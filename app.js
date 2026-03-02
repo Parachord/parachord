@@ -5069,6 +5069,8 @@ const Parachord = () => {
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
+  const savedResolverOrderRef = useRef(null);  // Persisted order from storage — used to restore priority position when re-enabling
+  const savedActiveResolversRef = useRef(null);  // Persisted active_resolvers from storage — used to distinguish auth-gated removal from user-disabled
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
   const [library, setLibrary] = useState([]);
@@ -9877,9 +9879,24 @@ ${trackListXml}
       let newOrder = prev.filter(id => activeResolvers.includes(id));
 
       // Add any active resolvers missing from the order
+      const savedOrder = savedResolverOrderRef.current;
       for (const id of activeResolvers) {
         if (!newOrder.includes(id) && loadedResolvers.some(r => r.id === id && r.capabilities?.resolve)) {
-          newOrder = insertInCanonicalOrder(newOrder, id);
+          // Restore to user's saved position if available (e.g. resolver re-enabled after auth refresh)
+          if (savedOrder && savedOrder.includes(id)) {
+            const savedIndex = savedOrder.indexOf(id);
+            let insertAt = newOrder.length;
+            for (let i = 0; i < newOrder.length; i++) {
+              const savedPos = savedOrder.indexOf(newOrder[i]);
+              if (savedPos !== -1 && savedPos > savedIndex) {
+                insertAt = i;
+                break;
+              }
+            }
+            newOrder = [...newOrder.slice(0, insertAt), id, ...newOrder.slice(insertAt)];
+          } else {
+            newOrder = insertInCanonicalOrder(newOrder, id);
+          }
         }
       }
 
@@ -18048,6 +18065,10 @@ ${trackListXml}
         // Deduplicate in case of corrupted data
         const dedupedActive = [...new Set(savedActiveResolvers)];
 
+        // Remember the user's saved active resolvers so we can distinguish
+        // auth-gated removal (should re-enable) from user-disabled (should not).
+        savedActiveResolversRef.current = dedupedActive;
+
         // Set resolvers optimistically so they're available immediately,
         // then run auth checks in parallel (non-blocking) to filter invalid ones.
         // This avoids blocking cacheLoaded (and all dependent useEffects) on slow
@@ -18097,6 +18118,7 @@ ${trackListXml}
         // Deduplicate in case of corrupted data (preserving order of first occurrence)
         const dedupedOrder = [...new Set(savedResolverOrder)];
         setResolverOrder(dedupedOrder);
+        savedResolverOrderRef.current = dedupedOrder;
         console.log(`📦 Loaded resolver order from storage (${dedupedOrder.length} resolvers)`);
       }
 
@@ -28779,6 +28801,38 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Add Spotify authentication functions
 
+  // Re-enable a resolver that was removed by a failed startup auth check,
+  // restoring it to its saved position in the user's priority order.
+  // Only re-enables if the resolver was in the user's saved active_resolvers list
+  // (i.e. the user had it explicitly enabled before the auth check removed it).
+  const reEnableResolver = (resolverId) => {
+    // Don't re-add if the user never had it enabled — respect explicit disable
+    const savedActive = savedActiveResolversRef.current;
+    if (!savedActive || !savedActive.includes(resolverId)) return;
+
+    setActiveResolvers(prev => {
+      if (prev.includes(resolverId)) return prev;
+      console.log(`🔄 Re-enabling ${resolverId} resolver (restoring saved position)`);
+      // Restore to saved position from the user's persisted priority order
+      const savedOrder = savedResolverOrderRef.current;
+      if (savedOrder && savedOrder.includes(resolverId)) {
+        const savedIndex = savedOrder.indexOf(resolverId);
+        const newList = [...prev];
+        let insertAt = newList.length;
+        for (let i = 0; i < newList.length; i++) {
+          const savedPos = savedOrder.indexOf(newList[i]);
+          if (savedPos !== -1 && savedPos > savedIndex) {
+            insertAt = i;
+            break;
+          }
+        }
+        newList.splice(insertAt, 0, resolverId);
+        return newList;
+      }
+      return [...prev, resolverId];
+    });
+  };
+
   // Refresh the Spotify token and return the new token (or null if refresh failed)
   // This is called when a 401 is detected to get a fresh token
   const refreshSpotifyToken = async () => {
@@ -28793,6 +28847,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       console.log('✅ Token refreshed successfully');
       setSpotifyToken(tokenData.token);
       setSpotifyConnected(true);
+      reEnableResolver('spotify');
       return tokenData.token;
     } else {
       console.log('❌ Token refresh failed - no valid token returned');
@@ -28818,8 +28873,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         console.log('Valid token found, setting connected state');
         setSpotifyToken(tokenData.token);
         setSpotifyConnected(true);
-        // Note: Don't auto-enable Spotify resolver here - respect user's saved preference
-        // The resolver will only be enabled if it's in activeResolvers (loaded from storage)
+        reEnableResolver('spotify');
       } else {
         console.log('No valid token found');
       }
@@ -28883,6 +28937,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Remove Spotify sources from all tracks and remove from active resolvers
       removeResolverSources('spotify');
       setActiveResolvers(prev => prev.filter(id => id !== 'spotify'));
+      // Update saved ref so re-enable logic respects explicit disconnect
+      if (savedActiveResolversRef.current) {
+        savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== 'spotify');
+      }
     }
   };
 
@@ -28938,8 +28996,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         console.log('Valid SoundCloud token found, setting connected state');
         setSoundcloudToken(tokenData.token);
         setSoundcloudConnected(true);
-        // Note: Don't auto-enable SoundCloud resolver here - respect user's saved preference
-        // The resolver will only be enabled if it's in activeResolvers (loaded from storage)
+        // Re-enable if it was in the user's saved active resolvers (restores priority position)
+        reEnableResolver('soundcloud');
       } else {
         console.log('No valid SoundCloud token found');
       }
@@ -29034,6 +29092,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Remove SoundCloud sources from all tracks and remove from active resolvers
       removeResolverSources('soundcloud');
       setActiveResolvers(prev => prev.filter(id => id !== 'soundcloud'));
+      // Mark as explicitly disabled so reEnableResolver won't restore it
+      if (savedActiveResolversRef.current) {
+        savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== 'soundcloud');
+      }
     }
   };
 
@@ -29085,20 +29147,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             }
 
             setAppleMusicConnected(true);
-            // Ensure resolver is enabled (may be missing from saved state for
-            // users who connected before the auto-enable fix)
-            setActiveResolvers(prev => {
-              if (!prev.includes('applemusic')) {
-                return [...prev, 'applemusic'];
-              }
-              return prev;
-            });
-            setResolverOrder(prev => {
-              if (!prev.includes('applemusic')) {
-                return insertInCanonicalOrder(prev, 'applemusic');
-              }
-              return prev;
-            });
+            // Re-enable if it was in the user's saved active resolvers (restores priority position)
+            reEnableResolver('applemusic');
           } else if (userToken) {
             // We have a stored user token but MusicKit JS isn't authorized
             // The user token will be used automatically by MusicKit JS for API calls
@@ -29133,18 +29183,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
               // reconnect if native auth is valid. Fetch a user token in the
               // background for sync features, but don't gate connection on it.
               setAppleMusicConnected(true);
-              setActiveResolvers(prev => {
-                if (!prev.includes('applemusic')) {
-                  return [...prev, 'applemusic'];
-                }
-                return prev;
-              });
-              setResolverOrder(prev => {
-                if (!prev.includes('applemusic')) {
-                  return insertInCanonicalOrder(prev, 'applemusic');
-                }
-                return prev;
-              });
+              // Re-enable if it was in the user's saved active resolvers (restores priority position)
+              reEnableResolver('applemusic');
 
               // Best-effort: fetch and persist a user token for sync features
               const hasToken = !!(await window.electron?.store?.get('applemusic_user_token'));
@@ -29484,6 +29524,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Remove Apple Music sources from all tracks
     removeResolverSources('applemusic');
     setActiveResolvers(prev => prev.filter(id => id !== 'applemusic'));
+    // Mark as explicitly disabled so reEnableResolver won't restore it
+    if (savedActiveResolversRef.current) {
+      savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== 'applemusic');
+    }
 
     showToast('Apple Music disconnected', 'info');
   };
@@ -53669,9 +53713,17 @@ useEffect(() => {
                     if (isActive) {
                       setActiveResolvers(prev => prev.filter(id => id !== resolver.id));
                       setResolverOrder(prev => prev.filter(id => id !== resolver.id));
+                      // Mark as explicitly disabled so reEnableResolver won't restore it
+                      if (savedActiveResolversRef.current) {
+                        savedActiveResolversRef.current = savedActiveResolversRef.current.filter(id => id !== resolver.id);
+                      }
                     } else {
                       setActiveResolvers(prev => [...prev, resolver.id]);
                       setResolverOrder(prev => insertInCanonicalOrder(prev, resolver.id));
+                      // Mark as explicitly enabled so reEnableResolver can restore it after auth failures
+                      if (savedActiveResolversRef.current && !savedActiveResolversRef.current.includes(resolver.id)) {
+                        savedActiveResolversRef.current = [...savedActiveResolversRef.current, resolver.id];
+                      }
                     }
                   }
                 },
