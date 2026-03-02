@@ -650,8 +650,10 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  mainWindow.once('ready-to-show', () => {
-    console.log('Window ready to show');
+  let windowShown = false;
+  const showWindow = () => {
+    if (windowShown || !mainWindow || mainWindow.isDestroyed()) return;
+    windowShown = true;
     mainWindow.show();
 
     // Send any pending protocol URL that was received before window was ready
@@ -660,6 +662,29 @@ function createWindow() {
       safeSendToRenderer('protocol-url', global.pendingProtocolUrl);
       global.pendingProtocolUrl = null;
     }
+  };
+
+  mainWindow.once('ready-to-show', () => {
+    console.log('Window ready to show');
+    showWindow();
+  });
+
+  // Fallback: force-show the window after 5 seconds even if ready-to-show
+  // never fires (e.g., renderer crash or page load failure).
+  setTimeout(() => {
+    if (!windowShown) {
+      console.warn('⚠️ Window ready-to-show did not fire within 5s — forcing show');
+      showWindow();
+    }
+  }, 5000);
+
+  // Detect renderer crashes and page load failures
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('💥 Renderer process gone:', details.reason, details.exitCode);
+  });
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('❌ Page failed to load:', errorCode, errorDescription, validatedURL);
+    showWindow(); // Show the window so the user sees something
   });
 
   // Open DevTools in development
@@ -1547,12 +1572,16 @@ app.whenReady().then(() => {
   });
 
   createWindow();
-  startAuthServer();
-  startExtensionServer();
-  startNativeMessagingServer();
-  registerNativeMessagingHost();
-  startMcpServer(mainWindow);
-  systemVolumeMonitor.start();
+
+  // Start background services — wrap each in try/catch so a single
+  // failure doesn't prevent the menu from being set up or the window
+  // from showing.
+  try { startAuthServer(); } catch (e) { console.error('Failed to start auth server:', e.message); }
+  try { startExtensionServer(); } catch (e) { console.error('Failed to start extension server:', e.message); }
+  try { startNativeMessagingServer(); } catch (e) { console.error('Failed to start native messaging server:', e.message); }
+  try { registerNativeMessagingHost(); } catch (e) { console.error('Failed to register native messaging host:', e.message); }
+  try { startMcpServer(mainWindow); } catch (e) { console.error('Failed to start MCP server:', e.message); }
+  try { systemVolumeMonitor.start(); } catch (e) { console.error('Failed to start system volume monitor:', e.message); }
 
   // Set up application menu
   const isMac = process.platform === 'darwin';
