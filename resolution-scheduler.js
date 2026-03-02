@@ -152,7 +152,7 @@
         console.warn(`📋 Scheduler: updateVisibility called for unregistered context: ${contextId}`);
         return;
       }
-      console.log(`📋 Scheduler: updateVisibility for ${contextId}, ${visibleTracks.length} tracks`);
+      // Hot path — only log in debug mode to avoid console storm
 
       const newVisibleKeys = new Set(visibleTracks.map(t => t.key));
       const oldVisibleKeys = context.visibleTracks;
@@ -207,7 +207,7 @@
         console.warn(`📋 Scheduler: enqueue failed (context not found): ${contextId}`);
         return;
       }
-      console.log(`📋 Scheduler: enqueue ${trackKey} for ${contextId}`);
+      // Hot path — skip per-track logging
 
       const priority = CONTEXT_PRIORITY[context.type];
 
@@ -451,14 +451,14 @@
      */
     _maybeProcess() {
       if (this.isProcessing) {
-        console.log(`📋 Scheduler: _maybeProcess skipped (already processing)`);
+        // Hot path — skip logging when processor is busy
         return;
       }
       if (!this.resolveCallback) {
         console.warn(`📋 Scheduler: _maybeProcess skipped (no resolveCallback set)`);
         return;
       }
-      console.log(`📋 Scheduler: _maybeProcess starting, pending: ${this.pending.size}`);
+      // Only log process start (not skips)
       this._processNext();
     }
 
