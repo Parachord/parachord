@@ -4123,24 +4123,42 @@ ipcMain.handle('release-notes-get', async () => {
     return highlights;
   }
 
-  // Try GitHub Releases API for the current version's release notes
+  // Try GitHub Releases API — exact version first, then latest as fallback
   try {
     const { net } = require('electron');
-    const response = await net.fetch(
+    const headers = { 'Accept': 'application/vnd.github+json' };
+    const fetchOpts = { signal: AbortSignal.timeout(5000), headers };
+
+    // 1) Try the release matching this app's version
+    let release = null;
+    const tagResponse = await net.fetch(
       `https://api.github.com/repos/Parachord/parachord/releases/tags/v${currentVersion}`,
-      { signal: AbortSignal.timeout(5000), headers: { 'Accept': 'application/vnd.github+json' } }
+      fetchOpts
     );
-    if (response.ok) {
-      const release = await response.json();
-      if (release.body) {
-        const highlights = parseHighlights(release.body);
-        if (highlights.length > 0) {
-          return { success: true, highlights };
-        }
+    if (tagResponse.ok) {
+      release = await tagResponse.json();
+    } else {
+      // 2) Tag not found — fall back to latest release
+      console.log(`📋 No GitHub release for v${currentVersion}, trying latest`);
+      const latestResponse = await net.fetch(
+        'https://api.github.com/repos/Parachord/parachord/releases?per_page=1',
+        fetchOpts
+      );
+      if (latestResponse.ok) {
+        const releases = await latestResponse.json();
+        release = releases[0];
+      }
+    }
+
+    if (release?.body) {
+      console.log(`📋 Loaded release notes from GitHub: ${release.tag_name}`);
+      const highlights = parseHighlights(release.body);
+      if (highlights.length > 0) {
+        return { success: true, highlights };
       }
     }
   } catch (e) {
-    // Network unavailable — fall through to bundled file
+    console.log('📋 GitHub releases fetch failed, using bundled notes:', e.message);
   }
 
   // Fall back to bundled RELEASE_NOTES.md (first release section only)
