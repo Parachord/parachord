@@ -1,0 +1,21 @@
+changelog:
+  exclude:
+    labels:
+      - ci
+    authors:
+      - dependabot
+  categories:
+    - title: Browser Extension
+      labels: [extension]
+    - title: Smart Links
+      labels: [smart-links]
+    - title: Resolvers & Playback
+      labels: [resolvers, playback]
+    - title: Sync & Scrobbling
+      labels: [sync, scrobbling]
+    - title: Native Messaging
+      labels: [native-messaging]
+    - title: Bug Fixes
+      labels: [bug]
+    - title: Other Changes
+      labels: ['*']

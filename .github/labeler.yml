@@ -1,0 +1,42 @@
+# Auto-label PRs based on changed files (used by actions/labeler)
+
+extension:
+  - changed-files:
+      - any-glob-to-any-file: 'parachord-extension/**'
+
+smart-links:
+  - changed-files:
+      - any-glob-to-any-file: 'smart-links/**'
+
+native-messaging:
+  - changed-files:
+      - any-glob-to-any-file: 'native-messaging/**'
+
+resolvers:
+  - changed-files:
+      - any-glob-to-any-file: 'plugins/**'
+
+sync:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'sync-engine/**'
+          - 'sync-providers/**'
+
+scrobbling:
+  - changed-files:
+      - any-glob-to-any-file: 'scrobblers/**'
+
+playback:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'native/musickit-helper/**'
+          - 'resolution-scheduler.js'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/**'
+          - 'scripts/**'
+
+bug:
+  - head-branch: ['^fix/', '^claude/fix-']
