@@ -381,6 +381,14 @@
       animation: spin 1s linear infinite;
     }
 
+    @keyframes spin-reverse {
+      to { transform: rotate(-360deg); }
+    }
+
+    .animate-spin-reverse {
+      animation: spin-reverse 1s linear infinite;
+    }
+
     /* App loading screen - Wordmark reveal animation */
     @keyframes loadingFadeInUp {
       from {

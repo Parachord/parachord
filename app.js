@@ -30582,8 +30582,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'discover' ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
-                color: activeView === 'discover' ? '#ec4899' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'discover' ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
+                color: activeView === 'discover' ? '#f97316' : 'var(--nav-inactive)',
                 fontWeight: activeView === 'discover' ? '500' : '400'
               }
             },
@@ -30594,7 +30594,7 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Pop of the Tops',
                 showDiscoveryBadges && discoveryUnread.charts && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-pink-500 animate-pulse'
+                  className: 'w-2 h-2 rounded-full bg-orange-500 animate-pulse'
                 })
               )
             ),
@@ -30605,8 +30605,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'critics-picks' ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
-                color: activeView === 'critics-picks' ? '#f97316' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'critics-picks' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                color: activeView === 'critics-picks' ? '#ef4444' : 'var(--nav-inactive)',
                 fontWeight: activeView === 'critics-picks' ? '500' : '400'
               }
             },
@@ -30617,7 +30617,7 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Critical Darlings",
                 showDiscoveryBadges && discoveryUnread.criticsPicks && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-orange-500 animate-pulse'
+                  className: 'w-2 h-2 rounded-full bg-red-500 animate-pulse'
                 })
               )
             ),
@@ -34848,7 +34848,7 @@ useEffect(() => {
                     },
                       // Square image container - gray while loading, pattern only when imageLoaded && no image
                       React.createElement('div', {
-                        className: 'aspect-square relative group/art',
+                        className: 'aspect-square relative group/art overflow-hidden',
                         style: { background: artist.imageLoaded && !artist.image ? relatedPattern.gradient : 'var(--placeholder-bg)' }
                       },
                         // Shimmer while loading (imageLoaded not yet true)
@@ -36559,7 +36559,7 @@ useEffect(() => {
                             await refreshHostedPlaylist(playlist.id);
                             setRefreshingPlaylist(null);
                           },
-                          className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
+                          className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin-reverse' : ''}`,
                           title: 'Refresh playlist'
                         },
                           React.createElement('svg', { className: 'w-3 h-3 text-gray-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -38225,7 +38225,7 @@ useEffect(() => {
                             }
                           }
                         },
-                          React.createElement('svg', { className: 'w-4 h-4' + (aiRecs.loading ? ' animate-spin' : ''), fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('svg', { className: 'w-4 h-4' + (aiRecs.loading ? ' animate-spin-reverse' : ''), fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
                           )
                         )
@@ -40844,7 +40844,7 @@ useEffect(() => {
               title: newReleasesLoading ? 'Loading...' : 'Refresh'
             },
               React.createElement('svg', {
-                className: `w-4 h-4 ${newReleasesLoading ? 'animate-spin' : ''}`,
+                className: `w-4 h-4 ${newReleasesLoading ? 'animate-spin-reverse' : ''}`,
                 fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
               },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
