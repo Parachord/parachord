@@ -20264,6 +20264,12 @@ ${trackListXml}
     resolutionScheduler.abortContext(contextId, options);
   }, []);
 
+  // Stable queue-specific callbacks (avoids new function refs on every render
+  // which would re-trigger VirtualizedQueueList's useEffect continuously)
+  const updateQueueVisibility = useCallback((tracks) => updateSchedulerVisibility('queue', tracks), [updateSchedulerVisibility]);
+  const setQueueHoverTrack = useCallback((trackId) => setSchedulerHoverTrack(trackId, 'queue'), [setSchedulerHoverTrack]);
+  const clearQueueHoverTrack = clearSchedulerHoverTrack;
+
   // Expose scheduler API for use in components
   const resolutionSchedulerAPI = useMemo(() => ({
     registerPageContext,
@@ -36834,7 +36840,7 @@ useEffect(() => {
             },
               // Parachord wordmark centered above title
               React.createElement('img', {
-                src: 'assets/logo-wordmark-white.png',
+                src: 'assets/icons/logo-wordmark-white.png',
                 alt: 'Parachord',
                 className: 'mb-4',
                 style: { height: '38px', width: 'auto' }
@@ -36870,7 +36876,7 @@ useEffect(() => {
               }, 'HOME'),
               // Parachord wordmark on the right
               React.createElement('img', {
-                src: 'assets/logo-wordmark-white.png',
+                src: 'assets/icons/logo-wordmark-white.png',
                 alt: 'Parachord',
                 style: { height: '26px', width: 'auto' }
               })
@@ -54011,9 +54017,9 @@ useEffect(() => {
             handleUrlDrop,
             formatTime,
             // Resolution scheduler integration
-            onVisibilityChange: (tracks) => updateSchedulerVisibility('queue', tracks),
-            onTrackHover: (trackId) => setSchedulerHoverTrack(trackId, 'queue'),
-            onTrackHoverEnd: () => clearSchedulerHoverTrack(),
+            onVisibilityChange: updateQueueVisibility,
+            onTrackHover: setQueueHoverTrack,
+            onTrackHoverEnd: clearQueueHoverTrack,
             currentTrackIndex: currentQueue.findIndex(t => t.id === currentTrack?.id)
           })
       ),
