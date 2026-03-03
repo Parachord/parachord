@@ -12,12 +12,6 @@ on:
 permissions:
   contents: write
 
-# Cancel in-progress runs when a new push arrives for the same branch/PR.
-# Tagged releases are never cancelled so release builds always complete.
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
 jobs:
   build:
     env:
@@ -109,15 +103,7 @@ jobs:
           mkdir -p resources/keys
           echo "$MUSICKIT_PRIVATE_KEY" > resources/keys/AuthKey_437JVHZMMK.p8
 
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-
       - name: Install dependencies
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
       # Cache electron-builder binary downloads (NSIS, winCodeSign, electron zip)
