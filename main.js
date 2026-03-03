@@ -2378,6 +2378,17 @@ ipcMain.handle('store-clear', async () => {
     }
   }
 
+  // Clear collection data (synced tracks, albums, artists)
+  try {
+    const collectionPath = path.join(app.getPath('userData'), 'collection.json');
+    await fs.unlink(collectionPath);
+    console.log('  ✅ Cleared collection data');
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn('  ⚠️ Failed to clear collection data:', error.message);
+    }
+  }
+
   // Clear Local Files database (watch folders, scanned tracks)
   try {
     const localFilesDbPath = path.join(app.getPath('userData'), 'local-files.db');
@@ -4425,7 +4436,7 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
     // Get auth token for the provider
     let token;
     if (providerId === 'spotify') {
-      token = store.get('spotify_access_token');
+      token = store.get('spotify_token');
     } else if (providerId === 'applemusic') {
       if (!generatedMusicKitToken) {
         await musicKitTokenReady;

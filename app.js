@@ -7714,7 +7714,7 @@ const Parachord = () => {
           console.log(`✅ Loaded ${metaServicesData.length} meta services:`, metaServicesData.map(s => s.name).join(', '));
         }
       } catch (error) {
-        console.error('❌ Failed to load resolvers:', error);
+        console.error('❌ Failed to load resolvers:', error?.message || error, error?.stack);
         console.log('💾 Attempting to use fallback resolvers...');
         
         try {
