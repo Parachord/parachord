@@ -1295,6 +1295,11 @@ async function exchangeCodeForToken(code) {
       store.set('spotify_token', data.access_token);
       store.set('spotify_refresh_token', data.refresh_token);
       store.set('spotify_token_expiry', expiryTime);
+      // Record the scopes granted during this auth flow so we can detect
+      // stale tokens that lack newer scopes (e.g. library sync scopes).
+      if (data.scope) {
+        store.set('spotify_token_scopes', data.scope);
+      }
       console.log('Token saved. Expiry:', new Date(expiryTime).toISOString());
 
       // Verify it was saved
@@ -2471,9 +2476,13 @@ ipcMain.handle('spotify-auth', async () => {
     'user-read-playback-state',
     'user-modify-playback-state',
     'user-library-read',
+    'user-library-modify',
     'user-follow-read',
+    'user-follow-modify',
     'playlist-read-private',
-    'playlist-read-collaborative'
+    'playlist-read-collaborative',
+    'playlist-modify-private',
+    'playlist-modify-public'
   ].join(' ');
 
   // Generate PKCE code verifier and challenge
@@ -2763,6 +2772,7 @@ ipcMain.handle('spotify-disconnect', async () => {
   store.delete('spotify_token');
   store.delete('spotify_refresh_token');
   store.delete('spotify_token_expiry');
+  store.delete('spotify_token_scopes');
   console.log('Spotify tokens cleared');
   return { success: true };
 });
@@ -4865,6 +4875,23 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     return { success: false, error: 'Not authenticated' };
   }
 
+  // For Spotify, check that the token was granted with the scopes needed for
+  // library sync.  Tokens obtained before these scopes were added will still
+  // work for playback but will 403 on library endpoints.
+  if (providerId === 'spotify') {
+    const grantedScopes = store.get('spotify_token_scopes') || '';
+    const requiredSyncScopes = ['user-library-read', 'user-follow-read', 'playlist-read-private'];
+    const missing = requiredSyncScopes.filter(s => !grantedScopes.includes(s));
+    if (missing.length > 0) {
+      console.log(`[Sync] Token missing required scopes: ${missing.join(', ')}. Prompting re-auth.`);
+      return {
+        success: false,
+        error: 'Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions for library sync.',
+        errorCode: 'missing_scopes'
+      };
+    }
+  }
+
   // For Spotify, provide a token refresh callback that the sync provider can
   // call mid-sync when it encounters a 401 (token expired during long syncs).
   // Force-refreshes because a 401 means the current token was rejected.
@@ -5200,7 +5227,7 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
   try {
     const tracks = await provider.fetchPlaylistTracks(playlistExternalId, token, null, refreshTokenCb);
     // Also fetch the current snapshot ID
-    const snapshotId = await provider.getPlaylistSnapshot?.(playlistExternalId, token);
+    const snapshotId = await provider.getPlaylistSnapshot?.(playlistExternalId, token, refreshTokenCb);
     return { success: true, tracks, snapshotId };
   } catch (error) {
     return { success: false, error: error.message };

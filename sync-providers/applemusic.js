@@ -88,17 +88,39 @@ const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [
  */
 const transformTrack = (song) => {
   const attrs = song.attributes || {};
+  const artistName = attrs.artistName || 'Unknown Artist';
+  const albumName = attrs.albumName || 'Unknown Album';
+  const title = attrs.name || 'Unknown Title';
+  const duration = attrs.durationInMillis ? Math.round(attrs.durationInMillis / 1000) : 0;
+  const albumArt = attrs.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null;
+  const catalogId = attrs.playParams?.catalogId || song.id;
   return {
-    id: generateTrackId(attrs.artistName, attrs.name, attrs.albumName),
+    id: generateTrackId(artistName, title, albumName),
     externalId: song.id,
-    title: attrs.name || 'Unknown Title',
-    artist: attrs.artistName || 'Unknown Artist',
-    album: attrs.albumName || 'Unknown Album',
-    duration: attrs.durationInMillis ? Math.round(attrs.durationInMillis / 1000) : 0,
-    albumArt: attrs.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null,
+    title,
+    artist: artistName,
+    album: albumName,
+    duration,
+    albumArt,
     addedAt: attrs.dateAdded ? new Date(attrs.dateAdded).getTime() : Date.now(),
-    appleMusicId: attrs.playParams?.catalogId || song.id,
-    appleMusicUrl: attrs.url || `https://music.apple.com/us/song/${attrs.playParams?.catalogId || song.id}`
+    appleMusicId: catalogId,
+    appleMusicUrl: attrs.url || `https://music.apple.com/us/song/${catalogId}`,
+    // Pre-populate sources so the resolution system recognizes synced tracks
+    // as already resolved for Apple Music (avoids redundant Search API calls)
+    sources: {
+      applemusic: {
+        id: `applemusic-${catalogId}`,
+        title,
+        artist: artistName,
+        album: albumName,
+        duration,
+        appleMusicId: catalogId,
+        appleMusicUrl: attrs.url || `https://music.apple.com/us/song/${catalogId}`,
+        albumArt,
+        previewUrl: attrs.previews?.[0]?.url || null,
+        confidence: 1.0
+      }
+    }
   };
 };
 

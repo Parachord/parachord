@@ -46,7 +46,9 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
       return spotifyRequest(endpoint, token, options, _retryCount + 1);
     }
-    if ((response.status === 401 || response.status === 403) && refreshToken) {
+    // Only refresh on 401 (expired token). 403 means insufficient scopes —
+    // refreshing gives the same scopes, so retrying would be wasteful.
+    if (response.status === 401 && refreshToken) {
       const newToken = await refreshToken();
       if (newToken) {
         return spotifyRequest(endpoint, newToken, { ...options, refreshToken: null }, 0);
@@ -97,8 +99,9 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
       return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1);
     }
-    // On 401/403, try refreshing the token once before failing
-    if ((response.status === 401 || response.status === 403) && refreshToken) {
+    // Only refresh on 401 (expired token). 403 means insufficient scopes —
+    // refreshing gives the same scopes, so retrying would be wasteful.
+    if (response.status === 401 && refreshToken) {
       const newToken = await refreshToken();
       if (newToken) {
         return spotifyFetch(endpoint, newToken, allItems, onProgress, null, 0);
@@ -217,7 +220,7 @@ const transformPlaylist = (playlist, folderId = null, folderName = null) => {
     snapshotId: playlist.snapshot_id,
     folderId,
     folderName,
-    isOwnedByUser: playlist.owner?.id === playlist.owner?.id, // Will be set properly during fetch
+    isOwnedByUser: false, // Set properly in fetchPlaylists() with actual user ID comparison
     spotifyUri: playlist.uri,
     ownerName: playlist.owner?.display_name || playlist.owner?.id || null,
     ownerId: playlist.owner?.id || null
@@ -293,53 +296,25 @@ const SpotifySyncProvider = {
   async fetchArtists(token, onProgress, refreshToken, { localSyncedCount, localLatestExternalId } = {}) {
     // Quick count check for artists (first page includes total)
     if (localSyncedCount !== undefined) {
-      const probeResponse = await fetch(`${SPOTIFY_API_BASE}/me/following?type=artist&limit=1`, {
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-      });
-      if (probeResponse.ok) {
-        const probeData = await probeResponse.json();
-        const remoteTotal = probeData.artists?.total;
-        const remoteLatestId = probeData.artists?.items?.[0]?.id || null;
-        if (remoteTotal !== undefined && remoteTotal === localSyncedCount && remoteLatestId === localLatestExternalId) {
-          console.log(`[Spotify] Artist count unchanged (${remoteTotal}) and latest artist matches — skipping full fetch`);
-          return null;
-        }
-        if (remoteTotal !== undefined && remoteTotal !== localSyncedCount) {
-          console.log(`[Spotify] Artist count changed: remote ${remoteTotal} vs local ${localSyncedCount}`);
-        }
+      const probeData = await spotifyRequest('/me/following?type=artist&limit=1', token, { refreshToken });
+      const remoteTotal = probeData.artists?.total;
+      const remoteLatestId = probeData.artists?.items?.[0]?.id || null;
+      if (remoteTotal !== undefined && remoteTotal === localSyncedCount && remoteLatestId === localLatestExternalId) {
+        console.log(`[Spotify] Artist count unchanged (${remoteTotal}) and latest artist matches — skipping full fetch`);
+        return null;
+      }
+      if (remoteTotal !== undefined && remoteTotal !== localSyncedCount) {
+        console.log(`[Spotify] Artist count changed: remote ${remoteTotal} vs local ${localSyncedCount}`);
       }
     }
     // Artists use cursor-based pagination, different from other endpoints
-    let currentToken = token;
+    let currentRefreshToken = refreshToken;
     const fetchArtistsPage = async (after = null, allArtists = []) => {
       const url = `/me/following?type=artist&limit=50${after ? `&after=${after}` : ''}`;
-      const response = await fetch(`${SPOTIFY_API_BASE}${url}`, {
-        headers: {
-          'Authorization': `Bearer ${currentToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      const data = await spotifyRequest(url, token, { refreshToken: currentRefreshToken });
+      // Only allow one refresh attempt across all pages
+      currentRefreshToken = null;
 
-      if (!response.ok) {
-        // On 401/403, try refreshing the token once before failing
-        if ((response.status === 401 || response.status === 403) && refreshToken) {
-          const newToken = await refreshToken();
-          if (newToken) {
-            currentToken = newToken;
-            refreshToken = null; // Only retry once
-            return fetchArtistsPage(after, allArtists);
-          }
-        }
-        if (response.status === 401) {
-          throw new Error('Spotify token expired. Please reconnect your Spotify account.');
-        }
-        if (response.status === 403) {
-          throw new Error('Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions for library sync.');
-        }
-        throw new Error(`Spotify API error: ${response.status}`);
-      }
-
-      const data = await response.json();
       const artists = data.artists?.items || [];
       const combined = [...allArtists, ...artists];
 
@@ -368,10 +343,7 @@ const SpotifySyncProvider = {
     const items = await spotifyFetch('/me/playlists?limit=50', token, [], onProgress, refreshToken);
 
     // Get current user ID for ownership check
-    const userResponse = await fetch(`${SPOTIFY_API_BASE}/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const userData = await userResponse.json();
+    const userData = await spotifyRequest('/me', token, { refreshToken });
     const userId = userData.id;
 
     const playlists = items.map(playlist => ({
@@ -400,25 +372,8 @@ const SpotifySyncProvider = {
   /**
    * Get current snapshot ID for a playlist
    */
-  async getPlaylistSnapshot(playlistId, token) {
-    const response = await fetch(`${SPOTIFY_API_BASE}/playlists/${playlistId}?fields=snapshot_id`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Spotify token expired. Please reconnect your Spotify account.');
-      }
-      if (response.status === 403) {
-        throw new Error('Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions for library sync.');
-      }
-      throw new Error(`Spotify API error: ${response.status}`);
-    }
-
-    const data = await response.json();
+  async getPlaylistSnapshot(playlistId, token, refreshToken) {
+    const data = await spotifyRequest(`/playlists/${playlistId}?fields=snapshot_id`, token, { refreshToken });
     return data.snapshot_id;
   },
 
@@ -523,23 +478,13 @@ const SpotifySyncProvider = {
    * Check if user owns the playlist (can edit it)
    */
   async checkPlaylistOwnership(playlistId, token) {
-    const response = await fetch(`${SPOTIFY_API_BASE}/playlists/${playlistId}?fields=owner.id`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    if (!response.ok) {
+    try {
+      const playlist = await spotifyRequest(`/playlists/${playlistId}?fields=owner.id`, token);
+      const user = await spotifyRequest('/me', token);
+      return playlist.owner?.id === user.id;
+    } catch {
       return false;
     }
-
-    const playlist = await response.json();
-
-    // Get current user
-    const userResponse = await fetch(`${SPOTIFY_API_BASE}/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const user = await userResponse.json();
-
-    return playlist.owner?.id === user.id;
   },
 
   /**

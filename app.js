@@ -19771,6 +19771,20 @@ ${trackListXml}
         confidence: 1.0
       };
     }
+    // Same fallback for Apple Music synced tracks with top-level appleMusicId
+    if (track.appleMusicId && currentActiveResolvers.includes('applemusic') && !persistedSources.applemusic) {
+      persistedSources.applemusic = {
+        id: `applemusic-${track.appleMusicId}`,
+        title: track.title,
+        artist: artistName,
+        album: track.album || '',
+        duration: track.duration || 0,
+        appleMusicId: track.appleMusicId,
+        appleMusicUrl: track.appleMusicUrl || null,
+        albumArt: track.albumArt,
+        confidence: 1.0
+      };
+    }
 
     const hasValidPersistedSources = Object.keys(persistedSources).length > 0;
 
