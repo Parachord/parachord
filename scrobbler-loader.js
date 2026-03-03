@@ -137,8 +137,10 @@ class ScrobbleManager {
         anySuccess = true;
       } catch (error) {
         console.error(`[ScrobbleManager] Scrobble failed for ${plugin.id}:`, error);
-        // Queue for retry
-        await this.queueFailedScrobble(plugin.id, track, timestamp, error.message);
+        // Don't queue auth errors — they're permanent failures (invalid session key, bad API key)
+        if (!error.authError) {
+          await this.queueFailedScrobble(plugin.id, track, timestamp, error.message);
+        }
       }
     }
 
@@ -515,14 +517,22 @@ class LastFmScrobbler extends BaseScrobbler {
     if (data.error) {
       const errorCode = data.error;
       const errorMessage = data.message || 'Unknown error';
-      // Error 9: Invalid session key - user needs to re-authenticate
-      // Error 13: Invalid method signature
-      // Error 10: Invalid API key
-      // Error 26: Suspended API key
-      if (errorCode === 9) {
-        console.warn(`[LastFm] Session key is invalid or expired. Please re-authenticate in Settings > Scrobbling.`);
+
+      // Auth errors (9, 10, 26): session key invalid, API key invalid, or suspended
+      // These are permanent failures — clear credentials and notify UI to re-authenticate
+      if (errorCode === 9 || errorCode === 10 || errorCode === 26) {
+        console.warn(`[${this.name}] Auth error ${errorCode}: ${errorMessage}. Clearing session key.`);
+        const config = await this.getConfig();
+        await this.setConfig({ ...config, sessionKey: null, enabled: false, authError: errorMessage });
+        window.dispatchEvent(new CustomEvent('scrobbler-auth-error', {
+          detail: { scrobblerId: this.id, errorCode, errorMessage }
+        }));
+        const err = new Error(`${this.name} API error ${errorCode}: ${errorMessage}`);
+        err.authError = true;
+        throw err;
       }
-      throw new Error(`Last.fm API error ${errorCode}: ${errorMessage}`);
+
+      throw new Error(`${this.name} API error ${errorCode}: ${errorMessage}`);
     }
 
     // If HTTP request failed but no JSON error code, throw generic error
