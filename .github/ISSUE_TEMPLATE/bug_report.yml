@@ -1,0 +1,128 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in Parachord
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below so we can reproduce and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: Which OS are you running Parachord on?
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows 10
+        - Windows 11
+        - Linux (Ubuntu/Debian)
+        - Linux (Fedora/RHEL)
+        - Linux (Other)
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS Version
+      description: The specific version of your OS (e.g. macOS 15.3, Windows 11 24H2, Ubuntu 24.04).
+      placeholder: e.g. macOS 15.3
+    validations:
+      required: false
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Parachord Version
+      description: The version of Parachord you're using (shown in the title bar or About dialog).
+      placeholder: e.g. 1.2.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: dev-logs
+    attributes:
+      label: Developer Logs
+      description: |
+        Paste any relevant log output here. You can collect logs from two sources:
+
+        **1. DevTools Console (renderer logs)**
+        Open Parachord, then open Developer Tools using one of the shortcuts below:
+        - **macOS**: `Cmd+Option+I` (or menu bar: **View > Toggle Developer Tools**)
+        - **Windows / Linux**: `Ctrl+Shift+I` or `F12` (or menu bar: **View > Toggle Developer Tools**)
+
+        Click the **Console** tab, reproduce the issue, and copy any errors or warnings (shown in red/yellow).
+
+        **2. Terminal Output (main process logs)**
+        Start Parachord from a terminal so you can capture main-process output:
+        - **macOS**: Open **Terminal.app** or **iTerm** and run: `/Applications/Parachord.app/Contents/MacOS/Parachord`  (or `npm start` if running from source)
+        - **Windows**: Open **Command Prompt** or **PowerShell**, navigate to the install directory, and run: `Parachord.exe`  (or `npm start` if running from source)
+        - **Linux**: Open a terminal and run: `parachord` or `./Parachord.AppImage`  (or `npm start` if running from source)
+
+        Reproduce the issue, then copy the terminal output.
+
+        **3. App data directory (for crash logs or database issues)**
+        If asked by a maintainer, the app data directory is located at:
+        - **macOS**: `~/Library/Application Support/parachord-desktop/`
+        - **Windows**: `%APPDATA%\parachord-desktop\`
+        - **Linux**: `~/.config/parachord-desktop/`
+      render: shell
+      placeholder: Paste log output here...
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain the problem. You can drag and drop images here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context about the problem (e.g. which music sources were in use, plug-ins installed, etc.).
+    validations:
+      required: false
