@@ -12000,20 +12000,20 @@ ${trackListXml}
   }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, addTracksToCollection]);
 
   // Re-resolve tracks when resolver settings change (enabled/priority)
+  // Note: the in-memory cache (trackSourcesCache) and UI state (trackSources) are NOT
+  // wiped here. The cache stores sources from all resolvers keyed by track — if a user
+  // disables a resolver and re-enables it later, those cached sources are still valid.
+  // The UI already filters displayed sources by activeResolvers, and resolveTrack()
+  // handles resolver hash mismatches by computing missingResolvers and only querying those.
   useEffect(() => {
     // Skip on initial mount (when both are empty)
     if (activeResolvers.length === 0 && resolverOrder.length === 0) return;
 
-    // Clear scheduler's resolved set so tracks can be re-queued with new resolver config
+    // Skip before settings have been loaded from storage
+    if (!resolverSettingsLoaded.current) return;
+
+    // Clear scheduler's resolved set so tracks can be re-queued for newly enabled resolvers
     resolutionSchedulerRef.current?.clearResolved();
-
-    // Invalidate in-memory cache — resolver hash has changed so entries are stale
-    if (trackSourcesCache.current) {
-      trackSourcesCache.current = {};
-    }
-
-    // Clear trackSources state so UI shows shimmer (resolving) until fresh results arrive
-    setTrackSources({});
 
     // Re-enqueue currently visible collection tracks for resolution
     if (visibleCollectionTrackIds.current.size > 0) {
@@ -12060,48 +12060,16 @@ ${trackListXml}
       }
     }
 
-    // Re-resolve playlist tracks if viewing a playlist
+    // Re-enqueue visible playlist tracks for resolution (preserving existing sources)
     if (selectedPlaylist && playlistTracks.length > 0) {
-      console.log('🔄 Resolver settings changed, re-resolving playlist tracks...');
-
-      // Re-resolve playlist tracks in parallel with incremental UI updates
-      const reResolvePlaylistTracks = async () => {
-        const tracksCopy = playlistTracks.map(t => ({ ...t, sources: {} }));
-        let flushScheduled = false;
-
-        const scheduleFlush = () => {
-          if (flushScheduled) return;
-          flushScheduled = true;
-          // Batch flush — coalesce rapid updates into one React render
-          requestAnimationFrame(() => {
-            flushScheduled = false;
-            setPlaylistTracks([...tracksCopy]);
-          });
-        };
-
-        // Resolve all tracks in parallel across all resolvers
-        await Promise.all(tracksCopy.map(async (track) => {
-          await Promise.all(activeResolvers.map(async (resolverId) => {
-            const resolver = allResolvers.find(r => r.id === resolverId);
-            if (!resolver || !resolver.capabilities.resolve) return;
-            try {
-              const config = await getResolverConfig(resolverId);
-              const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-              if (resolved) {
-                track.sources[resolverId] = resolved;
-                scheduleFlush();
-              }
-            } catch (error) {
-              // Silently fail - best-effort
-            }
-          }));
-        }));
-
-        setPlaylistTracks(tracksCopy);
-        console.log('✅ Playlist tracks re-resolved');
-      };
-
-      reResolvePlaylistTracks();
+      console.log('🔄 Resolver settings changed, re-enqueuing playlist tracks for resolution...');
+      const visibleTracks = playlistTracks.map(track => ({
+        key: track.id,
+        data: { track, artistName: track.artist || 'Unknown Artist' }
+      }));
+      if (resolutionSchedulerRef.current?.hasContext('playlist-tracks')) {
+        updateSchedulerVisibility('playlist-tracks', visibleTracks);
+      }
     }
   }, [activeResolvers, resolverOrder]);
 
@@ -20392,28 +20360,57 @@ ${trackListXml}
   // Background pre-resolution: register context and idle callback
   const backgroundResolutionIndex = useRef(0); // Track progress through collection
   const backgroundPlaylistIndex = useRef({ playlistIdx: 0, trackIdx: 0 }); // Track progress through playlists
-  const backgroundBatchSize = 25; // Tracks to queue per idle callback
+  const backgroundBatchCount = useRef(0); // How many batches have been processed (for ramp-up)
+  const backgroundStartTime = useRef(Date.now()); // When the app started (for startup grace period)
 
   useEffect(() => {
     // Register background context
     resolutionScheduler.registerContext('background', 'background');
 
+    // Record startup time for grace period
+    backgroundStartTime.current = Date.now();
+
     // Set up idle callback to pre-resolve collection and playlist tracks
     resolutionScheduler.setOnIdleCallback(() => {
       const now = Date.now();
+
+      // Startup grace period: wait 30 seconds before starting background resolution
+      // to avoid flooding APIs while the user is still loading/interacting with the app
+      const timeSinceStart = now - backgroundStartTime.current;
+      if (timeSinceStart < 30000) return;
+
       const currentActiveResolvers = activeResolversRef.current || [];
 
       // Skip if no active resolvers
       if (currentActiveResolvers.length === 0) return;
 
+      // Ramp up batch size: start small (5) and increase to 25 over the first few batches
+      const batchSize = backgroundBatchCount.current < 3 ? 5 : 25;
+
       // Collect tracks that need resolution
       const tracksToResolve = [];
+
+      // Helper: check if a track has at least one valid (non-expired, non-noMatch) source
+      // from any active resolver. Tracks with any playable source don't need
+      // background resolution — they can already be played.
+      const hasAnyValidSource = (track) => {
+        if (!track.sources || typeof track.sources !== 'object') return false;
+        for (const resolverId of currentActiveResolvers) {
+          const source = track.sources[resolverId];
+          if (!source || source.noMatch) continue;
+          // Sources without resolvedAt are from sync — always valid
+          if (!source.resolvedAt) return true;
+          // Check if source is within TTL
+          if ((now - source.resolvedAt) < CACHE_TTL.persistedSources) return true;
+        }
+        return false;
+      };
 
       // First, check collection tracks (read from ref to avoid stale closures)
       const allCollectionTracks = collectionTracksRef.current || [];
       let collectionIdx = backgroundResolutionIndex.current;
 
-      while (tracksToResolve.length < backgroundBatchSize && collectionIdx < allCollectionTracks.length) {
+      while (tracksToResolve.length < batchSize && collectionIdx < allCollectionTracks.length) {
         const track = allCollectionTracks[collectionIdx];
         collectionIdx++;
 
@@ -20425,44 +20422,31 @@ ${trackListXml}
           continue;
         }
 
-        // Check if track already has valid sources for all active resolvers
-        let needsResolution = false;
-        for (const resolverId of currentActiveResolvers) {
-          const source = track.sources?.[resolverId];
-          if (!source) {
-            needsResolution = true;
-            break;
-          }
-          // Check if source has expired (only if it has resolvedAt - sync sources are always valid)
-          if (source.resolvedAt && (now - source.resolvedAt) >= CACHE_TTL.persistedSources) {
-            needsResolution = true;
-            break;
-          }
-        }
+        // Only resolve tracks that have NO valid sources at all.
+        // Tracks with at least one playable source are fine for now.
+        if (hasAnyValidSource(track)) continue;
 
-        if (needsResolution) {
-          tracksToResolve.push({
-            key: trackKey,
-            data: {
-              track,
-              artistName: track.artist,
-              isQueueResolution: false
-            }
-          });
-        }
+        tracksToResolve.push({
+          key: trackKey,
+          data: {
+            track,
+            artistName: track.artist,
+            isQueueResolution: false
+          }
+        });
       }
       backgroundResolutionIndex.current = collectionIdx;
 
       // If we've finished collection, move to playlists
-      if (collectionIdx >= allCollectionTracks.length && tracksToResolve.length < backgroundBatchSize) {
+      if (collectionIdx >= allCollectionTracks.length && tracksToResolve.length < batchSize) {
         const playlistList = allPlaylistsRef.current || [];
         let { playlistIdx, trackIdx } = backgroundPlaylistIndex.current;
 
-        while (tracksToResolve.length < backgroundBatchSize && playlistIdx < playlistList.length) {
+        while (tracksToResolve.length < batchSize && playlistIdx < playlistList.length) {
           const playlist = playlistList[playlistIdx];
           const playlistTracks = playlist?.tracks || [];
 
-          while (tracksToResolve.length < backgroundBatchSize && trackIdx < playlistTracks.length) {
+          while (tracksToResolve.length < batchSize && trackIdx < playlistTracks.length) {
             const track = playlistTracks[trackIdx];
             trackIdx++;
 
@@ -20473,31 +20457,18 @@ ${trackListXml}
               continue;
             }
 
-            // Check if track needs resolution
-            let needsResolution = false;
-            for (const resolverId of currentActiveResolvers) {
-              const source = track.sources?.[resolverId];
-              if (!source) {
-                needsResolution = true;
-                break;
-              }
-              if (source.resolvedAt && (now - source.resolvedAt) >= CACHE_TTL.persistedSources) {
-                needsResolution = true;
-                break;
-              }
-            }
+            // Only resolve tracks with no valid sources
+            if (hasAnyValidSource(track)) continue;
 
-            if (needsResolution) {
-              tracksToResolve.push({
-                key: trackKey,
-                data: {
-                  track,
-                  artistName: track.artist,
-                  isQueueResolution: false,
-                  playlistId: playlist.id // Include playlist ID for persistence
-                }
-              });
-            }
+            tracksToResolve.push({
+              key: trackKey,
+              data: {
+                track,
+                artistName: track.artist,
+                isQueueResolution: false,
+                playlistId: playlist.id // Include playlist ID for persistence
+              }
+            });
           }
 
           if (trackIdx >= playlistTracks.length) {
@@ -20515,6 +20486,8 @@ ${trackListXml}
           resolutionScheduler.enqueue(key, 'background', data);
         }
       }
+
+      backgroundBatchCount.current++;
     });
 
     return () => {
