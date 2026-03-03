@@ -4128,7 +4128,10 @@ ipcMain.handle('release-notes-get', async () => {
     for (const section of sections) {
       const titleMatch = section.match(/^#{2,3} (.+)/);
       if (!titleMatch) continue;
-      const title = titleMatch[1].trim().replace(/\*\*([^*]+)\*\*/g, '$1');
+      const title = titleMatch[1].trim()
+        .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/\*(.+?)\*/g, '$1');
 
       const lines = section.split('\n').slice(1);
       let text = '';
@@ -4138,8 +4141,10 @@ ipcMain.handle('release-notes-get', async () => {
         // Skip sub-headings within the section
         if (/^#{1,6} /.test(trimmed)) continue;
         text = trimmed
-          .replace(/^- /, '')
-          .replace(/\*\*([^*]+)\*\*/g, '$1')
+          .replace(/^[-*+] /, '')
+          .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+          .replace(/\*\*(.+?)\*\*/g, '$1')
+          .replace(/\*(.+?)\*/g, '$1')
           .replace(/`([^`]+)`/g, '$1');
         break;
       }
