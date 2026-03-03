@@ -4122,20 +4122,25 @@ ipcMain.handle('release-notes-get', async () => {
   const currentVersion = app.getVersion();
 
   function parseHighlights(content) {
-    // Extract section highlights: each "## Title" with its first bullet or paragraph
-    const sections = content.split(/\n(?=## )/);
+    // Extract section highlights: each "##" or "###" heading with its first bullet or paragraph
+    const sections = content.split(/\n(?=#{2,3} )/);
     const highlights = [];
     for (const section of sections) {
-      const titleMatch = section.match(/^## (.+)/);
+      const titleMatch = section.match(/^#{2,3} (.+)/);
       if (!titleMatch) continue;
-      const title = titleMatch[1].trim();
+      const title = titleMatch[1].trim().replace(/\*\*([^*]+)\*\*/g, '$1');
 
       const lines = section.split('\n').slice(1);
       let text = '';
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || trimmed === '---') continue;
-        text = trimmed.replace(/^- /, '').replace(/\*\*([^*]+)\*\*/g, '$1');
+        // Skip sub-headings within the section
+        if (/^#{1,6} /.test(trimmed)) continue;
+        text = trimmed
+          .replace(/^- /, '')
+          .replace(/\*\*([^*]+)\*\*/g, '$1')
+          .replace(/`([^`]+)`/g, '$1');
         break;
       }
       if (title && text) {
