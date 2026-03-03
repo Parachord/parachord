@@ -167,6 +167,9 @@
         "portable"
       ]
     },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
     "linux": {
       "icon": "assets/icons",
       "target": [
