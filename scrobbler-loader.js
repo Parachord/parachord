@@ -137,8 +137,10 @@ class ScrobbleManager {
         anySuccess = true;
       } catch (error) {
         console.error(`[ScrobbleManager] Scrobble failed for ${plugin.id}:`, error);
-        // Queue for retry
-        await this.queueFailedScrobble(plugin.id, track, timestamp, error.message);
+        // Don't queue auth errors — they're permanent failures until user re-authenticates
+        if (!error.authError) {
+          await this.queueFailedScrobble(plugin.id, track, timestamp, error.message);
+        }
       }
     }
 
@@ -193,23 +195,54 @@ class ScrobbleManager {
 
     console.log(`[ScrobbleManager] Retrying ${queue.length} failed scrobbles`);
     const remaining = [];
+    const failedPlugins = new Set(); // Skip remaining items after auth error for a plugin
+
+    // Pre-check which plugins are enabled (one check per plugin, not per item)
+    const pluginEnabled = new Map();
+    for (const item of queue) {
+      if (!pluginEnabled.has(item.pluginId)) {
+        const plugin = this.plugins.get(item.pluginId);
+        pluginEnabled.set(item.pluginId, plugin && await plugin.isEnabled());
+      }
+    }
 
     for (const item of queue) {
-      const plugin = this.plugins.get(item.pluginId);
-      if (!plugin || !(await plugin.isEnabled())) {
-        // Keep in queue if plugin not available
+      // Drop items older than 14 days
+      if ((Date.now() - item.queuedAt) >= 14 * 24 * 60 * 60 * 1000) {
+        console.log(`[ScrobbleManager] Dropping expired scrobble: ${item.track?.artist} - ${item.track?.title}`);
+        continue;
+      }
+
+      // Drop items for plugins that no longer exist
+      if (!this.plugins.has(item.pluginId)) {
+        continue;
+      }
+
+      // Skip disabled plugins — keep items for when user re-authenticates
+      if (!pluginEnabled.get(item.pluginId)) {
+        remaining.push(item);
+        continue;
+      }
+
+      // Skip plugin entirely if an earlier retry hit an auth error
+      if (failedPlugins.has(item.pluginId)) {
         remaining.push(item);
         continue;
       }
 
       try {
-        await plugin.scrobble(item.track, item.timestamp);
+        await this.plugins.get(item.pluginId).scrobble(item.track, item.timestamp);
         console.log(`[ScrobbleManager] Retry successful for ${item.pluginId}`);
       } catch (error) {
+        // Auth errors: stop retrying this plugin (session is dead)
+        if (error.authError) {
+          failedPlugins.add(item.pluginId);
+          remaining.push(item);
+          continue;
+        }
         item.attempts++;
         item.error = error.message;
-        // Keep if under 10 attempts and less than 14 days old
-        if (item.attempts < 10 && (Date.now() - item.queuedAt) < 14 * 24 * 60 * 60 * 1000) {
+        if (item.attempts < 10) {
           remaining.push(item);
         } else {
           console.log(`[ScrobbleManager] Dropping scrobble after ${item.attempts} attempts`);
@@ -218,6 +251,9 @@ class ScrobbleManager {
     }
 
     await window.electron.store.set('scrobble-failed-queue', remaining);
+    if (remaining.length > 0) {
+      console.log(`[ScrobbleManager] ${queue.length - remaining.length} retried/dropped, ${remaining.length} remaining`);
+    }
   }
 }
 
@@ -515,14 +551,22 @@ class LastFmScrobbler extends BaseScrobbler {
     if (data.error) {
       const errorCode = data.error;
       const errorMessage = data.message || 'Unknown error';
-      // Error 9: Invalid session key - user needs to re-authenticate
-      // Error 13: Invalid method signature
-      // Error 10: Invalid API key
-      // Error 26: Suspended API key
-      if (errorCode === 9) {
-        console.warn(`[LastFm] Session key is invalid or expired. Please re-authenticate in Settings > Scrobbling.`);
+
+      // Auth errors (9, 10, 26): session key invalid, API key invalid, or suspended
+      // These are permanent failures — clear credentials and notify UI to re-authenticate
+      if (errorCode === 9 || errorCode === 10 || errorCode === 26) {
+        console.warn(`[${this.name}] Auth error ${errorCode}: ${errorMessage}. Clearing session key.`);
+        const config = await this.getConfig();
+        await this.setConfig({ ...config, sessionKey: null, enabled: false, authError: errorMessage });
+        window.dispatchEvent(new CustomEvent('scrobbler-auth-error', {
+          detail: { scrobblerId: this.id, errorCode, errorMessage }
+        }));
+        const err = new Error(`${this.name} API error ${errorCode}: ${errorMessage}`);
+        err.authError = true;
+        throw err;
       }
-      throw new Error(`Last.fm API error ${errorCode}: ${errorMessage}`);
+
+      throw new Error(`${this.name} API error ${errorCode}: ${errorMessage}`);
     }
 
     // If HTTP request failed but no JSON error code, throw generic error

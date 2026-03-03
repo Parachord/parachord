@@ -2172,8 +2172,21 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
       }
     };
 
+    // Listen for auth errors (invalid session key, bad API key, etc.)
+    const handleAuthError = async (event) => {
+      if (event.detail.scrobblerId === scrobbler.id) {
+        console.warn(`[ScrobblerSettingsCard] Auth error for ${scrobbler.id}:`, event.detail.errorMessage);
+        setError(`Session expired — please re-authenticate`);
+        onConfigChange(scrobbler.id, await scrobbler.getConfig());
+      }
+    };
+
     window.addEventListener('scrobbler-auth-complete', handleAuthComplete);
-    return () => window.removeEventListener('scrobbler-auth-complete', handleAuthComplete);
+    window.addEventListener('scrobbler-auth-error', handleAuthError);
+    return () => {
+      window.removeEventListener('scrobbler-auth-complete', handleAuthComplete);
+      window.removeEventListener('scrobbler-auth-error', handleAuthError);
+    };
   }, [scrobbler, onConfigChange]);
 
   const handleConnect = async () => {
