@@ -5067,7 +5067,6 @@ const Parachord = () => {
   const [activeResolvers, setActiveResolvers] = useState(['bandcamp', 'localfiles']);
   const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
-  const resolverAuthSettledTime = useRef(0);  // Timestamp when auth settling completes (for startup grace period)
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
   const savedResolverOrderRef = useRef(null);  // Persisted order from storage — used to restore priority position when re-enabling
@@ -12001,36 +12000,20 @@ ${trackListXml}
   }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, addTracksToCollection]);
 
   // Re-resolve tracks when resolver settings change (enabled/priority)
+  // Note: the in-memory cache (trackSourcesCache) and UI state (trackSources) are NOT
+  // wiped here. The cache stores sources from all resolvers keyed by track — if a user
+  // disables a resolver and re-enables it later, those cached sources are still valid.
+  // The UI already filters displayed sources by activeResolvers, and resolveTrack()
+  // handles resolver hash mismatches by computing missingResolvers and only querying those.
   useEffect(() => {
     // Skip on initial mount (when both are empty)
     if (activeResolvers.length === 0 && resolverOrder.length === 0) return;
 
-    // Skip during startup auth settling — resolver list changes as tokens are
-    // checked and resolvers are removed/re-enabled. Wiping caches during this
-    // phase causes unnecessary UI shimmer and re-resolution of already-resolved tracks.
+    // Skip before settings have been loaded from storage
     if (!resolverSettingsLoaded.current) return;
 
-    // Grace period: skip cache-wiping for 15 seconds after auth settling completes.
-    // During this window, resolvers may be re-enabled by token refresh callbacks
-    // (checkSpotifyToken, checkSoundcloudToken, etc.) which run on mount and call
-    // reEnableResolver(). These are auth-restoration changes, not user-initiated.
-    if (resolverAuthSettledTime.current === 0) {
-      // First run after settings loaded — record the settling time and skip
-      resolverAuthSettledTime.current = Date.now();
-      return;
-    }
-    if (Date.now() - resolverAuthSettledTime.current < 15000) return;
-
-    // Clear scheduler's resolved set so tracks can be re-queued with new resolver config
+    // Clear scheduler's resolved set so tracks can be re-queued for newly enabled resolvers
     resolutionSchedulerRef.current?.clearResolved();
-
-    // Invalidate in-memory cache — resolver hash has changed so entries are stale
-    if (trackSourcesCache.current) {
-      trackSourcesCache.current = {};
-    }
-
-    // Clear trackSources state so UI shows shimmer (resolving) until fresh results arrive
-    setTrackSources({});
 
     // Re-enqueue currently visible collection tracks for resolution
     if (visibleCollectionTrackIds.current.size > 0) {
@@ -12077,48 +12060,16 @@ ${trackListXml}
       }
     }
 
-    // Re-resolve playlist tracks if viewing a playlist
+    // Re-enqueue visible playlist tracks for resolution (preserving existing sources)
     if (selectedPlaylist && playlistTracks.length > 0) {
-      console.log('🔄 Resolver settings changed, re-resolving playlist tracks...');
-
-      // Re-resolve playlist tracks in parallel with incremental UI updates
-      const reResolvePlaylistTracks = async () => {
-        const tracksCopy = playlistTracks.map(t => ({ ...t, sources: {} }));
-        let flushScheduled = false;
-
-        const scheduleFlush = () => {
-          if (flushScheduled) return;
-          flushScheduled = true;
-          // Batch flush — coalesce rapid updates into one React render
-          requestAnimationFrame(() => {
-            flushScheduled = false;
-            setPlaylistTracks([...tracksCopy]);
-          });
-        };
-
-        // Resolve all tracks in parallel across all resolvers
-        await Promise.all(tracksCopy.map(async (track) => {
-          await Promise.all(activeResolvers.map(async (resolverId) => {
-            const resolver = allResolvers.find(r => r.id === resolverId);
-            if (!resolver || !resolver.capabilities.resolve) return;
-            try {
-              const config = await getResolverConfig(resolverId);
-              const resolved = await resolver.resolve(track.artist, track.title, track.album, config);
-              if (resolved) {
-                track.sources[resolverId] = resolved;
-                scheduleFlush();
-              }
-            } catch (error) {
-              // Silently fail - best-effort
-            }
-          }));
-        }));
-
-        setPlaylistTracks(tracksCopy);
-        console.log('✅ Playlist tracks re-resolved');
-      };
-
-      reResolvePlaylistTracks();
+      console.log('🔄 Resolver settings changed, re-enqueuing playlist tracks for resolution...');
+      const visibleTracks = playlistTracks.map(track => ({
+        key: track.id,
+        data: { track, artistName: track.artist || 'Unknown Artist' }
+      }));
+      if (resolutionSchedulerRef.current?.hasContext('playlist-tracks')) {
+        updateSchedulerVisibility('playlist-tracks', visibleTracks);
+      }
     }
   }, [activeResolvers, resolverOrder]);
 
