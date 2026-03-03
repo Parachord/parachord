@@ -346,10 +346,18 @@ const SpotifySyncProvider = {
     const userData = await spotifyRequest('/me', token, { refreshToken });
     const userId = userData.id;
 
-    const playlists = items.map(playlist => ({
-      ...transformPlaylist(playlist),
-      isOwnedByUser: playlist.owner?.id === userId
-    }));
+    // Deduplicate — Spotify pagination can return the same playlist on
+    // multiple pages when the library changes mid-fetch.
+    const seen = new Set();
+    const playlists = [];
+    for (const playlist of items) {
+      if (seen.has(playlist.id)) continue;
+      seen.add(playlist.id);
+      playlists.push({
+        ...transformPlaylist(playlist),
+        isOwnedByUser: playlist.owner?.id === userId
+      });
+    }
 
     // Spotify's public API doesn't expose folders
     // Return empty folders array - folders would require unofficial API access
