@@ -8309,6 +8309,7 @@ const Parachord = () => {
       playlists: [],
       folders: [],
       selectedPlaylists: existingSettings?.selectedPlaylistIds || [],
+      playlistFilter: 'all',
       settings: {
         syncTracks: existingSettings?.syncTracks ?? true,
         syncAlbums: existingSettings?.syncAlbums ?? true,
