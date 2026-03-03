@@ -17,6 +17,16 @@ REPO="Parachord/parachord"
 PROJECT_NUMBER=1
 ORG="Parachord"
 
+# ---------- pre-flight checks ------------------------------------------------
+
+# Warn (but don't block) if the token is missing 'project' scope
+if ! gh project list --owner "$ORG" --limit 1 &>/dev/null; then
+  echo "⚠ Warning: Cannot access project board (missing 'project' scope?)."
+  echo "  Issues will still be created, but won't be added to the project."
+  echo "  To fix: gh auth refresh -s project"
+  echo ""
+fi
+
 # ---------- helpers ----------------------------------------------------------
 
 create_issue_and_add() {
@@ -30,52 +40,60 @@ create_issue_and_add() {
     return
   fi
 
-  echo "Creating issue: $title"
-  local url
-  url=$(gh issue create --repo "$REPO" --title "$title" --body "$body" --label "$label" 2>&1)
-  echo "  -> $url"
+  # Idempotency: skip if an open issue with the same title already exists
+  local existing
+  existing=$(gh issue list --repo "$REPO" --search "\"$title\" in:title" --state open --json number,title --jq ".[] | select(.title == \"$title\") | .number" 2>/dev/null || true)
 
-  # Extract issue number from URL
-  local issue_number
-  issue_number=$(echo "$url" | grep -oE '[0-9]+$')
+  if [[ -n "$existing" ]]; then
+    echo "Skipping (already exists as #$existing): $title"
+    local url="https://github.com/$REPO/issues/$existing"
+  else
+    echo "Creating issue: $title"
+    local url
+    url=$(gh issue create --repo "$REPO" --title "$title" --body "$body" --label "$label" 2>&1)
+    echo "  -> $url"
+  fi
 
-  # Add to project board as Backlog
+  # Add to project board as Backlog (non-fatal if scopes are missing)
   local item_id
-  item_id=$(gh project item-add "$PROJECT_NUMBER" --owner "$ORG" --url "$url" --format json | jq -r '.id')
+  item_id=$(gh project item-add "$PROJECT_NUMBER" --owner "$ORG" --url "$url" --format json 2>/dev/null | jq -r '.id' 2>/dev/null) || true
+
+  if [[ -z "$item_id" || "$item_id" == "null" ]]; then
+    echo "  ⚠ Could not add to project board (missing 'project' scope? run: gh auth refresh -s project)"
+    echo ""
+    return
+  fi
   echo "  -> Added to project (item $item_id)"
 
-  # Set status to Backlog (if the project has a Status field)
-  local project_id
-  project_id=$(gh project list --owner "$ORG" --format json | jq -r ".projects[] | select(.number == $PROJECT_NUMBER) | .id")
+  # Cache project metadata on first call to avoid repeated API requests
+  if [[ -z "${_PROJECT_ID:-}" ]]; then
+    _PROJECT_ID=$(gh project list --owner "$ORG" --format json 2>/dev/null | jq -r ".projects[] | select(.number == $PROJECT_NUMBER) | .id" 2>/dev/null) || true
 
-  if [[ -n "$project_id" ]]; then
-    local status_field_id
-    status_field_id=$(gh project field-list "$PROJECT_NUMBER" --owner "$ORG" --format json | jq -r '.fields[] | select(.name == "Status") | .id')
+    if [[ -n "$_PROJECT_ID" ]]; then
+      local fields_json
+      fields_json=$(gh project field-list "$PROJECT_NUMBER" --owner "$ORG" --format json 2>/dev/null) || true
 
-    if [[ -n "$status_field_id" ]]; then
-      local backlog_option_id
-      backlog_option_id=$(gh project field-list "$PROJECT_NUMBER" --owner "$ORG" --format json | jq -r '.fields[] | select(.name == "Status") | .options[]? | select(.name == "Backlog") | .id')
-
-      if [[ -n "$backlog_option_id" ]]; then
-        gh project item-edit --project-id "$project_id" --id "$item_id" --field-id "$status_field_id" --single-select-option-id "$backlog_option_id" 2>/dev/null || true
-        echo "  -> Status set to Backlog"
-      fi
+      _STATUS_FIELD_ID=$(echo "$fields_json" | jq -r '.fields[] | select(.name == "Status") | .id' 2>/dev/null) || true
+      _BACKLOG_OPTION_ID=$(echo "$fields_json" | jq -r '.fields[] | select(.name == "Status") | .options[]? | select(.name == "Backlog") | .id' 2>/dev/null) || true
+      _PRIORITY_FIELD_ID=$(echo "$fields_json" | jq -r '.fields[] | select(.name == "Priority") | .id' 2>/dev/null) || true
+      _PRIORITY_OPTIONS_JSON=$(echo "$fields_json" | jq -c '.fields[] | select(.name == "Priority") | .options // []' 2>/dev/null) || true
     fi
   fi
 
+  # Set status to Backlog
+  if [[ -n "${_PROJECT_ID:-}" && -n "${_STATUS_FIELD_ID:-}" && -n "${_BACKLOG_OPTION_ID:-}" ]]; then
+    gh project item-edit --project-id "$_PROJECT_ID" --id "$item_id" --field-id "$_STATUS_FIELD_ID" --single-select-option-id "$_BACKLOG_OPTION_ID" 2>/dev/null || true
+    echo "  -> Status set to Backlog"
+  fi
+
   # Set priority field if present
-  if [[ -n "$project_id" && "$priority" != "none" ]]; then
-    local priority_field_id
-    priority_field_id=$(gh project field-list "$PROJECT_NUMBER" --owner "$ORG" --format json | jq -r '.fields[] | select(.name == "Priority") | .id' 2>/dev/null)
+  if [[ -n "${_PROJECT_ID:-}" && -n "${_PRIORITY_FIELD_ID:-}" && "$priority" != "none" ]]; then
+    local priority_option_id
+    priority_option_id=$(echo "$_PRIORITY_OPTIONS_JSON" | jq -r ".[]? | select(.name == \"$priority\") | .id" 2>/dev/null) || true
 
-    if [[ -n "$priority_field_id" ]]; then
-      local priority_option_id
-      priority_option_id=$(gh project field-list "$PROJECT_NUMBER" --owner "$ORG" --format json | jq -r ".fields[] | select(.name == \"Priority\") | .options[]? | select(.name == \"$priority\") | .id" 2>/dev/null)
-
-      if [[ -n "$priority_option_id" ]]; then
-        gh project item-edit --project-id "$project_id" --id "$item_id" --field-id "$priority_field_id" --single-select-option-id "$priority_option_id" 2>/dev/null || true
-        echo "  -> Priority set to $priority"
-      fi
+    if [[ -n "$priority_option_id" ]]; then
+      gh project item-edit --project-id "$_PROJECT_ID" --id "$item_id" --field-id "$_PRIORITY_FIELD_ID" --single-select-option-id "$priority_option_id" 2>/dev/null || true
+      echo "  -> Priority set to $priority"
     fi
   fi
 
