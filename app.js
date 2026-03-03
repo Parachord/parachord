@@ -52866,8 +52866,37 @@ useEffect(() => {
           },
             syncSetupModal.playlists.length === 0
               ? React.createElement('div', {
-                  style: { textAlign: 'center', padding: '32px 0', color: '#6b7280', fontSize: '14px' }
-                }, 'Loading playlists...')
+                  style: { display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px 0' }
+                },
+                  Array.from({ length: 6 }, (_, i) =>
+                    React.createElement('div', {
+                      key: `pl-skel-${i}`,
+                      style: { display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px' }
+                    },
+                      // Checkbox placeholder
+                      React.createElement('div', {
+                        className: 'animate-shimmer',
+                        style: { width: '16px', height: '16px', borderRadius: '4px', flexShrink: 0, background: 'linear-gradient(90deg, #e5e7eb, #f3f4f6, #e5e7eb)', backgroundSize: '200% 100%' }
+                      }),
+                      // Image placeholder
+                      React.createElement('div', {
+                        className: 'animate-shimmer',
+                        style: { width: '40px', height: '40px', borderRadius: '6px', flexShrink: 0, background: 'linear-gradient(90deg, #e5e7eb, #f3f4f6, #e5e7eb)', backgroundSize: '200% 100%' }
+                      }),
+                      // Text lines
+                      React.createElement('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' } },
+                        React.createElement('div', {
+                          className: 'animate-shimmer',
+                          style: { height: '14px', borderRadius: '4px', width: `${55 + (i * 17) % 35}%`, background: 'linear-gradient(90deg, #e5e7eb, #f3f4f6, #e5e7eb)', backgroundSize: '200% 100%' }
+                        }),
+                        React.createElement('div', {
+                          className: 'animate-shimmer',
+                          style: { height: '12px', borderRadius: '4px', width: '80px', background: 'linear-gradient(90deg, #e5e7eb, #f3f4f6, #e5e7eb)', backgroundSize: '200% 100%' }
+                        })
+                      )
+                    )
+                  )
+                )
               : React.createElement(React.Fragment, null,
                   // Filter tabs
                   React.createElement('div', {
