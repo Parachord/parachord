@@ -37,7 +37,7 @@ create_issue_and_add() {
 
   # Extract issue number from URL
   local issue_number
-  issue_number=$(echo "$url" | grep -oP '\d+$')
+  issue_number=$(echo "$url" | grep -oE '[0-9]+$')
 
   # Add to project board as Backlog
   local item_id
