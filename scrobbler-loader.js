@@ -137,7 +137,7 @@ class ScrobbleManager {
         anySuccess = true;
       } catch (error) {
         console.error(`[ScrobbleManager] Scrobble failed for ${plugin.id}:`, error);
-        // Don't queue auth errors — they're permanent failures (invalid session key, bad API key)
+        // Don't queue auth errors — they're permanent failures until user re-authenticates
         if (!error.authError) {
           await this.queueFailedScrobble(plugin.id, track, timestamp, error.message);
         }
