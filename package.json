@@ -103,7 +103,8 @@
     "asarUnpack": [
       "**/*.node",
       "mcp-stdio.js",
-      "native-messaging/**"
+      "native-messaging/**",
+      "plugins/**"
     ],
     "extraResources": [
       {

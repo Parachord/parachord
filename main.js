@@ -3425,7 +3425,13 @@ ipcMain.handle('resolvers-load-builtin', async () => {
   // Helper to load plugins from a directory
   const loadPluginsFromDir = async (dir, source) => {
     try {
-      await fs.mkdir(dir, { recursive: true });
+      // Only create the directory for writable locations (cache).
+      // The app plugins dir may be inside an ASAR archive where mkdir
+      // throws and aborts the entire function, silently skipping all
+      // shipped plugins in packaged builds.
+      if (source !== 'app') {
+        await fs.mkdir(dir, { recursive: true });
+      }
       const files = await fs.readdir(dir);
       const axeFiles = files.filter(f => f.endsWith('.axe'));
 
