@@ -50986,7 +50986,12 @@ useEffect(() => {
           // AI Service configuration - generic based on plugin settings
           // Check both .axe settings and top-level marketplace manifest properties
           ((selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey') ||
-           (selectedResolver.type === 'meta-service' && (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) && selectedResolver.id !== 'ollama')) && React.createElement('div', {
+           (selectedResolver.type === 'meta-service' && (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) && selectedResolver.id !== 'ollama')) && (() => {
+            // Determine the actual config field name from plugin settings (e.g. apiKey, clientId, appId)
+            const configurable = selectedResolver.settings?.configurable || {};
+            const authFieldKey = Object.keys(configurable).find(k => k !== 'model') || 'apiKey';
+            const authFieldSettings = configurable[authFieldKey] || {};
+            return React.createElement('div', {
             style: {
               padding: '16px 0',
               borderTop: '1px solid var(--border-subtle)'
@@ -51007,7 +51012,7 @@ useEffect(() => {
                 marginBottom: '16px',
                 lineHeight: '1.5'
               }
-            }, selectedResolver.settings?.configurable?.apiKey?.description || `Enter your API key to enable ${selectedResolver.name}.`),
+            }, authFieldSettings.description || `Enter your API key to enable ${selectedResolver.name}.`),
             // API Key input
             React.createElement('div', { style: { marginBottom: '16px' } },
               React.createElement('label', {
@@ -51018,18 +51023,18 @@ useEffect(() => {
                   color: 'var(--text-primary)',
                   marginBottom: '6px'
                 }
-              }, selectedResolver.settings?.configurable?.apiKey?.label || 'API Key'),
+              }, authFieldSettings.label || 'API Key'),
               React.createElement('input', {
                 type: 'password',
-                defaultValue: metaServiceConfigs[selectedResolver.id]?.apiKey || '',
+                defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '',
                 onBlur: (e) => {
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
-                    apiKey: e.target.value,
+                    [authFieldKey]: e.target.value,
                     enabled: !!e.target.value
                   });
                 },
-                placeholder: selectedResolver.settings?.configurable?.apiKey?.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''),
+                placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''),
                 style: {
                   width: '100%',
                   padding: '10px 12px',
@@ -51109,13 +51114,14 @@ useEffect(() => {
               )
             ),
             // Connection status
-            metaServiceConfigs[selectedResolver.id]?.apiKey && React.createElement('div', {
+            metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
               className: 'flex items-center gap-2 text-green-600 text-sm'
             },
               React.createElement('span', null, '✓'),
-              React.createElement('span', null, 'API key configured')
+              React.createElement('span', null, (authFieldSettings.label || 'API key') + ' configured')
             )
-          ),
+          );
+          })(),
 
           // Ollama configuration (no API key, but has endpoint and model)
           selectedResolver.id === 'ollama' && React.createElement('div', {
@@ -51639,7 +51645,7 @@ useEffect(() => {
               if (isContentResolver) {
                 showEnable = !activeResolvers.includes(selectedResolver.id);
               } else if (isMetaService) {
-                showEnable = !(config?.enabled || config?.apiKey || config?.username);
+                showEnable = !(config?.enabled || config?.apiKey || config?.appId || config?.clientId || config?.username);
               }
 
               return React.createElement('button', {
