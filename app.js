@@ -5451,6 +5451,7 @@ const Parachord = () => {
   const [concertsLocationOpen, setConcertsLocationOpen] = useState(false);
   const [concertsGeocodingLoading, setConcertsGeocodingLoading] = useState(false);
   const concertsCache = useRef({ events: null, timestamp: 0 });
+  const [concertsTicketFlyout, setConcertsTicketFlyout] = useState(null); // event ID of open flyout
 
   // Recommendations page state
   const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
@@ -5654,6 +5655,15 @@ const Parachord = () => {
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [concertsLocationOpen]);
+
+  // Close concerts ticket flyout when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setConcertsTicketFlyout(null);
+    if (concertsTicketFlyout) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [concertsTicketFlyout]);
 
   // Close concerts source filter dropdown when clicking outside
   useEffect(() => {
@@ -24276,15 +24286,58 @@ ${tracks}
       };
 
       const seenGeoKeys = new Set();
+      // Map dedup keys to event index in allEvents for merging ticket sources
+      const eventKeyToIndex = new Map();
+      const geoKeyToEventKey = new Map();
 
-      // Helper to add an event with dedup
+      // Helper to build a ticket source entry from an event
+      const makeTicketSource = (event) => ({
+        source: event.source,
+        aiProvider: event.aiProvider || null,
+        aiProviderName: event.aiProviderName || null,
+        ticketUrl: event.ticketUrl || event.url || null,
+        label: event.source === 'bandsintown' ? 'Bandsintown'
+          : event.source === 'songkick' ? 'Songkick'
+          : event.source === 'seatgeek' ? 'SeatGeek'
+          : event.source === 'ticketmaster' ? 'Ticketmaster'
+          : event.source === 'ai' ? (event.aiProviderName || 'AI')
+          : event.source || 'Unknown'
+      });
+
+      // Helper to add an event with dedup — merges ticket sources on match
       const addEventDeduped = (event, artistName) => {
         const key = makeEventKey(event, artistName);
-        if (seenEventKeys.has(key)) return false;
         const gk = geoKey(event, artistName);
-        if (gk && seenGeoKeys.has(gk)) return false;
+
+        // Check if we already have this event (by text key or geo key)
+        let existingKey = eventKeyToIndex.has(key) ? key : null;
+        if (!existingKey && gk && geoKeyToEventKey.has(gk)) {
+          existingKey = geoKeyToEventKey.get(gk);
+        }
+
+        if (existingKey) {
+          // Merge: add this source's ticket info to the existing event
+          const idx = eventKeyToIndex.get(existingKey);
+          const existing = allEvents[idx];
+          const newSource = makeTicketSource(event);
+          if (newSource.ticketUrl && !existing.ticketSources.some(s => s.source === newSource.source && s.aiProvider === newSource.aiProvider)) {
+            existing.ticketSources.push(newSource);
+          }
+          // Merge lineup if richer
+          if (event.lineup && event.lineup.length > (existing.lineup || []).length) {
+            existing.lineup = event.lineup;
+          }
+          return false;
+        }
+
+        // New event — initialize ticketSources array
+        event.ticketSources = [makeTicketSource(event)];
         seenEventKeys.add(key);
-        if (gk) seenGeoKeys.add(gk);
+        if (gk) {
+          seenGeoKeys.add(gk);
+          geoKeyToEventKey.set(gk, key);
+        }
+        eventKeyToIndex.set(key, allEvents.length);
         allEvents.push(event);
         return true;
       };
@@ -24414,18 +24467,33 @@ Return ONLY the JSON array, no other text.`;
       // Merge fresh results with prior cached events (so we don't lose results
       // from artists that weren't in this run's selection)
       const merged = [...allEvents, ...priorCachedEvents];
-      const seenMergeKeys = new Set();
+      const seenMergeKeys = new Map(); // key -> index in uniqueEvents
       const today = new Date().toISOString().split('T')[0];
-      const uniqueEvents = merged
-        .filter(e => {
-          // Drop past events during merge
-          if (e.date && e.date < today) return false;
-          const key = `${e.date || ''}-${normalizeForDedup(e.artist)}-${normalizeForDedup(e.venue?.name).slice(0, 20)}`;
-          if (seenMergeKeys.has(key)) return false;
-          seenMergeKeys.add(key);
-          return true;
-        })
-        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      const uniqueEvents = [];
+      for (const e of merged) {
+        if (e.date && e.date < today) continue; // Drop past events
+        const key = `${e.date || ''}-${normalizeForDedup(e.artist)}-${normalizeForDedup(e.venue?.name).slice(0, 20)}`;
+        if (seenMergeKeys.has(key)) {
+          // Merge ticketSources from duplicate into existing
+          const idx = seenMergeKeys.get(key);
+          const existing = uniqueEvents[idx];
+          if (e.ticketSources) {
+            for (const src of e.ticketSources) {
+              if (src.ticketUrl && !existing.ticketSources?.some(s => s.source === src.source && s.aiProvider === src.aiProvider)) {
+                (existing.ticketSources = existing.ticketSources || []).push(src);
+              }
+            }
+          }
+          continue;
+        }
+        // Ensure ticketSources exists (for legacy cached events)
+        if (!e.ticketSources) {
+          e.ticketSources = [makeTicketSource(e)];
+        }
+        seenMergeKeys.set(key, uniqueEvents.length);
+        uniqueEvents.push(e);
+      }
+      uniqueEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
       console.log(`🎤 Found ${allEvents.length} fresh + ${priorCachedEvents.length} cached → ${uniqueEvents.length} unique concerts for ${artistList.length} artists`);
 
@@ -42988,22 +43056,27 @@ useEffect(() => {
                                   }
                                 }
                               }, event.artist),
-                              // Source badge
-                              React.createElement('span', {
-                                className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
-                                style: (() => {
-                                  const isDark = effectiveTheme === 'dark';
-                                  const bgAlpha = isDark ? 0.2 : 0.1;
-                                  const srcColors = {
-                                    bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
-                                    songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
-                                    seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
-                                    ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
-                                  };
-                                  const c = srcColors[event.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };
-                                  return { backgroundColor: c.bg, color: c.text };
-                                })()
-                              }, event.source === 'bandsintown' ? 'BIT' : event.source === 'songkick' ? 'SK' : event.source === 'seatgeek' ? 'SG' : event.source === 'ticketmaster' ? 'TM' : (event.aiProviderName || 'AI'))
+                              // Source badges (one per provider that found this event)
+                              ...(() => {
+                                const isDark = effectiveTheme === 'dark';
+                                const bgAlpha = isDark ? 0.2 : 0.1;
+                                const srcColors = {
+                                  bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
+                                  songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
+                                  seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
+                                  ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
+                                };
+                                const badgeLabel = (src) => src.source === 'bandsintown' ? 'BIT' : src.source === 'songkick' ? 'SK' : src.source === 'seatgeek' ? 'SG' : src.source === 'ticketmaster' ? 'TM' : (src.aiProviderName || 'AI');
+                                const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
+                                return sources.map((src, si) => {
+                                  const c = srcColors[src.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };
+                                  return React.createElement('span', {
+                                    key: `badge-${si}`,
+                                    className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
+                                    style: { backgroundColor: c.bg, color: c.text }
+                                  }, badgeLabel(src));
+                                });
+                              })()
                             ),
                             React.createElement('div', {
                               className: 'text-sm text-gray-600 truncate'
@@ -43017,21 +43090,80 @@ useEffect(() => {
                             }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== event.artist.toLowerCase()).join(', '))
                           ),
 
-                          // Ticket button
-                          event.ticketUrl && React.createElement('a', {
-                            href: event.ticketUrl,
-                            target: '_blank',
-                            rel: 'noopener noreferrer',
-                            className: 'flex-shrink-0 px-4 py-2 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors opacity-70 group-hover:opacity-100',
-                            onClick: (e) => e.stopPropagation()
-                          }, 'Tickets'),
-                          !event.ticketUrl && event.url && React.createElement('a', {
-                            href: event.url,
-                            target: '_blank',
-                            rel: 'noopener noreferrer',
-                            className: 'flex-shrink-0 px-4 py-2 border border-violet-300 text-violet-600 text-sm font-medium rounded-lg hover:bg-violet-50 transition-colors opacity-70 group-hover:opacity-100',
-                            onClick: (e) => e.stopPropagation()
-                          }, 'Details')
+                          // Ticket button with provider flyout
+                          (() => {
+                            const sources = (event.ticketSources || []).filter(s => s.ticketUrl);
+                            const eventId = event.id || `${monthKey}-${eventIdx}`;
+                            if (sources.length === 0) return null;
+                            if (sources.length === 1) {
+                              // Single source — direct link, no flyout
+                              return React.createElement('a', {
+                                href: sources[0].ticketUrl,
+                                target: '_blank',
+                                rel: 'noopener noreferrer',
+                                className: 'flex-shrink-0 px-4 py-2 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors opacity-70 group-hover:opacity-100',
+                                onClick: (e) => e.stopPropagation()
+                              }, 'Tickets');
+                            }
+                            // Multiple sources — flyout
+                            const isOpen = concertsTicketFlyout === eventId;
+                            return React.createElement('div', { className: 'relative flex-shrink-0' },
+                              React.createElement('button', {
+                                onClick: (e) => {
+                                  e.stopPropagation();
+                                  setConcertsTicketFlyout(isOpen ? null : eventId);
+                                },
+                                className: 'px-4 py-2 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors opacity-70 group-hover:opacity-100 flex items-center gap-1.5'
+                              },
+                                'Tickets',
+                                React.createElement('span', {
+                                  className: 'bg-white/25 text-white text-xs rounded-full px-1.5 py-0.5 leading-none'
+                                }, sources.length),
+                                React.createElement('svg', {
+                                  className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`,
+                                  fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                                },
+                                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
+                                )
+                              ),
+                              isOpen && React.createElement('div', {
+                                className: 'absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-30',
+                                style: { minWidth: '180px' },
+                                onClick: (e) => e.stopPropagation()
+                              },
+                                sources.map((src, si) => {
+                                  const isDark = effectiveTheme === 'dark';
+                                  const srcColors = {
+                                    bandsintown: isDark ? '#2dd4bf' : '#00B4B3',
+                                    songkick: isDark ? '#fb7185' : '#F80046',
+                                    seatgeek: isDark ? '#fb923c' : '#FC4C02',
+                                    ticketmaster: isDark ? '#60a5fa' : '#026CDF'
+                                  };
+                                  const color = srcColors[src.source] || (isDark ? '#a78bfa' : '#8b5cf6');
+                                  return React.createElement('a', {
+                                    key: si,
+                                    href: src.ticketUrl,
+                                    target: '_blank',
+                                    rel: 'noopener noreferrer',
+                                    className: 'flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 transition-colors',
+                                    onClick: () => setConcertsTicketFlyout(null)
+                                  },
+                                    React.createElement('span', {
+                                      className: 'w-2 h-2 rounded-full flex-shrink-0',
+                                      style: { backgroundColor: color }
+                                    }),
+                                    React.createElement('span', { className: 'text-gray-700' }, src.label),
+                                    React.createElement('svg', {
+                                      className: 'w-3 h-3 text-gray-400 ml-auto',
+                                      fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                                    },
+                                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' })
+                                    )
+                                  );
+                                })
+                              )
+                            );
+                          })()
                         );
                       })
                     )
