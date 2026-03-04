@@ -24222,7 +24222,12 @@ ${tracks}
         for (const artist of artistList) {
           for (const service of concertServices) {
             try {
-              const config = metaServiceConfigs[service.id] || {};
+              const rawConfig = metaServiceConfigs[service.id] || {};
+              // Map generic apiKey to the plugin's expected field (e.g. clientId, appId)
+              const authField = Object.keys(service.configurable || {}).find(k => k !== 'model');
+              const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
+                ? { ...rawConfig, [authField]: rawConfig.apiKey }
+                : rawConfig;
               const events = await service.searchArtistEvents(artist.name, config);
               if (events && events.length > 0) {
                 dedicatedEvents.push(...events.map(e => ({ event: e, artist: artist.name })));
