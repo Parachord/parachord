@@ -499,15 +499,38 @@ Total: ~7 files new, ~3 files modified.
 
 ### What's in the Spotify Data Dump?
 
+Spotify offers **two tiers** of data export, both manual:
+
+#### Standard Export (hours to ~5 days)
+
 All JSON files in a ZIP:
 
 | File | Contents |
 |------|----------|
 | `YourLibrary.json` | Liked songs, saved podcasts, followed artists, hidden items |
 | `Playlist1.json` (etc.) | User playlists with track listings |
-| `StreamingHistory0.json` (etc.) | Last ~year of play history |
+| `StreamingHistory0.json` (etc.) | Last ~1 year of play history (track name, artist, ms played, timestamp) |
 | `SearchQueries.json` | Search history |
 | `Userdata.json` | Account info |
+
+#### Extended Streaming History (up to 30 days)
+
+A separate request that includes **lifetime play history** with richer fields:
+
+| Field | Description |
+|-------|-------------|
+| `ts` | Timestamp (ISO 8601) |
+| `master_metadata_track_name` | Track name |
+| `master_metadata_album_artist_name` | Artist name |
+| `master_metadata_album_album_name` | Album name |
+| `spotify_track_uri` | Full Spotify URI (e.g. `spotify:track:abc123`) |
+| `ms_played` | Milliseconds played |
+| `reason_start` / `reason_end` | Why playback started/ended (e.g. `trackdone`, `fwdbtn`, `clickrow`) |
+| `shuffle`, `skipped`, `offline` | Booleans |
+| `platform` | Device/OS |
+| `episode_name` / `episode_show_name` | Podcast fields |
+
+This is the only way to get full lifetime play history with track URIs from Spotify.
 
 ### Data Quality Compared to Web API
 
@@ -515,7 +538,7 @@ The GDPR export is **significantly less useful** than the Web API Parachord alre
 
 | Field | GDPR Export | Web API (current) |
 |-------|-------------|-------------------|
-| Track IDs | Inconsistent/missing | Full Spotify IDs |
+| Track IDs | Standard: missing; Extended: full `spotify_track_uri` | Full Spotify IDs |
 | Album art | Not included | Multiple sizes |
 | `added_at` timestamps | Not included | Included |
 | Duration | Not included | Included |
@@ -527,12 +550,12 @@ The GDPR export is **significantly less useful** than the Web API Parachord alre
 
 ### Verdict for Parachord
 
-**No action needed.** The paginated REST API approach in `sync-providers/spotify.js` is definitively the correct approach. The GDPR dump is:
+**No action needed for library sync.** The paginated REST API approach in `sync-providers/spotify.js` is definitively the correct approach for library/playlist sync. The GDPR dump is:
 - Not triggerable programmatically
-- Less data-rich (missing IDs, art, timestamps, durations)
+- Less data-rich for library data (missing art, `added_at`, durations in standard export)
 - Not suitable for continuous or two-way sync
 
-The only hypothetical use would be a one-time import fallback for users who already have a downloaded dump but don't want to connect their account — but the data quality is too low to justify the implementation effort (you'd need to resolve track names back to Spotify IDs via search).
+**Potential future use:** Like Apple Music's privacy export, the **Extended Streaming History** contains **full lifetime play history** with track URIs — data that the Web API doesn't expose (the Web API only gives recently played, deduplicated). If Parachord ever wants to import listening history (scrobbling backfill, recommendation seeding, stats), a manual Spotify data dump import could be valuable. The extended export is higher quality than Apple's equivalent since it includes proper `spotify_track_uri` identifiers.
 
 ### Note: Feb 2026 API Restrictions
 
