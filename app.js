@@ -7784,8 +7784,12 @@ const Parachord = () => {
         const metaServicesWithChat = metaServiceAxes.filter(axe =>
           axe.capabilities?.chat && axe.implementation?.chat
         );
+        // Meta services with concerts capability need implementation functions loaded
+        const metaServicesWithConcerts = metaServiceAxes.filter(axe =>
+          axe.capabilities?.concerts && axe.implementation?.searchArtistEvents
+        );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat)`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat, ${metaServicesWithConcerts.length} with concerts)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -7806,6 +7810,10 @@ const Parachord = () => {
           metaServicesWithChat.length > 0
             ? resolverLoader.current.loadResolvers(metaServicesWithChat).then(r =>
                 console.log(`💬 Loaded ${r.length} chat service(s):`, r.map(s => s.name).join(', ')))
+            : Promise.resolve(),
+          metaServicesWithConcerts.length > 0
+            ? resolverLoader.current.loadResolvers(metaServicesWithConcerts).then(r =>
+                console.log(`🎫 Loaded ${r.length} concert service(s):`, r.map(s => s.name).join(', ')))
             : Promise.resolve()
         ]);
 
