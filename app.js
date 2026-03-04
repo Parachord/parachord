@@ -7607,7 +7607,7 @@ const Parachord = () => {
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
     charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
     newReleases: 6 * 60 * 60 * 1000,        // 6 hours (new releases don't change that often)
-    concerts: 2 * 60 * 60 * 1000              // 2 hours (concert listings can change frequently)
+    concerts: 24 * 60 * 60 * 1000              // 24 hours (concert listings don't change that often)
   };
 
   // Cache for recommendations data (tracks from API)
@@ -25325,8 +25325,24 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   }, [cacheLoaded, newReleasesLoaded, newReleasesLoading]);
 
-  // Load concerts when navigating to the concerts page
-  // loadConcerts handles cache checks internally (state, ref, stale+refresh)
+  // Lazily pre-load concerts in the background after startup (lowest priority)
+  // This ensures concert data is ready before the user navigates to the tab
+  const concertsBackgroundLoaded = useRef(false);
+  useEffect(() => {
+    if (!cacheLoaded || concertsBackgroundLoaded.current) return;
+    concertsBackgroundLoaded.current = true;
+    const scheduleLoad = window.requestIdleCallback || ((cb) => setTimeout(cb, 200));
+    // Delay to let higher-priority startup tasks finish first
+    const timer = setTimeout(() => {
+      scheduleLoad(() => {
+        console.log('🎤 Background: pre-loading concerts...');
+        loadConcerts();
+      });
+    }, 15000); // 15s after cache loaded — lowest priority
+    return () => clearTimeout(timer);
+  }, [cacheLoaded]);
+
+  // Also load concerts immediately when navigating to the tab (if not already loaded)
   useEffect(() => {
     if (activeView === 'concerts' && cacheLoaded) {
       loadConcerts();
