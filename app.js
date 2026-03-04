@@ -25338,7 +25338,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         console.log('🎤 Background: pre-loading concerts...');
         loadConcerts();
       });
-    }, 15000); // 15s after cache loaded — lowest priority
+    }, 3 * 60 * 1000); // 3 min after cache loaded — lowest priority
     return () => clearTimeout(timer);
   }, [cacheLoaded]);
 
