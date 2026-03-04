@@ -36131,7 +36131,10 @@ useEffect(() => {
                               href: sources[0].ticketUrl,
                               target: '_blank',
                               rel: 'noopener noreferrer',
-                              className: 'flex-shrink-0 px-4 py-2 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors',
+                              className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
+                                style: { backgroundColor: '#7c3aed', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; },
                               onClick: (e) => e.stopPropagation()
                             }, 'Tickets');
                           }
@@ -36142,7 +36145,10 @@ useEffect(() => {
                                 e.stopPropagation();
                                 setArtistConcertsTicketFlyout(isOpen ? null : eventId);
                               },
-                              className: 'px-4 py-2 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors flex items-center gap-1.5'
+                              className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
+                                style: { backgroundColor: '#7c3aed', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
                             },
                               'Tickets',
                               React.createElement('svg', {
@@ -43598,7 +43604,10 @@ useEffect(() => {
                                 href: sources[0].ticketUrl,
                                 target: '_blank',
                                 rel: 'noopener noreferrer',
-                                className: 'flex-shrink-0 px-4 py-2 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors',
+                                className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
+                                style: { backgroundColor: '#7c3aed', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; },
                                 onClick: (e) => e.stopPropagation()
                               }, 'Tickets');
                             }
@@ -43610,7 +43619,10 @@ useEffect(() => {
                                   e.stopPropagation();
                                   setConcertsTicketFlyout(isOpen ? null : eventId);
                                 },
-                                className: 'px-4 py-2 bg-violet-500 text-white text-sm font-medium rounded-lg hover:bg-violet-600 transition-colors flex items-center gap-1.5'
+                                className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
+                                style: { backgroundColor: '#7c3aed', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
                               },
                                 'Tickets',
                                 React.createElement('svg', {
