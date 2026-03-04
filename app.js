@@ -42799,7 +42799,7 @@ useEffect(() => {
                                   const srcColors = {
                                     bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
                                     songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
-                                    seatgeek: { bg: `rgba(77, 184, 77, ${bgAlpha})`, text: isDark ? '#6ee7b7' : '#4DB84D' },
+                                    seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
                                     ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
                                   };
                                   const c = srcColors[event.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };

@@ -7,7 +7,7 @@
     "author": "Parachord Team",
     "description": "Find concerts and live events with ticket info. Powered by SeatGeek.",
     "icon": "🎫",
-    "color": "#4DB84D",
+    "color": "#FC4C02",
     "homepage": "https://seatgeek.com"
   },
   "capabilities": {
