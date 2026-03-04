@@ -31622,7 +31622,6 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => {
                 navigateTo('concerts');
-                loadConcerts();
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
