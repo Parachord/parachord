@@ -47997,8 +47997,8 @@ useEffect(() => {
             },
               // Line 1: Track title
               React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
-              // Line 2: Artist name with bio tooltip
-              React.createElement('div', { className: 'text-xs text-gray-400' },
+              // Line 2: Artist name with bio tooltip + on tour badge
+              React.createElement('div', { className: 'flex items-center gap-1.5 text-xs text-gray-400 min-w-0' },
                 (() => {
                   const bioPreview = playbarArtistBio && playbarArtistBio.bio
                     ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '...' : '')
@@ -48007,7 +48007,7 @@ useEffect(() => {
                   const artistButton = React.createElement('button', {
                     onClick: () => fetchArtistData(currentTrack.artist),
                     className: 'truncate hover:text-white hover:underline transition-colors cursor-pointer no-drag',
-                    style: { maxWidth: '100%', display: 'block' }
+                    style: { maxWidth: 'none' }
                   }, currentTrack.artist);
 
                   return bioPreview
@@ -48018,6 +48018,31 @@ useEffect(() => {
                         className: 'tooltip-bio'
                       }, artistButton)
                     : artistButton;
+                })(),
+                // "On Tour" pill — shown when artist has concerts near the user's location
+                (() => {
+                  if (!concertsLoaded || !currentTrack?.artist) return null;
+                  const artistNorm = currentTrack.artist.trim().toLowerCase();
+                  const hasNearbyShows = concerts.some(event => {
+                    if (event.artist?.trim().toLowerCase() !== artistNorm) return false;
+                    if (!concertsLocationCoords) return true; // no location filter — any show counts
+                    const vLat = event.venue?.latitude;
+                    const vLng = event.venue?.longitude;
+                    if (vLat != null && vLng != null) {
+                      return haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) <= concertsLocationRadius;
+                    }
+                    return true; // no venue coords — include it
+                  });
+                  if (!hasNearbyShows) return null;
+                  return React.createElement('button', {
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setArtistPageTab('on-tour');
+                      fetchArtistData(currentTrack.artist);
+                    },
+                    className: 'flex-shrink-0 px-1.5 py-0.5 rounded-full text-xs font-medium bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-colors cursor-pointer no-drag',
+                    title: 'View upcoming shows'
+                  }, 'On Tour');
                 })()
               ),
               // Line 3: Resolver dropdown + browser indicator
