@@ -1509,6 +1509,9 @@ chatgpt: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-1
   ),
   seatgeek: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M11.866 11.277h-.177l-.703-.001v-.001c-1.337-.002-3.426-.009-3.845-.011v-7.37c2.111.089 4.044.121 4.044.121l.304 1.556c.001 0-.745.007-2.361-.03v1.394l1.486.022v1.31L9.128 8.25v1.452c.832.008 1.595.013 2.411.014l1.99-5.615c.3-.008 1.573-.041 1.886-.054l2.637 7.225c-.661.003-1.331-.009-1.993-.006l-.448-1.302c-.76.008-1.52.013-2.281.016l-.445 1.293c-.355 0-.685 0-1.019.004m2.607-4.625l-.693 2.015c.461-.004.921-.009 1.38-.016zm4.389-1.197c-.719.044-1.438.081-2.157.112l.307-1.594c1.904-.105 3.8-.271 5.694-.497l.306 1.645c-.719.071-1.439.134-2.16.192l-.01 5.953c-.66.006-1.32-.001-1.98.004zM6.533 9.069c0 1.246-.901 2.401-2.674 2.401c-1.61 0-2.42-.752-2.42-.752V8.699c1.101 1.043 3.266 1.745 3.266.482c0-.96-3.266-1.125-3.266-3.518c0-1.342 1.247-2.186 2.675-2.186c1.009 0 1.855.193 2.065.258l-.083 1.772c-.884-.521-2.801-.763-2.801.134c0 .992 3.239 1.002 3.238 3.428m14.861 11.155l-1.957-3.596v3.433c-.673-.053-1.982-.133-1.982-.133V12.5l1.982.004c-.007 1.059.008 2.118 0 3.176l2.028-3.18h2.233l-2.314 3.569L24 20.525a90.598 90.598 0 0 0-2.606-.301M9.132 18.231c.892-.019 1.785-.029 2.678-.029l-.307 1.561c-.869.003-3.428.062-4.358.122v-7.374h4.038l.307 1.536s-.973-.007-2.358-.008v1.399l1.481-.013v1.323l-1.481.018zm5.162-.001c.707.015 1.905.054 2.682.082l-.32 1.573a87.388 87.388 0 0 0-4.349-.121v-7.253l4.051.002l.306 1.551l-2.371-.015v1.389c.461.005.92.009 1.379.017v1.321c-.459-.011-.919-.018-1.379-.025zM3.617 15.549l2.604-.059v4.445s-.7.032-2.26.178C1.746 20.321 0 19.022 0 16.468c0-3.034 2.222-3.993 4.225-3.993c.868 0 1.379.016 1.667.031l.328 1.723s-.58-.122-1.673-.122c-1.24 0-2.585.415-2.585 2.078c0 1.791.745 2.392 2.556 2.228l-.001-1.536l-1.206.059z' })
+  ),
+  ticketmaster: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M23.5 12c0 6.351-5.149 11.5-11.5 11.5S.5 18.351.5 12 5.649.5 12 .5 23.5 5.649 23.5 12zm-11.47-7.75c-1.305 0-2.292.39-2.953 1.166-.66.777-.99 1.901-.99 3.373v6.422c0 1.472.33 2.596.99 3.373.661.776 1.648 1.166 2.953 1.166 1.305 0 2.292-.39 2.952-1.166.661-.777.991-1.901.991-3.373V8.789c0-1.472-.33-2.596-.99-3.373-.661-.776-1.648-1.166-2.953-1.166zm1.417 10.96c0 .664-.128 1.164-.384 1.503-.256.338-.636.508-1.141.508-.505 0-.885-.17-1.14-.508-.257-.339-.385-.839-.385-1.503V8.789c0-.664.128-1.165.384-1.503.256-.339.636-.508 1.141-.508.505 0 .885.17 1.14.508.257.338.385.839.385 1.503z' })
   )
 };
 
@@ -5440,7 +5443,7 @@ const Parachord = () => {
   const [concertsHeaderCollapsed, setConcertsHeaderCollapsed] = useState(false);
   const [concertsSearchOpen, setConcertsSearchOpen] = useState(false);
   const [concertsSearch, setConcertsSearch] = useState('');
-  const [concertsSourceFilter, setConcertsSourceFilter] = useState('all'); // 'all' | 'bandsintown' | 'songkick' | 'seatgeek' | 'ai'
+  const [concertsSourceFilter, setConcertsSourceFilter] = useState('all'); // 'all' | 'bandsintown' | 'songkick' | 'seatgeek' | 'ticketmaster' | 'ai'
   const [concertsSourceFilterDropdownOpen, setConcertsSourceFilterDropdownOpen] = useState(false);
   const [concertsLocation, setConcertsLocation] = useState(''); // User's location for filtering (e.g. "New York", "London, UK")
   const [concertsLocationOpen, setConcertsLocationOpen] = useState(false);
@@ -42793,12 +42796,14 @@ useEffect(() => {
                                 style: {
                                   backgroundColor: event.source === 'bandsintown' ? 'rgba(0, 180, 179, 0.1)' :
                                     event.source === 'songkick' ? 'rgba(248, 0, 70, 0.1)' :
-                                    event.source === 'seatgeek' ? 'rgba(77, 184, 77, 0.1)' : 'rgba(139, 92, 246, 0.1)',
+                                    event.source === 'seatgeek' ? 'rgba(77, 184, 77, 0.1)' :
+                                    event.source === 'ticketmaster' ? 'rgba(2, 108, 223, 0.1)' : 'rgba(139, 92, 246, 0.1)',
                                   color: event.source === 'bandsintown' ? '#00B4B3' :
                                     event.source === 'songkick' ? '#F80046' :
-                                    event.source === 'seatgeek' ? '#4DB84D' : '#8b5cf6'
+                                    event.source === 'seatgeek' ? '#4DB84D' :
+                                    event.source === 'ticketmaster' ? '#026CDF' : '#8b5cf6'
                                 }
-                              }, event.source === 'bandsintown' ? 'BIT' : event.source === 'songkick' ? 'SK' : event.source === 'seatgeek' ? 'SG' : (event.aiProviderName || 'AI'))
+                              }, event.source === 'bandsintown' ? 'BIT' : event.source === 'songkick' ? 'SK' : event.source === 'seatgeek' ? 'SG' : event.source === 'ticketmaster' ? 'TM' : (event.aiProviderName || 'AI'))
                             ),
                             React.createElement('div', {
                               className: 'text-sm text-gray-600 truncate'
