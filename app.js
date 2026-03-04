@@ -24186,7 +24186,7 @@ ${tracks}
       navigator.geolocation.getCurrentPosition(
         (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         (err) => reject(err),
-        { enableHighAccuracy: false, timeout: 10000 }
+        { enableHighAccuracy: false, timeout: 30000 }
       );
     });
   };
@@ -43490,10 +43490,12 @@ useEffect(() => {
 
                         return React.createElement('div', {
                           key: event.id || `${monthKey}-${eventIdx}`,
-                          className: `flex items-center rounded-xl border cursor-default overflow-hidden ${isDark ? 'bg-gray-800/50 border-gray-700/50' : 'bg-white border-gray-100'}`,
+                          className: `flex items-center rounded-xl border cursor-default ${isDark ? 'bg-gray-800/50 border-gray-700/50' : 'bg-white border-gray-100'}`,
                           style: {
                             animation: 'fadeIn 300ms ease-out both',
-                            animationDelay: `${eventIdx * 30}ms`
+                            animationDelay: `${eventIdx * 30}ms`,
+                            position: 'relative',
+                            zIndex: concertsTicketFlyout === (event.id || `${monthKey}-${eventIdx}`) ? 20 : 1
                           }
                         },
                           // Date column
@@ -43591,10 +43593,14 @@ useEffect(() => {
                           // Reason column — fixed width so text aligns vertically across rows
                           React.createElement('div', {
                             className: 'flex-shrink-0 text-xs italic px-3 truncate',
-                            style: { width: '280px', textAlign: 'left', color: 'var(--text-tertiary)' }
+                            style: { width: '200px', textAlign: 'left', color: 'var(--text-tertiary)' }
                           }, reasonText || ''),
 
-                          // Ticket button with provider flyout
+                          // Ticket button column — fixed width for alignment
+                          React.createElement('div', {
+                            className: 'flex-shrink-0 flex items-center justify-center mr-4',
+                            style: { width: '100px' }
+                          },
                           (() => {
                             const sources = (event.ticketSources || []).filter(s => s.ticketUrl);
                             const eventId = event.id || `${monthKey}-${eventIdx}`;
@@ -43605,7 +43611,7 @@ useEffect(() => {
                                 href: sources[0].ticketUrl,
                                 target: '_blank',
                                 rel: 'noopener noreferrer',
-                                className: 'flex-shrink-0 mr-4 px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
+                                className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
                                 style: { backgroundColor: '#7c3aed', color: '#fff' },
                                 onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
                                 onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; },
@@ -43614,7 +43620,7 @@ useEffect(() => {
                             }
                             // Multiple sources — flyout
                             const isOpen = concertsTicketFlyout === eventId;
-                            return React.createElement('div', { className: 'relative flex-shrink-0 mr-4' },
+                            return React.createElement('div', { className: 'relative' },
                               React.createElement('button', {
                                 onClick: (e) => {
                                   e.stopPropagation();
@@ -43673,6 +43679,7 @@ useEffect(() => {
                               })()
                             );
                           })()
+                          )
                         );
                       })
                     )
