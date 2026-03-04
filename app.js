@@ -7665,6 +7665,14 @@ const Parachord = () => {
     return [...fromLoader, ...fromState];
   };
 
+  // Check if a service is enabled based on its config and auth requirements
+  const isServiceEnabled = (service) => {
+    const config = metaServiceConfigs[service.id] || {};
+    if (config.enabled === false) return false;
+    const noKeyNeeded = service.requiresAuth === false || service.settings?.requiresAuth === false;
+    return noKeyNeeded ? config.enabled === true : !!config.apiKey;
+  };
+
   // Check if a scrobbler service (Last.fm or ListenBrainz) is connected
   const hasScrobblerConnected = () => {
     const lastfmConfig = metaServiceConfigs.lastfm;
@@ -15608,11 +15616,8 @@ ${trackListXml}
   // AI Playlist Generation
   const handleAiGenerate = async (prompt) => {
     const aiServices = getAiServices();
-    // Filter to only enabled services with API keys
-    const enabledServices = aiServices.filter(s => {
-      const config = metaServiceConfigs[s.id] || {};
-      return !!config.apiKey;
-    });
+    // Filter to only enabled services with valid config
+    const enabledServices = aiServices.filter(isServiceEnabled);
 
     if (enabledServices.length === 0) {
       setAiError('No AI plugins configured. Enable OpenAI or Gemini and add your API key in Settings → General.');
@@ -16839,12 +16844,7 @@ ${trackListXml}
   const openAiChat = () => {
     const chatServices = getChatServices();
     // Filter to only enabled services with required config
-    const enabledServices = chatServices.filter(s => {
-      const config = metaServiceConfigs[s.id] || {};
-      // Services that don't require auth (e.g. Ollama) just need enabled toggle
-      const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-      return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-    });
+    const enabledServices = chatServices.filter(isServiceEnabled);
 
     if (enabledServices.length === 0) {
       showToast('No AI chat plugins configured. Enable Ollama or Claude in Settings.', 'error');
@@ -24185,11 +24185,13 @@ ${tracks}
     const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
     return allResolvers.filter(r => {
       if (!r.capabilities?.concerts || !r.searchArtistEvents) return false;
-      // Check that the service has valid auth configured
       const config = metaServiceConfigs[r.id] || {};
+      // Respect explicit disable toggle
+      if (config.enabled === false) return false;
       const noKeyNeeded = r.requiresAuth === false || r.settings?.requiresAuth === false;
-      if (noKeyNeeded) return true;
-      // Check the plugin's expected auth field (e.g. clientId, appId, apiKey)
+      // No-auth services require an explicit enabled toggle (same as AI concert services)
+      if (noKeyNeeded) return config.enabled === true;
+      // Auth-required services: check the plugin's expected auth field (e.g. clientId, appId, apiKey)
       const configurable = r.settings?.configurable || r.configurable || {};
       const authField = Object.keys(configurable).find(k => k !== 'model') || 'apiKey';
       return !!(config[authField] || config.apiKey);
@@ -24201,10 +24203,7 @@ ${tracks}
     const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
     return allResolvers.filter(r => {
       if (!r.capabilities?.concerts || !r.capabilities?.chat || !r.chat) return false;
-      // Must be enabled with API key (or no auth needed like Ollama)
-      const config = metaServiceConfigs[r.id] || {};
-      const noKeyNeeded = r.requiresAuth === false || r.settings?.requiresAuth === false;
-      return noKeyNeeded ? config.enabled === true : !!config.apiKey;
+      return isServiceEnabled(r);
     });
   };
 
@@ -24955,11 +24954,7 @@ Return ONLY the JSON array, no other text.`;
   // Load AI-generated recommendations for the home page
   const loadAiRecommendations = async (onUpdate) => {
     const chatServices = getChatServices();
-    const enabledServices = chatServices.filter(s => {
-      const config = metaServiceConfigs[s.id] || {};
-      const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-      return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-    });
+    const enabledServices = chatServices.filter(isServiceEnabled);
 
     if (enabledServices.length === 0) return null;
 
@@ -25306,11 +25301,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (aiSuggestionsRefreshing.current) return; // Already fetching
 
       const chatServices = getChatServices();
-      const hasEnabledChat = chatServices.some(s => {
-        const config = metaServiceConfigs[s.id] || {};
-        const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-        return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-      });
+      const hasEnabledChat = chatServices.some(isServiceEnabled);
 
       if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
 
@@ -38983,11 +38974,7 @@ useEffect(() => {
               // SECTION: AI Recommendations or Surprise Me fallback
               (() => {
                 const chatServices = getChatServices();
-                const hasEnabledChat = chatServices.some(s => {
-                  const config = metaServiceConfigs[s.id] || {};
-                  const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-                  return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-                });
+                const hasEnabledChat = chatServices.some(isServiceEnabled);
 
                 const aiRecs = homeData.aiRecommendations;
                 const hasAiRecs = aiRecs && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0);
@@ -47346,17 +47333,10 @@ useEffect(() => {
             const chatServices = getChatServices();
 
             // Check if chat providers are enabled
-            const hasEnabledChat = chatServices.some(s => {
-              const config = metaServiceConfigs[s.id] || {};
-              const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-              return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-            });
+            const hasEnabledChat = chatServices.some(isServiceEnabled);
 
             // Check if generate providers are enabled (fallback)
-            const hasEnabledGenerate = aiResolvers.some(s => {
-              const config = metaServiceConfigs[s.id] || {};
-              return !!config.apiKey;
-            });
+            const hasEnabledGenerate = aiResolvers.some(isServiceEnabled);
 
             const hasAnyAi = hasEnabledChat || hasEnabledGenerate;
             const isActive = aiChatOpen || aiPromptOpen;
@@ -48524,11 +48504,7 @@ useEffect(() => {
                 React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)' } }, 'powered by:'),
                 // Custom dropdown button
                 (() => {
-                  const enabledServices = getChatServices().filter(s => {
-                    const config = metaServiceConfigs[s.id] || {};
-                    const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-                    return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-                  });
+                  const enabledServices = getChatServices().filter(isServiceEnabled);
                   const currentService = enabledServices.find(s => s.id === selectedChatProvider);
                   const currentLogo = currentService ? SERVICE_LOGOS[currentService.id] : null;
 
