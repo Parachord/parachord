@@ -43490,108 +43490,110 @@ useEffect(() => {
 
                         return React.createElement('div', {
                           key: event.id || `${monthKey}-${eventIdx}`,
-                          className: `flex items-center gap-4 p-4 rounded-xl border cursor-default group ${isDark ? 'bg-gray-800/50 border-gray-700/50' : 'bg-white border-gray-100'}`,
+                          className: `flex items-center rounded-xl border cursor-default overflow-hidden ${isDark ? 'bg-gray-800/50 border-gray-700/50' : 'bg-white border-gray-100'}`,
                           style: {
                             animation: 'fadeIn 300ms ease-out both',
                             animationDelay: `${eventIdx * 30}ms`
                           }
                         },
-                          // Date column
+                          // Artist image — full-bleed rectangle
                           React.createElement('div', {
-                            className: 'flex flex-col items-center text-center',
-                            style: { minWidth: '56px' }
-                          },
-                            React.createElement('span', {
-                              className: 'text-xs font-medium text-violet-500 uppercase'
-                            }, monthShort),
-                            React.createElement('span', {
-                              className: `text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`
-                            }, dayNum),
-                            React.createElement('span', {
-                              className: 'text-xs text-gray-400 uppercase'
-                            }, dayOfWeek)
-                          ),
-
-                          // Artist image
-                          React.createElement('div', {
-                            className: `flex-shrink-0 rounded-full overflow-hidden ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`,
-                            style: { width: '44px', height: '44px' },
+                            className: `flex-shrink-0 overflow-hidden cursor-pointer ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`,
+                            style: { width: '100px', height: '100px' },
                             onClick: () => { if (event.artist) fetchArtistData(event.artist); }
                           },
                             artistImg?.url
                               ? React.createElement('img', {
                                   src: artistImg.url,
                                   alt: event.artist,
-                                  className: 'w-full h-full object-cover cursor-pointer',
+                                  className: 'w-full h-full object-cover',
                                   style: artistImg.facePosition ? { objectPosition: `${artistImg.facePosition.x}% ${artistImg.facePosition.y}%` } : undefined,
                                   loading: 'lazy'
                                 })
                               : React.createElement('div', {
-                                  className: `w-full h-full flex items-center justify-center cursor-pointer ${isDark ? 'text-gray-500' : 'text-gray-300'}`
+                                  className: `w-full h-full flex items-center justify-center ${isDark ? 'text-gray-500' : 'text-gray-300'}`
                                 },
-                                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                  React.createElement('svg', { className: 'w-8 h-8', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
                                   )
                                 )
                           ),
 
-                          // Event details
-                          React.createElement('div', { className: 'flex-1 min-w-0' },
-                            React.createElement('div', { className: 'flex items-center gap-2 mb-0.5' },
-                              React.createElement('span', {
-                                className: `font-semibold truncate cursor-pointer hover:text-violet-600 transition-colors ${isDark ? 'text-white' : 'text-gray-900'}`,
-                                onClick: () => {
-                                  // Navigate to artist page
-                                  if (event.artist) {
-                                    fetchArtistData(event.artist);
-                                  }
-                                }
-                              }, event.artist),
-                              // Source badges (one per provider that found this event)
-                              ...(() => {
-                                const bgAlpha = isDark ? 0.2 : 0.1;
-                                const srcColors = {
-                                  bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
-                                  songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
-                                  seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
-                                  ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
-                                };
-                                const badgeLabel = (src) => src.source === 'bandsintown' ? 'BIT' : src.source === 'songkick' ? 'SK' : src.source === 'seatgeek' ? 'SG' : src.source === 'ticketmaster' ? 'TM' : (src.aiProviderName || 'AI');
-                                const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
-                                const hasAiSource = sources.some(s => s.source === 'ai');
-                                const badges = sources.map((src, si) => {
-                                  const c = srcColors[src.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };
-                                  return React.createElement('span', {
-                                    key: `badge-${si}`,
-                                    className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
-                                    style: { backgroundColor: c.bg, color: c.text }
-                                  }, badgeLabel(src));
-                                });
-                                if (hasAiSource) {
-                                  badges.push(React.createElement('span', {
-                                    key: 'ai-disclaimer',
-                                    className: 'text-xs text-violet-400 italic flex-shrink-0',
-                                    title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
-                                  }, 'AI-generated'));
-                                }
-                                return badges;
-                              })()
-                            ),
+                          // Date + event details column
+                          React.createElement('div', { className: 'flex-1 min-w-0 flex items-center gap-4 px-4 py-3' },
+                            // Date column
                             React.createElement('div', {
-                              className: `text-sm truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`
-                            }, event.venue?.name || 'Venue TBA'),
-                            location && React.createElement('div', {
-                              className: `text-xs truncate mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
-                            }, location),
-                            // Lineup (if more than just the main artist)
-                            event.lineup && event.lineup.length > 1 && React.createElement('div', {
-                              className: `text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
-                            }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== event.artist.toLowerCase()).join(', ')),
-                            // Reason — why this concert was recommended
-                            reasonText && React.createElement('div', {
-                              className: `text-xs mt-1 italic ${isDark ? 'text-violet-400/70' : 'text-violet-400'}`
-                            }, reasonText)
+                              className: 'flex flex-col items-center text-center flex-shrink-0',
+                              style: { minWidth: '48px' }
+                            },
+                              React.createElement('span', {
+                                className: 'text-xs font-medium text-violet-500 uppercase'
+                              }, monthShort),
+                              React.createElement('span', {
+                                className: `text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`
+                              }, dayNum),
+                              React.createElement('span', {
+                                className: 'text-xs text-gray-400 uppercase'
+                              }, dayOfWeek)
+                            ),
+
+                            // Event info
+                            React.createElement('div', { className: 'flex-1 min-w-0' },
+                              React.createElement('div', { className: 'flex items-center gap-2 mb-0.5' },
+                                React.createElement('span', {
+                                  className: `font-semibold truncate cursor-pointer hover:text-violet-600 transition-colors ${isDark ? 'text-white' : 'text-gray-900'}`,
+                                  onClick: () => {
+                                    if (event.artist) fetchArtistData(event.artist);
+                                  }
+                                }, event.artist),
+                                // Source badges
+                                ...(() => {
+                                  const bgAlpha = isDark ? 0.2 : 0.1;
+                                  const srcColors = {
+                                    bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
+                                    songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
+                                    seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
+                                    ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
+                                  };
+                                  const badgeLabel = (src) => src.source === 'bandsintown' ? 'BIT' : src.source === 'songkick' ? 'SK' : src.source === 'seatgeek' ? 'SG' : src.source === 'ticketmaster' ? 'TM' : (src.aiProviderName || 'AI');
+                                  const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
+                                  const hasAiSource = sources.some(s => s.source === 'ai');
+                                  const badges = sources.map((src, si) => {
+                                    const c = srcColors[src.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };
+                                    return React.createElement('span', {
+                                      key: `badge-${si}`,
+                                      className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
+                                      style: { backgroundColor: c.bg, color: c.text }
+                                    }, badgeLabel(src));
+                                  });
+                                  if (hasAiSource) {
+                                    badges.push(React.createElement('span', {
+                                      key: 'ai-disclaimer',
+                                      className: 'text-xs text-violet-400 italic flex-shrink-0',
+                                      title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
+                                    }, 'AI-generated'));
+                                  }
+                                  return badges;
+                                })()
+                              ),
+                              React.createElement('div', {
+                                className: `text-sm truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`
+                              }, event.venue?.name || 'Venue TBA'),
+                              location && React.createElement('div', {
+                                className: `text-xs truncate mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                              }, location),
+                              // Lineup
+                              event.lineup && event.lineup.length > 1 && React.createElement('div', {
+                                className: `text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                              }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== event.artist.toLowerCase()).join(', '))
+                            )
                           ),
+
+                          // Reason column
+                          reasonText && React.createElement('div', {
+                            className: `flex-shrink-0 text-xs italic px-3 ${isDark ? 'text-violet-400/70' : 'text-violet-400'}`,
+                            style: { maxWidth: '160px' }
+                          }, reasonText),
 
                           // Ticket button with provider flyout
                           (() => {
