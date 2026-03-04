@@ -43588,8 +43588,8 @@ useEffect(() => {
 
                           // Reason column — fixed width so text aligns vertically across rows
                           React.createElement('div', {
-                            className: `flex-shrink-0 text-xs italic self-center px-3 ${isDark ? 'text-violet-400/70' : 'text-violet-400'}`,
-                            style: { width: '140px', textAlign: 'left' }
+                            className: 'flex-shrink-0 text-xs italic self-center px-3',
+                            style: { width: '140px', textAlign: 'left', color: 'var(--text-tertiary)' }
                           }, reasonText || ''),
 
                           // Ticket button with provider flyout
