@@ -48078,7 +48078,7 @@ useEffect(() => {
                     React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
-                        setArtistPageTab('on-tour');
+                        pendingProtocolTabRef.current = 'on-tour';
                         fetchArtistData(currentTrack.artist);
                       },
                       className: 'flex-shrink-0 ml-2.5 rounded-full transition-opacity hover:opacity-80 cursor-pointer no-drag',
