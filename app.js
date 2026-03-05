@@ -5456,6 +5456,8 @@ const Parachord = () => {
   const [concertsLocationRadius, setConcertsLocationRadius] = useState(50); // radius in miles
   const [concertsLocationOpen, setConcertsLocationOpen] = useState(false);
   const [concertsGeocodingLoading, setConcertsGeocodingLoading] = useState(false);
+  const [concertsLocationSuggestions, setConcertsLocationSuggestions] = useState([]);
+  const concertsLocationSearchTimer = useRef(null);
   const concertsCache = useRef({ events: null, timestamp: 0 });
   const [concertsTicketFlyout, setConcertsTicketFlyout] = useState(null); // event ID of open flyout
   const [concertsArtistImages, setConcertsArtistImages] = useState({}); // { normalizedArtistName: { url, facePosition } }
@@ -24176,6 +24178,34 @@ ${tracks}
     };
   };
 
+  // Search Nominatim for location suggestions (returns multiple results)
+  const searchLocationSuggestions = async (query) => {
+    if (!query || query.trim().length < 2) return [];
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`;
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Parachord/1.0', 'Accept': 'application/json' }
+      });
+      if (!resp.ok) return [];
+      const results = await resp.json();
+      return results.map(r => {
+        const addr = r.address || {};
+        const name = addr.city || addr.town || addr.village || addr.county || addr.state || r.display_name?.split(',').slice(0, 2).join(',').trim() || query;
+        const region = addr.state || addr.country || '';
+        return {
+          lat: parseFloat(r.lat),
+          lng: parseFloat(r.lon),
+          name: name,
+          region: region && region !== name ? `${name}, ${region}` : name,
+          displayName: r.display_name?.split(',').slice(0, 2).join(',').trim() || query
+        };
+      });
+    } catch (e) {
+      console.log('📍 Location search error:', e.message);
+      return [];
+    }
+  };
+
   // Use browser geolocation to get user's current coordinates
   const getBrowserGeolocation = () => {
     return new Promise((resolve, reject) => {
@@ -34467,7 +34497,7 @@ useEffect(() => {
               className: 'flex items-center gap-1 mt-6',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              ['music', 'biography', 'related', ...(artistConcertsLoaded && artistConcerts.length > 0 ? ['on-tour'] : [])].map((tab, index) => [
+              ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])].map((tab, index) => [
                 index > 0 && React.createElement('span', {
                   key: `sep-${tab}`,
                   className: 'text-gray-400 mx-2'
@@ -34587,7 +34617,7 @@ useEffect(() => {
               className: 'flex items-center gap-1',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              ['music', 'biography', 'related', ...(artistConcertsLoaded && artistConcerts.length > 0 ? ['on-tour'] : [])].map((tab, index) => [
+              ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])].map((tab, index) => [
                 index > 0 && React.createElement('span', {
                   key: `sep-collapsed-${tab}`,
                   className: 'text-gray-400 mx-2'
@@ -34697,7 +34727,7 @@ useEffect(() => {
               className: 'flex items-center gap-1',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              ['music', 'biography', 'related', ...(artistConcertsLoaded && artistConcerts.length > 0 ? ['on-tour'] : [])].map((tab, index) => [
+              ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])].map((tab, index) => [
                 index > 0 && React.createElement('span', {
                   key: `sep-release-${tab}`,
                   className: 'text-gray-400 mx-2'
@@ -43169,11 +43199,24 @@ useEffect(() => {
                     type: 'text',
                     value: concertsLocation,
                     onChange: (e) => {
-                      setConcertsLocation(e.target.value);
-                      if (!e.target.value.trim()) setConcertsLocationCoords(null);
+                      const val = e.target.value;
+                      setConcertsLocation(val);
+                      if (!val.trim()) {
+                        setConcertsLocationCoords(null);
+                        setConcertsLocationSuggestions([]);
+                        if (concertsLocationSearchTimer.current) clearTimeout(concertsLocationSearchTimer.current);
+                        return;
+                      }
+                      // Debounced search
+                      if (concertsLocationSearchTimer.current) clearTimeout(concertsLocationSearchTimer.current);
+                      concertsLocationSearchTimer.current = setTimeout(async () => {
+                        const results = await searchLocationSuggestions(val.trim());
+                        setConcertsLocationSuggestions(results);
+                      }, 350);
                     },
                     onKeyDown: async (e) => {
                       if (e.key === 'Enter' && concertsLocation.trim()) {
+                        setConcertsLocationSuggestions([]);
                         setConcertsGeocodingLoading(true);
                         const result = await geocodeLocation(concertsLocation.trim());
                         setConcertsGeocodingLoading(false);
@@ -43191,12 +43234,12 @@ useEffect(() => {
                   React.createElement('button', {
                     onClick: async () => {
                       setConcertsGeocodingLoading(true);
+                      setConcertsLocationSuggestions([]);
                       try {
                         const pos = await getBrowserGeolocation();
                         setConcertsLocationCoords({ lat: pos.lat, lng: pos.lng });
                         const name = await reverseGeocode(pos.lat, pos.lng);
                         setConcertsLocation(name);
-                        setConcertsLocationOpen(false);
                       } catch (err) {
                         console.log('📍 Geolocation error:', err.message);
                       }
@@ -43214,6 +43257,29 @@ useEffect(() => {
                           React.createElement('circle', { cx: 12, cy: 12, r: 3, strokeWidth: 2 }),
                           React.createElement('path', { strokeLinecap: 'round', strokeWidth: 2, d: 'M12 2v4m0 12v4m10-10h-4M6 12H2' })
                         )
+                  )
+                ),
+                // Location search suggestions
+                concertsLocationSuggestions.length > 0 && !concertsLocationCoords && React.createElement('div', {
+                  className: `rounded-lg overflow-hidden mb-3 border ${isDark ? 'bg-gray-750 border-gray-600' : 'bg-gray-50 border-gray-200'}`,
+                  style: { maxHeight: '160px', overflowY: 'auto' }
+                },
+                  concertsLocationSuggestions.map((suggestion, i) =>
+                    React.createElement('button', {
+                      key: i,
+                      onClick: () => {
+                        setConcertsLocationCoords({ lat: suggestion.lat, lng: suggestion.lng });
+                        setConcertsLocation(suggestion.displayName);
+                        setConcertsLocationSuggestions([]);
+                      },
+                      className: `w-full text-left px-2.5 py-2 text-xs transition-colors flex items-center gap-2 ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`,
+                      style: i > 0 ? { borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` } : {}
+                    },
+                      React.createElement('svg', { className: `w-3 h-3 flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-gray-400'}`, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' })
+                      ),
+                      React.createElement('span', { className: 'truncate' }, suggestion.region)
+                    )
                   )
                 ),
                 // Status line
