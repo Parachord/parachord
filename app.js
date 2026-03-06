@@ -43170,7 +43170,7 @@ useEffect(() => {
               // Location chip (shown when a location is active)
               concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
-                className: 'flex items-center gap-1.5 pl-2 pr-1.5 py-1 rounded-full text-xs font-medium transition-colors',
+                className: 'flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 rounded-full text-xs font-medium transition-colors',
                 style: { backgroundColor: 'var(--accent-primary-alpha-15)', color: 'var(--accent-primary)' },
                 title: `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
