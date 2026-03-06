@@ -17895,20 +17895,39 @@ ${trackListXml}
     }
 
     try {
-      // Batch-load all caches in parallel (each is an independent IPC roundtrip)
-      const [
-        albumArtData, artistData, trackSourcesData, artistImageData,
-        albumReleaseIdData, playlistCoverData, chartsData, newReleasesData
-      ] = await Promise.all([
-        window.electron.store.get('cache_album_art'),
-        window.electron.store.get('cache_artist_data'),
-        window.electron.store.get('cache_track_sources'),
-        window.electron.store.get('cache_artist_images'),
-        window.electron.store.get('cache_album_release_ids'),
-        window.electron.store.get('cache_playlist_covers'),
-        window.electron.store.get('cache_charts'),
-        window.electron.store.get('cache_new_releases')
-      ]);
+      // Single IPC roundtrip for ALL keys (caches + settings + preferences)
+      const allKeys = [
+        // Caches
+        'cache_album_art', 'cache_artist_data', 'cache_track_sources', 'cache_artist_images',
+        'cache_album_release_ids', 'cache_playlist_covers', 'cache_charts', 'cache_new_releases',
+        'cache_concerts', 'cache_ai_suggestions', 'last_active_view',
+        // Resolver settings & user preferences
+        'active_resolvers', 'resolver_order', 'meta_service_configs',
+        'applemusic_developer_token', 'friends', 'pinnedFriendIds',
+        'autoPinnedFriendIds', 'resolver_volume_offsets', 'skip_external_prompt',
+        'auto_launch_spotify', 'skip_unsaved_friend_warning', 'remember_queue',
+        'show_discovery_badges', 'playlists_view_mode', 'ai_include_history',
+        'recommendation_blocklist', 'resolver_blocklist', 'ai_chat_histories',
+        'selected_chat_provider', 'discovery_seen_recommendations', 'discovery_seen_criticsPicks',
+        'discovery_seen_charts',
+        // Concerts location
+        'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
+        // Queue & tutorial
+        'saved_queue', 'saved_playback_context', 'saved_shuffle_state',
+        'tutorial_completed', 'whats_new_dismissed_version'
+      ];
+      const d = window.electron.store.getBatch
+        ? await window.electron.store.getBatch(allKeys)
+        : Object.fromEntries(await Promise.all(allKeys.map(async k => [k, await window.electron.store.get(k)])));
+
+      const albumArtData = d['cache_album_art'];
+      const artistData = d['cache_artist_data'];
+      const trackSourcesData = d['cache_track_sources'];
+      const artistImageData = d['cache_artist_images'];
+      const albumReleaseIdData = d['cache_album_release_ids'];
+      const playlistCoverData = d['cache_playlist_covers'];
+      const chartsData = d['cache_charts'];
+      const newReleasesData = d['cache_new_releases'];
 
       const now = Date.now();
 
@@ -18019,7 +18038,7 @@ ${trackListXml}
       }
 
       // Load concerts cache
-      const concertsData = await window.electron.store.get('cache_concerts');
+      const concertsData = d['cache_concerts'];
       if (concertsData && concertsData.events && concertsData.events.length > 0) {
         const now = Date.now();
         if (concertsData.timestamp && (now - concertsData.timestamp) < CACHE_TTL.concerts) {
@@ -18036,11 +18055,9 @@ ${trackListXml}
         }
       }
 
-      // Batch-load AI suggestions and view restoration data in parallel
-      const [aiSuggestionsData, savedLastView] = await Promise.all([
-        window.electron.store.get('cache_ai_suggestions'),
-        window.electron.store.get('last_active_view')
-      ]);
+      // AI suggestions and view restoration (already loaded in batch)
+      const aiSuggestionsData = d['cache_ai_suggestions'];
+      const savedLastView = d['last_active_view'];
 
       // Load AI suggestions cache (show previous session's suggestions instantly)
       if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
@@ -18236,40 +18253,29 @@ ${trackListXml}
         setViewHistory(['home']);
       }
 
-      // Batch-load all resolver settings and user preferences in parallel
-      const [
-        savedActiveResolvers, savedResolverOrder, savedMetaServiceConfigs,
-        savedAppleMusicDevToken, savedFriends, savedPinnedFriendIds,
-        savedAutoPinnedFriendIds, savedVolumeOffsets, savedSkipExternalPrompt,
-        savedAutoLaunchSpotify, savedSkipUnsavedFriendWarning, savedRememberQueue,
-        savedShowDiscoveryBadges, savedPlaylistsViewMode, savedAiIncludeHistory,
-        savedBlocklist, savedResolverBlocklist, savedAiChatHistories,
-        savedChatProvider, savedSeenRecommendations, savedSeenCriticsPicks,
-        savedSeenCharts
-      ] = await Promise.all([
-        window.electron.store.get('active_resolvers'),
-        window.electron.store.get('resolver_order'),
-        window.electron.store.get('meta_service_configs'),
-        window.electron.store.get('applemusic_developer_token'),
-        window.electron.store.get('friends'),
-        window.electron.store.get('pinnedFriendIds'),
-        window.electron.store.get('autoPinnedFriendIds'),
-        window.electron.store.get('resolver_volume_offsets'),
-        window.electron.store.get('skip_external_prompt'),
-        window.electron.store.get('auto_launch_spotify'),
-        window.electron.store.get('skip_unsaved_friend_warning'),
-        window.electron.store.get('remember_queue'),
-        window.electron.store.get('show_discovery_badges'),
-        window.electron.store.get('playlists_view_mode'),
-        window.electron.store.get('ai_include_history'),
-        window.electron.store.get('recommendation_blocklist'),
-        window.electron.store.get('resolver_blocklist'),
-        window.electron.store.get('ai_chat_histories'),
-        window.electron.store.get('selected_chat_provider'),
-        window.electron.store.get('discovery_seen_recommendations'),
-        window.electron.store.get('discovery_seen_criticsPicks'),
-        window.electron.store.get('discovery_seen_charts')
-      ]);
+      // Resolver settings and user preferences (already loaded in batch)
+      const savedActiveResolvers = d['active_resolvers'];
+      const savedResolverOrder = d['resolver_order'];
+      const savedMetaServiceConfigs = d['meta_service_configs'];
+      const savedAppleMusicDevToken = d['applemusic_developer_token'];
+      const savedFriends = d['friends'];
+      const savedPinnedFriendIds = d['pinnedFriendIds'];
+      const savedAutoPinnedFriendIds = d['autoPinnedFriendIds'];
+      const savedVolumeOffsets = d['resolver_volume_offsets'];
+      const savedSkipExternalPrompt = d['skip_external_prompt'];
+      const savedAutoLaunchSpotify = d['auto_launch_spotify'];
+      const savedSkipUnsavedFriendWarning = d['skip_unsaved_friend_warning'];
+      const savedRememberQueue = d['remember_queue'];
+      const savedShowDiscoveryBadges = d['show_discovery_badges'];
+      const savedPlaylistsViewMode = d['playlists_view_mode'];
+      const savedAiIncludeHistory = d['ai_include_history'];
+      const savedBlocklist = d['recommendation_blocklist'];
+      const savedResolverBlocklist = d['resolver_blocklist'];
+      const savedAiChatHistories = d['ai_chat_histories'];
+      const savedChatProvider = d['selected_chat_provider'];
+      const savedSeenRecommendations = d['discovery_seen_recommendations'];
+      const savedSeenCriticsPicks = d['discovery_seen_criticsPicks'];
+      const savedSeenCharts = d['discovery_seen_charts'];
 
       if (savedActiveResolvers) {
         // Deduplicate and strip removed resolvers (e.g. qobuz) from persisted data
@@ -18466,10 +18472,10 @@ ${trackListXml}
         console.log('📦 Loaded last used chat provider:', savedChatProvider);
       }
 
-      // Load concerts location preference (text, coords, radius)
-      const savedConcertsLocation = await window.electron.store.get('concerts_location');
-      const savedConcertsCoords = await window.electron.store.get('concerts_location_coords');
-      const savedConcertsRadius = await window.electron.store.get('concerts_location_radius');
+      // Load concerts location preference (text, coords, radius) — already in batch
+      const savedConcertsLocation = d['concerts_location'];
+      const savedConcertsCoords = d['concerts_location_coords'];
+      const savedConcertsRadius = d['concerts_location_radius'];
       if (savedConcertsLocation) {
         setConcertsLocation(savedConcertsLocation);
         if (savedConcertsCoords) setConcertsLocationCoords(savedConcertsCoords);
@@ -18485,14 +18491,12 @@ ${trackListXml}
       };
       console.log('📦 Loaded discovery seen hashes');
 
-      // Load saved queue, playback context, shuffle state, tutorial, and version info in parallel
-      const [savedQueue, savedPlaybackContext, savedShuffleState, tutorialCompleted, dismissedVersion] = await Promise.all([
-        savedRememberQueue ? window.electron.store.get('saved_queue') : Promise.resolve(null),
-        savedRememberQueue ? window.electron.store.get('saved_playback_context') : Promise.resolve(null),
-        savedRememberQueue ? window.electron.store.get('saved_shuffle_state') : Promise.resolve(null),
-        window.electron.store.get('tutorial_completed'),
-        window.electron.store.get('whats_new_dismissed_version')
-      ]);
+      // Queue, playback context, shuffle state, tutorial, version — already in batch
+      const savedQueue = savedRememberQueue ? d['saved_queue'] : null;
+      const savedPlaybackContext = savedRememberQueue ? d['saved_playback_context'] : null;
+      const savedShuffleState = savedRememberQueue ? d['saved_shuffle_state'] : null;
+      const tutorialCompleted = d['tutorial_completed'];
+      const dismissedVersion = d['whats_new_dismissed_version'];
 
       // Restore saved queue if remember queue is enabled
       if (savedRememberQueue) {
