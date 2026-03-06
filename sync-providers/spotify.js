@@ -46,6 +46,15 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
       return spotifyRequest(endpoint, token, options, _retryCount + 1);
     }
+    // Retry on transient server errors (502, 503, 504) with exponential backoff
+    if ([502, 503, 504].includes(response.status)) {
+      if (_retryCount >= MAX_RETRIES) {
+        throw new Error(`Spotify API error: ${response.status} ${response.statusText} (after ${MAX_RETRIES} retries)`);
+      }
+      const delay = Math.min(1000 * Math.pow(2, _retryCount), 30000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return spotifyRequest(endpoint, token, options, _retryCount + 1);
+    }
     // Only refresh on 401 (expired token). 403 means insufficient scopes —
     // refreshing gives the same scopes, so retrying would be wasteful.
     if (response.status === 401 && refreshToken) {
@@ -97,6 +106,15 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
       // Rate limited - get retry-after header
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+      return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1);
+    }
+    // Retry on transient server errors (502, 503, 504) with exponential backoff
+    if ([502, 503, 504].includes(response.status)) {
+      if (_retryCount >= MAX_RETRIES) {
+        throw new Error(`Spotify API error: ${response.status} ${response.statusText} (after ${MAX_RETRIES} retries)`);
+      }
+      const delay = Math.min(1000 * Math.pow(2, _retryCount), 30000);
+      await new Promise(resolve => setTimeout(resolve, delay));
       return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1);
     }
     // Only refresh on 401 (expired token). 403 means insufficient scopes —
