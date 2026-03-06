@@ -43184,11 +43184,11 @@ useEffect(() => {
               // Location chip (shown when a location is active)
               concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
-                className: 'flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium transition-colors',
+                className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
                 style: { backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)' },
                 title: `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
-                React.createElement('svg', { className: 'w-3 h-3 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('svg', { className: 'w-3.5 h-3.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' })
                 ),
                 React.createElement('span', { className: 'max-w-[120px] truncate' }, concertsLocation),
@@ -43199,7 +43199,7 @@ useEffect(() => {
                   className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
                   style: { color: 'var(--accent-primary)' }
                 },
-                  React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M6 18L18 6M6 6l12 12' })
                   )
                 )
