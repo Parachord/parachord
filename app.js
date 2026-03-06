@@ -43006,7 +43006,38 @@ useEffect(() => {
         ),
 
         // Concerts view with collapsible hero header
-        activeView === 'concerts' && React.createElement('div', {
+        activeView === 'concerts' && (() => {
+          // Pre-compute filtered count so the header reflects active filters
+          const _searchL = concertsSearch.toLowerCase().trim();
+          const _locL = concertsLocation.toLowerCase().trim();
+          const filteredConcertsCount = concerts.filter(event => {
+            if (concertsSourceFilter !== 'all') {
+              if (concertsSourceFilter.startsWith('ai:')) {
+                if (event.source !== 'ai' || event.aiProvider !== concertsSourceFilter.slice(3)) return false;
+              } else if (event.source !== concertsSourceFilter) return false;
+            }
+            if (concertsLocationCoords) {
+              const vLat = event.venue?.latitude, vLng = event.venue?.longitude;
+              if (vLat != null && vLng != null) {
+                if (haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) > concertsLocationRadius) return false;
+              } else {
+                const city = (event.venue?.city || '').toLowerCase().trim();
+                const region = (event.venue?.region || '').toLowerCase().trim();
+                if (!(city && _locL.includes(city)) && !(region && _locL.includes(region))) return false;
+              }
+            } else if (_locL) {
+              const city = (event.venue?.city || '').toLowerCase().trim();
+              const region = (event.venue?.region || '').toLowerCase().trim();
+              if (!(city && _locL.includes(city)) && !(region && _locL.includes(region))) return false;
+            }
+            if (_searchL) {
+              const m = [event.artist, ...(event.lineup || []), event.venue?.name, event.venue?.city, event.title]
+                .some(s => s && s.toLowerCase().includes(_searchL));
+              if (!m) return false;
+            }
+            return true;
+          }).length;
+          return React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
           style: { overflow: 'hidden', minHeight: 0 }
         },
@@ -43055,7 +43086,7 @@ useEffect(() => {
                 },
                   React.createElement('span', {
                     className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
-                  }, concerts.length > 0 ? `${concerts.length} Upcoming Shows` : '')
+                  }, filteredConcertsCount > 0 ? `${filteredConcertsCount} Upcoming Shows` : '')
                 ),
                 React.createElement('p', {
                   className: 'mt-2 text-white/80 text-sm'
@@ -43081,7 +43112,7 @@ useEffect(() => {
                 React.createElement('div', { className: 'flex-1' }),
                 React.createElement('span', {
                   className: 'text-sm font-medium uppercase tracking-wider text-white/80'
-                }, concerts.length > 0 ? `${concerts.length} Upcoming Shows` : '')
+                }, filteredConcertsCount > 0 ? `${filteredConcertsCount} Upcoming Shows` : '')
               )
           ),
           // Filter bar (outside scrollable area)
@@ -43174,7 +43205,7 @@ useEffect(() => {
               // Location chip (shown when a location is active)
               concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
-                className: 'flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 rounded-full text-xs font-medium transition-colors',
+                className: 'flex items-center gap-1.5 pl-3.5 pr-3 py-1.5 rounded-full text-xs font-medium transition-colors',
                 style: { backgroundColor: 'var(--accent-primary-alpha-15)', color: 'var(--accent-primary)' },
                 title: `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
@@ -43249,7 +43280,7 @@ useEffect(() => {
                     },
                     autoFocus: true,
                     placeholder: 'City or region...',
-                    className: `flex-1 text-sm outline-none rounded-lg px-2.5 py-1.5 transition-colors ${isDark ? 'bg-gray-700 text-gray-200 placeholder-gray-500 border border-gray-600 focus:border-violet-500' : 'bg-gray-50 text-gray-700 placeholder-gray-400 border border-gray-200 focus:border-violet-400'}`
+                    className: `flex-1 text-sm outline-none rounded-lg px-3.5 py-2.5 transition-colors ${isDark ? 'bg-gray-700 text-gray-200 placeholder-gray-500 border border-gray-600 focus:border-violet-500' : 'bg-gray-50 text-gray-700 placeholder-gray-400 border border-gray-200 focus:border-violet-400'}`
                   }),
                   // "Use my location" button
                   React.createElement('button', {
@@ -43272,7 +43303,7 @@ useEffect(() => {
                     title: 'Use my location'
                   },
                     concertsGeocodingLoading
-                      ? React.createElement('svg', { className: 'w-4 h-4 animate-spin', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      ? React.createElement('svg', { className: 'w-4 h-4 animate-[spin_1s_linear_infinite_reverse]', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
                         )
                       : React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -43331,7 +43362,7 @@ useEffect(() => {
                   })
                 ),
                 // Action buttons row
-                React.createElement('div', { className: `flex items-center justify-between mt-2 pt-2.5 border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}` },
+                React.createElement('div', { className: `flex items-center justify-between mt-2 pt-3 pb-1 border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}` },
                   // Clear button
                   React.createElement('button', {
                     onClick: () => {
@@ -43810,7 +43841,8 @@ useEffect(() => {
               );
             })()
           )
-        ),
+        );
+        })(),
 
         // Recommendations view with collapsible hero header
         activeView === 'recommendations' && React.createElement('div', {
