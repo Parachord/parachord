@@ -1414,7 +1414,8 @@ const SERVICE_LOGO_PATHS = {
   applemusic: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z',
   soundcloud: 'M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.27-2.154c-.009-.06-.052-.1-.084-.1zm-.899.828c-.06 0-.091.037-.104.094L0 14.479l.165 1.308c.014.057.045.094.09.094.049 0 .084-.037.09-.094l.195-1.308-.196-1.332c-.006-.057-.04-.094-.068-.094zm1.83-1.229c-.06 0-.12.037-.12.1l-.21 2.563.225 2.458c0 .06.045.1.105.1.074 0 .12-.04.12-.1l.24-2.458-.24-2.563c0-.06-.03-.1-.12-.1zm.945-.089c-.075 0-.135.045-.15.105l-.18 2.647.18 2.456c.015.06.075.105.15.105.075 0 .135-.045.15-.105l.21-2.456-.21-2.647c-.015-.06-.075-.105-.15-.105zm1.065.285c-.09 0-.15.045-.165.105l-.15 2.382.15 2.423c.015.075.075.12.165.12.09 0 .15-.045.165-.12l.18-2.423-.195-2.382c-.015-.06-.06-.105-.15-.105zm1.08-1.5c-.09 0-.18.06-.18.135l-.15 3.762.15 2.4c0 .09.09.149.18.149.09 0 .165-.06.18-.135l.165-2.414-.165-3.762c-.015-.09-.09-.135-.18-.135zm1.05-.706c-.105 0-.195.075-.195.165l-.12 4.333.12 2.37c0 .09.09.165.195.165.09 0 .18-.075.195-.165l.135-2.37-.135-4.333c-.015-.09-.09-.165-.195-.165zm1.14-.255c-.105 0-.21.075-.21.165l-.105 4.59.105 2.34c.015.09.105.165.21.165.105 0 .195-.075.21-.165l.12-2.355-.12-4.575c0-.09-.09-.165-.21-.165zm1.11-.165c-.12 0-.225.09-.225.18l-.09 4.74.09 2.31c.015.105.105.18.225.18.12 0 .21-.075.225-.18l.105-2.31-.105-4.74c-.015-.09-.105-.18-.225-.18zm1.17-.225c-.135 0-.24.09-.24.195l-.075 4.785.075 2.28c0 .12.105.21.24.21.12 0 .225-.09.24-.21l.09-2.28-.09-4.785c-.015-.105-.12-.195-.24-.195zm1.2.045c-.135 0-.255.105-.255.21l-.06 4.545.06 2.25c.015.12.12.21.255.21.15 0 .255-.09.27-.21l.075-2.25-.075-4.545c-.015-.105-.12-.21-.27-.21zm1.2.375c-.15 0-.27.105-.285.225l-.045 4.17.045 2.22c.015.12.135.225.285.225.135 0 .27-.105.27-.225l.06-2.22-.06-4.17c0-.12-.12-.225-.27-.225zm3.98-1.62c-.36 0-.705.06-1.035.18-.21-2.37-2.19-4.215-4.59-4.215-.615 0-1.2.135-1.725.36-.195.09-.255.18-.255.36v8.94c0 .18.15.345.33.36h7.275c1.665 0 3.015-1.35 3.015-3.015 0-1.665-1.35-3.015-3.015-3.015v.045z',
   wikipedia: 'M12.09 13.119c-.936 1.932-2.217 4.548-2.853 5.728-.616 1.074-1.127.931-1.532.029-1.406-3.321-4.293-9.144-5.651-12.409-.251-.601-.441-.987-.619-1.139-.181-.15-.554-.24-1.122-.271C.103 5.033 0 4.982 0 4.898v-.455l.052-.045c.924-.005 5.401 0 5.401 0l.051.045v.434c0 .119-.075.176-.225.176l-.564.031c-.485.029-.727.164-.727.436 0 .135.053.33.166.601 1.082 2.646 4.818 10.521 4.818 10.521l2.681-5.476-2.607-5.24c-.237-.477-.42-.752-.545-.825-.126-.073-.437-.123-.934-.147l-.356-.022c-.152 0-.228-.053-.228-.166v-.457c0-.119.085-.17.253-.15l4.834.045.042.045v.447c0 .119-.07.176-.212.176l-.453.022c-.454.022-.681.155-.681.4 0 .106.043.274.133.502l2.008 4.097 1.905-3.971c.09-.183.137-.38.137-.597 0-.243-.233-.383-.7-.424l-.453-.022c-.152 0-.228-.058-.228-.176v-.457c0-.085.058-.134.176-.15l4.063-.045.042.045v.457c0 .106-.07.164-.212.164l-.534.031c-.391.022-.681.142-.863.36-.182.218-.404.573-.668 1.068l-2.388 4.786 2.715 5.455s3.767-7.894 4.916-10.442c.15-.326.223-.586.223-.78 0-.263-.233-.405-.7-.427l-.534-.022c-.152 0-.228-.058-.228-.176v-.457c0-.085.058-.129.176-.129h4.863l.033.045v.457c0 .106-.07.164-.212.164-.609.014-1.055.089-1.34.22-.285.133-.542.398-.767.792-.346.6-4.608 9.075-5.906 11.667-.377.755-.882.939-1.268.047-.54-1.254-2.7-5.471-2.7-5.471l-2.625 5.42c-.27.549-.748.704-1.14.013-.54-1.125-2.841-5.773-2.841-5.773z',
-  discogs: 'M12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm0 21.6c-5.304 0-9.6-4.296-9.6-9.6S6.696 2.4 12 2.4s9.6 4.296 9.6 9.6-4.296 9.6-9.6 9.6zm0-16.8c-3.972 0-7.2 3.228-7.2 7.2s3.228 7.2 7.2 7.2 7.2-3.228 7.2-7.2-3.228-7.2-7.2-7.2zm0 12c-2.652 0-4.8-2.148-4.8-4.8s2.148-4.8 4.8-4.8 4.8 2.148 4.8 4.8-2.148 4.8-4.8 4.8zm0-7.2c-1.326 0-2.4 1.074-2.4 2.4s1.074 2.4 2.4 2.4 2.4-1.074 2.4-2.4-1.074-2.4-2.4-2.4z'
+  discogs: 'M12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm0 21.6c-5.304 0-9.6-4.296-9.6-9.6S6.696 2.4 12 2.4s9.6 4.296 9.6 9.6-4.296 9.6-9.6 9.6zm0-16.8c-3.972 0-7.2 3.228-7.2 7.2s3.228 7.2 7.2 7.2 7.2-3.228 7.2-7.2-3.228-7.2-7.2-7.2zm0 12c-2.652 0-4.8-2.148-4.8-4.8s2.148-4.8 4.8-4.8 4.8 2.148 4.8 4.8-2.148 4.8-4.8 4.8zm0-7.2c-1.326 0-2.4 1.074-2.4 2.4s1.074 2.4 2.4 2.4 2.4-1.074 2.4-2.4-1.074-2.4-2.4-2.4z',
+  seatgeek: 'M11.866 11.277h-.177l-.703-.001v-.001c-1.337-.002-3.426-.009-3.845-.011v-7.37c2.111.089 4.044.121 4.044.121l.304 1.556c.001 0-.745.007-2.361-.03v1.394l1.486.022v1.31L9.128 8.25v1.452c.832.008 1.595.013 2.411.014l1.99-5.615c.3-.008 1.573-.041 1.886-.054l2.637 7.225c-.661.003-1.331-.009-1.993-.006l-.448-1.302c-.76.008-1.52.013-2.281.016l-.445 1.293c-.355 0-.685 0-1.019.004m2.607-4.625l-.693 2.015c.461-.004.921-.009 1.38-.016zm4.389-1.197c-.719.044-1.438.081-2.157.112l.307-1.594c1.904-.105 3.8-.271 5.694-.497l.306 1.645c-.719.071-1.439.134-2.16.192l-.01 5.953c-.66.006-1.32-.001-1.98.004zM6.533 9.069c0 1.246-.901 2.401-2.674 2.401c-1.61 0-2.42-.752-2.42-.752V8.699c1.101 1.043 3.266 1.745 3.266.482c0-.96-3.266-1.125-3.266-3.518c0-1.342 1.247-2.186 2.675-2.186c1.009 0 1.855.193 2.065.258l-.083 1.772c-.884-.521-2.801-.763-2.801.134c0 .992 3.239 1.002 3.238 3.428m14.861 11.155l-1.957-3.596v3.433c-.673-.053-1.982-.133-1.982-.133V12.5l1.982.004c-.007 1.059.008 2.118 0 3.176l2.028-3.18h2.233l-2.314 3.569L24 20.525a90.598 90.598 0 0 0-2.606-.301M9.132 18.231c.892-.019 1.785-.029 2.678-.029l-.307 1.561c-.869.003-3.428.062-4.358.122v-7.374h4.038l.307 1.536s-.973-.007-2.358-.008v1.399l1.481-.013v1.323l-1.481.018zm5.162-.001c.707.015 1.905.054 2.682.082l-.32 1.573a87.388 87.388 0 0 0-4.349-.121v-7.253l4.051.002l.306 1.551l-2.371-.015v1.389c.461.005.92.009 1.379.017v1.321c-.459-.011-.919-.018-1.379-.025zM3.617 15.549l2.604-.059v4.445s-.7.032-2.26.178C1.746 20.321 0 19.022 0 16.468c0-3.034 2.222-3.993 4.225-3.993c.868 0 1.379.016 1.667.031l.328 1.723s-.58-.122-1.673-.122c-1.24 0-2.585.415-2.585 2.078c0 1.791.745 2.392 2.556 2.228l-.001-1.536l-1.206.059z'
 };
 
 // Helper to create resolver icon at any size
@@ -1499,6 +1500,18 @@ chatgpt: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-1
   ),
   discogs: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm0 21.6c-5.304 0-9.6-4.296-9.6-9.6S6.696 2.4 12 2.4s9.6 4.296 9.6 9.6-4.296 9.6-9.6 9.6zm0-16.8c-3.972 0-7.2 3.228-7.2 7.2s3.228 7.2 7.2 7.2 7.2-3.228 7.2-7.2-3.228-7.2-7.2-7.2zm0 12c-2.652 0-4.8-2.148-4.8-4.8s2.148-4.8 4.8-4.8 4.8 2.148 4.8 4.8-2.148 4.8-4.8 4.8zm0-7.2c-1.326 0-2.4 1.074-2.4 2.4s1.074 2.4 2.4 2.4 2.4-1.074 2.4-2.4-1.074-2.4-2.4-2.4z' })
+  ),
+  bandsintown: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M6.399 12.8v4.8H19.2v1.6H4.799V0H0v24h24V12.8H6.399Zm4.801-8H6.399v6.4H11.2V4.8Zm6.4 0h-4.8v6.4h4.8V4.8ZM24 0h-4.8v11.2H24V0Z' })
+  ),
+  songkick: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M6.55 18.779c-1.855 0-3.372-.339-4.598-1.602l1.92-1.908c.63.631 1.74.853 2.715.853 1.186 0 1.739-.391 1.739-1.089 0-.291-.06-.529-.239-.717-.15-.154-.404-.273-.795-.324l-1.455-.205c-1.064-.152-1.891-.51-2.43-1.072-.555-.578-.84-1.395-.84-2.434C2.536 8.066 4.2 6.45 6.96 6.45c1.74 0 3.048.407 4.086 1.448L9.171 9.77c-.765-.766-1.77-.715-2.295-.715-1.039 0-1.465.597-1.465 1.125 0 .152.051.375.24.561.15.153.404.307.832.359l1.467.203c1.09.153 1.875.495 2.385 1.005.645.63.9 1.53.9 2.655 0 2.47-2.127 3.819-4.68 3.819l-.005-.003zM20.813 2.651C19.178 1.432 17.37.612 15.089.237v10.875l3.261-4.539h3.565l-4.095 5.72s.944 1.51 1.515 2.405c.586.899 1.139 1.14 1.965 1.14h.57v2.806h-.872c-1.812 0-2.9-.33-3.72-1.575-.504-.811-2.175-3.436-2.175-3.436v4.995H12.12V-.001H12c-3.852 0-6.509.931-8.811 2.652C-.132 5.137.001 8.451.001 11.997c0 3.547-.133 6.867 3.188 9.352C5.491 23.074 8.148 24 12 24s6.51-.927 8.812-2.651C24.131 18.865 24 15.544 24 11.997c0-3.546.132-6.859-3.188-9.346h.001z' })
+  ),
+  seatgeek: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M11.866 11.277h-.177l-.703-.001v-.001c-1.337-.002-3.426-.009-3.845-.011v-7.37c2.111.089 4.044.121 4.044.121l.304 1.556c.001 0-.745.007-2.361-.03v1.394l1.486.022v1.31L9.128 8.25v1.452c.832.008 1.595.013 2.411.014l1.99-5.615c.3-.008 1.573-.041 1.886-.054l2.637 7.225c-.661.003-1.331-.009-1.993-.006l-.448-1.302c-.76.008-1.52.013-2.281.016l-.445 1.293c-.355 0-.685 0-1.019.004m2.607-4.625l-.693 2.015c.461-.004.921-.009 1.38-.016zm4.389-1.197c-.719.044-1.438.081-2.157.112l.307-1.594c1.904-.105 3.8-.271 5.694-.497l.306 1.645c-.719.071-1.439.134-2.16.192l-.01 5.953c-.66.006-1.32-.001-1.98.004zM6.533 9.069c0 1.246-.901 2.401-2.674 2.401c-1.61 0-2.42-.752-2.42-.752V8.699c1.101 1.043 3.266 1.745 3.266.482c0-.96-3.266-1.125-3.266-3.518c0-1.342 1.247-2.186 2.675-2.186c1.009 0 1.855.193 2.065.258l-.083 1.772c-.884-.521-2.801-.763-2.801.134c0 .992 3.239 1.002 3.238 3.428m14.861 11.155l-1.957-3.596v3.433c-.673-.053-1.982-.133-1.982-.133V12.5l1.982.004c-.007 1.059.008 2.118 0 3.176l2.028-3.18h2.233l-2.314 3.569L24 20.525a90.598 90.598 0 0 0-2.606-.301M9.132 18.231c.892-.019 1.785-.029 2.678-.029l-.307 1.561c-.869.003-3.428.062-4.358.122v-7.374h4.038l.307 1.536s-.973-.007-2.358-.008v1.399l1.481-.013v1.323l-1.481.018zm5.162-.001c.707.015 1.905.054 2.682.082l-.32 1.573a87.388 87.388 0 0 0-4.349-.121v-7.253l4.051.002l.306 1.551l-2.371-.015v1.389c.461.005.92.009 1.379.017v1.321c-.459-.011-.919-.018-1.379-.025zM3.617 15.549l2.604-.059v4.445s-.7.032-2.26.178C1.746 20.321 0 19.022 0 16.468c0-3.034 2.222-3.993 4.225-3.993c.868 0 1.379.016 1.667.031l.328 1.723s-.58-.122-1.673-.122c-1.24 0-2.585.415-2.585 2.078c0 1.791.745 2.392 2.556 2.228l-.001-1.536l-1.206.059z' })
+  ),
+  ticketmaster: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M7.5 7.5h3.2v-4h2.6v4H17v2.4h-3.7V16c0 1.1.4 1.6 1.4 1.6.7 0 1.4-.2 2.1-.5l.7 2.2c-1 .5-2.1.8-3.3.8-2.5 0-3.5-1.4-3.5-3.8V9.9H7.5V7.5z' })
   )
 };
 
@@ -5015,6 +5028,12 @@ const Parachord = () => {
   const [loadingBio, setLoadingBio] = useState(false);
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
+  // On Tour tab state (artist-specific concerts)
+  const [artistConcerts, setArtistConcerts] = useState([]);
+  const [artistConcertsLoading, setArtistConcertsLoading] = useState(false);
+  const [artistConcertsLoaded, setArtistConcertsLoaded] = useState(false);
+  const artistConcertsCache = useRef({}); // { normalizedArtistName: { events: [], timestamp } }
+  const [artistConcertsTicketFlyout, setArtistConcertsTicketFlyout] = useState(null);
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
   const [loadingRelease, setLoadingRelease] = useState(false);
   const [prefetchedReleases, setPrefetchedReleases] = useState({}); // Cache for on-hover prefetched release tracks: { releaseId: { tracks: [...], title, albumArt } }
@@ -5048,13 +5067,15 @@ const Parachord = () => {
     recommendations: false,
     criticsPicks: false,
     charts: false,
-    newReleases: false
+    newReleases: false,
+    concerts: false
   });
   const discoverySeenHashes = useRef({
     recommendations: null,
     criticsPicks: null,
     charts: null,
-    newReleases: null
+    newReleases: null,
+    concerts: null
   });
 
   // HOME view state
@@ -5420,6 +5441,27 @@ const Parachord = () => {
   const [newReleasesFilter, setNewReleasesFilter] = useState('all'); // 'all' | 'album' | 'ep' | 'single'
   const [newReleasesFilterDropdownOpen, setNewReleasesFilterDropdownOpen] = useState(false);
 
+  // Concerts page state
+  const [concerts, setConcerts] = useState([]);
+  const [concertsLoading, setConcertsLoading] = useState(false);
+  const [concertsLoaded, setConcertsLoaded] = useState(false);
+  const [concertsError, setConcertsError] = useState(null);
+  const [concertsHeaderCollapsed, setConcertsHeaderCollapsed] = useState(false);
+  const [concertsSearchOpen, setConcertsSearchOpen] = useState(false);
+  const [concertsSearch, setConcertsSearch] = useState('');
+  const [concertsSourceFilter, setConcertsSourceFilter] = useState('all'); // 'all' | 'bandsintown' | 'songkick' | 'seatgeek' | 'ticketmaster' | 'ai'
+  const [concertsSourceFilterDropdownOpen, setConcertsSourceFilterDropdownOpen] = useState(false);
+  const [concertsLocation, setConcertsLocation] = useState(''); // User's location display text (e.g. "New York", "London, UK")
+  const [concertsLocationCoords, setConcertsLocationCoords] = useState(null); // { lat, lng } resolved coordinates
+  const [concertsLocationRadius, setConcertsLocationRadius] = useState(50); // radius in miles
+  const [concertsLocationOpen, setConcertsLocationOpen] = useState(false);
+  const [concertsGeocodingLoading, setConcertsGeocodingLoading] = useState(false);
+  const [concertsLocationSuggestions, setConcertsLocationSuggestions] = useState([]);
+  const concertsLocationSearchTimer = useRef(null);
+  const concertsCache = useRef({ events: null, timestamp: 0 });
+  const [concertsTicketFlyout, setConcertsTicketFlyout] = useState(null); // event ID of open flyout
+  const [concertsArtistImages, setConcertsArtistImages] = useState({}); // { normalizedArtistName: { url, facePosition } }
+
   // Recommendations page state
   const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
   const [recommendationsTab, setRecommendationsTab] = useState('artists'); // 'artists' | 'songs'
@@ -5614,6 +5656,42 @@ const Parachord = () => {
     }
   }, [newReleasesFilterDropdownOpen]);
 
+  // Close concerts location dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setConcertsLocationOpen(false);
+    if (concertsLocationOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [concertsLocationOpen]);
+
+  // Close concerts ticket flyout when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setConcertsTicketFlyout(null);
+    if (concertsTicketFlyout) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [concertsTicketFlyout]);
+
+  // Close artist concerts ticket flyout when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setArtistConcertsTicketFlyout(null);
+    if (artistConcertsTicketFlyout) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [artistConcertsTicketFlyout]);
+
+  // Close concerts source filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setConcertsSourceFilterDropdownOpen(false);
+    if (concertsSourceFilterDropdownOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [concertsSourceFilterDropdownOpen]);
+
   // Close history sort dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = () => setHistorySortDropdownOpen(false);
@@ -5779,6 +5857,15 @@ const Parachord = () => {
       setNewReleasesHeaderCollapsed(false);
       setNewReleasesSearchOpen(false);
       setNewReleasesSearch('');
+    }
+  }, [activeView]);
+
+  // Reset concerts header collapse when leaving concerts view
+  useEffect(() => {
+    if (activeView !== 'concerts') {
+      setConcertsHeaderCollapsed(false);
+      setConcertsSearchOpen(false);
+      setConcertsSearch('');
     }
   }, [activeView]);
 
@@ -6536,6 +6623,13 @@ const Parachord = () => {
       setArtistBio(null);
       setArtistExtendedInfo(null);
       setRelatedArtists([]);
+    }
+    // Reset and proactively load artist concerts for the On Tour tab
+    setArtistConcerts([]);
+    setArtistConcertsLoaded(false);
+    setArtistConcertsTicketFlyout(null);
+    if (currentArtist?.name) {
+      loadArtistConcerts(currentArtist.name);
     }
   }, [currentArtist]);
 
@@ -7547,7 +7641,8 @@ const Parachord = () => {
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
     charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
-    newReleases: 6 * 60 * 60 * 1000         // 6 hours (new releases don't change that often)
+    newReleases: 6 * 60 * 60 * 1000,        // 6 hours (new releases don't change that often)
+    concerts: 24 * 60 * 60 * 1000              // 24 hours (concert listings don't change that often)
   };
 
   // Cache for recommendations data (tracks from API)
@@ -7593,6 +7688,14 @@ const Parachord = () => {
     );
 
     return [...fromLoader, ...fromState];
+  };
+
+  // Check if a service is enabled based on its config and auth requirements
+  const isServiceEnabled = (service) => {
+    const config = metaServiceConfigs[service.id] || {};
+    if (config.enabled === false) return false;
+    const noKeyNeeded = service.requiresAuth === false || service.settings?.requiresAuth === false;
+    return noKeyNeeded ? config.enabled === true : !!config.apiKey;
   };
 
   // Check if a scrobbler service (Last.fm or ListenBrainz) is connected
@@ -7739,8 +7842,12 @@ const Parachord = () => {
         const metaServicesWithChat = metaServiceAxes.filter(axe =>
           axe.capabilities?.chat && axe.implementation?.chat
         );
+        // Meta services with concerts capability need implementation functions loaded
+        const metaServicesWithConcerts = metaServiceAxes.filter(axe =>
+          axe.capabilities?.concerts && axe.implementation?.searchArtistEvents
+        );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat)`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat, ${metaServicesWithConcerts.length} with concerts)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -7761,6 +7868,10 @@ const Parachord = () => {
           metaServicesWithChat.length > 0
             ? resolverLoader.current.loadResolvers(metaServicesWithChat).then(r =>
                 console.log(`💬 Loaded ${r.length} chat service(s):`, r.map(s => s.name).join(', ')))
+            : Promise.resolve(),
+          metaServicesWithConcerts.length > 0
+            ? resolverLoader.current.loadResolvers(metaServicesWithConcerts).then(r =>
+                console.log(`🎫 Loaded ${r.length} concert service(s):`, r.map(s => s.name).join(', ')))
             : Promise.resolve()
         ]);
 
@@ -9165,7 +9276,7 @@ const Parachord = () => {
           case 'artist': {
             const [artistName, tab] = segments;
             if (artistName) {
-              if (tab && ['music', 'biography', 'related'].includes(tab)) {
+              if (tab && ['music', 'biography', 'related', 'on-tour'].includes(tab)) {
                 pendingProtocolTabRef.current = tab;
               }
               setActiveView('artist');
@@ -9326,6 +9437,10 @@ const Parachord = () => {
 
           case 'new-releases':
             setActiveView('new-releases');
+            break;
+
+          case 'concerts':
+            setActiveView('concerts');
             break;
 
           case 'search': {
@@ -12320,6 +12435,15 @@ ${trackListXml}
       window.electron.store.set('playlists_view_mode', playlistsViewMode);
     }
   }, [playlistsViewMode, cacheLoaded]);
+
+  // Persist concerts location preference (text, coords, radius)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('concerts_location', concertsLocation);
+      window.electron.store.set('concerts_location_coords', concertsLocationCoords);
+      window.electron.store.set('concerts_location_radius', concertsLocationRadius);
+    }
+  }, [concertsLocation, concertsLocationCoords, concertsLocationRadius, cacheLoaded]);
 
   // Persist selected chat provider (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -15517,11 +15641,8 @@ ${trackListXml}
   // AI Playlist Generation
   const handleAiGenerate = async (prompt) => {
     const aiServices = getAiServices();
-    // Filter to only enabled services with API keys
-    const enabledServices = aiServices.filter(s => {
-      const config = metaServiceConfigs[s.id] || {};
-      return !!config.apiKey;
-    });
+    // Filter to only enabled services with valid config
+    const enabledServices = aiServices.filter(isServiceEnabled);
 
     if (enabledServices.length === 0) {
       setAiError('No AI plugins configured. Enable OpenAI or Gemini and add your API key in Settings → General.');
@@ -16748,12 +16869,7 @@ ${trackListXml}
   const openAiChat = () => {
     const chatServices = getChatServices();
     // Filter to only enabled services with required config
-    const enabledServices = chatServices.filter(s => {
-      const config = metaServiceConfigs[s.id] || {};
-      // Services that don't require auth (e.g. Ollama) just need enabled toggle
-      const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-      return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-    });
+    const enabledServices = chatServices.filter(isServiceEnabled);
 
     if (enabledServices.length === 0) {
       showToast('No AI chat plugins configured. Enable Ollama or Claude in Settings.', 'error');
@@ -17779,20 +17895,39 @@ ${trackListXml}
     }
 
     try {
-      // Batch-load all caches in parallel (each is an independent IPC roundtrip)
-      const [
-        albumArtData, artistData, trackSourcesData, artistImageData,
-        albumReleaseIdData, playlistCoverData, chartsData, newReleasesData
-      ] = await Promise.all([
-        window.electron.store.get('cache_album_art'),
-        window.electron.store.get('cache_artist_data'),
-        window.electron.store.get('cache_track_sources'),
-        window.electron.store.get('cache_artist_images'),
-        window.electron.store.get('cache_album_release_ids'),
-        window.electron.store.get('cache_playlist_covers'),
-        window.electron.store.get('cache_charts'),
-        window.electron.store.get('cache_new_releases')
-      ]);
+      // Single IPC roundtrip for ALL keys (caches + settings + preferences)
+      const allKeys = [
+        // Caches
+        'cache_album_art', 'cache_artist_data', 'cache_track_sources', 'cache_artist_images',
+        'cache_album_release_ids', 'cache_playlist_covers', 'cache_charts', 'cache_new_releases',
+        'cache_concerts', 'cache_ai_suggestions', 'last_active_view',
+        // Resolver settings & user preferences
+        'active_resolvers', 'resolver_order', 'meta_service_configs',
+        'applemusic_developer_token', 'friends', 'pinnedFriendIds',
+        'autoPinnedFriendIds', 'resolver_volume_offsets', 'skip_external_prompt',
+        'auto_launch_spotify', 'skip_unsaved_friend_warning', 'remember_queue',
+        'show_discovery_badges', 'playlists_view_mode', 'ai_include_history',
+        'recommendation_blocklist', 'resolver_blocklist', 'ai_chat_histories',
+        'selected_chat_provider', 'discovery_seen_recommendations', 'discovery_seen_criticsPicks',
+        'discovery_seen_charts',
+        // Concerts location
+        'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
+        // Queue & tutorial
+        'saved_queue', 'saved_playback_context', 'saved_shuffle_state',
+        'tutorial_completed', 'whats_new_dismissed_version'
+      ];
+      const d = window.electron.store.getBatch
+        ? await window.electron.store.getBatch(allKeys)
+        : Object.fromEntries(await Promise.all(allKeys.map(async k => [k, await window.electron.store.get(k)])));
+
+      const albumArtData = d['cache_album_art'];
+      const artistData = d['cache_artist_data'];
+      const trackSourcesData = d['cache_track_sources'];
+      const artistImageData = d['cache_artist_images'];
+      const albumReleaseIdData = d['cache_album_release_ids'];
+      const playlistCoverData = d['cache_playlist_covers'];
+      const chartsData = d['cache_charts'];
+      const newReleasesData = d['cache_new_releases'];
 
       const now = Date.now();
 
@@ -17902,11 +18037,27 @@ ${trackListXml}
         }
       }
 
-      // Batch-load AI suggestions and view restoration data in parallel
-      const [aiSuggestionsData, savedLastView] = await Promise.all([
-        window.electron.store.get('cache_ai_suggestions'),
-        window.electron.store.get('last_active_view')
-      ]);
+      // Load concerts cache
+      const concertsData = d['cache_concerts'];
+      if (concertsData && concertsData.events && concertsData.events.length > 0) {
+        const now = Date.now();
+        if (concertsData.timestamp && (now - concertsData.timestamp) < CACHE_TTL.concerts) {
+          concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
+          setConcerts(concertsData.events);
+          setConcertsLoaded(true);
+          console.log(`📦 Loaded ${concertsData.events.length} concerts from cache`);
+        } else {
+          // Stale but still useful to display immediately
+          concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
+          setConcerts(concertsData.events);
+          setConcertsLoaded(true);
+          console.log(`📦 Loaded ${concertsData.events.length} stale concerts from cache (will refresh)`);
+        }
+      }
+
+      // AI suggestions and view restoration (already loaded in batch)
+      const aiSuggestionsData = d['cache_ai_suggestions'];
+      const savedLastView = d['last_active_view'];
 
       // Load AI suggestions cache (show previous session's suggestions instantly)
       if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
@@ -17978,7 +18129,7 @@ ${trackListXml}
       // Set activeView immediately after display-critical cached data (new releases, AI suggestions)
       // so the UI can render with cached results while the rest of settings continue loading.
       if (savedLastView) {
-        const validViews = ['home', 'library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases'];
+        const validViews = ['home', 'library', 'search', 'artist', 'playlists', 'playlist-view', 'discover', 'critics-picks', 'recommendations', 'history', 'settings', 'friends', 'friendHistory', 'new-releases', 'concerts'];
         if (validViews.includes(savedLastView.view)) {
           // For artist view, we need to restore the artist data
           if (savedLastView.view === 'artist' && savedLastView.artistName) {
@@ -18102,40 +18253,29 @@ ${trackListXml}
         setViewHistory(['home']);
       }
 
-      // Batch-load all resolver settings and user preferences in parallel
-      const [
-        savedActiveResolvers, savedResolverOrder, savedMetaServiceConfigs,
-        savedAppleMusicDevToken, savedFriends, savedPinnedFriendIds,
-        savedAutoPinnedFriendIds, savedVolumeOffsets, savedSkipExternalPrompt,
-        savedAutoLaunchSpotify, savedSkipUnsavedFriendWarning, savedRememberQueue,
-        savedShowDiscoveryBadges, savedPlaylistsViewMode, savedAiIncludeHistory,
-        savedBlocklist, savedResolverBlocklist, savedAiChatHistories,
-        savedChatProvider, savedSeenRecommendations, savedSeenCriticsPicks,
-        savedSeenCharts
-      ] = await Promise.all([
-        window.electron.store.get('active_resolvers'),
-        window.electron.store.get('resolver_order'),
-        window.electron.store.get('meta_service_configs'),
-        window.electron.store.get('applemusic_developer_token'),
-        window.electron.store.get('friends'),
-        window.electron.store.get('pinnedFriendIds'),
-        window.electron.store.get('autoPinnedFriendIds'),
-        window.electron.store.get('resolver_volume_offsets'),
-        window.electron.store.get('skip_external_prompt'),
-        window.electron.store.get('auto_launch_spotify'),
-        window.electron.store.get('skip_unsaved_friend_warning'),
-        window.electron.store.get('remember_queue'),
-        window.electron.store.get('show_discovery_badges'),
-        window.electron.store.get('playlists_view_mode'),
-        window.electron.store.get('ai_include_history'),
-        window.electron.store.get('recommendation_blocklist'),
-        window.electron.store.get('resolver_blocklist'),
-        window.electron.store.get('ai_chat_histories'),
-        window.electron.store.get('selected_chat_provider'),
-        window.electron.store.get('discovery_seen_recommendations'),
-        window.electron.store.get('discovery_seen_criticsPicks'),
-        window.electron.store.get('discovery_seen_charts')
-      ]);
+      // Resolver settings and user preferences (already loaded in batch)
+      const savedActiveResolvers = d['active_resolvers'];
+      const savedResolverOrder = d['resolver_order'];
+      const savedMetaServiceConfigs = d['meta_service_configs'];
+      const savedAppleMusicDevToken = d['applemusic_developer_token'];
+      const savedFriends = d['friends'];
+      const savedPinnedFriendIds = d['pinnedFriendIds'];
+      const savedAutoPinnedFriendIds = d['autoPinnedFriendIds'];
+      const savedVolumeOffsets = d['resolver_volume_offsets'];
+      const savedSkipExternalPrompt = d['skip_external_prompt'];
+      const savedAutoLaunchSpotify = d['auto_launch_spotify'];
+      const savedSkipUnsavedFriendWarning = d['skip_unsaved_friend_warning'];
+      const savedRememberQueue = d['remember_queue'];
+      const savedShowDiscoveryBadges = d['show_discovery_badges'];
+      const savedPlaylistsViewMode = d['playlists_view_mode'];
+      const savedAiIncludeHistory = d['ai_include_history'];
+      const savedBlocklist = d['recommendation_blocklist'];
+      const savedResolverBlocklist = d['resolver_blocklist'];
+      const savedAiChatHistories = d['ai_chat_histories'];
+      const savedChatProvider = d['selected_chat_provider'];
+      const savedSeenRecommendations = d['discovery_seen_recommendations'];
+      const savedSeenCriticsPicks = d['discovery_seen_criticsPicks'];
+      const savedSeenCharts = d['discovery_seen_charts'];
 
       if (savedActiveResolvers) {
         // Deduplicate and strip removed resolvers (e.g. qobuz) from persisted data
@@ -18332,6 +18472,17 @@ ${trackListXml}
         console.log('📦 Loaded last used chat provider:', savedChatProvider);
       }
 
+      // Load concerts location preference (text, coords, radius) — already in batch
+      const savedConcertsLocation = d['concerts_location'];
+      const savedConcertsCoords = d['concerts_location_coords'];
+      const savedConcertsRadius = d['concerts_location_radius'];
+      if (savedConcertsLocation) {
+        setConcertsLocation(savedConcertsLocation);
+        if (savedConcertsCoords) setConcertsLocationCoords(savedConcertsCoords);
+        if (savedConcertsRadius) setConcertsLocationRadius(savedConcertsRadius);
+        console.log('📦 Loaded concerts location:', savedConcertsLocation, savedConcertsCoords ? `(${savedConcertsCoords.lat.toFixed(2)}, ${savedConcertsCoords.lng.toFixed(2)})` : '(no coords)', `${savedConcertsRadius || 50}mi`);
+      }
+
       // Load discovery feature seen hashes (for unread badges)
       discoverySeenHashes.current = {
         recommendations: savedSeenRecommendations || null,
@@ -18340,14 +18491,12 @@ ${trackListXml}
       };
       console.log('📦 Loaded discovery seen hashes');
 
-      // Load saved queue, playback context, shuffle state, tutorial, and version info in parallel
-      const [savedQueue, savedPlaybackContext, savedShuffleState, tutorialCompleted, dismissedVersion] = await Promise.all([
-        savedRememberQueue ? window.electron.store.get('saved_queue') : Promise.resolve(null),
-        savedRememberQueue ? window.electron.store.get('saved_playback_context') : Promise.resolve(null),
-        savedRememberQueue ? window.electron.store.get('saved_shuffle_state') : Promise.resolve(null),
-        window.electron.store.get('tutorial_completed'),
-        window.electron.store.get('whats_new_dismissed_version')
-      ]);
+      // Queue, playback context, shuffle state, tutorial, version — already in batch
+      const savedQueue = savedRememberQueue ? d['saved_queue'] : null;
+      const savedPlaybackContext = savedRememberQueue ? d['saved_playback_context'] : null;
+      const savedShuffleState = savedRememberQueue ? d['saved_shuffle_state'] : null;
+      const tutorialCompleted = d['tutorial_completed'];
+      const dismissedVersion = d['whats_new_dismissed_version'];
 
       // Restore saved queue if remember queue is enabled
       if (savedRememberQueue) {
@@ -18565,8 +18714,11 @@ ${trackListXml}
     } else if (activeView === 'new-releases' && newReleases.length > 0) {
       const hash = generateDiscoveryHash(newReleases);
       markDiscoverySeen('newReleases', hash);
+    } else if (activeView === 'concerts' && concerts.length > 0) {
+      const hash = generateDiscoveryHash(concerts);
+      markDiscoverySeen('concerts', hash);
     }
-  }, [activeView, recommendations.artists, criticsPicks, charts, newReleases, generateDiscoveryHash, markDiscoverySeen]);
+  }, [activeView, recommendations.artists, criticsPicks, charts, newReleases, concerts, generateDiscoveryHash, markDiscoverySeen]);
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
@@ -23868,6 +24020,768 @@ ${tracks}
     }
   };
 
+  // ─── CONCERTS ─────────────────────────────────────────────────────────────
+
+  // Gather artists from user's collection and listening history for concert lookup
+  const gatherConcertsArtists = async () => {
+    const seen = new Set();
+    const collectionArtists = [];
+    const libraryArtists = [];
+    const historyArtists = [];
+
+    // Source 1: Collection artists
+    if (collectionData.artists?.length > 0) {
+      collectionData.artists.forEach(a => {
+        const key = a.name.trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          collectionArtists.push({ name: a.name, source: 'collection' });
+        }
+      });
+    }
+
+    // Source 2: Artists from collection tracks
+    if (collectionData.tracks?.length > 0) {
+      collectionData.tracks.forEach(t => {
+        if (t.artist) {
+          const key = t.artist.trim().toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            libraryArtists.push({ name: t.artist, source: 'library' });
+          }
+        }
+      });
+    }
+
+    // Source 3: Artists from collection albums
+    if (collectionData.albums?.length > 0) {
+      collectionData.albums.forEach(a => {
+        if (a.artist) {
+          const key = a.artist.trim().toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            libraryArtists.push({ name: a.artist, source: 'library' });
+          }
+        }
+      });
+    }
+
+    // Source 4: Top artists from listening history (Last.fm and/or ListenBrainz)
+    let historyArtistData = topArtists.artists || [];
+    if (historyArtistData.length === 0) {
+      const historyFetches = [];
+
+      const lastfmConfig = metaServiceConfigs.lastfm;
+      const apiKey = getLastfmApiKey();
+      if (lastfmConfig?.username && apiKey) {
+        historyFetches.push((async () => {
+          try {
+            const url = `https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=6month&limit=40`;
+            const response = await lastfmFetch(url);
+            if (response.ok) {
+              const data = await response.json();
+              return (data.topartists?.artist || []).map(a => ({ name: a.name }));
+            }
+          } catch (e) {
+            console.log('🎤 Could not fetch Last.fm top artists for concerts:', e.message);
+          }
+          return [];
+        })());
+      }
+
+      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+      if (listenbrainzConfig?.username) {
+        historyFetches.push((async () => {
+          try {
+            const response = await fetch(
+              `https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=half_yearly&count=40`
+            );
+            if (response.ok && response.status !== 204) {
+              const data = await response.json();
+              return (data.payload?.artists || []).map(a => ({ name: a.artist_name }));
+            }
+          } catch (e) {
+            console.log('🎤 Could not fetch ListenBrainz top artists for concerts:', e.message);
+          }
+          return [];
+        })());
+      }
+
+      if (historyFetches.length > 0) {
+        const results = await Promise.all(historyFetches);
+        const mergedNames = new Set();
+        historyArtistData = [];
+        for (const result of results) {
+          for (const a of result) {
+            const key = a.name.trim().toLowerCase();
+            if (!mergedNames.has(key)) {
+              mergedNames.add(key);
+              historyArtistData.push(a);
+            }
+          }
+        }
+      }
+    }
+
+    if (historyArtistData.length > 0) {
+      historyArtistData.forEach(a => {
+        const key = a.name.trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          historyArtists.push({ name: a.name, source: 'history' });
+        }
+      });
+    }
+
+    // Interleave sources so each gets fair representation
+    const maxArtists = 40;
+    const buckets = [collectionArtists, libraryArtists, historyArtists].filter(b => b.length > 0);
+    const artistList = [];
+    let round = 0;
+    while (artistList.length < maxArtists) {
+      let added = false;
+      for (const bucket of buckets) {
+        if (round < bucket.length && artistList.length < maxArtists) {
+          artistList.push(bucket[round]);
+          added = true;
+        }
+      }
+      if (!added) break;
+      round++;
+    }
+
+    console.log(`🎤 Found ${collectionArtists.length + libraryArtists.length + historyArtists.length} unique artists for concerts (${collectionArtists.length} collection, ${libraryArtists.length} library, ${historyArtists.length} history), checking ${artistList.length}`);
+    return artistList;
+  };
+
+  // Haversine distance between two lat/lng points in miles
+  const haversineDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 3958.8; // Earth radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  // Geocode a location string to coordinates using Nominatim (OpenStreetMap)
+  const geocodeLocation = async (query) => {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'Parachord/1.0', 'Accept': 'application/json' }
+    });
+    if (!resp.ok) return null;
+    const results = await resp.json();
+    if (!results || results.length === 0) return null;
+    const r = results[0];
+    return {
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lon),
+      displayName: r.display_name?.split(',').slice(0, 2).join(',').trim() || query
+    };
+  };
+
+  // Search Nominatim for location suggestions (returns multiple results)
+  const searchLocationSuggestions = async (query) => {
+    if (!query || query.trim().length < 2) return [];
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`;
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Parachord/1.0', 'Accept': 'application/json' }
+      });
+      if (!resp.ok) return [];
+      const results = await resp.json();
+      return results.map(r => {
+        const addr = r.address || {};
+        const name = addr.city || addr.town || addr.village || addr.county || addr.state || r.display_name?.split(',').slice(0, 2).join(',').trim() || query;
+        const region = addr.state || addr.country || '';
+        return {
+          lat: parseFloat(r.lat),
+          lng: parseFloat(r.lon),
+          name: name,
+          region: region && region !== name ? `${name}, ${region}` : name,
+          displayName: r.display_name?.split(',').slice(0, 2).join(',').trim() || query
+        };
+      });
+    } catch (e) {
+      console.log('📍 Location search error:', e.message);
+      return [];
+    }
+  };
+
+  // Use browser geolocation to get user's current coordinates, with IP-based fallback
+  const getBrowserGeolocation = async () => {
+    // Try navigator.geolocation first
+    try {
+      const pos = await new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error('Geolocation not supported'));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          (err) => reject(err),
+          { enableHighAccuracy: false, timeout: 10000 }
+        );
+      });
+      return pos;
+    } catch (browserErr) {
+      console.log('📍 Browser geolocation failed, trying IP lookup:', browserErr.message);
+    }
+    // Fallback: IP-based geolocation — try multiple services
+    const ipServices = [
+      {
+        url: 'https://ipapi.co/json/',
+        parse: (d) => d.latitude && d.longitude ? { lat: d.latitude, lng: d.longitude } : null
+      },
+      {
+        url: 'http://ip-api.com/json/?fields=lat,lon,status',
+        parse: (d) => d.status === 'success' && d.lat && d.lon ? { lat: d.lat, lng: d.lon } : null
+      },
+      {
+        url: 'https://ipwho.is/',
+        parse: (d) => d.success !== false && d.latitude && d.longitude ? { lat: d.latitude, lng: d.longitude } : null
+      }
+    ];
+    for (const svc of ipServices) {
+      try {
+        const resp = await fetch(svc.url, { headers: { 'Accept': 'application/json' } });
+        if (resp.ok) {
+          const data = await resp.json();
+          const pos = svc.parse(data);
+          if (pos) return pos;
+        }
+      } catch (e) {
+        console.log(`📍 IP geolocation failed (${svc.url}):`, e.message);
+      }
+    }
+    throw new Error('Could not determine your location');
+  };
+
+  // Reverse geocode coordinates to a display name
+  const reverseGeocode = async (lat, lng) => {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=10`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'Parachord/1.0', 'Accept': 'application/json' }
+    });
+    if (!resp.ok) return `${lat.toFixed(2)}, ${lng.toFixed(2)}`;
+    const data = await resp.json();
+    const addr = data.address || {};
+    return addr.city || addr.town || addr.village || addr.county || data.display_name?.split(',').slice(0, 2).join(',').trim() || `${lat.toFixed(2)}, ${lng.toFixed(2)}`;
+  };
+
+  // Get dedicated concert service plugins (Bandsintown, Songkick, SeatGeek) that are enabled and have auth
+  const getConcertServices = () => {
+    const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
+    return allResolvers.filter(r => {
+      if (!r.capabilities?.concerts || !r.searchArtistEvents) return false;
+      const config = metaServiceConfigs[r.id] || {};
+      // Respect explicit disable toggle
+      if (config.enabled === false) return false;
+      const noKeyNeeded = r.requiresAuth === false || r.settings?.requiresAuth === false;
+      // No-auth services require an explicit enabled toggle (same as AI concert services)
+      if (noKeyNeeded) return config.enabled === true;
+      // Auth-required services: check the plugin's expected auth field (e.g. clientId, appId, apiKey)
+      const configurable = r.settings?.configurable || r.configurable || {};
+      const authField = Object.keys(configurable).find(k => k !== 'model') || 'apiKey';
+      return !!(config[authField] || config.apiKey);
+    });
+  };
+
+  // Get AI chat services that can suggest concerts
+  const getAiConcertServices = () => {
+    const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
+    return allResolvers.filter(r => {
+      if (!r.capabilities?.concerts || !r.capabilities?.chat || !r.chat) return false;
+      return isServiceEnabled(r);
+    });
+  };
+
+  // Load concerts for user's favorite artists
+  const loadConcerts = async (forceRefresh = false) => {
+    if (concertsLoading) return;
+
+    // If we already have data in state and aren't force-refreshing, just show it
+    if (!forceRefresh && concerts.length > 0 && concertsLoaded) {
+      console.log(`🎤 Using ${concerts.length} cached concerts from state`);
+      return;
+    }
+
+    // Check ref cache as fallback
+    const now = Date.now();
+    if (!forceRefresh && concertsCache.current.events && concertsCache.current.events.length > 0) {
+      const cacheAge = now - concertsCache.current.timestamp;
+      if (cacheAge < CACHE_TTL.concerts) {
+        console.log(`🎤 Using ref-cached concerts (${Math.round(cacheAge / 60000)}m old)`);
+        setConcerts(concertsCache.current.events);
+        setConcertsLoaded(true);
+        return;
+      }
+      // Stale cache: show it immediately, then continue to refresh in background
+      console.log(`🎤 Showing ${concertsCache.current.events.length} stale cached concerts while refreshing...`);
+      setConcerts(concertsCache.current.events);
+      setConcertsLoaded(true);
+    }
+
+    // Check for enabled concert services (dedicated + AI)
+    const concertServices = getConcertServices();
+    const aiConcertServices = getAiConcertServices();
+    if (concertServices.length === 0 && aiConcertServices.length === 0) {
+      // Only show the error if we have no cached data to display
+      if (!concertsCache.current.events || concertsCache.current.events.length === 0) {
+        setConcertsError('no_services');
+      }
+      setConcertsLoaded(true);
+      return;
+    }
+
+    setConcertsLoading(true);
+    setConcertsError(null);
+    console.log(`🎤 Loading concerts from ${concertServices.length} dedicated + ${aiConcertServices.length} AI service(s)...`);
+
+    try {
+      const artistList = await gatherConcertsArtists();
+
+      // Build a lookup from artist name to their source (collection/library/history)
+      const artistSourceMap = {};
+      for (const a of artistList) {
+        artistSourceMap[a.name.trim().toLowerCase()] = a.source;
+      }
+
+      if (artistList.length === 0) {
+        console.log('🎤 No artists found in collection or history for concerts');
+        setConcerts([]);
+        setConcertsLoaded(true);
+        setConcertsLoading(false);
+        return;
+      }
+
+      // Snapshot prior cached events for merging
+      const priorCachedEvents = [...(concertsCache.current.events || [])];
+
+      const allEvents = [];
+      const seenEventKeys = new Set();
+
+      // Normalize a string for dedup comparison: lowercase, strip common
+      // suffixes/punctuation, collapse whitespace so "Madison Square Garden"
+      // matches "Madison Square Garden, New York" from another source.
+      const normalizeForDedup = (str) =>
+        (str || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+
+      // Build a dedup key that's resilient to minor venue name differences
+      // across providers.  Two events match if same date + same artist AND
+      // either (a) venue names share a long common prefix, or (b) both
+      // have lat/lng within ~1 km.
+      const makeEventKey = (event, artistName) => {
+        const date = event.date || '';
+        const artist = normalizeForDedup(artistName);
+        // Use first 20 chars of normalized venue as the key — long enough
+        // to distinguish venues but short enough to collapse minor trailing
+        // differences like city/state suffixes.
+        const venuePrefix = normalizeForDedup(event.venue?.name).slice(0, 20);
+        return `${date}-${artist}-${venuePrefix}`;
+      };
+
+      // Secondary dedup: same date + artist + geo-proximity (within ~2 km)
+      const geoKey = (event, artistName) => {
+        if (!event.venue?.latitude || !event.venue?.longitude) return null;
+        const lat = Math.round(event.venue.latitude * 50) / 50; // ~2 km buckets
+        const lng = Math.round(event.venue.longitude * 50) / 50;
+        return `${event.date || ''}-${normalizeForDedup(artistName)}-${lat},${lng}`;
+      };
+
+      const seenGeoKeys = new Set();
+      // Map dedup keys to event index in allEvents for merging ticket sources
+      const eventKeyToIndex = new Map();
+      const geoKeyToEventKey = new Map();
+
+      // Helper to build a ticket source entry from an event
+      const makeTicketSource = (event) => ({
+        source: event.source,
+        aiProvider: event.aiProvider || null,
+        aiProviderName: event.aiProviderName || null,
+        ticketUrl: event.ticketUrl || event.url || null,
+        label: event.source === 'bandsintown' ? 'Bandsintown'
+          : event.source === 'songkick' ? 'Songkick'
+          : event.source === 'seatgeek' ? 'SeatGeek'
+          : event.source === 'ticketmaster' ? 'Ticketmaster'
+          : event.source === 'ai' ? (event.aiProviderName || 'AI')
+          : event.source || 'Unknown'
+      });
+
+      // Helper to add an event with dedup — merges ticket sources on match
+      const addEventDeduped = (event, artistName, artistSource) => {
+        const key = makeEventKey(event, artistName);
+        const gk = geoKey(event, artistName);
+
+        // Check if we already have this event (by text key or geo key)
+        let existingKey = eventKeyToIndex.has(key) ? key : null;
+        if (!existingKey && gk && geoKeyToEventKey.has(gk)) {
+          existingKey = geoKeyToEventKey.get(gk);
+        }
+
+        if (existingKey) {
+          // Merge: add this source's ticket info to the existing event
+          const idx = eventKeyToIndex.get(existingKey);
+          const existing = allEvents[idx];
+          const newSource = makeTicketSource(event);
+          if (newSource.ticketUrl && !existing.ticketSources.some(s => s.source === newSource.source && s.aiProvider === newSource.aiProvider)) {
+            existing.ticketSources.push(newSource);
+          }
+          // Merge lineup if richer
+          if (event.lineup && event.lineup.length > (existing.lineup || []).length) {
+            existing.lineup = event.lineup;
+          }
+          return false;
+        }
+
+        // New event — initialize ticketSources array and artist source
+        event.ticketSources = [makeTicketSource(event)];
+        if (artistSource) event.artistSource = artistSource;
+        seenEventKeys.add(key);
+        if (gk) {
+          seenGeoKeys.add(gk);
+          geoKeyToEventKey.set(gk, key);
+        }
+        eventKeyToIndex.set(key, allEvents.length);
+        allEvents.push(event);
+        return true;
+      };
+
+      // Run dedicated service queries and AI queries in parallel
+      // Use concurrency pool to avoid hammering APIs while keeping it fast
+      const dedicatedPromise = (async () => {
+        const dedicatedEvents = [];
+        const concurrency = 5; // max parallel artist queries
+        let idx = 0;
+        const fetchArtist = async (artist) => {
+          const results = [];
+          for (const service of concertServices) {
+            try {
+              const rawConfig = metaServiceConfigs[service.id] || {};
+              // Map generic apiKey to the plugin's expected field (e.g. clientId, appId)
+              const authField = Object.keys(service.configurable || {}).find(k => k !== 'model');
+              const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
+                ? { ...rawConfig, [authField]: rawConfig.apiKey }
+                : rawConfig;
+              const events = await service.searchArtistEvents(artist.name, config);
+              if (events && events.length > 0) {
+                results.push(...events.map(e => ({ event: e, artist: artist.name })));
+              }
+            } catch (e) {
+              console.log(`🎤 Error fetching concerts for ${artist.name} from ${service.id}:`, e.message);
+            }
+          }
+          return results;
+        };
+        const runNext = async () => {
+          while (idx < artistList.length) {
+            const i = idx++;
+            const results = await fetchArtist(artistList[i]);
+            dedicatedEvents.push(...results);
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(concurrency, artistList.length) }, () => runNext()));
+        return dedicatedEvents;
+      })();
+
+      // AI queries — batch artists in groups of 15, run all batches in parallel
+      const aiPromise = (async () => {
+        if (aiConcertServices.length === 0) return [];
+
+        let aiService = aiConcertServices[0];
+        if (selectedChatProvider) {
+          const preferred = aiConcertServices.find(s => s.id === selectedChatProvider);
+          if (preferred) aiService = preferred;
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        const currentYear = new Date().getFullYear();
+        const config = metaServiceConfigs[aiService.id] || {};
+        const providerName = aiService.name || aiService.id;
+
+        // Split artists into batches of 15 for better per-artist coverage
+        const AI_BATCH_SIZE = 15;
+        const artistBatches = [];
+        for (let i = 0; i < artistList.length; i += AI_BATCH_SIZE) {
+          artistBatches.push(artistList.slice(i, i + AI_BATCH_SIZE));
+        }
+
+        // Run all batches in parallel
+        const batchResults = await Promise.allSettled(artistBatches.map(async (batch) => {
+          const artistNames = batch.map(a => a.name).join(', ');
+          const prompt = `What upcoming concerts, tours, or festival appearances do you know about for these artists: ${artistNames}
+
+Today's date is ${today}. Share any concert dates, announced tours, festival lineups, residencies, or live events you know about from ${currentYear} onward for these artists. Include events from known annual festivals (Coachella, Glastonbury, Lollapalooza, etc.) if these artists are on the lineup. If an artist has announced a tour, include the dates you know about. Aim for multiple events per artist where possible.
+
+Return ONLY a JSON array. Each event object should have:
+- "artist": artist name
+- "title": event title (e.g. "Artist Name at Venue" or "Festival Name ${currentYear}")
+- "date": date in YYYY-MM-DD format (use your best estimate if only month is known, e.g. first of the month)
+- "venue": object with "name", "city", "region", "country"
+- "url": ticket or event URL if known, or empty string
+- "description": brief note (e.g. "Part of World Tour ${currentYear}", "Festival headliner")
+
+Return ONLY the JSON array, no other text.`;
+
+          const messages = [
+            { role: 'system', content: `You are a knowledgeable music events assistant. Your job is to share what you know about upcoming concerts, tours, and festival appearances. You have extensive knowledge of announced tours, festival lineups, residencies, and live music events. Share all relevant events you know about — include announced tours, festival bookings, and recurring events. Use ${currentYear} dates. Return valid JSON arrays only.` },
+            { role: 'user', content: prompt }
+          ];
+
+          const response = await aiService.chat(messages, [], config);
+          if (!response?.content) return [];
+
+          const jsonMatch = response.content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          const aiEvents = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(response.content);
+          if (!Array.isArray(aiEvents)) return [];
+
+          return aiEvents.map(aiEvent => ({
+            id: `ai-${aiService.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            source: 'ai',
+            aiProvider: aiService.id,
+            aiProviderName: providerName,
+            artist: aiEvent.artist || '',
+            title: aiEvent.title || `${aiEvent.artist || 'Unknown'} Concert`,
+            datetime: aiEvent.date ? new Date(aiEvent.date).toISOString() : '',
+            date: aiEvent.date || '',
+            venue: {
+              name: aiEvent.venue?.name || 'Venue TBA',
+              city: aiEvent.venue?.city || '',
+              region: aiEvent.venue?.region || '',
+              country: aiEvent.venue?.country || ''
+            },
+            ticketUrl: aiEvent.url || '',
+            url: aiEvent.url || '',
+            description: aiEvent.description || 'AI-suggested event'
+          }));
+        }));
+
+        const aiEvents = [];
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled' && result.value.length > 0) {
+            aiEvents.push(...result.value);
+          } else if (result.status === 'rejected') {
+            console.log(`🎤 AI concert batch failed:`, result.reason?.message || result.reason);
+          }
+        }
+        console.log(`🎤 AI service ${aiService.id} suggested ${aiEvents.length} concert events (${artistBatches.length} parallel batches)`);
+        return aiEvents;
+      })();
+
+      // Wait for both dedicated and AI queries to complete
+      const [dedicatedResults, aiResults] = await Promise.all([dedicatedPromise, aiPromise]);
+
+      // Add dedicated service results
+      for (const { event, artist } of dedicatedResults) {
+        addEventDeduped(event, artist, artistSourceMap[artist.trim().toLowerCase()]);
+      }
+      // Add AI results
+      for (const aiEvent of aiResults) {
+        addEventDeduped(aiEvent, aiEvent.artist, artistSourceMap[(aiEvent.artist || '').trim().toLowerCase()]);
+      }
+
+      // Merge fresh results with prior cached events (so we don't lose results
+      // from artists that weren't in this run's selection)
+      const merged = [...allEvents, ...priorCachedEvents];
+      const seenMergeKeys = new Map(); // key -> index in uniqueEvents
+      const today = new Date().toISOString().split('T')[0];
+      const uniqueEvents = [];
+      for (const e of merged) {
+        if (e.date && e.date < today) continue; // Drop past events
+        const key = `${e.date || ''}-${normalizeForDedup(e.artist)}-${normalizeForDedup(e.venue?.name).slice(0, 20)}`;
+        if (seenMergeKeys.has(key)) {
+          // Merge ticketSources from duplicate into existing
+          const idx = seenMergeKeys.get(key);
+          const existing = uniqueEvents[idx];
+          if (e.ticketSources) {
+            for (const src of e.ticketSources) {
+              if (src.ticketUrl && !existing.ticketSources?.some(s => s.source === src.source && s.aiProvider === src.aiProvider)) {
+                (existing.ticketSources = existing.ticketSources || []).push(src);
+              }
+            }
+          }
+          continue;
+        }
+        // Ensure ticketSources exists (for legacy cached events)
+        if (!e.ticketSources) {
+          e.ticketSources = [makeTicketSource(e)];
+        }
+        seenMergeKeys.set(key, uniqueEvents.length);
+        uniqueEvents.push(e);
+      }
+      uniqueEvents.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+      console.log(`🎤 Found ${allEvents.length} fresh + ${priorCachedEvents.length} cached → ${uniqueEvents.length} unique concerts for ${artistList.length} artists`);
+
+      setConcerts(uniqueEvents);
+      setConcertsLoaded(true);
+
+      concertsCache.current = { events: uniqueEvents, timestamp: Date.now() };
+
+      const hash = generateDiscoveryHash(uniqueEvents);
+      checkDiscoveryUnread('concerts', hash);
+
+      // Persist to store
+      try {
+        await window.electron.store.set('cache_concerts', { events: uniqueEvents, timestamp: Date.now() });
+      } catch (e) {
+        console.log('🎤 Could not persist concerts cache:', e.message);
+      }
+
+    } catch (error) {
+      console.error('Failed to load concerts:', error);
+      setConcertsError('Failed to load concerts. Please try again.');
+    } finally {
+      setConcertsLoading(false);
+    }
+  };
+
+  // Load concerts for a specific artist (On Tour tab)
+  const loadArtistConcerts = async (artistName, forceRefresh = false) => {
+    if (!artistName || artistConcertsLoading) return;
+
+    const normalizedName = artistName.trim().toLowerCase();
+    const now = Date.now();
+
+    // Check ref cache
+    if (!forceRefresh && artistConcertsCache.current[normalizedName]) {
+      const cached = artistConcertsCache.current[normalizedName];
+      if ((now - cached.timestamp) < CACHE_TTL.concerts) {
+        console.log(`🎸 Using cached artist concerts for ${artistName} (${cached.events.length} events)`);
+        setArtistConcerts(cached.events);
+        setArtistConcertsLoaded(true);
+        return;
+      }
+    }
+
+    const concertServices = getConcertServices();
+    if (concertServices.length === 0) {
+      setArtistConcerts([]);
+      setArtistConcertsLoaded(true);
+      return;
+    }
+
+    setArtistConcertsLoading(true);
+    console.log(`🎸 Loading concerts for ${artistName} from ${concertServices.length} service(s)...`);
+
+    try {
+      const allEvents = [];
+      const eventKeyToIndex = new Map();
+      const geoKeyToEventKey = new Map();
+
+      const normalizeForDedup = (str) =>
+        (str || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+
+      const makeEventKey = (event) => {
+        const date = event.date || '';
+        const artist = normalizeForDedup(artistName);
+        const venuePrefix = normalizeForDedup(event.venue?.name).slice(0, 20);
+        return `${date}-${artist}-${venuePrefix}`;
+      };
+
+      const geoKey = (event) => {
+        if (!event.venue?.latitude || !event.venue?.longitude) return null;
+        const lat = Math.round(event.venue.latitude * 50) / 50;
+        const lng = Math.round(event.venue.longitude * 50) / 50;
+        return `${event.date || ''}-${normalizeForDedup(artistName)}-${lat},${lng}`;
+      };
+
+      const makeTicketSource = (event) => ({
+        source: event.source,
+        ticketUrl: event.ticketUrl || event.url || null,
+        label: event.source === 'bandsintown' ? 'Bandsintown'
+          : event.source === 'songkick' ? 'Songkick'
+          : event.source === 'seatgeek' ? 'SeatGeek'
+          : event.source === 'ticketmaster' ? 'Ticketmaster'
+          : event.source || 'Unknown'
+      });
+
+      const addEventDeduped = (event) => {
+        const key = makeEventKey(event);
+        const gk = geoKey(event);
+
+        let existingKey = eventKeyToIndex.has(key) ? key : null;
+        if (!existingKey && gk && geoKeyToEventKey.has(gk)) {
+          existingKey = geoKeyToEventKey.get(gk);
+        }
+
+        if (existingKey) {
+          const idx = eventKeyToIndex.get(existingKey);
+          const existing = allEvents[idx];
+          const newSource = makeTicketSource(event);
+          if (newSource.ticketUrl && !existing.ticketSources.some(s => s.source === newSource.source)) {
+            existing.ticketSources.push(newSource);
+          }
+          if (event.lineup && event.lineup.length > (existing.lineup || []).length) {
+            existing.lineup = event.lineup;
+          }
+          return;
+        }
+
+        event.ticketSources = [makeTicketSource(event)];
+        if (gk) geoKeyToEventKey.set(gk, key);
+        eventKeyToIndex.set(key, allEvents.length);
+        allEvents.push(event);
+      };
+
+      // Query all concert services in parallel for this single artist
+      const results = await Promise.allSettled(
+        concertServices.map(async (service) => {
+          const rawConfig = metaServiceConfigs[service.id] || {};
+          const authField = Object.keys(service.configurable || service.settings?.configurable || {}).find(k => k !== 'model');
+          const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
+            ? { ...rawConfig, [authField]: rawConfig.apiKey }
+            : rawConfig;
+          return service.searchArtistEvents(artistName, config);
+        })
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+          for (const event of result.value) {
+            addEventDeduped(event);
+          }
+        }
+      }
+
+      // Filter to future dates only and sort
+      const today = new Date().toISOString().split('T')[0];
+      const futureEvents = allEvents
+        .filter(e => !e.date || e.date >= today)
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+      console.log(`🎸 Found ${futureEvents.length} upcoming concerts for ${artistName}`);
+
+      setArtistConcerts(futureEvents);
+      setArtistConcertsLoaded(true);
+
+      // Cache results
+      artistConcertsCache.current[normalizedName] = { events: futureEvents, timestamp: Date.now() };
+    } catch (error) {
+      console.error(`Failed to load concerts for ${artistName}:`, error);
+      setArtistConcerts([]);
+      setArtistConcertsLoaded(true);
+    } finally {
+      setArtistConcertsLoading(false);
+    }
+  };
+
+  // Handle scroll for Concerts header collapse
+  const handleConcertsScroll = (e) => {
+    const scrollTop = e.target.scrollTop;
+    const container = e.target;
+    if (scrollTop > 100 && !concertsHeaderCollapsed) {
+      const hasEnoughContent = container.scrollHeight - container.clientHeight > 300;
+      if (hasEnoughContent) {
+        setConcertsHeaderCollapsed(true);
+      }
+    } else if (scrollTop <= 50 && concertsHeaderCollapsed) {
+      setConcertsHeaderCollapsed(false);
+    }
+  };
+
   // Load Recommendations from Last.fm and/or ListenBrainz (merged and de-duped)
   const loadRecommendations = async (forceRefresh = false) => {
     // Check if Last.fm or ListenBrainz is configured
@@ -24268,11 +25182,7 @@ ${tracks}
   // Load AI-generated recommendations for the home page
   const loadAiRecommendations = async (onUpdate) => {
     const chatServices = getChatServices();
-    const enabledServices = chatServices.filter(s => {
-      const config = metaServiceConfigs[s.id] || {};
-      const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-      return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-    });
+    const enabledServices = chatServices.filter(isServiceEnabled);
 
     if (enabledServices.length === 0) return null;
 
@@ -24619,11 +25529,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (aiSuggestionsRefreshing.current) return; // Already fetching
 
       const chatServices = getChatServices();
-      const hasEnabledChat = chatServices.some(s => {
-        const config = metaServiceConfigs[s.id] || {};
-        const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-        return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-      });
+      const hasEnabledChat = chatServices.some(isServiceEnabled);
 
       if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
 
@@ -24726,6 +25632,63 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       loadNewReleases();
     }
   }, [cacheLoaded, newReleasesLoaded, newReleasesLoading]);
+
+  // Lazily pre-load concerts in the background after startup (lowest priority)
+  // This ensures concert data is ready before the user navigates to the tab
+  const concertsBackgroundLoaded = useRef(false);
+  useEffect(() => {
+    if (!cacheLoaded || concertsBackgroundLoaded.current) return;
+    concertsBackgroundLoaded.current = true;
+    const scheduleLoad = window.requestIdleCallback || ((cb) => setTimeout(cb, 200));
+    // Delay to let higher-priority startup tasks finish first
+    const timer = setTimeout(() => {
+      scheduleLoad(() => {
+        console.log('🎤 Background: pre-loading concerts...');
+        loadConcerts();
+      });
+    }, 3 * 60 * 1000); // 3 min after cache loaded — lowest priority
+    return () => clearTimeout(timer);
+  }, [cacheLoaded]);
+
+  // Also load concerts immediately when navigating to the tab (if not already loaded)
+  useEffect(() => {
+    if (activeView === 'concerts' && cacheLoaded) {
+      loadConcerts();
+    }
+  }, [activeView, cacheLoaded]);
+
+  // Load artist images for concerts when concert data changes
+  useEffect(() => {
+    if (concerts.length === 0) return;
+    const uniqueArtists = [...new Set(concerts.map(e => e.artist).filter(Boolean))];
+    // Only fetch images for artists we don't already have
+    const toFetch = uniqueArtists.filter(name => {
+      const key = name.trim().toLowerCase();
+      return !concertsArtistImages[key];
+    });
+    if (toFetch.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      // Batch fetch in groups of 5 to avoid overloading
+      for (let i = 0; i < toFetch.length && !cancelled; i += 5) {
+        const batch = toFetch.slice(i, i + 5);
+        const results = await Promise.allSettled(batch.map(name => getArtistImage(name)));
+        if (cancelled) return;
+        const updates = {};
+        batch.forEach((name, idx) => {
+          const result = results[idx];
+          if (result.status === 'fulfilled' && result.value?.url) {
+            updates[name.trim().toLowerCase()] = result.value;
+          }
+        });
+        if (Object.keys(updates).length > 0) {
+          setConcertsArtistImages(prev => ({ ...prev, ...updates }));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [concerts]);
 
   // Load recommendations when navigating to the page or when config changes
   useEffect(() => {
@@ -28407,6 +29370,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return 'parachord://critics-picks';
       case 'new-releases':
         return 'parachord://new-releases';
+      case 'concerts':
+        return 'parachord://concerts';
       case 'search':
         return searchQuery ? `parachord://search?q=${encodeURIComponent(searchQuery)}` : 'parachord://search';
       case 'playlists':
@@ -30722,6 +31687,28 @@ useEffect(() => {
                 })
               )
             ),
+            React.createElement('button', {
+              onClick: () => {
+                navigateTo('concerts');
+              },
+              className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
+              style: {
+                backgroundColor: activeView === 'concerts' ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
+                color: activeView === 'concerts' ? '#8b5cf6' : 'var(--nav-inactive)',
+                fontWeight: activeView === 'concerts' ? '500' : '400'
+              }
+            },
+              // Ticket icon for Concerts
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' })
+              ),
+              React.createElement('span', { className: 'flex items-center gap-1.5' },
+                'Concerts',
+                showDiscoveryBadges && discoveryUnread.concerts && React.createElement('span', {
+                  className: 'w-2 h-2 rounded-full bg-violet-500 animate-pulse'
+                })
+              )
+            ),
           ),
 
           // FRIENDS section (always visible so new users can discover and add friends)
@@ -31551,7 +32538,8 @@ useEffect(() => {
           },
             // Sticky filter bar for Artists (sort dropdown + search on right like other pages)
             searchDetailCategory === 'artists' && React.createElement('div', {
-              className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
+              className: 'sticky top-0 z-10 flex items-center px-6 py-3',
+              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
               React.createElement('div', { className: 'relative' },
@@ -31636,7 +32624,8 @@ useEffect(() => {
 
             // Sticky filter bar for Albums (sort dropdown + search like Critical Darlings)
             searchDetailCategory === 'albums' && React.createElement('div', {
-              className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
+              className: 'sticky top-0 z-10 flex items-center px-6 py-3',
+              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
               React.createElement('div', { className: 'relative' },
@@ -31727,7 +32716,8 @@ useEffect(() => {
 
             // Sticky filter bar for Songs (sort dropdown + search)
             searchDetailCategory === 'tracks' && React.createElement('div', {
-              className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
+              className: 'sticky top-0 z-10 flex items-center px-6 py-3',
+              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown
               React.createElement('div', { className: 'relative' },
@@ -33545,7 +34535,7 @@ useEffect(() => {
               className: 'flex items-center gap-1 mt-6',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              ['music', 'biography', 'related'].map((tab, index) => [
+              ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])].map((tab, index) => [
                 index > 0 && React.createElement('span', {
                   key: `sep-${tab}`,
                   className: 'text-gray-400 mx-2'
@@ -33570,7 +34560,7 @@ useEffect(() => {
                       ? 'text-white'
                       : 'text-gray-400 hover:text-white'
                   }`
-                }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
+                }, tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
             ),
             // Play Top Tracks button - responsive sizing
@@ -33665,7 +34655,7 @@ useEffect(() => {
               className: 'flex items-center gap-1',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              ['music', 'biography', 'related'].map((tab, index) => [
+              ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])].map((tab, index) => [
                 index > 0 && React.createElement('span', {
                   key: `sep-collapsed-${tab}`,
                   className: 'text-gray-400 mx-2'
@@ -33689,7 +34679,7 @@ useEffect(() => {
                       ? 'text-white'
                       : 'text-gray-400 hover:text-white'
                   }`
-                }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
+                }, tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
             ),
             // Right side: Play Top Tracks button - responsive sizing
@@ -33775,7 +34765,7 @@ useEffect(() => {
               className: 'flex items-center gap-1',
               style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
             },
-              ['music', 'biography', 'related'].map((tab, index) => [
+              ['music', 'biography', 'related', ...((artistConcertsLoaded && artistConcerts.length > 0) || artistPageTab === 'on-tour' ? ['on-tour'] : [])].map((tab, index) => [
                 index > 0 && React.createElement('span', {
                   key: `sep-release-${tab}`,
                   className: 'text-gray-400 mx-2'
@@ -33814,7 +34804,7 @@ useEffect(() => {
                       ? 'text-white'
                       : 'text-gray-400 hover:text-white'
                   }`
-                }, tab === 'related' ? 'Related Artists' : tab.charAt(0).toUpperCase() + tab.slice(1))
+                }, tab === 'related' ? 'Related Artists' : tab === 'on-tour' ? 'On Tour' : tab.charAt(0).toUpperCase() + tab.slice(1))
               ]).flat().filter(Boolean)
             )
           )
@@ -34881,7 +35871,8 @@ useEffect(() => {
             return React.createElement(React.Fragment, null,
               // Sticky filter bar - show when both services are configured
               hasBothServicesConfigured && React.createElement('div', {
-                className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
+                className: 'sticky top-0 z-10 flex items-center px-6 py-3',
+              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
               },
                 React.createElement('div', { className: 'flex gap-2' },
                   [
@@ -35047,10 +36038,251 @@ useEffect(() => {
                 )
               )
             );
+          })(),
+
+          // On Tour tab — upcoming concerts for this artist
+          artistPageTab === 'on-tour' && (() => {
+            const isDark = effectiveTheme === 'dark';
+            const events = artistConcerts;
+
+            // Group events by month
+            const grouped = {};
+            for (const event of events) {
+              const date = event.date ? new Date(event.date + 'T00:00:00') : null;
+              const monthKey = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : 'unknown';
+              const monthLabel = date ? date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Date TBA';
+              if (!grouped[monthKey]) {
+                grouped[monthKey] = { label: monthLabel, events: [] };
+              }
+              grouped[monthKey].events.push(event);
+            }
+            const sortedMonths = Object.keys(grouped).sort();
+
+            return React.createElement('div', { className: 'p-6' },
+              // Header row with count and refresh
+              React.createElement('div', {
+                className: `flex items-center justify-between mb-6`
+              },
+                React.createElement('div', { className: 'flex items-center gap-3' },
+                  React.createElement('h2', {
+                    className: `text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`
+                  }, `${events.length} Upcoming Concert${events.length !== 1 ? 's' : ''}`),
+                  artistConcertsLoading && React.createElement('svg', {
+                    className: 'w-4 h-4 animate-spin text-violet-500',
+                    fill: 'none', viewBox: '0 0 24 24'
+                  },
+                    React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
+                    React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
+                  )
+                ),
+                React.createElement('button', {
+                  onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
+                  disabled: artistConcertsLoading,
+                  className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-violet-500' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`,
+                  title: artistConcertsLoading ? 'Loading...' : 'Refresh'
+                },
+                  React.createElement('svg', {
+                    className: `w-4 h-4 ${artistConcertsLoading ? 'animate-spin' : ''}`,
+                    fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                  },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                  )
+                )
+              ),
+
+              // Empty state
+              events.length === 0 && !artistConcertsLoading && React.createElement('div', {
+                className: 'flex flex-col items-center justify-center py-12'
+              },
+                React.createElement('p', { className: `text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}` }, 'No upcoming concerts found.')
+              ),
+
+              // Loading state
+              events.length === 0 && artistConcertsLoading && React.createElement('div', {
+                className: 'flex flex-col items-center justify-center py-12'
+              },
+                React.createElement('svg', {
+                  className: 'w-8 h-8 animate-spin text-violet-500 mb-3',
+                  fill: 'none', viewBox: '0 0 24 24'
+                },
+                  React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
+                  React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
+                ),
+                React.createElement('p', { className: `text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}` }, 'Loading concerts...')
+              ),
+
+              // Month-grouped event list
+              sortedMonths.map(monthKey =>
+                React.createElement('div', { key: monthKey, className: 'mb-8' },
+                  React.createElement('h3', {
+                    className: `text-sm font-semibold uppercase tracking-wider mb-3 px-1 ${isDark ? 'text-gray-400' : 'text-gray-400'}`
+                  }, grouped[monthKey].label),
+
+                  React.createElement('div', { className: 'space-y-3' },
+                    grouped[monthKey].events.map((event, eventIdx) => {
+                      const eventDate = event.date ? new Date(event.date + 'T00:00:00') : null;
+                      const dayOfWeek = eventDate ? eventDate.toLocaleDateString('en-US', { weekday: 'short' }) : '';
+                      const dayNum = eventDate ? eventDate.getDate() : '?';
+                      const monthShort = eventDate ? eventDate.toLocaleDateString('en-US', { month: 'short' }) : '';
+                      const location = [event.venue?.city, event.venue?.region, event.venue?.country].filter(Boolean).join(', ');
+
+                      return React.createElement('div', {
+                        key: event.id || `${monthKey}-${eventIdx}`,
+                        className: `flex items-center gap-4 p-4 rounded-xl border cursor-default group ${isDark ? 'bg-gray-800/50 border-gray-700/50' : 'bg-white border-gray-100'}`,
+                        style: {
+                          animation: 'fadeIn 300ms ease-out both',
+                          animationDelay: `${eventIdx * 30}ms`
+                        }
+                      },
+                        // Date column
+                        React.createElement('div', {
+                          className: 'flex flex-col items-center text-center',
+                          style: { minWidth: '56px' }
+                        },
+                          React.createElement('span', {
+                            className: 'text-xs font-medium text-violet-500 uppercase'
+                          }, monthShort),
+                          React.createElement('span', {
+                            className: `text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`
+                          }, dayNum),
+                          React.createElement('span', {
+                            className: 'text-xs text-gray-400 uppercase'
+                          }, dayOfWeek)
+                        ),
+
+                        // Event details
+                        React.createElement('div', { className: 'flex-1 min-w-0' },
+                          React.createElement('div', { className: 'flex items-center gap-2 mb-0.5' },
+                            React.createElement('span', {
+                              className: `font-semibold truncate ${isDark ? 'text-white' : 'text-gray-900'}`
+                            }, event.title || `${currentArtist?.name || event.artist} live`),
+                            // Source badges
+                            ...(() => {
+                              const bgAlpha = isDark ? 0.2 : 0.1;
+                              const srcColors = {
+                                bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
+                                songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
+                                seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
+                                ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
+                              };
+                              const badgeLabel = (src) => src.source === 'bandsintown' ? 'BIT' : src.source === 'songkick' ? 'SK' : src.source === 'seatgeek' ? 'SG' : src.source === 'ticketmaster' ? 'TM' : (src.label || 'Unknown');
+                              const badgeFullName = (src) => src.source === 'bandsintown' ? 'Bandsintown' : src.source === 'songkick' ? 'Songkick' : src.source === 'seatgeek' ? 'SeatGeek' : src.source === 'ticketmaster' ? 'Ticketmaster' : (src.label || 'Unknown');
+                              const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
+                              const hasAiSource = sources.some(s => s.source === 'ai');
+                              const badges = sources.map((src, si) => {
+                                const c = srcColors[src.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };
+                                return React.createElement('span', {
+                                  key: `badge-${si}`,
+                                  className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
+                                  style: { backgroundColor: c.bg, color: c.text },
+                                  title: badgeFullName(src)
+                                }, badgeLabel(src));
+                              });
+                              if (hasAiSource) {
+                                badges.push(React.createElement('span', {
+                                  key: 'ai-disclaimer',
+                                  className: 'text-xs text-violet-400 italic flex-shrink-0',
+                                  title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
+                                }, 'AI generated results may be hallucinations'));
+                              }
+                              return badges;
+                            })()
+                          ),
+                          React.createElement('div', {
+                            className: `text-sm truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`
+                          }, event.venue?.name || 'Venue TBA'),
+                          location && React.createElement('div', {
+                            className: `text-xs truncate mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                          }, location),
+                          event.lineup && event.lineup.length > 1 && React.createElement('div', {
+                            className: `text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                          }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== (currentArtist?.name || '').toLowerCase()).join(', '))
+                        ),
+
+                        // Ticket button with provider flyout
+                        (() => {
+                          const sources = (event.ticketSources || []).filter(s => s.ticketUrl);
+                          const eventId = event.id || `${monthKey}-${eventIdx}`;
+                          if (sources.length === 0) return null;
+                          if (sources.length === 1) {
+                            return React.createElement('a', {
+                              href: sources[0].ticketUrl,
+                              target: '_blank',
+                              rel: 'noopener noreferrer',
+                              className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
+                                style: { backgroundColor: '#7c3aed', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; },
+                              onClick: (e) => e.stopPropagation()
+                            }, 'Tickets');
+                          }
+                          const isOpen = artistConcertsTicketFlyout === eventId;
+                          return React.createElement('div', { className: 'relative flex-shrink-0' },
+                            React.createElement('button', {
+                              onClick: (e) => {
+                                e.stopPropagation();
+                                setArtistConcertsTicketFlyout(isOpen ? null : eventId);
+                              },
+                              className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
+                                style: { backgroundColor: '#7c3aed', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
+                            },
+                              'Tickets',
+                              React.createElement('svg', {
+                                className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`,
+                                fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                              },
+                                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
+                              )
+                            ),
+                            isOpen && React.createElement('div', {
+                              className: `absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`,
+                              style: { minWidth: '180px' },
+                              onClick: (e) => e.stopPropagation()
+                            },
+                              sources.map((src, si) => {
+                                const srcColors = {
+                                  bandsintown: isDark ? '#2dd4bf' : '#00B4B3',
+                                  songkick: isDark ? '#fb7185' : '#F80046',
+                                  seatgeek: isDark ? '#fb923c' : '#FC4C02',
+                                  ticketmaster: isDark ? '#60a5fa' : '#026CDF'
+                                };
+                                const color = srcColors[src.source] || (isDark ? '#a78bfa' : '#8b5cf6');
+                                return React.createElement('a', {
+                                  key: si,
+                                  href: src.ticketUrl,
+                                  target: '_blank',
+                                  rel: 'noopener noreferrer',
+                                  className: `flex items-center gap-2 px-4 py-2 text-sm transition-colors ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`,
+                                  onClick: () => setArtistConcertsTicketFlyout(null)
+                                },
+                                  React.createElement('span', {
+                                    className: 'w-2 h-2 rounded-full flex-shrink-0',
+                                    style: { backgroundColor: color }
+                                  }),
+                                  React.createElement('span', { className: isDark ? 'text-gray-200' : 'text-gray-700' }, src.label),
+                                  React.createElement('svg', {
+                                    className: 'w-3 h-3 text-gray-400 ml-auto',
+                                    fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                                  },
+                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' })
+                                  )
+                                );
+                              })
+                            )
+                          );
+                        })()
+                      );
+                    })
+                  )
+                )
+              )
+            );
           })()
         )
       )
-      
+
       // Main content area - Playlist Page loading state (waiting for playlist to be resolved)
       : activeView === 'playlist-view' && !selectedPlaylist ? React.createElement('div', {
         className: 'flex-1 flex flex-col',
@@ -35117,7 +36349,8 @@ useEffect(() => {
         },
           // PLAYLIST DETAILS sticky bar with breadcrumb (same as loaded state)
           React.createElement('div', {
-            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200'
+            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4',
+            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
             // Breadcrumb navigation: Playlists > Playlist Name
             React.createElement('div', {
@@ -35292,7 +36525,8 @@ useEffect(() => {
         },
           // PLAYLIST DETAILS section header with breadcrumb and Edit buttons (sticky)
           React.createElement('div', {
-            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200'
+            className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4',
+            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
             // Breadcrumb navigation: Playlists > Playlist Name (or HOME for ephemeral)
             React.createElement('div', {
@@ -36338,8 +37572,8 @@ useEffect(() => {
         ),
         // Filter bar (outside scrollable area)
         React.createElement('div', {
-          className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
-          style: { flexShrink: 0 }
+          className: 'flex items-center px-6 py-3',
+          style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
         },
           // Sort dropdown
           React.createElement('div', { className: 'relative' },
@@ -36996,12 +38230,12 @@ useEffect(() => {
       : React.createElement('div', {
         className: `flex-1 ${
           // Views with custom scroll handling should not have overflow on parent
-          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView)
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'concerts'].includes(activeView)
             ? 'overflow-hidden'
             : 'overflow-y-auto scrollable-content'
         } ${
           // No padding for views with full-bleed heroes
-          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings'].includes(activeView) ? '' : 'p-6'
+          ['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'concerts'].includes(activeView) ? '' : 'p-6'
         }`,
         style: {
           minHeight: 0,
@@ -37010,7 +38244,7 @@ useEffect(() => {
         }
       },
         // Shared header - only show for views without custom heroes
-        !['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view'].includes(activeView) &&
+        !['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view', 'concerts'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
           React.createElement('h2', { className: 'text-2xl font-bold' },
             activeView === 'friends' ? 'Friends' :
@@ -37099,8 +38333,8 @@ useEffect(() => {
 
           // Sticky header bar with Collection Radio button
           React.createElement('div', {
-            className: 'flex items-center justify-end px-6 py-3 bg-white border-b border-gray-200',
-            style: { flexShrink: 0, minHeight: '52px' }
+            className: 'flex items-center justify-end px-6 py-3',
+            style: { flexShrink: 0, minHeight: '52px', backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
             // Start Collection Radio button
             (collectionData.tracks.length > 0 || library.length > 0) && React.createElement('button', {
@@ -38247,11 +39481,7 @@ useEffect(() => {
               // SECTION: AI Recommendations or Surprise Me fallback
               (() => {
                 const chatServices = getChatServices();
-                const hasEnabledChat = chatServices.some(s => {
-                  const config = metaServiceConfigs[s.id] || {};
-                  const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-                  return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-                });
+                const hasEnabledChat = chatServices.some(isServiceEnabled);
 
                 const aiRecs = homeData.aiRecommendations;
                 const hasAiRecs = aiRecs && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0);
@@ -39015,7 +40245,8 @@ useEffect(() => {
           },
             // Sticky filter bar
             React.createElement('div', {
-              className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
+              className: 'sticky top-0 z-10 flex items-center px-6 py-3',
+              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               // Sort dropdown (moved to left)
               React.createElement('div', { className: 'relative' },
@@ -40117,7 +41348,8 @@ useEffect(() => {
           ),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
-            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            className: 'flex items-center px-6 py-3',
+            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' },
             style: { flexShrink: 0 }
           },
               // Source dropdown (for Songs tab)
@@ -40891,7 +42123,8 @@ useEffect(() => {
           ),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
-            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            className: 'flex items-center px-6 py-3',
+            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' },
             style: { flexShrink: 0 }
           },
             // Type filter dropdown
@@ -41391,7 +42624,8 @@ useEffect(() => {
           ),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
-            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            className: 'flex items-center px-6 py-3',
+            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' },
             style: { flexShrink: 0 }
           },
             // Sort dropdown
@@ -41788,6 +43022,845 @@ useEffect(() => {
           )
         ),
 
+        // Concerts view with collapsible hero header
+        activeView === 'concerts' && (() => {
+          // Pre-compute filtered count so the header reflects active filters
+          const _searchL = concertsSearch.toLowerCase().trim();
+          const _locL = concertsLocation.toLowerCase().trim();
+          const filteredConcertsCount = concerts.filter(event => {
+            if (concertsSourceFilter !== 'all') {
+              if (concertsSourceFilter.startsWith('ai:')) {
+                if (event.source !== 'ai' || event.aiProvider !== concertsSourceFilter.slice(3)) return false;
+              } else if (event.source !== concertsSourceFilter) return false;
+            }
+            if (concertsLocationCoords) {
+              const vLat = event.venue?.latitude, vLng = event.venue?.longitude;
+              if (vLat != null && vLng != null) {
+                if (haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) > concertsLocationRadius) return false;
+              } else {
+                const city = (event.venue?.city || '').toLowerCase().trim();
+                const region = (event.venue?.region || '').toLowerCase().trim();
+                if (!(city && _locL.includes(city)) && !(region && _locL.includes(region))) return false;
+              }
+            } else if (_locL) {
+              const city = (event.venue?.city || '').toLowerCase().trim();
+              const region = (event.venue?.region || '').toLowerCase().trim();
+              if (!(city && _locL.includes(city)) && !(region && _locL.includes(region))) return false;
+            }
+            if (_searchL) {
+              const m = [event.artist, ...(event.lineup || []), event.venue?.name, event.venue?.city, event.title]
+                .some(s => s && s.toLowerCase().includes(_searchL));
+              if (!m) return false;
+            }
+            return true;
+          }).length;
+          return React.createElement('div', {
+          className: 'flex-1 flex flex-col h-full',
+          style: { overflow: 'hidden', minHeight: 0 }
+        },
+          // Header section (outside scrollable area)
+          React.createElement('div', {
+            className: 'relative',
+            style: {
+              height: concertsHeaderCollapsed ? '80px' : '320px',
+              flexShrink: 0,
+              transition: 'height 300ms ease-out',
+              overflow: 'hidden'
+            }
+          },
+              // Gradient background
+              React.createElement('div', {
+                className: 'absolute inset-0 bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-600'
+              }),
+              // Background pattern - musical notes
+              React.createElement('div', {
+                className: 'absolute inset-0',
+                style: {
+                  opacity: 0.15,
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' viewBox=\'0 0 80 80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.4\'%3E%3Ccircle cx=\'20\' cy=\'20\' r=\'3\'/%3E%3Ccircle cx=\'60\' cy=\'20\' r=\'2\'/%3E%3Ccircle cx=\'40\' cy=\'40\' r=\'2.5\'/%3E%3Ccircle cx=\'20\' cy=\'60\' r=\'2\'/%3E%3Ccircle cx=\'60\' cy=\'60\' r=\'3\'/%3E%3Cpath d=\'M10 45l4-15v12\' stroke=\'%23ffffff\' stroke-width=\'1\' fill=\'none\'/%3E%3Cpath d=\'M65 35l4-15v12\' stroke=\'%23ffffff\' stroke-width=\'1\' fill=\'none\'/%3E%3C/g%3E%3C/svg%3E")'
+                }
+              }),
+              // EXPANDED STATE - Centered content
+              !concertsHeaderCollapsed && React.createElement('div', {
+                className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10',
+                style: {
+                  opacity: concertsHeaderCollapsed ? 0 : 1,
+                  transition: 'opacity 300ms ease-out'
+                }
+              },
+                React.createElement('h1', {
+                  className: 'text-5xl font-light text-white',
+                  style: {
+                    textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+                    letterSpacing: '0.3em',
+                    textTransform: 'uppercase'
+                  },
+                  onContextMenu: copyParachordLink
+                }, 'CONCERTS'),
+                React.createElement('div', {
+                  className: 'flex items-center gap-1 mt-6',
+                  style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
+                },
+                  React.createElement('span', {
+                    className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
+                  }, filteredConcertsCount > 0 ? `${filteredConcertsCount} Upcoming Shows` : '')
+                ),
+                React.createElement('p', {
+                  className: 'mt-2 text-white/80 text-sm'
+                }, 'Upcoming concerts from artists you love')
+              ),
+              // COLLAPSED STATE - Inline layout
+              concertsHeaderCollapsed && React.createElement('div', {
+                className: 'absolute inset-0 flex items-center px-6 z-10',
+                style: {
+                  opacity: concertsHeaderCollapsed ? 1 : 0,
+                  transition: 'opacity 300ms ease-out'
+                }
+              },
+                React.createElement('h1', {
+                  className: 'text-2xl font-light text-white',
+                  style: {
+                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase'
+                  },
+                  onContextMenu: copyParachordLink
+                }, 'CONCERTS'),
+                React.createElement('div', { className: 'flex-1' }),
+                React.createElement('span', {
+                  className: 'text-sm font-medium uppercase tracking-wider text-white/80'
+                }, filteredConcertsCount > 0 ? `${filteredConcertsCount} Upcoming Shows` : '')
+              )
+          ),
+          // Filter bar (outside scrollable area)
+          (() => {
+            const isDark = effectiveTheme === 'dark';
+            return React.createElement('div', {
+            className: 'flex items-center px-6 py-3',
+            style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
+          },
+            // Source filter dropdown
+            React.createElement('div', { className: 'relative' },
+              (() => {
+                // Build options from sources that actually returned results
+                const sourceOptions = [{ value: 'all', label: 'All Sources' }];
+                const seenSources = new Set();
+                for (const event of concerts) {
+                  if (event.source === 'ai' && event.aiProvider) {
+                    const key = `ai:${event.aiProvider}`;
+                    if (!seenSources.has(key)) {
+                      seenSources.add(key);
+                      sourceOptions.push({ value: key, label: event.aiProviderName || event.aiProvider });
+                    }
+                  } else if (event.source && !seenSources.has(event.source)) {
+                    seenSources.add(event.source);
+                    const allResolvers = resolverLoaderRef.current ? resolverLoaderRef.current.getAllResolvers() : [];
+                    const resolver = allResolvers.find(r => r.id === event.source);
+                    sourceOptions.push({ value: event.source, label: resolver?.name || event.source });
+                  }
+                }
+                const selectedLabel = sourceOptions.find(o => o.value === concertsSourceFilter)?.label || 'All Sources';
+
+                return [
+                  React.createElement('button', {
+                    key: 'source-btn',
+                    onClick: (e) => { e.stopPropagation(); setConcertsSourceFilterDropdownOpen(!concertsSourceFilterDropdownOpen); },
+                    className: `flex items-center gap-1 px-3 py-1.5 text-sm transition-colors ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`
+                  },
+                    React.createElement('span', null, selectedLabel),
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                    )
+                  ),
+                  concertsSourceFilterDropdownOpen && React.createElement('div', {
+                    key: 'source-dropdown',
+                    className: `absolute left-0 top-full mt-1 rounded-lg shadow-lg py-1 min-w-[160px] z-30 border ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`
+                  },
+                    sourceOptions.map(option =>
+                      React.createElement('button', {
+                        key: option.value,
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          setConcertsSourceFilter(option.value);
+                          setConcertsSourceFilterDropdownOpen(false);
+                        },
+                        className: `w-full px-4 py-2 text-left text-sm flex items-center justify-between ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} ${
+                          concertsSourceFilter === option.value ? (isDark ? 'text-white font-medium' : 'text-gray-900 font-medium') : (isDark ? 'text-gray-300' : 'text-gray-600')
+                        }`
+                      },
+                        option.label,
+                        concertsSourceFilter === option.value && React.createElement('svg', {
+                          className: 'w-4 h-4',
+                          fill: 'none',
+                          viewBox: '0 0 24 24',
+                          stroke: 'currentColor'
+                        },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                        )
+                      )
+                    )
+                  )
+                ];
+              })()
+            ),
+            // Refresh button
+            React.createElement('button', {
+              onClick: () => loadConcerts(true),
+              disabled: concertsLoading,
+              className: `ml-2 p-1.5 transition-colors ${concertsLoading ? 'text-violet-500' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`,
+              title: concertsLoading ? 'Loading...' : 'Refresh'
+            },
+              React.createElement('svg', {
+                className: `w-4 h-4 ${concertsLoading ? 'animate-[spin_1s_linear_infinite_reverse]' : ''}`,
+                fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+              },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+              )
+            ),
+            // Location filter
+            React.createElement('div', { className: 'relative ml-2 flex items-center gap-1.5' },
+              // Location chip (shown when a location is active)
+              concertsLocationCoords && React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
+                className: 'flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium transition-colors',
+                style: { backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)' },
+                title: `${concertsLocation} (${concertsLocationRadius} mi radius)`
+              },
+                React.createElement('svg', { className: 'w-3 h-3 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' })
+                ),
+                React.createElement('span', { className: 'max-w-[120px] truncate' }, concertsLocation),
+                React.createElement('span', { style: { opacity: 0.7 } }, `${concertsLocationRadius}mi`),
+                // X to clear
+                React.createElement('span', {
+                  onClick: (e) => { e.stopPropagation(); setConcertsLocation(''); setConcertsLocationCoords(null); setConcertsLocationRadius(50); },
+                  className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
+                  style: { color: 'var(--accent-primary)' }
+                },
+                  React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M6 18L18 6M6 6l12 12' })
+                  )
+                )
+              ),
+              // Location pin button (shown when no location is active)
+              !concertsLocationCoords && React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
+                className: 'p-1.5 transition-colors',
+                style: { color: concertsLocation ? 'var(--accent-primary)' : 'var(--text-tertiary)' },
+                title: concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location'
+              },
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' }),
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 11a3 3 0 11-6 0 3 3 0 016 0z' })
+                )
+              ),
+              // Location dropdown panel
+              concertsLocationOpen && React.createElement('div', {
+                className: `absolute left-0 top-full mt-1 rounded-xl shadow-lg z-30 border ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`,
+                style: { width: '280px', padding: '14px' },
+                onClick: (e) => e.stopPropagation()
+              },
+                // Header
+                React.createElement('div', { className: `text-xs font-medium mb-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}` }, 'Filter by location'),
+                // Text input row
+                React.createElement('div', { className: 'flex items-center gap-2 mb-3' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: concertsLocation,
+                    onChange: (e) => {
+                      const val = e.target.value;
+                      setConcertsLocation(val);
+                      if (!val.trim()) {
+                        setConcertsLocationCoords(null);
+                        setConcertsLocationSuggestions([]);
+                        if (concertsLocationSearchTimer.current) clearTimeout(concertsLocationSearchTimer.current);
+                        return;
+                      }
+                      // Debounced search
+                      if (concertsLocationSearchTimer.current) clearTimeout(concertsLocationSearchTimer.current);
+                      concertsLocationSearchTimer.current = setTimeout(async () => {
+                        const results = await searchLocationSuggestions(val.trim());
+                        setConcertsLocationSuggestions(results);
+                      }, 350);
+                    },
+                    onKeyDown: async (e) => {
+                      if (e.key === 'Enter' && concertsLocation.trim()) {
+                        setConcertsLocationSuggestions([]);
+                        setConcertsGeocodingLoading(true);
+                        const result = await geocodeLocation(concertsLocation.trim());
+                        setConcertsGeocodingLoading(false);
+                        if (result) {
+                          setConcertsLocationCoords({ lat: result.lat, lng: result.lng });
+                          setConcertsLocation(result.displayName);
+                        }
+                      }
+                    },
+                    autoFocus: true,
+                    placeholder: 'City or region...',
+                    className: `flex-1 text-sm outline-none rounded-lg px-3.5 py-2.5 transition-colors ${isDark ? 'bg-gray-700 text-gray-200 placeholder-gray-500 border border-gray-600 focus:border-violet-500' : 'bg-gray-50 text-gray-700 placeholder-gray-400 border border-gray-200 focus:border-violet-400'}`
+                  }),
+                  // "Use my location" button
+                  React.createElement('button', {
+                    onClick: async () => {
+                      setConcertsGeocodingLoading(true);
+                      setConcertsLocationSuggestions([]);
+                      try {
+                        const pos = await getBrowserGeolocation();
+                        setConcertsLocationCoords({ lat: pos.lat, lng: pos.lng });
+                        const name = await reverseGeocode(pos.lat, pos.lng);
+                        setConcertsLocation(name);
+                      } catch (err) {
+                        console.log('📍 Geolocation error:', err.message);
+                        showToast('Could not determine your location');
+                      }
+                      setConcertsGeocodingLoading(false);
+                    },
+                    disabled: concertsGeocodingLoading,
+                    className: `p-1.5 rounded-lg transition-colors flex-shrink-0 ${isDark ? 'text-gray-400 hover:text-violet-400 hover:bg-gray-700' : 'text-gray-400 hover:text-violet-500 hover:bg-gray-100'}`,
+                    title: 'Use my location'
+                  },
+                    concertsGeocodingLoading
+                      ? React.createElement('svg', { className: 'w-4 h-4 animate-[spin_1s_linear_infinite_reverse]', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                        )
+                      : React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                          React.createElement('circle', { cx: 12, cy: 12, r: 3, strokeWidth: 2 }),
+                          React.createElement('path', { strokeLinecap: 'round', strokeWidth: 2, d: 'M12 2v4m0 12v4m10-10h-4M6 12H2' })
+                        )
+                  )
+                ),
+                // Location search suggestions
+                concertsLocationSuggestions.length > 0 && !concertsLocationCoords && React.createElement('div', {
+                  className: `rounded-lg overflow-hidden mb-3 border ${isDark ? 'bg-gray-750 border-gray-600' : 'bg-gray-50 border-gray-200'}`,
+                  style: { maxHeight: '160px', overflowY: 'auto' }
+                },
+                  concertsLocationSuggestions.map((suggestion, i) =>
+                    React.createElement('button', {
+                      key: i,
+                      onClick: () => {
+                        setConcertsLocationCoords({ lat: suggestion.lat, lng: suggestion.lng });
+                        setConcertsLocation(suggestion.displayName);
+                        setConcertsLocationSuggestions([]);
+                      },
+                      className: `w-full text-left px-2.5 py-2 text-xs transition-colors flex items-center gap-2 ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`,
+                      style: i > 0 ? { borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` } : {}
+                    },
+                      React.createElement('svg', { className: `w-3 h-3 flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-gray-400'}`, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' })
+                      ),
+                      React.createElement('span', { className: 'truncate' }, suggestion.region)
+                    )
+                  )
+                ),
+                // Status line
+                concertsLocationCoords && React.createElement('div', {
+                  className: `flex items-center gap-1.5 text-xs mb-3 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`
+                },
+                  React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M5 13l4 4L19 7' })
+                  ),
+                  React.createElement('span', null, concertsLocation)
+                ),
+                // Radius slider
+                React.createElement('div', { style: { marginBottom: '10px' } },
+                  React.createElement('div', { className: 'flex items-center justify-between mb-1.5' },
+                    React.createElement('span', { className: `text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}` }, 'Radius'),
+                    React.createElement('span', { className: `text-xs font-medium ${isDark ? 'text-gray-200' : 'text-gray-700'}` }, `${concertsLocationRadius} mi`)
+                  ),
+                  React.createElement('input', {
+                    type: 'range',
+                    min: 10,
+                    max: 500,
+                    step: 10,
+                    value: concertsLocationRadius,
+                    onChange: (e) => setConcertsLocationRadius(parseInt(e.target.value)),
+                    className: 'w-full',
+                    style: { accentColor: '#8b5cf6', height: '4px' }
+                  })
+                ),
+                // Action buttons row
+                React.createElement('div', { className: `flex items-center justify-between mt-2 pt-3 pb-1 border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}` },
+                  // Clear button
+                  React.createElement('button', {
+                    onClick: () => {
+                      setConcertsLocation('');
+                      setConcertsLocationCoords(null);
+                      setConcertsLocationRadius(50);
+                      setConcertsLocationOpen(false);
+                    },
+                    className: `text-xs transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`
+                  }, 'Clear'),
+                  // Apply button (geocode if needed)
+                  React.createElement('button', {
+                    onClick: async () => {
+                      if (concertsLocation.trim() && !concertsLocationCoords) {
+                        setConcertsGeocodingLoading(true);
+                        const result = await geocodeLocation(concertsLocation.trim());
+                        setConcertsGeocodingLoading(false);
+                        if (result) {
+                          setConcertsLocationCoords({ lat: result.lat, lng: result.lng });
+                          setConcertsLocation(result.displayName);
+                        }
+                      }
+                      setConcertsLocationOpen(false);
+                    },
+                    disabled: concertsGeocodingLoading,
+                    className: `text-xs font-medium px-3 py-1 rounded-md transition-colors ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-violet-500 text-white hover:bg-violet-600'}`
+                  }, concertsGeocodingLoading ? 'Looking up...' : 'Apply')
+                )
+              )
+            ),
+            React.createElement('div', { className: 'flex-1' }),
+            // Search
+            React.createElement('div', { className: 'flex items-center' },
+              concertsSearchOpen ?
+                React.createElement('div', { className: `flex items-center border rounded-full px-3 py-1.5 ${isDark ? 'border-gray-600' : 'border-gray-300'}` },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: concertsSearch,
+                    onChange: (e) => setConcertsSearch(e.target.value),
+                    onBlur: () => { if (!concertsSearch.trim()) setConcertsSearchOpen(false); },
+                    autoFocus: true,
+                    placeholder: 'Filter...',
+                    className: `bg-transparent text-sm outline-none ${isDark ? 'text-gray-200 placeholder-gray-500' : 'text-gray-700 placeholder-gray-400'}`,
+                    style: { width: '150px' }
+                  }),
+                  concertsSearch && React.createElement('button', {
+                    onClick: () => { setConcertsSearch(''); setConcertsSearchOpen(false); },
+                    className: `ml-2 ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              :
+                React.createElement('button', {
+                  onClick: () => setConcertsSearchOpen(true),
+                  className: `p-1.5 transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  )
+                )
+            )
+          );
+          })(),
+          // Scrollable content area
+          React.createElement('div', {
+            className: 'flex-1 overflow-y-auto',
+            style: { minHeight: 0 },
+            onScroll: handleConcertsScroll
+          },
+            // Error state - no concert services configured
+            concertsError === 'no_services' && !concertsLoading && React.createElement('div', {
+              className: 'flex flex-col items-center justify-center py-20 px-6'
+            },
+              React.createElement('div', {
+                className: 'w-16 h-16 rounded-full bg-violet-100 flex items-center justify-center mb-4'
+              },
+                React.createElement('svg', { className: 'w-8 h-8 text-violet-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' })
+                )
+              ),
+              React.createElement('h3', {
+                className: 'text-lg font-medium text-gray-900 mb-2'
+              }, 'No Concert Services Configured'),
+              React.createElement('p', {
+                className: 'text-sm text-gray-500 text-center max-w-md mb-4'
+              }, 'Enable a concert service plugin (Bandsintown, Songkick, or SeatGeek) in Settings to see upcoming shows for artists you love.'),
+              React.createElement('button', {
+                onClick: () => { navigateTo('settings'); },
+                className: 'px-4 py-2 bg-violet-500 text-white rounded-lg text-sm hover:bg-violet-600 transition-colors'
+              }, 'Go to Settings')
+            ),
+
+            // Error state - generic error
+            concertsError && concertsError !== 'no_services' && !concertsLoading && React.createElement('div', {
+              className: 'flex flex-col items-center justify-center py-20 px-6'
+            },
+              React.createElement('p', { className: 'text-sm text-red-500 mb-3' }, concertsError),
+              React.createElement('button', {
+                onClick: () => loadConcerts(true),
+                className: 'px-4 py-2 bg-violet-500 text-white rounded-lg text-sm hover:bg-violet-600 transition-colors'
+              }, 'Try Again')
+            ),
+
+            // Loading skeleton
+            concertsLoading && concerts.length === 0 && React.createElement('div', {
+              className: 'p-6 space-y-4'
+            },
+              Array.from({ length: 8 }).map((_, i) =>
+                React.createElement('div', {
+                  key: `concert-skeleton-${i}`,
+                  className: 'flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-100',
+                  style: { animation: `pulse 1.5s ease-in-out infinite`, animationDelay: `${i * 100}ms` }
+                },
+                  // Date placeholder
+                  React.createElement('div', { className: 'flex flex-col items-center', style: { minWidth: '56px' } },
+                    React.createElement('div', { className: 'w-10 h-4 bg-gray-200 rounded mb-1' }),
+                    React.createElement('div', { className: 'w-8 h-6 bg-gray-200 rounded' })
+                  ),
+                  // Content placeholder
+                  React.createElement('div', { className: 'flex-1' },
+                    React.createElement('div', { className: 'w-48 h-4 bg-gray-200 rounded mb-2' }),
+                    React.createElement('div', { className: 'w-32 h-3 bg-gray-200 rounded mb-1' }),
+                    React.createElement('div', { className: 'w-24 h-3 bg-gray-200 rounded' })
+                  ),
+                  // Button placeholder
+                  React.createElement('div', { className: 'w-20 h-8 bg-gray-200 rounded-lg' })
+                )
+              )
+            ),
+
+            // Empty state
+            !concertsLoading && concertsLoaded && !concertsError && concerts.length === 0 && React.createElement('div', {
+              className: 'flex flex-col items-center justify-center py-20 px-6'
+            },
+              React.createElement('div', {
+                className: 'w-16 h-16 rounded-full bg-violet-100 flex items-center justify-center mb-4'
+              },
+                React.createElement('svg', { className: 'w-8 h-8 text-violet-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' })
+                )
+              ),
+              React.createElement('h3', {
+                className: 'text-lg font-medium text-gray-900 mb-2'
+              }, 'No Upcoming Concerts Found'),
+              React.createElement('p', {
+                className: 'text-sm text-gray-500 text-center max-w-md'
+              }, 'Add artists to your collection or listen to more music. We\'ll check for upcoming shows from artists you love.'),
+              React.createElement('button', {
+                onClick: () => loadConcerts(true),
+                className: 'mt-4 px-4 py-2 text-violet-600 border border-violet-300 rounded-lg text-sm hover:bg-violet-50 transition-colors'
+              }, 'Refresh')
+            ),
+
+            // Concert list
+            !concertsError && concerts.length > 0 && (() => {
+              const searchLower = concertsSearch.toLowerCase().trim();
+              const locationLower = concertsLocation.toLowerCase().trim();
+              const filtered = concerts.filter(event => {
+                // Source filter (supports 'all', dedicated service IDs, and 'ai:providerId')
+                if (concertsSourceFilter !== 'all') {
+                  if (concertsSourceFilter.startsWith('ai:')) {
+                    const aiProviderId = concertsSourceFilter.slice(3);
+                    if (event.source !== 'ai' || event.aiProvider !== aiProviderId) return false;
+                  } else if (event.source !== concertsSourceFilter) {
+                    return false;
+                  }
+                }
+                // Location filter — coordinate-based distance when available, text fallback
+                if (concertsLocationCoords) {
+                  const vLat = event.venue?.latitude;
+                  const vLng = event.venue?.longitude;
+                  if (vLat != null && vLng != null) {
+                    const dist = haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng);
+                    if (dist > concertsLocationRadius) return false;
+                  } else {
+                    // No venue coordinates — fall back to city/region text matching.
+                    // locationLower is the full Nominatim display name (e.g. "new york, new york, united states")
+                    // so check if it contains the venue city/region, not the other way around.
+                    const city = (event.venue?.city || '').toLowerCase().trim();
+                    const region = (event.venue?.region || '').toLowerCase().trim();
+                    const matchesCity = city && locationLower.includes(city);
+                    const matchesRegion = region && locationLower.includes(region);
+                    if (!matchesCity && !matchesRegion) return false;
+                  }
+                } else if (locationLower) {
+                  // No geocoded coords yet — use city/region text matching
+                  const city = (event.venue?.city || '').toLowerCase().trim();
+                  const region = (event.venue?.region || '').toLowerCase().trim();
+                  const matchesCity = city && locationLower.includes(city);
+                  const matchesRegion = region && locationLower.includes(region);
+                  if (!matchesCity && !matchesRegion) return false;
+                }
+                // Search filter
+                if (searchLower) {
+                  const matchesArtist = event.artist?.toLowerCase().includes(searchLower);
+                  const matchesLineup = event.lineup && event.lineup.some(a => a.toLowerCase().includes(searchLower));
+                  const matchesVenue = event.venue?.name?.toLowerCase().includes(searchLower);
+                  const matchesCity = event.venue?.city?.toLowerCase().includes(searchLower);
+                  const matchesTitle = event.title?.toLowerCase().includes(searchLower);
+                  if (!matchesArtist && !matchesLineup && !matchesVenue && !matchesCity && !matchesTitle) return false;
+                }
+                return true;
+              });
+
+              // Group events by month
+              const grouped = {};
+              for (const event of filtered) {
+                const date = event.date ? new Date(event.date + 'T00:00:00') : null;
+                const monthKey = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : 'unknown';
+                const monthLabel = date ? date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Date TBA';
+                if (!grouped[monthKey]) {
+                  grouped[monthKey] = { label: monthLabel, events: [] };
+                }
+                grouped[monthKey].events.push(event);
+              }
+
+              const sortedMonths = Object.keys(grouped).sort();
+
+              return React.createElement('div', { className: 'p-6' },
+
+                filtered.length === 0 && searchLower && React.createElement('div', {
+                  className: 'flex flex-col items-center justify-center py-12'
+                },
+                  React.createElement('p', { className: 'text-sm text-gray-500' }, `No concerts matching "${concertsSearch}"`)
+                ),
+
+                filtered.length === 0 && locationLower && !searchLower && React.createElement('div', {
+                  className: 'flex flex-col items-center justify-center py-12'
+                },
+                  React.createElement('p', { className: 'text-sm text-gray-500' }, `No concerts found near "${concertsLocation}"`)
+                ),
+
+                sortedMonths.map(monthKey =>
+                  React.createElement('div', { key: monthKey, className: 'mb-8' },
+                    // Month header
+                    React.createElement('h2', {
+                      className: 'text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3 px-1'
+                    }, grouped[monthKey].label),
+
+                    // Events in this month
+                    React.createElement('div', { className: 'space-y-3' },
+                      grouped[monthKey].events.map((event, eventIdx) => {
+                        const eventDate = event.date ? new Date(event.date + 'T00:00:00') : null;
+                        const dayOfWeek = eventDate ? eventDate.toLocaleDateString('en-US', { weekday: 'short' }) : '';
+                        const dayNum = eventDate ? eventDate.getDate() : '?';
+                        const monthShort = eventDate ? eventDate.toLocaleDateString('en-US', { month: 'short' }) : '';
+                        const location = [event.venue?.city, event.venue?.region, event.venue?.country].filter(Boolean).join(', ');
+                        const isDark = effectiveTheme === 'dark';
+                        const artistImg = event.artist ? concertsArtistImages[event.artist.trim().toLowerCase()] : null;
+                        // Build reason string based on why this artist was recommended
+                        const reasonText = (() => {
+                          const src = event.artistSource;
+                          if (src === 'collection') return 'In your collection';
+                          if (src === 'library') return 'In your library';
+                          if (src === 'history') return 'From your listening history';
+                          if (event.description && event.description !== 'AI-suggested event') return event.description;
+                          return null;
+                        })();
+
+                        return React.createElement('div', {
+                          key: event.id || `${monthKey}-${eventIdx}`,
+                          className: `flex items-center rounded-xl border cursor-default ${isDark ? 'bg-gray-800/50 border-gray-700/50' : 'bg-white border-gray-100'}`,
+                          style: {
+                            animation: 'fadeIn 300ms ease-out both',
+                            animationDelay: `${eventIdx * 30}ms`,
+                            position: 'relative',
+                            zIndex: concertsTicketFlyout === (event.id || `${monthKey}-${eventIdx}`) ? 20 : 1
+                          }
+                        },
+                          // Date column
+                          React.createElement('div', {
+                            className: 'flex flex-col items-center justify-center text-center flex-shrink-0 px-4',
+                            style: { minWidth: '100px' }
+                          },
+                            React.createElement('span', {
+                              className: 'text-xs font-medium text-violet-500 uppercase'
+                            }, monthShort),
+                            React.createElement('span', {
+                              className: `text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`
+                            }, dayNum),
+                            React.createElement('span', {
+                              className: 'text-xs text-gray-400 uppercase'
+                            }, dayOfWeek)
+                          ),
+
+                          // Artist image — full-bleed rectangle
+                          React.createElement('div', {
+                            className: `flex-shrink-0 overflow-hidden cursor-pointer ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`,
+                            style: { width: '100px', height: '100px', alignSelf: 'stretch' },
+                            onClick: () => { if (event.artist) fetchArtistData(event.artist); }
+                          },
+                            artistImg?.url
+                              ? React.createElement('img', {
+                                  src: artistImg.url,
+                                  alt: event.artist,
+                                  className: 'w-full h-full object-cover',
+                                  style: artistImg.facePosition ? { objectPosition: `${artistImg.facePosition.x}% ${artistImg.facePosition.y}%` } : undefined,
+                                  loading: 'lazy'
+                                })
+                              : React.createElement('div', {
+                                  className: `w-full h-full flex items-center justify-center ${isDark ? 'text-gray-500' : 'text-gray-300'}`
+                                },
+                                  React.createElement('svg', { className: 'w-8 h-8', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                                  )
+                                )
+                          ),
+
+                          // Event details column
+                          React.createElement('div', { className: 'flex-1 min-w-0 flex items-center px-4 py-3' },
+                            React.createElement('div', { className: 'flex-1 min-w-0' },
+                              React.createElement('div', { className: 'flex items-center gap-2 mb-0.5' },
+                                React.createElement('span', {
+                                  className: `font-semibold truncate cursor-pointer hover:text-violet-600 transition-colors ${isDark ? 'text-white' : 'text-gray-900'}`,
+                                  onClick: () => {
+                                    if (event.artist) fetchArtistData(event.artist);
+                                  }
+                                }, event.artist),
+                                // Source badges
+                                ...(() => {
+                                  const bgAlpha = isDark ? 0.2 : 0.1;
+                                  const srcColors = {
+                                    bandsintown: { bg: `rgba(0, 180, 179, ${bgAlpha})`, text: isDark ? '#2dd4bf' : '#00B4B3' },
+                                    songkick: { bg: `rgba(248, 0, 70, ${bgAlpha})`, text: isDark ? '#fb7185' : '#F80046' },
+                                    seatgeek: { bg: `rgba(252, 76, 2, ${bgAlpha})`, text: isDark ? '#fb923c' : '#FC4C02' },
+                                    ticketmaster: { bg: `rgba(2, 108, 223, ${bgAlpha})`, text: isDark ? '#60a5fa' : '#026CDF' }
+                                  };
+                                  const badgeLabel = (src) => src.source === 'bandsintown' ? 'BIT' : src.source === 'songkick' ? 'SK' : src.source === 'seatgeek' ? 'SG' : src.source === 'ticketmaster' ? 'TM' : (src.aiProviderName || 'AI');
+                                  const badgeFullName = (src) => src.source === 'bandsintown' ? 'Bandsintown' : src.source === 'songkick' ? 'Songkick' : src.source === 'seatgeek' ? 'SeatGeek' : src.source === 'ticketmaster' ? 'Ticketmaster' : (src.aiProviderName || 'AI');
+                                  const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
+                                  const hasAiSource = sources.some(s => s.source === 'ai');
+                                  const badges = sources.map((src, si) => {
+                                    const c = srcColors[src.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };
+                                    return React.createElement('span', {
+                                      key: `badge-${si}`,
+                                      className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
+                                      style: { backgroundColor: c.bg, color: c.text },
+                                      title: badgeFullName(src)
+                                    }, badgeLabel(src));
+                                  });
+                                  if (hasAiSource) {
+                                    badges.push(React.createElement('span', {
+                                      key: 'ai-disclaimer',
+                                      className: 'text-xs text-violet-400 italic flex-shrink-0',
+                                      title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
+                                    }, 'AI generated results may be hallucinations'));
+                                  }
+                                  return badges;
+                                })()
+                              ),
+                              React.createElement('div', {
+                                className: `text-sm truncate ${isDark ? 'text-gray-300' : 'text-gray-600'}`
+                              }, event.venue?.name || 'Venue TBA'),
+                              location && React.createElement('div', {
+                                className: `text-xs truncate mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                              }, location),
+                              // Lineup
+                              event.lineup && event.lineup.length > 1 && React.createElement('div', {
+                                className: `text-xs mt-0.5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`
+                              }, 'with ' + event.lineup.filter(a => a.toLowerCase() !== event.artist.toLowerCase()).join(', '))
+                            )
+                          ),
+
+                          // Reason column — fixed width so text aligns vertically across rows
+                          React.createElement('div', {
+                            className: 'flex-shrink-0 text-xs italic px-3 truncate',
+                            style: { width: '200px', textAlign: 'left', color: 'var(--text-tertiary)' }
+                          }, reasonText || ''),
+
+                          // Ticket button column — fixed width for alignment
+                          React.createElement('div', {
+                            className: 'flex-shrink-0 flex items-center justify-center mr-4',
+                            style: { width: '100px' }
+                          },
+                          (() => {
+                            const sources = (event.ticketSources || []).filter(s => s.ticketUrl);
+                            const eventId = event.id || `${monthKey}-${eventIdx}`;
+                            if (sources.length === 0) return null;
+                            if (sources.length === 1) {
+                              // Single source — direct link, no flyout
+                              return React.createElement('a', {
+                                href: sources[0].ticketUrl,
+                                target: '_blank',
+                                rel: 'noopener noreferrer',
+                                className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
+                                style: { backgroundColor: '#7c3aed', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; },
+                                onClick: (e) => e.stopPropagation()
+                              }, 'Tickets');
+                            }
+                            // Multiple sources — flyout
+                            const isOpen = concertsTicketFlyout === eventId;
+                            return React.createElement('div', { className: 'relative' },
+                              React.createElement('button', {
+                                onClick: (e) => {
+                                  e.stopPropagation();
+                                  setConcertsTicketFlyout(isOpen ? null : eventId);
+                                },
+                                className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
+                                style: { backgroundColor: '#7c3aed', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
+                              },
+                                'Tickets',
+                                React.createElement('svg', {
+                                  className: `w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`,
+                                  fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                                },
+                                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
+                                )
+                              ),
+                              isOpen && (() => {
+                                const isDkFlyout = effectiveTheme === 'dark';
+                                return React.createElement('div', {
+                                className: `absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 z-30 ${isDkFlyout ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`,
+                                style: { minWidth: '180px' },
+                                onClick: (e) => e.stopPropagation()
+                              },
+                                sources.map((src, si) => {
+                                  const srcColors = {
+                                    bandsintown: isDkFlyout ? '#2dd4bf' : '#00B4B3',
+                                    songkick: isDkFlyout ? '#fb7185' : '#F80046',
+                                    seatgeek: isDkFlyout ? '#fb923c' : '#FC4C02',
+                                    ticketmaster: isDkFlyout ? '#60a5fa' : '#026CDF'
+                                  };
+                                  const color = srcColors[src.source] || (isDkFlyout ? '#a78bfa' : '#8b5cf6');
+                                  return React.createElement('a', {
+                                    key: si,
+                                    href: src.ticketUrl,
+                                    target: '_blank',
+                                    rel: 'noopener noreferrer',
+                                    className: `flex items-center gap-2 px-4 py-2 text-sm transition-colors ${isDkFlyout ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`,
+                                    onClick: () => setConcertsTicketFlyout(null)
+                                  },
+                                    React.createElement('span', {
+                                      className: 'w-2 h-2 rounded-full flex-shrink-0',
+                                      style: { backgroundColor: color }
+                                    }),
+                                    React.createElement('span', { className: isDkFlyout ? 'text-gray-200' : 'text-gray-700' }, src.label),
+                                    React.createElement('svg', {
+                                      className: 'w-3 h-3 text-gray-400 ml-auto',
+                                      fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                                    },
+                                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14' })
+                                    )
+                                  );
+                                })
+                              );
+                              })()
+                            );
+                          })()
+                          )
+                        );
+                      })
+                    )
+                  )
+                ),
+
+                // Loading indicator at bottom during refresh
+                concertsLoading && concerts.length > 0 && React.createElement('div', {
+                  className: 'flex items-center justify-center py-4'
+                },
+                  React.createElement('svg', {
+                    className: 'w-5 h-5 animate-spin text-violet-500 mr-2',
+                    fill: 'none', viewBox: '0 0 24 24'
+                  },
+                    React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
+                    React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z' })
+                  ),
+                  React.createElement('span', { className: 'text-sm text-gray-500' }, 'Refreshing concerts...')
+                )
+              );
+            })()
+          )
+        );
+        })(),
+
         // Recommendations view with collapsible hero header
         activeView === 'recommendations' && React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
@@ -41947,7 +44020,8 @@ useEffect(() => {
             },
               // Sticky filter bar - show when both services are configured (even during loading)
               hasBothServicesConfigured && React.createElement('div', {
-                className: 'sticky top-0 z-10 flex items-center px-6 py-3 bg-white border-b border-gray-200'
+                className: 'sticky top-0 z-10 flex items-center px-6 py-3',
+              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
               },
                 // Source filter pills
                 React.createElement('div', { className: 'flex gap-2' },
@@ -42512,7 +44586,8 @@ useEffect(() => {
           ),
           // Filter bar (outside scrollable area)
           React.createElement('div', {
-            className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+            className: 'flex items-center px-6 py-3',
+            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' },
             style: { flexShrink: 0 }
           },
             // Period dropdown for top charts OR sort dropdown for recent
@@ -43553,7 +45628,8 @@ useEffect(() => {
             ),
             // Filter bar (outside scrollable area - matching History exactly)
             React.createElement('div', {
-              className: 'flex items-center px-6 py-3 bg-white border-b border-gray-200',
+              className: 'flex items-center px-6 py-3',
+            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' },
               style: { flexShrink: 0 }
             },
               // Sort dropdown for recent, period dropdown for top charts
@@ -44390,6 +46466,7 @@ useEffect(() => {
                     { value: 'streaming', label: 'Streaming' },
                     { value: 'social', label: 'Social' },
                     { value: 'metadata', label: 'Metadata' },
+                    { value: 'concerts', label: 'Concerts' },
                     { value: 'ai', label: 'AI' },
                     { value: 'local', label: 'Local' }
                   ].map(({ value, label }) =>
@@ -44676,6 +46753,14 @@ useEffect(() => {
                           const isEnabled = !!config?.enabled || !!config?.username;
                           isServiceActive = !!config?.username;
                           needsConfiguration = isEnabled && !config?.username;
+                        } else if (service.capabilities?.concerts) {
+                          // Concert services (Bandsintown, Songkick, SeatGeek): require API key
+                          const hasApiKey = !!(config?.apiKey || config?.appId || config?.clientId);
+                          const isExplicitlyEnabled = config?.enabled === true;
+                          isServiceActive = hasApiKey || isExplicitlyEnabled;
+                          if (isServiceActive && !hasApiKey && service.settings?.requiresAuth) {
+                            needsConfiguration = true;
+                          }
                         } else {
                           // Wikipedia, Discogs, etc.: always active
                           isServiceActive = true;
@@ -45486,7 +47571,7 @@ useEffect(() => {
                         'Show unread badges'
                       ),
                       React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
-                        'Display badges when Recommendations, Critical Darlings, or Pop of the Tops have new content'
+                        'Display badges when Recommendations, Critical Darlings, Pop of the Tops, or Concerts have new content'
                       )
                     ),
                     React.createElement('button', {
@@ -45893,17 +47978,10 @@ useEffect(() => {
             const chatServices = getChatServices();
 
             // Check if chat providers are enabled
-            const hasEnabledChat = chatServices.some(s => {
-              const config = metaServiceConfigs[s.id] || {};
-              const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-              return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-            });
+            const hasEnabledChat = chatServices.some(isServiceEnabled);
 
             // Check if generate providers are enabled (fallback)
-            const hasEnabledGenerate = aiResolvers.some(s => {
-              const config = metaServiceConfigs[s.id] || {};
-              return !!config.apiKey;
-            });
+            const hasEnabledGenerate = aiResolvers.some(isServiceEnabled);
 
             const hasAnyAi = hasEnabledChat || hasEnabledGenerate;
             const isActive = aiChatOpen || aiPromptOpen;
@@ -46096,8 +48174,8 @@ useEffect(() => {
             },
               // Line 1: Track title
               React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
-              // Line 2: Artist name with bio tooltip
-              React.createElement('div', { className: 'text-xs text-gray-400' },
+              // Line 2: Artist name with bio tooltip + on tour badge
+              React.createElement('div', { className: 'flex items-center text-xs text-gray-400 min-w-0' },
                 (() => {
                   const bioPreview = playbarArtistBio && playbarArtistBio.bio
                     ? playbarArtistBio.bio.split('\n').slice(0, 2).join(' ').substring(0, 200).trim() + (playbarArtistBio.bio.length > 200 ? '...' : '')
@@ -46106,7 +48184,7 @@ useEffect(() => {
                   const artistButton = React.createElement('button', {
                     onClick: () => fetchArtistData(currentTrack.artist),
                     className: 'truncate hover:text-white hover:underline transition-colors cursor-pointer no-drag',
-                    style: { maxWidth: '100%', display: 'block' }
+                    style: { maxWidth: 'none' }
                   }, currentTrack.artist);
 
                   return bioPreview
@@ -46117,6 +48195,39 @@ useEffect(() => {
                         className: 'tooltip-bio'
                       }, artistButton)
                     : artistButton;
+                })(),
+                // "On Tour" pill — shown when artist has concerts near the user's location
+                (() => {
+                  if (!concertsLoaded || !currentTrack?.artist) return null;
+                  const artistNorm = currentTrack.artist.trim().toLowerCase();
+                  const hasNearbyShows = concerts.some(event => {
+                    const isPrimary = event.artist?.trim().toLowerCase() === artistNorm;
+                    const isInLineup = event.lineup && event.lineup.some(a => a.trim().toLowerCase() === artistNorm);
+                    if (!isPrimary && !isInLineup) return false;
+                    if (!concertsLocationCoords) return true; // no location filter — any show counts
+                    const vLat = event.venue?.latitude;
+                    const vLng = event.venue?.longitude;
+                    if (vLat != null && vLng != null) {
+                      return haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) <= concertsLocationRadius;
+                    }
+                    return true; // no venue coords — include it
+                  });
+                  if (!hasNearbyShows) return null;
+                  return React.createElement(Tooltip, {
+                    content: 'On tour near you',
+                    position: 'top',
+                    variant: 'dark'
+                  },
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        pendingProtocolTabRef.current = 'on-tour';
+                        fetchArtistData(currentTrack.artist);
+                      },
+                      className: 'flex-shrink-0 ml-3 rounded-full transition-opacity hover:opacity-80 cursor-pointer no-drag',
+                      style: { width: '7px', height: '7px', backgroundColor: '#7c3aed' }
+                    })
+                  );
                 })()
               ),
               // Line 3: Resolver dropdown + browser indicator
@@ -47071,11 +49182,7 @@ useEffect(() => {
                 React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)' } }, 'powered by:'),
                 // Custom dropdown button
                 (() => {
-                  const enabledServices = getChatServices().filter(s => {
-                    const config = metaServiceConfigs[s.id] || {};
-                    const noKeyNeeded = s.requiresAuth === false || s.settings?.requiresAuth === false;
-                    return noKeyNeeded ? config.enabled === true : !!config.apiKey;
-                  });
+                  const enabledServices = getChatServices().filter(isServiceEnabled);
                   const currentService = enabledServices.find(s => s.id === selectedChatProvider);
                   const currentLogo = currentService ? SERVICE_LOGOS[currentService.id] : null;
 
@@ -49907,7 +52014,12 @@ useEffect(() => {
           // AI Service configuration - generic based on plugin settings
           // Check both .axe settings and top-level marketplace manifest properties
           ((selectedResolver.settings?.requiresAuth && selectedResolver.settings?.authType === 'apikey') ||
-           (selectedResolver.type === 'meta-service' && (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) && selectedResolver.id !== 'ollama')) && React.createElement('div', {
+           (selectedResolver.type === 'meta-service' && (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat) && selectedResolver.id !== 'ollama')) && (() => {
+            // Determine the actual config field name from plugin settings (e.g. apiKey, clientId, appId)
+            const configurable = selectedResolver.settings?.configurable || {};
+            const authFieldKey = Object.keys(configurable).find(k => k !== 'model') || 'apiKey';
+            const authFieldSettings = configurable[authFieldKey] || {};
+            return React.createElement('div', {
             style: {
               padding: '16px 0',
               borderTop: '1px solid var(--border-subtle)'
@@ -49928,7 +52040,7 @@ useEffect(() => {
                 marginBottom: '16px',
                 lineHeight: '1.5'
               }
-            }, selectedResolver.settings?.configurable?.apiKey?.description || `Enter your API key to enable ${selectedResolver.name}.`),
+            }, authFieldSettings.description || `Enter your API key to enable ${selectedResolver.name}.`),
             // API Key input
             React.createElement('div', { style: { marginBottom: '16px' } },
               React.createElement('label', {
@@ -49939,18 +52051,18 @@ useEffect(() => {
                   color: 'var(--text-primary)',
                   marginBottom: '6px'
                 }
-              }, selectedResolver.settings?.configurable?.apiKey?.label || 'API Key'),
+              }, authFieldSettings.label || 'API Key'),
               React.createElement('input', {
                 type: 'password',
-                defaultValue: metaServiceConfigs[selectedResolver.id]?.apiKey || '',
+                defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '',
                 onBlur: (e) => {
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
-                    apiKey: e.target.value,
+                    [authFieldKey]: e.target.value,
                     enabled: !!e.target.value
                   });
                 },
-                placeholder: selectedResolver.settings?.configurable?.apiKey?.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''),
+                placeholder: authFieldSettings.placeholder || (selectedResolver.id === 'chatgpt' ? 'sk-...' : selectedResolver.id === 'gemini' ? 'AIza...' : selectedResolver.id === 'claude' ? 'sk-ant-...' : ''),
                 style: {
                   width: '100%',
                   padding: '10px 12px',
@@ -50030,13 +52142,14 @@ useEffect(() => {
               )
             ),
             // Connection status
-            metaServiceConfigs[selectedResolver.id]?.apiKey && React.createElement('div', {
+            metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
               className: 'flex items-center gap-2 text-green-600 text-sm'
             },
               React.createElement('span', null, '✓'),
-              React.createElement('span', null, 'API key configured')
+              React.createElement('span', null, (authFieldSettings.label || 'API key') + ' configured')
             )
-          ),
+          );
+          })(),
 
           // Ollama configuration (no API key, but has endpoint and model)
           selectedResolver.id === 'ollama' && React.createElement('div', {
@@ -50560,7 +52673,7 @@ useEffect(() => {
               if (isContentResolver) {
                 showEnable = !activeResolvers.includes(selectedResolver.id);
               } else if (isMetaService) {
-                showEnable = !(config?.enabled || config?.apiKey || config?.username);
+                showEnable = !(config?.enabled || config?.apiKey || config?.appId || config?.clientId || config?.username);
               }
 
               return React.createElement('button', {

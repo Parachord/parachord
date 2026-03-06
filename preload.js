@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Storage operations
   store: {
     get: (key) => ipcRenderer.invoke('store-get', key),
+    getBatch: (keys) => ipcRenderer.invoke('store-get-batch', keys),
     set: (key, value) => ipcRenderer.invoke('store-set', key, value),
     delete: (key) => ipcRenderer.invoke('store-delete', key),
     clear: () => ipcRenderer.invoke('store-clear'),

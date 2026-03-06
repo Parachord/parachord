@@ -2355,7 +2355,8 @@ const ALLOWED_STORE_KEYS = new Set([
   'applemusic_authorized', 'applemusic_developer_token', 'applemusic_user_token',
   'auto_launch_spotify', 'autoPinnedFriendIds',
   'cache_ai_suggestions', 'cache_album_art', 'cache_album_release_ids', 'cache_artist_data',
-  'cache_artist_images', 'cache_charts', 'cache_new_releases', 'cache_playlist_covers', 'cache_track_sources',
+  'cache_artist_images', 'cache_charts', 'cache_concerts', 'cache_new_releases', 'cache_playlist_covers', 'cache_track_sources',
+  'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
   'discovery_seen_charts', 'discovery_seen_criticsPicks', 'discovery_seen_recommendations',
   'friends', 'last_active_view', 'local_playlists', 'media-key-handling',
   'meta_service_configs', 'pinnedFriendIds', 'playlists_view_mode',
@@ -2380,6 +2381,17 @@ ipcMain.handle('store-get', (event, key) => {
     return undefined;
   }
   return store.get(key);
+});
+
+// Batch get — fetch multiple keys in a single IPC roundtrip
+ipcMain.handle('store-get-batch', (event, keys) => {
+  const result = {};
+  for (const key of keys) {
+    if (ALLOWED_STORE_KEYS.has(key)) {
+      result[key] = store.get(key);
+    }
+  }
+  return result;
 });
 
 ipcMain.handle('store-set', (event, key, value) => {
