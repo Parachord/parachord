@@ -43163,7 +43163,7 @@ useEffect(() => {
               title: concertsLoading ? 'Loading...' : 'Refresh'
             },
               React.createElement('svg', {
-                className: `w-4 h-4 ${concertsLoading ? 'animate-spin' : ''}`,
+                className: `w-4 h-4 ${concertsLoading ? 'animate-[spin_1s_linear_infinite_reverse]' : ''}`,
                 fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
               },
                 React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
@@ -43509,16 +43509,22 @@ useEffect(() => {
                   if (vLat != null && vLng != null) {
                     const dist = haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng);
                     if (dist > concertsLocationRadius) return false;
-                  } else if (locationLower) {
-                    // No venue coordinates — fall back to city/state text matching
-                    const matchesCity = event.venue?.city?.toLowerCase().includes(locationLower);
-                    const matchesRegion = event.venue?.region?.toLowerCase().includes(locationLower);
+                  } else {
+                    // No venue coordinates — fall back to city/region text matching.
+                    // locationLower is the full Nominatim display name (e.g. "new york, new york, united states")
+                    // so check if it contains the venue city/region, not the other way around.
+                    const city = (event.venue?.city || '').toLowerCase().trim();
+                    const region = (event.venue?.region || '').toLowerCase().trim();
+                    const matchesCity = city && locationLower.includes(city);
+                    const matchesRegion = region && locationLower.includes(region);
                     if (!matchesCity && !matchesRegion) return false;
                   }
                 } else if (locationLower) {
-                  // No geocoded coords yet — use city/state text matching
-                  const matchesCity = event.venue?.city?.toLowerCase().includes(locationLower);
-                  const matchesRegion = event.venue?.region?.toLowerCase().includes(locationLower);
+                  // No geocoded coords yet — use city/region text matching
+                  const city = (event.venue?.city || '').toLowerCase().trim();
+                  const region = (event.venue?.region || '').toLowerCase().trim();
+                  const matchesCity = city && locationLower.includes(city);
+                  const matchesRegion = region && locationLower.includes(region);
                   if (!matchesCity && !matchesRegion) return false;
                 }
                 // Search filter
