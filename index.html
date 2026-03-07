@@ -500,6 +500,11 @@
       background-image: linear-gradient(to right, var(--shimmer-from, #d1d5db), var(--shimmer-via, #e5e7eb), var(--shimmer-to, #d1d5db));
       background-size: 200% 100%;
     }
+    /* Always-dark shimmer for surfaces that stay dark in both themes (e.g. player bar) */
+    .shimmer-dark {
+      background-image: linear-gradient(to right, #374151, #4b5563, #374151);
+      background-size: 200% 100%;
+    }
 
     /* Marquee scrolling animation for long text */
     @keyframes marquee-scroll {
