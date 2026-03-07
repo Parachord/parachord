@@ -11,8 +11,7 @@
     "homepage": "https://ollama.ai"
   },
   "capabilities": {
-    "chat": true,
-    "concerts": true
+    "chat": true
   },
   "settings": {
     "requiresAuth": false,

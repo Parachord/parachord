@@ -12,8 +12,7 @@
   },
   "capabilities": {
     "generate": true,
-    "chat": true,
-    "concerts": true
+    "chat": true
   },
   "settings": {
     "requiresAuth": true,

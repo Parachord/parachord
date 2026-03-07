@@ -11,8 +11,7 @@
     "homepage": "https://anthropic.com"
   },
   "capabilities": {
-    "chat": true,
-    "concerts": true
+    "chat": true
   },
   "settings": {
     "requiresAuth": true,
