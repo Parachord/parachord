@@ -31883,7 +31883,7 @@ useEffect(() => {
               'data-friend-id': friend.id,
               className: `px-3 py-1 rounded cursor-pointer group transition-all duration-300 ease-in-out flex items-center ${isNewlyPinned ? 'friend-entry' : ''} ${wasMoved ? 'friend-moved' : ''}`,
               style: {
-                minHeight: '44px',
+                height: '56px',
                 backgroundColor: isSelected ? 'var(--hover-bg-default)' : 'transparent',
                 color: isSelected ? 'var(--text-primary)' : 'inherit'
               },
