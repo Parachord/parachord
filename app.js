@@ -3101,9 +3101,9 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
 
   // Badge colors - refined palette matching app aesthetic
   const badgeStyles = {
-    album: { bg: 'rgba(17, 24, 39, 0.06)', color: 'var(--nav-inactive)' },
-    ep: { bg: 'rgba(233, 30, 99, 0.08)', color: '#db2777' },
-    single: { bg: 'rgba(139, 92, 246, 0.08)', color: 'var(--accent-primary)' },
+    album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
+    ep: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
+    single: { bg: 'rgba(236, 72, 153, 0.08)', color: '#db2777' },
     live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
     compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' }
   };
@@ -3379,9 +3379,9 @@ const ReleasePage = ({
       const year = release.date ? release.date.split('-')[0] : '';
       // Badge colors - matching ReleaseCard palette
       const badgeStyles = {
-        album: { bg: 'rgba(17, 24, 39, 0.06)', color: 'var(--nav-inactive)' },
+        album: { bg: 'rgba(99, 102, 241, 0.08)', color: 'rgb(99, 102, 241)' },
         ep: { bg: 'rgba(233, 30, 99, 0.08)', color: '#db2777' },
-        single: { bg: 'rgba(139, 92, 246, 0.08)', color: 'var(--accent-primary)' },
+        single: { bg: 'rgba(168, 85, 247, 0.08)', color: '#a855f7' },
         live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
         compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' }
       };
@@ -35141,13 +35141,13 @@ useEffect(() => {
             // Release type filter pills
             React.createElement('div', { className: 'flex gap-2 flex-wrap' },
               [
-                { value: 'all', label: 'All' },
-                { value: 'album', label: 'Studio Albums' },
-                { value: 'ep', label: 'EPs' },
-                { value: 'single', label: 'Singles' },
-                { value: 'live', label: 'Live' },
-                { value: 'compilation', label: 'Compilations' }
-              ].map(({ value, label }) => {
+                { value: 'all', label: 'All', activeColor: '#7c3aed' },
+                { value: 'album', label: 'Studio Albums', activeColor: 'rgb(99, 102, 241)' },
+                { value: 'ep', label: 'EPs', activeColor: '#a855f7' },
+                { value: 'single', label: 'Singles', activeColor: '#db2777' },
+                { value: 'live', label: 'Live', activeColor: '#d97706' },
+                { value: 'compilation', label: 'Compilations', activeColor: '#0eb3a0' }
+              ].map(({ value, label, activeColor }) => {
                 const searchFiltered = filterArtistReleases(artistReleases);
                 const count = value === 'all'
                   ? searchFiltered.length
@@ -35161,8 +35161,9 @@ useEffect(() => {
                   key: value,
                   onClick: () => setReleaseTypeFilter(value),
                   className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                    isActive ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`
+                    isActive ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`,
+                  style: isActive ? { backgroundColor: activeColor } : undefined
                 }, loadingArtist ? label : `${label} (${count})`);
               })
             ),
@@ -42243,11 +42244,11 @@ useEffect(() => {
             // Type filter pills
             React.createElement('div', { className: 'flex gap-2 flex-wrap' },
               [
-                { value: 'all', label: 'All' },
-                { value: 'album', label: 'Albums' },
-                { value: 'ep', label: 'EPs' },
-                { value: 'single', label: 'Singles' }
-              ].map(({ value, label }) => {
+                { value: 'all', label: 'All', activeColor: '#7c3aed' },
+                { value: 'album', label: 'Albums', activeColor: 'rgb(99, 102, 241)' },
+                { value: 'ep', label: 'EPs', activeColor: '#a855f7' },
+                { value: 'single', label: 'Singles', activeColor: '#db2777' }
+              ].map(({ value, label, activeColor }) => {
                 const count = value === 'all'
                   ? newReleases.length
                   : newReleases.filter(r => r.releaseType === value).length;
@@ -42257,8 +42258,9 @@ useEffect(() => {
                   key: value,
                   onClick: () => setNewReleasesFilter(value),
                   className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                    isActive ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`
+                    isActive ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`,
+                  style: isActive ? { backgroundColor: activeColor } : undefined
                 }, `${label} (${count})`);
               })
             ),
