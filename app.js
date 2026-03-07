@@ -25335,10 +25335,10 @@ Return ONLY the JSON array, no other text.`;
 
     const systemPrompt = `You are a music recommendation engine. You MUST respond with ONLY a valid JSON object, no markdown, no explanations, no text before or after the JSON. The JSON must have exactly this structure:
 {"albums":[{"title":"...","artist":"...","reason":"..."}],"artists":[{"name":"...","reason":"..."}]}
-Provide exactly 12 albums and 8 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.
+Provide exactly 12 albums and 20 artists. Each "reason" should be one short sentence explaining why this recommendation fits. Recommendations should be things the user has NOT already listened to — suggest new discoveries, not things already in their library or recent history. IMPORTANT: Only recommend full-length studio albums. Do NOT recommend singles, EPs, compilations, live albums, soundtracks, or remix albums. Every album must be a well-known, officially released studio album with a full tracklist.
 Variety guidance: ${theme} Be creative and surprising — avoid defaulting to the most obvious or popular choices.`;
 
-    const userPrompt = `Based on this listening profile, recommend 12 albums and 8 artists I should check out:\n\n${contextInfo}${exclusionNote}`;
+    const userPrompt = `Based on this listening profile, recommend 12 albums and 20 artists I should check out. For artists, go deep — suggest a wide variety spanning different genres, eras, and regions. Avoid defaulting to the most well-known names:\n\n${contextInfo}${exclusionNote}`;
 
     try {
       const response = await provider.chat(
@@ -25449,7 +25449,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Track these suggestions so we can exclude them on next refresh
       previousAiSuggestions.current = {
         albums: [...previousAiSuggestions.current.albums, ...albums].slice(-20),
-        artists: [...previousAiSuggestions.current.artists, ...artists].slice(-15)
+        artists: [...previousAiSuggestions.current.artists, ...artists].slice(-50)
       };
 
       return { albums, artists };
