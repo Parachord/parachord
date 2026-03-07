@@ -212,19 +212,21 @@
     }
 
     /* Theme-aware shimmer utility classes */
+    /* Use background-image (not background shorthand) so background-position
+       remains free for the @keyframes shimmer animation to control */
     .shimmer-light {
-      background: linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to)) !important;
+      background-image: linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to)) !important;
       background-size: 200% 100% !important;
     }
 
     .shimmer-strong {
-      background: linear-gradient(to right, var(--shimmer-strong-from), var(--shimmer-strong-via), var(--shimmer-strong-to)) !important;
+      background-image: linear-gradient(to right, var(--shimmer-strong-from), var(--shimmer-strong-via), var(--shimmer-strong-to)) !important;
       background-size: 200% 100% !important;
     }
 
     /* Shimmer for always-dark surfaces (player bar, queue drawer) — never changes with theme */
     .shimmer-on-dark {
-      background: linear-gradient(to right, #374151, #4b5563, #374151) !important;
+      background-image: linear-gradient(to right, #374151, #4b5563, #374151) !important;
       background-size: 200% 100% !important;
     }
 
@@ -491,11 +493,11 @@
 
     /* Shimmer background classes (theme-aware via CSS variables when available) */
     .shimmer-light {
-      background: linear-gradient(to right, var(--shimmer-from, #e5e7eb), var(--shimmer-via, #f3f4f6), var(--shimmer-to, #e5e7eb));
+      background-image: linear-gradient(to right, var(--shimmer-from, #e5e7eb), var(--shimmer-via, #f3f4f6), var(--shimmer-to, #e5e7eb));
       background-size: 200% 100%;
     }
     .shimmer-strong {
-      background: linear-gradient(to right, var(--shimmer-from, #d1d5db), var(--shimmer-via, #e5e7eb), var(--shimmer-to, #d1d5db));
+      background-image: linear-gradient(to right, var(--shimmer-from, #d1d5db), var(--shimmer-via, #e5e7eb), var(--shimmer-to, #d1d5db));
       background-size: 200% 100%;
     }
 
