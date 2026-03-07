@@ -10,7 +10,16 @@ module.exports = {
     './scrobbler-loader.js'
   ],
   theme: {
-    extend: {}
+    extend: {
+      colors: {
+        teal: {
+          100: '#d1fcf4',
+          400: '#36dcc8',
+          500: '#10c9b4',
+          600: '#0eb3a0',
+        }
+      }
+    }
   },
   plugins: []
 };

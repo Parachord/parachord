@@ -3105,7 +3105,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     ep: { bg: 'rgba(233, 30, 99, 0.08)', color: '#db2777' },
     single: { bg: 'rgba(139, 92, 246, 0.08)', color: 'var(--accent-primary)' },
     live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
-    compilation: { bg: 'rgba(20, 184, 166, 0.08)', color: '#0d9488' }
+    compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' }
   };
   const badge = badgeStyles[release.releaseType] || badgeStyles.album;
 
@@ -3383,7 +3383,7 @@ const ReleasePage = ({
         ep: { bg: 'rgba(233, 30, 99, 0.08)', color: '#db2777' },
         single: { bg: 'rgba(139, 92, 246, 0.08)', color: 'var(--accent-primary)' },
         live: { bg: 'rgba(245, 158, 11, 0.08)', color: '#d97706' },
-        compilation: { bg: 'rgba(20, 184, 166, 0.08)', color: '#0d9488' }
+        compilation: { bg: 'rgba(16, 201, 180, 0.08)', color: '#0eb3a0' }
       };
       const releaseType = release.releaseType || 'album';
       const badge = badgeStyles[releaseType] || badgeStyles.album;
@@ -24338,6 +24338,10 @@ ${tracks}
 
     setConcertsLoading(true);
     setConcertsError(null);
+    // Clear stale data on force refresh so user sees fresh results only
+    if (forceRefresh) {
+      concertsCache.current = { events: [], timestamp: 0 };
+    }
     console.log(`🎤 Loading concerts from ${concertServices.length} dedicated + ${aiConcertServices.length} AI service(s)...`);
 
     try {
@@ -24357,8 +24361,8 @@ ${tracks}
         return;
       }
 
-      // Snapshot prior cached events for merging
-      const priorCachedEvents = [...(concertsCache.current.events || [])];
+      // Snapshot prior cached events for merging (skip on force refresh to clear stale items)
+      const priorCachedEvents = forceRefresh ? [] : [...(concertsCache.current.events || [])];
 
       const allEvents = [];
       const seenEventKeys = new Set();
@@ -31541,14 +31545,14 @@ useEffect(() => {
               onDrop: handleCollectionDrop,
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: collectionDropHighlight ? {
-                backgroundColor: 'var(--accent-primary-alpha-10)',
-                outline: '2px solid #a78bfa',
+                backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                outline: '2px solid #06b6d4',
                 outlineOffset: '-2px',
                 borderRadius: '4px',
-                color: 'var(--accent-primary)'
+                color: '#06b6d4'
               } : {
-                backgroundColor: activeView === 'library' ? 'rgba(147, 51, 234, 0.1)' : 'transparent',
-                color: activeView === 'library' ? '#9333ea' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'library' ? 'rgba(6, 182, 212, 0.1)' : 'transparent',
+                color: activeView === 'library' ? '#06b6d4' : 'var(--nav-inactive)',
                 fontWeight: activeView === 'library' ? '500' : '400'
               }
             },
@@ -31561,7 +31565,7 @@ useEffect(() => {
                 className: 'ml-auto sidebar-badge',
                 style: {
                   fontSize: '11px',
-                  backgroundColor: 'var(--accent-primary)',
+                  backgroundColor: '#06b6d4',
                   color: '#ffffff',
                   padding: '2px 6px',
                   borderRadius: '10px'
@@ -31626,8 +31630,8 @@ useEffect(() => {
               onClick: () => navigateTo('recommendations'),
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'recommendations' ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
-                color: activeView === 'recommendations' ? 'var(--accent-tertiary)' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'recommendations' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                color: activeView === 'recommendations' ? '#f59e0b' : 'var(--nav-inactive)',
                 fontWeight: activeView === 'recommendations' ? '500' : '400'
               }
             },
@@ -31638,7 +31642,7 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 "Recommendations",
                 showDiscoveryBadges && discoveryUnread.recommendations && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-purple-500 animate-pulse'
+                  className: 'w-2 h-2 rounded-full bg-amber-500 animate-pulse'
                 })
               )
             ),
@@ -31695,8 +31699,8 @@ useEffect(() => {
               },
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'concerts' ? 'rgba(139, 92, 246, 0.1)' : 'transparent',
-                color: activeView === 'concerts' ? '#8b5cf6' : 'var(--nav-inactive)',
+                backgroundColor: activeView === 'concerts' ? 'rgba(16, 201, 180, 0.1)' : 'transparent',
+                color: activeView === 'concerts' ? '#10c9b4' : 'var(--nav-inactive)',
                 fontWeight: activeView === 'concerts' ? '500' : '400'
               }
             },
@@ -31707,7 +31711,7 @@ useEffect(() => {
               React.createElement('span', { className: 'flex items-center gap-1.5' },
                 'Concerts',
                 showDiscoveryBadges && discoveryUnread.concerts && React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full bg-violet-500 animate-pulse'
+                  className: 'w-2 h-2 rounded-full bg-teal-500 animate-pulse'
                 })
               )
             ),
@@ -36033,7 +36037,7 @@ useEffect(() => {
                     className: `text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`
                   }, `${events.length} Upcoming Concert${events.length !== 1 ? 's' : ''}`),
                   artistConcertsLoading && React.createElement('svg', {
-                    className: 'w-4 h-4 animate-spin text-violet-500',
+                    className: 'w-4 h-4 animate-spin text-teal-500',
                     fill: 'none', viewBox: '0 0 24 24'
                   },
                     React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
@@ -36043,7 +36047,7 @@ useEffect(() => {
                 React.createElement('button', {
                   onClick: () => currentArtist && loadArtistConcerts(currentArtist.name, true),
                   disabled: artistConcertsLoading,
-                  className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-violet-500' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`,
+                  className: `p-1.5 transition-colors ${artistConcertsLoading ? 'text-teal-500' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`,
                   title: artistConcertsLoading ? 'Loading...' : 'Refresh'
                 },
                   React.createElement('svg', {
@@ -36067,7 +36071,7 @@ useEffect(() => {
                 className: 'flex flex-col items-center justify-center py-12'
               },
                 React.createElement('svg', {
-                  className: 'w-8 h-8 animate-spin text-violet-500 mb-3',
+                  className: 'w-8 h-8 animate-spin text-teal-500 mb-3',
                   fill: 'none', viewBox: '0 0 24 24'
                 },
                   React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
@@ -36105,7 +36109,7 @@ useEffect(() => {
                           style: { minWidth: '56px' }
                         },
                           React.createElement('span', {
-                            className: 'text-xs font-medium text-violet-500 uppercase'
+                            className: 'text-xs font-medium text-teal-500 uppercase'
                           }, monthShort),
                           React.createElement('span', {
                             className: `text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`
@@ -36135,7 +36139,7 @@ useEffect(() => {
                               const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
                               const hasAiSource = sources.some(s => s.source === 'ai');
                               const badges = sources.map((src, si) => {
-                                const c = srcColors[src.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };
+                                const c = srcColors[src.source] || { bg: `rgba(16, 201, 180, ${bgAlpha})`, text: isDark ? '#66f0da' : '#10c9b4' };
                                 return React.createElement('span', {
                                   key: `badge-${si}`,
                                   className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
@@ -36146,7 +36150,7 @@ useEffect(() => {
                               if (hasAiSource) {
                                 badges.push(React.createElement('span', {
                                   key: 'ai-disclaimer',
-                                  className: 'text-xs text-violet-400 italic flex-shrink-0',
+                                  className: 'text-xs text-teal-400 italic flex-shrink-0',
                                   title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
                                 }, 'AI generated results may be hallucinations'));
                               }
@@ -36175,9 +36179,9 @@ useEffect(() => {
                               target: '_blank',
                               rel: 'noopener noreferrer',
                               className: 'flex-shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
-                                style: { backgroundColor: '#7c3aed', color: '#fff' },
-                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; },
+                                style: { backgroundColor: '#10c9b4', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; },
                               onClick: (e) => e.stopPropagation()
                             }, 'Tickets');
                           }
@@ -36189,9 +36193,9 @@ useEffect(() => {
                                 setArtistConcertsTicketFlyout(isOpen ? null : eventId);
                               },
                               className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
-                                style: { backgroundColor: '#7c3aed', color: '#fff' },
-                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
+                                style: { backgroundColor: '#10c9b4', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
                             },
                               'Tickets',
                               React.createElement('svg', {
@@ -36213,7 +36217,7 @@ useEffect(() => {
                                   seatgeek: isDark ? '#fb923c' : '#FC4C02',
                                   ticketmaster: isDark ? '#60a5fa' : '#026CDF'
                                 };
-                                const color = srcColors[src.source] || (isDark ? '#a78bfa' : '#8b5cf6');
+                                const color = srcColors[src.source] || (isDark ? '#66f0da' : '#10c9b4');
                                 return React.createElement('a', {
                                   key: si,
                                   href: src.ticketUrl,
@@ -38441,7 +38445,7 @@ useEffect(() => {
                     description: 'Search for music and add favorites to your library',
                     action: () => navigateTo('search'),
                     actionLabel: 'Start Searching',
-                    color: '#0ea5e9'
+                    color: '#06b6d4'
                   });
                 }
 
@@ -39385,7 +39389,7 @@ useEffect(() => {
                   React.createElement('div', {
                     className: 'card-fade-up rounded-xl text-left text-white transition-all hover:shadow-lg overflow-hidden flex flex-col',
                     style: {
-                      background: 'linear-gradient(135deg, #10b981 0%, #14b8a6 50%, #06b6d4 100%)',
+                      background: 'linear-gradient(135deg, #10b981 0%, #10c9b4 50%, #06b6d4 100%)',
                       animationDelay: '150ms'
                     }
                   },
@@ -40060,7 +40064,7 @@ useEffect(() => {
           },
               // Gradient background
               React.createElement('div', {
-                className: 'absolute inset-0 bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700'
+                className: 'absolute inset-0 bg-gradient-to-br from-cyan-500 via-cyan-600 to-blue-700'
               }),
               // Vinyl pattern overlay
               React.createElement('div', {
@@ -40129,7 +40133,7 @@ useEffect(() => {
                       backgroundColor: '#E91E63',
                       boxShadow: '0 4px 15px rgba(233, 30, 99, 0.4)'
                     }
-                  }, 'Start Collection Station')
+                  }, 'Start Collection Radio')
                 )
               ),
             // COLLAPSED STATE - Inline layout matching Recommendations
@@ -40186,7 +40190,7 @@ useEffect(() => {
                   style: {
                     backgroundColor: '#E91E63'
                   }
-                }, 'Start Station')
+                }, 'Start Radio')
               )
           ),
           // Scrollable content area
@@ -40303,7 +40307,7 @@ useEffect(() => {
                   onClick: () => setSyncMenuOpen(!syncMenuOpen),
                   className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
                   style: {
-                    backgroundColor: Object.values(resolverSyncSettings).some(s => s?.enabled) ? '#22c55e' : 'var(--nav-inactive)',
+                    backgroundColor: Object.values(resolverSyncSettings).some(s => s?.enabled) ? '#06b6d4' : 'var(--nav-inactive)',
                     color: '#ffffff',
                     border: 'none',
                     cursor: 'pointer'
@@ -40390,7 +40394,7 @@ useEffect(() => {
               // Add Friend button in header (only on friends tab)
               collectionTab === 'friends' && React.createElement('button', {
                 onClick: () => setAddFriendModalOpen(true),
-                className: 'ml-3 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+                className: 'ml-3 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
@@ -40692,7 +40696,7 @@ useEffect(() => {
                       handlePlaylistDragEnd();
                     },
                     className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all no-drag group ${
-                      isNowPlaying && isPlaying ? 'bg-purple-50' : 'hover:bg-gray-50/80'
+                      isNowPlaying && isPlaying ? 'bg-cyan-50' : 'hover:bg-gray-50/80'
                     }`,
                     style: {
                       borderRadius: '8px',
@@ -43032,7 +43036,7 @@ useEffect(() => {
           },
               // Gradient background
               React.createElement('div', {
-                className: 'absolute inset-0 bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-600'
+                className: 'absolute inset-0 bg-gradient-to-br from-teal-500 via-teal-500 to-cyan-600'
               }),
               // Background pattern - musical notes
               React.createElement('div', {
@@ -43169,7 +43173,7 @@ useEffect(() => {
             React.createElement('button', {
               onClick: () => loadConcerts(true),
               disabled: concertsLoading,
-              className: `ml-2 p-1.5 transition-colors ${concertsLoading ? 'text-violet-500' : 'text-gray-400 hover:text-gray-600'}`,
+              className: `ml-2 p-1.5 transition-colors ${concertsLoading ? 'text-teal-500' : 'text-gray-400 hover:text-gray-600'}`,
               title: concertsLoading ? 'Loading...' : 'Refresh'
             },
               React.createElement('svg', {
@@ -43185,7 +43189,7 @@ useEffect(() => {
               concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
                 className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
-                style: { backgroundColor: 'var(--accent-surface)', color: 'var(--accent-primary)' },
+                style: { backgroundColor: 'rgba(16, 201, 180, 0.1)', color: '#10c9b4' },
                 title: `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
                 React.createElement('svg', { className: 'w-3.5 h-3.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -43197,7 +43201,7 @@ useEffect(() => {
                 React.createElement('span', {
                   onClick: (e) => { e.stopPropagation(); setConcertsLocation(''); setConcertsLocationCoords(null); setConcertsLocationRadius(50); },
                   className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
-                  style: { color: 'var(--accent-primary)' }
+                  style: { color: '#10c9b4' }
                 },
                   React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M6 18L18 6M6 6l12 12' })
@@ -43208,7 +43212,7 @@ useEffect(() => {
               !concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
                 className: 'p-1.5 transition-colors',
-                style: { color: concertsLocation ? 'var(--accent-primary)' : 'var(--text-tertiary)' },
+                style: { color: concertsLocation ? '#10c9b4' : 'var(--text-tertiary)' },
                 title: concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location'
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -43259,7 +43263,7 @@ useEffect(() => {
                     },
                     autoFocus: true,
                     placeholder: 'City or region...',
-                    className: `flex-1 text-sm outline-none rounded-lg px-3.5 py-2.5 transition-colors ${isDark ? 'bg-gray-700 text-gray-200 placeholder-gray-500 border border-gray-600 focus:border-violet-500' : 'bg-gray-50 text-gray-700 placeholder-gray-400 border border-gray-200 focus:border-violet-400'}`
+                    className: `flex-1 text-sm outline-none rounded-lg px-3.5 py-2.5 transition-colors ${isDark ? 'bg-gray-700 text-gray-200 placeholder-gray-500 border border-gray-600 focus:border-teal-500' : 'bg-gray-50 text-gray-700 placeholder-gray-400 border border-gray-200 focus:border-teal-400'}`
                   }),
                   // "Use my location" button
                   React.createElement('button', {
@@ -43278,7 +43282,7 @@ useEffect(() => {
                       setConcertsGeocodingLoading(false);
                     },
                     disabled: concertsGeocodingLoading,
-                    className: `p-1.5 rounded-lg transition-colors flex-shrink-0 ${isDark ? 'text-gray-400 hover:text-violet-400 hover:bg-gray-700' : 'text-gray-400 hover:text-violet-500 hover:bg-gray-100'}`,
+                    className: `p-1.5 rounded-lg transition-colors flex-shrink-0 ${isDark ? 'text-gray-400 hover:text-teal-400 hover:bg-gray-700' : 'text-gray-400 hover:text-teal-500 hover:bg-gray-100'}`,
                     title: 'Use my location'
                   },
                     concertsGeocodingLoading
@@ -43337,7 +43341,7 @@ useEffect(() => {
                     value: concertsLocationRadius,
                     onChange: (e) => setConcertsLocationRadius(parseInt(e.target.value)),
                     className: 'w-full',
-                    style: { accentColor: '#8b5cf6', height: '4px' }
+                    style: { accentColor: '#10c9b4', height: '4px' }
                   })
                 ),
                 // Action buttons row
@@ -43367,7 +43371,7 @@ useEffect(() => {
                       setConcertsLocationOpen(false);
                     },
                     disabled: concertsGeocodingLoading,
-                    className: `text-xs font-medium px-3 py-1 rounded-md transition-colors ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-violet-500 text-white hover:bg-violet-600'}`
+                    className: `text-xs font-medium px-3 py-1 rounded-md transition-colors ${isDark ? 'bg-teal-600 text-white hover:bg-teal-500' : 'bg-teal-500 text-white hover:bg-teal-600'}`
                   }, concertsGeocodingLoading ? 'Looking up...' : 'Apply')
                 )
               )
@@ -43419,9 +43423,9 @@ useEffect(() => {
               className: 'flex flex-col items-center justify-center py-20 px-6'
             },
               React.createElement('div', {
-                className: 'w-16 h-16 rounded-full bg-violet-100 flex items-center justify-center mb-4'
+                className: 'w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center mb-4'
               },
-                React.createElement('svg', { className: 'w-8 h-8 text-violet-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('svg', { className: 'w-8 h-8 text-teal-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' })
                 )
               ),
@@ -43433,7 +43437,7 @@ useEffect(() => {
               }, 'Enable a concert service plugin (Bandsintown, Songkick, or SeatGeek) in Settings to see upcoming shows for artists you love.'),
               React.createElement('button', {
                 onClick: () => { navigateTo('settings'); },
-                className: 'px-4 py-2 bg-violet-500 text-white rounded-lg text-sm hover:bg-violet-600 transition-colors'
+                className: 'px-4 py-2 bg-teal-500 text-white rounded-lg text-sm hover:bg-teal-600 transition-colors'
               }, 'Go to Settings')
             ),
 
@@ -43444,7 +43448,7 @@ useEffect(() => {
               React.createElement('p', { className: 'text-sm text-red-500 mb-3' }, concertsError),
               React.createElement('button', {
                 onClick: () => loadConcerts(true),
-                className: 'px-4 py-2 bg-violet-500 text-white rounded-lg text-sm hover:bg-violet-600 transition-colors'
+                className: 'px-4 py-2 bg-teal-500 text-white rounded-lg text-sm hover:bg-teal-600 transition-colors'
               }, 'Try Again')
             ),
 
@@ -43480,9 +43484,9 @@ useEffect(() => {
               className: 'flex flex-col items-center justify-center py-20 px-6'
             },
               React.createElement('div', {
-                className: 'w-16 h-16 rounded-full bg-violet-100 flex items-center justify-center mb-4'
+                className: 'w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center mb-4'
               },
-                React.createElement('svg', { className: 'w-8 h-8 text-violet-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('svg', { className: 'w-8 h-8 text-teal-400', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                   React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' })
                 )
               ),
@@ -43494,7 +43498,7 @@ useEffect(() => {
               }, 'Add artists to your collection or listen to more music. We\'ll check for upcoming shows from artists you love.'),
               React.createElement('button', {
                 onClick: () => loadConcerts(true),
-                className: 'mt-4 px-4 py-2 text-violet-600 border border-violet-300 rounded-lg text-sm hover:bg-violet-50 transition-colors'
+                className: 'mt-4 px-4 py-2 text-teal-600 border border-teal-300 rounded-lg text-sm hover:bg-teal-50 transition-colors'
               }, 'Refresh')
             ),
 
@@ -43620,7 +43624,7 @@ useEffect(() => {
                             style: { minWidth: '100px' }
                           },
                             React.createElement('span', {
-                              className: 'text-xs font-medium text-violet-500 uppercase'
+                              className: 'text-xs font-medium text-teal-500 uppercase'
                             }, monthShort),
                             React.createElement('span', {
                               className: `text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`
@@ -43634,7 +43638,7 @@ useEffect(() => {
                           React.createElement('div', {
                             className: `flex-shrink-0 overflow-hidden cursor-pointer ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`,
                             style: { width: '100px', height: '100px', alignSelf: 'stretch' },
-                            onClick: () => { if (event.artist) fetchArtistData(event.artist); }
+                            onClick: () => { if (event.artist) { pendingProtocolTabRef.current = 'on-tour'; fetchArtistData(event.artist); } }
                           },
                             artistImg?.url
                               ? React.createElement('img', {
@@ -43658,9 +43662,9 @@ useEffect(() => {
                             React.createElement('div', { className: 'flex-1 min-w-0' },
                               React.createElement('div', { className: 'flex items-center gap-2 mb-0.5' },
                                 React.createElement('span', {
-                                  className: `font-semibold truncate cursor-pointer hover:text-violet-600 transition-colors ${isDark ? 'text-white' : 'text-gray-900'}`,
+                                  className: `font-semibold truncate cursor-pointer hover:text-teal-500 transition-colors ${isDark ? 'text-white' : 'text-gray-900'}`,
                                   onClick: () => {
-                                    if (event.artist) fetchArtistData(event.artist);
+                                    if (event.artist) { pendingProtocolTabRef.current = 'on-tour'; fetchArtistData(event.artist); }
                                   }
                                 }, event.artist),
                                 // Source badges
@@ -43677,7 +43681,7 @@ useEffect(() => {
                                   const sources = event.ticketSources || [{ source: event.source, aiProviderName: event.aiProviderName }];
                                   const hasAiSource = sources.some(s => s.source === 'ai');
                                   const badges = sources.map((src, si) => {
-                                    const c = srcColors[src.source] || { bg: `rgba(139, 92, 246, ${bgAlpha})`, text: isDark ? '#a78bfa' : '#8b5cf6' };
+                                    const c = srcColors[src.source] || { bg: `rgba(16, 201, 180, ${bgAlpha})`, text: isDark ? '#66f0da' : '#10c9b4' };
                                     return React.createElement('span', {
                                       key: `badge-${si}`,
                                       className: 'flex-shrink-0 px-1.5 py-0.5 text-xs rounded-full',
@@ -43688,7 +43692,7 @@ useEffect(() => {
                                   if (hasAiSource) {
                                     badges.push(React.createElement('span', {
                                       key: 'ai-disclaimer',
-                                      className: 'text-xs text-violet-400 italic flex-shrink-0',
+                                      className: 'text-xs text-teal-400 italic flex-shrink-0',
                                       title: 'AI-generated results may not be accurate. Verify event details before purchasing tickets.'
                                     }, 'AI generated results may be hallucinations'));
                                   }
@@ -43730,9 +43734,9 @@ useEffect(() => {
                                 target: '_blank',
                                 rel: 'noopener noreferrer',
                                 className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors no-drag',
-                                style: { backgroundColor: '#7c3aed', color: '#fff' },
-                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; },
+                                style: { backgroundColor: '#10c9b4', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; },
                                 onClick: (e) => e.stopPropagation()
                               }, 'Tickets');
                             }
@@ -43745,9 +43749,9 @@ useEffect(() => {
                                   setConcertsTicketFlyout(isOpen ? null : eventId);
                                 },
                                 className: 'px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5',
-                                style: { backgroundColor: '#7c3aed', color: '#fff' },
-                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
-                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
+                                style: { backgroundColor: '#10c9b4', color: '#fff' },
+                                onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#0eb3a0'; },
+                                onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#10c9b4'; }
                               },
                                 'Tickets',
                                 React.createElement('svg', {
@@ -43771,7 +43775,7 @@ useEffect(() => {
                                     seatgeek: isDkFlyout ? '#fb923c' : '#FC4C02',
                                     ticketmaster: isDkFlyout ? '#60a5fa' : '#026CDF'
                                   };
-                                  const color = srcColors[src.source] || (isDkFlyout ? '#a78bfa' : '#8b5cf6');
+                                  const color = srcColors[src.source] || (isDkFlyout ? '#66f0da' : '#10c9b4');
                                   return React.createElement('a', {
                                     key: si,
                                     href: src.ticketUrl,
@@ -43809,7 +43813,7 @@ useEffect(() => {
                   className: 'flex items-center justify-center py-4'
                 },
                   React.createElement('svg', {
-                    className: 'w-5 h-5 animate-spin text-violet-500 mr-2',
+                    className: 'w-5 h-5 animate-spin text-teal-500 mr-2',
                     fill: 'none', viewBox: '0 0 24 24'
                   },
                     React.createElement('circle', { className: 'opacity-25', cx: 12, cy: 12, r: 10, stroke: 'currentColor', strokeWidth: 4 }),
@@ -43840,7 +43844,7 @@ useEffect(() => {
           },
             // Gradient background - purple/indigo theme for recommendations
             React.createElement('div', {
-              className: 'absolute inset-0 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500'
+              className: 'absolute inset-0 bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500'
             }),
             // Background pattern - stars for recommendations
             React.createElement('div', {
@@ -43999,7 +44003,7 @@ useEffect(() => {
                         recommendationsSourceFilter === value
                           ? value === 'listenbrainz' ? 'bg-orange-500 text-white'
                             : value === 'lastfm' ? 'bg-red-600 text-white'
-                            : 'bg-purple-600 text-white'
+                            : 'bg-amber-500 text-white'
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`
                     }, recommendations.loading ? label : `${label} (${count})`)
@@ -45674,7 +45678,7 @@ useEffect(() => {
                 onClick: () => pinnedFriendIds.includes(currentFriend.id) ? unpinFriend(currentFriend.id) : pinFriend(currentFriend.id),
                 className: 'flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors',
                 style: pinnedFriendIds.includes(currentFriend.id)
-                  ? { backgroundColor: 'var(--accent-primary)', color: '#ffffff' }
+                  ? { backgroundColor: '#8b5cf6', color: '#ffffff' }
                   : { backgroundColor: 'var(--hover-bg-default)', color: 'var(--text-secondary)' }
               },
                 React.createElement('svg', {
@@ -48185,7 +48189,7 @@ useEffect(() => {
                         fetchArtistData(currentTrack.artist);
                       },
                       className: 'flex-shrink-0 ml-3 rounded-full transition-opacity hover:opacity-80 cursor-pointer no-drag',
-                      style: { width: '7px', height: '7px', backgroundColor: '#7c3aed' }
+                      style: { width: '7px', height: '7px', backgroundColor: '#10c9b4' }
                     })
                   );
                 })()
