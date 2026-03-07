@@ -18009,14 +18009,14 @@ ${trackListXml}
         );
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
-          newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp };
+          newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp, lastFullScan: newReleasesData.lastFullScan || 0 };
           console.log(`📦 Loaded ${filteredReleases.length} new releases from cache`);
         } else {
           // Cache expired but still useful as stale data to show instantly.
           // Keep the original timestamp (not 0) so saveCacheToStore preserves a
           // truthy value — a 0 sentinel would cause the loading guard to skip on
-          // next restart since 0 is falsy.
-          newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp };
+          // next startup since 0 is falsy.
+          newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp, lastFullScan: newReleasesData.lastFullScan || 0 };
           console.log(`📦 Loaded ${filteredReleases.length} stale new releases from cache (will refresh)`);
         }
         // Hydrate albumArt from albumArtCache for releases missing art
@@ -18605,7 +18605,8 @@ ${trackListXml}
       if (newReleasesCache.current.releases) {
         await window.electron.store.set('cache_new_releases', {
           releases: newReleasesCache.current.releases,
-          timestamp: newReleasesCache.current.timestamp
+          timestamp: newReleasesCache.current.timestamp,
+          lastFullScan: newReleasesCache.current.lastFullScan || 0
         });
       }
 
@@ -23572,7 +23573,7 @@ ${tracks}
   };
 
   // Load New Releases from MusicBrainz for artists in the user's collection and listening history
-  const newReleasesCache = useRef({ releases: null, timestamp: 0 });
+  const newReleasesCache = useRef({ releases: null, timestamp: 0, lastFullScan: 0 });
   // Gather artists from all sources (collection, library, listening history)
   const gatherNewReleasesArtists = async () => {
     const seen = new Set();
@@ -23845,8 +23846,12 @@ ${tracks}
     // do an incremental update (only look for releases newer than the newest cached one).
     // If the cache is older than 24 hours, fall through to a full 6-month scan instead,
     // which uses shuffled artists and discovers releases from previously unchecked artists.
-    const cacheTimestamp = newReleasesCache.current.timestamp || 0;
-    const cacheIsRecent = (Date.now() - cacheTimestamp) < 24 * 60 * 60 * 1000; // 24 hours
+    // Use lastFullScan (not timestamp) to decide incremental vs full refresh.
+    // timestamp gets updated on every incremental check, but lastFullScan only
+    // updates after a complete 6-month scan, ensuring we periodically re-scan
+    // with shuffled artists to discover releases from previously unchecked artists.
+    const lastFullScan = newReleasesCache.current.lastFullScan || 0;
+    const cacheIsRecent = (Date.now() - lastFullScan) < 24 * 60 * 60 * 1000; // 24 hours
     if (forceRefresh && newReleases.length > 0 && cacheIsRecent) {
       console.log('✨ Incremental refresh: checking for new releases...');
       setNewReleasesLoading(true);
@@ -23878,7 +23883,7 @@ ${tracks}
           // Prepend new releases and re-sort
           const merged = [...brandNew, ...newReleases].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
           setNewReleases(merged);
-          newReleasesCache.current = { releases: merged, timestamp: Date.now() };
+          newReleasesCache.current = { releases: merged, timestamp: Date.now(), lastFullScan: newReleasesCache.current.lastFullScan || 0 };
 
           const hash = generateDiscoveryHash(merged);
           checkDiscoveryUnread('newReleases', hash);
@@ -23898,7 +23903,10 @@ ${tracks}
       return;
     }
 
-    // Full initial load
+    // Full initial load (or full re-scan when last full scan was >24h ago)
+    if (forceRefresh && newReleases.length > 0) {
+      console.log(`✨ Full re-scan: last full scan was ${Math.round((Date.now() - lastFullScan) / 3600000)}h ago (>24h threshold)`);
+    }
     setNewReleasesLoading(true);
     setNewReleasesError(null);
     console.log('✨ Loading New Releases (full fetch)...');
@@ -23948,7 +23956,7 @@ ${tracks}
           setNewReleases(deduped);
           // Keep cache ref in sync so periodic saveCacheToStore captures
           // in-progress results (prevents data loss on rebuild/crash)
-          newReleasesCache.current = { releases: deduped, timestamp: Date.now() };
+          newReleasesCache.current = { releases: deduped, timestamp: Date.now(), lastFullScan: Date.now() };
         }
       );
 
@@ -23973,7 +23981,7 @@ ${tracks}
       setNewReleases(uniqueReleases);
       setNewReleasesLoaded(true);
 
-      newReleasesCache.current = { releases: uniqueReleases, timestamp: Date.now() };
+      newReleasesCache.current = { releases: uniqueReleases, timestamp: Date.now(), lastFullScan: Date.now() };
 
       const hash = generateDiscoveryHash(uniqueReleases);
       checkDiscoveryUnread('newReleases', hash);
