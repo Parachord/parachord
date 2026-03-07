@@ -33645,14 +33645,38 @@ useEffect(() => {
           className: 'h-full overflow-y-auto bg-white'
         },
           // Header bar with SEARCH title and CLOSE button
-          React.createElement('div', { className: 'flex items-center justify-between px-8 py-3 border-b border-gray-200' },
-            React.createElement('span', { className: 'text-xs font-medium tracking-widest text-gray-400 uppercase' }, 'Search'),
+          React.createElement('div', {
+            className: 'flex items-center justify-between px-8 py-4 flex-shrink-0',
+            style: {
+              borderBottom: '1px solid var(--border-subtle)',
+              backgroundColor: 'var(--bg-secondary)'
+            }
+          },
+            React.createElement('span', {
+              style: {
+                fontSize: '11px',
+                fontWeight: '600',
+                letterSpacing: '0.08em',
+                color: 'var(--text-tertiary)',
+                textTransform: 'uppercase'
+              }
+            }, 'Search'),
             React.createElement('button', {
               onClick: () => navigateBack(),
-              className: 'flex items-center gap-1 px-3 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors no-drag'
+              className: 'flex items-center gap-2 no-drag transition-all',
+              style: {
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '500',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '6px',
+                backgroundColor: 'transparent',
+                cursor: 'pointer'
+              }
             },
-              'CLOSE',
-              React.createElement('span', { className: 'text-gray-400' }, '×')
+              'Close',
+              React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '×')
             )
           ),
 
