@@ -23686,10 +23686,20 @@ ${tracks}
       });
     }
 
+    // Shuffle each source so different artists are checked on each load,
+    // allowing releases to accumulate from the full library over time.
+    const shuffle = (arr) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
+
     // Interleave sources so each gets fair representation in the artist limit.
     // Kept moderate since merge logic accumulates releases across sessions.
     const maxArtists = 50;
-    const buckets = [collectionArtists, libraryArtists, historyArtists].filter(b => b.length > 0);
+    const buckets = [shuffle(collectionArtists), shuffle(libraryArtists), shuffle(historyArtists)].filter(b => b.length > 0);
     const artistList = [];
     let round = 0;
     while (artistList.length < maxArtists) {
@@ -23831,8 +23841,13 @@ ${tracks}
       setNewReleasesLoaded(true);
     }
 
-    // For refresh: if we have existing data, do an incremental update
-    if (forceRefresh && newReleases.length > 0) {
+    // For refresh: if we have existing data and the cache is reasonably fresh,
+    // do an incremental update (only look for releases newer than the newest cached one).
+    // If the cache is older than 24 hours, fall through to a full 6-month scan instead,
+    // which uses shuffled artists and discovers releases from previously unchecked artists.
+    const cacheTimestamp = newReleasesCache.current.timestamp || 0;
+    const cacheIsRecent = (Date.now() - cacheTimestamp) < 24 * 60 * 60 * 1000; // 24 hours
+    if (forceRefresh && newReleases.length > 0 && cacheIsRecent) {
       console.log('✨ Incremental refresh: checking for new releases...');
       setNewReleasesLoading(true);
       setNewReleasesError(null);
