@@ -35559,15 +35559,15 @@ useEffect(() => {
           artistPageTab === 'biography' && React.createElement('div', {
             className: 'flex gap-0 p-6'
           },
-            // LEFT COLUMN: Artist Info Card (same width as album art column)
+            // LEFT COLUMN: Artist Info Card (~1/4 width)
             React.createElement('div', {
-              className: 'flex-shrink-0 pr-8',
-              style: { width: '240px' }
+              className: 'pr-8',
+              style: { flex: '0 0 25%' }
             },
               // Artist Info Card
               React.createElement('div', {
                 style: {
-                  width: '192px',
+                  width: '100%',
                   backgroundColor: 'var(--card-bg)',
                   borderRadius: '10px',
                   padding: '14px',
@@ -39243,7 +39243,7 @@ useEffect(() => {
                             ),
                             // Track info - click to play, right-click for context menu
                             track && React.createElement('p', {
-                              className: 'text-xs truncate mt-0.5 cursor-pointer hover:underline',
+                              className: 'text-xs truncate mt-0.5 cursor-pointer hover:underline flex items-center gap-1',
                               style: { color: onAir ? 'var(--nav-inactive)' : 'var(--text-tertiary)' },
                               onClick: (e) => {
                                 e.stopPropagation();
@@ -39279,9 +39279,9 @@ useEffect(() => {
                               }
                             },
                               React.createElement('span', {
-                                style: { color: onAir ? '#22c55e' : 'var(--border-default)' }
-                              }, '\u266A '),
-                              `${track.name} \u00B7 ${track.artist}`
+                                style: { color: onAir ? '#22c55e' : 'var(--text-tertiary)', flexShrink: 0 }
+                              }, '\u266A'),
+                              React.createElement('span', { className: 'truncate' }, `${track.name} \u00B7 ${track.artist}`)
                             )
                           ),
                           // Listen along button (only for online friends)
