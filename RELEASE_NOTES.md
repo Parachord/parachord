@@ -1,3 +1,103 @@
+# Parachord v0.8.1-alpha.1
+
+**Release date:** 2026-03-07
+
+---
+
+## Dark Mode & Theming Engine
+
+Full dark mode support with a comprehensive design token system. Every surface, text color, border, shadow, and accent in the app now uses CSS custom properties — no more hardcoded hex values.
+
+- **Dark mode toggle** — choose Light, Dark, or System in Settings; follows your OS preference by default
+- **Flash-free startup** — the main process pre-applies the `dark` class before the window is shown, so there is no flash of light mode on launch
+- **Design tokens** — 100+ CSS custom properties (`--bg-primary`, `--text-secondary`, `--accent-primary`, `--card-shadow`, etc.) defined in `:root` with `.dark` overrides
+- **365+ hardcoded colors converted** — every inline `#hex` and `rgb()` value across cards, tooltips, modals, filter bars, inputs, scrollbars, and skeletons now references design tokens
+- **System theme listener** — `nativeTheme.on('updated')` in the main process notifies the renderer when the OS switches between light and dark
+- **Theme-aware focus rings** — all `focus-visible` outlines use `--accent-primary` with rounded corners
+- **Shimmer and skeleton classes** — new `shimmer-light` and `shimmer-strong` utility classes replace per-element gradient definitions
+- **Always-dark surfaces** — the player bar, queue drawer, and AI panels retain their dark appearance in both modes via dedicated `--surface-dark-*` tokens
+
+## Concerts — Live Music Discovery
+
+A brand-new Concerts page aggregates upcoming shows from multiple ticketing services, filtered by your location and listening history.
+
+- **Four concert data sources** — new Bandsintown, Songkick, SeatGeek, and Ticketmaster plugins (`.axe` files) provide concert listings
+- **AI concert disclaimer** — when AI-sourced concert results are present, a disclaimer badge flags them as potentially hallucinated
+- **Location-aware filtering** — IP-based geolocation with multiple fallback services, plus a location autocomplete search dialog with configurable radius (miles)
+- **On Tour indicator** — a purple dot next to the now-playing artist links directly to the On Tour tab when nearby concerts exist; hovering shows a tooltip
+- **Artist page On Tour tab** — artist detail pages show an "On Tour" tab with that artist's upcoming concerts, with ticket links and loading skeletons
+- **Concert row design** — large artist images, 3-column layout (date, image, venue/reason), ticket buttons with flyout menus linking to each service
+- **Lineup and opener matching** — concerts are matched against your library by headliner, opener, and lineup members; tribute/cover band false positives are filtered out
+- **Persistent cache** — concert results are cached for 24 hours and survive app restarts; `cache_concerts` added to the store key whitelist
+
+## Fresh Drops — Reliability Improvements
+
+- **Fixed stale cache loop** — `lastFullScan` is now tracked separately from `timestamp`; incremental refreshes no longer reset the full-scan clock, preventing an infinite refresh loop
+- **Shuffled artist sources** — collection, library, and history artists are shuffled and interleaved in round-robin so every refresh discovers releases from different artists
+- **Full re-scan after 24 hours** — when the last full scan is over 24 hours old, a complete re-scan runs instead of an incremental check
+- **Fixed duplicate releases** — Fresh Drops no longer shows the same releases repeatedly
+
+## Performance
+
+- **Batch IPC on startup** — all `store.get()` calls during initialization are batched into a single `store-get-batch` IPC roundtrip, eliminating dozens of sequential Electron IPC calls and significantly reducing cold-start time
+- **Background concert pre-loading** — concert data is fetched in the background after initial load, without blocking the UI
+
+## UI & UX Polish
+
+- **Search tab** — font size and icon size now match other sidebar tabs; subtle active-state indicator added
+- **Filter pills** — consistent focus styling, rounded corners on focus-visible rings, standardized chip sizing across concerts and other filter bars
+- **Artist cards** — collection and search artist cards now match album card styling with visible borders at rest and theme-aware colors
+- **Sidebar tab colors** — brightened teal accent; highlight colors match page headers; fixed hover overflow and spin direction
+- **Tooltip contrast** — dark mode tooltips use a lighter background for better readability; player bar tooltips stay dark in both modes
+- **Playlist share button** — increased spacing above the Share button on playlist view
+- **Refresh icon** — fixed spin direction to rotate clockwise; player bar skeleton shimmer now animates correctly
+- **Close button** — capitalization fix ("Close" instead of "close"); uses theme-aware styling in Search header
+- **Artist discography navigation** — BACK button no longer skips the artist discography when closing a release; it returns to the release list first
+
+## Spotify API Resilience
+
+- **Retry on 502/503/504** — both `spotifyRequest` and `spotifyFetch` now retry transient server errors with exponential backoff (up to 30 seconds between retries), instead of failing immediately
+
+## Plugin Marketplace
+
+- **New concert plugins** — Bandsintown, Songkick, SeatGeek, and Ticketmaster added to the marketplace manifest with icons, descriptions, and download URLs
+- **New `concerts` category** — added to the marketplace category list
+
+## Documentation
+
+- **TypeScript migration plan** — comprehensive plan for migrating the JavaScript codebase to TypeScript
+- **YouTube Music sync design** — design document for YouTube Music library sync using Google Data Portability API
+- **Listening history import** — issue draft for cross-service listening history import
+- **YouTube Music library import** — issue draft for YouTube Music library import feature
+- **Bulk export research** — appendices covering Spotify extended streaming history and Apple Music bulk export
+- **UI consistency audit** — remaining implementation plan for UI consistency work
+
+## Bug Fixes
+
+- Fixed Artist Suggestions card not loading discography on click
+- Fixed playlist resolution stopping when navigating back
+- Fixed shimmer animation not playing on resolver icon skeletons (switched from `background` shorthand to `background-image`)
+- Fixed concert cache not bypassing when clicking the nav button
+- Fixed geoIP location lookup failing by adding multiple fallback services
+- Fixed dark mode styling inconsistencies across filter bars and modals
+- Fixed concert false positives from tribute and cover bands leaking through the location filter
+- Fixed concert refresh not clearing stale cache properly
+
+---
+
+# Parachord v0.8.0-alpha.12
+
+**Release date:** 2026-03-03
+
+---
+
+*See git log for alpha.12 and earlier changes.*
+
+---
+
+<details>
+<summary>v0.8.0-alpha.2 and earlier</summary>
+
 # Parachord v0.8.0-alpha.2
 
 **Release date:** 2026-02-25
@@ -171,3 +271,9 @@ Third-party websites can embed a button that sends playlists directly into Parac
 ---
 
 **Full changelog:** `git log v0.8.0-alpha.1..v0.8.0-alpha.2`
+
+</details>
+
+---
+
+**Full changelog:** `git log v0.8.0-alpha.12..v0.8.1-alpha.1`
