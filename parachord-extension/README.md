@@ -31,7 +31,11 @@ Connect your browser to [Parachord](https://github.com/Parachord/parachord) desk
 
 ### From Chrome Web Store
 
-Coming soon.
+Install from the [Chrome Web Store](https://chromewebstore.google.com/detail/parachord/gibkgapadebfoillbakpgmgpnppjlnie) (works with Chrome, Edge, and other Chromium browsers).
+
+### From Firefox Add-ons
+
+Install from [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/parachord/).
 
 ## Usage
 
