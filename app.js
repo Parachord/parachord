@@ -19212,7 +19212,7 @@ ${trackListXml}
     setArtistImagePosition('center 25%');
     navigateTo('artist');
 
-    if (cachedData && cachedData.resolverHash !== currentResolverHash) {
+    if (cachedData && cachedData.resolverHash !== getResolverSettingsHash()) {
       console.log('🔄 Resolver settings changed, invalidating cache for:', artistName);
     }
 
