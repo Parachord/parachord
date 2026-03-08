@@ -1,4 +1,12 @@
-import { Action, ActionPanel, Form, showHUD, showToast, Toast, LaunchProps } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Form,
+  showHUD,
+  showToast,
+  Toast,
+  LaunchProps,
+} from "@raycast/api";
 import { useState } from "react";
 import { openParachord, parseArtistTrack } from "./utils";
 
@@ -37,7 +45,10 @@ export default function Command(props: LaunchProps<{ arguments: Arguments }>) {
 
     if (finalArtist && finalTitle) {
       // Direct play with artist and title
-      await openParachord("play", [], { artist: finalArtist, title: finalTitle });
+      await openParachord("play", [], {
+        artist: finalArtist,
+        title: finalTitle,
+      });
       await showHUD(`Playing "${finalTitle}" by ${finalArtist}`);
     } else {
       // Open search in Parachord

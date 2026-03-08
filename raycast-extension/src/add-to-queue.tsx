@@ -1,4 +1,12 @@
-import { Action, ActionPanel, Form, showHUD, showToast, Toast, LaunchProps } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Form,
+  showHUD,
+  showToast,
+  Toast,
+  LaunchProps,
+} from "@raycast/api";
 import { useState } from "react";
 import { openParachord, parseArtistTrack } from "./utils";
 
@@ -34,7 +42,10 @@ export default function Command(props: LaunchProps<{ arguments: Arguments }>) {
       return;
     }
 
-    await openParachord("queue", ["add"], { artist: finalArtist, title: finalTitle });
+    await openParachord("queue", ["add"], {
+      artist: finalArtist,
+      title: finalTitle,
+    });
     await showHUD(`Added "${finalTitle}" by ${finalArtist} to queue`);
   };
 

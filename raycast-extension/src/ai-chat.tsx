@@ -8,13 +8,31 @@ interface Arguments {
 
 const QUICK_PROMPTS = [
   { title: "Play something chill", value: "play something chill" },
-  { title: "Play something upbeat", value: "play something upbeat for working out" },
-  { title: "Play similar to current", value: "play something similar to what's playing" },
-  { title: "Create a playlist", value: "create a playlist based on my recent listening" },
+  {
+    title: "Play something upbeat",
+    value: "play something upbeat for working out",
+  },
+  {
+    title: "Play similar to current",
+    value: "play something similar to what's playing",
+  },
+  {
+    title: "Create a playlist",
+    value: "create a playlist based on my recent listening",
+  },
   { title: "What's playing?", value: "what am I listening to right now?" },
-  { title: "Recommend new artists", value: "recommend some new artists I might like" },
-  { title: "Play something for focus", value: "play something good for focus and concentration" },
-  { title: "Play something nostalgic", value: "play something nostalgic from the 90s" },
+  {
+    title: "Recommend new artists",
+    value: "recommend some new artists I might like",
+  },
+  {
+    title: "Play something for focus",
+    value: "play something good for focus and concentration",
+  },
+  {
+    title: "Play something nostalgic",
+    value: "play something nostalgic from the 90s",
+  },
 ];
 
 export default function Command(props: LaunchProps<{ arguments: Arguments }>) {

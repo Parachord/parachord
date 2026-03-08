@@ -1,4 +1,12 @@
-import { Action, ActionPanel, Form, showHUD, showToast, Toast, LaunchProps } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  Form,
+  showHUD,
+  showToast,
+  Toast,
+  LaunchProps,
+} from "@raycast/api";
 import { useState } from "react";
 import { openParachord } from "./utils";
 

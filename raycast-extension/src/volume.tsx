@@ -30,7 +30,10 @@ export default function Command() {
           icon={level.icon}
           actions={
             <ActionPanel>
-              <Action title="Set Volume" onAction={() => handleSelect(level.value)} />
+              <Action
+                title="Set Volume"
+                onAction={() => handleSelect(level.value)}
+              />
             </ActionPanel>
           }
         />

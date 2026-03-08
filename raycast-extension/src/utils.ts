@@ -8,7 +8,7 @@ const PARACHORD_HTTP_PORT = 8888;
 export function buildProtocolUrl(
   command: string,
   segments: string[] = [],
-  params: Record<string, string> = {}
+  params: Record<string, string> = {},
 ): string {
   const path = [command, ...segments.map(encodeURIComponent)].join("/");
   const searchParams = new URLSearchParams(params).toString();
@@ -22,7 +22,7 @@ export async function openParachord(
   command: string,
   segments: string[] = [],
   params: Record<string, string> = {},
-  hudMessage?: string
+  hudMessage?: string,
 ): Promise<void> {
   const protocolUrl = buildProtocolUrl(command, segments, params);
   const httpUrl = `http://127.0.0.1:${PARACHORD_HTTP_PORT}/protocol?url=${encodeURIComponent(protocolUrl)}`;
@@ -31,8 +31,12 @@ export async function openParachord(
     const response = await fetch(httpUrl);
 
     if (!response.ok) {
-      const data = await response.json().catch(() => ({} as { error?: string }));
-      throw new Error((data as { error?: string }).error || `HTTP ${response.status}`);
+      const data = await response
+        .json()
+        .catch(() => ({}) as { error?: string });
+      throw new Error(
+        (data as { error?: string }).error || `HTTP ${response.status}`,
+      );
     }
 
     if (hudMessage) {
@@ -61,7 +65,9 @@ export async function openParachord(
 /**
  * Parse "Artist - Track" format into separate parts
  */
-export function parseArtistTrack(input: string): { artist: string; title: string } | null {
+export function parseArtistTrack(
+  input: string,
+): { artist: string; title: string } | null {
   // Try "Artist - Track" format first
   const dashMatch = input.match(/^(.+?)\s*[-–—]\s*(.+)$/);
   if (dashMatch) {
