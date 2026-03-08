@@ -19145,9 +19145,11 @@ ${trackListXml}
     // Cache is valid if data exists, not expired, and the cached artist name is
     // a reasonable match for what was searched (prevents serving stale data from
     // a previous bad MusicBrainz match, e.g. wrong "John Smith" cached under "john smith")
-    const cachedName = cachedData?.artist?.name?.toLowerCase() || '';
-    const cacheNameMatch = cachedName === cacheKey ||
-                          cachedName.replace(/[^a-z0-9]/g, '') === cacheKey.replace(/[^a-z0-9]/g, '');
+    const normCache = s => s?.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+    const cachedNorm = normCache(cachedData?.artist?.name);
+    const searchNorm = normCache(artistName);
+    const cacheNameMatch = cachedNorm === searchNorm;
     const cacheValid = cachedData &&
                       (now - cachedData.timestamp) < CACHE_TTL.artistData &&
                       cacheNameMatch;
@@ -19277,10 +19279,23 @@ ${trackListXml}
       const searchData = await searchResponse.json();
       
       // Validate MusicBrainz match quality — weak matches get the same fallback treatment
+      // MusicBrainz scores are relative (100 = best match found, not necessarily correct),
+      // so we must also verify the name is actually similar to avoid wrong-artist matches
+      // (e.g. "Jack Jose" → "José José" with score 100)
       const mbCandidate = searchData.artists?.[0];
       const mbScore = mbCandidate?.score || 0;
-      const mbNameMatch = mbCandidate?.name?.toLowerCase() === artistName.toLowerCase();
-      const mbMatchIsGood = mbCandidate && (mbScore >= 80 || mbNameMatch);
+      const normalizeName = s => s?.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+      const mbNorm = normalizeName(mbCandidate?.name);
+      const searchNorm = normalizeName(artistName);
+      // Check if one name contains the other, but only if the shorter is at least
+      // half the length of the longer (prevents "Red" matching "Red Hot Chili Peppers")
+      const shorterLen = Math.min(mbNorm.length, searchNorm.length);
+      const longerLen = Math.max(mbNorm.length, searchNorm.length);
+      const mbNameMatch = mbNorm === searchNorm ||
+                          ((mbNorm.includes(searchNorm) || searchNorm.includes(mbNorm)) &&
+                           shorterLen >= longerLen * 0.5);
+      const mbMatchIsGood = mbCandidate && mbNameMatch;
 
       if (!mbMatchIsGood) {
         if (mbCandidate) {
@@ -19394,9 +19409,10 @@ ${trackListXml}
         } // end if (fallbackResult)
       } // end if (!mbMatchIsGood)
 
-      // Prefer exact name match among results, fall back to highest-scored
+      // Prefer exact name match among results (with diacritics normalization),
+      // fall back to highest-scored
       const artist = searchData.artists.find(a =>
-        a.name.toLowerCase() === artistName.toLowerCase()
+        normalizeName(a.name) === searchNorm
       ) || searchData.artists[0];
       console.log('Found artist:', artist.name, 'MBID:', artist.id, 'Score:', artist.score);
 
