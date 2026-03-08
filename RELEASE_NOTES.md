@@ -73,6 +73,17 @@ A brand-new Concerts page aggregates upcoming shows from multiple ticketing serv
 - **Cache name validation** — cached artist data is checked against the search term before serving, preventing stale wrong-artist entries from persisting
 - **Search supplementing** — when MusicBrainz returns fewer than 3 results for artists, albums, or tracks, active resolvers (Spotify, Apple Music) supplement with deduplicated results
 
+## Browser Extension
+
+- **Published to stores** — the browser extension is now available on the Chrome Web Store and Firefox Add-ons; the in-app info modal links directly to the store listings instead of showing manual install instructions
+- **Official browser logos** — store buttons use the official Chrome and Firefox logos
+
+## Raycast Extension
+
+- **Store publishing prep** — the Raycast extension is ready for the Raycast Store: added `.eslintrc.json` (extending `@raycast`), CHANGELOG.md, Prettier formatting, and correct author metadata
+- **Dependency security** — upgraded `@raycast/eslint-config` to v2 to resolve all npm audit vulnerabilities
+- **Sync workflow fixes** — dotfiles (e.g. `.eslintrc.json`) are now included in repo sync; change detection stages files before diffing to catch new files
+
 ## Plugin Marketplace
 
 - **New concert plugins** — Bandsintown, Songkick, SeatGeek, and Ticketmaster added to the marketplace manifest with icons, descriptions, and download URLs
