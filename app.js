@@ -43868,16 +43868,21 @@ useEffect(() => {
                 if (event.source !== 'ai' || event.aiProvider !== concertsSourceFilter.slice(3)) return false;
               } else if (event.source !== concertsSourceFilter) return false;
             }
-            if (_locL) {
-              const city = (event.venue?.city || '').toLowerCase().trim();
-              const region = (event.venue?.region || '').toLowerCase().trim();
-              if (!(city && _locL.includes(city)) && !(region && _locL.includes(region))) return false;
-            }
             if (concertsLocationCoords) {
               const vLat = event.venue?.latitude, vLng = event.venue?.longitude;
               if (vLat != null && vLng != null) {
                 if (haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) > concertsLocationRadius) return false;
+              } else {
+                const locCity = _locL.split(',')[0].trim();
+                const city = (event.venue?.city || '').toLowerCase().trim();
+                const region = (event.venue?.region || '').toLowerCase().trim();
+                if (!(city && locCity.includes(city)) && !(region && locCity.includes(region))) return false;
               }
+            } else if (_locL) {
+              const locCity = _locL.split(',')[0].trim();
+              const city = (event.venue?.city || '').toLowerCase().trim();
+              const region = (event.venue?.region || '').toLowerCase().trim();
+              if (!(city && locCity.includes(city)) && !(region && locCity.includes(region))) return false;
             }
             if (_searchL) {
               const m = [event.artist, ...(event.lineup || []), event.venue?.name, event.venue?.city, event.title]
@@ -44382,21 +44387,31 @@ useEffect(() => {
                     return false;
                   }
                 }
-                // Location filter — always apply text matching, plus coordinate distance when available
-                if (locationLower) {
-                  const city = (event.venue?.city || '').toLowerCase().trim();
-                  const region = (event.venue?.region || '').toLowerCase().trim();
-                  const matchesCity = city && locationLower.includes(city);
-                  const matchesRegion = region && locationLower.includes(region);
-                  if (!matchesCity && !matchesRegion) return false;
-                }
+                // Location filter — coordinate-based distance when available, text fallback
                 if (concertsLocationCoords) {
                   const vLat = event.venue?.latitude;
                   const vLng = event.venue?.longitude;
                   if (vLat != null && vLng != null) {
                     const dist = haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng);
                     if (dist > concertsLocationRadius) return false;
+                  } else {
+                    // No venue coordinates — match on city portion of location only
+                    // (excludes broad terms like country names from the Nominatim display string)
+                    const locCity = locationLower.split(',')[0].trim();
+                    const city = (event.venue?.city || '').toLowerCase().trim();
+                    const region = (event.venue?.region || '').toLowerCase().trim();
+                    const matchesCity = city && locCity.includes(city);
+                    const matchesRegion = region && locCity.includes(region);
+                    if (!matchesCity && !matchesRegion) return false;
                   }
+                } else if (locationLower) {
+                  // No geocoded coords — use city portion of text for matching
+                  const locCity = locationLower.split(',')[0].trim();
+                  const city = (event.venue?.city || '').toLowerCase().trim();
+                  const region = (event.venue?.region || '').toLowerCase().trim();
+                  const matchesCity = city && locCity.includes(city);
+                  const matchesRegion = region && locCity.includes(region);
+                  if (!matchesCity && !matchesRegion) return false;
                 }
                 // Search filter
                 if (searchLower) {
@@ -49023,25 +49038,24 @@ useEffect(() => {
                 (() => {
                   if (!concertsLoaded || !currentTrack?.artist) return null;
                   const artistNorm = currentTrack.artist.trim().toLowerCase();
-                  const _onTourLocL = concertsLocation.toLowerCase().trim();
                   const hasNearbyShows = concerts.some(event => {
                     const isPrimary = event.artist?.trim().toLowerCase() === artistNorm;
                     const isInLineup = event.lineup && event.lineup.some(a => a.trim().toLowerCase() === artistNorm);
                     if (!isPrimary && !isInLineup) return false;
-                    if (!concertsLocationCoords && !_onTourLocL) return true; // no location filter — any show counts
-                    if (_onTourLocL) {
+                    if (!concertsLocationCoords) return true; // no location filter — any show counts
+                    const vLat = event.venue?.latitude;
+                    const vLng = event.venue?.longitude;
+                    if (vLat != null && vLng != null) {
+                      return haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) <= concertsLocationRadius;
+                    }
+                    // No venue coords — match on city portion of location text
+                    const _onTourLocCity = concertsLocation.toLowerCase().trim().split(',')[0].trim();
+                    if (_onTourLocCity) {
                       const city = (event.venue?.city || '').toLowerCase().trim();
                       const region = (event.venue?.region || '').toLowerCase().trim();
-                      if (!(city && _onTourLocL.includes(city)) && !(region && _onTourLocL.includes(region))) return false;
+                      return (city && _onTourLocCity.includes(city)) || (region && _onTourLocCity.includes(region));
                     }
-                    if (concertsLocationCoords) {
-                      const vLat = event.venue?.latitude;
-                      const vLng = event.venue?.longitude;
-                      if (vLat != null && vLng != null) {
-                        return haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) <= concertsLocationRadius;
-                      }
-                    }
-                    return true; // passed text matching, no coord check applicable
+                    return true;
                   });
                   if (!hasNearbyShows) return null;
                   return React.createElement(Tooltip, {
