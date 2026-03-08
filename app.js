@@ -39296,13 +39296,9 @@ useEffect(() => {
                     title: 'Install Browser Extension',
                     description: 'Control YouTube, Bandcamp, SoundCloud from Parachord',
                     action: () => {
-                      // Show installation instructions
-                      showToast(
-                        'In Chrome: Extensions → Developer Mode → Load Unpacked → parachord-extension',
-                        'info'
-                      );
+                      setExtensionInfoOpen(true);
                     },
-                    actionLabel: 'How to Install',
+                    actionLabel: 'Get Extension',
                     color: '#4285f4'
                   });
                 }
@@ -54012,53 +54008,105 @@ useEffect(() => {
             )
           ),
 
-          // Installation instructions
+          // Install from store
           React.createElement('div', null,
             React.createElement('h4', {
               style: { fontSize: '12px', fontWeight: '600', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }
-            }, 'Installation (Chrome/Edge)'),
+            }, 'Install'),
             React.createElement('div', {
-              style: {
-                backgroundColor: 'var(--bg-secondary)',
-                borderRadius: '12px',
-                padding: '16px'
-              }
+              style: { display: 'flex', flexDirection: 'column', gap: '10px' }
             },
-              [
-                { step: '1', text: 'Download the extension from GitHub' },
-                { step: '2', text: 'Unzip the downloaded file to a folder' },
-                { step: '3', text: 'Open Chrome and go to chrome://extensions' },
-                { step: '4', text: 'Enable "Developer mode" (toggle in top-right)' },
-                { step: '5', text: 'Click "Load unpacked" and select the extension folder' },
-                { step: '6', text: 'The Parachord icon will appear in your toolbar' }
-              ].map((item, i) =>
-                React.createElement('div', {
-                  key: i,
-                  style: { display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: i < 5 ? '10px' : '0' }
+              // Chrome Web Store button
+              React.createElement('button', {
+                onClick: () => {
+                  const url = 'https://chromewebstore.google.com/detail/parachord/gibkgapadebfoillbakpgmgpnppjlnie';
+                  if (window.electron?.shell?.openExternal) {
+                    window.electron.shell.openExternal(url);
+                  } else {
+                    window.open(url, '_blank');
+                  }
                 },
-                  React.createElement('div', {
-                    style: {
-                      width: '22px',
-                      height: '22px',
-                      borderRadius: '50%',
-                      backgroundColor: 'var(--accent-primary)',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      flexShrink: 0
-                    }
-                  }, item.step),
-                  React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)', lineHeight: '22px' } }, item.text)
+                className: 'transition-colors',
+                style: {
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 16px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  width: '100%',
+                  textAlign: 'left'
+                }
+              },
+                React.createElement('div', {
+                  style: {
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #4285f4 0%, #34a853 50%, #fbbc05 75%, #ea4335 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }
+                },
+                  React.createElement('svg', { width: '18', height: '18', viewBox: '0 0 24 24', fill: 'white' },
+                    React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z' })
+                  )
+                ),
+                React.createElement('div', null,
+                  React.createElement('div', { style: { fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' } }, 'Chrome Web Store'),
+                  React.createElement('div', { style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '1px' } }, 'For Chrome, Edge, and Chromium browsers')
+                )
+              ),
+              // Firefox Add-ons button
+              React.createElement('button', {
+                onClick: () => {
+                  const url = 'https://addons.mozilla.org/en-US/firefox/addon/parachord/';
+                  if (window.electron?.shell?.openExternal) {
+                    window.electron.shell.openExternal(url);
+                  } else {
+                    window.open(url, '_blank');
+                  }
+                },
+                className: 'transition-colors',
+                style: {
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 16px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  width: '100%',
+                  textAlign: 'left'
+                }
+              },
+                React.createElement('div', {
+                  style: {
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #FF9500 0%, #E66000 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }
+                },
+                  React.createElement('svg', { width: '18', height: '18', viewBox: '0 0 24 24', fill: 'white' },
+                    React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z' })
+                  )
+                ),
+                React.createElement('div', null,
+                  React.createElement('div', { style: { fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' } }, 'Firefox Add-ons'),
+                  React.createElement('div', { style: { fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '1px' } }, 'For Mozilla Firefox')
                 )
               )
-            ),
-            // Note about developer mode
-            React.createElement('p', {
-              style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '12px', lineHeight: '1.5' }
-            }, 'Note: Extensions loaded in developer mode will show a warning on browser startup. This is normal for extensions not yet in the Chrome Web Store.')
+            )
           )
         ),
         // Footer
@@ -54072,26 +54120,6 @@ useEffect(() => {
             gap: '12px'
           }
         },
-          React.createElement('button', {
-            onClick: () => {
-              if (window.electron?.shell?.openExternal) {
-                window.electron.shell.openExternal('https://github.com/Parachord/parachord-browser-extension/releases');
-              } else {
-                window.open('https://github.com/Parachord/parachord-browser-extension/releases', '_blank');
-              }
-            },
-            className: 'transition-colors',
-            style: {
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#ffffff',
-              backgroundColor: 'var(--accent-primary)',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }
-          }, 'Download from GitHub'),
           React.createElement('button', {
             onClick: () => setExtensionInfoOpen(false),
             className: 'transition-colors',
