@@ -58,14 +58,20 @@ A brand-new Concerts page aggregates upcoming shows from multiple ticketing serv
 - **Refresh icon** — fixed spin direction to rotate clockwise; player bar skeleton shimmer now animates correctly
 - **Close button** — capitalization fix ("Close" instead of "close"); uses theme-aware styling in Search header
 - **Artist discography navigation** — BACK button no longer skips the artist discography when closing a release; it returns to the release list first
+- **Queue badge** — color updated from emerald to accent purple for visual consistency
+- **Artist fallback view** — navigates to home instead of library when artist data is missing
 
 ## Spotify API Resilience
 
 - **Retry on 502/503/504** — both `spotifyRequest` and `spotifyFetch` now retry transient server errors with exponential backoff (up to 30 seconds between retries), instead of failing immediately
 
-## Artist Lookup Fallback
+## Artist Lookup & Search
 
-- **Multi-source fallback** — when MusicBrainz returns no results for an artist, enabled resolvers (Spotify, Apple Music/MusicKit, Last.fm, Discogs) are tried in sequence as fallback sources for artist data and albums
+- **MusicBrainz match validation** — results are now validated by name similarity (NFD-normalized, punctuation-stripped) instead of blindly trusting the MB score; fetches 5 candidates instead of 1 for better exact-match chances
+- **Multi-source fallback** — when MusicBrainz returns no or weak results, enabled resolvers (Spotify, Apple Music/MusicKit, Last.fm, Discogs) are tried in sequence as fallback sources for artist data and albums
+- **Fallback name validation** — all four fallback sources validate that the returned artist name actually matches the query using word-level comparison, preventing false matches like "Jack Jose" → "Jerry Joseph And The Jackmormons"
+- **Cache name validation** — cached artist data is checked against the search term before serving, preventing stale wrong-artist entries from persisting
+- **Search supplementing** — when MusicBrainz returns fewer than 3 results for artists, albums, or tracks, active resolvers (Spotify, Apple Music) supplement with deduplicated results
 
 ## Plugin Marketplace
 
@@ -94,6 +100,11 @@ A brand-new Concerts page aggregates upcoming shows from multiple ticketing serv
 - Fixed friend activity music note invisible in dark mode (was using `--border-default`)
 - Fixed modal button/icon colors washed out in dark mode (switched to vivid purple)
 - Fixed album breadcrumb not respecting dark mode
+- Fixed back navigation loading empty page after app relaunch (missing view history entry + unguarded data-dependent views)
+- Fixed `musicKitWeb` ReferenceError in search supplement code (must use `window.getMusicKitWeb()`)
+- Fixed wrong artist match from MusicBrainz (e.g. "Jack Jose" → "José José") by validating name similarity instead of trusting MB score
+- Fixed crash in `fetchArtistData` when cached artist name didn't match (undeclared `currentResolverHash` variable)
+- Fixed bad MusicBrainz matches persisting in cache across searches
 
 ---
 
