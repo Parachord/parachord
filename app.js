@@ -18189,6 +18189,7 @@ ${trackListXml}
           } else if (savedLastView.view === 'library') {
             // Restore library view with tab
             setActiveView('library');
+            setViewHistory(['library']);
             if (savedLastView.collectionTab) {
               setCollectionTab(savedLastView.collectionTab);
             }
@@ -30007,7 +30008,27 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (viewHistory.length > 1) {
       const newHistory = [...viewHistory];
       const activeView = newHistory.pop(); // Remove current view
-      const previousView = newHistory[newHistory.length - 1];
+      let previousView = newHistory[newHistory.length - 1];
+
+      // Safety guard: if previousView is a data-dependent view without its
+      // required data (e.g. after an app relaunch where only the last page
+      // was fully restored), fall back to a safe parent view.
+      if (previousView === 'artist' && !currentArtist) {
+        previousView = 'library';
+        newHistory[newHistory.length - 1] = 'library';
+      } else if (previousView === 'playlist-view' && !selectedPlaylist) {
+        previousView = 'playlists';
+        newHistory[newHistory.length - 1] = 'playlists';
+      } else if (previousView === 'friendHistory' && !currentFriend) {
+        previousView = 'friends';
+        newHistory[newHistory.length - 1] = 'friends';
+      } else if (!previousView) {
+        // History stack was corrupted or empty — reset to home
+        previousView = 'home';
+        newHistory.length = 0;
+        newHistory.push('home');
+      }
+
       setViewHistory(newHistory);
       setForwardHistory(prev => [...prev, activeView]); // Add current view to forward history
       setActiveView(previousView);
