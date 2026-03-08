@@ -19253,7 +19253,7 @@ ${trackListXml}
       };
 
       const searchResponse = await fetchWithRetry(
-        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistName)}&fmt=json&limit=1`
+        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistName)}&fmt=json&limit=5`
       );
 
       if (!searchResponse.ok) {
@@ -19271,9 +19271,18 @@ ${trackListXml}
       
       const searchData = await searchResponse.json();
       
-      if (!searchData.artists || searchData.artists.length === 0) {
-        console.log('Artist not found on MusicBrainz, trying fallback sources...');
+      // Validate MusicBrainz match quality — weak matches get the same fallback treatment
+      const mbCandidate = searchData.artists?.[0];
+      const mbScore = mbCandidate?.score || 0;
+      const mbNameMatch = mbCandidate?.name?.toLowerCase() === artistName.toLowerCase();
+      const mbMatchIsGood = mbCandidate && (mbScore >= 80 || mbNameMatch);
 
+      if (!mbMatchIsGood) {
+        if (mbCandidate) {
+          console.log(`⚠️ MusicBrainz match is weak (score: ${mbScore}, name: "${mbCandidate.name}" vs "${artistName}"), trying fallbacks...`);
+        } else {
+          console.log('Artist not found on MusicBrainz, trying fallback sources...');
+        }
         // Try fallback sources: enabled resolvers first, then meta-services
         const fallbackSources = [
           fetchArtistFromSpotify,
@@ -19289,7 +19298,8 @@ ${trackListXml}
           if (fallbackResult) break;
         }
 
-        if (!fallbackResult) {
+        if (!fallbackResult && !mbCandidate) {
+          // No results from any source
           showConfirmDialog({
             type: 'info',
             title: 'Artist Not Found',
@@ -19299,6 +19309,13 @@ ${trackListXml}
           return;
         }
 
+        if (!fallbackResult && mbCandidate) {
+          // All fallbacks failed but we have a weak MusicBrainz match — use it as last resort
+          console.log(`⚠️ No fallback found, using weak MusicBrainz match: "${mbCandidate.name}" (score: ${mbScore})`);
+          // Don't return — fall through to the normal MusicBrainz flow below
+        }
+
+        if (fallbackResult) {
         console.log(`✅ Found artist via ${fallbackResult.source} fallback:`, fallbackResult.artist.name);
 
         if (thisFetchId !== artistFetchId.current) return; // Stale check
@@ -19369,10 +19386,14 @@ ${trackListXml}
         visibleAlbumIds.current.clear();
         processAlbumArtQueue();
         return;
-      }
-      
-      const artist = searchData.artists[0];
-      console.log('Found artist:', artist.name, 'MBID:', artist.id);
+        } // end if (fallbackResult)
+      } // end if (!mbMatchIsGood)
+
+      // Prefer exact name match among results, fall back to highest-scored
+      const artist = searchData.artists.find(a =>
+        a.name.toLowerCase() === artistName.toLowerCase()
+      ) || searchData.artists[0];
+      console.log('Found artist:', artist.name, 'MBID:', artist.id, 'Score:', artist.score);
 
       // Check if this fetch is still current (user may have navigated to another artist)
       if (thisFetchId !== artistFetchId.current) {
