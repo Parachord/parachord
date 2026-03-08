@@ -35,6 +35,8 @@ declare namespace Preferences {
   export type ClearQueue = ExtensionPreferences & {}
   /** Preferences accessible in the `open-parachord` command */
   export type OpenParachord = ExtensionPreferences & {}
+  /** Preferences accessible in the `collection-radio` command */
+  export type CollectionRadio = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -72,5 +74,7 @@ declare namespace Arguments {
   export type ClearQueue = {}
   /** Arguments passed to the `open-parachord` command */
   export type OpenParachord = {}
+  /** Arguments passed to the `collection-radio` command */
+  export type CollectionRadio = {}
 }
 
