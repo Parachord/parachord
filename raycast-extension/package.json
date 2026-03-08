@@ -142,8 +142,8 @@
     "@raycast/api": "^1.64.0"
   },
   "devDependencies": {
-    "@raycast/eslint-config": "^1.0.8",
-    "eslint": "^8.54.0",
+    "@raycast/eslint-config": "^2.1.1",
+    "eslint": "^8.57.0",
     "prettier": "^3.1.0",
     "typescript": "^5.3.2"
   },
