@@ -17550,6 +17550,86 @@ ${trackListXml}
                 };
               }
             });
+
+            // Supplement with resolver results if MusicBrainz returned few/no artists
+            if (artists.length < 3 && query === searchQueryRef.current) {
+              const activeIds = activeResolversRef.current || [];
+              const supplementSearches = [];
+
+              // Spotify artist search
+              if (activeIds.includes('spotify')) {
+                supplementSearches.push((async () => {
+                  try {
+                    const config = getResolverConfigRef.current ? await getResolverConfigRef.current('spotify') : {};
+                    if (!config.token) return [];
+                    const spUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=10`;
+                    const spResponse = await fetch(spUrl, {
+                      headers: { 'Authorization': `Bearer ${config.token}` },
+                      signal
+                    });
+                    if (!spResponse.ok) return [];
+                    const spData = await spResponse.json();
+                    return (spData.artists?.items || []).map(a => ({
+                      id: `spotify-${a.id}`,
+                      name: a.name,
+                      type: a.type === 'artist' ? 'Person' : 'Group',
+                      _source: 'spotify',
+                      _spotifyImage: a.images?.[0]?.url || null
+                    }));
+                  } catch (e) {
+                    if (e.name !== 'AbortError') console.warn('Spotify artist search supplement failed:', e);
+                    return [];
+                  }
+                })());
+              }
+
+              // Apple Music artist search
+              if (activeIds.includes('applemusic') && musicKitWeb?.musicKit?.api) {
+                supplementSearches.push((async () => {
+                  try {
+                    const results = await musicKitWeb.musicKit.api.music(`/v1/catalog/us/search`, {
+                      term: query,
+                      types: 'artists',
+                      limit: 10
+                    });
+                    return (results.data.results.artists?.data || []).map(a => ({
+                      id: `applemusic-${a.id}`,
+                      name: a.attributes.name,
+                      type: 'Group',
+                      _source: 'applemusic'
+                    }));
+                  } catch (e) {
+                    if (e.name !== 'AbortError') console.warn('Apple Music artist search supplement failed:', e);
+                    return [];
+                  }
+                })());
+              }
+
+              if (supplementSearches.length > 0) {
+                try {
+                  const allResults = await Promise.all(supplementSearches);
+                  if (query !== searchQueryRef.current) return;
+                  const newArtists = allResults.flat().filter(a => {
+                    const name = a.name?.toLowerCase();
+                    if (seenArtists.has(name)) return false;
+                    seenArtists.add(name);
+                    return true;
+                  });
+                  if (newArtists.length > 0) {
+                    console.log(`🔍 Resolvers supplemented ${newArtists.length} artist(s) for search: "${query}"`);
+                    const merged = [...artists, ...newArtists];
+                    setSearchResults(prev => ({ ...prev, artists: merged }));
+                    searchResultsCache.current[cacheKey] = {
+                      ...searchResultsCache.current[cacheKey],
+                      artists: merged,
+                      timestamp: Date.now()
+                    };
+                  }
+                } catch (e) {
+                  if (e.name !== 'AbortError') console.warn('Resolver artist search supplement failed:', e);
+                }
+              }
+            }
           }
         } catch (error) {
           if (error.name !== 'AbortError') {
@@ -17611,6 +17691,94 @@ ${trackListXml}
                 };
               }
             });
+
+            // Supplement with resolver results if MusicBrainz returned few/no albums
+            if (albums.length < 3 && query === searchQueryRef.current) {
+              const activeIds = activeResolversRef.current || [];
+              const supplementSearches = [];
+
+              if (activeIds.includes('spotify')) {
+                supplementSearches.push((async () => {
+                  try {
+                    const config = getResolverConfigRef.current ? await getResolverConfigRef.current('spotify') : {};
+                    if (!config.token) return [];
+                    const spUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=album&limit=10`;
+                    const spResponse = await fetch(spUrl, {
+                      headers: { 'Authorization': `Bearer ${config.token}` },
+                      signal
+                    });
+                    if (!spResponse.ok) return [];
+                    const spData = await spResponse.json();
+                    return (spData.albums?.items || []).map(a => ({
+                      id: `spotify-${a.id}`,
+                      title: a.name,
+                      'primary-type': a.album_type || 'Album',
+                      'artist-credit': [{ name: a.artists?.[0]?.name || 'Unknown' }],
+                      albumArt: a.images?.[0]?.url || null,
+                      'first-release-date': a.release_date || '',
+                      _source: 'spotify'
+                    }));
+                  } catch (e) {
+                    if (e.name !== 'AbortError') console.warn('Spotify album search supplement failed:', e);
+                    return [];
+                  }
+                })());
+              }
+
+              if (activeIds.includes('applemusic') && musicKitWeb?.musicKit?.api) {
+                supplementSearches.push((async () => {
+                  try {
+                    const results = await musicKitWeb.musicKit.api.music(`/v1/catalog/us/search`, {
+                      term: query,
+                      types: 'albums',
+                      limit: 10
+                    });
+                    return (results.data.results.albums?.data || []).map(a => ({
+                      id: `applemusic-${a.id}`,
+                      title: a.attributes.name,
+                      'primary-type': 'Album',
+                      'artist-credit': [{ name: a.attributes.artistName || 'Unknown' }],
+                      albumArt: a.attributes.artwork?.url?.replace('{w}x{h}', '300x300') || null,
+                      'first-release-date': a.attributes.releaseDate || '',
+                      _source: 'applemusic'
+                    }));
+                  } catch (e) {
+                    if (e.name !== 'AbortError') console.warn('Apple Music album search supplement failed:', e);
+                    return [];
+                  }
+                })());
+              }
+
+              if (supplementSearches.length > 0) {
+                try {
+                  const allResults = await Promise.all(supplementSearches);
+                  if (query !== searchQueryRef.current) return;
+                  const newAlbums = allResults.flat().filter(a => {
+                    const artist = a['artist-credit']?.[0]?.name?.toLowerCase() || '';
+                    const title = a.title?.toLowerCase() || '';
+                    const key = `${artist}|${title}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  });
+                  if (newAlbums.length > 0) {
+                    console.log(`🔍 Resolvers supplemented ${newAlbums.length} album(s) for search: "${query}"`);
+                    const merged = [...albums, ...newAlbums];
+                    setSearchResults(prev => {
+                      fetchSearchAlbumArt(newAlbums, prev.tracks);
+                      return { ...prev, albums: merged };
+                    });
+                    searchResultsCache.current[cacheKey] = {
+                      ...searchResultsCache.current[cacheKey],
+                      albums: merged,
+                      timestamp: Date.now()
+                    };
+                  }
+                } catch (e) {
+                  if (e.name !== 'AbortError') console.warn('Resolver album search supplement failed:', e);
+                }
+              }
+            }
           }
         } catch (error) {
           if (error.name !== 'AbortError') {
@@ -17681,6 +17849,95 @@ ${trackListXml}
                 };
               }
             });
+
+            // Supplement with resolver results if MusicBrainz returned few/no tracks
+            if (tracks.length < 3 && query === searchQueryRef.current) {
+              const activeIds = activeResolversRef.current || [];
+              const seenTracks = new Set(tracks.map(t => `${t.artist?.toLowerCase()}|${t.title?.toLowerCase()}`));
+              const supplementSearches = [];
+
+              if (activeIds.includes('spotify')) {
+                supplementSearches.push((async () => {
+                  try {
+                    const config = getResolverConfigRef.current ? await getResolverConfigRef.current('spotify') : {};
+                    if (!config.token) return [];
+                    const spUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=15`;
+                    const spResponse = await fetch(spUrl, {
+                      headers: { 'Authorization': `Bearer ${config.token}` },
+                      signal
+                    });
+                    if (!spResponse.ok) return [];
+                    const spData = await spResponse.json();
+                    return (spData.tracks?.items || []).map(t => ({
+                      id: `spotify-${t.id}`,
+                      title: t.name,
+                      artist: t.artists?.[0]?.name || 'Unknown',
+                      duration: Math.floor((t.duration_ms || 180000) / 1000),
+                      album: t.album?.name || '',
+                      sources: { spotify: { url: t.external_urls?.spotify, id: t.id } },
+                      _needsResolution: false,
+                      _source: 'spotify'
+                    }));
+                  } catch (e) {
+                    if (e.name !== 'AbortError') console.warn('Spotify track search supplement failed:', e);
+                    return [];
+                  }
+                })());
+              }
+
+              if (activeIds.includes('applemusic') && musicKitWeb?.musicKit?.api) {
+                supplementSearches.push((async () => {
+                  try {
+                    const results = await musicKitWeb.musicKit.api.music(`/v1/catalog/us/search`, {
+                      term: query,
+                      types: 'songs',
+                      limit: 15
+                    });
+                    return (results.data.results.songs?.data || []).map(t => ({
+                      id: `applemusic-${t.id}`,
+                      title: t.attributes.name,
+                      artist: t.attributes.artistName || 'Unknown',
+                      duration: Math.floor((t.attributes.durationInMillis || 180000) / 1000),
+                      album: t.attributes.albumName || '',
+                      sources: {},
+                      _needsResolution: true,
+                      _source: 'applemusic'
+                    }));
+                  } catch (e) {
+                    if (e.name !== 'AbortError') console.warn('Apple Music track search supplement failed:', e);
+                    return [];
+                  }
+                })());
+              }
+
+              if (supplementSearches.length > 0) {
+                try {
+                  const allResults = await Promise.all(supplementSearches);
+                  if (query !== searchQueryRef.current) return;
+                  const newTracks = allResults.flat().filter(t => {
+                    const key = `${t.artist?.toLowerCase()}|${t.title?.toLowerCase()}`;
+                    if (seenTracks.has(key)) return false;
+                    seenTracks.add(key);
+                    return true;
+                  });
+                  if (newTracks.length > 0) {
+                    console.log(`🔍 Resolvers supplemented ${newTracks.length} track(s) for search: "${query}"`);
+                    setSearchResults(prev => {
+                      const localTracks = prev.tracks.filter(t => t.isLocal);
+                      const mbTracks = prev.tracks.filter(t => !t.isLocal);
+                      return { ...prev, tracks: [...localTracks, ...mbTracks, ...newTracks] };
+                    });
+                    searchResultsCache.current[cacheKey] = {
+                      ...searchResultsCache.current[cacheKey],
+                      tracks: [...tracks, ...newTracks],
+                      timestamp: Date.now()
+                    };
+                  }
+                } catch (e) {
+                  if (e.name !== 'AbortError') console.warn('Resolver track search supplement failed:', e);
+                }
+              }
+            }
           }
         } catch (error) {
           if (error.name !== 'AbortError') {
