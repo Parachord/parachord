@@ -88,17 +88,17 @@ jobs:
           shopt -s dotglob
           cp -r ../parachord-extension/* .
 
+          # Stage all changes (including new untracked files)
+          git add -A
+
           # Check if there are changes to commit
-          if git diff --quiet && git diff --staged --quiet; then
+          if git diff --staged --quiet; then
             echo "No changes to sync"
             exit 0
           fi
 
-          # Stage and commit
-          git add -A
+          # Commit and push
           git commit -m "Sync from parachord monorepo (${SOURCE_COMMIT}): ${SOURCE_MSG}"
-
-          # Push changes
           git push origin main || git push origin master
 
           echo "Successfully synced browser extension to dedicated repo"
@@ -164,17 +164,17 @@ jobs:
           shopt -s dotglob
           cp -r ../raycast-extension/* .
 
+          # Stage all changes (including new untracked files)
+          git add -A
+
           # Check if there are changes to commit
-          if git diff --quiet && git diff --staged --quiet; then
+          if git diff --staged --quiet; then
             echo "No changes to sync"
             exit 0
           fi
 
-          # Stage and commit
-          git add -A
+          # Commit and push
           git commit -m "Sync from parachord monorepo (${SOURCE_COMMIT}): ${SOURCE_MSG}"
-
-          # Push changes
           git push origin main || git push origin master
 
           echo "Successfully synced Raycast extension to dedicated repo"
@@ -263,17 +263,17 @@ jobs:
             fs.writeFileSync('manifest.json', JSON.stringify(result, null, 2) + '\n');
           "
 
+          # Stage all changes (including new untracked files)
+          git add -A
+
           # Check if there are changes to commit
-          if git diff --quiet && git diff --staged --quiet; then
+          if git diff --staged --quiet; then
             echo "No changes to sync"
             exit 0
           fi
 
-          # Stage and commit
-          git add -A
+          # Commit and push
           git commit -m "Sync from parachord monorepo (${SOURCE_COMMIT}): ${SOURCE_MSG}"
-
-          # Push changes
           git push origin main || git push origin master
 
           echo "Successfully synced plugins to dedicated repo"
