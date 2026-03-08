@@ -17512,13 +17512,15 @@ ${trackListXml}
             `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistQuery)}&fmt=json&limit=25`,
             fetchOptions
           );
+          const seenArtists = new Set();
+          let artists = [];
+          const cacheKey = query.toLowerCase();
           if (artistResponse.ok && query === searchQueryRef.current) {
             const data = await artistResponse.json();
             const rawArtists = data.artists || [];
 
             // Deduplicate artists by name (case-insensitive)
-            const seenArtists = new Set();
-            let artists = rawArtists.filter(artist => {
+            artists = rawArtists.filter(artist => {
               const name = artist.name?.toLowerCase() || '';
               if (seenArtists.has(name)) return false;
               seenArtists.add(name);
@@ -17529,7 +17531,6 @@ ${trackListXml}
             setSearchResults(prev => ({ ...prev, artists }));
 
             // Cache raw results
-            const cacheKey = query.toLowerCase();
             searchResultsCache.current[cacheKey] = {
               ...searchResultsCache.current[cacheKey],
               artists,
@@ -17550,9 +17551,10 @@ ${trackListXml}
                 };
               }
             });
+          }
 
-            // Supplement with resolver results if MusicBrainz returned few/no artists
-            if (artists.length < 3 && query === searchQueryRef.current) {
+          // Supplement with resolver results if MusicBrainz returned few/no artists (or failed entirely)
+          if (artists.length < 3 && query === searchQueryRef.current) {
               const activeIds = activeResolversRef.current || [];
               const supplementSearches = [];
 
@@ -17631,7 +17633,6 @@ ${trackListXml}
                 }
               }
             }
-          }
         } catch (error) {
           if (error.name !== 'AbortError') {
             console.error('Artist search error:', error);
@@ -17642,6 +17643,7 @@ ${trackListXml}
       })();
 
       // Search albums
+
       const albumPromise = (async () => {
         try {
           const albumQuery = preprocessQuery(query, 'release-group');
@@ -17649,13 +17651,15 @@ ${trackListXml}
             `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(albumQuery)}&fmt=json&limit=30`,
             fetchOptions
           );
+          const seen = new Set();
+          let albums = [];
+          const cacheKey = query.toLowerCase();
           if (albumResponse.ok && query === searchQueryRef.current) {
             const data = await albumResponse.json();
             const rawAlbums = data['release-groups'] || [];
 
             // Deduplicate albums by artist + title (case-insensitive)
-            const seen = new Set();
-            let albums = rawAlbums.filter(album => {
+            albums = rawAlbums.filter(album => {
               const artist = album['artist-credit']?.[0]?.name?.toLowerCase() || '';
               const title = album.title?.toLowerCase() || '';
               const key = `${artist}|${title}`;
@@ -17671,7 +17675,6 @@ ${trackListXml}
             });
 
             // Cache raw results
-            const cacheKey = query.toLowerCase();
             searchResultsCache.current[cacheKey] = {
               ...searchResultsCache.current[cacheKey],
               albums,
@@ -17692,8 +17695,9 @@ ${trackListXml}
                 };
               }
             });
+          }
 
-            // Supplement with resolver results if MusicBrainz returned few/no albums
+          // Supplement with resolver results if MusicBrainz returned few/no albums (or failed entirely)
             if (albums.length < 3 && query === searchQueryRef.current) {
               const activeIds = activeResolversRef.current || [];
               const supplementSearches = [];
@@ -17781,7 +17785,6 @@ ${trackListXml}
                 }
               }
             }
-          }
         } catch (error) {
           if (error.name !== 'AbortError') {
             console.error('Album search error:', error);
@@ -17799,12 +17802,14 @@ ${trackListXml}
             `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(trackQuery)}&fmt=json&limit=50`,
             fetchOptions
           );
+          let tracks = [];
+          const cacheKey = query.toLowerCase();
           if (trackResponse.ok && query === searchQueryRef.current) {
             const data = await trackResponse.json();
             const recordings = data.recordings || [];
 
             // Create all tracks as unresolved initially (resolve on-demand when played)
-            let tracks = recordings.map(recording => ({
+            tracks = recordings.map(recording => ({
               id: recording.id,
               title: recording.title,
               artist: recording['artist-credit']?.[0]?.name || 'Unknown',
@@ -17827,7 +17832,6 @@ ${trackListXml}
             });
 
             // Cache raw results
-            const cacheKey = query.toLowerCase();
             searchResultsCache.current[cacheKey] = {
               ...searchResultsCache.current[cacheKey],
               tracks,
@@ -17851,8 +17855,9 @@ ${trackListXml}
                 };
               }
             });
+          }
 
-            // Supplement with resolver results if MusicBrainz returned few/no tracks
+          // Supplement with resolver results if MusicBrainz returned few/no tracks (or failed entirely)
             if (tracks.length < 3 && query === searchQueryRef.current) {
               const activeIds = activeResolversRef.current || [];
               const seenTracks = new Set(tracks.map(t => `${t.artist?.toLowerCase()}|${t.title?.toLowerCase()}`));
@@ -17941,7 +17946,6 @@ ${trackListXml}
                 }
               }
             }
-          }
         } catch (error) {
           if (error.name !== 'AbortError') {
             console.error('Track search error:', error);
