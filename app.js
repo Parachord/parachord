@@ -18852,6 +18852,18 @@ ${trackListXml}
     }
   }, [friends, pendingFriendLoad]);
 
+  // Helper to check if an artist name from a fallback source is a reasonable match
+  const isFallbackNameMatch = (candidateName, searchName) => {
+    const norm = s => s?.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+    const cn = norm(candidateName);
+    const sn = norm(searchName);
+    if (cn === sn) return true;
+    const shorter = Math.min(cn.length, sn.length);
+    const longer = Math.max(cn.length, sn.length);
+    return (cn.includes(sn) || sn.includes(cn)) && shorter >= longer * 0.5;
+  };
+
   // Fallback artist lookup via Spotify API (when MusicBrainz has no results)
   const fetchArtistFromSpotify = async (artistName) => {
     const resolvers = loadedResolversRef.current || [];
@@ -18873,8 +18885,12 @@ ${trackListXml}
       if (!searchResponse.ok) return null;
       const searchData = await searchResponse.json();
       const artists = searchData.artists?.items || [];
-      const artist = artists.find(a => a.name.toLowerCase() === artistName.toLowerCase()) || artists[0];
-      if (!artist) return null;
+      // Only accept artists whose name actually matches the search
+      const artist = artists.find(a => isFallbackNameMatch(a.name, artistName));
+      if (!artist) {
+        console.log('🎵 Spotify: no matching artist name found for:', artistName);
+        return null;
+      }
 
       // Fetch artist's albums
       const albumsUrl = `https://api.spotify.com/v1/artists/${artist.id}/albums?include_groups=album,single&limit=50&market=US`;
@@ -18939,10 +18955,11 @@ ${trackListXml}
       });
 
       const artists = searchResults.data.results.artists?.data || [];
-      const artist = artists.find(a =>
-        a.attributes.name.toLowerCase() === artistName.toLowerCase()
-      ) || artists[0];
-      if (!artist) return null;
+      const artist = artists.find(a => isFallbackNameMatch(a.attributes.name, artistName));
+      if (!artist) {
+        console.log('🍎 MusicKit: no matching artist name found for:', artistName);
+        return null;
+      }
 
       // Fetch artist's albums
       const albumsResult = await musicKitWeb.musicKit.api.music(
@@ -19008,8 +19025,12 @@ ${trackListXml}
       if (data.error || !data.topalbums?.album?.length) return null;
 
       const albums = data.topalbums.album;
-      // Last.fm returns artist name in the response
+      // Last.fm returns artist name in the response — validate it matches
       const lfmArtistName = albums[0]?.artist?.name || artistName;
+      if (!isFallbackNameMatch(lfmArtistName, artistName)) {
+        console.log(`📻 Last.fm: returned "${lfmArtistName}" which doesn't match "${artistName}"`);
+        return null;
+      }
 
       const releases = albums
         .filter(album => album.name && album.name !== '(null)')
@@ -19060,9 +19081,11 @@ ${trackListXml}
       const searchData = await searchResponse.json();
       if (!searchData.results?.length) return null;
 
-      const artistResult = searchData.results.find(r =>
-        r.title?.toLowerCase() === artistName.toLowerCase()
-      ) || searchData.results[0];
+      const artistResult = searchData.results.find(r => isFallbackNameMatch(r.title, artistName));
+      if (!artistResult) {
+        console.log('📀 Discogs: no matching artist name found for:', artistName);
+        return null;
+      }
 
       // Fetch artist releases
       const releasesUrl = `https://api.discogs.com/artists/${artistResult.id}/releases?sort=year&sort_order=desc&per_page=100`;
