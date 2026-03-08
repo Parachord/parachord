@@ -17584,10 +17584,11 @@ ${trackListXml}
               }
 
               // Apple Music artist search
-              if (activeIds.includes('applemusic') && musicKitWeb?.musicKit?.api) {
+              const mkWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+              if (activeIds.includes('applemusic') && mkWeb?.musicKit?.api) {
                 supplementSearches.push((async () => {
                   try {
-                    const results = await musicKitWeb.musicKit.api.music(`/v1/catalog/us/search`, {
+                    const results = await mkWeb.musicKit.api.music(`/v1/catalog/us/search`, {
                       term: query,
                       types: 'artists',
                       limit: 10
@@ -17725,10 +17726,11 @@ ${trackListXml}
                 })());
               }
 
-              if (activeIds.includes('applemusic') && musicKitWeb?.musicKit?.api) {
+              const mkWebAlbum = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+              if (activeIds.includes('applemusic') && mkWebAlbum?.musicKit?.api) {
                 supplementSearches.push((async () => {
                   try {
-                    const results = await musicKitWeb.musicKit.api.music(`/v1/catalog/us/search`, {
+                    const results = await mkWebAlbum.musicKit.api.music(`/v1/catalog/us/search`, {
                       term: query,
                       types: 'albums',
                       limit: 10
@@ -17885,10 +17887,11 @@ ${trackListXml}
                 })());
               }
 
-              if (activeIds.includes('applemusic') && musicKitWeb?.musicKit?.api) {
+              const mkWebTrack = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+              if (activeIds.includes('applemusic') && mkWebTrack?.musicKit?.api) {
                 supplementSearches.push((async () => {
                   try {
-                    const results = await musicKitWeb.musicKit.api.music(`/v1/catalog/us/search`, {
+                    const results = await mkWebTrack.musicKit.api.music(`/v1/catalog/us/search`, {
                       term: query,
                       types: 'songs',
                       limit: 15
