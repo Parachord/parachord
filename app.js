@@ -19142,10 +19142,15 @@ ${trackListXml}
     const cachedData = artistDataCache.current[cacheKey];
     const now = Date.now();
 
-    // Cache is valid if data exists and not expired
-    // Note: Resolver settings don't affect artist/release metadata - tracks are re-resolved when loading a release
+    // Cache is valid if data exists, not expired, and the cached artist name is
+    // a reasonable match for what was searched (prevents serving stale data from
+    // a previous bad MusicBrainz match, e.g. wrong "John Smith" cached under "john smith")
+    const cachedName = cachedData?.artist?.name?.toLowerCase() || '';
+    const cacheNameMatch = cachedName === cacheKey ||
+                          cachedName.replace(/[^a-z0-9]/g, '') === cacheKey.replace(/[^a-z0-9]/g, '');
     const cacheValid = cachedData &&
-                      (now - cachedData.timestamp) < CACHE_TTL.artistData;
+                      (now - cachedData.timestamp) < CACHE_TTL.artistData &&
+                      cacheNameMatch;
 
     // Also check if artist image is in cache
     const normalizedName = artistName.trim().toLowerCase();
