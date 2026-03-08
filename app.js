@@ -48501,7 +48501,7 @@ useEffect(() => {
               // Show queue badge (gray when in spinoff or listen-along mode)
               currentQueue.length > 0 && React.createElement('span', {
                 className: `absolute -top-1 -right-1 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 font-medium ${queueAnimating ? 'badge-flash' : ''}`,
-                style: { fontSize: '10px', backgroundColor: (spinoffMode || listenAlongFriend) ? '#6b7280' : '#059669' }
+                style: { fontSize: '10px', backgroundColor: (spinoffMode || listenAlongFriend) ? '#6b7280' : '#7c3aed' }
               }, currentQueue.length > 99 ? '99+' : currentQueue.length)
             )
           ),
