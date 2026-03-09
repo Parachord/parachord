@@ -9272,7 +9272,7 @@ const Parachord = () => {
           case 'volume': {
             const vol = parseInt(segments[0], 10);
             if (!isNaN(vol) && vol >= 0 && vol <= 100) {
-              setVolume(vol / 100);
+              setVolume(vol);
             }
             break;
           }
