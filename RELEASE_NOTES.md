@@ -1,6 +1,6 @@
-# Parachord v0.8.1-alpha.1
+# Parachord v0.9.0-beta.1
 
-**Release date:** 2026-03-07
+**Release date:** 2026-03-09
 
 ---
 
@@ -24,6 +24,8 @@ A brand-new Concerts page aggregates upcoming shows from multiple ticketing serv
 - **Four concert data sources** — new Bandsintown, Songkick, SeatGeek, and Ticketmaster plugins (`.axe` files) provide concert listings
 - **AI concert disclaimer** — when AI-sourced concert results are present, a disclaimer badge flags them as potentially hallucinated
 - **Location-aware filtering** — IP-based geolocation with multiple fallback services, plus a location autocomplete search dialog with configurable radius (miles)
+- **Improved geo filtering** — text-based location matching now falls back to city-portion matching; geo filter is always applied alongside radius filtering to prevent false positives
+- **Restyled location modal** — the concert location picker modal now matches the app design system
 - **On Tour indicator** — a purple dot next to the now-playing artist links directly to the On Tour tab when nearby concerts exist; hovering shows a tooltip
 - **Artist page On Tour tab** — artist detail pages show an "On Tour" tab with that artist's upcoming concerts, with ticket links and loading skeletons; the tab animates in smoothly via max-width/opacity transitions
 - **Concert row design** — large artist images, 3-column layout (date, image, venue/reason), ticket buttons with flyout menus linking to each service
@@ -53,6 +55,8 @@ A brand-new Concerts page aggregates upcoming shows from multiple ticketing serv
 - **Biography panel** — responsive width (25%) instead of fixed pixel widths
 - **Artist header tabs** — stronger text shadow for better contrast on bright album art backgrounds
 - **Sidebar tab colors** — brightened teal accent; highlight colors match page headers; fixed hover overflow and spin direction
+- **Queue drawer contrast** — improved queue drawer readability in dark mode
+- **Geolocation button** — restyled to look more clearly interactive
 - **Tooltip contrast** — dark mode tooltips use a lighter background for better readability; player bar tooltips stay dark in both modes
 - **Playlist share button** — increased spacing above the Share button on playlist view
 - **Refresh icon** — fixed spin direction to rotate clockwise; player bar skeleton shimmer now animates correctly
@@ -64,6 +68,7 @@ A brand-new Concerts page aggregates upcoming shows from multiple ticketing serv
 ## Spotify API Resilience
 
 - **Retry on 502/503/504** — both `spotifyRequest` and `spotifyFetch` now retry transient server errors with exponential backoff (up to 30 seconds between retries), instead of failing immediately
+- **Token refresh during playback** — Spotify 401 errors during playback now trigger an automatic token refresh and retry, preventing mid-session auth failures
 
 ## Artist Lookup & Search
 
@@ -91,6 +96,8 @@ A brand-new Concerts page aggregates upcoming shows from multiple ticketing serv
 
 ## Documentation
 
+- **Design system documentation** — comprehensive documentation of the design token system and theming architecture
+- **Harmonix → Parachord cleanup** — removed outdated docs and fixed remaining references to the old project name
 - **TypeScript migration plan** — comprehensive plan for migrating the JavaScript codebase to TypeScript
 - **YouTube Music sync design** — design document for YouTube Music library sync using Google Data Portability API
 - **Listening history import** — issue draft for cross-service listening history import
@@ -116,10 +123,13 @@ A brand-new Concerts page aggregates upcoming shows from multiple ticketing serv
 - Fixed wrong artist match from MusicBrainz (e.g. "Jack Jose" → "José José") by validating name similarity instead of trusting MB score
 - Fixed crash in `fetchArtistData` when cached artist name didn't match (undeclared `currentResolverHash` variable)
 - Fixed bad MusicBrainz matches persisting in cache across searches
+- Fixed protocol volume handler using wrong scale (0–1 instead of 0–100)
+- Fixed Ticketmaster plugin not showing under Concerts category filter
+- Fixed stale concert list render by keying on location state
 
 ---
 
-# Parachord v0.8.0-alpha.12
+# Parachord v0.8.0-alpha.12 (last alpha)
 
 **Release date:** 2026-03-03
 
@@ -310,4 +320,4 @@ Third-party websites can embed a button that sends playlists directly into Parac
 
 ---
 
-**Full changelog:** `git log v0.8.0-alpha.12..v0.8.1-alpha.1`
+**Full changelog:** `git log v0.8.0-alpha.12..v0.9.0-beta.1`
