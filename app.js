@@ -44424,16 +44424,6 @@ useEffect(() => {
                 return true;
               });
 
-              // DEBUG: log all filtered events once per render
-              if (concertsLocationCoords && filtered.length > 0) {
-                const summary = filtered.map(e => {
-                  const vLat = e.venue?.latitude, vLng = e.venue?.longitude;
-                  const dist = (vLat != null && vLng != null) ? haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng).toFixed(1) : 'no-coords';
-                  return `${e.artist} @ ${e.venue?.city},${e.venue?.region} [${dist}mi] src=${e.source}`;
-                });
-                console.log(`🎯 FILTERED ${filtered.length}/${concerts.length} events:`, summary);
-              }
-
               // Group events by month
               const grouped = {};
               for (const event of filtered) {
@@ -44448,7 +44438,7 @@ useEffect(() => {
 
               const sortedMonths = Object.keys(grouped).sort();
 
-              return React.createElement('div', { className: 'p-6' },
+              return React.createElement('div', { key: `concerts-${concertsLocationCoords ? `${concertsLocationCoords.lat},${concertsLocationCoords.lng}` : 'none'}-${concertsLocationRadius}-${concertsLocation}`, className: 'p-6' },
 
                 filtered.length === 0 && searchLower && React.createElement('div', {
                   className: 'flex flex-col items-center justify-center py-12'
