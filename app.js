@@ -13745,8 +13745,11 @@ ${trackListXml}
             sources: { ...trackOrSource.sources, spotify: retrySource }
           } : retrySource;
 
-          console.log('🔄 Retrying Spotify playback...');
-          const retrySuccess = await resolver.play(retrySource, config);
+          console.log('🔄 Retrying Spotify playback with fresh token...');
+          // Clear config cache and get a fresh token for the retry
+          delete resolverConfigCache.current['spotify'];
+          const freshConfig = await getResolverConfig(resolverId);
+          const retrySuccess = await resolver.play(retrySource, freshConfig);
 
           // Check if superseded during retry play
           if (playbackGenerationRef.current !== thisGeneration) {
