@@ -44060,7 +44060,7 @@ useEffect(() => {
               concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
                 className: 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
-                style: { backgroundColor: 'rgba(16, 201, 180, 0.1)', color: '#10c9b4' },
+                style: { backgroundColor: 'var(--accent-primary-alpha-10)', color: 'var(--accent-primary)' },
                 title: `${concertsLocation} (${concertsLocationRadius} mi radius)`
               },
                 React.createElement('svg', { className: 'w-3.5 h-3.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -44072,7 +44072,7 @@ useEffect(() => {
                 React.createElement('span', {
                   onClick: (e) => { e.stopPropagation(); setConcertsLocation(''); setConcertsLocationCoords(null); setConcertsLocationRadius(50); },
                   className: 'ml-0.5 rounded-full p-0.5 transition-colors cursor-pointer',
-                  style: { color: '#10c9b4' }
+                  style: { color: 'var(--accent-primary)' }
                 },
                   React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M6 18L18 6M6 6l12 12' })
@@ -44083,7 +44083,7 @@ useEffect(() => {
               !concertsLocationCoords && React.createElement('button', {
                 onClick: (e) => { e.stopPropagation(); setConcertsLocationOpen(!concertsLocationOpen); },
                 className: 'p-1.5 transition-colors',
-                style: { color: concertsLocation ? '#10c9b4' : 'var(--text-tertiary)' },
+                style: { color: concertsLocation ? 'var(--accent-primary)' : 'var(--text-tertiary)' },
                 title: concertsLocation ? `Filtered: ${concertsLocation}` : 'Filter by location'
               },
                 React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -44093,12 +44093,12 @@ useEffect(() => {
               ),
               // Location dropdown panel
               concertsLocationOpen && React.createElement('div', {
-                className: `absolute left-0 top-full mt-1 rounded-xl shadow-lg z-30 border ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`,
-                style: { width: '280px', padding: '14px' },
+                className: 'absolute left-0 top-full mt-1 z-30',
+                style: { width: '300px', padding: '16px 20px', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-default)', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' },
                 onClick: (e) => e.stopPropagation()
               },
                 // Header
-                React.createElement('div', { className: `text-xs font-medium mb-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}` }, 'Filter by location'),
+                React.createElement('div', { style: { fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '12px' } }, 'Filter by location'),
                 // Text input row
                 React.createElement('div', { className: 'flex items-center gap-2 mb-3' },
                   React.createElement('input', {
@@ -44134,7 +44134,10 @@ useEffect(() => {
                     },
                     autoFocus: true,
                     placeholder: 'City or region...',
-                    className: `flex-1 text-sm outline-none rounded-lg px-3.5 py-2.5 transition-colors ${isDark ? 'bg-gray-700 text-gray-200 placeholder-gray-500 border border-gray-600 focus:border-teal-500' : 'bg-gray-50 text-gray-700 placeholder-gray-400 border border-gray-200 focus:border-teal-400'}`
+                    className: 'flex-1 text-sm outline-none transition-colors',
+                    style: { backgroundColor: 'var(--bg-inset)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', borderRadius: '10px', padding: '8px 14px' },
+                    onFocus: (e) => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124, 58, 237, 0.15)'; },
+                    onBlur: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.boxShadow = 'none'; }
                   }),
                   // "Use my location" button
                   React.createElement('button', {
@@ -44153,7 +44156,10 @@ useEffect(() => {
                       setConcertsGeocodingLoading(false);
                     },
                     disabled: concertsGeocodingLoading,
-                    className: `p-2 rounded-lg transition-colors flex-shrink-0 border ${isDark ? 'text-gray-300 bg-gray-700 border-gray-600 hover:text-teal-400 hover:border-teal-500' : 'text-gray-500 bg-gray-50 border-gray-200 hover:text-teal-500 hover:border-teal-400'}`,
+                    className: 'flex-shrink-0 transition-colors',
+                    style: { padding: '8px', borderRadius: '10px', backgroundColor: 'var(--bg-inset)', border: '1px solid var(--border-default)', color: 'var(--text-tertiary)' },
+                    onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--accent-primary)'; e.currentTarget.style.borderColor = 'var(--accent-primary)'; },
+                    onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.borderColor = 'var(--border-default)'; },
                     title: 'Use my location'
                   },
                     concertsGeocodingLoading
@@ -44168,8 +44174,8 @@ useEffect(() => {
                 ),
                 // Location search suggestions
                 concertsLocationSuggestions.length > 0 && !concertsLocationCoords && React.createElement('div', {
-                  className: `rounded-lg overflow-hidden mb-3 border ${isDark ? 'bg-gray-750 border-gray-600' : 'bg-gray-50 border-gray-200'}`,
-                  style: { maxHeight: '160px', overflowY: 'auto' }
+                  className: 'rounded-lg overflow-hidden mb-3',
+                  style: { maxHeight: '160px', overflowY: 'auto', backgroundColor: 'var(--bg-inset)', border: '1px solid var(--border-default)', borderRadius: '10px' }
                 },
                   concertsLocationSuggestions.map((suggestion, i) =>
                     React.createElement('button', {
@@ -44179,10 +44185,12 @@ useEffect(() => {
                         setConcertsLocation(suggestion.displayName);
                         setConcertsLocationSuggestions([]);
                       },
-                      className: `w-full text-left px-2.5 py-2 text-xs transition-colors flex items-center gap-2 ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`,
-                      style: i > 0 ? { borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}` } : {}
+                      className: 'w-full text-left transition-colors flex items-center gap-2',
+                      style: { padding: '8px 12px', fontSize: '13px', color: 'var(--text-secondary)', borderTop: i > 0 ? '1px solid var(--border-subtle)' : 'none' },
+                      onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
+                      onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; }
                     },
-                      React.createElement('svg', { className: `w-3 h-3 flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-gray-400'}`, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('svg', { className: 'w-3.5 h-3.5 flex-shrink-0', style: { color: 'var(--text-tertiary)' }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z' })
                       ),
                       React.createElement('span', { className: 'truncate' }, suggestion.region)
@@ -44191,18 +44199,19 @@ useEffect(() => {
                 ),
                 // Status line
                 concertsLocationCoords && React.createElement('div', {
-                  className: `flex items-center gap-1.5 text-xs mb-3 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`
+                  className: 'flex items-center gap-1.5 mb-3',
+                  style: { fontSize: '13px', color: '#10b981' }
                 },
-                  React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('svg', { className: 'w-3.5 h-3.5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                     React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M5 13l4 4L19 7' })
                   ),
                   React.createElement('span', null, concertsLocation)
                 ),
                 // Radius slider
-                React.createElement('div', { style: { marginBottom: '10px' } },
-                  React.createElement('div', { className: 'flex items-center justify-between mb-1.5' },
-                    React.createElement('span', { className: `text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}` }, 'Radius'),
-                    React.createElement('span', { className: `text-xs font-medium ${isDark ? 'text-gray-200' : 'text-gray-700'}` }, `${concertsLocationRadius} mi`)
+                React.createElement('div', { style: { marginBottom: '12px' } },
+                  React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '8px' } },
+                    React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-tertiary)' } }, 'Radius'),
+                    React.createElement('span', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, `${concertsLocationRadius} mi`)
                   ),
                   React.createElement('input', {
                     type: 'range',
@@ -44212,11 +44221,11 @@ useEffect(() => {
                     value: concertsLocationRadius,
                     onChange: (e) => setConcertsLocationRadius(parseInt(e.target.value)),
                     className: 'w-full',
-                    style: { accentColor: '#10c9b4', height: '4px' }
+                    style: { accentColor: '#7c3aed', height: '4px' }
                   })
                 ),
                 // Action buttons row
-                React.createElement('div', { className: `flex items-center justify-between mt-2 pt-3 pb-1 border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}` },
+                React.createElement('div', { className: 'flex items-center justify-between', style: { paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' } },
                   // Clear button
                   React.createElement('button', {
                     onClick: () => {
@@ -44225,7 +44234,10 @@ useEffect(() => {
                       setConcertsLocationRadius(50);
                       setConcertsLocationOpen(false);
                     },
-                    className: `text-xs transition-colors ${isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`
+                    className: 'transition-colors',
+                    style: { fontSize: '13px', color: 'var(--text-tertiary)' },
+                    onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; },
+                    onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }
                   }, 'Clear'),
                   // Apply button (geocode if needed)
                   React.createElement('button', {
@@ -44242,7 +44254,9 @@ useEffect(() => {
                       setConcertsLocationOpen(false);
                     },
                     disabled: concertsGeocodingLoading,
-                    className: `text-xs font-medium px-3 py-1 rounded-md transition-colors ${isDark ? 'bg-teal-600 text-white hover:bg-teal-500' : 'bg-teal-500 text-white hover:bg-teal-600'}`
+                    style: { fontSize: '13px', fontWeight: '500', padding: '6px 16px', borderRadius: '8px', backgroundColor: '#7c3aed', color: '#fff' },
+                    onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = '#6d28d9'; },
+                    onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = '#7c3aed'; }
                   }, concertsGeocodingLoading ? 'Looking up...' : 'Apply')
                 )
               )
