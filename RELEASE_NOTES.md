@@ -1,4 +1,4 @@
-# Parachord v0.8.1-beta.1
+# Parachord v0.9.0-beta.1
 
 **Release date:** 2026-03-09
 
@@ -320,4 +320,4 @@ Third-party websites can embed a button that sends playlists directly into Parac
 
 ---
 
-**Full changelog:** `git log v0.8.0-alpha.12..v0.8.1-beta.1`
+**Full changelog:** `git log v0.8.0-alpha.12..v0.9.0-beta.1`
