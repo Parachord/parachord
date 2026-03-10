@@ -30911,7 +30911,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
               message: 'To use Spotify, you need to create a free Spotify Developer app and enter your Client ID below.\n\n' +
                 '1. Go to developer.spotify.com/dashboard\n' +
                 '2. Create an app (name it anything)\n' +
-                '3. Add redirect URI: http://127.0.0.1:8888/callback\n' +
+                '3. Add both redirect URIs:\n' +
+                '   http://127.0.0.1:8888/callback\n' +
+                '   http://[::1]:8888/callback\n' +
                 '4. Copy your Client ID and paste it in Settings'
             });
           } else {
@@ -51556,12 +51558,19 @@ useEffect(() => {
                 }
               },
                 React.createElement('div', null, '1. Create a new app (name it anything)'),
-                React.createElement('div', null, '2. Set Redirect URI to: ',
+                React.createElement('div', null, '2. Add both Redirect URIs:'),
+                React.createElement('div', { style: { paddingLeft: '12px', marginTop: '2px', marginBottom: '2px' } },
                   React.createElement('code', {
                     onClick: () => navigator.clipboard.writeText('http://127.0.0.1:8888/callback'),
                     title: 'Click to copy',
-                    style: { cursor: 'pointer', backgroundColor: 'var(--hover-bg-default)', padding: '1px 4px', borderRadius: '3px' }
-                  }, 'http://127.0.0.1:8888/callback')
+                    style: { cursor: 'pointer', backgroundColor: 'var(--hover-bg-default)', padding: '1px 4px', borderRadius: '3px', display: 'inline-block', marginBottom: '2px' }
+                  }, 'http://127.0.0.1:8888/callback'),
+                  React.createElement('br'),
+                  React.createElement('code', {
+                    onClick: () => navigator.clipboard.writeText('http://[::1]:8888/callback'),
+                    title: 'Click to copy',
+                    style: { cursor: 'pointer', backgroundColor: 'var(--hover-bg-default)', padding: '1px 4px', borderRadius: '3px', display: 'inline-block' }
+                  }, 'http://[::1]:8888/callback')
                 ),
                 React.createElement('div', null, '3. Copy your Client ID and paste it below')
               ),
@@ -51587,12 +51596,12 @@ useEffect(() => {
                   }
                 })
               ),
-              // Redirect URI (always visible for reference)
+              // Redirect URIs (always visible for reference)
               React.createElement('div', { style: { marginBottom: '12px' } },
                 React.createElement('label', {
                   style: { fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }
-                }, 'Redirect URI'),
-                React.createElement('div', { style: { display: 'flex', gap: '6px' } },
+                }, 'Redirect URIs'),
+                React.createElement('div', { style: { display: 'flex', gap: '6px', marginBottom: '6px' } },
                   React.createElement('input', {
                     type: 'text',
                     value: 'http://127.0.0.1:8888/callback',
@@ -51625,9 +51634,42 @@ useEffect(() => {
                     }
                   }, 'Copy')
                 ),
+                React.createElement('div', { style: { display: 'flex', gap: '6px' } },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: 'http://[::1]:8888/callback',
+                    readOnly: true,
+                    style: {
+                      flex: 1,
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      outline: 'none'
+                    }
+                  }),
+                  React.createElement('button', {
+                    onClick: () => {
+                      navigator.clipboard.writeText('http://[::1]:8888/callback');
+                      showToast('Copied to clipboard', 'success');
+                    },
+                    title: 'Copy to clipboard',
+                    style: {
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      backgroundColor: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Copy')
+                ),
                 React.createElement('p', {
                   style: { fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px' }
-                }, 'Add this exact URL to your Spotify app\'s Redirect URIs')
+                }, 'Add both URLs to your Spotify app\'s Redirect URIs (IPv4 + IPv6)')
               ),
               // Save / Clear buttons
               React.createElement('div', { className: 'flex gap-2' },
