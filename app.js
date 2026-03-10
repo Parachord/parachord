@@ -6239,6 +6239,7 @@ const Parachord = () => {
   };
 
   const [collectionDropHighlight, setCollectionDropHighlight] = useState(false);
+  const [playlistDropHighlight, setPlaylistDropHighlight] = useState(false);
   const [dropTargetPlaylistId, setDropTargetPlaylistId] = useState(null); // Playlist being hovered during drag
   const [dropTargetNewPlaylist, setDropTargetNewPlaylist] = useState(false); // Hovering over "+ NEW" button during drag
   const [droppedTrackForNewPlaylist, setDroppedTrackForNewPlaylist] = useState(null); // Track dropped on "+ NEW" to be added after creating playlist
@@ -12193,6 +12194,34 @@ ${trackListXml}
       console.error('Failed to parse drop data:', error);
     }
   }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, addTracksToCollection]);
+
+  // Handle drop on playlists sidebar / playlists tab — import playlist from URL
+  const handlePlaylistDrop = useCallback(async (e) => {
+    e.preventDefault();
+    setPlaylistDropHighlight(false);
+
+    const url = extractUrlFromDrop(e.dataTransfer);
+    if (!url) return;
+
+    // Check if this is a playlist URL (Spotify, Apple Music, hosted XSPF)
+    const resolverId = resolverLoaderRef.current?.findResolverForUrl(url);
+    const urlType = resolverId ? resolverLoaderRef.current.getUrlType(url) : 'unknown';
+
+    // Accept playlist URLs from resolvers, or any URL that could be a hosted XSPF
+    if ((resolverId && urlType === 'playlist') || (!resolverId && isValidUrl(url))) {
+      try {
+        const result = await handleImportPlaylistFromUrl(url);
+        if (result?.updated) {
+          showToast(`Updated playlist: ${result.playlist?.title || 'Untitled'}`);
+        } else if (result?.playlist) {
+          showToast(`Imported playlist: ${result.playlist?.title || 'Untitled'}`);
+          navigateTo('playlists');
+        }
+      } catch (err) {
+        showToast(`Import failed: ${err.message}`, 'error');
+      }
+    }
+  }, [handleImportPlaylistFromUrl, showToast, navigateTo]);
 
   // Re-resolve tracks when resolver settings change (enabled/priority)
   // Note: the in-memory cache (trackSourcesCache) and UI state (trackSources) are NOT
@@ -32328,8 +32357,18 @@ useEffect(() => {
             }, 'Your Music'),
             React.createElement('button', {
               onClick: () => navigateTo('playlists'),
+              onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
+              onDragEnter: (e) => { e.preventDefault(); setPlaylistDropHighlight(true); },
+              onDragLeave: (e) => { e.preventDefault(); setPlaylistDropHighlight(false); },
+              onDrop: handlePlaylistDrop,
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
-              style: {
+              style: playlistDropHighlight ? {
+                backgroundColor: 'rgba(236, 72, 153, 0.1)',
+                outline: '2px solid #ec4899',
+                outlineOffset: '-2px',
+                borderRadius: '4px',
+                color: '#ec4899'
+              } : {
                 backgroundColor: (activeView === 'playlists' || activeView === 'playlist-view') ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
                 color: (activeView === 'playlists' || activeView === 'playlist-view') ? '#ec4899' : 'var(--nav-inactive)',
                 fontWeight: (activeView === 'playlists' || activeView === 'playlist-view') ? '500' : '400'
@@ -38408,7 +38447,10 @@ useEffect(() => {
       // Main content area - Playlists Page (separate layout like Artist page)
       : activeView === 'playlists' ? React.createElement('div', {
         className: 'flex-1 flex flex-col h-full',
-        style: { overflow: 'hidden', minHeight: 0 }
+        style: { overflow: 'hidden', minHeight: 0 },
+        onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; },
+        onDragEnter: (e) => { e.preventDefault(); },
+        onDrop: handlePlaylistDrop
       },
         // Header section (outside scrollable area)
         React.createElement('div', {
