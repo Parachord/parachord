@@ -4992,7 +4992,16 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         };
       }
     } else {
-      console.log('[Sync] No stored scopes found (legacy auth). Skipping scope check, API will enforce permissions.');
+      // Legacy auth — token was obtained before we started storing scopes.
+      // Refreshing preserves the original (possibly incomplete) scopes, so
+      // the only reliable fix is a full re-auth.  Prompt the user instead of
+      // silently hitting 403s mid-sync.
+      console.log('[Sync] No stored scopes found (legacy auth). Prompting re-auth to ensure correct permissions.');
+      return {
+        success: false,
+        error: 'Your Spotify connection needs to be refreshed to support library sync. Please disconnect and reconnect Spotify in Settings.',
+        errorCode: 'missing_scopes'
+      };
     }
   }
 
