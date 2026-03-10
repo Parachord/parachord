@@ -7763,10 +7763,10 @@ const Parachord = () => {
         : Promise.resolve(null);
       const builtinPromise = loadBuiltinResolvers();
       const uninstalledPromise = window.electron?.store?.get
-        ? window.electron.store.get('uninstalled_resolvers').catch(() => [])
+        ? window.electron.store.get('uninstalled_resolvers').then(v => v || []).catch(() => [])
         : Promise.resolve([]);
       const metaConfigsPromise = window.electron?.store?.get
-        ? window.electron.store.get('meta_service_configs').catch(() => ({}))
+        ? window.electron.store.get('meta_service_configs').then(v => v || {}).catch(() => ({}))
         : Promise.resolve({});
 
       const [lfmKey, builtinAxeFiles, uninstalledResolvers, savedMetaConfigs] = await Promise.all([
@@ -7934,7 +7934,7 @@ const Parachord = () => {
 
         // Filter out user-uninstalled meta services (same logic as initial load)
         const uninstalledResolvers = await (window.electron?.store?.get
-          ? window.electron.store.get('uninstalled_resolvers').catch(() => [])
+          ? window.electron.store.get('uninstalled_resolvers').then(v => v || []).catch(() => [])
           : Promise.resolve([]));
         const filteredAxes = metaServiceAxes.filter(axe => {
           const id = axe.manifest?.id;
@@ -30411,27 +30411,67 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Import playlist from URL (hosted XSPF)
+  // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
   // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
   // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
   const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
 
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+      // Check if a resolver can handle this URL as a playlist (e.g. Spotify, Apple Music)
+      const resolverId = resolverLoaderRef.current?.findResolverForUrl(url);
+      const urlType = resolverId ? resolverLoaderRef.current.getUrlType(url) : 'unknown';
+
+      let parsed = null;
+      let content = null;
+
+      if (resolverId && urlType === 'playlist') {
+        // Use resolver API to fetch playlist tracks (Spotify, Apple Music, etc.)
+        console.log(`🔌 Using resolver "${resolverId}" to import playlist`);
+        const config = await getResolverConfig(resolverId);
+        const result = await resolverLoaderRef.current.lookupPlaylist(url, config);
+
+        if (!result || !result.playlist || !result.playlist.tracks?.length) {
+          throw new Error(`Could not load playlist from ${resolverId}. Make sure the service is connected and the playlist is accessible.`);
+        }
+
+        const playlist = result.playlist;
+        console.log(`🎵 Loaded ${playlist.tracks.length} tracks via ${resolverId}`);
+
+        // Convert resolver result to internal format
+        parsed = {
+          title: playlist.name || 'Untitled Playlist',
+          creator: playlist.artist || resolverId,
+          date: null,
+          tracks: playlist.tracks.map(t => ({
+            title: t.title || 'Unknown Track',
+            artist: t.artist || 'Unknown Artist',
+            album: t.album || '',
+            duration: t.duration || 0,
+            location: ''
+          }))
+        };
+
+        // Generate XSPF for storage so the playlist can be reloaded without the service
+        content = generateXSPF({ ...parsed, createdAt: Date.now() });
+      } else {
+        // Hosted XSPF — fetch and parse directly
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+        }
+
+        content = await response.text();
+        parsed = parseXSPF(content);
       }
 
-      const content = await response.text();
-
-      // Parse to get playlist info
-      const parsed = parseXSPF(content);
-      if (!parsed) {
+      if (!parsed || !parsed.tracks?.length) {
         showConfirmDialog({
           type: 'error',
           title: 'Import Failed',
-          message: 'Failed to parse XSPF file from URL'
+          message: resolverId
+            ? `No tracks found. Make sure ${resolverId} is connected and the playlist URL is correct.`
+            : 'Failed to parse XSPF file from URL'
         });
         return;
       }
@@ -30467,6 +30507,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       // Add new hosted playlist
+      // Set source based on how the playlist was imported
+      const importSource = resolverId ? `${resolverId}-import` : 'hosted-xspf';
       const newPlaylist = {
         id: id,
         filename: null,  // No local file for hosted playlists
@@ -30474,7 +30516,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         creator: playlistCreator,
         tracks: parsed.tracks || [],
         xspf: content,
-        source: 'hosted-xspf',
+        source: importSource,
         sourceUrl: url,  // Track the source URL for updates
         createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
         addedAt: storedAddedAt || Date.now(), // When added to library (use stored value on reload)
