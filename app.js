@@ -48824,7 +48824,11 @@ useEffect(() => {
     // z-50 to stay above queue drawer
     React.createElement('div', {
       className: 'backdrop-blur-xl py-3 no-drag flex-shrink-0 relative z-50',
-      style: { minHeight: '85px', paddingLeft: '26px', paddingRight: '26px', backgroundColor: 'var(--surface-dark)', borderTop: '1px solid var(--surface-dark-border)' }
+      style: { minHeight: '85px', paddingLeft: '26px', paddingRight: '26px', backgroundColor: 'var(--surface-dark)', borderTop: '1px solid var(--surface-dark-border)' },
+      onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
+      onDragOver: (e) => handleDragOver(e, 'now-playing'),
+      onDragLeave: handleDragLeave,
+      onDrop: (e) => handleDrop(e, 'now-playing')
     },
       React.createElement('div', { className: 'flex items-center justify-between gap-4' },
         // LEFT: Transport controls + Queue button
