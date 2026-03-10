@@ -30515,7 +30515,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const result = await resolverLoaderRef.current.lookupPlaylist(url, config);
 
         if (!result || !result.playlist || !result.playlist.tracks?.length) {
-          throw new Error(`Could not load playlist from ${resolverId}. Make sure the service is connected and the playlist is accessible. If using your own Spotify developer app, ensure it has been approved for Extended Quota Mode in the Spotify Developer Dashboard.`);
+          throw new Error(`Could not load playlist from ${resolverId}. Make sure the service is connected and the playlist is accessible.`);
         }
 
         const playlist = result.playlist;
