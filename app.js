@@ -6877,8 +6877,8 @@ const Parachord = () => {
 
       const hasCurrentTrack = currentTrackRef.current !== null;
 
-      // If dropped on now-playing zone, clear queue, play first track,
-      // and fill queue with remaining tracks (like pressing play on the playlist)
+      // If dropped on now-playing zone, play first track immediately
+      // and add remaining tracks to the BEGINNING of the queue (play next)
       if (zone === 'now-playing') {
         const firstTrack = resolvedTracks[0];
         const remainingTracks = resolvedTracks.slice(1);
@@ -6886,8 +6886,10 @@ const Parachord = () => {
         // Show toast notification
         showToast(`Playing "${collection.name}" (${tracks.length} tracks)`);
 
-        // Replace queue with remaining tracks
-        setCurrentQueue(remainingTracks);
+        // Add remaining tracks to the BEGINNING of the queue (so they play next)
+        if (remainingTracks.length > 0) {
+          setCurrentQueue(prev => [...remainingTracks, ...prev]);
+        }
 
         // Set context and play first track immediately
         setPlaybackContext(context);
