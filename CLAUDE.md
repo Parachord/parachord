@@ -50,6 +50,107 @@ npm run build:linux    # Build Linux binaries
 - Tailwind CSS for styling (pre-built, rebuild with `npm run build:css`)
 - No ESLint config in root — follow existing code conventions
 
+## Resolver Pipeline
+
+The resolver system resolves a (artist, track) pair into playable sources across multiple services.
+
+### .axe Plugin Format
+
+Each `.axe` file is JSON with a manifest, capabilities, URL patterns, settings, and an `implementation` object containing JavaScript functions as strings (`resolve`, `search`, `play`, `lookupUrl`, `init`, `cleanup`). Functions are instantiated via `new Function()` in a sandboxed context.
+
+### Resolution Flow
+
+1. **ResolverLoader** (`resolver-loader.js`) loads `.axe` files, converts string functions to callable functions, and registers URL patterns
+2. **ResolutionScheduler** (`resolution-scheduler.js`) prioritizes which tracks to resolve based on visibility context:
+   - queue (1) > hover (2) > pool (3) > page (4) > sidebar (5) > background (6)
+   - Rate-limited: 150ms between resolutions
+   - Supports abort via AbortController when tracks scroll out of view
+3. **resolveTrack()** (in `app.js`) queries all enabled resolvers in parallel, flushes results to UI as each completes
+4. **Background pre-resolution** runs during idle periods with a 30s startup grace period, ramping from 5 to 25 tracks per batch
+
+### Resolution Caching (3 layers)
+
+| Layer | TTL | Scope |
+|-------|-----|-------|
+| In-memory `trackSourcesCache` | 7 days | Session, keyed by `artist\|title` |
+| Persisted `track.sources` | 30 days | Collection/playlist DB, per resolver |
+| No-match sentinels | Session | Prevents re-querying resolvers that found nothing |
+
+Canonical resolver order: Spotify → Apple Music → Bandcamp → SoundCloud → Local Files → YouTube. Fallback resolvers are embedded in `app.js` if `.axe` files fail to load.
+
+## Metadata Providers
+
+Metadata is fetched from multiple sources with fallback chains. MusicBrainz is the primary hub.
+
+### Album Art Fallback Chain
+
+1. Check `albumToReleaseIdCache` (artist-album → MusicBrainz release/release-group IDs)
+2. Search MusicBrainz for release if not cached
+3. Fetch from Cover Art Archive: try `/release-group/{id}/front-250`, fall back to `/release/{id}/front-250`
+4. Fall back to resolver plugins (Spotify, Apple Music, etc.) via `getAlbumArtFromResolvers()`
+
+### Artist Bio Fallback Chain (fetched in parallel, priority-selected)
+
+1. **Wikipedia** (highest) — MusicBrainz → Wikidata → Wikipedia extract
+2. **Discogs** (medium) — requires optional personal access token
+3. **Last.fm** (lowest) — artist name lookup, strips HTML
+
+### Artist Images
+
+1. Spotify API search (exact name match)
+2. MusicKit fallback (Apple Music)
+3. Wikipedia/Discogs fallback for when neither is available
+
+### Artist Data Fallback
+
+1. MusicBrainz (primary — releases, relations, members, URLs)
+2. Spotify resolver
+3. Apple Music MusicKit
+4. Last.fm
+5. Discogs
+
+### Related Artists
+
+- ListenBrainz Labs API (requires MBID, scored similarity)
+- Last.fm similar artists (name-based, percentage match)
+
+## Cover Art Cache
+
+### Disk Cache (local files only)
+
+- **Directory:** `{userDataPath}/album-art-cache/`
+- **Embedded art:** `embedded-{md5(filePath)}.{jpg|png}` — extracted via `music-metadata`
+- **CAA art:** `caa-{releaseId}.jpg` — fetched from Cover Art Archive
+- **Folder art:** auto-detected `cover.jpg`, `folder.jpg`, `album.jpg`, `front.jpg` (+ png/jpeg variants)
+- Managed by `AlbumArtResolver` in `local-files/album-art.js`
+
+### In-Memory Cache (renderer)
+
+| Cache | Key | TTL | Persisted |
+|-------|-----|-----|-----------|
+| `albumArtCache` | Release ID or Release Group ID | 90 days | Yes (`cache_album_art`) |
+| `albumToReleaseIdCache` | `"artist-album"` | No expiry | Yes (`cache_album_release_ids`) |
+| `resolverArtCache` | `"artist-album"` | Session | No |
+| `artistImageCache` | Artist name | 90 days | Yes |
+
+### All Cache TTLs
+
+| Cache | TTL |
+|-------|-----|
+| Album art | 90 days |
+| Artist images | 90 days |
+| Artist data | 30 days |
+| Artist extended info | 30 days |
+| Track sources | 7 days |
+| Persisted sources | 30 days |
+| Playlist covers | 30 days |
+| Recommendations | 1 hour |
+| Charts | 24 hours |
+| New releases | 6 hours |
+| Concerts | 24 hours |
+
+Caches are loaded from `electron.store` at startup (expired entries filtered) and saved periodically.
+
 ## Key Details
 
 - `.axe` plugin files are JSON with embedded JavaScript — treat them as data files with code strings
