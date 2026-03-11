@@ -1812,14 +1812,15 @@ app.whenReady().then(() => {
 
     autoUpdater.on('error', (err) => {
       console.error('❌ Auto-updater error:', err.message);
-      // Only forward to renderer if the user initiated the check
+      // Always forward errors to the renderer so download/install failures
+      // are visible. Only suppress the generic startup check errors.
       if (userInitiatedUpdateCheck) {
         userInitiatedUpdateCheck = false;
-        safeSendToRenderer('updater-status', {
-          status: 'error',
-          error: 'Could not check for updates. Please try again later.'
-        });
       }
+      safeSendToRenderer('updater-status', {
+        status: 'error',
+        error: err.message || 'An update error occurred.'
+      });
     });
 
     // Check for updates after a short delay (don't block startup)
