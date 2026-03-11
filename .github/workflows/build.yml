@@ -249,16 +249,32 @@ jobs:
 
           if [ "$COUNT" -ge 2 ]; then
             echo "Merging $COUNT latest-mac.yml manifests..."
-            # Use the first file as the base, append 'files' entries from the rest.
-            # latest-mac.yml is a YAML file with a top-level 'files' array.
+            # latest-mac.yml structure:
+            #   version: X.Y.Z
+            #   files:
+            #     - url: Foo.zip
+            #       sha512: ...
+            #       size: ...
+            #   path: Foo.zip
+            #   sha512: ...
+            #   releaseDate: ...
+            #
+            # Merge all 'files' entries into a single manifest. We rebuild
+            # the file by taking header+files from the base, inserting extra
+            # file entries from the other manifests before 'path:', then
+            # appending the rest (path/sha512/releaseDate) from the base.
             BASE=$(echo "$MAC_FILES" | head -1)
-            cp "$BASE" artifacts/latest-mac.yml
 
+            # Split base into: everything up to (not including) 'path:' line,
+            # and everything from 'path:' onward.
+            sed '/^path:/,$d' "$BASE" > artifacts/latest-mac.yml
             for f in $MAC_FILES; do
               [ "$f" = "$BASE" ] && continue
-              # Append file entries (lines starting with spaces under "files:")
+              # Extract indented file entries (the lines under 'files:')
               sed -n '/^files:/,/^[^ ]/{ /^  /p }' "$f" >> artifacts/latest-mac.yml
             done
+            # Append the path/sha512/releaseDate footer from the base
+            sed -n '/^path:/,$p' "$BASE" >> artifacts/latest-mac.yml
 
             echo "Merged latest-mac.yml:"
             cat artifacts/latest-mac.yml
