@@ -187,6 +187,16 @@ jobs:
             fi
           done
 
+      # Upload YAML manifests separately per platform/arch so they don't
+      # overwrite each other when downloaded with merge-multiple.
+      - name: Upload YAML manifest
+        if: hashFiles('dist/*.yml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*.yml
+          retention-days: 30
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -198,7 +208,6 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.rpm
-            dist/*.yml
             dist/*.blockmap
           if-no-files-found: ignore
           retention-days: 30
@@ -212,8 +221,50 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: parachord-*
           path: artifacts
           merge-multiple: true
+
+      # Download all YAML manifests into separate subdirectories so
+      # per-arch files with the same name don't overwrite each other.
+      - name: Download manifests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: manifest-*
+          path: manifests
+
+      # Each Mac arch build produces its own latest-mac.yml containing only
+      # that arch's files.  electron-updater expects a single latest-mac.yml
+      # with entries for BOTH architectures so it can pick the right one.
+      # Merge them here; non-Mac manifests are just copied through.
+      - name: Merge manifests
+        shell: bash
+        run: |
+          # Copy all non-Mac manifests directly into artifacts/
+          find manifests -name '*.yml' ! -name 'latest-mac.yml' -exec cp {} artifacts/ \;
+
+          # Merge Mac manifests
+          MAC_FILES=$(find manifests -name 'latest-mac.yml' | sort)
+          COUNT=$(echo "$MAC_FILES" | wc -l)
+
+          if [ "$COUNT" -ge 2 ]; then
+            echo "Merging $COUNT latest-mac.yml manifests..."
+            # Use the first file as the base, append 'files' entries from the rest.
+            # latest-mac.yml is a YAML file with a top-level 'files' array.
+            BASE=$(echo "$MAC_FILES" | head -1)
+            cp "$BASE" artifacts/latest-mac.yml
+
+            for f in $MAC_FILES; do
+              [ "$f" = "$BASE" ] && continue
+              # Append file entries (lines starting with spaces under "files:")
+              sed -n '/^files:/,/^[^ ]/{ /^  /p }' "$f" >> artifacts/latest-mac.yml
+            done
+
+            echo "Merged latest-mac.yml:"
+            cat artifacts/latest-mac.yml
+          elif [ "$COUNT" -eq 1 ]; then
+            cp $MAC_FILES artifacts/latest-mac.yml
+          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
