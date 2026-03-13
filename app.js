@@ -5140,6 +5140,7 @@ const Parachord = () => {
   const [criticsPicksLoading, setCriticsPicksLoading] = useState(false);
   const [criticsPicksLoaded, setCriticsPicksLoaded] = useState(false);
   const [criticsPicksError, setCriticsPicksError] = useState(null);
+  const [criticsPicksLastFetched, setCriticsPicksLastFetched] = useState(null);
 
   // Charts state
   const [charts, setCharts] = useState([]);
@@ -23692,7 +23693,7 @@ ${tracks}
         let artist = '';
         let album = '';
 
-        const byMatch = titleText.match(/^(.+?)\s+by\s+(.+)$/i);
+        const byMatch = titleText.trim().match(/^(.+?)\s+by\s+(.+)$/is);
         if (byMatch) {
           album = byMatch[1].trim();
           artist = byMatch[2].trim();
@@ -23826,8 +23827,9 @@ ${tracks}
   };
 
   // Load Critic's Picks from RSS feed
-  const loadCriticsPicks = async () => {
-    if (criticsPicksLoading || criticsPicksLoaded) return;
+  const loadCriticsPicks = async (forceRefresh = false) => {
+    if (criticsPicksLoading) return;
+    if (criticsPicksLoaded && !forceRefresh) return;
 
     setCriticsPicksLoading(true);
     setCriticsPicksError(null);
@@ -23847,6 +23849,7 @@ ${tracks}
       // Set albums immediately (without album art)
       setCriticsPicks(albums);
       setCriticsPicksLoaded(true);
+      setCriticsPicksLastFetched(Date.now());
 
       // Check for new content (unread badge)
       const hash = generateDiscoveryHash(albums);
@@ -26484,11 +26487,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   }, [activeView, cacheLoaded, chartsLoaded]);
 
-  // Load critics picks when navigating to critics-picks page
+  // Load critics picks when navigating to critics-picks page (re-fetch if stale)
   useEffect(() => {
-    // Only load if we're on the critics-picks page AND cache is loaded AND not already loaded
-    if (activeView === 'critics-picks' && cacheLoaded && !criticsPicksLoaded) {
-      loadCriticsPicks();
+    if (activeView === 'critics-picks' && cacheLoaded) {
+      const staleAfterMs = 4 * 60 * 60 * 1000; // 4 hours
+      const isStale = criticsPicksLastFetched && (Date.now() - criticsPicksLastFetched) > staleAfterMs;
+      if (!criticsPicksLoaded || isStale) {
+        loadCriticsPicks(isStale);
+      }
     }
   }, [activeView, cacheLoaded, criticsPicksLoaded]);
 
