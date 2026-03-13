@@ -9891,6 +9891,33 @@ ${trackListXml}
     };
   }, []);
 
+  // Listen for MusicKit JS track-ended and Apple Music preview-ended events
+  // to advance to the next track in the queue automatically
+  useEffect(() => {
+    const handleMusicKitTrackEnded = () => {
+      const track = currentTrackRef.current;
+      if (track?._activeResolver === 'applemusic') {
+        console.log('[MusicKit] Track ended, advancing to next');
+        if (handleNextRef.current) handleNextRef.current();
+      }
+    };
+
+    const handlePreviewEnded = () => {
+      const track = currentTrackRef.current;
+      if (track?._activeResolver === 'applemusic') {
+        console.log('[AppleMusic] Preview ended, advancing to next');
+        if (handleNextRef.current) handleNextRef.current();
+      }
+    };
+
+    window.addEventListener('musickit-track-ended', handleMusicKitTrackEnded);
+    window.addEventListener('applemusic-preview-ended', handlePreviewEnded);
+    return () => {
+      window.removeEventListener('musickit-track-ended', handleMusicKitTrackEnded);
+      window.removeEventListener('applemusic-preview-ended', handlePreviewEnded);
+    };
+  }, []);
+
   // Apple Music preview audio progress tracking
   // The preview audio element (window._appleMusicPreviewAudio) is created lazily in the
   // resolver's play method, separate from audioRef.current, so it needs its own timeupdate listener.

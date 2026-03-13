@@ -196,6 +196,12 @@ class MusicKitWeb {
    * Check authorization status
    */
   getAuthStatus() {
+    // Query live MusicKit authorization state instead of relying on cached
+    // this.isAuthorized, which can become stale if the user's session expires
+    // or authorization is revoked externally (e.g. via System Settings).
+    if (this.musicKit) {
+      this.isAuthorized = this.musicKit.isAuthorized;
+    }
     return {
       configured: this.isConfigured,
       authorized: this.isAuthorized,
