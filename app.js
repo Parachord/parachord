@@ -5147,6 +5147,7 @@ const Parachord = () => {
   const [chartsLoading, setChartsLoading] = useState(false);
   const [chartsLoaded, setChartsLoaded] = useState(false);
   const [chartsError, setChartsError] = useState(null);
+  const [chartsLastFetched, setChartsLastFetched] = useState(null);
 
   // New Releases state
   const [newReleases, setNewReleases] = useState([]);
@@ -5434,9 +5435,15 @@ const Parachord = () => {
                     return incoming;
                   });
                 }
-                // When collection is null, no meaningful changes occurred
-                // (only syncedAt timestamps updated). Skip reloading — the
-                // renderer already has the current data.
+                // Reload playlists to pick up hasUpdates flags from sync
+                if (settings.syncPlaylists) {
+                  try {
+                    const loadedPlaylists = await window.electron.playlists.load();
+                    setPlaylists(loadedPlaylists);
+                  } catch (e) {
+                    console.warn('[Sync] Failed to reload playlists after background sync:', e);
+                  }
+                }
               } else {
                 console.warn(`[Sync] Background sync for ${providerId} returned unsuccessful:`, result.error);
               }
@@ -23867,8 +23874,9 @@ ${tracks}
   };
 
   // Load Charts from Apple Music JSON feed
-  const loadCharts = async () => {
-    if (chartsLoading || chartsLoaded) return;
+  const loadCharts = async (forceRefresh = false) => {
+    if (chartsLoading) return;
+    if (chartsLoaded && !forceRefresh) return;
 
     setChartsLoading(true);
     setChartsError(null);
@@ -23888,6 +23896,7 @@ ${tracks}
 
       setCharts(albums);
       setChartsLoaded(true);
+      setChartsLastFetched(Date.now());
 
       // Check for new content (unread badge)
       const hash = generateDiscoveryHash(albums);
@@ -26479,11 +26488,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     fetchAiRecommendations();
   }, [activeView, cacheLoaded, metaServices, homeVisitCount]);
 
-  // Load charts when navigating to discover page (Pop of the Tops)
+  // Load charts when navigating to discover page (Pop of the Tops), re-fetch if stale
   useEffect(() => {
-    // Only load if we're on the discover page AND cache is loaded AND charts haven't been loaded yet
-    if (activeView === 'discover' && cacheLoaded && !chartsLoaded) {
-      loadCharts();
+    if (activeView === 'discover' && cacheLoaded) {
+      const staleAfterMs = 4 * 60 * 60 * 1000; // 4 hours
+      const isStale = chartsLastFetched && (Date.now() - chartsLastFetched) > staleAfterMs;
+      if (!chartsLoaded || isStale) {
+        loadCharts(isStale);
+      }
     }
   }, [activeView, cacheLoaded, chartsLoaded]);
 
