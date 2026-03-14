@@ -5444,6 +5444,119 @@ const Parachord = () => {
                     console.warn('[Sync] Failed to reload playlists after background sync:', e);
                   }
                 }
+              // Auto-sync local playlists to this provider
+              try {
+                const allPlaylists = await window.electron.playlists.load();
+                let playlistsChanged = false;
+
+                for (const playlist of allPlaylists) {
+                  // Skip playlists that are local-only or synced FROM this provider
+                  if (playlist.localOnly) continue;
+                  if (playlist.syncedFrom) continue;
+
+                  // Skip playlists with pending actions
+                  if (playlist.syncedTo?.[providerId]?.pendingAction) continue;
+
+                  const syncInfo = playlist.syncedTo?.[providerId];
+
+                  if (!syncInfo) {
+                    // Playlist not yet created on this provider — create it
+                    console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
+                    try {
+                      const result = await window.electron.sync.createPlaylist(
+                        providerId,
+                        playlist.title,
+                        playlist.description || '',
+                        playlist.tracks || []
+                      );
+                      if (result.success) {
+                        playlist.syncedTo = {
+                          ...playlist.syncedTo,
+                          [providerId]: {
+                            externalId: result.externalId,
+                            snapshotId: result.snapshotId,
+                            syncedAt: Date.now(),
+                            unresolvedTracks: result.unresolvedTracks || [],
+                            pendingAction: null
+                          }
+                        };
+                        playlistsChanged = true;
+                        console.log(`[Sync] Created playlist "${playlist.title}" on ${providerId}: ${result.externalId}`);
+                      }
+                    } catch (err) {
+                      console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
+                    }
+                  } else if (playlist.locallyModified) {
+                    // Playlist exists remotely and has local changes — push updates
+                    console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
+                    try {
+                      // Resolve tracks to provider-specific URIs before pushing
+                      let tracksForPush = playlist.tracks || [];
+                      try {
+                        const resolveResult = await window.electron.sync.resolveTracks(providerId, tracksForPush);
+                        if (resolveResult.success) {
+                          tracksForPush = resolveResult.resolved;
+                          playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
+                        }
+                      } catch (resolveErr) {
+                        console.warn(`[Sync] Track resolution failed for "${playlist.title}" on ${providerId}:`, resolveErr.message);
+                      }
+
+                      const pushResult = await window.electron.sync.pushPlaylist(
+                        providerId,
+                        syncInfo.externalId,
+                        tracksForPush,
+                        { name: playlist.title, description: playlist.description || '' }
+                      );
+                      if (pushResult?.success) {
+                        playlist.syncedTo[providerId] = {
+                          ...playlist.syncedTo[providerId],
+                          snapshotId: pushResult.snapshotId,
+                          syncedAt: Date.now()
+                        };
+                        playlistsChanged = true;
+                      } else if (pushResult?.error === 'PLAYLIST_NOT_FOUND' || pushResult?.error?.includes('404')) {
+                        // Remote playlist was deleted
+                        playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
+                        playlistsChanged = true;
+                        console.warn(`[Sync] Remote playlist "${playlist.title}" was deleted on ${providerId}`);
+                      }
+                    } catch (err) {
+                      if (err.message?.includes('404') || err.message?.includes('Not Found')) {
+                        playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
+                        playlistsChanged = true;
+                      }
+                      console.warn(`[Sync] Failed to push playlist "${playlist.title}" to ${providerId}:`, err.message);
+                    }
+                  }
+                }
+
+                // Reset locallyModified for playlists synced to ALL providers
+                if (playlistsChanged) {
+                  const enabledProviders = Object.entries(resolverSyncSettingsRef.current)
+                    .filter(([, s]) => s.enabled)
+                    .map(([id]) => id);
+
+                  for (const playlist of allPlaylists) {
+                    if (playlist.locallyModified && playlist.syncedTo) {
+                      const allSynced = enabledProviders.every(pid =>
+                        playlist.syncedTo[pid]?.syncedAt >= (playlist.lastModified || 0)
+                      );
+                      if (allSynced) {
+                        playlist.locallyModified = false;
+                      }
+                    }
+                  }
+
+                  // Save all changes to disk and update UI
+                  for (const playlist of allPlaylists) {
+                    await window.electron.playlists.save(playlist);
+                  }
+                  setPlaylists(allPlaylists);
+                }
+              } catch (err) {
+                console.warn(`[Sync] Local playlist sync failed for ${providerId}:`, err.message);
+              }
               } else {
                 console.warn(`[Sync] Background sync for ${providerId} returned unsuccessful:`, result.error);
               }
@@ -15226,11 +15339,11 @@ ${trackListXml}
     });
   };
 
-  // Mark a synced playlist as locally modified (for sync disconnect handling)
-  // Only affects playlists with syncedFrom - local playlists are unaffected
+  // Mark a synced playlist as locally modified (for sync push handling)
+  // Affects playlists with syncedFrom (pulled from service) OR syncedTo (pushed to service)
   const markPlaylistAsLocallyModified = (playlistId) => {
     setPlaylists(prev => prev.map(p =>
-      p.id === playlistId && p.syncedFrom
+      p.id === playlistId && (p.syncedFrom || p.syncedTo)
         ? { ...p, locallyModified: true, lastModified: Date.now() }
         : p
     ));
