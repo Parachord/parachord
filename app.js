@@ -8942,9 +8942,6 @@ const Parachord = () => {
           console.log(`[Sync] Collection push: ${allTracks.length} total tracks, ${manualTracks.length} manual, ${unpushedTracks.length} unpushed for ${providerId}`);
 
           if (unpushedTracks.length > 0) {
-            for (const t of unpushedTracks) {
-              console.log(`[Sync] Unpushed track: "${t.artist} - ${t.title}", spotifyId=${t.spotifyId}, sources.spotify?.spotifyId=${t.sources?.spotify?.spotifyId}, sources keys=${Object.keys(t.sources || {})}`);
-            }
             const trackIds = unpushedTracks
               .map(t => {
                 if (providerId === 'spotify') return t.spotifyId || t.sources?.spotify?.spotifyId;
