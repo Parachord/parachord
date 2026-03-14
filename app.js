@@ -8882,9 +8882,10 @@ const Parachord = () => {
         results: result.results
       }));
 
-      // Auto-create local playlists on this provider after manual sync
+      // Auto-create local playlists and push collection items after manual sync
       // Run after dialog updates to 'complete' so UI isn't blocked during track resolution
       (async () => {
+        console.log(`[Sync] Post-sync IIFE started for ${providerId}`);
         try {
           const allPlaylists = await window.electron.playlists.load();
           let playlistsChanged = false;
@@ -8935,9 +8936,10 @@ const Parachord = () => {
           let collectionChanged = false;
 
           // Push tracks with manual source that haven't been pushed to this provider
-          const unpushedTracks = (collection.tracks || []).filter(t =>
-            t.syncSources?.manual && !t.syncSources?.[providerId]
-          );
+          const allTracks = collection.tracks || [];
+          const manualTracks = allTracks.filter(t => t.syncSources?.manual);
+          const unpushedTracks = manualTracks.filter(t => !t.syncSources?.[providerId]);
+          console.log(`[Sync] Collection push: ${allTracks.length} total tracks, ${manualTracks.length} manual, ${unpushedTracks.length} unpushed for ${providerId}`);
 
           if (unpushedTracks.length > 0) {
             const trackIds = unpushedTracks
@@ -8947,9 +8949,11 @@ const Parachord = () => {
                 return null;
               })
               .filter(Boolean);
+            console.log(`[Sync] Found ${trackIds.length} tracks with ${providerId} IDs to push`);
 
             if (trackIds.length > 0) {
               const saveResult = await window.electron.sync.saveTracks(providerId, trackIds);
+              console.log(`[Sync] saveTracks result:`, JSON.stringify(saveResult));
               if (saveResult.success) {
                 console.log(`[Sync] Pushed ${trackIds.length} local tracks to ${providerId}`);
                 for (const track of unpushedTracks) {
