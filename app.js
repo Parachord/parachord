@@ -8758,6 +8758,51 @@ const Parachord = () => {
         setPlaylists(loadedPlaylists);
       }
 
+      // Auto-create local playlists on this provider after manual sync
+      try {
+        const allPlaylists = await window.electron.playlists.load();
+        let playlistsChanged = false;
+
+        for (const playlist of allPlaylists) {
+          if (playlist.localOnly || playlist.syncedFrom) continue;
+          if (playlist.syncedTo?.[providerId]) continue;
+
+          console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
+          try {
+            const createResult = await window.electron.sync.createPlaylist(
+              providerId,
+              playlist.title,
+              playlist.description || '',
+              playlist.tracks || []
+            );
+            if (createResult.success) {
+              playlist.syncedTo = {
+                ...playlist.syncedTo,
+                [providerId]: {
+                  externalId: createResult.externalId,
+                  snapshotId: createResult.snapshotId,
+                  syncedAt: Date.now(),
+                  unresolvedTracks: createResult.unresolvedTracks || [],
+                  pendingAction: null
+                }
+              };
+              playlistsChanged = true;
+            }
+          } catch (err) {
+            console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
+          }
+        }
+
+        if (playlistsChanged) {
+          for (const playlist of allPlaylists) {
+            await window.electron.playlists.save(playlist);
+          }
+          setPlaylists(allPlaylists);
+        }
+      } catch (err) {
+        console.warn('[Sync] Local playlist auto-create failed after manual sync:', err.message);
+      }
+
       setSyncSetupModal(prev => ({
         ...prev,
         step: 'complete',
