@@ -515,7 +515,6 @@ const SpotifySyncProvider = {
 
   /**
    * Save tracks to user's Spotify library (Liked Songs)
-   * Uses the unified PUT /me/library endpoint (Feb 2026 API update)
    * @param {string[]} trackIds - Array of Spotify track IDs (not URIs)
    * @param {string} token - Access token
    * @returns {Object} - { success: boolean }
@@ -525,20 +524,20 @@ const SpotifySyncProvider = {
       return { success: true, saved: 0 };
     }
 
-    // Convert IDs to Spotify URIs for the unified /me/library endpoint
-    const uris = trackIds.map(id => id.startsWith('spotify:') ? id : `spotify:track:${id}`);
+    // Strip URIs down to bare IDs if needed
+    const ids = trackIds.map(id => id.startsWith('spotify:track:') ? id.replace('spotify:track:', '') : id);
 
     // Spotify allows max 50 items per request
     const batches = [];
-    for (let i = 0; i < uris.length; i += 50) {
-      batches.push(uris.slice(i, i + 50));
+    for (let i = 0; i < ids.length; i += 50) {
+      batches.push(ids.slice(i, i + 50));
     }
 
     let totalSaved = 0;
     for (const batch of batches) {
-      await spotifyRequest('/me/library', token, {
+      await spotifyRequest('/me/tracks', token, {
         method: 'PUT',
-        body: { uris: batch }
+        body: { ids: batch }
       });
       totalSaved += batch.length;
       await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
@@ -558,18 +557,18 @@ const SpotifySyncProvider = {
       return { success: true, saved: 0 };
     }
 
-    const uris = albumIds.map(id => id.startsWith('spotify:') ? id : `spotify:album:${id}`);
+    const ids = albumIds.map(id => id.startsWith('spotify:album:') ? id.replace('spotify:album:', '') : id);
 
     const batches = [];
-    for (let i = 0; i < uris.length; i += 50) {
-      batches.push(uris.slice(i, i + 50));
+    for (let i = 0; i < ids.length; i += 50) {
+      batches.push(ids.slice(i, i + 50));
     }
 
     let totalSaved = 0;
     for (const batch of batches) {
-      await spotifyRequest('/me/library', token, {
+      await spotifyRequest('/me/albums', token, {
         method: 'PUT',
-        body: { uris: batch }
+        body: { ids: batch }
       });
       totalSaved += batch.length;
       await new Promise(resolve => setTimeout(resolve, 100));
