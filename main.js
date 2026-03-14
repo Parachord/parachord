@@ -5347,6 +5347,15 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
   let token;
   if (providerId === 'spotify') {
     token = store.get('spotify_token');
+  } else if (providerId === 'applemusic') {
+    if (!generatedMusicKitToken) {
+      await musicKitTokenReady;
+    }
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
+    const userToken = store.get('applemusic_user_token');
+    if (developerToken && userToken) {
+      token = JSON.stringify({ developerToken, userToken });
+    }
   }
 
   if (!token) {
@@ -5371,9 +5380,109 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token);
     return { success: true, snapshotId: result.snapshotId };
   } catch (error) {
+    // Detect remote playlist deletion (404)
+    if (error.message?.includes('404') || error.message?.includes('Not Found') || error.status === 404) {
+      return { success: false, error: 'PLAYLIST_NOT_FOUND', message: 'The remote playlist no longer exists' };
+    }
     return { success: false, error: error.message };
   }
 });
+
+  // Create a new playlist on a remote service from a local playlist
+  ipcMain.handle('sync:create-playlist', async (event, providerId, name, description, tracks) => {
+    const provider = SyncEngine.getProvider(providerId);
+    if (!provider || !provider.capabilities.playlists) {
+      return { success: false, error: 'Provider does not support playlists' };
+    }
+
+    if (!provider.createPlaylist) {
+      return { success: false, error: 'Provider does not support creating playlists' };
+    }
+
+    let token;
+    if (providerId === 'spotify') {
+      token = await ensureValidSpotifyToken();
+    } else if (providerId === 'applemusic') {
+      if (!generatedMusicKitToken) {
+        await musicKitTokenReady;
+      }
+      const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
+      const userToken = store.get('applemusic_user_token');
+      if (developerToken && userToken) {
+        token = JSON.stringify({ developerToken, userToken });
+      }
+    }
+
+    if (!token) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    try {
+      // Step 1: Resolve tracks to provider-specific IDs
+      let resolved = tracks;
+      let unresolved = [];
+      if (provider.resolveTracks) {
+        const resolveResult = await provider.resolveTracks(tracks, token);
+        resolved = resolveResult.resolved;
+        unresolved = resolveResult.unresolved;
+        console.log(`[Sync] Resolved ${resolved.length}/${tracks.length} tracks for ${providerId} (${unresolved.length} unresolved)`);
+      }
+
+      // Step 2: Create the playlist
+      const { externalId, snapshotId } = await provider.createPlaylist(name, description, token);
+      console.log(`[Sync] Created playlist "${name}" on ${providerId}: ${externalId}`);
+
+      // Step 3: Add tracks
+      let finalSnapshotId = snapshotId;
+      if (resolved.length > 0 && provider.updatePlaylistTracks) {
+        const updateResult = await provider.updatePlaylistTracks(externalId, resolved, token);
+        finalSnapshotId = updateResult.snapshotId || snapshotId;
+      }
+
+      return {
+        success: true,
+        externalId,
+        snapshotId: finalSnapshotId,
+        unresolvedTracks: unresolved
+      };
+    } catch (error) {
+      console.error(`[Sync] Failed to create playlist on ${providerId}:`, error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Resolve local tracks to provider-specific IDs
+  ipcMain.handle('sync:resolve-tracks', async (event, providerId, tracks) => {
+    const provider = SyncEngine.getProvider(providerId);
+    if (!provider?.resolveTracks) {
+      return { success: false, error: 'Provider does not support track resolution' };
+    }
+
+    let token;
+    if (providerId === 'spotify') {
+      token = await ensureValidSpotifyToken();
+    } else if (providerId === 'applemusic') {
+      if (!generatedMusicKitToken) {
+        await musicKitTokenReady;
+      }
+      const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
+      const userToken = store.get('applemusic_user_token');
+      if (developerToken && userToken) {
+        token = JSON.stringify({ developerToken, userToken });
+      }
+    }
+
+    if (!token) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    try {
+      const result = await provider.resolveTracks(tracks, token);
+      return { success: true, resolved: result.resolved, unresolved: result.unresolved };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
 
 // Push track changes to sync provider (add to Liked Songs)
 ipcMain.handle('sync:save-tracks', async (event, providerId, trackIds) => {
