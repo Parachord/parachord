@@ -5110,10 +5110,12 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         sendProgress({ phase: 'playlists', current: i + 1, total: selectedRemote.length, providerId });
 
         try {
-          // Check for existing playlist by syncedFrom.externalId OR by matching ID pattern
-          // This handles both new sync structure and older playlists that may have been synced before
+          // Check for existing playlist by syncedFrom.externalId, syncedTo externalId, or matching ID pattern
+          // This handles: playlists imported FROM this provider, playlists pushed TO this provider,
+          // and older playlists that may have been synced before the syncedFrom/syncedTo structure
           const localPlaylist = currentPlaylists.find(p =>
             p.syncedFrom?.externalId === remotePlaylist.externalId ||
+            p.syncedTo?.[providerId]?.externalId === remotePlaylist.externalId ||
             p.id === remotePlaylist.id ||
             p.id === `${providerId}-${remotePlaylist.externalId}`
           );
