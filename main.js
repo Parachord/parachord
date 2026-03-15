@@ -33,16 +33,40 @@ app.name = 'Parachord';
 // Note: Linux works out of the box; Windows requires VMP signing (Castlabs fork)
 // so this is primarily useful on Linux for now.
 if (process.platform !== 'darwin') {
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const programFiles = process.env.PROGRAMFILES || '';
+  const home = process.env.HOME || '';
+
   const cdmSearchPaths = process.platform === 'win32'
     ? [
-        path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'User Data', 'WidevineCdm'),
-        path.join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'WidevineCdm'),
+        // Chrome
+        path.join(localAppData, 'Google', 'Chrome', 'User Data', 'WidevineCdm'),
+        path.join(programFiles, 'Google', 'Chrome', 'Application', 'WidevineCdm'),
+        // Edge
+        path.join(localAppData, 'Microsoft', 'Edge', 'User Data', 'WidevineCdm'),
+        // Brave
+        path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'User Data', 'WidevineCdm'),
+        // Vivaldi
+        path.join(localAppData, 'Vivaldi', 'User Data', 'WidevineCdm'),
+        // Opera
+        path.join(localAppData, 'Opera Software', 'Opera Stable', 'WidevineCdm'),
+        // Dia (The Browser Company)
+        path.join(localAppData, 'Dia', 'User Data', 'WidevineCdm'),
+        path.join(localAppData, 'TheBrowserCompany', 'Dia', 'User Data', 'WidevineCdm'),
       ]
     : [
-        // Linux: Chrome and Chromium paths
+        // Chrome
         '/opt/google/chrome/WidevineCdm',
+        // Chromium
         '/usr/lib/chromium/WidevineCdm',
-        path.join(process.env.HOME || '', '.local', 'lib', 'WidevineCdm'),
+        // Edge
+        '/opt/microsoft/msedge/WidevineCdm',
+        // Brave
+        '/opt/brave.com/brave/WidevineCdm',
+        // Vivaldi
+        '/opt/vivaldi/WidevineCdm',
+        // Shared / user-local
+        path.join(home, '.local', 'lib', 'WidevineCdm'),
       ];
 
   const cdmLib = process.platform === 'win32' ? 'widevinecdm.dll' : 'libwidevinecdm.so';
@@ -75,7 +99,7 @@ if (process.platform !== 'darwin') {
   }
 
   if (!cdmFound) {
-    console.log('[Widevine] CDM not found — install Google Chrome for full Apple Music playback via MusicKit JS');
+    console.log('[Widevine] CDM not found — install a Chromium-based browser (Chrome, Edge, Brave, etc.) for full Apple Music playback via MusicKit JS');
   }
 }
 
