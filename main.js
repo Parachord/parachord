@@ -5159,15 +5159,26 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
             const idx = currentPlaylists.findIndex(p => p.id === localPlaylist.id);
             if (idx >= 0) {
               const hasTrackUpdates = localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
+              const existingTracks = currentPlaylists[idx].tracks || [];
+              const isEmpty = existingTracks.length === 0;
+
               if (hasTrackUpdates) {
                 console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
               }
 
+              // Refetch tracks if the playlist is empty (e.g. from a previously
+              // failed sync that saved the playlist shell without tracks)
+              let tracks = existingTracks;
+              if (isEmpty) {
+                console.log(`[Sync] Playlist "${remotePlaylist.name}" has 0 tracks, refetching...`);
+                tracks = await provider.fetchPlaylistTracks(remotePlaylist.externalId, token, null, refreshToken);
+                console.log(`[Sync] Fetched ${tracks.length} tracks for "${remotePlaylist.name}"`);
+              }
+
               // Recalculate createdAt from existing tracks if available
-              const existingTracks = currentPlaylists[idx].tracks || [];
               let recalculatedCreatedAt = currentPlaylists[idx].createdAt;
-              if (existingTracks.length > 0) {
-                const trackDates = existingTracks.map(t => t.addedAt || t.syncSources?.spotify?.addedAt).filter(Boolean);
+              if (tracks.length > 0) {
+                const trackDates = tracks.map(t => t.addedAt || t.syncSources?.spotify?.addedAt).filter(Boolean);
                 if (trackDates.length > 0) {
                   recalculatedCreatedAt = Math.min(...trackDates);
                 }
@@ -5176,6 +5187,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // Always update/backfill metadata fields (creator, source, syncedFrom, createdAt)
               currentPlaylists[idx] = {
                 ...currentPlaylists[idx],
+                // Refill tracks if they were empty
+                tracks: tracks,
                 // Backfill creator if not set
                 creator: currentPlaylists[idx].creator || remotePlaylist.ownerName || null,
                 // Backfill source if not set
@@ -5197,7 +5210,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 }
               };
 
-              if (hasTrackUpdates) {
+              if (hasTrackUpdates || (isEmpty && tracks.length > 0)) {
                 playlistsUpdated++;
               }
             }
