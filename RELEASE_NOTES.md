@@ -1,3 +1,67 @@
+# Parachord v0.9.0-beta.3
+
+**Release date:** 2026-03-15
+
+---
+
+## Bidirectional Playlist & Collection Sync
+
+Sync your local playlists to Spotify and Apple Music — playlists you create in Parachord can now be pushed to your streaming services.
+
+- **Push playlists to streaming services** — local playlists sync to Spotify and Apple Music, with track resolution handled automatically
+- **Bidirectional collection sync** — tracks and albums you save locally are pushed to your Spotify/Apple Music library
+- **Sync status UI** — shows sync progress with a status indicator on synced playlists
+- **Local-only toggle** — mark playlists as "local only" to keep them private and exclude them from sync
+- **Remote deletion prompt** — when a synced playlist is deleted on the remote side, you're prompted before it gets re-created
+- **Background sync** — local playlists are automatically created and pushed during background sync, not just manual sync
+
+## Playlist Import via Drag & Drop
+
+- **Drag & drop import** — drag a Spotify or Apple Music playlist URL onto the sidebar or Playlists tab to import it instantly
+- **Playbar drop zone** — drop a URL on the playbar to add tracks to your queue
+- **Apple Music playlist import** — now uses the MusicKit API for richer metadata (artwork, track details)
+
+## Widevine CDM Auto-Detection (Linux/Windows)
+
+On Linux, Parachord now automatically finds the Widevine CDM from installed Chromium-based browsers so MusicKit JS can play full Apple Music tracks instead of 30-second previews.
+
+- **Auto-detection** — searches Chrome, Edge, Brave, Vivaldi, Opera, and Dia for installed Widevine CDM
+- **Zero configuration** — if you have any Chromium-based browser installed, full Apple Music playback via MusicKit JS just works on Linux
+- **macOS unaffected** — native MusicKit continues to handle playback on Mac
+
+## Raycast Extension
+
+- **Published to the Raycast Store** — control Parachord playback, search your library, and start collection radio from Raycast
+
+## Improvements
+
+- Charts now refresh periodically and playlists reload after background sync
+- Queue drawer has better contrast in dark mode
+- Queue badge color updated to match the app accent palette
+- Concert location modal restyled to match the design system
+- Geolocation button in concerts is more visually distinct
+- Playlist edit mode now styles correctly in dark mode
+- Browser extension install buttons show official Chrome and Firefox logos
+
+## Bug Fixes
+
+- Fixed Apple Music sync creating duplicate playlists on every sync
+- Fixed synced playlists showing 0 tracks after a failed sync recovery
+- Fixed crash when sync skips certain data types
+- Fixed Apple Music repeated authorization prompts and auto-play not advancing to the next track
+- Fixed auto-updater installing the Intel build on Apple Silicon Macs
+- Fixed Spotify 401 errors during playback by adding automatic token refresh
+- Fixed Spotify search 400 errors from unquoted field values in search queries
+- Fixed Spotify playlist import 403 by requiring re-auth for legacy tokens missing scopes
+- Fixed wrong artist appearing on artist pages due to loose MusicBrainz matching; added name validation at every fallback level
+- Fixed back navigation loading a blank page after app relaunch
+- Fixed concert geo filter to correctly match on city names
+- Fixed Critical Darlings RSS feed not showing new entries; added periodic re-fetching
+- Fixed Ticketmaster plugin not showing under Concerts category filter
+- Fixed protocol volume handler using wrong scale (0–1 instead of 0–100)
+
+---
+
 # Parachord v0.9.0-beta.1
 
 **Release date:** 2026-03-09
