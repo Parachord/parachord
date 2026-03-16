@@ -363,6 +363,7 @@ class ResolverLoader {
       }
     } catch (error) {
       console.error(`Playlist lookup error for ${resolverId}:`, error);
+      throw error;
     }
 
     return null;
