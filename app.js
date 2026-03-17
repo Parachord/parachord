@@ -4985,6 +4985,15 @@ const Parachord = () => {
   const isMutedRef = useRef(false); // Ref for mute state to avoid stale closures
   const spotifyVolumeTimeoutRef = useRef(null); // Debounce Spotify volume API calls
 
+  // Spotify device picker state
+  const [devicePickerDialog, setDevicePickerDialog] = useState({
+    show: false,
+    devices: [],
+    onSelect: null // callback(device) or null to cancel
+  });
+  const [preferredSpotifyDeviceId, setPreferredSpotifyDeviceId] = useState(null);
+  const preferredSpotifyDeviceIdRef = useRef(null);
+
   // Track main content width for responsive layouts
   const [mainContentWidth, setMainContentWidth] = useState(800);
   const mainContentRef = useRef(null);
@@ -6804,6 +6813,12 @@ const Parachord = () => {
   useEffect(() => { shuffleModeRef.current = shuffleMode; }, [shuffleMode]);
   useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => {
+    preferredSpotifyDeviceIdRef.current = preferredSpotifyDeviceId;
+    if (cacheLoaded && window.electron?.store && preferredSpotifyDeviceId) {
+      window.electron.store.set('preferred_spotify_device_id', preferredSpotifyDeviceId);
+    }
+  }, [preferredSpotifyDeviceId]);
   useEffect(() => {
     volumeRef.current = volume;
     window._parachordVolume = isMutedRef.current ? 0 : volume;
@@ -18730,7 +18745,8 @@ ${trackListXml}
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
-        'autoPinnedFriendIds', 'resolver_volume_offsets', 'saved_volume', 'skip_external_prompt',
+        'autoPinnedFriendIds', 'resolver_volume_offsets', 'saved_volume',
+        'preferred_spotify_device_id', 'skip_external_prompt',
         'auto_launch_spotify', 'skip_unsaved_friend_warning', 'remember_queue',
         'show_discovery_badges', 'playlists_view_mode', 'ai_include_history',
         'recommendation_blocklist', 'resolver_blocklist', 'ai_chat_histories',
@@ -19095,6 +19111,7 @@ ${trackListXml}
       const savedAutoPinnedFriendIds = d['autoPinnedFriendIds'];
       const savedVolumeOffsets = d['resolver_volume_offsets'];
       const savedVolume = d['saved_volume'];
+      const savedPreferredDevice = d['preferred_spotify_device_id'];
       const savedSkipExternalPrompt = d['skip_external_prompt'];
       const savedAutoLaunchSpotify = d['auto_launch_spotify'];
       const savedSkipUnsavedFriendWarning = d['skip_unsaved_friend_warning'];
@@ -19238,6 +19255,12 @@ ${trackListXml}
         setVolume(clampedVolume);
         preMuteVolumeRef.current = clampedVolume;
         console.log(`🔊 Restored saved volume: ${clampedVolume}%`);
+      }
+
+      // Load preferred Spotify device
+      if (savedPreferredDevice) {
+        setPreferredSpotifyDeviceId(savedPreferredDevice);
+        console.log(`📱 Restored preferred Spotify device: ${savedPreferredDevice}`);
       }
 
       // Load skip external prompt preference
@@ -19439,6 +19462,11 @@ ${trackListXml}
 
       // Save current volume level
       await window.electron.store.set('saved_volume', volumeRef.current);
+
+      // Save preferred Spotify device
+      if (preferredSpotifyDeviceIdRef.current) {
+        await window.electron.store.set('preferred_spotify_device_id', preferredSpotifyDeviceIdRef.current);
+      }
 
       // Save new releases cache
       if (newReleasesCache.current.releases) {
@@ -32480,21 +32508,53 @@ const playOnSpotifyConnect = async (track) => {
 
     // Device selection priority:
     // 1. Active device (if any)
-    // 2. Computer type devices (Spotify desktop app)
-    // 3. Smartphone type devices
-    // 4. Any other device (but NOT Web Browser - these are often phantom devices)
+    // 2. User's preferred device (if saved and available)
+    // 3. If multiple inactive devices, prompt user to choose
+    // 4. Fallback: Computer > Smartphone > Speaker > other
     let activeDevice = availableDevices.find(d => d.is_active);
 
     if (!activeDevice) {
-      // No active device - select by preference
-      // Prefer Computer > Smartphone > Speaker > other, but avoid "Web Player" type
-      const computerDevice = availableDevices.find(d => d.type === 'Computer');
-      const smartphoneDevice = availableDevices.find(d => d.type === 'Smartphone');
-      const speakerDevice = availableDevices.find(d => d.type === 'Speaker');
-      const nonWebDevice = availableDevices.find(d => d.type !== 'Computer' && !d.name.toLowerCase().includes('web'));
+      // Check if the user has a preferred device that's currently available
+      const preferredId = preferredSpotifyDeviceIdRef.current;
+      const preferredDevice = preferredId ? availableDevices.find(d => d.id === preferredId) : null;
 
-      activeDevice = computerDevice || smartphoneDevice || speakerDevice || nonWebDevice || availableDevices[0];
-      console.log(`📱 No active device, selected by preference: "${activeDevice.name}" (${activeDevice.type})`);
+      if (preferredDevice) {
+        activeDevice = preferredDevice;
+        console.log(`📱 Using preferred device: "${activeDevice.name}" (${activeDevice.type})`);
+      } else if (availableDevices.length > 1) {
+        // Multiple devices, none active, no saved preference — ask the user
+        console.log(`📱 ${availableDevices.length} devices available, prompting user to choose...`);
+        const chosenDevice = await new Promise((resolve) => {
+          setDevicePickerDialog({
+            show: true,
+            devices: availableDevices,
+            onSelect: (device) => {
+              setDevicePickerDialog({ show: false, devices: [], onSelect: null });
+              resolve(device);
+            }
+          });
+        });
+
+        if (!chosenDevice) {
+          // User cancelled the picker
+          console.log('📱 User cancelled device selection');
+          return false;
+        }
+
+        activeDevice = chosenDevice;
+        // Remember this choice for next time
+        setPreferredSpotifyDeviceId(activeDevice.id);
+        console.log(`📱 User selected device: "${activeDevice.name}" (${activeDevice.type}), saved as preferred`);
+      } else {
+        // Only one device — use it directly
+        const computerDevice = availableDevices.find(d => d.type === 'Computer');
+        const smartphoneDevice = availableDevices.find(d => d.type === 'Smartphone');
+        const speakerDevice = availableDevices.find(d => d.type === 'Speaker');
+        const nonWebDevice = availableDevices.find(d => d.type !== 'Computer' && !d.name.toLowerCase().includes('web'));
+
+        activeDevice = computerDevice || smartphoneDevice || speakerDevice || nonWebDevice || availableDevices[0];
+        console.log(`📱 Single device available: "${activeDevice.name}" (${activeDevice.type})`);
+      }
     } else {
       console.log(`📱 Using active device: "${activeDevice.name}" (${activeDevice.type})`);
     }
@@ -52549,6 +52609,41 @@ useEffect(() => {
                   className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoLaunchSpotify ? 'translate-x-5' : 'translate-x-0'}`
                 })
               )
+            ),
+            // Preferred device option
+            preferredSpotifyDeviceId && React.createElement('div', {
+              className: 'flex items-center justify-between',
+              style: { marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border-subtle)' }
+            },
+              React.createElement('div', null,
+                React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } },
+                  'Preferred Device'
+                ),
+                React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.5' } },
+                  'Parachord will use this device when no Spotify device is active. Clear to be prompted again.'
+                )
+              ),
+              React.createElement('button', {
+                onClick: () => {
+                  setPreferredSpotifyDeviceId(null);
+                  if (window.electron?.store) {
+                    window.electron.store.set('preferred_spotify_device_id', null);
+                  }
+                  showToast('Preferred device cleared', 'info');
+                },
+                style: {
+                  flexShrink: 0,
+                  marginLeft: '16px',
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  color: 'var(--text-secondary)',
+                  backgroundColor: 'transparent',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }
+              }, 'Clear')
             )
           ),
 
@@ -56664,6 +56759,149 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'OK')
+        )
+      )
+    ),
+
+    // Spotify Device Picker Dialog
+    devicePickerDialog.show && React.createElement('div', {
+      className: 'fixed inset-0 flex items-center justify-center z-[60]',
+      style: {
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        backdropFilter: 'blur(4px)'
+      },
+      onClick: (e) => {
+        if (e.target === e.currentTarget && devicePickerDialog.onSelect) {
+          devicePickerDialog.onSelect(null); // Cancel
+        }
+      }
+    },
+      React.createElement('div', {
+        style: {
+          backgroundColor: 'var(--card-bg)',
+          borderRadius: '16px',
+          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
+          maxWidth: '400px',
+          width: '100%',
+          margin: '0 16px',
+          overflow: 'hidden'
+        },
+        onClick: (e) => e.stopPropagation()
+      },
+        // Header
+        React.createElement('div', {
+          className: 'flex flex-col items-center text-center',
+          style: { padding: '32px 24px 16px' }
+        },
+          React.createElement('div', {
+            className: 'flex items-center justify-center',
+            style: {
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(30, 215, 96, 0.1)',
+              marginBottom: '16px'
+            }
+          },
+            React.createElement('svg', {
+              width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none',
+              stroke: '#1DB954', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round'
+            },
+              React.createElement('path', { d: 'M5.5 3.5A2.5 2.5 0 0 1 8 6c0 1.5-2.5 2.5-2.5 2.5S3 7.5 3 6a2.5 2.5 0 0 1 2.5-2.5' }),
+              React.createElement('rect', { x: 2, y: 14, width: 7, height: 7, rx: 1 }),
+              React.createElement('rect', { x: 15, y: 3, width: 7, height: 7, rx: 1 }),
+              React.createElement('rect', { x: 15, y: 14, width: 7, height: 7, rx: 1 })
+            )
+          ),
+          React.createElement('h3', {
+            style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' }
+          }, 'Choose Spotify Device'),
+          React.createElement('p', {
+            style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }
+          }, 'Multiple devices are available. Where would you like to play?')
+        ),
+        // Device list
+        React.createElement('div', {
+          style: {
+            padding: '4px 16px 8px',
+            maxHeight: '240px',
+            overflowY: 'auto'
+          }
+        },
+          devicePickerDialog.devices.map(device =>
+            React.createElement('button', {
+              key: device.id,
+              onClick: () => devicePickerDialog.onSelect && devicePickerDialog.onSelect(device),
+              className: 'w-full flex items-center gap-3 transition-colors hover:bg-white/5',
+              style: {
+                padding: '12px',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }
+            },
+              // Device type icon
+              React.createElement('div', {
+                className: 'flex items-center justify-center flex-shrink-0',
+                style: {
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  backgroundColor: 'rgba(30, 215, 96, 0.08)',
+                }
+              },
+                React.createElement('span', {
+                  style: { fontSize: '18px' }
+                },
+                  device.type === 'Computer' ? '💻' :
+                  device.type === 'Smartphone' ? '📱' :
+                  device.type === 'Speaker' ? '🔊' :
+                  device.type === 'TV' ? '📺' :
+                  device.type === 'CastVideo' || device.type === 'CastAudio' ? '📡' :
+                  '🎵'
+                )
+              ),
+              // Device name and type
+              React.createElement('div', { className: 'flex flex-col min-w-0' },
+                React.createElement('span', {
+                  style: {
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    color: 'var(--text-primary)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }
+                }, device.name),
+                React.createElement('span', {
+                  style: {
+                    fontSize: '12px',
+                    color: 'var(--text-tertiary)',
+                    marginTop: '2px'
+                  }
+                }, device.type + (device.volume_percent != null ? ` · ${device.volume_percent}%` : ''))
+              )
+            )
+          )
+        ),
+        // Cancel button
+        React.createElement('div', { style: { padding: '4px 16px 16px' } },
+          React.createElement('button', {
+            onClick: () => devicePickerDialog.onSelect && devicePickerDialog.onSelect(null),
+            className: 'w-full transition-colors',
+            style: {
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: 'var(--text-secondary)',
+              backgroundColor: 'transparent',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }
+          }, 'Cancel')
         )
       )
     ),
