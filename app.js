@@ -25225,6 +25225,22 @@ ${tracks}
         let mbid = artistDataCache.current[cacheKey]?.artist?.mbid;
         let madeApiCall = false;
 
+        // Check MBID mapper cache before hitting rate-limited MusicBrainz search
+        // Each mapper cache hit saves ~1100ms (skips MB artist search + rate limit delay)
+        if (!mbid) {
+          const mapperMbid = getArtistMbidFromMapperCache(artist.name);
+          if (mapperMbid) {
+            mbid = mapperMbid;
+            console.log(`✨ MBID mapper cache hit for "${artist.name}" → ${mbid} (saved ~1100ms)`);
+            // Cache it in artistDataCache too for future non-mapper lookups
+            artistDataCache.current[cacheKey] = {
+              ...(artistDataCache.current[cacheKey] || {}),
+              artist: { ...(artistDataCache.current[cacheKey]?.artist || {}), name: artist.name, mbid },
+              timestamp: Date.now()
+            };
+          }
+        }
+
         if (!mbid) {
           const searchResponse = await fetchWithTimeout(
             `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
