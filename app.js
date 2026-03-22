@@ -10840,6 +10840,8 @@ ${trackListXml}
           if (localTracks && localTracks.length > 0) {
             console.log(`📚 Loaded ${localTracks.length} local tracks into library`);
             setLibrary(localTracks);
+            // Background-enrich local library tracks with MBIDs
+            enrichTracksWithMbids(localTracks);
           } else {
             console.log('📚 No local files found - library is empty');
             setLibrary([]);
@@ -17900,6 +17902,8 @@ ${trackListXml}
           isLocal: true,
           sources: { localFiles: { filePath: track.filePath, confidence: 1 } }
         }));
+        // Background-enrich local file tracks with MBIDs
+        enrichTracksWithMbids(localTracks);
       } catch (error) {
         console.error('Local files search error:', error);
       }
