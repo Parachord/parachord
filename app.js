@@ -42250,7 +42250,7 @@ useEffect(() => {
 
               return React.createElement('div', {
                 className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
-                style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
+                style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
               },
                 sorted.map((album, index) =>
                   React.createElement(CollectionAlbumCard, {
@@ -42749,7 +42749,7 @@ useEffect(() => {
               }
 
               return React.createElement('div', {
-                style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
+                style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
               },
                 // Grid of friend cards - Cinematic Light design
                 React.createElement('div', {
