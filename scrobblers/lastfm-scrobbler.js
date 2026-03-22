@@ -81,23 +81,27 @@ class LastFmScrobbler extends BaseScrobbler {
   }
 
   async updateNowPlaying(track) {
-    await this.apiRequest('track.updateNowPlaying', {
+    const params = {
       artist: track.artist,
       track: track.title,
       album: track.album || undefined,
       duration: track.duration || undefined
-    });
+    };
+    if (track.mbid) params.mbid = track.mbid;
+    await this.apiRequest('track.updateNowPlaying', params);
     return true;
   }
 
   async scrobble(track, timestamp) {
-    await this.apiRequest('track.scrobble', {
+    const params = {
       'artist[0]': track.artist,
       'track[0]': track.title,
       'timestamp[0]': timestamp,
       'album[0]': track.album || undefined,
       'duration[0]': track.duration || undefined
-    });
+    };
+    if (track.mbid) params['mbid[0]'] = track.mbid;
+    await this.apiRequest('track.scrobble', params);
     return true;
   }
 

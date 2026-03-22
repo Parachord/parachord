@@ -162,7 +162,10 @@ class ScrobbleManager {
           title: track.title,
           artist: track.artist,
           album: track.album,
-          duration: track.duration
+          duration: track.duration,
+          mbid: track.mbid || null,
+          artistMbids: track.artistMbids || [],
+          releaseMbid: track.releaseMbid || null
         },
         timestamp,
         error,

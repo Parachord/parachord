@@ -20,6 +20,16 @@ class ListenBrainzScrobbler extends BaseScrobbler {
       throw new Error('ListenBrainz token not configured');
     }
 
+    const additionalInfo = {
+      media_player: 'Parachord',
+      submission_client: 'Parachord',
+      submission_client_version: '1.0.0',
+      duration_ms: track.duration ? track.duration * 1000 : undefined
+    };
+    if (track.mbid) additionalInfo.recording_mbid = track.mbid;
+    if (track.artistMbids?.length > 0) additionalInfo.artist_mbids = track.artistMbids;
+    if (track.releaseMbid) additionalInfo.release_mbid = track.releaseMbid;
+
     const payload = {
       listen_type: 'playing_now',
       payload: [{
@@ -27,12 +37,7 @@ class ListenBrainzScrobbler extends BaseScrobbler {
           artist_name: track.artist,
           track_name: track.title,
           release_name: track.album || undefined,
-          additional_info: {
-            media_player: 'Parachord',
-            submission_client: 'Parachord',
-            submission_client_version: '1.0.0',
-            duration_ms: track.duration ? track.duration * 1000 : undefined
-          }
+          additional_info: additionalInfo
         }
       }]
     };
@@ -60,6 +65,16 @@ class ListenBrainzScrobbler extends BaseScrobbler {
       throw new Error('ListenBrainz token not configured');
     }
 
+    const additionalInfo = {
+      media_player: 'Parachord',
+      submission_client: 'Parachord',
+      submission_client_version: '1.0.0',
+      duration_ms: track.duration ? track.duration * 1000 : undefined
+    };
+    if (track.mbid) additionalInfo.recording_mbid = track.mbid;
+    if (track.artistMbids?.length > 0) additionalInfo.artist_mbids = track.artistMbids;
+    if (track.releaseMbid) additionalInfo.release_mbid = track.releaseMbid;
+
     const payload = {
       listen_type: 'single',
       payload: [{
@@ -68,12 +83,7 @@ class ListenBrainzScrobbler extends BaseScrobbler {
           artist_name: track.artist,
           track_name: track.title,
           release_name: track.album || undefined,
-          additional_info: {
-            media_player: 'Parachord',
-            submission_client: 'Parachord',
-            submission_client_version: '1.0.0',
-            duration_ms: track.duration ? track.duration * 1000 : undefined
-          }
+          additional_info: additionalInfo
         }
       }]
     };

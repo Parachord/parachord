@@ -7278,6 +7278,9 @@ const Parachord = () => {
   const resolveTracksInBackground = async (tracks) => {
     console.log(`🔍 Background resolution: resolving ${tracks.length} tracks across all sources...`);
 
+    // Background-enrich all tracks with MBIDs in parallel (non-blocking)
+    enrichTracksWithMbids(tracks);
+
     // Use refs to avoid stale closure issues
     const currentResolvers = loadedResolversRef.current;
     const currentActiveResolvers = activeResolversRef.current;
@@ -7948,6 +7951,10 @@ const Parachord = () => {
   // Cache for artist extended info from MusicBrainz (mbid -> { info, timestamp })
   const artistExtendedInfoCache = useRef({});
 
+  // Cache for MBID Mapper lookups (artist|title -> { result: { recording_mbid, artist_credit_mbids, ... }, timestamp })
+  // Uses ListenBrainz MBID Mapper v2.0 for fast metadata-to-MBID resolution (~4ms)
+  const mbidMapperCache = useRef({});
+
   // Cache for playlist cover art (playlistId -> { covers: [url1, url2, url3, url4], timestamp })
   const playlistCoverCache = useRef({});
 
@@ -7995,7 +8002,78 @@ const Parachord = () => {
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
     charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
     newReleases: 6 * 60 * 60 * 1000,        // 6 hours (new releases don't change that often)
-    concerts: 24 * 60 * 60 * 1000              // 24 hours (concert listings don't change that often)
+    concerts: 24 * 60 * 60 * 1000,             // 24 hours (concert listings don't change that often)
+    mbidMapper: 90 * 24 * 60 * 60 * 1000       // 90 days (MBIDs are permanent identifiers)
+  };
+
+  // MBID Mapper v2.0: fast fuzzy lookup of MusicBrainz IDs from artist + recording name
+  // Returns { recording_mbid, artist_credit_mbids, release_mbid, confidence } or null
+  const lookupMbidMapper = async (artist, title, album) => {
+    if (!artist || !title) return null;
+    const cacheKey = `${artist.toLowerCase().trim()}|${title.toLowerCase().trim()}`;
+    const cached = mbidMapperCache.current[cacheKey];
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.mbidMapper) {
+      return cached.result;
+    }
+    try {
+      const params = new URLSearchParams({
+        artist_credit_name: artist,
+        recording_name: title
+      });
+      if (album) params.set('release_name', album);
+      const response = await fetch(`https://mapper.listenbrainz.org/mapping/lookup?${params}`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (data && data.recording_mbid) {
+        const result = {
+          recording_mbid: data.recording_mbid,
+          artist_credit_mbids: data.artist_credit_mbids || [],
+          release_mbid: data.release_mbid || null,
+          recording_name: data.recording_name,
+          artist_credit_name: data.artist_credit_name,
+          release_name: data.release_name,
+          confidence: data.confidence || 0
+        };
+        mbidMapperCache.current[cacheKey] = { result, timestamp: Date.now() };
+        return result;
+      }
+      // Cache misses too to avoid repeated lookups for unknown tracks
+      mbidMapperCache.current[cacheKey] = { result: null, timestamp: Date.now() };
+      return null;
+    } catch (error) {
+      console.warn('MBID Mapper lookup failed:', error.message);
+      return null;
+    }
+  };
+
+  // Look up an artist MBID from the MBID mapper cache (any previously resolved track by that artist)
+  const getArtistMbidFromMapperCache = (artistName) => {
+    const normArtist = artistName.toLowerCase().trim();
+    for (const [key, entry] of Object.entries(mbidMapperCache.current)) {
+      if (key.startsWith(normArtist + '|') && entry.result?.artist_credit_mbids?.length > 0) {
+        return entry.result.artist_credit_mbids[0];
+      }
+    }
+    return null;
+  };
+
+  // Enrich a track object with MBID metadata from the mapper (mutates track in-place)
+  const enrichTrackWithMbid = async (track) => {
+    if (!track.artist || !track.title) return;
+    if (track.mbid) return; // Already enriched
+    const result = await lookupMbidMapper(track.artist, track.title, track.album);
+    if (result && result.recording_mbid) {
+      track.mbid = result.recording_mbid;
+      track.artistMbids = result.artist_credit_mbids;
+      if (result.release_mbid) track.releaseMbid = result.release_mbid;
+    }
+  };
+
+  // Batch-enrich multiple tracks with MBIDs in the background (fire-and-forget)
+  const enrichTracksWithMbids = (tracks) => {
+    if (!tracks || tracks.length === 0) return;
+    // Fire all lookups in parallel, don't block
+    Promise.all(tracks.map(track => enrichTrackWithMbid(track).catch(() => {}))).catch(() => {});
   };
 
   // Cache for recommendations data (tracks from API)
@@ -13415,6 +13493,12 @@ ${trackListXml}
           return null;
         };
 
+        // Fire MBID Mapper lookup in parallel with resolver searches
+        // This gives us a canonical recording identity to improve cross-resolver matching
+        const mbidLookupPromise = lookupMbidMapper(
+          trackOrSource.artist, trackOrSource.title, trackOrSource.album
+        ).catch(() => null);
+
         const freshSources = {};
         const resolvePromises = enabledResolvers.map(async (resolver) => {
           try {
@@ -13456,12 +13540,26 @@ ${trackListXml}
           }
         });
 
-        await Promise.all(resolvePromises);
+        // Wait for both resolver searches and MBID lookup to complete
+        const [, mbidResult] = await Promise.all([
+          Promise.all(resolvePromises),
+          mbidLookupPromise
+        ]);
 
         // Check if another play request superseded this one during resolution
         if (playbackGenerationRef.current !== thisGeneration) {
           console.log('⏹️ Playback request superseded during resolution, aborting');
           return;
+        }
+
+        // Enrich track with MBID metadata if mapper returned a result
+        if (mbidResult && mbidResult.recording_mbid) {
+          trackOrSource.mbid = mbidResult.recording_mbid;
+          trackOrSource.artistMbids = mbidResult.artist_credit_mbids;
+          if (mbidResult.release_mbid) trackOrSource.releaseMbid = mbidResult.release_mbid;
+          if (mbidResult.confidence >= 0.9) {
+            console.log(`🎯 MBID Mapper: "${trackOrSource.title}" → ${mbidResult.recording_mbid} (confidence: ${mbidResult.confidence})`);
+          }
         }
 
         if (Object.keys(freshSources).length > 0) {
@@ -13477,6 +13575,62 @@ ${trackListXml}
 
         // Update availableResolvers after resolution
         availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
+
+        // If no sources found but MBID mapper returned canonical names, retry with those
+        // This helps when the original metadata has typos, alternate spellings, or non-standard formatting
+        if (availableResolvers.length === 0 && mbidResult && mbidResult.confidence >= 0.7) {
+          const canonicalArtist = mbidResult.artist_credit_name;
+          const canonicalTitle = mbidResult.recording_name;
+          const origArtistNorm = (trackOrSource.artist || '').toLowerCase().trim();
+          const origTitleNorm = (trackOrSource.title || '').toLowerCase().trim();
+          // Only retry if canonical names actually differ from what we searched
+          if ((canonicalArtist || '').toLowerCase().trim() !== origArtistNorm ||
+              (canonicalTitle || '').toLowerCase().trim() !== origTitleNorm) {
+            console.log(`🔄 MBID Mapper: retrying with canonical names "${canonicalArtist} - ${canonicalTitle}"`);
+            const retryPromises = enabledResolvers.map(async (resolver) => {
+              try {
+                const config = getResolverConfigRef.current
+                  ? await getResolverConfigRef.current(resolver.id)
+                  : {};
+                let bestMatch = null;
+                if (resolver.search && typeof resolver.search === 'function') {
+                  const query = `${canonicalArtist} ${canonicalTitle}`;
+                  const results = await resolver.search(query, config);
+                  if (results && results.length > 0) {
+                    bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle);
+                  }
+                } else if (resolver.resolve) {
+                  const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config);
+                  if (result && validateResolvedTrack(result, canonicalArtist, canonicalTitle)) {
+                    bestMatch = result;
+                  }
+                }
+                if (bestMatch) {
+                  freshSources[resolver.id] = {
+                    ...bestMatch,
+                    confidence: (bestMatch.confidence || 0.9) * mbidResult.confidence,
+                    resolvedAt: Date.now(),
+                    mbidResolved: true
+                  };
+                }
+              } catch (error) {
+                // Silently fail canonical retry
+              }
+            });
+            await Promise.all(retryPromises);
+            if (Object.keys(freshSources).length > 0) {
+              trackOrSource.sources = freshSources;
+              if (trackOrSource.id) {
+                setTrackSources(prev => ({
+                  ...prev,
+                  [trackOrSource.id]: freshSources
+                }));
+              }
+            }
+            availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
+          }
+        }
+
         if (availableResolvers.length === 0) {
           console.error('❌ No resolver found for track after on-demand resolution');
           setTrackLoading(false); // Clear loading state
@@ -17714,6 +17868,9 @@ ${trackListXml}
 
     // Queue track resolution is now handled by ResolutionScheduler via queue context visibility
 
+    // Background-enrich queued tracks with MBIDs (so they're ready by playback/scrobble time)
+    enrichTracksWithMbids(taggedTracks);
+
     // If nothing is playing, auto-start the first track (unless skipAutoPlay is set)
     if (nothingPlaying && taggedTracks.length > 0 && !skipAutoPlay) {
       const firstTrack = taggedTracks[0];
@@ -17937,6 +18094,8 @@ ${trackListXml}
   const resolveRecording = async (recording) => {
     const track = {
       id: recording.id,
+      mbid: recording.id,
+      artistMbids: recording['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
       title: recording.title,
       artist: recording['artist-credit']?.[0]?.name || 'Unknown',
       duration: Math.floor((recording.length || 180000) / 1000), // Convert ms to seconds
@@ -18375,8 +18534,12 @@ ${trackListXml}
             const recordings = data.recordings || [];
 
             // Create all tracks as unresolved initially (resolve on-demand when played)
+            // recording.id IS the MusicBrainz recording MBID — store it as mbid for downstream enrichment
             let tracks = recordings.map(recording => ({
               id: recording.id,
+              mbid: recording.id,
+              artistMbids: recording['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
+              releaseMbid: recording.releases?.[0]?.id || null,
               title: recording.title,
               artist: recording['artist-credit']?.[0]?.name || 'Unknown',
               duration: Math.floor((recording.length || 180000) / 1000),
@@ -18404,6 +18567,9 @@ ${trackListXml}
               tracks,
               timestamp: Date.now()
             };
+
+            // Background-enrich tracks with MBID mapper data (populates cache for future lookups)
+            enrichTracksWithMbids(tracks);
 
             // Defer Fuse.js re-ranking to idle time for smoother UI
             const scheduleRerank = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
@@ -18739,7 +18905,7 @@ ${trackListXml}
       // Single IPC roundtrip for ALL keys (caches + settings + preferences)
       const allKeys = [
         // Caches
-        'cache_album_art', 'cache_artist_data', 'cache_track_sources', 'cache_artist_images',
+        'cache_album_art', 'cache_artist_data', 'cache_track_sources', 'cache_artist_images', 'cache_mbid_mapper',
         'cache_album_release_ids', 'cache_playlist_covers', 'cache_charts', 'cache_new_releases',
         'cache_concerts', 'cache_ai_suggestions', 'last_active_view',
         // Resolver settings & user preferences
@@ -18770,6 +18936,7 @@ ${trackListXml}
       const playlistCoverData = d['cache_playlist_covers'];
       const chartsData = d['cache_charts'];
       const newReleasesData = d['cache_new_releases'];
+      const mbidMapperData = d['cache_mbid_mapper'];
 
       const now = Date.now();
 
@@ -18815,6 +18982,15 @@ ${trackListXml}
         );
         artistImageCache.current = Object.fromEntries(validEntries);
         console.log(`📦 Loaded ${validEntries.length} artist image entries from cache`);
+      }
+
+      // Load MBID mapper cache
+      if (mbidMapperData) {
+        const validEntries = Object.entries(mbidMapperData).filter(
+          ([_, entry]) => entry && entry.timestamp && (now - entry.timestamp) < CACHE_TTL.mbidMapper
+        );
+        mbidMapperCache.current = Object.fromEntries(validEntries);
+        console.log(`📦 Loaded ${validEntries.length} MBID mapper entries from cache`);
       }
 
       // Load album-to-release-ID mapping cache (for Critic's Picks and track art lookups)
@@ -19449,6 +19625,9 @@ ${trackListXml}
 
       // Save playlist cover cache
       await window.electron.store.set('cache_playlist_covers', playlistCoverCache.current);
+
+      // Save MBID mapper cache
+      await window.electron.store.set('cache_mbid_mapper', mbidMapperCache.current);
 
       // Save charts cache
       await window.electron.store.set('cache_charts', chartsCache.current);
@@ -20102,6 +20281,16 @@ ${trackListXml}
 
     console.log('🌐 Fetching fresh artist data from MusicBrainz...');
 
+    // Try MBID mapper cache first for fast artist MBID shortcut (~0ms vs ~500ms+ for MB search)
+    const cachedArtistMbid = getArtistMbidFromMapperCache(artistName);
+    if (!cachedArtistMbid) {
+      // Fire a mapper lookup in the background using current track if available
+      const ct = currentTrackRef.current;
+      if (ct && ct.artist?.toLowerCase() === artistName.toLowerCase() && ct.title) {
+        lookupMbidMapper(ct.artist, ct.title, ct.album).catch(() => null);
+      }
+    }
+
     try {
       // Step 1: Search for artist by name to get MBID
       // Helper function to fetch with retry on rate limit and network errors
@@ -20578,6 +20767,8 @@ ${trackListXml}
                 title: track.title || track.recording?.title || 'Unknown Track',
                 length: track.length,
                 recording: track.recording,
+                mbid: track.recording?.id || null,
+                artistMbids: track.recording?.['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
                 mediumIndex: mediumIndex + 1,
                 mediumTitle: medium.title
               });
@@ -30516,6 +30707,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Resolution handled by scheduler via IntersectionObserver
         console.log(`✅ Loaded ${tracksWithIds.length} tracks (resolution via scheduler)`);
+
+        // Background-enrich playlist tracks with MBIDs
+        enrichTracksWithMbids(tracksWithIds);
       }
     } else if (playlist.isEphemeral && playlist.listenbrainzId && (!playlist.tracks || playlist.tracks.length === 0)) {
       // Handle ephemeral ListenBrainz playlists - load tracks from API
@@ -30555,6 +30749,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         });
 
         console.log(`✅ Loaded ${tracksWithIds.length} tracks from ListenBrainz`);
+
+        // Background-enrich ListenBrainz playlist tracks with MBIDs
+        enrichTracksWithMbids(tracksWithIds);
       } else {
         console.log('⚠️ No tracks found in ListenBrainz playlist');
         setPlaylistTracks([]);
@@ -30593,6 +30790,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       // Resolution handled by scheduler via IntersectionObserver
       console.log(`✅ Loaded ${tracksWithIds.length} tracks (resolution via scheduler)`);
+
+      // Background-enrich playlist tracks with MBIDs
+      enrichTracksWithMbids(tracksWithIds);
     } else {
       // No tracks to display
       console.log('⚠️ Playlist has no tracks');
