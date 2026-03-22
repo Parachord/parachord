@@ -8076,6 +8076,74 @@ const Parachord = () => {
     Promise.all(tracks.map(track => enrichTrackWithMbid(track).catch(() => {}))).catch(() => {});
   };
 
+  // Fetch album art for a track using its releaseMbid from MBID mapper (fast path, no MusicBrainz search needed)
+  // Returns the art URL or null. Also caches in albumArtCache for future getCachedAlbumArt() hits.
+  const fetchArtworkViaMbid = async (track) => {
+    if (!track.releaseMbid) return null;
+    const releaseId = track.releaseMbid;
+
+    // Check if we already have art cached for this release
+    if (albumArtCache.current[releaseId]?.url) {
+      return albumArtCache.current[releaseId].url;
+    }
+
+    try {
+      const caaResponse = await fetch(
+        `https://coverartarchive.org/release/${releaseId}/front-250`,
+        { redirect: 'follow' }
+      );
+      if (caaResponse.ok) {
+        const artUrl = caaResponse.url;
+        const cacheEntry = { url: artUrl, timestamp: Date.now() };
+        albumArtCache.current[releaseId] = cacheEntry;
+        // Also store in albumToReleaseIdCache for getCachedAlbumArt() lookups by artist+album
+        if (track.artist && track.album) {
+          const lookupKey = `${track.artist}-${track.album}`.toLowerCase();
+          if (!albumToReleaseIdCache.current[lookupKey]) {
+            albumToReleaseIdCache.current[lookupKey] = { releaseId, releaseGroupId: null };
+          }
+        }
+        return artUrl;
+      }
+    } catch (error) {
+      // CAA lookup failed, not critical
+    }
+    return null;
+  };
+
+  // Enrich local file tracks with MBIDs, then fetch artwork for those missing it.
+  // Two-phase: first MBID enrichment (fast, ~4ms each), then artwork fetch for artless tracks.
+  const enrichLocalTracksWithArtwork = async (tracks) => {
+    if (!tracks || tracks.length === 0) return;
+
+    // Phase 1: MBID enrichment (all in parallel)
+    await Promise.all(tracks.map(track => enrichTrackWithMbid(track).catch(() => {})));
+
+    // Phase 2: Fetch artwork for tracks that lack albumArt but got a releaseMbid
+    const artlessTracks = tracks.filter(t => !t.albumArt && t.releaseMbid);
+    if (artlessTracks.length === 0) return;
+
+    console.log(`🎨 Fetching artwork for ${artlessTracks.length} local tracks via MBID...`);
+    let fetched = 0;
+
+    // Process in batches of 5 to avoid hammering CAA
+    for (let i = 0; i < artlessTracks.length; i += 5) {
+      const batch = artlessTracks.slice(i, i + 5);
+      await Promise.all(batch.map(track =>
+        fetchArtworkViaMbid(track).then(url => {
+          if (url) {
+            track.albumArt = url;
+            fetched++;
+          }
+        }).catch(() => {})
+      ));
+    }
+
+    if (fetched > 0) {
+      console.log(`🎨 Fetched artwork for ${fetched}/${artlessTracks.length} local tracks`);
+    }
+  };
+
   // Cache for recommendations data (tracks from API)
   const recommendationsCache = useRef({ tracks: null, timestamp: 0 });
 
@@ -10840,8 +10908,8 @@ ${trackListXml}
           if (localTracks && localTracks.length > 0) {
             console.log(`📚 Loaded ${localTracks.length} local tracks into library`);
             setLibrary(localTracks);
-            // Background-enrich local library tracks with MBIDs
-            enrichTracksWithMbids(localTracks);
+            // Background-enrich local library tracks with MBIDs, then fetch artwork for artless tracks
+            enrichLocalTracksWithArtwork(localTracks).catch(() => {});
           } else {
             console.log('📚 No local files found - library is empty');
             setLibrary([]);
@@ -13917,6 +13985,39 @@ ${trackListXml}
         if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration) && audioDuration > 0) {
           console.log('🎵 Setting duration from audio element:', audioDuration);
           setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+        }
+
+        // Revalidate artwork for local files missing album art at playback time
+        // Fast path: use releaseMbid from MBID enrichment to fetch from Cover Art Archive
+        // Fallback: full getAlbumArt() flow (MusicBrainz search -> CAA -> resolvers)
+        if (!trackToSet.albumArt && trackToSet.artist && trackToSet.album) {
+          const myGen = thisGeneration;
+          (async () => {
+            try {
+              // First try MBID fast path - enrich if needed, then fetch art via releaseMbid
+              let artUrl = null;
+              if (!trackToSet.releaseMbid && !trackToSet.mbid) {
+                await enrichTrackWithMbid(trackToSet);
+              }
+              if (trackToSet.releaseMbid) {
+                artUrl = await fetchArtworkViaMbid(trackToSet);
+              }
+              // Fallback to full getAlbumArt flow if MBID path didn't yield art
+              if (!artUrl) {
+                artUrl = await getAlbumArt(trackToSet.artist, trackToSet.album);
+              }
+              if (artUrl && playbackGenerationRef.current === myGen) {
+                setCurrentTrack(prev => {
+                  if (prev && prev.artist === trackToSet.artist && prev.title === trackToSet.title && !prev.albumArt) {
+                    return { ...prev, albumArt: artUrl };
+                  }
+                  return prev;
+                });
+              }
+            } catch (e) {
+              // Artwork revalidation is non-critical
+            }
+          })();
         }
       } catch (error) {
         console.error('❌ Local file playback failed:', error);
