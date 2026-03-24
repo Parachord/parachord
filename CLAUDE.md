@@ -97,6 +97,67 @@ All dialogs follow the same pattern: state object with `show` boolean, rendered 
 - `syncDeleteDialog` (L6605): Multi-action dialog `{ show, playlist }`
 - `devicePickerDialog` (L4989): Promise-based picker `{ show, devices[], onSelect }`
 
+## MBID Mapper Integration (ListenBrainz)
+
+### Overview
+We use the [ListenBrainz MBID Mapper v2.0](https://mapper.listenbrainz.org) to resolve music metadata to MusicBrainz IDs in ~4ms. This replaces or shortcuts several slow MusicBrainz API calls that are rate-limited to 1 req/sec.
+
+### API
+- **Endpoint**: `GET https://mapper.listenbrainz.org/mapping/lookup`
+- **Required params**: `artist_credit_name`, `recording_name`
+- **Optional params**: `release_name` (improves accuracy)
+- **Response**: `{ recording_mbid, artist_credit_mbids[], release_mbid, release_name, recording_name, artist_credit_name, confidence (0-1) }`
+- **Speed**: ~4ms typical response time
+- **No auth required**, no documented strict rate limit
+- **Docs**: https://mapper.listenbrainz.org/docs
+
+### What It Can Do
+- Map `artist + track title` → `recording_mbid`, `artist_credit_mbids[]`, `release_mbid`
+- Return canonical/corrected names (useful when metadata has typos or alternate spellings)
+- Confidence score (0-1) indicates match quality; ≥0.9 is a strong match
+
+### What It Cannot Do
+- **Not a search engine** — takes exact metadata, returns one result (not a list)
+- **Cannot look up by album alone** — requires a recording name
+- **Cannot replace discography fetches** — only maps recordings, not release-groups
+- **Cannot replace open-ended search** — user queries still need MusicBrainz `/ws/2/` search endpoints
+
+### Where We Use It (Electron app)
+1. **Playbar artist bio** — mapper resolves artist MBID from current track in ~4ms instead of MB artist search (~500ms+)
+2. **Artist page loading** — when navigating from current track's artist, uses cached/live mapper MBID for direct `/ws/2/artist/{id}` lookup instead of fuzzy search
+3. **Fresh Drops (new releases)** — checks mapper cache for artist MBIDs before hitting rate-limited MB search (saves 1100ms per cache hit)
+4. **Track resolution fallback** — when all resolvers fail to find a match, retries with mapper's canonical artist/recording names
+
+### Cache Strategy
+- **Key**: `"artist_lowercase|title_lowercase"` → `{ result, timestamp }`
+- **TTL**: 90 days (MBIDs are permanent identifiers)
+- **Null caching**: misses are cached too to avoid repeated lookups for unknown tracks
+- **Persisted**: saved/loaded via `electron.store` key `cache_mbid_mapper`
+- **Helper**: `getArtistMbidFromMapperCache(artistName)` scans cache for any track by that artist
+
+### Integration Pattern for Android
+When implementing in the Android app, the same strategy applies:
+1. **Cache aggressively** — MBIDs don't change. Use a Room/SQLite table with `artist|title` as key, 90-day TTL
+2. **Fire in parallel** — mapper calls should run concurrently with resolver searches, not block them
+3. **Use for artist MBID shortcutting** — any time you need an artist MBID and have a track title available, prefer the mapper (~4ms) over MB artist search (~500ms + rate limit risk)
+4. **Canonical name retry** — when resolver string matching fails, retry with mapper's `artist_credit_name` + `recording_name` as the search query
+5. **Don't use for album-only lookups** — the mapper requires a recording name; album lookups still need MB `/ws/2/release-group` search
+6. **Don't depend on for ISRC** — the mapper doesn't return ISRCs. Spotify deprecated `external_ids` (including ISRC) in Feb 2026 (partially reverted in March 2026), making ISRC-based cross-service matching unreliable
+
+### MusicBrainz API Calls That Benefit
+| Use case | Before | After (with mapper) |
+|---|---|---|
+| Artist MBID from track context | `/ws/2/artist?query=...` search (~500ms, rate limited) | Mapper cache hit (~0ms) or live call (~4ms) |
+| Artist page initial load | Fuzzy search + validation | Direct `/ws/2/artist/{mbid}` lookup |
+| Fresh Drops batch (50 artists) | 50 × 1100ms = ~55s worst case | Cache hits skip MB search entirely |
+| Playbar bio MBID resolution | MB artist search per track change | Mapper with MB fallback |
+
+### MusicBrainz API Calls That Don't Benefit
+- Discography fetch (`/ws/2/release-group?artist={mbid}`) — still needs MB, mapper has no release-group data
+- Release details (`/ws/2/release/{id}?inc=recordings`) — need full tracklist, mapper only maps single recordings
+- Album art (`/ws/2/release?query=...`) — need release ID for Cover Art Archive, mapper's `release_mbid` could help but only when we have a track name
+- Global search (artist/album/track) — open-ended queries need MB's fuzzy search, not mapper's exact lookup
+
 ## Common Patterns
 
 - **Refs for stale closure avoidance**: Most state values have a companion ref (e.g., `volumeRef`, `isPlayingRef`) synced via `useEffect`. Always use refs in async callbacks.

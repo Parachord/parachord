@@ -7948,6 +7948,61 @@ const Parachord = () => {
   // Cache for artist extended info from MusicBrainz (mbid -> { info, timestamp })
   const artistExtendedInfoCache = useRef({});
 
+  // Cache for MBID Mapper lookups (artist|title -> { recording_mbid, artist_credit_mbids, confidence, timestamp })
+  // Uses ListenBrainz MBID Mapper v2.0 for fast metadata-to-MBID resolution (~4ms)
+  const mbidMapperCache = useRef({});
+
+  // MBID Mapper v2.0: fast fuzzy lookup of MusicBrainz IDs from artist + recording name
+  // Returns { recording_mbid, artist_credit_mbids, release_mbid, confidence } or null
+  const lookupMbidMapper = async (artist, title, album) => {
+    if (!artist || !title) return null;
+    const cacheKey = `${artist.toLowerCase().trim()}|${title.toLowerCase().trim()}`;
+    const cached = mbidMapperCache.current[cacheKey];
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.mbidMapper) {
+      return cached.result;
+    }
+    try {
+      const params = new URLSearchParams({
+        artist_credit_name: artist,
+        recording_name: title
+      });
+      if (album) params.set('release_name', album);
+      const response = await fetch(`https://mapper.listenbrainz.org/mapping/lookup?${params}`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (data && data.recording_mbid) {
+        const result = {
+          recording_mbid: data.recording_mbid,
+          artist_credit_mbids: data.artist_credit_mbids || [],
+          release_mbid: data.release_mbid || null,
+          recording_name: data.recording_name,
+          artist_credit_name: data.artist_credit_name,
+          release_name: data.release_name,
+          confidence: data.confidence || 0
+        };
+        mbidMapperCache.current[cacheKey] = { result, timestamp: Date.now() };
+        return result;
+      }
+      // Cache misses too to avoid repeated lookups for unknown tracks
+      mbidMapperCache.current[cacheKey] = { result: null, timestamp: Date.now() };
+      return null;
+    } catch (error) {
+      console.warn('MBID Mapper lookup failed:', error.message);
+      return null;
+    }
+  };
+
+  // Look up an artist MBID from the MBID mapper cache (any previously resolved track by that artist)
+  const getArtistMbidFromMapperCache = (artistName) => {
+    const normArtist = artistName.toLowerCase().trim();
+    for (const [key, entry] of Object.entries(mbidMapperCache.current)) {
+      if (key.startsWith(normArtist + '|') && entry.result?.artist_credit_mbids?.length > 0) {
+        return entry.result.artist_credit_mbids[0];
+      }
+    }
+    return null;
+  };
+
   // Cache for playlist cover art (playlistId -> { covers: [url1, url2, url3, url4], timestamp })
   const playlistCoverCache = useRef({});
 
@@ -7992,6 +8047,7 @@ const Parachord = () => {
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
+    mbidMapper: 90 * 24 * 60 * 60 * 1000,   // 90 days (MBIDs are permanent identifiers)
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
     charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
     newReleases: 6 * 60 * 60 * 1000,        // 6 hours (new releases don't change that often)
@@ -13415,6 +13471,12 @@ ${trackListXml}
           return null;
         };
 
+        // Fire MBID Mapper lookup in parallel with resolver searches
+        // This gives us a canonical recording identity to improve cross-resolver matching
+        const mbidLookupPromise = lookupMbidMapper(
+          trackOrSource.artist, trackOrSource.title, trackOrSource.album
+        ).catch(() => null);
+
         const freshSources = {};
         const resolvePromises = enabledResolvers.map(async (resolver) => {
           try {
@@ -13456,12 +13518,27 @@ ${trackListXml}
           }
         });
 
-        await Promise.all(resolvePromises);
+        // Wait for both resolver searches and MBID lookup to complete
+        const [, mbidResult] = await Promise.all([
+          Promise.all(resolvePromises),
+          mbidLookupPromise
+        ]);
 
         // Check if another play request superseded this one during resolution
         if (playbackGenerationRef.current !== thisGeneration) {
           console.log('⏹️ Playback request superseded during resolution, aborting');
           return;
+        }
+
+        // Enrich track with MBID metadata if mapper returned a result
+        if (mbidResult && mbidResult.recording_mbid) {
+          trackOrSource.mbid = mbidResult.recording_mbid;
+          trackOrSource.artistMbids = mbidResult.artist_credit_mbids;
+          if (mbidResult.release_mbid) trackOrSource.releaseMbid = mbidResult.release_mbid;
+          // Use canonical names from MusicBrainz for display consistency
+          if (mbidResult.confidence >= 0.9) {
+            console.log(`🎯 MBID Mapper: "${trackOrSource.title}" → ${mbidResult.recording_mbid} (confidence: ${mbidResult.confidence})`);
+          }
         }
 
         if (Object.keys(freshSources).length > 0) {
@@ -13477,6 +13554,61 @@ ${trackListXml}
 
         // Update availableResolvers after resolution
         availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
+
+        // If no sources found but MBID mapper returned canonical names, retry with those
+        // This helps when the original metadata has typos, alternate spellings, or non-standard formatting
+        if (availableResolvers.length === 0 && mbidResult && mbidResult.confidence >= 0.7) {
+          const canonicalArtist = mbidResult.artist_credit_name;
+          const canonicalTitle = mbidResult.recording_name;
+          const origArtistNorm = normalizeStr(trackOrSource.artist);
+          const origTitleNorm = normalizeStr(trackOrSource.title);
+          // Only retry if canonical names actually differ from what we searched
+          if (normalizeStr(canonicalArtist) !== origArtistNorm || normalizeStr(canonicalTitle) !== origTitleNorm) {
+            console.log(`🔄 MBID Mapper: retrying with canonical names "${canonicalArtist} - ${canonicalTitle}"`);
+            const retryPromises = enabledResolvers.map(async (resolver) => {
+              try {
+                const config = getResolverConfigRef.current
+                  ? await getResolverConfigRef.current(resolver.id)
+                  : {};
+                let bestMatch = null;
+                if (resolver.search && typeof resolver.search === 'function') {
+                  const query = `${canonicalArtist} ${canonicalTitle}`;
+                  const results = await resolver.search(query, config);
+                  if (results && results.length > 0) {
+                    bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle);
+                  }
+                } else if (resolver.resolve) {
+                  const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config);
+                  if (result && validateResolvedTrack(result, canonicalArtist, canonicalTitle)) {
+                    bestMatch = result;
+                  }
+                }
+                if (bestMatch) {
+                  freshSources[resolver.id] = {
+                    ...bestMatch,
+                    confidence: (bestMatch.confidence || 0.9) * mbidResult.confidence,
+                    resolvedAt: Date.now(),
+                    mbidResolved: true
+                  };
+                }
+              } catch (error) {
+                console.error(`  ❌ ${resolver.name || resolver.id} MBID retry error:`, error);
+              }
+            });
+            await Promise.all(retryPromises);
+
+            if (playbackGenerationRef.current !== thisGeneration) return;
+
+            if (Object.keys(freshSources).length > 0) {
+              trackOrSource.sources = freshSources;
+              if (trackOrSource.id) {
+                setTrackSources(prev => ({ ...prev, [trackOrSource.id]: freshSources }));
+              }
+            }
+            availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
+          }
+        }
+
         if (availableResolvers.length === 0) {
           console.error('❌ No resolver found for track after on-demand resolution');
           setTrackLoading(false); // Clear loading state
@@ -18741,7 +18873,7 @@ ${trackListXml}
         // Caches
         'cache_album_art', 'cache_artist_data', 'cache_track_sources', 'cache_artist_images',
         'cache_album_release_ids', 'cache_playlist_covers', 'cache_charts', 'cache_new_releases',
-        'cache_concerts', 'cache_ai_suggestions', 'last_active_view',
+        'cache_concerts', 'cache_ai_suggestions', 'cache_mbid_mapper', 'last_active_view',
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
@@ -18815,6 +18947,16 @@ ${trackListXml}
         );
         artistImageCache.current = Object.fromEntries(validEntries);
         console.log(`📦 Loaded ${validEntries.length} artist image entries from cache`);
+      }
+
+      // Load MBID Mapper cache
+      const mbidMapperData = d['cache_mbid_mapper'];
+      if (mbidMapperData) {
+        const validEntries = Object.entries(mbidMapperData).filter(
+          ([_, entry]) => entry.timestamp && (now - entry.timestamp) < CACHE_TTL.mbidMapper
+        );
+        mbidMapperCache.current = Object.fromEntries(validEntries);
+        console.log(`📦 Loaded ${validEntries.length} MBID mapper entries from cache`);
       }
 
       // Load album-to-release-ID mapping cache (for Critic's Picks and track art lookups)
@@ -19443,6 +19585,9 @@ ${trackListXml}
 
       // Save artist image cache (already has timestamps)
       await window.electron.store.set('cache_artist_images', artistImageCache.current);
+
+      // Save MBID Mapper cache
+      await window.electron.store.set('cache_mbid_mapper', mbidMapperCache.current);
 
       // Save album-to-release-ID mapping cache
       await window.electron.store.set('cache_album_release_ids', albumToReleaseIdCache.current);
@@ -20141,9 +20286,34 @@ ${trackListXml}
         });
       };
 
-      const searchResponse = await fetchWithRetry(
-        `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistName)}&fmt=json&limit=5`
-      );
+      // Fast path: try MBID mapper cache or live lookup to skip the slow MB artist search
+      let mapperArtistMbid = getArtistMbidFromMapperCache(artistName);
+      if (!mapperArtistMbid && currentTrackRef.current?.artist?.toLowerCase().trim() === artistName.toLowerCase().trim()) {
+        // We're navigating to the current track's artist — use the track to do a mapper lookup
+        const mapperResult = await lookupMbidMapper(
+          currentTrackRef.current.artist, currentTrackRef.current.title, currentTrackRef.current.album
+        );
+        if (mapperResult?.artist_credit_mbids?.length > 0) {
+          mapperArtistMbid = mapperResult.artist_credit_mbids[0];
+        }
+      }
+
+      let searchResponse;
+      if (mapperArtistMbid) {
+        // Direct MBID lookup (~2x faster than fuzzy search, no matching needed)
+        searchResponse = await fetchWithRetry(
+          `https://musicbrainz.org/ws/2/artist/${mapperArtistMbid}?fmt=json`
+        );
+        if (!searchResponse.ok) {
+          console.warn('MBID mapper artist ID lookup failed, falling back to search');
+          mapperArtistMbid = null;
+        }
+      }
+      if (!mapperArtistMbid) {
+        searchResponse = await fetchWithRetry(
+          `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistName)}&fmt=json&limit=5`
+        );
+      }
 
       if (!searchResponse.ok) {
         console.error('Artist search failed:', searchResponse.status);
@@ -20157,15 +20327,17 @@ ${trackListXml}
         setLoadingArtist(false);
         return;
       }
-      
-      const searchData = await searchResponse.json();
-      
+
+      const searchData = mapperArtistMbid
+        ? { artists: [await searchResponse.json()] } // Direct lookup returns artist object, wrap to match search format
+        : await searchResponse.json();
+
       // Validate MusicBrainz match quality — weak matches get the same fallback treatment
       // MusicBrainz scores are relative (100 = best match found, not necessarily correct),
       // so we must also verify the name is actually similar to avoid wrong-artist matches
       // (e.g. "Jack Jose" → "José José" with score 100)
       const mbCandidate = searchData.artists?.[0];
-      const mbScore = mbCandidate?.score || 0;
+      const mbScore = mapperArtistMbid ? 100 : (mbCandidate?.score || 0);
       const normalizeName = s => s?.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .toLowerCase().replace(/[^a-z0-9]/g, '') || '';
       const mbNorm = normalizeName(mbCandidate?.name);
@@ -25035,6 +25207,14 @@ ${tracks}
         let madeApiCall = false;
 
         if (!mbid) {
+          // Fast path: check MBID mapper cache for any previously resolved track by this artist
+          mbid = getArtistMbidFromMapperCache(artist.name);
+          if (mbid) {
+            console.log(`🎯 Fresh Drops: got MBID for "${artist.name}" from mapper cache (skipping MB search)`);
+          }
+        }
+
+        if (!mbid) {
           const searchResponse = await fetchWithTimeout(
             `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artist.name)}&fmt=json&limit=1`,
             { headers: mbHeaders }
@@ -29246,21 +29426,33 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     setPlaybarArtistBio(null);
 
     (async () => {
-      // First, search for the artist to get their MBID
       try {
-        const searchResponse = await fetch(
-          `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(currentTrack.artist)}&fmt=json&limit=1`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' }}
-        );
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          const mbid = searchData.artists?.[0]?.id;
+        let mbid = null;
 
-          // Fetch bio using the existing function
-          const bioData = await getArtistBio(currentTrack.artist, mbid);
-          if (bioData) {
-            setPlaybarArtistBio({ ...bioData, artistName: currentTrack.artist });
+        // Fast path: use MBID Mapper if we have a track title (~4ms vs ~500ms+ for MB search)
+        if (currentTrack.title) {
+          const mapperResult = await lookupMbidMapper(currentTrack.artist, currentTrack.title, currentTrack.album);
+          if (mapperResult?.artist_credit_mbids?.length > 0) {
+            mbid = mapperResult.artist_credit_mbids[0];
           }
+        }
+
+        // Fallback: MusicBrainz artist search if mapper didn't return an MBID
+        if (!mbid) {
+          const searchResponse = await fetch(
+            `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(currentTrack.artist)}&fmt=json&limit=1`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' }}
+          );
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            mbid = searchData.artists?.[0]?.id;
+          }
+        }
+
+        // Fetch bio using the existing function
+        const bioData = await getArtistBio(currentTrack.artist, mbid);
+        if (bioData) {
+          setPlaybarArtistBio({ ...bioData, artistName: currentTrack.artist });
         }
       } catch (error) {
         console.error('Error fetching playbar artist bio:', error);
