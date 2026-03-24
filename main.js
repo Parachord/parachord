@@ -18,7 +18,7 @@ console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? 
 console.log('=========================');
 
 
-const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu, nativeTheme, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -1664,6 +1664,32 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+
+  // Allow WebAuthn / passkey permission requests so that Apple's sign-in
+  // popup (opened via setWindowOpenHandler) can trigger Touch ID / passkeys.
+  // Without this, Electron's default session silently denies the request and
+  // the auth page stalls with a spinner.  We scope the grant to apple.com
+  // origins; all other permission requests keep Electron's default behaviour.
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const url = details.requestingUrl || webContents.getURL();
+    const isApple = url.includes('apple.com') || url.includes('icloud.com');
+    if (isApple && (permission === 'hid' || permission === 'usb')) {
+      callback(true);
+      return;
+    }
+    // Default: allow standard permissions, deny exotic ones
+    const allowed = ['media', 'geolocation', 'notifications', 'fullscreen', 'pointerLock',
+                     'clipboard-read', 'clipboard-sanitized-write', 'hid', 'usb'].includes(permission);
+    callback(allowed);
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    if ((requestingOrigin.includes('apple.com') || requestingOrigin.includes('icloud.com')) &&
+        (permission === 'hid' || permission === 'usb')) {
+      return true;
+    }
+    // Return true for standard permissions by default
+    return true;
+  });
 
   // Start background services — wrap each in try/catch so a single
   // failure doesn't prevent the menu from being set up or the window

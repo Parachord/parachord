@@ -32076,115 +32076,111 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     try {
 
-    // Try MusicKit JS first (works cross-platform, requires developer token)
+    // Determine available auth methods
     const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
     let developerToken = localStorage.getItem('musickit_developer_token') || '';
     if (!developerToken && window.electron?.config?.get) {
       try { developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || ''; } catch (e) {}
     }
 
-    if (musicKitWeb && developerToken) {
+    const hasNativeMusicKit = window.electron?.musicKit && await window.electron.musicKit.isAvailable().catch(() => false);
+    const hasMusicKitWeb = !!(musicKitWeb && developerToken);
+
+    // On macOS, prefer native MusicKit auth — the MusicKit JS popup runs inside
+    // an Electron BrowserWindow that cannot surface macOS system sheets (Touch ID,
+    // passkeys), causing the auth flow to stall when the user picks passkey login.
+    // Native MusicKit delegates to the OS which handles all auth methods natively.
+    const tryNativeFirst = hasNativeMusicKit;
+
+    // MusicKit JS auth helper (used as primary on non-macOS, fallback on macOS)
+    const tryMusicKitJsAuth = async () => {
+      if (!hasMusicKitWeb) return false;
       try {
         console.log('[AppleMusic] Trying MusicKit JS authorization...');
-
-        // Configure MusicKit JS if not already configured
         const status = musicKitWeb.getAuthStatus();
         if (!status.configured) {
           await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
         }
-
-        // Request authorization (Apple ID sign-in)
         const authResult = await musicKitWeb.authorize();
         console.log('[AppleMusic] MusicKit JS auth result:', authResult);
+        if (!authResult.authorized) return false;
 
-        if (authResult.authorized) {
-          console.log('🍎 MusicKit JS authorized successfully');
-          setAppleMusicConnected(true);
+        console.log('🍎 MusicKit JS authorized successfully');
+        setAppleMusicConnected(true);
 
-          // Store the music user token for session persistence and sync
-          if (authResult.userToken) {
-            localStorage.setItem('musickit_user_token', authResult.userToken);
-            if (window.electron?.store) {
-              await window.electron.store.set('applemusic_user_token', authResult.userToken);
-            }
-            console.log('🍎 Music user token stored');
-          }
-
-          // Save auth state
+        if (authResult.userToken) {
+          localStorage.setItem('musickit_user_token', authResult.userToken);
           if (window.electron?.store) {
-            await window.electron.store.set('applemusic_authorized', true);
+            await window.electron.store.set('applemusic_user_token', authResult.userToken);
           }
-
-          // Automatically enable Apple Music resolver after successful auth
-          setActiveResolvers(prev => {
-            if (!prev.includes('applemusic')) {
-              return [...prev, 'applemusic'];
-            }
-            return prev;
-          });
-          setResolverOrder(prev => {
-            if (!prev.includes('applemusic')) {
-              return insertInCanonicalOrder(prev, 'applemusic');
-            }
-            return prev;
-          });
-
-          showToast('Apple Music connected successfully', 'success');
-
-          // If library sync was previously enabled for Apple Music, trigger an
-          // immediate sync now that we have a valid token (same rationale as Spotify).
-          if (window.electron?.sync?.start) {
-            window.electron.syncSettings?.load().then(syncSettings => {
-              if (syncSettings?.applemusic?.enabled) {
-                console.log('[Sync] Apple Music re-authenticated with sync enabled, triggering immediate sync');
-                window.electron.sync.start('applemusic', { settings: syncSettings.applemusic }).then(result => {
-                  if (result?.success && result.collection) {
-                    const incoming = {
-                      tracks: result.collection.tracks || [],
-                      albums: result.collection.albums || [],
-                      artists: result.collection.artists || []
-                    };
-                    setCollectionData(prev => {
-                      const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
-                      const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
-                      if (netLoss > 50 && lossRatio > 0.1) {
-                        console.warn(`[Sync] Skipping UI update after re-auth: likely incomplete API response`);
-                        return prev;
-                      }
-                      return incoming;
-                    });
-                  }
-                }).catch(err => console.error('[Sync] Post-auth Apple Music sync failed:', err));
-              }
-            }).catch(() => {});
-          }
-
-          return;
+          console.log('🍎 Music user token stored');
         }
+
+        if (window.electron?.store) {
+          await window.electron.store.set('applemusic_authorized', true);
+        }
+
+        setActiveResolvers(prev => {
+          if (!prev.includes('applemusic')) {
+            return [...prev, 'applemusic'];
+          }
+          return prev;
+        });
+        setResolverOrder(prev => {
+          if (!prev.includes('applemusic')) {
+            return insertInCanonicalOrder(prev, 'applemusic');
+          }
+          return prev;
+        });
+
+        showToast('Apple Music connected successfully', 'success');
+
+        if (window.electron?.sync?.start) {
+          window.electron.syncSettings?.load().then(syncSettings => {
+            if (syncSettings?.applemusic?.enabled) {
+              console.log('[Sync] Apple Music re-authenticated with sync enabled, triggering immediate sync');
+              window.electron.sync.start('applemusic', { settings: syncSettings.applemusic }).then(result => {
+                if (result?.success && result.collection) {
+                  const incoming = {
+                    tracks: result.collection.tracks || [],
+                    albums: result.collection.albums || [],
+                    artists: result.collection.artists || []
+                  };
+                  setCollectionData(prev => {
+                    const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
+                    const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
+                    if (netLoss > 50 && lossRatio > 0.1) {
+                      console.warn(`[Sync] Skipping UI update after re-auth: likely incomplete API response`);
+                      return prev;
+                    }
+                    return incoming;
+                  });
+                }
+              }).catch(err => console.error('[Sync] Post-auth Apple Music sync failed:', err));
+            }
+          }).catch(() => {});
+        }
+
+        return true;
       } catch (error) {
         console.log('[AppleMusic] MusicKit JS auth failed:', error.message);
-        // Fall through to native MusicKit
+        return false;
       }
+    };
+
+    if (!tryNativeFirst) {
+      // Non-macOS: try MusicKit JS first, then show error if unavailable
+      if (await tryMusicKitJsAuth()) return;
     }
 
-    // Fall back to native MusicKit (macOS only)
-    if (!window.electron?.musicKit) {
+    // Native MusicKit path (macOS) — or fallback after MusicKit JS failure
+    if (!hasNativeMusicKit) {
       showConfirmDialog({
         type: 'error',
         title: 'MusicKit Not Available',
         message: developerToken
           ? 'MusicKit JS authorization failed. Please check your developer token.'
           : 'MusicKit requires either a developer token (Settings → Resolvers → Apple Music) or macOS native integration.'
-      });
-      return;
-    }
-
-    const isAvailable = await window.electron.musicKit.isAvailable();
-    if (!isAvailable) {
-      showConfirmDialog({
-        type: 'error',
-        title: 'MusicKit Not Available',
-        message: 'Native MusicKit is only available on macOS. For cross-platform support, add your MusicKit developer token in Settings → Resolvers → Apple Music.'
       });
       return;
     }
