@@ -333,17 +333,25 @@ const AppleMusicSyncProvider = {
    * @returns {Object} - { success: boolean }
    */
   async deletePlaylist(playlistId, token) {
-    const { developerToken, userToken } = JSON.parse(token);
-    const response = await fetch(`${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlistId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${developerToken}`,
-        'Music-User-Token': userToken
-      }
-    });
-    if (!response.ok && response.status !== 204) {
-      throw new Error(`Failed to delete playlist: ${response.status}`);
+    // Apple Music API does not support DELETE for library playlists.
+    // Instead, clear the playlist's tracks so it becomes an empty shell,
+    // and rename it to signal it's a leftover duplicate.
+    try {
+      await this.updatePlaylistTracks(playlistId, [], token);
+    } catch (err) {
+      // If clearing tracks fails, still try renaming
+      console.warn(`[AppleMusic] Failed to clear tracks for playlist ${playlistId}:`, err.message);
     }
+
+    try {
+      await this.updatePlaylistDetails(playlistId, {
+        name: `[Deleted] ${playlistId}`,
+        description: 'Duplicate cleared by Parachord sync cleanup'
+      }, token);
+    } catch (err) {
+      console.warn(`[AppleMusic] Failed to rename deleted playlist ${playlistId}:`, err.message);
+    }
+
     return { success: true };
   },
 
@@ -488,8 +496,78 @@ const AppleMusicSyncProvider = {
     return { resolved, unresolved };
   },
 
-  // Create a new playlist on Apple Music
+  // Find an existing user-owned playlist by exact name (case-insensitive).
+  // Returns the best match (most tracks) or null.
+  async findPlaylistByName(name, token) {
+    const { developerToken, userToken } = JSON.parse(token);
+    const items = await appleMusicFetch(
+      '/me/library/playlists?limit=100',
+      developerToken,
+      userToken
+    );
+    const normalizedName = (name || '').trim().toLowerCase();
+    const matches = items
+      .filter(p => {
+        const pName = (p.attributes?.name || '').trim().toLowerCase();
+        return pName === normalizedName && (p.attributes?.canEdit !== false);
+      });
+
+    if (matches.length === 0) return null;
+
+    // If multiple matches, prefer the one with the most tracks
+    // (fetch track counts to decide)
+    if (matches.length === 1) {
+      const p = matches[0];
+      return {
+        externalId: p.id,
+        snapshotId: p.attributes?.lastModifiedDate || null
+      };
+    }
+
+    // Fetch track counts for each match to pick the best one
+    const headers = {
+      'Authorization': `Bearer ${developerToken}`,
+      'Music-User-Token': userToken
+    };
+    const withCounts = await Promise.all(matches.map(async (p) => {
+      let trackCount = 0;
+      try {
+        const resp = await fetch(
+          `${APPLE_MUSIC_API_BASE}/me/library/playlists/${p.id}/tracks?limit=1`,
+          { headers }
+        );
+        if (resp.ok) {
+          const data = await resp.json();
+          trackCount = data.meta?.total ?? data.data?.length ?? 0;
+        }
+      } catch { /* leave as 0 */ }
+      return { playlist: p, trackCount };
+    }));
+
+    withCounts.sort((a, b) => b.trackCount - a.trackCount);
+    const best = withCounts[0].playlist;
+    return {
+      externalId: best.id,
+      snapshotId: best.attributes?.lastModifiedDate || null
+    };
+  },
+
+  // Create a new playlist on Apple Music, or adopt an existing one with the same name
   async createPlaylist(name, description, token) {
+    // Check for an existing playlist with the same name to avoid duplicates.
+    // Apple Music API does not support DELETE, so preventing duplicates at
+    // creation time is critical.
+    try {
+      const existing = await this.findPlaylistByName(name, token);
+      if (existing) {
+        console.log(`[AppleMusic] Adopting existing playlist "${name}" (${existing.externalId}) instead of creating duplicate`);
+        return existing;
+      }
+    } catch (err) {
+      // Non-fatal — fall through to create
+      console.warn(`[AppleMusic] Failed to check for existing playlist "${name}":`, err.message);
+    }
+
     const { developerToken, userToken } = JSON.parse(token);
 
     const resp = await fetch(`${APPLE_MUSIC_API_BASE}/me/library/playlists`, {

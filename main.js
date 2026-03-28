@@ -5696,7 +5696,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
           try {
             await provider.deletePlaylist(dup.externalId, token);
             totalDeleted++;
-            console.log(`[Sync Cleanup] Deleted duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
+            console.log(`[Sync Cleanup] Cleared duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
             // Rate limit delay between deletions
             if (provider.getRateLimitDelay) {
               await new Promise(r => setTimeout(r, provider.getRateLimitDelay()));
