@@ -2622,6 +2622,7 @@ ipcMain.handle('spotify-auth', async () => {
     'streaming',
     'user-read-playback-state',
     'user-modify-playback-state',
+    'user-read-currently-playing',
     'user-library-read',
     'user-library-modify',
     'user-follow-read',
