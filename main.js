@@ -4583,7 +4583,29 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
       return { success: false, error: 'Not authenticated with provider' };
     }
 
-    await provider.deletePlaylist(externalId, token);
+    // Provide a token refresh callback for Apple Music 401 recovery
+    let refreshTokenCb = null;
+    if (providerId === 'applemusic') {
+      refreshTokenCb = async () => {
+        try {
+          const bridge = getMusicKitBridge();
+          const freshDevToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
+          if (!freshDevToken) return null;
+          const result = await bridge.fetchUserToken(freshDevToken);
+          if (result && result.userToken) {
+            store.set('applemusic_user_token', result.userToken);
+            const newToken = JSON.stringify({ developerToken: freshDevToken, userToken: result.userToken });
+            token = newToken;
+            return newToken;
+          }
+        } catch (err) {
+          console.warn('[AppleMusic] Failed to refresh user token:', err.message);
+        }
+        return null;
+      };
+    }
+
+    await provider.deletePlaylist(externalId, token, refreshTokenCb);
     console.log('  ✅ Deleted playlist from source');
     return { success: true };
   } catch (error) {
@@ -5647,6 +5669,26 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       if (developerToken && userToken) {
         token = JSON.stringify({ developerToken, userToken });
       }
+      // Apple Music token refresh: try to fetch a fresh user token via the
+      // native MusicKit bridge when a 401 occurs (expired user token).
+      refreshTokenCb = async () => {
+        try {
+          const bridge = getMusicKitBridge();
+          const freshDevToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
+          if (!freshDevToken) return null;
+          const result = await bridge.fetchUserToken(freshDevToken);
+          if (result && result.userToken) {
+            store.set('applemusic_user_token', result.userToken);
+            const newToken = JSON.stringify({ developerToken: freshDevToken, userToken: result.userToken });
+            token = newToken;
+            console.log('[AppleMusic] Refreshed user token successfully');
+            return newToken;
+          }
+        } catch (err) {
+          console.warn('[AppleMusic] Failed to refresh user token:', err.message);
+        }
+        return null;
+      };
     }
 
     if (!token) {
@@ -5695,9 +5737,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
 
         for (const dup of toDelete) {
           try {
-            await provider.deletePlaylist(dup.externalId, token);
+            await provider.deletePlaylist(dup.externalId, token, refreshTokenCb);
             totalDeleted++;
-            console.log(`[Sync Cleanup] Cleared duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
+            console.log(`[Sync Cleanup] Deleted duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
             // Rate limit delay between deletions
             if (provider.getRateLimitDelay) {
               await new Promise(r => setTimeout(r, provider.getRateLimitDelay()));

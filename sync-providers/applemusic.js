@@ -330,29 +330,76 @@ const AppleMusicSyncProvider = {
    * Delete a playlist from the user's Apple Music library
    * @param {string} playlistId - Apple Music library playlist ID
    * @param {string} token - JSON string with developerToken and userToken
+   * @param {function} [refreshTokenCb] - Optional async callback to refresh token on 401
    * @returns {Object} - { success: boolean }
    */
-  async deletePlaylist(playlistId, token) {
-    // Apple Music API does not support DELETE for library playlists.
-    // Instead, clear the playlist's tracks so it becomes an empty shell,
-    // and rename it to signal it's a leftover duplicate.
-    try {
-      await this.updatePlaylistTracks(playlistId, [], token);
-    } catch (err) {
-      // If clearing tracks fails, still try renaming
-      console.warn(`[AppleMusic] Failed to clear tracks for playlist ${playlistId}:`, err.message);
+  async deletePlaylist(playlistId, token, refreshTokenCb) {
+    // Try the actual DELETE endpoint first (Apple Music API supports it for
+    // library playlists). Fall back to clear+rename if DELETE is not supported.
+    const attemptDelete = async (currentToken) => {
+      const { developerToken, userToken } = JSON.parse(currentToken);
+      const resp = await fetch(
+        `${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlistId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${developerToken}`,
+            'Music-User-Token': userToken
+          }
+        }
+      );
+      return resp;
+    };
+
+    // First attempt with current token
+    let resp = await attemptDelete(token);
+
+    // On 401, try refreshing the token and retry once
+    if ((resp.status === 401 || resp.status === 403) && refreshTokenCb) {
+      console.log(`[AppleMusic] Got ${resp.status} on DELETE, attempting token refresh...`);
+      const newToken = await refreshTokenCb();
+      if (newToken) {
+        token = newToken;
+        resp = await attemptDelete(token);
+      }
     }
 
-    try {
-      await this.updatePlaylistDetails(playlistId, {
-        name: `[Deleted] ${playlistId}`,
-        description: 'Duplicate cleared by Parachord sync cleanup'
-      }, token);
-    } catch (err) {
-      console.warn(`[AppleMusic] Failed to rename deleted playlist ${playlistId}:`, err.message);
+    if (resp.ok || resp.status === 204 || resp.status === 202) {
+      return { success: true };
     }
 
-    return { success: true };
+    // DELETE not supported (405) or other non-auth error — fall back to clear + rename
+    if (resp.status === 405 || resp.status === 404) {
+      console.log(`[AppleMusic] DELETE returned ${resp.status}, falling back to clear+rename for ${playlistId}`);
+      let cleared = false;
+      let renamed = false;
+      try {
+        await this.updatePlaylistTracks(playlistId, [], token);
+        cleared = true;
+      } catch (err) {
+        console.warn(`[AppleMusic] Failed to clear tracks for playlist ${playlistId}:`, err.message);
+      }
+      try {
+        await this.updatePlaylistDetails(playlistId, {
+          name: `[Deleted] ${playlistId}`,
+          description: 'Duplicate cleared by Parachord sync cleanup'
+        }, token);
+        renamed = true;
+      } catch (err) {
+        console.warn(`[AppleMusic] Failed to rename deleted playlist ${playlistId}:`, err.message);
+      }
+      if (!cleared && !renamed) {
+        throw new Error(`Failed to delete Apple Music playlist ${playlistId}: both clear and rename failed`);
+      }
+      return { success: true };
+    }
+
+    // Auth failure even after refresh
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error(`Apple Music authorization failed (${resp.status}). Please reconnect your Apple Music account.`);
+    }
+
+    throw new Error(`Failed to delete Apple Music playlist ${playlistId}: ${resp.status}`);
   },
 
   /**
@@ -555,8 +602,6 @@ const AppleMusicSyncProvider = {
   // Create a new playlist on Apple Music, or adopt an existing one with the same name
   async createPlaylist(name, description, token) {
     // Check for an existing playlist with the same name to avoid duplicates.
-    // Apple Music API does not support DELETE, so preventing duplicates at
-    // creation time is critical.
     try {
       const existing = await this.findPlaylistByName(name, token);
       if (existing) {
