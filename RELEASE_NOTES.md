@@ -1,3 +1,66 @@
+# Parachord v0.9.0-beta.6 (unreleased)
+
+**Release date:** TBD
+
+---
+
+## Shuffleupagus AI DJ — Playlist Management
+
+The AI DJ can now browse, reorder, add to, remove from, rename, and delete your playlists via 7 new tools — all gated behind the existing "Share my data" opt-in setting.
+
+## Duplicate Playlist Cleanup
+
+- **One-click duplicate removal** — new "Clean Up Duplicates" button in Settings > General > Library Sync fetches all remote playlists, groups by name, and deletes duplicates (keeps the copy with the most tracks)
+- **Local reference cleanup** — stale syncedTo/syncedFrom pointers to deleted playlists are cleaned up automatically
+
+## Bug Fixes
+
+- Fixed Apple Music sync creating thousands of empty duplicate playlists during background sync — three-layer guard: partial-response detection skips clearing when >30% of playlists appear "missing"; playlist creation now persists syncedTo even if track addition fails; auto-create skips playlists that originated from the target provider
+- Fixed Apple Music playlist deletion silently failing — switched to the correct DELETE endpoint with automatic token refresh on 401
+- Fixed Apple Music duplicate deduplication using unsupported DELETE API — falls back to clearing tracks and renaming when DELETE returns 401
+- Fixed white screen on some Electron versions caused by restrictive permission whitelist — switched to allow-all for non-dangerous permissions
+- Fixed missing Spotify OAuth scopes — `user-read-currently-playing`, `playlist-read-private`, and `playlist-read-collaborative` were declared but never requested during auth
+- Fixed silent store failures for `cache_mbid_mapper`, `saved_volume`, and `preferred_spotify_device_id` — added to `ALLOWED_STORE_KEYS` whitelist
+
+---
+
+# Parachord v0.9.0-beta.5
+
+**Release date:** 2026-03-25
+
+---
+
+## ListenBrainz MBID Mapper Integration
+
+Integrated the ListenBrainz MBID Mapper v2.0 to resolve track metadata to MusicBrainz IDs in ~4ms, replacing many slow, rate-limited MusicBrainz API searches.
+
+- **Parallel enrichment during playback** — mapper fires alongside resolver searches in `handlePlay`, enriching tracks with `mbid`, `artistMbids`, and `releaseMbid`
+- **Canonical name fallback** — when all resolvers fail, the mapper's corrected artist/track names retry resolution (confidence >= 0.7)
+- **Artist page speedup** — `getArtistMbidFromMapperCache()` shortcuts the MB artist search (~0ms vs ~500ms)
+- **Fresh Drops speedup** — mapper cache checked before rate-limited MB artist search, saving ~1100ms per cache hit across 50 artists
+- **Background batch enrichment** — queue additions, playlist loads (XSPF, ListenBrainz, direct), and user-interacted content are enriched in the background
+- **Scrobbler enrichment** — ListenBrainz sends `recording_mbid`, `artist_mbids`, `release_mbid` in `additional_info`; Last.fm/Libre.fm sends `mbid` parameter
+- **Local files artwork** — local files without embedded album art now fetch artwork via MBID from the Cover Art Archive
+- **90-day persistent cache** — results (including misses) cached and persisted via `electron.store`
+
+## Spotify Device Picker
+
+- **Multi-device dialog** — when multiple inactive Spotify devices are detected, a picker dialog lets you choose which one to play on instead of auto-selecting
+- **Preferred device memory** — your last-picked device is remembered and auto-selected in future sessions
+- **Volume safety** — if the selected device's volume is lower than the app's internal volume, Parachord adopts the device volume to prevent loud surprises
+
+## Bug Fixes
+
+- Fixed unsafe 70% default volume — lowered to 30%, persisted across restarts, and respects device volume on Spotify Connect transfer
+- Fixed Spotify playlist import/sync failing with 403 for users with stale tokens missing required scopes
+- Fixed native MusicKit auth on macOS — now prefers native auth to avoid passkey stall in the web flow
+
+## UI Improvements
+
+- Fixed album and friends grid cards floating to center — added `alignContent: start` to pack cards to the top
+
+---
+
 # Parachord v0.9.0-beta.4
 
 **Release date:** 2026-03-15
