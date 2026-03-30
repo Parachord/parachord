@@ -36,7 +36,9 @@
       "user-modify-playback-state",
       "user-read-currently-playing",
       "playlist-read-private",
-      "playlist-read-collaborative"
+      "playlist-read-collaborative",
+      "playlist-modify-private",
+      "playlist-modify-public"
     ],
     "configurable": {
       "clientId": {
