@@ -41,8 +41,18 @@ collection.json
 # Temp files
 *.tmp
 .temp/
-# MCP configuration should be committed for team consistency
-# .mcp.json
+*.backup
+
+# Backup directories
+assets/icons/backup-*/
+
+# Native build artifacts
+native/musickit-helper/.build/
+
+# Generated CSS
+tailwind-output.css
+# MCP configuration (local dev environment)
+.mcp.json
 .worktrees/
 builtin/
 resources/bin/
