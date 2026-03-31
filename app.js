@@ -6469,7 +6469,6 @@ const Parachord = () => {
     const sorted = [...items];
     switch (criticsSort) {
       case 'recent': return sorted; // Keep original order (date added)
-      case 'score-desc': return sorted.sort((a, b) => (b.score || 0) - (a.score || 0));
       case 'artist': return sorted.sort((a, b) => a.artist.localeCompare(b.artist));
       default: return sorted;
     }
@@ -6477,7 +6476,6 @@ const Parachord = () => {
 
   const criticsSortOptions = [
     { value: 'recent', label: 'Date Added' },
-    { value: 'score-desc', label: 'Score' },
     { value: 'artist', label: 'Artist Name' }
   ];
 
