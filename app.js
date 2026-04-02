@@ -4791,7 +4791,18 @@ class AIChatService {
         tool_calls: calls
       });
 
-      for (const call of calls) {
+      // Deduplicate: if model returned multiple queue_add calls, merge into one
+      const queueAddCalls = calls.filter(c => c.name === 'queue_add');
+      let deduplicatedCalls = calls;
+      if (queueAddCalls.length > 1) {
+        const mergedTracks = queueAddCalls.flatMap(c => c.arguments?.tracks || []);
+        const firstQueueAdd = queueAddCalls[0];
+        firstQueueAdd.arguments = { ...firstQueueAdd.arguments, tracks: mergedTracks };
+        deduplicatedCalls = calls.filter(c => c.name !== 'queue_add');
+        deduplicatedCalls.push(firstQueueAdd);
+      }
+
+      for (const call of deduplicatedCalls) {
         // Report progress to UI
         const toolLabels = {
           search: 'Searching...',
@@ -51953,11 +51964,53 @@ useEffect(() => {
                     return React.createElement('div', {
                       key: index,
                       ref: messageRef,
+                      className: 'chat-message-row',
                       style: {
                         display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
                         justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
                       }
                     },
+                      // Copy as Parachord link button (user messages only, before the bubble)
+                      msg.role === 'user' && React.createElement('button', {
+                        className: 'chat-copy-link-btn',
+                        title: 'Share prompt',
+                        onClick: () => {
+                          const text = typeof msg.content === 'string' ? msg.content : '';
+                          const truncated = text.slice(0, 500);
+                          const uri = `parachord://chat?prompt=${encodeURIComponent(truncated)}`;
+                          const link = `https://parachord.com/go?uri=${encodeURIComponent(uri)}`;
+                          navigator.clipboard?.writeText(link).then(() => {
+                            showToast('Copied shareable prompt link!', 'success');
+                          }).catch(() => {
+                            window.prompt('Copy this link:', link);
+                          });
+                        },
+                        style: {
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          opacity: 0,
+                          transition: 'opacity 0.15s',
+                          padding: '6px',
+                          marginRight: '2px',
+                          borderRadius: '4px',
+                          color: 'rgba(255, 255, 255, 0.4)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          flexShrink: 0
+                        }
+                      },
+                        React.createElement('svg', {
+                          width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+                          stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round'
+                        },
+                          React.createElement('path', { d: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8' }),
+                          React.createElement('polyline', { points: '16 6 12 2 8 6' }),
+                          React.createElement('line', { x1: 12, y1: 2, x2: 12, y2: 15 })
+                        )
+                      ),
                       React.createElement('div', {
                         style: {
                           maxWidth: '85%',
