@@ -5471,6 +5471,30 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
     return { success: false, error: 'Not authenticated' };
   }
 
+  // For Spotify, check that the token has the scopes needed for playlist access.
+  if (providerId === 'spotify') {
+    const grantedScopes = store.get('spotify_token_scopes');
+    if (grantedScopes) {
+      const requiredScopes = ['playlist-read-private'];
+      const missing = requiredScopes.filter(s => !grantedScopes.includes(s));
+      if (missing.length > 0) {
+        console.log(`[Sync] Token missing required scopes for playlist pull: ${missing.join(', ')}. Prompting re-auth.`);
+        return {
+          success: false,
+          error: 'Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions.',
+          errorCode: 'missing_scopes'
+        };
+      }
+    } else {
+      console.log('[Sync] No stored scopes found (legacy auth). Prompting re-auth.');
+      return {
+        success: false,
+        error: 'Your Spotify connection needs to be refreshed. Please disconnect and reconnect Spotify in Settings.',
+        errorCode: 'missing_scopes'
+      };
+    }
+  }
+
   try {
     const tracks = await provider.fetchPlaylistTracks(playlistExternalId, token, null, refreshTokenCb);
     // Also fetch the current snapshot ID
@@ -5494,7 +5518,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
 
   let token;
   if (providerId === 'spotify') {
-    token = store.get('spotify_token');
+    token = await ensureValidSpotifyToken();
   } else if (providerId === 'applemusic') {
     if (!generatedMusicKitToken) {
       await musicKitTokenReady;
@@ -5508,6 +5532,30 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
 
   if (!token) {
     return { success: false, error: 'Not authenticated' };
+  }
+
+  // For Spotify, check that the token has the scopes needed for playlist modification.
+  if (providerId === 'spotify') {
+    const grantedScopes = store.get('spotify_token_scopes');
+    if (grantedScopes) {
+      const requiredScopes = ['playlist-modify-public', 'playlist-modify-private'];
+      const hasAny = requiredScopes.some(s => grantedScopes.includes(s));
+      if (!hasAny) {
+        console.log(`[Sync] Token missing required scopes for playlist push. Prompting re-auth.`);
+        return {
+          success: false,
+          error: 'Missing permissions. Please disconnect and reconnect Spotify to grant the required permissions.',
+          errorCode: 'missing_scopes'
+        };
+      }
+    } else {
+      console.log('[Sync] No stored scopes found (legacy auth). Prompting re-auth.');
+      return {
+        success: false,
+        error: 'Your Spotify connection needs to be refreshed. Please disconnect and reconnect Spotify in Settings.',
+        errorCode: 'missing_scopes'
+      };
+    }
   }
 
   try {

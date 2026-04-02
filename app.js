@@ -38781,9 +38781,18 @@ useEffect(() => {
                   setPlaylistTracks(result.tracks);
                   setPlaylists(prev => prev.map(p => p.id === playlist.id ? updatedPlaylist : p));
                   await savePlaylistToStore(updatedPlaylist);
+                  showToast(`Pulled ${result.tracks.length} tracks from ${providerName}`);
+                } else {
+                  console.error('Failed to pull playlist:', result?.error);
+                  if (result?.errorCode === 'missing_scopes') {
+                    showToast('Missing permissions. Please disconnect and reconnect Spotify in Settings.', 'error');
+                  } else {
+                    showToast(`Failed to pull changes: ${result?.error || 'Unknown error'}`, 'error');
+                  }
                 }
               } catch (err) {
                 console.error('Failed to pull playlist updates:', err);
+                showToast(`Failed to pull changes: ${err.message}`, 'error');
               }
             };
 
