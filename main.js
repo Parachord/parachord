@@ -3992,14 +3992,17 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
   }
 
   // Add "Edit ID3 Tags" option for local files (tracks with filePath)
-  if (data.type === 'track' && data.track?.filePath) {
+  const trackFilePath = data.track?.filePath || data.track?.sources?.localfiles?.filePath;
+  if (data.type === 'track' && trackFilePath) {
     menuItems.push({ type: 'separator' });
     menuItems.push({
       label: 'Edit ID3 Tags',
       click: () => {
+        // Ensure filePath is at top level (may only be in sources.localfiles for multi-source tracks)
+        const trackWithFilePath = data.track.filePath ? data.track : { ...data.track, filePath: trackFilePath };
         safeSendToRenderer('track-context-menu-action', {
           action: 'edit-id3-tags',
-          track: data.track
+          track: trackWithFilePath
         });
       }
     });
