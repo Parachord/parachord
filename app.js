@@ -32924,7 +32924,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   const fetchDynamicModels = async (resolver, config) => {
     const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
     if (modelSetting?.type !== 'dynamic-select') return;
-    if (!resolver.listModels) return;
+
+    // Look up the full resolver from the loader (has implementation functions like listModels)
+    // metaServices state only stores metadata, not implementation functions
+    const fullResolver = resolverLoaderRef.current?.getResolver(resolver.id) || resolver;
+    if (!fullResolver.listModels) return;
 
     const resolverId = resolver.id;
     setDynamicModelOptions(prev => ({
@@ -32933,7 +32937,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }));
 
     try {
-      const options = await resolver.listModels(config || metaServiceConfigs[resolverId] || {});
+      const options = await fullResolver.listModels(config || metaServiceConfigs[resolverId] || {});
       setDynamicModelOptions(prev => ({
         ...prev,
         [resolverId]: { loading: false, options: options || [], error: null }
