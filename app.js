@@ -7333,7 +7333,7 @@ const Parachord = () => {
     if (selectedResolver) {
       const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
       const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
-      if (modelSetting?.type === 'dynamic-select' && resolver.listModels) {
+      if (modelSetting?.type === 'dynamic-select') {
         fetchDynamicModels(resolver, metaServiceConfigs[resolver.id]);
       }
     }
@@ -54838,7 +54838,8 @@ useEffect(() => {
                   // Re-fetch dynamic models after API key change
                   setTimeout(() => {
                     const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
-                    if (resolver.listModels) {
+                    const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                    if (modelSetting?.type === 'dynamic-select') {
                       fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], [authFieldKey]: e.target.value });
                     }
                   }, 100);
@@ -55040,7 +55041,8 @@ useEffect(() => {
                   // Re-fetch dynamic models after endpoint change
                   setTimeout(() => {
                     const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
-                    if (resolver.listModels) {
+                    const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                    if (modelSetting?.type === 'dynamic-select') {
                       fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], endpoint: e.target.value });
                     }
                   }, 100);

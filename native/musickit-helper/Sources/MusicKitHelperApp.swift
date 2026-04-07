@@ -271,7 +271,20 @@ class MusicKitBridge {
 
         // Set the queue to this song and play
         player.queue = [song]
-        try await player.play()
+
+        do {
+            try await player.prepareToPlay()
+            try await player.play()
+        } catch {
+            let nsError = error as NSError
+            FileHandle.standardError.write("[MusicKit] play() failed: domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription)\n".data(using: .utf8)!)
+            // Retry once: stop, re-queue, prepare, play
+            player.stop()
+            player.queue = [song]
+            try await player.prepareToPlay()
+            try await Task.sleep(nanoseconds: 500_000_000) // 500ms
+            try await player.play()
+        }
 
         return [
             "playing": true,
