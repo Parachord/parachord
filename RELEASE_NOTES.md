@@ -1,6 +1,24 @@
-# Parachord v0.9.0-beta.7 (unreleased)
+# Parachord v0.9.0-beta.8 (unreleased)
 
 **Release date:** TBD
+
+---
+
+## Apple Music Resilience
+
+- **Session error detection** — when native MusicKit playback fails (e.g. after a reboot requiring TOS acceptance), a toast guides the user to open Music.app to resolve the issue
+- **No more repeated login popups** — if MusicKit JS web authorization fails, the auth prompt is skipped for the rest of the session instead of popping up on every track
+- **Better native playback recovery** — `prepareToPlay()` + retry with diagnostic logging for native MusicKit errors
+
+## Bug Fixes
+
+- Fixed dynamic model fetching never triggering for Ollama, ChatGPT, and Gemini — the useEffect and onBlur handlers checked `resolver.listModels` on metadata-only objects where it was always undefined (#740)
+
+---
+
+# Parachord v0.9.0-beta.7
+
+**Release date:** 2026-04-08
 
 ---
 
