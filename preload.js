@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electron', {
     checkToken: (options) => ipcRenderer.invoke('spotify-check-token', options),
     disconnect: () => ipcRenderer.invoke('spotify-disconnect'),
     launchInBackground: () => ipcRenderer.invoke('spotify-launch-background'),
+    scrapePlaylist: (playlistId) => ipcRenderer.invoke('spotify-scrape-playlist', playlistId),
     getCredentials: () => ipcRenderer.invoke('spotify-get-credentials'),
     setCredentials: (credentials) => ipcRenderer.invoke('spotify-set-credentials', credentials),
 

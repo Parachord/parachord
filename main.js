@@ -2931,6 +2931,76 @@ ipcMain.handle('spotify-disconnect', async () => {
   return { success: true };
 });
 
+// Scrape Spotify playlist data from the public embed page (no auth required)
+// Used as fallback when the API returns 403 (Development Mode restrictions)
+ipcMain.handle('spotify-scrape-playlist', async (event, playlistId) => {
+  console.log(`=== Spotify Embed Scrape: ${playlistId} ===`);
+  try {
+    const https = require('https');
+    const url = `https://open.spotify.com/embed/playlist/${playlistId}`;
+
+    const html = await new Promise((resolve, reject) => {
+      https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Embed page returned ${res.statusCode}`));
+          return;
+        }
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => resolve(body));
+      }).on('error', reject);
+    });
+
+    // Extract __NEXT_DATA__ JSON from the page
+    const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (!match) {
+      console.log('  ❌ Could not find __NEXT_DATA__ in embed page');
+      return { success: false, error: 'Could not parse embed page' };
+    }
+
+    const nextData = JSON.parse(match[1]);
+    const entity = nextData?.props?.pageProps?.state?.data?.entity;
+    if (!entity) {
+      console.log('  ❌ No entity data in __NEXT_DATA__');
+      return { success: false, error: 'No playlist data found in embed page' };
+    }
+
+    const tracks = (entity.trackList || []).map((t, i) => {
+      // Extract Spotify track ID from URI (spotify:track:XXXXX)
+      const trackId = t.uri ? t.uri.split(':').pop() : null;
+      return {
+        id: trackId ? 'spotify-' + trackId : 'spotify-embed-' + i,
+        title: t.title || 'Unknown Track',
+        artist: t.subtitle || 'Unknown Artist',
+        album: '', // Embed doesn't include album name
+        duration: t.duration ? Math.floor(t.duration / 1000) : 0,
+        sources: ['spotify'],
+        spotifyUri: t.uri || null,
+        spotifyId: trackId,
+        previewUrl: t.audioPreview?.url || null
+      };
+    });
+
+    console.log(`  ✅ Scraped ${tracks.length} tracks from embed: ${entity.name}`);
+    return {
+      success: true,
+      playlist: {
+        id: 'spotify-playlist-' + playlistId,
+        name: entity.name || 'Unknown Playlist',
+        owner: entity.subtitle || '',
+        albumArt: entity.coverArt?.sources?.[0]?.url || entity.images?.[0]?.url || null,
+        trackCount: tracks.length,
+        tracks: tracks,
+        url: `https://open.spotify.com/playlist/${playlistId}`,
+        scraped: true
+      }
+    };
+  } catch (error) {
+    console.error(`  ❌ Embed scrape failed:`, error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('soundcloud-disconnect', async () => {
   console.log('=== SoundCloud Disconnect ===');
   store.delete('soundcloud_token');

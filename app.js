@@ -13079,8 +13079,31 @@ ${trackListXml}
           } else {
             const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
             if (confirmed) {
-              const result = await window.electron.playlists.delete(data.playlistId);
-              if (result.success) {
+              const isHosted = data.playlistId.startsWith('hosted-');
+              let deleteSuccess = false;
+
+              if (isHosted) {
+                // Hosted playlists are stored in hosted_playlists URL list, not local_playlists
+                try {
+                  const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
+                  const filtered = hostedPlaylists.filter(hp => hp.id !== data.playlistId);
+                  await window.electron?.store?.set('hosted_playlists', filtered);
+                  // Also clean up any metadata overrides
+                  console.log(`🗑️ Deleted hosted playlist: ${data.name}`);
+                  deleteSuccess = true;
+                } catch (error) {
+                  console.error('Failed to delete hosted playlist:', error);
+                  alert(`Failed to delete playlist: ${error.message}`);
+                }
+              } else {
+                const result = await window.electron.playlists.delete(data.playlistId);
+                deleteSuccess = result.success;
+                if (!result.success) {
+                  alert(`Failed to delete playlist: ${result.error}`);
+                }
+              }
+
+              if (deleteSuccess) {
                 setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
                 delete playlistCoverCache.current[data.playlistId];
                 setAllPlaylistCovers(prev => {
@@ -13088,8 +13111,6 @@ ${trackListXml}
                   delete updated[data.playlistId];
                   return updated;
                 });
-              } else {
-                alert(`Failed to delete playlist: ${result.error}`);
               }
             }
           }
