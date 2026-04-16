@@ -31889,13 +31889,19 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const existingIndex = prev.findIndex(p => p.sourceUrl === url);
         if (existingIndex >= 0) {
           didUpdate = true;
+          const existing = prev[existingIndex];
+          // Mark as locally modified only if the XSPF content actually changed —
+          // so the sync loop pushes XSPF-driven updates to providers, but startup
+          // reloads with unchanged content don't trigger spurious pushes.
+          const contentChanged = existing.xspf !== content;
           updatedPlaylist = {
-            ...prev[existingIndex],
+            ...existing,
             xspf: content,
             title: playlistTitle,
             creator: playlistCreator,
             tracks: parsed.tracks || [],
-            lastUpdated: Date.now()
+            lastUpdated: Date.now(),
+            ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
           };
           return prev.map((p, i) => i === existingIndex ? updatedPlaylist : p);
         }
