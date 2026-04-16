@@ -5731,7 +5731,12 @@ const Parachord = () => {
                 if (settings.syncPlaylists) {
                   try {
                     const loadedPlaylists = await window.electron.playlists.load();
-                    setPlaylists(loadedPlaylists);
+                    // Preserve in-memory hosted playlists not yet persisted to disk
+                    setPlaylists(prev => {
+                      const loadedUrls = new Set(loadedPlaylists.map(p => p.sourceUrl).filter(Boolean));
+                      const hostedOnly = prev.filter(p => p.sourceUrl && !loadedUrls.has(p.sourceUrl));
+                      return [...loadedPlaylists, ...hostedOnly];
+                    });
                   } catch (e) {
                     console.warn('[Sync] Failed to reload playlists after background sync:', e);
                   }
@@ -9329,7 +9334,12 @@ const Parachord = () => {
       // Reload playlists if they were synced
       if (settings.syncPlaylists && selectedPlaylists.length > 0) {
         const loadedPlaylists = await window.electron.playlists.load();
-        setPlaylists(loadedPlaylists);
+        // Preserve in-memory hosted playlists not yet persisted to disk
+        setPlaylists(prev => {
+          const loadedUrls = new Set(loadedPlaylists.map(p => p.sourceUrl).filter(Boolean));
+          const hostedOnly = prev.filter(p => p.sourceUrl && !loadedUrls.has(p.sourceUrl));
+          return [...loadedPlaylists, ...hostedOnly];
+        });
       }
 
       setSyncSetupModal(prev => ({
@@ -31872,15 +31882,33 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const playlistTitle = metadataOverrides?.title || parsed.title;
       const playlistCreator = metadataOverrides?.creator ?? parsed.creator;
 
-      // Check if playlist already exists
-      const existingIndex = playlists.findIndex(p => p.sourceUrl === url);
-      if (existingIndex >= 0) {
-        // Update existing playlist (preserve local title/creator if they were edited)
-        setPlaylists(prev => prev.map((p, i) =>
-          i === existingIndex
-            ? { ...p, xspf: content, title: playlistTitle, creator: playlistCreator, tracks: parsed.tracks || [], lastUpdated: Date.now() }
-            : p
-        ));
+      // Check if playlist already exists (use updater form to avoid stale closure)
+      let didUpdate = false;
+      let updatedPlaylist = null;
+      setPlaylists(prev => {
+        const existingIndex = prev.findIndex(p => p.sourceUrl === url);
+        if (existingIndex >= 0) {
+          didUpdate = true;
+          updatedPlaylist = {
+            ...prev[existingIndex],
+            xspf: content,
+            title: playlistTitle,
+            creator: playlistCreator,
+            tracks: parsed.tracks || [],
+            lastUpdated: Date.now()
+          };
+          return prev.map((p, i) => i === existingIndex ? updatedPlaylist : p);
+        }
+        return prev;
+      });
+
+      if (didUpdate) {
+        // Persist updated hosted playlist to disk so it survives sync reloads and can be synced to providers
+        try {
+          await window.electron.playlists.save(updatedPlaylist);
+        } catch (e) {
+          console.warn('Failed to persist updated hosted playlist:', e);
+        }
         console.log(`🔄 Updated hosted playlist: ${playlistTitle} (${parsed.tracks?.length || 0} tracks)`);
         return { updated: true, playlist: { ...parsed, title: playlistTitle, creator: playlistCreator } };
       }
@@ -31902,8 +31930,19 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         lastModified: Date.now()
       };
 
+      // Persist to disk so sync reloads and sync-to-provider pick it up
+      try {
+        await window.electron.playlists.save(newPlaylist);
+      } catch (e) {
+        console.warn('Failed to persist hosted playlist:', e);
+      }
+
       // Add to state (prepend so it appears at top immediately, unless loading from storage)
-      setPlaylists(prev => skipStorageUpdate ? [...prev, newPlaylist] : [newPlaylist, ...prev]);
+      setPlaylists(prev => {
+        // Guard against double-add if another path already inserted it
+        if (prev.some(p => p.sourceUrl === url)) return prev;
+        return skipStorageUpdate ? [...prev, newPlaylist] : [newPlaylist, ...prev];
+      });
 
       // Fetch covers for the 2x2 grid display immediately
       fetchPlaylistCovers(id, parsed.tracks || []);
@@ -58606,7 +58645,12 @@ useEffect(() => {
                 setCollectionData(newCollection);
               }
               const loadedPlaylists = await window.electron.playlists.load();
-              setPlaylists(loadedPlaylists);
+              // Preserve in-memory hosted playlists not yet persisted to disk
+              setPlaylists(prev => {
+                const loadedUrls = new Set(loadedPlaylists.map(p => p.sourceUrl).filter(Boolean));
+                const hostedOnly = prev.filter(p => p.sourceUrl && !loadedUrls.has(p.sourceUrl));
+                return [...loadedPlaylists, ...hostedOnly];
+              });
             },
             disabled: Object.values(syncStatus).some(s => s?.inProgress),
             style: {
