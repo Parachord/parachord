@@ -5696,6 +5696,11 @@ const Parachord = () => {
   const resolverSyncSettingsRef = useRef(resolverSyncSettings);
   useEffect(() => { resolverSyncSettingsRef.current = resolverSyncSettings; }, [resolverSyncSettings]);
 
+  // Mutex to prevent concurrent playlist creation across background and manual sync paths.
+  // Without this, both paths can load playlists simultaneously, both see a playlist
+  // without syncedTo[providerId], and both create it on the remote — producing duplicates.
+  const playlistSyncInProgressRef = useRef(false);
+
   useEffect(() => {
     const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
     const INITIAL_DELAY = 60 * 1000; // 60 seconds — let the app fully load first
@@ -5748,6 +5753,11 @@ const Parachord = () => {
                   }
                 }
               // Auto-sync local playlists to this provider
+              // Guard with mutex to prevent concurrent creation across background + manual sync
+              if (playlistSyncInProgressRef.current) {
+                console.log(`[Sync] Playlist sync already in progress, skipping background playlist sync for ${providerId}`);
+              } else {
+              playlistSyncInProgressRef.current = true;
               try {
                 const allPlaylists = await window.electron.playlists.load();
                 let playlistsChanged = false;
@@ -5865,7 +5875,10 @@ const Parachord = () => {
                 }
               } catch (err) {
                 console.warn(`[Sync] Local playlist sync failed for ${providerId}:`, err.message);
+              } finally {
+                playlistSyncInProgressRef.current = false;
               }
+              } // end mutex guard
 
               // Push locally-added collection items to this provider
               try {
@@ -9365,50 +9378,59 @@ const Parachord = () => {
       // Run after dialog updates to 'complete' so UI isn't blocked during track resolution
       (async () => {
         console.log(`[Sync] Post-sync IIFE started for ${providerId}`);
-        try {
-          const allPlaylists = await window.electron.playlists.load();
-          let playlistsChanged = false;
 
-          for (const playlist of allPlaylists) {
-            if (playlist.localOnly || playlist.syncedFrom) continue;
-            if (playlist.id?.startsWith(`${providerId}-`)) continue;
-            if (playlist.syncedTo?.[providerId]) continue;
+        // Guard with mutex to prevent concurrent creation across background + manual sync
+        if (playlistSyncInProgressRef.current) {
+          console.log(`[Sync] Playlist sync already in progress, skipping manual playlist creation for ${providerId}`);
+        } else {
+          playlistSyncInProgressRef.current = true;
+          try {
+            const allPlaylists = await window.electron.playlists.load();
+            let playlistsChanged = false;
 
-            console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
-            try {
-              const createResult = await window.electron.sync.createPlaylist(
-                providerId,
-                playlist.title,
-                playlist.description || '',
-                playlist.tracks || []
-              );
-              if (createResult.success) {
-                playlist.syncedTo = {
-                  ...playlist.syncedTo,
-                  [providerId]: {
-                    externalId: createResult.externalId,
-                    snapshotId: createResult.snapshotId,
-                    syncedAt: Date.now(),
-                    unresolvedTracks: createResult.unresolvedTracks || [],
-                    pendingAction: null
-                  }
-                };
-                playlistsChanged = true;
-              }
-            } catch (err) {
-              console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
-            }
-          }
-
-          if (playlistsChanged) {
             for (const playlist of allPlaylists) {
-              await window.electron.playlists.save(playlist);
+              if (playlist.localOnly || playlist.syncedFrom) continue;
+              if (playlist.id?.startsWith(`${providerId}-`)) continue;
+              if (playlist.syncedTo?.[providerId]) continue;
+
+              console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
+              try {
+                const createResult = await window.electron.sync.createPlaylist(
+                  providerId,
+                  playlist.title,
+                  playlist.description || '',
+                  playlist.tracks || []
+                );
+                if (createResult.success) {
+                  playlist.syncedTo = {
+                    ...playlist.syncedTo,
+                    [providerId]: {
+                      externalId: createResult.externalId,
+                      snapshotId: createResult.snapshotId,
+                      syncedAt: Date.now(),
+                      unresolvedTracks: createResult.unresolvedTracks || [],
+                      pendingAction: null
+                    }
+                  };
+                  playlistsChanged = true;
+                }
+              } catch (err) {
+                console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
+              }
             }
-            setPlaylists(allPlaylists);
+
+            if (playlistsChanged) {
+              for (const playlist of allPlaylists) {
+                await window.electron.playlists.save(playlist);
+              }
+              setPlaylists(allPlaylists);
+            }
+          } catch (err) {
+            console.warn('[Sync] Local playlist auto-create failed after manual sync:', err.message);
+          } finally {
+            playlistSyncInProgressRef.current = false;
           }
-        } catch (err) {
-          console.warn('[Sync] Local playlist auto-create failed after manual sync:', err.message);
-        }
+        } // end mutex guard
 
         // Push locally-added collection items to this provider
         try {
