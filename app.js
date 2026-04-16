@@ -5855,7 +5855,12 @@ const Parachord = () => {
                   for (const playlist of allPlaylists) {
                     await window.electron.playlists.save(playlist);
                   }
-                  setPlaylists(allPlaylists);
+                  // Preserve in-memory hosted playlists not yet persisted to disk
+                  setPlaylists(prev => {
+                    const diskIds = new Set(allPlaylists.map(p => p.id));
+                    const hostedOnly = prev.filter(p => p.sourceUrl && !diskIds.has(p.id));
+                    return [...allPlaylists, ...hostedOnly];
+                  });
                 }
               } catch (err) {
                 console.warn(`[Sync] Local playlist sync failed for ${providerId}:`, err.message);
@@ -24864,8 +24869,11 @@ ${tracks}
         // Preserve sync-related properties
         syncedFrom: playlist.syncedFrom,
         syncSources: playlist.syncSources,
+        syncedTo: playlist.syncedTo,
         hasUpdates: playlist.hasUpdates,
-        locallyModified: playlist.locallyModified
+        locallyModified: playlist.locallyModified,
+        sourceUrl: playlist.sourceUrl,
+        source: playlist.source
       };
 
       const result = await window.electron.playlists.save(playlistData);
