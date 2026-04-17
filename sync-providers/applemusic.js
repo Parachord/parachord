@@ -368,30 +368,24 @@ const AppleMusicSyncProvider = {
       return { success: true };
     }
 
-    // DELETE not supported (405) or other non-auth error — fall back to clear + rename
+    // DELETE not supported (405) or playlist already gone (404) — fall
+    // back to renaming. We can't truly clear tracks on Apple Music
+    // (no documented per-track DELETE), so the renamed playlist will
+    // still contain its tracks — but from the user's perspective it's
+    // marked as deleted and will no longer show up under the original
+    // name. The user can manually remove it from Apple Music's app.
     if (resp.status === 405 || resp.status === 404) {
-      console.log(`[AppleMusic] DELETE returned ${resp.status}, falling back to clear+rename for ${playlistId}`);
-      let cleared = false;
-      let renamed = false;
-      try {
-        await this.updatePlaylistTracks(playlistId, [], token);
-        cleared = true;
-      } catch (err) {
-        console.warn(`[AppleMusic] Failed to clear tracks for playlist ${playlistId}:`, err.message);
-      }
+      console.log(`[AppleMusic] DELETE returned ${resp.status}, falling back to rename for ${playlistId}`);
       try {
         await this.updatePlaylistDetails(playlistId, {
           name: `[Deleted] ${playlistId}`,
-          description: 'Duplicate cleared by Parachord sync cleanup'
+          description: 'Marked deleted by Parachord sync cleanup'
         }, token);
-        renamed = true;
+        return { success: true };
       } catch (err) {
         console.warn(`[AppleMusic] Failed to rename deleted playlist ${playlistId}:`, err.message);
+        throw new Error(`Failed to delete Apple Music playlist ${playlistId}: DELETE returned ${resp.status} and rename fallback failed: ${err.message}`);
       }
-      if (!cleared && !renamed) {
-        throw new Error(`Failed to delete Apple Music playlist ${playlistId}: both clear and rename failed`);
-      }
-      return { success: true };
     }
 
     // Auth failure even after refresh
@@ -643,15 +637,65 @@ const AppleMusicSyncProvider = {
     };
   },
 
-  // Replace all tracks in an Apple Music playlist
+  // Sync `tracks` to an Apple Music playlist.
+  //
+  // Apple Music's documented Library Playlists API only supports adding
+  // tracks (POST /me/library/playlists/{id}/tracks). There is no public
+  // endpoint to remove individual tracks from an existing library
+  // playlist, which means we cannot implement true "replace" semantics.
+  //
+  // We approximate replace with a **diff-based append**:
+  //   1. GET the playlist's current tracks.
+  //   2. Build a set of existing Apple Music catalog IDs on the remote.
+  //   3. POST only the tracks from `tracks` that aren't already present.
+  //
+  // Trade-offs:
+  //   - ✅ Never creates duplicates, regardless of how many times called
+  //     (which was the bug PR #748's naive POST introduced).
+  //   - ✅ Matches what callers expect for the "fresh playlist" case
+  //     (remote is empty → all requested tracks added).
+  //   - ⚠️ Removing a track locally does NOT remove it on Apple Music.
+  //     Parachord's push loop will keep the local change, but the remote
+  //     will retain the track. Documented limitation until Apple exposes
+  //     a per-track DELETE endpoint.
+  //   - ⚠️ Calling with an empty `tracks` array is a no-op (cannot
+  //     clear). Callers that need to clear should prefer deletePlaylist.
   async updatePlaylistTracks(playlistId, tracks, token) {
     const { developerToken, userToken } = JSON.parse(token);
 
-    // Filter to tracks with Apple Music catalog IDs
+    // Filter to tracks with Apple Music catalog IDs (can't add without one).
     const catalogTracks = tracks.filter(t => t.appleMusicCatalogId || t.appleMusicId);
 
+    // Fetch existing remote tracks so we only add what's missing.
+    let existingCatalogIds = new Set();
+    try {
+      const remoteTracks = await this.fetchPlaylistTracks(playlistId, token);
+      for (const t of remoteTracks) {
+        if (t.appleMusicId) existingCatalogIds.add(String(t.appleMusicId));
+      }
+    } catch (err) {
+      // Non-fatal: if we can't read the current state, fall through and
+      // attempt the POST. Apple deduplicates internally in some cases,
+      // but the failure mode is an append of everything — still better
+      // than refusing to sync.
+      console.warn(`[AppleMusic] Could not fetch existing tracks for ${playlistId} before push; proceeding without diff:`, err.message);
+    }
+
+    const toAdd = catalogTracks.filter(t => {
+      const id = String(t.appleMusicCatalogId || t.appleMusicId);
+      return !existingCatalogIds.has(id);
+    });
+
+    if (toAdd.length === 0) {
+      // Nothing to add — either empty input or remote already has
+      // everything. Still refresh the snapshot so callers that store
+      // `syncedAt`/`snapshotId` get a current value.
+      const snapshot = await this.getPlaylistSnapshot(playlistId, token);
+      return { success: true, snapshotId: snapshot };
+    }
+
     const body = {
-      data: catalogTracks.map(t => ({
+      data: toAdd.map(t => ({
         id: t.appleMusicCatalogId || t.appleMusicId,
         type: 'songs'
       }))
@@ -674,10 +718,8 @@ const AppleMusicSyncProvider = {
       throw new Error(`Failed to update Apple Music playlist tracks: ${resp.status}`);
     }
 
-    // Fetch updated snapshot
     const snapshot = await this.getPlaylistSnapshot(playlistId, token);
-
-    return { success: true, snapshotId: snapshot };
+    return { success: true, snapshotId: snapshot, added: toAdd.length };
   },
 
   // Update playlist name and description on Apple Music

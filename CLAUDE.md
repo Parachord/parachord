@@ -164,6 +164,20 @@ Flow:
 - `locallyModified=true` → banner shows as push (XSPF is ready to go upstream).
 - Conflict (both flags) → rendered as push (XSPF wins anyway).
 
+### Provider-Specific Push Semantics
+
+Not every provider supports true "replace all tracks" over its API. Clients must not assume `updatePlaylistTracks` behaves identically across providers.
+
+| Provider | Semantics | How |
+|---|---|---|
+| **Spotify** | Full replace | `PUT /playlists/{id}/tracks` replaces; subsequent batches `POST` to append for >100 tracks. |
+| **Apple Music** | Diff-based append-only | No public per-track DELETE endpoint exists. `updatePlaylistTracks` fetches current remote tracks, diffs against the requested list by catalog ID, and `POST`s only the additions. **Tracks removed locally are NOT removed from the Apple Music playlist.** |
+
+Consequences:
+- On Apple Music, calling `updatePlaylistTracks` with an empty array is a no-op (can't clear). Callers that want to remove the remote should use `deletePlaylist` instead.
+- `deletePlaylist` on Apple Music tries `DELETE /me/library/playlists/{id}` first. If that returns 405/404, it falls back to renaming the playlist to `[Deleted] {id}` — the tracks stay, but the playlist is marked as deleted from the user's perspective (they can manually remove it in the Apple Music app).
+- Android implementations should surface this asymmetry in UI copy: for Apple Music, "sync to provider" should be worded as "push additions to" rather than "mirror to," and local track removals should carry a small warning.
+
 ### Sync IPC Surface
 
 | Handler | Purpose |
