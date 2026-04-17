@@ -5791,7 +5791,8 @@ const Parachord = () => {
                         providerId,
                         playlist.title,
                         playlist.description || '',
-                        playlist.tracks || []
+                        playlist.tracks || [],
+                        playlist.id
                       );
                       if (result.success) {
                         playlist.syncedTo = {
@@ -9414,7 +9415,8 @@ const Parachord = () => {
                   providerId,
                   playlist.title,
                   playlist.description || '',
-                  playlist.tracks || []
+                  playlist.tracks || [],
+                  playlist.id
                 );
                 if (createResult.success) {
                   playlist.syncedTo = {

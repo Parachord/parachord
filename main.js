@@ -4640,6 +4640,95 @@ ipcMain.handle('playlists-suppress-sync', async (event, providerId, externalId) 
   }
 });
 
+// ---------------------------------------------------------------------------
+// Sync playlist links — durable local→remote ID map
+// ---------------------------------------------------------------------------
+//
+// Primary duplicate-prevention is `syncedTo[providerId].externalId` on each
+// local playlist. That field is fragile: any playlist-save path that forgets
+// to forward it drops the link, and the next sync creates a remote duplicate.
+//
+// `sync_playlist_links` is an independent, write-only-from-main store keyed
+// by local playlist ID. It's never written by renderer playlist saves, so it
+// can't be clobbered by a save that omits fields. Before creating a playlist
+// on a remote, we consult this map; if we already have a link, we verify the
+// remote still exists and reuse it instead of creating a duplicate.
+//
+// Shape: { [localPlaylistId]: { [providerId]: { externalId, syncedAt } } }
+//
+function getSyncLinks() {
+  return store.get('sync_playlist_links') || {};
+}
+
+function setSyncLink(localPlaylistId, providerId, externalId) {
+  if (!localPlaylistId || !providerId || !externalId) return;
+  const links = getSyncLinks();
+  if (!links[localPlaylistId]) links[localPlaylistId] = {};
+  links[localPlaylistId][providerId] = { externalId, syncedAt: Date.now() };
+  store.set('sync_playlist_links', links);
+}
+
+function removeSyncLink(localPlaylistId, providerId) {
+  if (!localPlaylistId) return;
+  const links = getSyncLinks();
+  if (!links[localPlaylistId]) return;
+  if (providerId) {
+    delete links[localPlaylistId][providerId];
+    if (Object.keys(links[localPlaylistId]).length === 0) {
+      delete links[localPlaylistId];
+    }
+  } else {
+    delete links[localPlaylistId];
+  }
+  store.set('sync_playlist_links', links);
+}
+
+ipcMain.handle('sync-links:get-all', async () => getSyncLinks());
+ipcMain.handle('sync-links:set', async (event, localPlaylistId, providerId, externalId) => {
+  setSyncLink(localPlaylistId, providerId, externalId);
+  return { success: true };
+});
+ipcMain.handle('sync-links:remove', async (event, localPlaylistId, providerId) => {
+  removeSyncLink(localPlaylistId, providerId);
+  return { success: true };
+});
+
+// Startup migration: populate sync_playlist_links from existing syncedTo data
+// on local playlists. Idempotent and safe to run on every launch — if the map
+// already has an entry, syncedTo is the newer source of truth anyway (sync
+// writes the map AND syncedTo together post-fix), and re-populating from
+// syncedTo just refreshes stale entries.
+function migrateSyncLinksFromPlaylists() {
+  try {
+    const playlists = store.get('local_playlists') || [];
+    const links = getSyncLinks();
+    let added = 0;
+    for (const p of playlists) {
+      if (!p.id || !p.syncedTo) continue;
+      for (const [providerId, info] of Object.entries(p.syncedTo)) {
+        if (!info?.externalId) continue;
+        const existing = links[p.id]?.[providerId];
+        if (existing?.externalId === info.externalId) continue;
+        if (!links[p.id]) links[p.id] = {};
+        links[p.id][providerId] = {
+          externalId: info.externalId,
+          syncedAt: info.syncedAt || Date.now()
+        };
+        added++;
+      }
+    }
+    if (added > 0) {
+      store.set('sync_playlist_links', links);
+      console.log(`[SyncLinks] Migrated ${added} playlist link(s) from syncedTo to sync_playlist_links`);
+    }
+  } catch (err) {
+    console.warn('[SyncLinks] Migration failed (non-fatal):', err.message);
+  }
+}
+// Run once at startup. Fire-and-forget because it only reads/writes the store
+// and never touches the network.
+migrateSyncLinksFromPlaylists();
+
 ipcMain.handle('playlists-delete-from-source', async (event, providerId, externalId) => {
   console.log(`=== Delete Playlist from Source: ${providerId}/${externalId} ===`);
   try {
@@ -5686,7 +5775,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
 });
 
   // Create a new playlist on a remote service from a local playlist
-  ipcMain.handle('sync:create-playlist', async (event, providerId, name, description, tracks) => {
+  ipcMain.handle('sync:create-playlist', async (event, providerId, name, description, tracks, localPlaylistId = null) => {
     const provider = SyncEngine.getProvider(providerId);
     if (!provider || !provider.capabilities.playlists) {
       return { success: false, error: 'Provider does not support playlists' };
@@ -5720,73 +5809,105 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       return { success: false, error: 'Not authenticated' };
     }
 
-    try {
-      // Step 0: Defense-in-depth duplicate check.
-      //
-      // The renderer only decides to create when local `syncedTo[providerId]`
-      // is missing. That single source of truth is fragile: if syncedTo was
-      // never persisted (crash, partial save, pre-existing playlists from
-      // before sync tracking, any save path that stripped the field), the
-      // next sync would happily create another remote duplicate even though
-      // one already exists.
-      //
-      // To prevent this at the only gateway that actually writes to the
-      // remote, fetch the user's owned playlists and reuse any existing
-      // playlist whose name matches (case-insensitive, trimmed). The caller
-      // still receives { externalId, snapshotId } and will persist
-      // syncedTo[providerId] pointing at the matched remote — no duplicate
-      // gets created, and future syncs will see the link on disk.
-      if (provider.fetchPlaylists) {
+    // Helper: push tracks to an existing remote playlist and return the
+    // shape sync:create-playlist would normally return. Used when we link
+    // to an existing remote instead of creating.
+    const linkToExisting = async (existing, source) => {
+      let resolved = tracks;
+      let unresolved = [];
+      if (provider.resolveTracks) {
+        const resolveResult = await provider.resolveTracks(tracks, token);
+        resolved = resolveResult.resolved;
+        unresolved = resolveResult.unresolved;
+      }
+      let snapshotId = existing.snapshotId;
+      if (resolved.length > 0 && provider.updatePlaylistTracks) {
         try {
-          const { playlists: remotePlaylists } = await provider.fetchPlaylists(token, null, refreshTokenCb);
-          const normalized = (name || '').trim().toLowerCase();
-          const matches = (remotePlaylists || [])
-            .filter(p => p.isOwnedByUser && (p.name || '').trim().toLowerCase() === normalized);
-          if (matches.length > 0) {
-            // Prefer the most-populated match as the canonical target so the
-            // user's richest playlist wins when duplicates already exist.
-            matches.sort((a, b) => (b.trackCount || 0) - (a.trackCount || 0));
-            const existing = matches[0];
-            console.log(`[Sync] Playlist "${name}" already exists on ${providerId} (${existing.externalId}); linking instead of creating${matches.length > 1 ? ` (${matches.length} candidates)` : ''}`);
+          const updateResult = await provider.updatePlaylistTracks(existing.externalId, resolved, token);
+          snapshotId = updateResult.snapshotId || snapshotId;
+        } catch (trackError) {
+          console.warn(`[Sync] Linked "${name}" to existing ${providerId} playlist but failed to push tracks: ${trackError.message}`);
+          unresolved = tracks.map(t => ({ artist: t.artist, title: t.title }));
+        }
+      }
+      // Persist the link on the main-process side too so renderer save bugs
+      // can't clobber it.
+      if (localPlaylistId) {
+        setSyncLink(localPlaylistId, providerId, existing.externalId);
+      }
+      console.log(`[Sync] Linked "${name}" to existing ${providerId} playlist ${existing.externalId} (via ${source})`);
+      return {
+        success: true,
+        externalId: existing.externalId,
+        snapshotId,
+        unresolvedTracks: unresolved,
+        linkedToExisting: true,
+        linkSource: source
+      };
+    };
 
-            // Still resolve + push tracks so the linked remote gets the
-            // local track state, same as a fresh create would produce.
-            let resolved = tracks;
-            let unresolved = [];
-            if (provider.resolveTracks) {
-              const resolveResult = await provider.resolveTracks(tracks, token);
-              resolved = resolveResult.resolved;
-              unresolved = resolveResult.unresolved;
-            }
+    try {
+      // We fetch the remote playlist list at most once and reuse it for both
+      // the ID-based link check and the name-based fallback check.
+      let remotePlaylists = null;
+      const getRemotePlaylists = async () => {
+        if (remotePlaylists !== null) return remotePlaylists;
+        if (!provider.fetchPlaylists) return (remotePlaylists = []);
+        try {
+          const { playlists } = await provider.fetchPlaylists(token, null, refreshTokenCb);
+          remotePlaylists = playlists || [];
+        } catch (err) {
+          console.warn(`[Sync] Could not fetch remote playlists for dedup check on ${providerId}:`, err.message);
+          remotePlaylists = [];
+        }
+        return remotePlaylists;
+      };
 
-            let snapshotId = existing.snapshotId;
-            if (resolved.length > 0 && provider.updatePlaylistTracks) {
-              try {
-                const updateResult = await provider.updatePlaylistTracks(existing.externalId, resolved, token);
-                snapshotId = updateResult.snapshotId || snapshotId;
-              } catch (trackError) {
-                console.warn(`[Sync] Linked to existing "${name}" on ${providerId} but failed to push tracks: ${trackError.message}`);
-                unresolved = tracks.map(t => ({ artist: t.artist, title: t.title }));
-              }
-            }
-
-            return {
-              success: true,
-              externalId: existing.externalId,
-              snapshotId,
-              unresolvedTracks: unresolved,
-              linkedToExisting: true
-            };
+      // -----------------------------------------------------------------
+      // Step 0a: ID-based link check (durable, rename-safe).
+      //
+      // The sync_playlist_links map is an independent source of truth that
+      // survives any renderer-side save bug that might strip syncedTo. If
+      // we've previously linked this local playlist to a remote, reuse it —
+      // but first verify the remote still exists, to handle cases where the
+      // user deleted the playlist on the service between syncs.
+      // -----------------------------------------------------------------
+      if (localPlaylistId) {
+        const existingLink = getSyncLinks()[localPlaylistId]?.[providerId];
+        if (existingLink?.externalId) {
+          const remote = await getRemotePlaylists();
+          const match = remote.find(p => p.externalId === existingLink.externalId && p.isOwnedByUser);
+          if (match) {
+            return await linkToExisting(match, 'id-link');
           }
-        } catch (dedupeError) {
-          // Do NOT let a duplicate-check failure block creation — fall through
-          // to the original create path. The mutex + local syncedTo still
-          // provide protection in the happy path.
-          console.warn(`[Sync] Duplicate-check failed for "${name}" on ${providerId}, proceeding with create:`, dedupeError.message);
+          // Link is stale (remote gone) — clear it so we don't keep trying
+          // to reuse a dead ID on future syncs.
+          console.log(`[Sync] Stored link ${providerId}:${existingLink.externalId} for local ${localPlaylistId} no longer exists remotely; clearing and falling through to create`);
+          removeSyncLink(localPlaylistId, providerId);
         }
       }
 
+      // -----------------------------------------------------------------
+      // Step 0b: Name-based fallback (last-ditch).
+      //
+      // Catches cases where the ID link is missing entirely: legacy data
+      // that predates sync_playlist_links, or installs where migration
+      // hadn't run yet. Matches on trimmed-lowercased name among the
+      // user's owned playlists. If several match, the richest one wins.
+      // -----------------------------------------------------------------
+      const remote = await getRemotePlaylists();
+      if (remote.length > 0) {
+        const normalized = (name || '').trim().toLowerCase();
+        const matches = remote.filter(p => p.isOwnedByUser && (p.name || '').trim().toLowerCase() === normalized);
+        if (matches.length > 0) {
+          matches.sort((a, b) => (b.trackCount || 0) - (a.trackCount || 0));
+          return await linkToExisting(matches[0], matches.length > 1 ? `name-match (${matches.length} candidates)` : 'name-match');
+        }
+      }
+
+      // -----------------------------------------------------------------
       // Step 1: Resolve tracks to provider-specific IDs
+      // -----------------------------------------------------------------
       let resolved = tracks;
       let unresolved = [];
       if (provider.resolveTracks) {
@@ -5796,13 +5917,24 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         console.log(`[Sync] Resolved ${resolved.length}/${tracks.length} tracks for ${providerId} (${unresolved.length} unresolved)`);
       }
 
+      // -----------------------------------------------------------------
       // Step 2: Create the playlist
+      // -----------------------------------------------------------------
       const { externalId, snapshotId } = await provider.createPlaylist(name, description, token);
       console.log(`[Sync] Created playlist "${name}" on ${providerId}: ${externalId}`);
 
-      // Step 3: Add tracks — if this fails, the playlist was still created on the
-      // provider so we must return success with the externalId.  Otherwise syncedTo
-      // is never set and the next sync cycle creates another duplicate.
+      // Record the new link in our durable map immediately — even if Step 3
+      // (track push) or the renderer-side syncedTo save fails, the next sync
+      // will find this link and avoid a duplicate.
+      if (localPlaylistId) {
+        setSyncLink(localPlaylistId, providerId, externalId);
+      }
+
+      // -----------------------------------------------------------------
+      // Step 3: Add tracks — if this fails, the playlist was still created
+      // on the provider so we must return success with the externalId.
+      // Otherwise syncedTo is never set and the next sync creates a dupe.
+      // -----------------------------------------------------------------
       let finalSnapshotId = snapshotId;
       if (resolved.length > 0 && provider.updatePlaylistTracks) {
         try {
@@ -6004,6 +6136,22 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         if (localCleaned > 0) {
           store.set('local_playlists', updatedLocal);
           console.log(`[Sync Cleanup] Cleaned ${localCleaned} local playlist references to deleted duplicates`);
+        }
+
+        // Also prune the durable link map so the next sync doesn't waste a
+        // validation round-trip on a known-dead externalId. The validation
+        // step would catch it anyway, but keeping the map tidy is cheap.
+        const allLinks = getSyncLinks();
+        let linksCleaned = 0;
+        for (const [localId, providers] of Object.entries(allLinks)) {
+          const link = providers[providerId];
+          if (link?.externalId && deletedExternalIds.has(link.externalId)) {
+            removeSyncLink(localId, providerId);
+            linksCleaned++;
+          }
+        }
+        if (linksCleaned > 0) {
+          console.log(`[Sync Cleanup] Pruned ${linksCleaned} stale sync-link(s) pointing at deleted duplicates`);
         }
       }
 

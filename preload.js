@@ -339,7 +339,7 @@ contextBridge.exposeInMainWorld('electron', {
     fetchPlaylists: (providerId) => ipcRenderer.invoke('sync:fetch-playlists', providerId),
     fetchPlaylistTracks: (providerId, playlistExternalId) => ipcRenderer.invoke('sync:fetch-playlist-tracks', providerId, playlistExternalId),
     pushPlaylist: (providerId, playlistExternalId, tracks, metadata) => ipcRenderer.invoke('sync:push-playlist', providerId, playlistExternalId, tracks, metadata),
-    createPlaylist: (providerId, name, description, tracks) => ipcRenderer.invoke('sync:create-playlist', providerId, name, description, tracks),
+    createPlaylist: (providerId, name, description, tracks, localPlaylistId = null) => ipcRenderer.invoke('sync:create-playlist', providerId, name, description, tracks, localPlaylistId),
     resolveTracks: (providerId, tracks) => ipcRenderer.invoke('sync:resolve-tracks', providerId, tracks),
     cleanupDuplicatePlaylists: (providerId) => ipcRenderer.invoke('sync:cleanup-duplicate-playlists', providerId),
     saveTracks: (providerId, trackIds) => ipcRenderer.invoke('sync:save-tracks', providerId, trackIds),
@@ -353,6 +353,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('sync:progress', handler);
       return () => ipcRenderer.removeListener('sync:progress', handler);
     }
+  },
+
+  // Durable local→remote playlist ID links (survives syncedTo loss)
+  syncLinks: {
+    getAll: () => ipcRenderer.invoke('sync-links:get-all'),
+    set: (localPlaylistId, providerId, externalId) => ipcRenderer.invoke('sync-links:set', localPlaylistId, providerId, externalId),
+    remove: (localPlaylistId, providerId) => ipcRenderer.invoke('sync-links:remove', localPlaylistId, providerId)
   },
 
   // Playback window operations (for Bandcamp, etc. with autoplay)
