@@ -39322,6 +39322,18 @@ useEffect(() => {
             // No sync needed
             if (!hasRemoteUpdates && !hasLocalChanges) return null;
 
+            // Hosted XSPF playlists have a stronger upstream than the remote
+            // provider: the hosted URL poller runs every 5 minutes and will
+            // revert any pulled tracks by re-applying the XSPF. Pull on a
+            // hosted playlist is therefore a no-op (or worse — the
+            // subsequent push would overwrite the remote changes anyway).
+            // Suppress the pull UI entirely and treat conflict as push-only.
+            const isHosted = !!playlist.sourceUrl;
+            if (isHosted && !hasLocalChanges) {
+              // Pure pull state would be meaningless — the XSPF poller wins.
+              return null;
+            }
+
             // Determine sync state and which version is newer
             const localModTime = playlist.lastModified || 0;
             const lastSyncTime = playlist.syncSources?.[provider]?.syncedAt || 0;
@@ -39331,7 +39343,12 @@ useEffect(() => {
 
             // Sync state: 'push' | 'pull' | 'conflict'
             let syncState;
-            if (hasLocalChanges && hasRemoteUpdates) {
+            if (isHosted) {
+              // Hosted playlists always express state as push: the XSPF is
+              // canonical, so remote changes (even concurrent with local)
+              // will be overwritten by the next push from the XSPF.
+              syncState = 'push';
+            } else if (hasLocalChanges && hasRemoteUpdates) {
               syncState = 'conflict';
             } else if (hasLocalChanges) {
               syncState = 'push';
