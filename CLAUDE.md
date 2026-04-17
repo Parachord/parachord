@@ -62,11 +62,130 @@ Main component: `const Parachord = () => { ... }` (L4951), rendered via `ReactDO
 
 ## Syncing System
 
-### Playlist Sync
+### Playlist Sync Overview
 - `syncSetupModal` (L5361): Multi-step wizard (options -> playlists -> syncing -> complete)
 - Providers: spotify, applemusic (primary); also librefm, listenbrainz for scrobbling
 - Settings loaded via `window.electron.syncSettings.load()`, saved per-provider via `.setProvider()`
 - `suppressSync(providerId, externalId)`: Prevents future auto-sync for a removed playlist
+
+### Playlist Sync Data Model
+
+Every local playlist object can carry these sync-related fields. **Any client (desktop, Android, etc.) MUST preserve all of them on every save path or duplicates get created.**
+
+| Field | Direction | Meaning |
+|---|---|---|
+| `syncedFrom: { resolver, externalId, snapshotId, ownerId }` | remote → local | This playlist was imported from that remote. Pull updates apply to it. |
+| `syncedTo: { [providerId]: { externalId, snapshotId, syncedAt, unresolvedTracks, pendingAction } }` | local → remote | This playlist has been (or should be) pushed to those remotes. Push updates go there. |
+| `syncSources: { [providerId]: { addedAt, syncedAt } }` | metadata | When items were added on each provider, for last-sync timestamps. |
+| `hasUpdates: boolean` | remote → local | Remote `snapshotId` differs from ours. Shown as "pull" banner. |
+| `locallyModified: boolean` | local → remote | Local content changed since last sync. Triggers the push branch. |
+| `lastModified: number` | local | Timestamp of the last local content change. |
+| `localOnly: boolean` | intent | User opted this playlist out of all provider sync. |
+| `sourceUrl: string` | hosted XSPF | Playlist mirrors a remote XSPF URL, polled every 5 min. |
+| `id` | local | Local playlist ID. Imported playlists use `${providerId}-${externalId}`; manually created use `playlist-${Date.now()}`, `ai-chat-${Date.now()}`, `hosted-${hash(url)}`, etc. |
+
+### Durable Link Map (`sync_playlist_links`)
+
+`syncedTo[providerId].externalId` on the playlist object is the primary local→remote link, but it's fragile: any save path that forgets to forward the field drops it. To prevent duplicate creation when that happens, we maintain a parallel map in electron-store:
+
+```
+sync_playlist_links = {
+  [localPlaylistId]: {
+    [providerId]: { externalId, syncedAt }
+  }
+}
+```
+
+**Rules:**
+- **Only the main process writes it** (see `setSyncLink`, `removeSyncLink`, `migrateSyncLinksFromPlaylists` in main.js). Renderer playlist saves cannot clobber it.
+- Written on successful create or link inside `sync:create-playlist`.
+- Pruned when `cleanupDuplicatePlaylists` deletes a remote.
+- Populated on every startup from existing `syncedTo` data (idempotent migration) — ensures users upgrading never lose existing links.
+- The renderer can read it via `window.electron.syncLinks.getAll()` but usually doesn't need to.
+
+### Three-Layer Duplicate Prevention
+
+All remote-playlist writes flow through the `sync:create-playlist` IPC handler (main.js L5689+). Before calling `provider.createPlaylist`, the handler checks for an existing remote in this order:
+
+1. **ID link via `sync_playlist_links[localPlaylistId][providerId]`.** If present, fetch the user's owned remote playlists and verify the stored `externalId` still exists. Match → reuse (pushes tracks, returns the existing ID). Gone → remove the stale link, fall through.
+2. **ID link via `syncedTo[providerId].externalId` on the playlist.** Same validation logic. (In practice the renderer already short-circuits this case before calling the IPC, but the handler re-checks for robustness.)
+3. **Name match fallback** (trim + lowercase, user-owned only). Picks the richest match if multiple exist. Last-ditch cover for legacy data where no ID link survived.
+
+Only if all three fail does `provider.createPlaylist` actually create a new remote. On success, both `sync_playlist_links` and the caller's `syncedTo` must be populated.
+
+### In-Session Mutex
+
+The renderer has **two independent code paths** that can call `sync.createPlaylist`:
+
+- Background sync timer (every 15 min, app.js L5750+)
+- Manual sync post-IIFE after the wizard completes (app.js L9377+)
+
+Both loops read `local_playlists`, iterate, and push. Without coordination they race: both read a playlist without `syncedTo`, both call `sync.createPlaylist`, both create remotes.
+
+**Mitigation:** `playlistSyncInProgressRef` (app.js L5700), a simple renderer-side boolean ref. Each path acquires it before the creation loop and releases in `finally`. If already held, the path skips with a log message. This is belt-and-suspenders with the IPC-level dedup above.
+
+### Required: Pass `localPlaylistId` When Calling Create
+
+The IPC signature is:
+```js
+window.electron.sync.createPlaylist(providerId, name, description, tracks, localPlaylistId)
+```
+
+**Always pass `localPlaylistId`** (it's the local playlist's `id` field). Without it:
+- Step 1 (sync_playlist_links lookup) is skipped — we can't look up a link without a key.
+- `setSyncLink` on success is skipped — the durable map stays empty for this playlist.
+
+Only the name-match fallback protects you. Don't rely on it.
+
+### Cleanup: Relink Orphans, Then Dedup
+
+`sync:cleanup-duplicate-playlists` (main.js L6025+) runs two phases:
+
+**Phase 1 — Relink orphans** (via shared helper `relinkOrphansFor`). A local playlist is "orphaned" for a provider if it has tracks, isn't `localOnly`, and has no `syncedTo[providerId]`, `syncedFrom` for that provider, nor `sync_playlist_links` entry. For each orphan with an unambiguous 1:1 name match against a user-owned remote, write both `syncedTo[providerId]` and the link map entry. Ambiguous cases (multiple locals same name, OR multiple remotes same name) are surfaced in the response as `ambiguous` — never automatically resolved.
+
+**Phase 2 — Link-aware deduplication.** Group remote owned playlists by `trim().toLowerCase(name)`. For each group with >1 member:
+- **If exactly one remote is linked** to any local (via `syncedTo`, `syncedFrom`, or the link map) → that remote is the keeper. Track counts don't matter.
+- **If multiple remotes in the group each have distinct local references** → group is ambiguous, skip entirely. Do not delete anything.
+- **If no linked remotes** → fallback: most tracks, tiebreak on most recent `snapshotId`.
+
+Keeper selection guarantees no local ever gets silently re-pointed to a copy it wasn't synced with. Phase 1 must run before Phase 2 so the keeper check sees freshly-written links.
+
+### Hosted XSPF Semantics
+
+A playlist with `sourceUrl` is a **hosted XSPF** — it mirrors a remote URL polled every 5 minutes (`pollHostedPlaylists` effect, app.js L32167+). The XSPF is canonical; Spotify (if linked) is a passive mirror.
+
+Flow:
+1. Poller fetches `sourceUrl`. If `content !== playlist.xspf`, call `handleImportPlaylistFromUrl` → replaces `tracks`, sets `locallyModified: true`.
+2. Next sync push loop pushes local tracks to Spotify via `updatePlaylistTracks` (full replace).
+3. Spotify's own state (if changed since last sync) is overwritten.
+
+**Sync banner behavior for hosted playlists** (app.js L39315+): the "pull" option is suppressed. A pull would briefly replace local tracks with Spotify's, but the 5-min poller would revert it and the next sync push would overwrite Spotify again — effectively a no-op with confusing UX. For hosted playlists:
+- `hasUpdates=true, locallyModified=false` → banner hidden (pull is useless).
+- `locallyModified=true` → banner shows as push (XSPF is ready to go upstream).
+- Conflict (both flags) → rendered as push (XSPF wins anyway).
+
+### Sync IPC Surface
+
+| Handler | Purpose |
+|---|---|
+| `sync:start` | Full sync for a provider: fetch remote library, import into collection and selected playlists. Does NOT create remote playlists. |
+| `sync:fetch-playlists` | Fetch a provider's owned+followed playlists list (used by the wizard). |
+| `sync:fetch-playlist-tracks` | Pull one playlist's tracks from a provider. |
+| `sync:push-playlist` | Push tracks to an *existing* remote playlist (replace). |
+| `sync:create-playlist` | Create OR link to a remote playlist. All three dedup layers live here. `(providerId, name, description, tracks, localPlaylistId)`. |
+| `sync:resolve-tracks` | Resolve local tracks to provider-specific IDs/URIs. |
+| `sync:cleanup-duplicate-playlists` | Relink orphans, then dedup remote owned playlists. |
+| `sync:relink-orphaned-playlists` | Standalone relink. Rarely needed — cleanup calls it. |
+| `sync-links:get-all` / `:set` / `:remove` | Direct access to the durable link map. |
+
+### Invariants & Traps
+
+- **Don't drop `syncedTo` on save.** The most common regression. Any place that builds a save payload must copy `syncedTo`, `syncedFrom`, `syncSources`, `hasUpdates`, `locallyModified`, `sourceUrl`, `source` from the input. See `savePlaylistToStore` (app.js L24946) as the reference shape.
+- **Always pass `localPlaylistId` to `sync:create-playlist`.**
+- **Never create a remote playlist outside `sync:create-playlist`.** That's the only gateway with dedup.
+- **Imported playlist ID convention:** `${providerId}-${externalId}`. The creation loop has a guard `if (playlist.id?.startsWith(\`${providerId}-\`)) continue;` — so imported playlists never get re-pushed even if `syncedFrom` was cleared.
+- **Main.js `sync:start` clears `syncedFrom` when the remote no longer exists** — but only if the response looks complete (>70% of previously-synced playlists still present). Guards against mass-duplicate creation on partial API responses.
+- **Bulk save on Android** must guarantee `sync_playlist_links` writes are durable independently of playlist object writes (separate keys, separate transactions). The whole point of the map is to survive playlist-save bugs.
 
 ### Track/Album/Artist Sync
 - After playback, fire-and-forget pushes to enabled sync providers
