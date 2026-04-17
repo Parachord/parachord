@@ -660,7 +660,7 @@ const AppleMusicSyncProvider = {
     const resp = await fetch(
       `${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlistId}/tracks`,
       {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${developerToken}`,
           'Music-User-Token': userToken,
