@@ -141,6 +141,33 @@ jobs:
           cp scripts/codesign-retry.sh "$HOME/.local/bin/codesign"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # Diagnostic: verify Apple notarization credentials before spending time
+      # building. @electron/notarize@2.2.1 crashes on non-JSON notarytool output
+      # (see "Unexpected token 'E'" JSON.parse error), which swallows the
+      # underlying Apple error. Running notarytool directly surfaces the real
+      # message (401 auth failure, 403 Team ID mismatch, etc.).
+      # continue-on-error so this is purely informational — never fails the build.
+      - name: Diagnose notarization credentials
+        if: matrix.platform == 'mac' && startsWith(github.ref, 'refs/tags/v')
+        continue-on-error: true
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "=== Apple credential presence ==="
+          echo "APPLE_ID:                    ${APPLE_ID:+SET (${#APPLE_ID} chars)}${APPLE_ID:-UNSET}"
+          echo "APPLE_TEAM_ID:               ${APPLE_TEAM_ID:+SET (${#APPLE_TEAM_ID} chars)}${APPLE_TEAM_ID:-UNSET}"
+          echo "APPLE_APP_SPECIFIC_PASSWORD: ${APPLE_APP_SPECIFIC_PASSWORD:+SET (${#APPLE_APP_SPECIFIC_PASSWORD} chars)}${APPLE_APP_SPECIFIC_PASSWORD:-UNSET}"
+          echo ""
+          echo "=== notarytool history (recent submissions) ==="
+          xcrun notarytool history \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" 2>&1 | head -40 || true
+          echo ""
+          echo "=== End diagnostic ==="
+
       - name: Build for ${{ matrix.platform }}
         run: npm run build:${{ matrix.platform }} -- --${{ matrix.arch }} --publish never
         env:
