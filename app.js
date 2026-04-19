@@ -28639,22 +28639,49 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       const batch = [];
 
+      // Per-service counters for diagnostic logging. Helps identify which
+      // side is short when a user reports "sync missed some friends".
+      let lastfmSeen = 0;
+      let lastfmAdded = 0;
+      let lbSeen = 0;
+      let lbAdded = 0;
+
       // ---- Last.fm: user.getFriends ------------------------------------
+      //
+      // Paginated. 50 per page default; Last.fm caps limit at ~500 but we
+      // use 200 to stay comfortably under rate limits. Response meta has
+      // `@attr.totalPages` — loop until we've fetched them all.
       if (apiKey && lastfmUsername) {
         try {
-          const url = `https://ws.audioscrobbler.com/2.0/?method=user.getfriends&user=${encodeURIComponent(lastfmUsername)}&api_key=${apiKey}&format=json&limit=50`;
-          const resp = await lastfmFetch(url);
-          if (resp.ok) {
+          const PAGE_LIMIT = 200;
+          let page = 1;
+          let totalPages = 1;
+          // Hard cap as defense against a runaway response claiming
+          // absurd page counts. 50 * 200 = 10k friends — more than
+          // enough for any real user.
+          const MAX_PAGES = 50;
+          do {
+            const url = `https://ws.audioscrobbler.com/2.0/?method=user.getfriends&user=${encodeURIComponent(lastfmUsername)}&api_key=${apiKey}&format=json&limit=${PAGE_LIMIT}&page=${page}`;
+            const resp = await lastfmFetch(url);
+            if (!resp.ok) {
+              console.warn(`[Friends] Last.fm getfriends page ${page} returned ${resp.status}`);
+              break;
+            }
             const data = await resp.json();
             const users = data.friends?.user || [];
+            // Last.fm quirk: `@attr.totalPages` arrives as a string.
+            const attrTotal = parseInt(data.friends?.['@attr']?.totalPages || '1', 10);
+            if (!Number.isNaN(attrTotal) && attrTotal > 0) totalPages = attrTotal;
+
             for (const u of users) {
               const uname = u.name;
               if (!uname) continue;
+              lastfmSeen++;
               const key = friendKey('lastfm', uname);
               if (existingKeys.has(key) || hiddenKeys.has(key)) continue;
               const avatar = u.image?.[2]?.['#text'] || u.image?.[1]?.['#text'] || null;
               batch.push({
-                id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${lastfmAdded}`,
                 username: uname,
                 service: 'lastfm',
                 displayName: u.realname?.trim() || uname,
@@ -28664,17 +28691,26 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
                 cachedRecentTrack: null,
                 savedToCollection: false
               });
-              existingKeys.add(key); // guard against same service returning dupes
+              existingKeys.add(key);
+              lastfmAdded++;
             }
-          } else {
-            console.warn(`[Friends] Last.fm getfriends returned ${resp.status}`);
-          }
+            // If Last.fm returns fewer users than the requested page size,
+            // we've hit the end even if totalPages says otherwise (happens
+            // on the final page of some endpoints).
+            if (users.length < PAGE_LIMIT) break;
+            page++;
+          } while (page <= totalPages && page <= MAX_PAGES);
+          console.log(`[Friends] Last.fm: ${lastfmSeen} friend(s) found, ${lastfmAdded} new after dedup/hide filter`);
         } catch (err) {
           console.warn('[Friends] Last.fm sync failed:', err.message);
         }
       }
 
       // ---- ListenBrainz: /user/{name}/following ------------------------
+      //
+      // Returns the full following list in one response (no pagination in
+      // the public API). Response shape varies by ListenBrainz version —
+      // can be plain strings or objects with `musicbrainz_id` / `user_name`.
       if (lbUsername) {
         try {
           const resp = await fetch(
@@ -28683,18 +28719,20 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           if (resp.ok) {
             const data = await resp.json();
             const following = data.following || [];
+            console.log(`[Friends] ListenBrainz: raw /following returned ${following.length} entries`);
             for (const entry of following) {
-              // ListenBrainz returns an array of usernames (strings) or
-              // objects depending on API version — handle both.
-              const uname = typeof entry === 'string' ? entry : entry?.musicbrainz_id || entry?.user_name;
+              const uname = typeof entry === 'string'
+                ? entry
+                : (entry?.musicbrainz_id || entry?.user_name || entry?.name);
               if (!uname) continue;
+              lbSeen++;
               const key = friendKey('listenbrainz', uname);
               if (existingKeys.has(key) || hiddenKeys.has(key)) continue;
               batch.push({
-                id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${lbAdded}`,
                 username: uname,
                 service: 'listenbrainz',
-                displayName: uname, // ListenBrainz doesn't provide display names
+                displayName: uname,
                 avatarUrl: null,
                 addedAt: Date.now(),
                 lastFetched: 0,
@@ -28702,7 +28740,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
                 savedToCollection: false
               });
               existingKeys.add(key);
+              lbAdded++;
             }
+            console.log(`[Friends] ListenBrainz: ${lbSeen} valid, ${lbAdded} new after dedup/hide filter`);
           } else {
             console.warn(`[Friends] ListenBrainz following returned ${resp.status}`);
           }
@@ -28711,8 +28751,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       }
 
-      if (batch.length === 0) {
-        if (!silent) showToast('No new friends to sync', 'info');
+      const totalSeen = lastfmSeen + lbSeen;
+
+      // Zero-returned path: the APIs gave us nothing at all. Usually means
+      // credentials are stale/wrong, or both services legit have no
+      // follow graph for this user. Surface it so the user can tell
+      // the difference from "all already synced".
+      if (totalSeen === 0) {
+        if (!silent) {
+          const parts = [];
+          if (apiKey && lastfmUsername) parts.push('Last.fm');
+          if (lbUsername) parts.push('ListenBrainz');
+          if (parts.length === 0) {
+            showToast('No Last.fm or ListenBrainz account connected', 'error');
+          } else {
+            showToast(`No friends returned from ${parts.join(' or ')}. Check Settings.`, 'info');
+          }
+        }
         return 0;
       }
 
@@ -28725,16 +28780,19 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const deduped = batch.filter(f => !currentKeys.has(friendKey(f.service, f.username)));
 
       if (deduped.length === 0) {
-        if (!silent) showToast('No new friends to sync', 'info');
+        // Distinguish "already had everyone" from "found nothing at all"
+        if (!silent) {
+          showToast(`All ${totalSeen} friend${totalSeen === 1 ? '' : 's'} already in your list`, 'info');
+        }
         return 0;
       }
 
       setFriends(prev => [...prev, ...deduped]);
-      console.log(`[Friends] Synced ${deduped.length} new friend(s) from services`);
+      console.log(`[Friends] Synced ${deduped.length} new friend(s); saw ${totalSeen} total across services (lastfm=${lastfmSeen}, lb=${lbSeen})`);
 
       if (!silent) {
         const n = deduped.length;
-        showToast(`Synced ${n} new friend${n === 1 ? '' : 's'}`, 'success');
+        showToast(`Synced ${n} new friend${n === 1 ? '' : 's'} (${totalSeen} total across services)`, 'success');
       }
       return deduped.length;
     } finally {
