@@ -6065,6 +6065,15 @@ const Parachord = () => {
   const [friends, setFriends] = useState([]);
   const [pinnedFriendIds, setPinnedFriendIds] = useState([]);
   const [autoPinnedFriendIds, setAutoPinnedFriendIds] = useState([]); // Friends auto-pinned due to being on-air
+  // Hidden friend keys — `${service}:${username_lowercase}` strings for friends
+  // the user has explicitly removed. Prevents the next inbound sync pull from
+  // re-adding them. Load-bearing for Last.fm (whose friend API is deprecated
+  // and can't accept unfollow writes); belt-and-suspenders for ListenBrainz.
+  const [hiddenFriendKeys, setHiddenFriendKeys] = useState([]);
+  const hiddenFriendKeysRef = useRef([]);
+  useEffect(() => { hiddenFriendKeysRef.current = hiddenFriendKeys; }, [hiddenFriendKeys]);
+  // Sync in progress flag for manual button UX
+  const [friendSyncInProgress, setFriendSyncInProgress] = useState(false);
   const [newlyPinnedFriendIds, setNewlyPinnedFriendIds] = useState(new Set()); // Track newly added friends for animation
   const [movedFriendIds, setMovedFriendIds] = useState(new Set()); // Track friends that moved position for animation
   const [currentFriend, setCurrentFriend] = useState(null);
@@ -6676,6 +6685,7 @@ const Parachord = () => {
         { value: 'alpha-asc', label: 'A-Z' },
         { value: 'alpha-desc', label: 'Z-A' },
         { value: 'recent', label: 'Recently Added' },
+        { value: 'activity', label: 'Most Recent Activity' },
         { value: 'on-air', label: 'On Air Now' }
       ];
     }
@@ -13531,6 +13541,13 @@ ${trackListXml}
     }
   }, [autoPinnedFriendIds, cacheLoaded]);
 
+  // Persist hidden friend keys to storage (only after cache is loaded to avoid overwriting)
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('hidden_friend_keys', hiddenFriendKeys);
+    }
+  }, [hiddenFriendKeys, cacheLoaded]);
+
   // Persist AI include history preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     aiIncludeHistoryRef.current = aiIncludeHistory;
@@ -19542,7 +19559,7 @@ ${trackListXml}
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
-        'autoPinnedFriendIds', 'resolver_volume_offsets', 'saved_volume',
+        'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
         'preferred_spotify_device_id', 'skip_external_prompt',
         'auto_launch_spotify', 'skip_unsaved_friend_warning', 'remember_queue',
         'show_discovery_badges', 'playlists_view_mode', 'ai_include_history',
@@ -19916,6 +19933,7 @@ ${trackListXml}
       const savedFriends = d['friends'];
       const savedPinnedFriendIds = d['pinnedFriendIds'];
       const savedAutoPinnedFriendIds = d['autoPinnedFriendIds'];
+      const savedHiddenFriendKeys = d['hidden_friend_keys'];
       const savedVolumeOffsets = d['resolver_volume_offsets'];
       const savedVolume = d['saved_volume'];
       const savedPreferredDevice = d['preferred_spotify_device_id'];
@@ -20052,6 +20070,17 @@ ${trackListXml}
         const dedupedIds = [...new Set(savedAutoPinnedFriendIds)];
         setAutoPinnedFriendIds(dedupedIds);
         console.log(`📌 Loaded ${dedupedIds.length} auto-pinned friends from storage`);
+      }
+
+      // Load hidden friend keys — the allowlist that keeps removed friends from
+      // being re-added on the next inbound sync pull.
+      if (savedHiddenFriendKeys && Array.isArray(savedHiddenFriendKeys)) {
+        const dedupedKeys = [...new Set(savedHiddenFriendKeys.filter(k => typeof k === 'string'))];
+        setHiddenFriendKeys(dedupedKeys);
+        hiddenFriendKeysRef.current = dedupedKeys;
+        if (dedupedKeys.length > 0) {
+          console.log(`👥 Loaded ${dedupedKeys.length} hidden friend key(s) from storage`);
+        }
       }
 
       // Load volume normalization offsets
@@ -28518,6 +28547,201 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Add a friend from username or URL
+  // Build `${service}:${username_lowercase}` key used in the hidden-friends
+  // allowlist and dedup logic during sync.
+  const friendKey = (service, username) => `${service}:${(username || '').toLowerCase()}`;
+
+  // Follow a user on their service so other Parachord clients pick up the add.
+  // ListenBrainz has a proper follow API; Last.fm's was deprecated in 2018.
+  const followOnService = async (friend) => {
+    try {
+      if (friend.service === 'listenbrainz') {
+        const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+        const token = listenbrainzConfig?.userToken;
+        if (!token) return; // not authenticated — silent no-op
+        const resp = await fetch(
+          `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/follow`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Token ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        if (!resp.ok) {
+          console.warn(`[Friends] ListenBrainz follow failed for ${friend.username}: ${resp.status}`);
+        } else {
+          console.log(`[Friends] Followed ${friend.username} on ListenBrainz`);
+        }
+      }
+      // Last.fm: no-op. user.addFriend is deprecated.
+    } catch (err) {
+      console.warn(`[Friends] followOnService failed for ${friend.username}:`, err.message);
+    }
+  };
+
+  // Unfollow a user on their service when removing locally. ListenBrainz
+  // supports this; Last.fm does not. For Last.fm the hidden-keys allowlist
+  // is what keeps the removal durable across sync cycles.
+  const unfollowOnService = async (friend) => {
+    try {
+      if (friend.service === 'listenbrainz') {
+        const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+        const token = listenbrainzConfig?.userToken;
+        if (!token) return;
+        const resp = await fetch(
+          `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/follow`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Token ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        if (!resp.ok && resp.status !== 404) {
+          console.warn(`[Friends] ListenBrainz unfollow failed for ${friend.username}: ${resp.status}`);
+        } else {
+          console.log(`[Friends] Unfollowed ${friend.username} on ListenBrainz`);
+        }
+      }
+      // Last.fm: no-op. Hidden-keys allowlist enforces the removal.
+    } catch (err) {
+      console.warn(`[Friends] unfollowOnService failed for ${friend.username}:`, err.message);
+    }
+  };
+
+  // Sync friends from Last.fm and ListenBrainz into the local `friends` state.
+  //
+  // Inbound pull only — outbound follow/unfollow happens inline with
+  // addFriend/removeFriend. Idempotent: dedups against existing friends AND
+  // the hidden-keys allowlist so removed friends never creep back in.
+  //
+  // Returns the number of new friends added (for toast UX on manual trigger).
+  const syncFriendsFromServices = async ({ silent = true } = {}) => {
+    if (friendSyncInProgress) return 0;
+    setFriendSyncInProgress(true);
+    try {
+      const lastfmConfig = metaServiceConfigs.lastfm;
+      const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+
+      const apiKey = getLastfmApiKey();
+      const lastfmUsername = lastfmConfig?.username;
+      const lbUsername = listenbrainzConfig?.username;
+
+      // Build lookup sets against fresh refs (avoids stale closure during
+      // the periodic sync, which fires from a setInterval callback).
+      const existingKeys = new Set(
+        friendsRef.current.map(f => friendKey(f.service, f.username))
+      );
+      const hiddenKeys = new Set(hiddenFriendKeysRef.current);
+
+      const batch = [];
+
+      // ---- Last.fm: user.getFriends ------------------------------------
+      if (apiKey && lastfmUsername) {
+        try {
+          const url = `https://ws.audioscrobbler.com/2.0/?method=user.getfriends&user=${encodeURIComponent(lastfmUsername)}&api_key=${apiKey}&format=json&limit=50`;
+          const resp = await lastfmFetch(url);
+          if (resp.ok) {
+            const data = await resp.json();
+            const users = data.friends?.user || [];
+            for (const u of users) {
+              const uname = u.name;
+              if (!uname) continue;
+              const key = friendKey('lastfm', uname);
+              if (existingKeys.has(key) || hiddenKeys.has(key)) continue;
+              const avatar = u.image?.[2]?.['#text'] || u.image?.[1]?.['#text'] || null;
+              batch.push({
+                id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                username: uname,
+                service: 'lastfm',
+                displayName: u.realname?.trim() || uname,
+                avatarUrl: avatar,
+                addedAt: Date.now(),
+                lastFetched: 0,
+                cachedRecentTrack: null,
+                savedToCollection: false
+              });
+              existingKeys.add(key); // guard against same service returning dupes
+            }
+          } else {
+            console.warn(`[Friends] Last.fm getfriends returned ${resp.status}`);
+          }
+        } catch (err) {
+          console.warn('[Friends] Last.fm sync failed:', err.message);
+        }
+      }
+
+      // ---- ListenBrainz: /user/{name}/following ------------------------
+      if (lbUsername) {
+        try {
+          const resp = await fetch(
+            `https://api.listenbrainz.org/1/user/${encodeURIComponent(lbUsername)}/following`
+          );
+          if (resp.ok) {
+            const data = await resp.json();
+            const following = data.following || [];
+            for (const entry of following) {
+              // ListenBrainz returns an array of usernames (strings) or
+              // objects depending on API version — handle both.
+              const uname = typeof entry === 'string' ? entry : entry?.musicbrainz_id || entry?.user_name;
+              if (!uname) continue;
+              const key = friendKey('listenbrainz', uname);
+              if (existingKeys.has(key) || hiddenKeys.has(key)) continue;
+              batch.push({
+                id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                username: uname,
+                service: 'listenbrainz',
+                displayName: uname, // ListenBrainz doesn't provide display names
+                avatarUrl: null,
+                addedAt: Date.now(),
+                lastFetched: 0,
+                cachedRecentTrack: null,
+                savedToCollection: false
+              });
+              existingKeys.add(key);
+            }
+          } else {
+            console.warn(`[Friends] ListenBrainz following returned ${resp.status}`);
+          }
+        } catch (err) {
+          console.warn('[Friends] ListenBrainz sync failed:', err.message);
+        }
+      }
+
+      if (batch.length === 0) {
+        if (!silent) showToast('No new friends to sync', 'info');
+        return 0;
+      }
+
+      // Apply-time dedup against the very latest friendsRef in case another
+      // code path added a friend while we were fetching. Avoids duplicates
+      // from two desktop instances syncing the same account concurrently.
+      const currentKeys = new Set(
+        friendsRef.current.map(f => friendKey(f.service, f.username))
+      );
+      const deduped = batch.filter(f => !currentKeys.has(friendKey(f.service, f.username)));
+
+      if (deduped.length === 0) {
+        if (!silent) showToast('No new friends to sync', 'info');
+        return 0;
+      }
+
+      setFriends(prev => [...prev, ...deduped]);
+      console.log(`[Friends] Synced ${deduped.length} new friend(s) from services`);
+
+      if (!silent) {
+        const n = deduped.length;
+        showToast(`Synced ${n} new friend${n === 1 ? '' : 's'}`, 'success');
+      }
+      return deduped.length;
+    } finally {
+      setFriendSyncInProgress(false);
+    }
+  };
+
   const addFriend = async (input) => {
     setAddFriendLoading(true);
 
@@ -28592,6 +28816,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // (only manually pinned friends via context menu/drag stay permanently)
       setAutoPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
 
+      // If the user previously hid this friend, un-hide so the next sync
+      // doesn't skip them. Adding via the modal IS the un-hide escape hatch.
+      const key = friendKey(finalService, userInfo.username);
+      if (hiddenFriendKeysRef.current.includes(key)) {
+        setHiddenFriendKeys(prev => prev.filter(k => k !== key));
+      }
+
+      // Outbound push: follow on ListenBrainz (no-op on Last.fm). Fire-and-forget.
+      followOnService(newFriend);
+
       setAddFriendModalOpen(false);
       setAddFriendInput('');
       showToast(`${newFriend.displayName} pinned to sidebar`);
@@ -28605,12 +28839,20 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Remove a friend completely (deletes from friends list and unpins)
+  // Remove a friend completely (deletes from friends list and unpins).
+  // Also records the `${service}:${username}` in the hidden-keys allowlist
+  // so the next inbound sync doesn't re-add them, and pushes an unfollow to
+  // the service (ListenBrainz only — Last.fm's friend API is deprecated).
   const removeFriend = (friendId) => {
     const friend = friends.find(f => f.id === friendId);
     setFriends(prev => prev.filter(f => f.id !== friendId));
     setPinnedFriendIds(prev => prev.filter(id => id !== friendId));
     if (friend) {
+      const key = friendKey(friend.service, friend.username);
+      setHiddenFriendKeys(prev => prev.includes(key) ? prev : [...prev, key]);
+      // Outbound push: unfollow on ListenBrainz (no-op on Last.fm).
+      // Fire-and-forget — local removal stands even if the API call fails.
+      unfollowOnService(friend);
       showToast(`${friend.displayName} removed`);
     }
   };
@@ -29025,6 +29267,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   activateListenAlongRef.current = activateListenAlong;
   deactivateListenAlongRef.current = deactivateListenAlong;
 
+  // Periodic friend-graph sync (every 15th activity tick = ~30 min when the
+  // normal 2-min cadence is in effect). Decouples friend-graph fetches from
+  // the 2-min recent-track fetches — friend graphs change orders of
+  // magnitude less often, so there's no value polling them every 2 min.
+  const friendSyncTickCounterRef = useRef(0);
+  const SYNC_TICK_INTERVAL = 15;
+
   // Poll friends for on-air status (pinned friends + saved friends for auto-pinning)
   const hasSavedFriends = friends.some(f => f.savedToCollection);
   useEffect(() => {
@@ -29034,7 +29283,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       // Set up polling interval - faster when listen-along is active
       const pollInterval = listenAlongFriend ? 15 * 1000 : 2 * 60 * 1000; // 15 seconds vs 2 minutes
-      friendPollIntervalRef.current = setInterval(refreshPinnedFriends, pollInterval);
+      friendPollIntervalRef.current = setInterval(() => {
+        refreshPinnedFriends();
+        // Periodic friend-graph sync gate
+        friendSyncTickCounterRef.current += 1;
+        if (friendSyncTickCounterRef.current >= SYNC_TICK_INTERVAL) {
+          friendSyncTickCounterRef.current = 0;
+          syncFriendsFromServices({ silent: true });
+        }
+      }, pollInterval);
 
       return () => {
         if (friendPollIntervalRef.current) {
@@ -29043,6 +29300,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       };
     }
   }, [pinnedFriendIds.length, hasSavedFriends, listenAlongFriend]);
+
+  // Startup sync: one-time inbound pull after the bulk cache load completes
+  // and credentials are available. Fire-and-forget; activity poll fills
+  // cachedRecentTrack for anyone newly synced in on the next 2-min tick.
+  const friendStartupSyncDoneRef = useRef(false);
+  useEffect(() => {
+    if (!cacheLoaded) return;
+    if (friendStartupSyncDoneRef.current) return;
+    const lastfmConfig = metaServiceConfigs.lastfm;
+    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+    const hasCreds = !!(lastfmConfig?.username || listenbrainzConfig?.username);
+    if (!hasCreds) return;
+    friendStartupSyncDoneRef.current = true;
+    // Small delay so we don't thrash the network during startup.
+    setTimeout(() => syncFriendsFromServices({ silent: true }), 5000);
+  }, [cacheLoaded, metaServiceConfigs]);
 
   // Load friend's recent listening history
   const loadFriendRecentTracks = async (friend) => {
@@ -43151,6 +43424,37 @@ useEffect(() => {
                   onClick: () => setSyncMenuOpen(false)
                 })
               ),
+              // Sync friends button in header (only on friends tab).
+              // Manually triggers inbound pull from Last.fm + ListenBrainz.
+              // Disabled when no credentials exist; shows spinner during fetch.
+              collectionTab === 'friends' && (() => {
+                const lastfmConfig = metaServiceConfigs.lastfm;
+                const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+                const hasCreds = !!(lastfmConfig?.username || listenbrainzConfig?.username);
+                return React.createElement('button', {
+                  onClick: () => syncFriendsFromServices({ silent: false }),
+                  disabled: friendSyncInProgress || !hasCreds,
+                  title: hasCreds
+                    ? 'Sync friends from Last.fm and ListenBrainz'
+                    : 'Connect Last.fm or ListenBrainz in Settings to sync friends',
+                  className: 'ml-3 p-1.5 text-gray-500 hover:text-gray-700 transition-colors',
+                  style: { opacity: friendSyncInProgress || !hasCreds ? 0.4 : 1, cursor: hasCreds ? 'pointer' : 'not-allowed' }
+                },
+                  friendSyncInProgress
+                    ? React.createElement('svg', {
+                        className: 'w-5 h-5 animate-spin',
+                        fill: 'none', viewBox: '0 0 24 24'
+                      },
+                        React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
+                        React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
+                      )
+                    : React.createElement('svg', {
+                        className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                      },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                      )
+                );
+              })(),
               // Add Friend button in header (only on friends tab)
               collectionTab === 'friends' && React.createElement('button', {
                 onClick: () => setAddFriendModalOpen(true),
@@ -43700,6 +44004,14 @@ useEffect(() => {
                 if (sort === 'alpha-asc') return a.displayName.localeCompare(b.displayName);
                 if (sort === 'alpha-desc') return b.displayName.localeCompare(a.displayName);
                 if (sort === 'recent') return b.addedAt - a.addedAt;
+                if (sort === 'activity') {
+                  // Most Recent Activity — sort everyone by last-track timestamp,
+                  // newest first. Unlike 'on-air' this does NOT filter out
+                  // inactive friends; they just sink to the bottom (ts 0).
+                  const aTime = a.cachedRecentTrack?.timestamp || 0;
+                  const bTime = b.cachedRecentTrack?.timestamp || 0;
+                  return bTime - aTime;
+                }
                 if (sort === 'on-air') {
                   const aOnAir = isOnAir(a);
                   const bOnAir = isOnAir(b);
