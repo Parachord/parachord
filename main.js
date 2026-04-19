@@ -2882,10 +2882,13 @@ ipcMain.handle('soundcloud-check-token', async () => {
       });
 
       if (!response.ok) {
-        // Try to get error details from response body
+        // Try to get error details from response body. Parsed twice-indirectly
+        // so we have both the string (for logging / the thrown error) and the
+        // structured body (for the clear-tokens decision below).
         let errorDetails = '';
+        let errorBody = null;
         try {
-          const errorBody = await response.json();
+          errorBody = await response.json();
           errorDetails = JSON.stringify(errorBody);
           console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
           console.error('   Error details:', errorDetails);
@@ -2893,8 +2896,16 @@ ipcMain.handle('soundcloud-check-token', async () => {
           console.error('❌ SoundCloud token refresh failed:', response.status, response.statusText);
         }
 
-        // On 401, the refresh token is invalid/expired - clear tokens so user can re-auth
-        if (response.status === 401) {
+        // Clear stored tokens when the refresh token itself is dead. Two
+        // signals indicate this:
+        //   - HTTP 401 (some providers return this for dead refresh tokens)
+        //   - RFC 6749 §5.2 `error: "invalid_grant"` in the body (what
+        //     SoundCloud actually returns, paired with HTTP 400)
+        // Without clearing, the next proactive-refresh tick retries the same
+        // dead refresh token forever, spamming 400s until the user manually
+        // disconnects and reconnects in Settings.
+        const bodyErrorCode = errorBody?.error || '';
+        if (response.status === 401 || bodyErrorCode === 'invalid_grant') {
           console.log('🔒 Clearing invalid SoundCloud tokens (refresh token expired or revoked)');
           store.delete('soundcloud_token');
           store.delete('soundcloud_refresh_token');
