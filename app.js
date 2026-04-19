@@ -6685,7 +6685,7 @@ const Parachord = () => {
         { value: 'alpha-asc', label: 'A-Z' },
         { value: 'alpha-desc', label: 'Z-A' },
         { value: 'recent', label: 'Recently Added' },
-        { value: 'activity', label: 'Most Recent Activity' },
+        { value: 'active', label: 'Recently Active' },
         { value: 'on-air', label: 'On Air Now' }
       ];
     }
@@ -44062,10 +44062,11 @@ useEffect(() => {
                 if (sort === 'alpha-asc') return a.displayName.localeCompare(b.displayName);
                 if (sort === 'alpha-desc') return b.displayName.localeCompare(a.displayName);
                 if (sort === 'recent') return b.addedAt - a.addedAt;
-                if (sort === 'activity') {
-                  // Most Recent Activity — sort everyone by last-track timestamp,
-                  // newest first. Unlike 'on-air' this does NOT filter out
-                  // inactive friends; they just sink to the bottom (ts 0).
+                if (sort === 'active') {
+                  // Recently Active — sort by last-track timestamp desc.
+                  // The 14-day inactivity filter is applied BELOW alongside
+                  // the on-air filter so it affects `displayFriends`, not
+                  // the intermediate `sortedFriends` used by `hasMatches`.
                   const aTime = a.cachedRecentTrack?.timestamp || 0;
                   const bTime = b.cachedRecentTrack?.timestamp || 0;
                   return bTime - aTime;
@@ -44091,10 +44092,18 @@ useEffect(() => {
                   )
                 : sortedFriends;
 
-              // Filter to only on-air if that sort is selected
-              const displayFriends = collectionSort.friends === 'on-air'
-                ? filtered.filter(f => isOnAir(f))
-                : filtered;
+              // Sort-driven filters:
+              //   on-air  → show only friends whose last track is < 10 min old
+              //   active  → show only friends with activity in the last 14 days
+              //             (mirrors Android's FriendSort.ACTIVE)
+              const ACTIVE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+              const activeCutoff = Date.now() - ACTIVE_WINDOW_MS;
+              const displayFriends =
+                collectionSort.friends === 'on-air'
+                  ? filtered.filter(f => isOnAir(f))
+                  : collectionSort.friends === 'active'
+                    ? filtered.filter(f => (f.cachedRecentTrack?.timestamp || 0) > activeCutoff)
+                    : filtered;
 
               if (displayFriends.length === 0 && collectionSearch) {
                 return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
@@ -44109,6 +44118,16 @@ useEffect(() => {
                   ),
                   React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends on air right now'),
                   React.createElement('p', { className: 'text-sm text-gray-400' }, 'Check back later to see who\'s listening')
+                );
+              }
+
+              if (displayFriends.length === 0 && collectionSort.friends === 'active') {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' })
+                  ),
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No friends active in the last 14 days'),
+                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Try a different sort to see all your friends')
                 );
               }
 

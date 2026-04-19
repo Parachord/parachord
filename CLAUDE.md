@@ -274,10 +274,10 @@ New friends are added with `savedToCollection: false` — same default as manual
 `collectionSort.friends` supports:
 - `alpha-asc`, `alpha-desc` — by `displayName`
 - `recent` — by `addedAt` descending ("Recently Added" in UI)
-- `activity` — by `cachedRecentTrack?.timestamp` descending, all friends, no filter ("Most Recent Activity" in UI)
+- `active` — friends with activity in the last 14 days, sorted by `cachedRecentTrack?.timestamp` descending ("Recently Active" in UI). Mirrors Android's `FriendSort.ACTIVE`.
 - `on-air` — filters to friends whose last track < 10 min old, sorted by activity
 
-Sort switch lives in the friends-tab branch of the collection view (app.js L43971+).
+Sort switch lives in the friends-tab branch of the collection view (app.js L43971+). Both `active` and `on-air` are filter-and-sort combined: an extra branch in the `displayFriends` derivation applies the inactivity cutoff alongside the on-air filter.
 
 ### Manual Sync UI
 
