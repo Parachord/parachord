@@ -8,6 +8,17 @@
 
 const APPLE_MUSIC_API_BASE = 'https://api.music.apple.com/v1';
 
+// Session-scoped kill-switch for the undocumented per-track DELETE endpoint.
+// `DELETE /v1/me/library/playlists/{id}/tracks/{libraryTrackId}` isn't part of
+// Apple's public contract; third-party clients have used it reliably for
+// years, but Apple could change it at any time. If we ever see HTTP 405
+// (Method Not Allowed) from that endpoint, we flip this flag and skip the
+// DELETE loop for the rest of the process lifetime — failing gracefully
+// back to append-only semantics without any user-visible error. Resets on
+// app restart, so if Apple restores the endpoint we recover automatically
+// at the cost of one wasted 405 per session.
+const amRemovalUnsupportedRef = { current: false };
+
 /**
  * Normalize a string for ID generation (lowercase, remove special chars)
  */
@@ -637,70 +648,100 @@ const AppleMusicSyncProvider = {
     };
   },
 
-  // Sync `tracks` to an Apple Music playlist.
+  // Sync `tracks` to an Apple Music playlist with full-replace semantics.
   //
-  // Apple Music's documented Library Playlists API only supports adding
-  // tracks (POST /me/library/playlists/{id}/tracks). There is no public
-  // endpoint to remove individual tracks from an existing library
-  // playlist, which means we cannot implement true "replace" semantics.
+  // Apple's *documented* Library Playlists API only exposes POST for
+  // tracks — so historically we implemented append-only. This version
+  // additionally uses the *undocumented* per-track DELETE endpoint
+  // (`DELETE /v1/me/library/playlists/{id}/tracks/{libraryTrackId}`) to
+  // remove tracks that are no longer in the requested list. Third-party
+  // Apple Music clients have used this endpoint reliably for years; if
+  // Apple ever returns 405 we flip the module-scope kill-switch and
+  // degrade silently to append-only for the rest of the session.
   //
-  // We approximate replace with a **diff-based append**:
-  //   1. GET the playlist's current tracks.
-  //   2. Build a set of existing Apple Music catalog IDs on the remote.
-  //   3. POST only the tracks from `tracks` that aren't already present.
+  // Diff algorithm:
+  //   1. Fetch current remote tracks.
+  //   2. Compute toRemove = remote rows whose catalog isn't in requested,
+  //      plus duplicate rows for catalogs that are in requested (collapse
+  //      to one instance — matches Spotify's behavior).
+  //   3. Compute toAdd = requested catalogs not currently on the remote.
+  //   4. DELETE toRemove (serial, rate-limited), then POST toAdd.
   //
-  // Trade-offs:
-  //   - ✅ Never creates duplicates, regardless of how many times called
-  //     (which was the bug PR #748's naive POST introduced).
-  //   - ✅ Matches what callers expect for the "fresh playlist" case
-  //     (remote is empty → all requested tracks added).
-  //   - ⚠️ Removing a track locally does NOT remove it on Apple Music.
-  //     Parachord's push loop will keep the local change, but the remote
-  //     will retain the track. Documented limitation until Apple exposes
-  //     a per-track DELETE endpoint.
-  //   - ⚠️ Calling with an empty `tracks` array is a no-op (cannot
-  //     clear). Callers that need to clear should prefer deletePlaylist.
+  // The returned `removed` count does NOT include rows that were skipped
+  // because the kill-switch fired mid-loop; only rows we successfully
+  // deleted (or that were already 404).
   async updatePlaylistTracks(playlistId, tracks, token) {
     const { developerToken, userToken } = JSON.parse(token);
 
-    // Filter to tracks with Apple Music catalog IDs (can't add without one).
-    const catalogTracks = tracks.filter(t => t.appleMusicCatalogId || t.appleMusicId);
+    // Inputs: collect unique catalog IDs from the local tracklist.
+    const requestedCatalog = new Set(
+      tracks
+        .map(t => t?.appleMusicCatalogId || t?.appleMusicId)
+        .filter(Boolean)
+        .map(id => String(id))
+    );
 
-    // Fetch existing remote tracks so we only add what's missing.
-    let existingCatalogIds = new Set();
+    // Current remote state.
+    let remoteTracks = [];
     try {
-      const remoteTracks = await this.fetchPlaylistTracks(playlistId, token);
-      for (const t of remoteTracks) {
-        if (t.appleMusicId) existingCatalogIds.add(String(t.appleMusicId));
-      }
+      remoteTracks = await this.fetchPlaylistTracks(playlistId, token);
     } catch (err) {
-      // Non-fatal: if we can't read the current state, fall through and
-      // attempt the POST. Apple deduplicates internally in some cases,
-      // but the failure mode is an append of everything — still better
-      // than refusing to sync.
-      console.warn(`[AppleMusic] Could not fetch existing tracks for ${playlistId} before push; proceeding without diff:`, err.message);
-    }
-
-    const toAdd = catalogTracks.filter(t => {
-      const id = String(t.appleMusicCatalogId || t.appleMusicId);
-      return !existingCatalogIds.has(id);
-    });
-
-    if (toAdd.length === 0) {
-      // Nothing to add — either empty input or remote already has
-      // everything. Still refresh the snapshot so callers that store
-      // `syncedAt`/`snapshotId` get a current value.
+      // Non-fatal: without the current state we can't compute a proper
+      // diff. Fall back to the pre-change append-only path: POST every
+      // requested catalog. Worst case is a few duplicates if Apple
+      // doesn't dedup (it usually does on this endpoint).
+      console.warn(`[AppleMusic] Could not fetch existing tracks for ${playlistId}; falling back to append-only for this call:`, err.message);
+      const toAdd = [...requestedCatalog];
+      const added = toAdd.length > 0
+        ? await this._postTracksToPlaylist(playlistId, toAdd, developerToken, userToken)
+        : 0;
       const snapshot = await this.getPlaylistSnapshot(playlistId, token);
-      return { success: true, snapshotId: snapshot };
+      return { success: true, snapshotId: snapshot, added, removed: 0 };
     }
 
-    const body = {
-      data: toAdd.map(t => ({
-        id: t.appleMusicCatalogId || t.appleMusicId,
-        type: 'songs'
-      }))
-    };
+    // Diff. Iterate the full remoteTracks array (NOT a Map keyed by
+    // catalog) so duplicate rows on the remote are each considered.
+    const toRemove = [];
+    const keptCatalog = new Set();
+    for (const r of remoteTracks) {
+      const catalog = String(r?.appleMusicId || '');
+      if (!catalog) continue;
+      if (!requestedCatalog.has(catalog)) {
+        toRemove.push(r);
+      } else if (keptCatalog.has(catalog)) {
+        // Duplicate of a row we've already kept — remove to collapse.
+        toRemove.push(r);
+      } else {
+        keptCatalog.add(catalog);
+      }
+    }
+    const toAdd = [...requestedCatalog].filter(id => !keptCatalog.has(id));
 
+    // DELETE pass. Skipped when the kill-switch is set (Apple 405'd us
+    // earlier in this process). Also skipped when there's nothing to
+    // remove.
+    let removed = 0;
+    if (!amRemovalUnsupportedRef.current && toRemove.length > 0) {
+      removed = await this._deleteTracksFromPlaylist(playlistId, toRemove, token);
+    }
+
+    // POST pass.
+    let added = 0;
+    if (toAdd.length > 0) {
+      added = await this._postTracksToPlaylist(playlistId, toAdd, developerToken, userToken);
+    }
+
+    const snapshot = await this.getPlaylistSnapshot(playlistId, token);
+    console.log(`[AppleMusic] Playlist ${playlistId}: +${added} / −${removed}${amRemovalUnsupportedRef.current ? ' (removals unsupported in this session)' : ''}`);
+    return { success: true, snapshotId: snapshot, added, removed };
+  },
+
+  // Internal: POST an add-batch of catalog IDs to the playlist's tracks
+  // endpoint. Returns the number added (equals input length on success).
+  async _postTracksToPlaylist(playlistId, catalogIds, developerToken, userToken) {
+    const body = {
+      data: catalogIds.map(id => ({ id: String(id), type: 'songs' }))
+    };
     const resp = await fetch(
       `${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlistId}/tracks`,
       {
@@ -713,13 +754,77 @@ const AppleMusicSyncProvider = {
         body: JSON.stringify(body)
       }
     );
-
     if (!resp.ok) {
-      throw new Error(`Failed to update Apple Music playlist tracks: ${resp.status}`);
+      throw new Error(`Failed to add tracks to Apple Music playlist: ${resp.status}`);
+    }
+    return catalogIds.length;
+  },
+
+  // Internal: issue a DELETE per row against the undocumented per-track
+  // endpoint. Rate-limited via getRateLimitDelay() to avoid 429s.
+  // Handles per-response outcomes per the design doc:
+  //   200/204/404 → success
+  //   429         → Retry-After backoff + one retry, else abort loop
+  //   405         → flip amRemovalUnsupportedRef and abort loop
+  //   other       → log + skip this row, continue
+  async _deleteTracksFromPlaylist(playlistId, rows, token) {
+    const { developerToken, userToken } = JSON.parse(token);
+    const delay = this.getRateLimitDelay ? this.getRateLimitDelay() : 150;
+    let removed = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const libraryTrackId = rows[i]?.externalId; // library ID stored by transformTrack
+      if (!libraryTrackId) continue;
+
+      const url = `${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlistId}/tracks/${encodeURIComponent(libraryTrackId)}`;
+
+      let attempt = 0;
+      while (true) {
+        attempt++;
+        const resp = await fetch(url, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${developerToken}`,
+            'Music-User-Token': userToken
+          }
+        });
+
+        if (resp.status === 200 || resp.status === 204 || resp.status === 404) {
+          removed++;
+          break;
+        }
+
+        if (resp.status === 405) {
+          // Endpoint disabled — stop trying for this session. Append
+          // semantics resume silently.
+          console.warn(`[AppleMusic] DELETE returned 405; disabling per-track removal for the rest of this session. Playlist ${playlistId} retains ${rows.length - removed} extra track(s) on the remote.`);
+          amRemovalUnsupportedRef.current = true;
+          return removed;
+        }
+
+        if (resp.status === 429 && attempt === 1) {
+          const retryAfter = parseInt(resp.headers.get('Retry-After') || '1', 10);
+          await new Promise(r => setTimeout(r, Math.max(retryAfter, 1) * 1000));
+          continue; // retry once
+        }
+
+        if (resp.status === 429) {
+          console.warn(`[AppleMusic] DELETE repeatedly rate-limited on playlist ${playlistId}; aborting loop. ${rows.length - removed} track(s) still on remote.`);
+          return removed;
+        }
+
+        // Other 4xx / 5xx: log and skip this row.
+        console.warn(`[AppleMusic] DELETE ${libraryTrackId} returned ${resp.status}; skipping row.`);
+        break;
+      }
+
+      // Rate-limit between successful DELETEs, not between retries.
+      if (i < rows.length - 1) {
+        await new Promise(r => setTimeout(r, delay));
+      }
     }
 
-    const snapshot = await this.getPlaylistSnapshot(playlistId, token);
-    return { success: true, snapshotId: snapshot, added: toAdd.length };
+    return removed;
   },
 
   // Update playlist name and description on Apple Music

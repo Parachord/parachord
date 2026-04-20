@@ -166,17 +166,23 @@ Flow:
 
 ### Provider-Specific Push Semantics
 
-Not every provider supports true "replace all tracks" over its API. Clients must not assume `updatePlaylistTracks` behaves identically across providers.
-
 | Provider | Semantics | How |
 |---|---|---|
 | **Spotify** | Full replace | `PUT /playlists/{id}/tracks` replaces; subsequent batches `POST` to append for >100 tracks. |
-| **Apple Music** | Diff-based append-only | No public per-track DELETE endpoint exists. `updatePlaylistTracks` fetches current remote tracks, diffs against the requested list by catalog ID, and `POST`s only the additions. **Tracks removed locally are NOT removed from the Apple Music playlist.** |
+| **Apple Music** | Full diff (add + remove) | `updatePlaylistTracks` fetches current remote tracks, diffs catalog IDs against the requested list, `DELETE`s removals one at a time via `DELETE /me/library/playlists/{id}/tracks/{libraryTrackId}`, then `POST`s additions in one batch. The DELETE endpoint is **undocumented** — Apple's public API only documents POST for this resource — but has been reliably used by third-party Apple Music clients for years. |
+
+Apple Music fallback behavior:
+
+- If DELETE returns HTTP 405 (Apple restricted or pulled the endpoint), the provider flips a module-scope `amRemovalUnsupportedRef.current = true` flag for the rest of the process. Subsequent `updatePlaylistTracks` calls skip the DELETE loop and silently fall back to append-only semantics. The flag resets on app restart, so if Apple restores the endpoint we recover automatically at the cost of one wasted 405 per session. No user-visible notice; this is an implementation detail.
+- If fetching current tracks fails (network, 429) before the diff, the call falls back to the pre-change append-only path: POST every requested catalog ID, no deletions.
+- DELETEs are serial with `getRateLimitDelay()` (~150ms) spacing to avoid 429 triggering. A first 429 retries once after `Retry-After`; a second 429 aborts the loop for that call without flipping the session flag.
 
 Consequences:
-- On Apple Music, calling `updatePlaylistTracks` with an empty array is a no-op (can't clear). Callers that want to remove the remote should use `deletePlaylist` instead.
-- `deletePlaylist` on Apple Music tries `DELETE /me/library/playlists/{id}` first. If that returns 405/404, it falls back to renaming the playlist to `[Deleted] {id}` — the tracks stay, but the playlist is marked as deleted from the user's perspective (they can manually remove it in the Apple Music app).
-- Android implementations should surface this asymmetry in UI copy: for Apple Music, "sync to provider" should be worded as "push additions to" rather than "mirror to," and local track removals should carry a small warning.
+
+- Calling `updatePlaylistTracks` with an empty array on Apple Music now genuinely clears the playlist (DELETEs every current row). The `deletePlaylist` fallback path (`rename to [Deleted] {id}` when the full-playlist DELETE returns 405/404) still skips clearing tracks first since the rename alone is sufficient to mark the playlist as deleted from the user's perspective.
+- Large deletions run one-per-call at ~150ms rate-limit spacing. Removing 500 tracks takes ~75 seconds. Common incremental deletions (1–20) complete in well under a second.
+- `DELETE` takes the **library-track ID** (e.g. `i.GE5rp8DTYkZdO5`), not the catalog ID. `transformTrack` stores this as `externalId` on each fetched remote row, so no extra plumbing is needed.
+- Android implementations: full diff is the target behavior. The undocumented endpoint works from Android too, same URL/headers. If Android prefers to start with append-only and add removal later, the diff-only path still works — the algorithm falls back naturally when the DELETE pass is skipped.
 
 ### Sync IPC Surface
 
