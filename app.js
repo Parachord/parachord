@@ -13546,6 +13546,25 @@ ${trackListXml}
     }
   }, [autoPinnedFriendIds, cacheLoaded]);
 
+  // Listen for Apple Music reauth-required signals from the main process.
+  // Fired when the token refresh callback detects an unrecoverable auth
+  // failure (e.g. MusicKit bridge returned the same stale token on
+  // refresh, or the bridge threw). One-shot toast prompts the user to
+  // reconnect in Settings. Debounced on the main side so we don't get
+  // spammed during a cleanup that tries N DELETEs in a row.
+  useEffect(() => {
+    const unsubscribe = window.electron?.musicKit?.onReauthRequired?.((data) => {
+      console.warn('[AppleMusic] Reauth required:', data);
+      showToast(
+        'Apple Music authorization has expired. Please reconnect in Settings → Resolvers → Apple Music.',
+        'error'
+      );
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
   // Persist hidden friend keys to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {

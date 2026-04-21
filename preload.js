@@ -470,6 +470,15 @@ contextBridge.exposeInMainWorld('electron', {
           callback(data);
         });
       }
+    },
+
+    // Fired when the Apple Music refresh callback has determined the
+    // stored user token is unrecoverable (same stale token returned, or
+    // bridge error). Renderer should prompt the user to reconnect.
+    onReauthRequired: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('applemusic:reauth-required', handler);
+      return () => ipcRenderer.removeListener('applemusic:reauth-required', handler);
     }
   },
 

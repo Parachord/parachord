@@ -2325,6 +2325,84 @@ async function ensureValidSpotifyToken(force = false) {
   return token || null;
 }
 
+// Build an Apple Music token refresh callback suitable for passing to a
+// provider method (e.g. fetchPlaylists, deletePlaylist). On 401, the
+// provider invokes this callback to request a fresh user token via the
+// MusicKit native bridge.
+//
+// Critical behavior: the MusicKit SDK/native helper will sometimes return
+// the EXACT SAME stale user token it's cached, rather than negotiating a
+// new one with Apple. When that happens, retrying the failed request with
+// the "refreshed" token just produces another 401, and the retry loop
+// spins uselessly. Detect the same-string case and treat it as a failed
+// refresh so the provider stops retrying.
+//
+// On unrecoverable failure, emit a one-shot IPC event so the renderer can
+// toast a "reconnect Apple Music" prompt. Debounced via module-level
+// state so we don't spam the toast for every 401 in a multi-request loop.
+let lastAppleMusicReauthPromptAt = 0;
+function buildAppleMusicRefreshCb(initialToken, onTokenChanged) {
+  const parseUserToken = (t) => {
+    try { return JSON.parse(t || '{}').userToken || null; }
+    catch { return null; }
+  };
+  const initialUserToken = parseUserToken(initialToken);
+
+  const emitReauthPromptOnce = (reason) => {
+    const now = Date.now();
+    // Debounce: at most one prompt per 30s across all refresh callers.
+    if (now - lastAppleMusicReauthPromptAt < 30_000) return;
+    lastAppleMusicReauthPromptAt = now;
+    try {
+      const win = require('electron').BrowserWindow.getAllWindows()[0];
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('applemusic:reauth-required', { reason });
+        console.warn(`[AppleMusic] Emitted applemusic:reauth-required (reason=${reason})`);
+      }
+    } catch (err) {
+      console.warn('[AppleMusic] Could not emit reauth prompt:', err.message);
+    }
+  };
+
+  return async () => {
+    try {
+      const bridge = getMusicKitBridge();
+      const freshDevToken = generatedMusicKitToken
+        || process.env.MUSICKIT_DEVELOPER_TOKEN
+        || store.get('applemusic_developer_token');
+      if (!freshDevToken) {
+        emitReauthPromptOnce('no-developer-token');
+        return null;
+      }
+
+      const result = await bridge.fetchUserToken(freshDevToken);
+      if (!result || !result.userToken) {
+        emitReauthPromptOnce('bridge-returned-no-token');
+        return null;
+      }
+
+      // The critical check: if the bridge handed us the SAME token we
+      // started with, the refresh is a no-op and the next request will
+      // 401 again. Prompt the user to reconnect instead of pretending.
+      if (initialUserToken && result.userToken === initialUserToken) {
+        console.warn('[AppleMusic] Token refresh returned the same stale user token; treating as unrecoverable and prompting reauth.');
+        emitReauthPromptOnce('same-token-returned');
+        return null;
+      }
+
+      store.set('applemusic_user_token', result.userToken);
+      const newToken = JSON.stringify({ developerToken: freshDevToken, userToken: result.userToken });
+      if (typeof onTokenChanged === 'function') onTokenChanged(newToken);
+      console.log('[AppleMusic] Refreshed user token successfully');
+      return newToken;
+    } catch (err) {
+      console.warn('[AppleMusic] Failed to refresh user token:', err.message);
+      emitReauthPromptOnce('refresh-threw');
+      return null;
+    }
+  };
+}
+
 // Helper to get SoundCloud credentials with priority: user-stored > env > fallback
 function getSoundCloudCredentials() {
   // First check user-configured credentials (stored via UI)
@@ -4909,23 +4987,7 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
     // Provide a token refresh callback for Apple Music 401 recovery
     let refreshTokenCb = null;
     if (providerId === 'applemusic') {
-      refreshTokenCb = async () => {
-        try {
-          const bridge = getMusicKitBridge();
-          const freshDevToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
-          if (!freshDevToken) return null;
-          const result = await bridge.fetchUserToken(freshDevToken);
-          if (result && result.userToken) {
-            store.set('applemusic_user_token', result.userToken);
-            const newToken = JSON.stringify({ developerToken: freshDevToken, userToken: result.userToken });
-            token = newToken;
-            return newToken;
-          }
-        } catch (err) {
-          console.warn('[AppleMusic] Failed to refresh user token:', err.message);
-        }
-        return null;
-      };
+      refreshTokenCb = buildAppleMusicRefreshCb(token, (newToken) => { token = newToken; });
     }
 
     await provider.deletePlaylist(externalId, token, refreshTokenCb);
@@ -6168,24 +6230,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       }
       // Apple Music token refresh: try to fetch a fresh user token via the
       // native MusicKit bridge when a 401 occurs (expired user token).
-      refreshTokenCb = async () => {
-        try {
-          const bridge = getMusicKitBridge();
-          const freshDevToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
-          if (!freshDevToken) return null;
-          const result = await bridge.fetchUserToken(freshDevToken);
-          if (result && result.userToken) {
-            store.set('applemusic_user_token', result.userToken);
-            const newToken = JSON.stringify({ developerToken: freshDevToken, userToken: result.userToken });
-            token = newToken;
-            console.log('[AppleMusic] Refreshed user token successfully');
-            return newToken;
-          }
-        } catch (err) {
-          console.warn('[AppleMusic] Failed to refresh user token:', err.message);
-        }
-        return null;
-      };
+      refreshTokenCb = buildAppleMusicRefreshCb(token, (newToken) => { token = newToken; });
     }
 
     if (!token) {
