@@ -13547,18 +13547,50 @@ ${trackListXml}
   }, [autoPinnedFriendIds, cacheLoaded]);
 
   // Listen for Apple Music reauth-required signals from the main process.
-  // Fired when the token refresh callback detects an unrecoverable auth
-  // failure (e.g. MusicKit bridge returned the same stale token on
-  // refresh, or the bridge threw). One-shot toast prompts the user to
-  // reconnect in Settings. Debounced on the main side so we don't get
-  // spammed during a cleanup that tries N DELETEs in a row.
+  //
+  // Fired when the token refresh callback detects an unrecoverable write
+  // auth failure: the MusicKit bridge returned the same stale token on
+  // refresh, or the bridge threw. This is typically a scope-level staleness
+  // — reads still work (playback, search, track fetch) but library write
+  // operations (DELETE, POST playlist tracks) return 401.
+  //
+  // Fixing it requires more than disconnecting in Parachord — macOS's
+  // system-level Media & Apple Music permission holds the authorization
+  // across our disconnect/reconnect cycle, so MusicAuthorization.request()
+  // never re-prompts and the same stale scope gets reused. The user has
+  // to revoke access in System Settings → Privacy & Security → Media
+  // & Apple Music, THEN reconnect in Parachord.
+  //
+  // Modal dialog (not toast) because: (a) the fix requires multiple steps
+  // the user needs to read and follow, (b) cleanup pass that triggered
+  // the prompt often follows immediately with its own completion toast
+  // that would bury a transient banner, (c) this is blocking for further
+  // syncing — the user needs to see it.
   useEffect(() => {
+    let dialogOpen = false;
     const unsubscribe = window.electron?.musicKit?.onReauthRequired?.((data) => {
+      if (dialogOpen) return; // debounce: main process also debounces, belt-and-suspenders
+      dialogOpen = true;
       console.warn('[AppleMusic] Reauth required:', data);
-      showToast(
-        'Apple Music authorization has expired. Please reconnect in Settings → Resolvers → Apple Music.',
-        'error'
-      );
+      showConfirmDialog({
+        type: 'warning',
+        title: 'Apple Music Reconnect Required',
+        message:
+          "Apple Music sync is failing because the authorization has gone stale at the system level — reads still work (so playback is fine), but writes (adding/removing tracks on playlists) are rejected.\n\n" +
+          "To fix this:\n" +
+          "1. Open System Settings → Privacy & Security → Media & Apple Music\n" +
+          "2. Toggle Parachord OFF, then back ON (or click Remove, then reconnect here)\n" +
+          "3. Come back to Parachord and click Connect on Apple Music in Settings\n" +
+          "4. Run the sync or cleanup that failed",
+        confirmLabel: 'Open System Settings',
+        onConfirm: () => {
+          dialogOpen = false;
+          if (window.electron?.shell?.openExternal) {
+            window.electron.shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_MediaAppleMusic');
+          }
+        },
+        onCancel: () => { dialogOpen = false; }
+      });
     });
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
