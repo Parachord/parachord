@@ -13572,16 +13572,31 @@ ${trackListXml}
       if (dialogOpen) return; // debounce: main process also debounces, belt-and-suspenders
       dialogOpen = true;
       console.warn('[AppleMusic] Reauth required:', data);
+
+      // Auto-disconnect our local state FIRST so the UI reflects the
+      // actually-broken auth. Without this, the Apple Music plugin
+      // still shows "Connected" while every write operation 401s,
+      // and the user has no way to trigger a reconnect because our
+      // connect button treats them as already-connected. Disconnecting
+      // clears applemusic_user_token, sets applemusic_authorized=false,
+      // removes applemusic from activeResolvers, and stops the helper.
+      if (typeof disconnectAppleMusic === 'function') {
+        Promise.resolve(disconnectAppleMusic()).catch(err => {
+          console.warn('[AppleMusic] Auto-disconnect on reauth failed:', err);
+        });
+      }
+
       showConfirmDialog({
         type: 'warning',
         title: 'Apple Music Reconnect Required',
         message:
           "Apple Music sync is failing because the authorization has gone stale at the system level — reads still work (so playback is fine), but writes (adding/removing tracks on playlists) are rejected.\n\n" +
-          "To fix this:\n" +
+          "Parachord has disconnected Apple Music locally. To fully reset:\n" +
           "1. Open System Settings → Privacy & Security → Media & Apple Music\n" +
-          "2. Toggle Parachord OFF, then back ON (or click Remove, then reconnect here)\n" +
+          "2. Toggle Parachord OFF there (revokes the system-level authorization)\n" +
           "3. Come back to Parachord and click Connect on Apple Music in Settings\n" +
-          "4. Run the sync or cleanup that failed",
+          "4. macOS will re-prompt for authorization; approve it\n" +
+          "5. Re-run the sync or cleanup that failed",
         confirmLabel: 'Open System Settings',
         onConfirm: () => {
           dialogOpen = false;
