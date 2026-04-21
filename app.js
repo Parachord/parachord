@@ -5667,11 +5667,15 @@ const Parachord = () => {
       if (result.success) {
         const ambiguousCount = result.ambiguous?.length || 0;
         const relinkedCount = result.relinked?.length || 0;
+        const repairedEmpty = result.repairedEmptyLinks || 0;
         const providerName = syncProviderConfig[providerId]?.name || providerId;
         const parts = [];
 
         if (relinkedCount > 0) {
           parts.push(`Linked ${relinkedCount} orphaned playlist${relinkedCount > 1 ? 's' : ''} to existing ${providerName} copies`);
+        }
+        if (repairedEmpty > 0) {
+          parts.push(`flagged ${repairedEmpty} empty ${providerName} playlist${repairedEmpty > 1 ? 's' : ''} to populate on next sync`);
         }
         if (result.deleted > 0) {
           const names = result.groups.map(g => `"${g.name}" (${g.deleted} removed)`).join(', ');
@@ -5685,12 +5689,12 @@ const Parachord = () => {
         if (parts.length === 0) {
           showToast('No orphaned or duplicate playlists found', 'info');
         } else {
-          const tone = ambiguousCount > 0 && result.deleted === 0 && relinkedCount === 0 ? 'warning' : 'success';
+          const tone = ambiguousCount > 0 && result.deleted === 0 && relinkedCount === 0 && repairedEmpty === 0 ? 'warning' : 'success';
           showToast(parts.join('. '), tone);
         }
 
-        // Reload playlists so UI reflects newly-populated syncedTo
-        if (relinkedCount > 0) {
+        // Reload playlists so UI reflects newly-populated syncedTo / locallyModified flags
+        if (relinkedCount > 0 || repairedEmpty > 0) {
           try {
             const loaded = await window.electron.playlists.load();
             setPlaylists(prev => {

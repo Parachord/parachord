@@ -4797,8 +4797,21 @@ function relinkOrphansFor(providerId, ownedRemote) {
       const link = linkedByLocalId.get(p.id);
       if (!link) return p;
       const existingSyncedTo = p.syncedTo || {};
+      // Flag the freshly-linked playlist as locallyModified so the next
+      // sync push populates the remote. This covers three cases:
+      //   - Remote is empty (common — we just linked to a placeholder that
+      //     another buggy sync had created but never populated).
+      //   - Remote has drifted from local content (mirror contract says
+      //     local wins on next push).
+      //   - Remote already matches local (push diff is empty, near-zero
+      //     cost with the full-diff update semantics we use now).
+      // Without this flag the push loop skips (!syncInfo branch doesn't
+      // fire because syncedTo exists; the else-if branch needs
+      // locallyModified) and the linked remote stays empty forever.
       return {
         ...p,
+        locallyModified: true,
+        lastModified: now,
         syncedTo: {
           ...existingSyncedTo,
           [providerId]: {
@@ -6208,6 +6221,41 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       // ----------------------------------------------------------------
       const relinkResult = relinkOrphansFor(providerId, ownedPlaylists);
 
+      // ----------------------------------------------------------------
+      // Step 1b: Repair linked-but-empty remotes.
+      //
+      // Before the relink-sets-locallyModified fix, orphan relink would
+      // write syncedTo without flagging the playlist as modified. The
+      // push loop needs locallyModified=true to push track content, so
+      // those already-linked playlists would stay empty on the remote
+      // indefinitely. Detect that state here and flag for push on the
+      // next sync. Covers users recovering from a pre-fix cleanup run.
+      // ----------------------------------------------------------------
+      const remoteByExternalId = new Map(
+        ownedPlaylists.map(p => [p.externalId, p])
+      );
+      const repairLocal = store.get('local_playlists') || [];
+      let repairedCount = 0;
+      const repairedLocal = repairLocal.map(p => {
+        const link = p.syncedTo?.[providerId];
+        if (!link?.externalId) return p;
+        if (p.locallyModified) return p; // already flagged
+        if (!(p.tracks?.length > 0)) return p; // nothing to push
+        const remote = remoteByExternalId.get(link.externalId);
+        if (!remote) return p; // remote is gone; different problem (pendingAction handles elsewhere)
+        if ((remote.trackCount || 0) > 0) return p; // remote isn't empty; don't trigger a push
+        repairedCount++;
+        return {
+          ...p,
+          locallyModified: true,
+          lastModified: Date.now()
+        };
+      });
+      if (repairedCount > 0) {
+        store.set('local_playlists', repairedLocal);
+        console.log(`[Sync Cleanup] Flagged ${repairedCount} locally-tracked playlist(s) as modified (linked to empty remote — will populate on next sync)`);
+      }
+
       // Group by normalized name
       const groups = {};
       for (const playlist of ownedPlaylists) {
@@ -6226,7 +6274,8 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
           ambiguous: [],
           relinked: relinkResult.linked,
           relinkAmbiguous: relinkResult.ambiguous,
-          orphanCount: relinkResult.orphanCount
+          orphanCount: relinkResult.orphanCount,
+          repairedEmptyLinks: repairedCount
         };
       }
 
@@ -6394,7 +6443,8 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         ambiguous: ambiguousGroups,
         relinked: relinkResult.linked,
         relinkAmbiguous: relinkResult.ambiguous,
-        orphanCount: relinkResult.orphanCount
+        orphanCount: relinkResult.orphanCount,
+        repairedEmptyLinks: repairedCount
       };
     } catch (error) {
       console.error(`[Sync Cleanup] Error: ${error.message}`);
