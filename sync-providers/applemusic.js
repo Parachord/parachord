@@ -365,7 +365,13 @@ const AppleMusicSyncProvider = {
     // First attempt with current token
     let resp = await attemptDelete(token);
 
-    // On 401, try refreshing the token and retry once
+    // On 401, try refreshing the token and retry once. Apple has been
+    // observed to return 401 on DELETE /me/library/playlists/{id} for
+    // MusicKit-issued user tokens even when other write operations
+    // (POST tracks, PATCH attributes) succeed with the same token —
+    // i.e. this is an endpoint-level restriction, not a broken session.
+    // The refresh attempt is harmless but usually returns the same
+    // token; we check the response regardless.
     if ((resp.status === 401 || resp.status === 403) && refreshTokenCb) {
       console.log(`[AppleMusic] Got ${resp.status} on DELETE, attempting token refresh...`);
       const newToken = await refreshTokenCb();
@@ -379,29 +385,25 @@ const AppleMusicSyncProvider = {
       return { success: true };
     }
 
-    // DELETE not supported (405) or playlist already gone (404) — fall
-    // back to renaming. We can't truly clear tracks on Apple Music
-    // (no documented per-track DELETE), so the renamed playlist will
-    // still contain its tracks — but from the user's perspective it's
-    // marked as deleted and will no longer show up under the original
-    // name. The user can manually remove it from Apple Music's app.
-    if (resp.status === 405 || resp.status === 404) {
-      console.log(`[AppleMusic] DELETE returned ${resp.status}, falling back to rename for ${playlistId}`);
+    // If the DELETE endpoint rejected us — whether with 405 (method not
+    // allowed), 404 (already gone), 401/403 (endpoint-restricted for
+    // MusicKit tokens on this account, per Apple's current behavior) —
+    // fall back to renaming the playlist to mark it as deleted. The
+    // tracks persist on the remote, but the playlist no longer collides
+    // with the keeper's name, and the user can remove it manually in
+    // Music.app.
+    if (resp.status === 405 || resp.status === 404 || resp.status === 401 || resp.status === 403) {
+      console.log(`[AppleMusic] DELETE returned ${resp.status} (endpoint rejected), falling back to rename for ${playlistId}`);
       try {
         await this.updatePlaylistDetails(playlistId, {
           name: `[Deleted] ${playlistId}`,
           description: 'Marked deleted by Parachord sync cleanup'
         }, token);
-        return { success: true };
+        return { success: true, renamedOnly: true };
       } catch (err) {
         console.warn(`[AppleMusic] Failed to rename deleted playlist ${playlistId}:`, err.message);
         throw new Error(`Failed to delete Apple Music playlist ${playlistId}: DELETE returned ${resp.status} and rename fallback failed: ${err.message}`);
       }
-    }
-
-    // Auth failure even after refresh
-    if (resp.status === 401 || resp.status === 403) {
-      throw new Error(`Apple Music authorization failed (${resp.status}). Please reconnect your Apple Music account.`);
     }
 
     throw new Error(`Failed to delete Apple Music playlist ${playlistId}: ${resp.status}`);

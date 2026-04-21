@@ -2330,27 +2330,22 @@ async function ensureValidSpotifyToken(force = false) {
 // provider invokes this callback to request a fresh user token via the
 // MusicKit native bridge.
 //
-// Critical behavior: the MusicKit SDK/native helper will sometimes return
-// the EXACT SAME stale user token it's cached, rather than negotiating a
-// new one with Apple. When that happens, retrying the failed request with
-// the "refreshed" token just produces another 401, and the retry loop
-// spins uselessly. Detect the same-string case and treat it as a failed
-// refresh so the provider stops retrying.
-//
-// On unrecoverable failure, emit a one-shot IPC event so the renderer can
-// toast a "reconnect Apple Music" prompt. Debounced via module-level
-// state so we don't spam the toast for every 401 in a multi-request loop.
+// Notes on Apple's behavior:
+//   - Apple's token provider typically returns the SAME long-lived user
+//     token on successive refresh calls — even with `.ignoreCache`. That
+//     is normal, not a failure. Most 401s on Apple Music writes aren't
+//     session-expiry problems; they're endpoint-specific restrictions
+//     (e.g. DELETE /me/library/playlists/{id} returns 401 even when the
+//     same token happily handles POST /tracks on the same playlist).
+//     The right handler per endpoint decides how to react — this
+//     callback's only job is to hand back a fresh token value.
+//   - If the MusicKit bridge actually fails (no dev token, threw, or
+//     returned nothing), we emit a one-shot reauth prompt so the user
+//     can reconnect. Debounced to once per 30s.
 let lastAppleMusicReauthPromptAt = 0;
-function buildAppleMusicRefreshCb(initialToken, onTokenChanged) {
-  const parseUserToken = (t) => {
-    try { return JSON.parse(t || '{}').userToken || null; }
-    catch { return null; }
-  };
-  const initialUserToken = parseUserToken(initialToken);
-
+function buildAppleMusicRefreshCb(_initialToken, onTokenChanged) {
   const emitReauthPromptOnce = (reason) => {
     const now = Date.now();
-    // Debounce: at most one prompt per 30s across all refresh callers.
     if (now - lastAppleMusicReauthPromptAt < 30_000) return;
     lastAppleMusicReauthPromptAt = now;
     try {
@@ -2381,19 +2376,12 @@ function buildAppleMusicRefreshCb(initialToken, onTokenChanged) {
         return null;
       }
 
-      // The critical check: if the bridge handed us the SAME token we
-      // started with, the refresh is a no-op and the next request will
-      // 401 again. Prompt the user to reconnect instead of pretending.
-      if (initialUserToken && result.userToken === initialUserToken) {
-        console.warn('[AppleMusic] Token refresh returned the same stale user token; treating as unrecoverable and prompting reauth.');
-        emitReauthPromptOnce('same-token-returned');
-        return null;
-      }
-
+      // Don't treat same-token-as-before as a failure — Apple routinely
+      // returns long-lived tokens. Let callers handle endpoint-specific
+      // 401s via their own fallback paths (e.g. deletePlaylist → rename).
       store.set('applemusic_user_token', result.userToken);
       const newToken = JSON.stringify({ developerToken: freshDevToken, userToken: result.userToken });
       if (typeof onTokenChanged === 'function') onTokenChanged(newToken);
-      console.log('[AppleMusic] Refreshed user token successfully');
       return newToken;
     } catch (err) {
       console.warn('[AppleMusic] Failed to refresh user token:', err.message);
@@ -6315,12 +6303,14 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         return {
           success: true,
           deleted: 0,
+          renamed: 0,
           groups: [],
           ambiguous: [],
           relinked: relinkResult.linked,
           relinkAmbiguous: relinkResult.ambiguous,
           orphanCount: relinkResult.orphanCount,
-          repairedEmptyLinks: repairedCount
+          repairedEmptyLinks: repairedCount,
+          relinkedFromShell: 0
         };
       }
 
@@ -6395,8 +6385,26 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         }
 
         let keeper;
+        let relinkFrom = null; // when we override a linked empty keeper, remember the original external id so we can relink locals
         if (linkedMembers.length === 1) {
-          keeper = linkedMembers[0];
+          const linked = linkedMembers[0];
+          const linkedIsEmpty = (linked.trackCount || 0) === 0;
+          // Populated alternatives in the group (not the linked member).
+          const populatedAlternatives = items.filter(p => p.externalId !== linked.externalId && (p.trackCount || 0) > 0);
+          if (linkedIsEmpty && populatedAlternatives.length > 0) {
+            // Linked remote is an empty shell (typically left behind by an
+            // earlier buggy relink that never populated it). A populated
+            // alternative in the same group is almost certainly what the
+            // user actually wants to keep. Pick the richest populated one,
+            // and flag that locals linked to the empty shell should be
+            // relinked to the new keeper.
+            populatedAlternatives.sort((a, b) => (b.trackCount || 0) - (a.trackCount || 0));
+            keeper = populatedAlternatives[0];
+            relinkFrom = linked.externalId;
+            console.log(`[Sync Cleanup] Group "${name}": linked remote ${linked.externalId} is empty; preferring populated alternative ${keeper.externalId} (${keeper.trackCount} tracks) and relinking ${localsByExternalId.get(linked.externalId).size} local(s).`);
+          } else {
+            keeper = linked;
+          }
         } else {
           const sorted = [...items].sort((a, b) => {
             if ((b.trackCount || 0) !== (a.trackCount || 0)) {
@@ -6408,7 +6416,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         }
 
         const toDelete = items.filter(p => p.externalId !== keeper.externalId);
-        cleanableGroups.push({ name, keeper, toDelete });
+        cleanableGroups.push({ name, keeper, toDelete, relinkFrom });
       }
 
       // ----------------------------------------------------------------
@@ -6420,21 +6428,33 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       // syncedTo and sync_playlist_links.
       // ----------------------------------------------------------------
       let totalDeleted = 0;
+      let totalRenamed = 0;
       const deletedGroups = [];
       const deletedExternalIds = new Set();
 
       for (const { name, keeper, toDelete } of cleanableGroups) {
         for (const dup of toDelete) {
           try {
-            await provider.deletePlaylist(dup.externalId, token, refreshTokenCb);
-            totalDeleted++;
-            deletedExternalIds.add(dup.externalId);
-            console.log(`[Sync Cleanup] Deleted duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
+            const result = await provider.deletePlaylist(dup.externalId, token, refreshTokenCb);
+            // result.renamedOnly=true indicates the provider couldn't
+            // fully delete (endpoint restricted) and fell back to
+            // renaming to "[Deleted] <id>". The playlist still exists on
+            // the service but its name no longer collides, and the user
+            // can remove it manually. Don't add to deletedExternalIds
+            // since the remote row hasn't actually gone away.
+            if (result?.renamedOnly) {
+              totalRenamed++;
+              console.log(`[Sync Cleanup] Renamed duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) to [Deleted] marker — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
+            } else {
+              totalDeleted++;
+              deletedExternalIds.add(dup.externalId);
+              console.log(`[Sync Cleanup] Deleted duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
+            }
             if (provider.getRateLimitDelay) {
               await new Promise(r => setTimeout(r, provider.getRateLimitDelay()));
             }
           } catch (err) {
-            console.warn(`[Sync Cleanup] Failed to delete "${dup.name}" (${dup.externalId}): ${err.message}`);
+            console.warn(`[Sync Cleanup] Failed to delete or rename "${dup.name}" (${dup.externalId}): ${err.message}`);
           }
         }
         deletedGroups.push({
@@ -6442,6 +6462,59 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
           kept: { externalId: keeper.externalId, trackCount: keeper.trackCount || 0 },
           deleted: toDelete.length
         });
+      }
+
+      // ----------------------------------------------------------------
+      // Relink locals whose keeper was overridden from an empty shell to
+      // a populated alternative. Any local whose syncedTo[provider]
+      // points at the old empty shell gets repointed at the new keeper.
+      // Also update the sync_playlist_links map. Set locallyModified to
+      // false since local's tracks don't match the new remote's tracks
+      // (the new keeper was already populated independently) — leaving
+      // it as-is would push local content over the richer remote copy.
+      // ----------------------------------------------------------------
+      const relinkOverrides = cleanableGroups
+        .filter(g => g.relinkFrom && g.relinkFrom !== g.keeper.externalId)
+        .map(g => ({ from: g.relinkFrom, to: g.keeper.externalId, keeperName: g.keeper.name, keeperSnapshot: g.keeper.snapshotId || null }));
+      let relinkedFromOverride = 0;
+      if (relinkOverrides.length > 0) {
+        const latestLocal = store.get('local_playlists') || [];
+        const overrideMap = new Map(relinkOverrides.map(o => [o.from, o]));
+        const now = Date.now();
+        const updatedLocal = latestLocal.map(p => {
+          const link = p.syncedTo?.[providerId];
+          if (!link?.externalId) return p;
+          const override = overrideMap.get(link.externalId);
+          if (!override) return p;
+          relinkedFromOverride++;
+          return {
+            ...p,
+            locallyModified: false,
+            syncedTo: {
+              ...p.syncedTo,
+              [providerId]: {
+                ...link,
+                externalId: override.to,
+                snapshotId: override.keeperSnapshot,
+                syncedAt: now,
+                pendingAction: null
+              }
+            }
+          };
+        });
+        if (relinkedFromOverride > 0) {
+          store.set('local_playlists', updatedLocal);
+          // Mirror the change into the sync_playlist_links map so the
+          // durable link survives any renderer-side save that might strip
+          // syncedTo.
+          for (const p of updatedLocal) {
+            const link = p.syncedTo?.[providerId];
+            if (link?.externalId && overrideMap.has(relinkOverrides.find(o => o.to === link.externalId)?.from)) {
+              setSyncLink(p.id, providerId, link.externalId);
+            }
+          }
+          console.log(`[Sync Cleanup] Relinked ${relinkedFromOverride} local playlist(s) from empty shells to populated keepers`);
+        }
       }
 
       // Defensive cleanup of local refs. Keeper selection makes this a
@@ -6484,12 +6557,14 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       return {
         success: true,
         deleted: totalDeleted,
+        renamed: totalRenamed,
         groups: deletedGroups,
         ambiguous: ambiguousGroups,
         relinked: relinkResult.linked,
         relinkAmbiguous: relinkResult.ambiguous,
         orphanCount: relinkResult.orphanCount,
-        repairedEmptyLinks: repairedCount
+        repairedEmptyLinks: repairedCount,
+        relinkedFromShell: relinkedFromOverride
       };
     } catch (error) {
       console.error(`[Sync Cleanup] Error: ${error.message}`);

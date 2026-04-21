@@ -5668,11 +5668,16 @@ const Parachord = () => {
         const ambiguousCount = result.ambiguous?.length || 0;
         const relinkedCount = result.relinked?.length || 0;
         const repairedEmpty = result.repairedEmptyLinks || 0;
+        const renamedCount = result.renamed || 0;
+        const relinkedShellCount = result.relinkedFromShell || 0;
         const providerName = syncProviderConfig[providerId]?.name || providerId;
         const parts = [];
 
         if (relinkedCount > 0) {
           parts.push(`Linked ${relinkedCount} orphaned playlist${relinkedCount > 1 ? 's' : ''} to existing ${providerName} copies`);
+        }
+        if (relinkedShellCount > 0) {
+          parts.push(`re-pointed ${relinkedShellCount} local playlist${relinkedShellCount > 1 ? 's' : ''} away from empty ${providerName} shells to populated copies`);
         }
         if (repairedEmpty > 0) {
           parts.push(`flagged ${repairedEmpty} empty ${providerName} playlist${repairedEmpty > 1 ? 's' : ''} to populate on next sync`);
@@ -5680,6 +5685,9 @@ const Parachord = () => {
         if (result.deleted > 0) {
           const names = result.groups.map(g => `"${g.name}" (${g.deleted} removed)`).join(', ');
           parts.push(`removed ${result.deleted} duplicate${result.deleted > 1 ? 's' : ''}: ${names}`);
+        }
+        if (renamedCount > 0) {
+          parts.push(`renamed ${renamedCount} duplicate${renamedCount > 1 ? 's' : ''} to "[Deleted] …" (${providerName}'s API rejected the delete; remove manually in the ${providerName} app)`);
         }
         if (ambiguousCount > 0) {
           const ambNames = result.ambiguous.map(a => `"${a.name}"`).join(', ');
@@ -5689,7 +5697,7 @@ const Parachord = () => {
         if (parts.length === 0) {
           showToast('No orphaned or duplicate playlists found', 'info');
         } else {
-          const tone = ambiguousCount > 0 && result.deleted === 0 && relinkedCount === 0 && repairedEmpty === 0 ? 'warning' : 'success';
+          const tone = ambiguousCount > 0 && result.deleted === 0 && renamedCount === 0 && relinkedCount === 0 && repairedEmpty === 0 && relinkedShellCount === 0 ? 'warning' : 'success';
           showToast(parts.join('. '), tone);
         }
 
