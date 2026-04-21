@@ -5667,10 +5667,11 @@ const Parachord = () => {
       if (result.success) {
         const ambiguousCount = result.ambiguous?.length || 0;
         const relinkedCount = result.relinked?.length || 0;
+        const providerName = syncProviderConfig[providerId]?.name || providerId;
         const parts = [];
 
         if (relinkedCount > 0) {
-          parts.push(`Linked ${relinkedCount} orphaned playlist${relinkedCount > 1 ? 's' : ''} to existing Spotify copies`);
+          parts.push(`Linked ${relinkedCount} orphaned playlist${relinkedCount > 1 ? 's' : ''} to existing ${providerName} copies`);
         }
         if (result.deleted > 0) {
           const names = result.groups.map(g => `"${g.name}" (${g.deleted} removed)`).join(', ');
@@ -50799,7 +50800,7 @@ useEffect(() => {
                       marginBottom: '16px',
                       lineHeight: '1.6'
                     }
-                  }, 'Scan a connected service for duplicate playlists and orphaned local playlists. Unambiguous local playlists get re-linked to their matching Spotify copy first, then duplicates are removed — the copy your local is already linked to is kept (or the copy with the most tracks, if none are linked).'),
+                  }, 'Scan a connected service for duplicate playlists and orphaned local playlists. Unambiguous local playlists get re-linked to their matching remote copy first, then duplicates are removed — the copy your local is already linked to is kept (or the copy with the most tracks, if none are linked).'),
                   // Cleanup buttons for each enabled sync provider
                   React.createElement('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
                     Object.entries(syncProviderConfig)
