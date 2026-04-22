@@ -188,7 +188,7 @@ Consequences:
 
 ### Multi-Provider Mirror Propagation
 
-A playlist can be mirrored to multiple providers simultaneously (e.g. synced *from* Spotify and *to* both Spotify and Apple Music). When one mirror changes upstream, the update has to propagate through the local copy to the other mirrors. Three places cooperate to make this work — losing any one of them silently breaks propagation for that playlist:
+A playlist can be mirrored to multiple providers simultaneously (e.g. synced *from* Spotify and *to* both Spotify and Apple Music). When one mirror changes upstream, the update has to propagate through the local copy to the other mirrors. Four places cooperate to make this work — losing any one of them silently breaks propagation for that playlist:
 
 **1. `handlePull` must set `locallyModified: true` when other mirrors exist** (app.js L39818+). A pull replaces local tracks with the remote's. If the playlist also has `syncedTo` entries for *other* providers, those copies are now out of date relative to what we just pulled. The pull writes `locallyModified: hasOtherMirrors` (not a hardcoded `false`) so the next push loop picks it up. Without this, an Android-edit → Spotify → desktop pull would stop at the desktop and never reach Apple Music.
 
@@ -214,11 +214,27 @@ const updatedPlaylist = {
 savePlaylistToStore(updatedPlaylist);
 ```
 
-**3. Post-sync clear logic must filter to `relevantMirrors`** (app.js L5903+) — enabled providers that actually have a `syncedTo[pid].externalId` entry. The old logic used `enabledProviders.every(pid => syncedTo[pid]?.syncedAt >= lastModified)` which silently failed when an enabled provider had no `syncedTo` entry (`undefined >= number` is `false`), leaving `locallyModified: true` forever and causing the next sync to re-push the same content:
+**3. Push-loop `syncedFrom` guard must be provider-scoped** (app.js L5817, L9483). The background push loop and the post-wizard create loop each skip playlists whose `syncedFrom` is set — the intent is "don't re-push a pulled playlist to its source." A blanket `if (playlist.syncedFrom) continue;` over-fires: a Spotify-imported playlist also has `syncedFrom: { resolver: 'spotify' }`, and the blanket guard blocks pushing it to *any* other provider too. Without this fix, an Android-edit → Spotify → desktop pull gets stuck at the desktop forever because Apple Music is never even considered in the push loop.
 
 ```js
+// Wrong — blocks pushing a Spotify-imported playlist to Apple Music too:
+if (playlist.syncedFrom) continue;
+
+// Right — only skip when the source provider matches the current push target:
+if (playlist.syncedFrom?.resolver === providerId) continue;
+```
+
+The id-based guard (`if (playlist.id?.startsWith(\`${providerId}-\`)) continue;`) is the defense-in-depth layer for the same concern and is already provider-scoped — match that pattern.
+
+**4. Post-sync clear logic must filter to `relevantMirrors`** (app.js L5916+) — enabled providers that actually have a `syncedTo[pid].externalId` entry, **excluding the `syncedFrom` source provider**. Two bugs in the old logic:
+
+- `enabledProviders.every(pid => syncedTo[pid]?.syncedAt >= lastModified)` silently failed when an enabled provider had no `syncedTo` entry (`undefined >= number` is `false`), leaving `locallyModified: true` forever.
+- If the source provider has a `syncedTo` entry (round-trip mirror — e.g. `syncedFrom: spotify` AND `syncedTo: { spotify, applemusic }`), its `syncedAt` never advances via the push loop because Fix 3's guard prevents pushing back to the source. Including it in `allSynced` strands the flag.
+
+```js
+const sourceProvider = playlist.syncedFrom?.resolver;
 const relevantMirrors = enabledProviders.filter(pid =>
-  playlist.syncedTo[pid]?.externalId
+  playlist.syncedTo[pid]?.externalId && pid !== sourceProvider
 );
 if (relevantMirrors.length === 0) {
   playlist.locallyModified = false;
@@ -230,9 +246,9 @@ if (relevantMirrors.length === 0) {
 }
 ```
 
-**Main.js `sync:start` also flags on refill** (main.js L5680+). When the backend refills an empty playlist from a pulled provider and the playlist has other `syncedTo` mirrors, main.js writes `locallyModified: true` alongside the fresh tracks. Same rationale as Fix 1 but from the sync-start path that bypasses `handlePull`.
+**Main.js `sync:start` also flags on refill** (main.js L5680+). When the backend refills an empty playlist from a pulled provider and the playlist has other `syncedTo` mirrors, main.js writes `locallyModified: true` alongside the fresh tracks. Same rationale as Fix 1 but from the sync-start path that bypasses `handlePull`. Note this only fires for `isEmpty` playlists — non-empty playlists stay untouched on `sync:start` (user must click the pull banner via `handlePull`, which is the only path that replaces non-empty tracks).
 
-End-to-end flow that all three enable: Android edit → Spotify remote → desktop `sync:start` or `handlePull` refills local with `locallyModified: true` → next push loop's `relevantMirrors` check sees AM is out of date → push loop issues PUT to AM → on success, `syncedTo[am].syncedAt` advances past `lastModified` → next cycle's clear logic sees `allSynced`, resets the flag.
+End-to-end flow that all four enable: Android edit → Spotify remote → desktop pull (handlePull or sync:start refill) sets `locallyModified: true` → next AM sync's push loop passes the provider-scoped `syncedFrom` guard → issues PUT to AM → on success, `syncedTo.applemusic.syncedAt` advances past `lastModified` → clear logic's `relevantMirrors` (excluding spotify source) sees `allSynced`, resets the flag.
 
 ### Sync IPC Surface
 
@@ -254,6 +270,7 @@ End-to-end flow that all three enable: Android edit → Spotify remote → deskt
 - **Always pass `localPlaylistId` to `sync:create-playlist`.**
 - **Never create a remote playlist outside `sync:create-playlist`.** That's the only gateway with dedup.
 - **Imported playlist ID convention:** `${providerId}-${externalId}`. The creation loop has a guard `if (playlist.id?.startsWith(\`${providerId}-\`)) continue;` — so imported playlists never get re-pushed even if `syncedFrom` was cleared.
+- **Push-loop `syncedFrom` guard must be provider-scoped**, not blanket. `if (playlist.syncedFrom) continue;` blocks pushes to *every* provider, including ones that aren't the pull source — this silently breaks multi-provider mirroring. Use `if (playlist.syncedFrom?.resolver === providerId) continue;` instead. Affects both the background sync push loop and the post-wizard create loop.
 - **Main.js `sync:start` clears `syncedFrom` when the remote no longer exists** — but only if the response looks complete (>70% of previously-synced playlists still present). Guards against mass-duplicate creation on partial API responses.
 - **Bulk save on Android** must guarantee `sync_playlist_links` writes are durable independently of playlist object writes (separate keys, separate transactions). The whole point of the map is to survive playlist-save bugs.
 

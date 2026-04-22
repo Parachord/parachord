@@ -5812,9 +5812,15 @@ const Parachord = () => {
                 let playlistsChanged = false;
 
                 for (const playlist of allPlaylists) {
-                  // Skip playlists that are local-only or synced FROM this provider
+                  // Skip playlists that are local-only
                   if (playlist.localOnly) continue;
-                  if (playlist.syncedFrom) continue;
+
+                  // Skip playlists synced FROM *this* provider — updates flow via
+                  // pull, not push, so we don't re-push to the source. Playlists
+                  // synced from a *different* provider (e.g. imported from Spotify)
+                  // must still be pushable to other providers (e.g. Apple Music),
+                  // otherwise multi-provider mirror propagation breaks.
+                  if (playlist.syncedFrom?.resolver === providerId) continue;
 
                   // Skip playlists whose ID indicates they originated from this provider
                   // (e.g. "applemusic-p.XXXXX"). Even if syncedFrom was cleared due to
@@ -5914,8 +5920,14 @@ const Parachord = () => {
 
                   for (const playlist of allPlaylists) {
                     if (playlist.locallyModified && playlist.syncedTo) {
+                      // Exclude the source provider: we pulled from it, we
+                      // don't push to it (see the syncedFrom guard above), so
+                      // its syncedTo[].syncedAt will never catch up to
+                      // lastModified via the push loop. Keeping it in the
+                      // check would leave locallyModified stuck forever.
+                      const sourceProvider = playlist.syncedFrom?.resolver;
                       const relevantMirrors = enabledProviders.filter(pid =>
-                        playlist.syncedTo[pid]?.externalId
+                        playlist.syncedTo[pid]?.externalId && pid !== sourceProvider
                       );
                       if (relevantMirrors.length === 0) {
                         // No outbound mirrors — the flag has no effect, clear
@@ -9474,7 +9486,11 @@ const Parachord = () => {
             let playlistsChanged = false;
 
             for (const playlist of allPlaylists) {
-              if (playlist.localOnly || playlist.syncedFrom) continue;
+              if (playlist.localOnly) continue;
+              // Only skip if this playlist was pulled FROM this provider —
+              // playlists pulled from a different provider must still be
+              // creatable on this one for multi-provider mirroring.
+              if (playlist.syncedFrom?.resolver === providerId) continue;
               if (playlist.id?.startsWith(`${providerId}-`)) continue;
               if (playlist.syncedTo?.[providerId]) continue;
 
