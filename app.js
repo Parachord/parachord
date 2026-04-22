@@ -9398,13 +9398,39 @@ const Parachord = () => {
     // Load existing settings
     const existingSettings = await window.electron.syncSettings.getProvider(providerId);
 
+    // Seed the selection from the union of:
+    //   (a) saved `selectedPlaylistIds` from the last wizard completion
+    //   (b) externalIds of local playlists currently pulled from this provider
+    //       (syncedFrom.resolver === providerId)
+    //   (c) externalIds of local playlists currently pushed to this provider
+    //       (syncedTo[providerId].externalId)
+    // This makes the checkbox reflect reality — "this playlist has an active
+    // sync relationship with this provider in either direction" — instead of
+    // only reflecting the last explicit wizard selection.
+    const localPlaylistsForSeed = await window.electron.playlists.load().catch(() => []);
+    const pulledExternalIds = new Set(
+      (localPlaylistsForSeed || [])
+        .filter(p => p.syncedFrom?.resolver === providerId && p.syncedFrom?.externalId)
+        .map(p => p.syncedFrom.externalId)
+    );
+    const pushedExternalIds = new Set(
+      (localPlaylistsForSeed || [])
+        .filter(p => p.syncedTo?.[providerId]?.externalId)
+        .map(p => p.syncedTo[providerId].externalId)
+    );
+    const seededSelection = [...new Set([
+      ...(existingSettings?.selectedPlaylistIds || []),
+      ...pulledExternalIds,
+      ...pushedExternalIds
+    ])];
+
     setSyncSetupModal({
       open: true,
       providerId,
       step: 'options',
       playlists: [],
       folders: [],
-      selectedPlaylists: existingSettings?.selectedPlaylistIds || [],
+      selectedPlaylists: seededSelection,
       playlistFilter: 'all',
       settings: {
         syncTracks: existingSettings?.syncTracks ?? true,

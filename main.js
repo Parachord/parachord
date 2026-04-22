@@ -5648,9 +5648,16 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               }
 
               // Refetch tracks if the playlist is empty (e.g. from a previously
-              // failed sync that saved the playlist shell without tracks)
+              // failed sync that saved the playlist shell without tracks) —
+              // but only if we're the canonical pull source. Cross-provider
+              // push mirrors (matched via syncedTo[providerId].externalId but
+              // with syncedFrom pointing at a different provider) get their
+              // tracks from that other provider's pull; refetching from here
+              // would overwrite them and break round-trip mirroring.
+              const preRefreshIsOwnPullSource = !localPlaylist.syncedFrom?.resolver
+                || localPlaylist.syncedFrom.resolver === providerId;
               let tracks = existingTracks;
-              if (isEmpty) {
+              if (isEmpty && preRefreshIsOwnPullSource) {
                 console.log(`[Sync] Playlist "${remotePlaylist.name}" has 0 tracks, refetching...`);
                 tracks = await provider.fetchPlaylistTracks(remotePlaylist.externalId, token, null, refreshToken);
                 console.log(`[Sync] Fetched ${tracks.length} tracks for "${remotePlaylist.name}"`);
@@ -5674,38 +5681,60 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 currentPlaylists[idx] = freshPlaylist;
               }
               const current = currentPlaylists[idx];
-              // Re-check after refresh — the user may have already pulled this update
-              const stillHasUpdates = current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
+
+              // Determine whether this provider is the canonical pull source
+              // for the local playlist. It IS the pull source when:
+              //   - the local has no syncedFrom yet (first time linking), OR
+              //   - the existing syncedFrom.resolver already points at us.
+              // If syncedFrom points at a DIFFERENT provider (e.g. Spotify),
+              // this local is being matched via syncedTo[providerId] — it's a
+              // cross-provider push mirror. We must NOT overwrite its
+              // syncedFrom or clobber its tracks, because the other provider
+              // is the authoritative source.
+              const isOwnPullSource = !current.syncedFrom?.resolver
+                || current.syncedFrom.resolver === providerId;
+
+              // Re-check after refresh — the user may have already pulled this update.
+              // Only meaningful when we're the pull source; otherwise snapshotIds
+              // come from different providers and aren't comparable.
+              const stillHasUpdates = isOwnPullSource
+                && current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
 
               // If we backfilled tracks for a previously-empty playlist AND
               // the playlist is mirrored to providers other than this one, the
               // mirrors now have stale (empty) content. Flag locallyModified so
               // the next push loop propagates the fetched tracks outward. This
               // is the main.js parallel of handlePull's hasOtherMirrors logic.
-              const filledFromEmpty = isEmpty && tracks.length > 0;
+              const filledFromEmpty = isEmpty && tracks.length > 0 && isOwnPullSource;
               const hasOtherMirrors = !!(current.syncedTo && Object.keys(current.syncedTo).some(
                 pid => pid !== providerId && current.syncedTo[pid]?.externalId
               ));
 
-              // Always update/backfill metadata fields (creator, source, syncedFrom, createdAt)
+              // Always update/backfill metadata fields (creator, source, createdAt)
               currentPlaylists[idx] = {
                 ...current,
-                // Refill tracks if they were empty
-                tracks: isEmpty ? tracks : current.tracks,
+                // Refill tracks if they were empty — but only if we're the pull
+                // source. Cross-provider push mirrors preserve their existing
+                // (empty or non-empty) tracks; the authoritative provider will
+                // fill them on its own sync.
+                tracks: (isEmpty && isOwnPullSource) ? tracks : current.tracks,
                 // Backfill creator if not set
                 creator: current.creator || remotePlaylist.ownerName || null,
                 // Backfill source if not set
                 source: current.source || (remotePlaylist.isOwnedByUser ? `${providerId}-sync` : `${providerId}-import`),
                 // Update createdAt from track data
                 createdAt: recalculatedCreatedAt,
-                // Update/backfill syncedFrom structure
-                syncedFrom: {
-                  ...current.syncedFrom,
-                  resolver: providerId,
-                  externalId: remotePlaylist.externalId,
-                  snapshotId: stillHasUpdates ? current.syncedFrom?.snapshotId : remotePlaylist.snapshotId,
-                  ownerId: remotePlaylist.ownerId
-                },
+                // Update/backfill syncedFrom ONLY if we're the pull source.
+                // Cross-provider push mirrors keep their original syncedFrom.
+                syncedFrom: isOwnPullSource
+                  ? {
+                      ...current.syncedFrom,
+                      resolver: providerId,
+                      externalId: remotePlaylist.externalId,
+                      snapshotId: stillHasUpdates ? current.syncedFrom?.snapshotId : remotePlaylist.snapshotId,
+                      ownerId: remotePlaylist.ownerId
+                    }
+                  : current.syncedFrom,
                 hasUpdates: stillHasUpdates ? true : current.hasUpdates,
                 locallyModified: (filledFromEmpty && hasOtherMirrors) ? true : current.locallyModified,
                 syncSources: {
@@ -5714,7 +5743,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 }
               };
 
-              if (stillHasUpdates || (isEmpty && tracks.length > 0)) {
+              if (stillHasUpdates || (isEmpty && tracks.length > 0 && isOwnPullSource)) {
                 playlistsUpdated++;
               }
             }
