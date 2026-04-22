@@ -5677,6 +5677,16 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // Re-check after refresh — the user may have already pulled this update
               const stillHasUpdates = current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
 
+              // If we backfilled tracks for a previously-empty playlist AND
+              // the playlist is mirrored to providers other than this one, the
+              // mirrors now have stale (empty) content. Flag locallyModified so
+              // the next push loop propagates the fetched tracks outward. This
+              // is the main.js parallel of handlePull's hasOtherMirrors logic.
+              const filledFromEmpty = isEmpty && tracks.length > 0;
+              const hasOtherMirrors = !!(current.syncedTo && Object.keys(current.syncedTo).some(
+                pid => pid !== providerId && current.syncedTo[pid]?.externalId
+              ));
+
               // Always update/backfill metadata fields (creator, source, syncedFrom, createdAt)
               currentPlaylists[idx] = {
                 ...current,
@@ -5697,6 +5707,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                   ownerId: remotePlaylist.ownerId
                 },
                 hasUpdates: stillHasUpdates ? true : current.hasUpdates,
+                locallyModified: (filledFromEmpty && hasOtherMirrors) ? true : current.locallyModified,
                 syncSources: {
                   ...current.syncSources,
                   [providerId]: { ...current.syncSources?.[providerId], syncedAt: Date.now() }
@@ -6303,7 +6314,8 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         return {
           success: true,
           deleted: 0,
-          renamed: 0,
+          unsupported: 0,
+          unsupportedManualRemoval: [],
           groups: [],
           ambiguous: [],
           relinked: relinkResult.linked,
@@ -6428,33 +6440,39 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       // syncedTo and sync_playlist_links.
       // ----------------------------------------------------------------
       let totalDeleted = 0;
-      let totalRenamed = 0;
+      let totalUnsupported = 0;
       const deletedGroups = [];
       const deletedExternalIds = new Set();
+      const unsupportedManualRemoval = []; // remotes the provider couldn't delete
 
       for (const { name, keeper, toDelete } of cleanableGroups) {
         for (const dup of toDelete) {
           try {
             const result = await provider.deletePlaylist(dup.externalId, token, refreshTokenCb);
-            // result.renamedOnly=true indicates the provider couldn't
-            // fully delete (endpoint restricted) and fell back to
-            // renaming to "[Deleted] <id>". The playlist still exists on
-            // the service but its name no longer collides, and the user
-            // can remove it manually. Don't add to deletedExternalIds
-            // since the remote row hasn't actually gone away.
-            if (result?.renamedOnly) {
-              totalRenamed++;
-              console.log(`[Sync Cleanup] Renamed duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) to [Deleted] marker — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
-            } else {
+            if (result?.success) {
               totalDeleted++;
               deletedExternalIds.add(dup.externalId);
               console.log(`[Sync Cleanup] Deleted duplicate "${dup.name}" (${dup.externalId}, ${dup.trackCount || 0} tracks) — keeping ${keeper.externalId} (${keeper.trackCount || 0} tracks)`);
+            } else if (result?.reason === 'endpoint-unsupported') {
+              // Provider doesn't support DELETE on its public API (Apple
+              // Music). Track so we can surface "manually remove these"
+              // guidance; don't treat as failure — the local relink
+              // phase still produces correct local state.
+              totalUnsupported++;
+              unsupportedManualRemoval.push({
+                name: dup.name,
+                externalId: dup.externalId,
+                trackCount: dup.trackCount || 0
+              });
+              console.log(`[Sync Cleanup] Cannot delete "${dup.name}" (${dup.externalId}) via ${providerId} public API; user must remove manually`);
+            } else {
+              console.warn(`[Sync Cleanup] Unexpected deletePlaylist result for "${dup.name}":`, result);
             }
             if (provider.getRateLimitDelay) {
               await new Promise(r => setTimeout(r, provider.getRateLimitDelay()));
             }
           } catch (err) {
-            console.warn(`[Sync Cleanup] Failed to delete or rename "${dup.name}" (${dup.externalId}): ${err.message}`);
+            console.warn(`[Sync Cleanup] Failed to delete "${dup.name}" (${dup.externalId}): ${err.message}`);
           }
         }
         deletedGroups.push({
@@ -6557,7 +6575,8 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       return {
         success: true,
         deleted: totalDeleted,
-        renamed: totalRenamed,
+        unsupported: totalUnsupported,
+        unsupportedManualRemoval,
         groups: deletedGroups,
         ambiguous: ambiguousGroups,
         relinked: relinkResult.linked,

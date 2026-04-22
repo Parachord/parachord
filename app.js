@@ -5668,7 +5668,7 @@ const Parachord = () => {
         const ambiguousCount = result.ambiguous?.length || 0;
         const relinkedCount = result.relinked?.length || 0;
         const repairedEmpty = result.repairedEmptyLinks || 0;
-        const renamedCount = result.renamed || 0;
+        const unsupportedCount = result.unsupported || 0;
         const relinkedShellCount = result.relinkedFromShell || 0;
         const providerName = syncProviderConfig[providerId]?.name || providerId;
         const parts = [];
@@ -5686,8 +5686,9 @@ const Parachord = () => {
           const names = result.groups.map(g => `"${g.name}" (${g.deleted} removed)`).join(', ');
           parts.push(`removed ${result.deleted} duplicate${result.deleted > 1 ? 's' : ''}: ${names}`);
         }
-        if (renamedCount > 0) {
-          parts.push(`renamed ${renamedCount} duplicate${renamedCount > 1 ? 's' : ''} to "[Deleted] …" (${providerName}'s API rejected the delete; remove manually in the ${providerName} app)`);
+        if (unsupportedCount > 0) {
+          const names = (result.unsupportedManualRemoval || []).map(u => `"${u.name}"`).join(', ');
+          parts.push(`${unsupportedCount} duplicate${unsupportedCount > 1 ? 's' : ''} (${names}) must be removed manually in the ${providerName} app — its public API doesn't allow playlist deletion`);
         }
         if (ambiguousCount > 0) {
           const ambNames = result.ambiguous.map(a => `"${a.name}"`).join(', ');
@@ -5697,7 +5698,7 @@ const Parachord = () => {
         if (parts.length === 0) {
           showToast('No orphaned or duplicate playlists found', 'info');
         } else {
-          const tone = ambiguousCount > 0 && result.deleted === 0 && renamedCount === 0 && relinkedCount === 0 && repairedEmpty === 0 && relinkedShellCount === 0 ? 'warning' : 'success';
+          const tone = ambiguousCount > 0 && result.deleted === 0 && unsupportedCount === 0 && relinkedCount === 0 && repairedEmpty === 0 && relinkedShellCount === 0 ? 'warning' : 'success';
           showToast(parts.join('. '), tone);
         }
 
@@ -5899,7 +5900,13 @@ const Parachord = () => {
                   }
                 }
 
-                // Reset locallyModified for playlists synced to ALL providers
+                // Reset locallyModified when every outbound mirror is up to
+                // date. A provider is "up to date" if the playlist's
+                // syncedTo[provider].syncedAt >= lastModified. We only check
+                // enabled providers that this playlist actually has a
+                // syncedTo entry for — we don't require a pulled-only
+                // playlist (syncedFrom but no syncedTo) to gain a syncedTo
+                // entry before we can clear the flag.
                 if (playlistsChanged) {
                   const enabledProviders = Object.entries(resolverSyncSettingsRef.current)
                     .filter(([, s]) => s.enabled)
@@ -5907,11 +5914,20 @@ const Parachord = () => {
 
                   for (const playlist of allPlaylists) {
                     if (playlist.locallyModified && playlist.syncedTo) {
-                      const allSynced = enabledProviders.every(pid =>
-                        playlist.syncedTo[pid]?.syncedAt >= (playlist.lastModified || 0)
+                      const relevantMirrors = enabledProviders.filter(pid =>
+                        playlist.syncedTo[pid]?.externalId
                       );
-                      if (allSynced) {
+                      if (relevantMirrors.length === 0) {
+                        // No outbound mirrors — the flag has no effect, clear
+                        // it for consistency.
                         playlist.locallyModified = false;
+                      } else {
+                        const allSynced = relevantMirrors.every(pid =>
+                          (playlist.syncedTo[pid]?.syncedAt || 0) >= (playlist.lastModified || 0)
+                        );
+                        if (allSynced) {
+                          playlist.locallyModified = false;
+                        }
                       }
                     }
                   }
@@ -17356,30 +17372,41 @@ ${trackListXml}
       addTracksToPlaylist: (playlistId, tracks) => {
         setPlaylists(prev => prev.map(p => {
           if (p.id === playlistId) {
+            // Set locallyModified inline so the single save persists it. The
+            // older split (save first, mark second) only updated React state,
+            // so the store never saw the flag — push loops missed the edit.
+            // Only flag if the playlist is actually synced somewhere; unsynced
+            // local-only playlists don't need the marker.
+            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
             const updatedPlaylist = {
               ...p,
               tracks: [...(p.tracks || []), ...tracks],
-              lastModified: Date.now()
+              lastModified: Date.now(),
+              ...(shouldFlag ? { locallyModified: true } : {})
             };
             savePlaylistToStore(updatedPlaylist);
             return updatedPlaylist;
           }
           return p;
         }));
-        markPlaylistAsLocallyModified(playlistId);
       },
       removeTrackFromPlaylist: (playlistId, trackIndex) => {
         setPlaylists(prev => prev.map(p => {
           if (p.id === playlistId) {
             const newTracks = [...(p.tracks || [])];
             newTracks.splice(trackIndex, 1);
-            const updatedPlaylist = { ...p, tracks: newTracks, lastModified: Date.now() };
+            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+            const updatedPlaylist = {
+              ...p,
+              tracks: newTracks,
+              lastModified: Date.now(),
+              ...(shouldFlag ? { locallyModified: true } : {})
+            };
             savePlaylistToStore(updatedPlaylist);
             return updatedPlaylist;
           }
           return p;
         }));
-        markPlaylistAsLocallyModified(playlistId);
         // Update displayed tracks if viewing this playlist
         if (selectedPlaylistRef.current?.id === playlistId) {
           setPlaylistTracks(prev => {
@@ -17395,13 +17422,18 @@ ${trackListXml}
             const newTracks = [...(p.tracks || [])];
             const [removed] = newTracks.splice(fromIndex, 1);
             newTracks.splice(toIndex, 0, removed);
-            const updatedPlaylist = { ...p, tracks: newTracks, lastModified: Date.now() };
+            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+            const updatedPlaylist = {
+              ...p,
+              tracks: newTracks,
+              lastModified: Date.now(),
+              ...(shouldFlag ? { locallyModified: true } : {})
+            };
             savePlaylistToStore(updatedPlaylist);
             return updatedPlaylist;
           }
           return p;
         }));
-        markPlaylistAsLocallyModified(playlistId);
         // Update displayed tracks if viewing this playlist
         if (selectedPlaylistRef.current?.id === playlistId) {
           setPlaylistTracks(prev => {
@@ -39821,11 +39853,20 @@ useEffect(() => {
               try {
                 const result = await window.electron.sync.fetchPlaylistTracks(provider, externalId);
                 if (result?.success && result.tracks) {
+                  // If this playlist is mirrored to providers other than the one
+                  // we just pulled from, those mirrors now have stale content.
+                  // Flag locallyModified so the next push loop propagates the
+                  // new tracks outward (e.g. Spotify pull → push to Apple Music).
+                  // Pure single-provider pulls leave locallyModified=false so we
+                  // don't pointlessly re-push to the source.
+                  const hasOtherMirrors = !!(playlist.syncedTo && Object.keys(playlist.syncedTo).some(
+                    pid => pid !== provider && playlist.syncedTo[pid]?.externalId
+                  ));
                   const applyPull = prev => ({
                     ...prev,
                     tracks: result.tracks,
                     hasUpdates: false,
-                    locallyModified: false,
+                    locallyModified: hasOtherMirrors,
                     syncedFrom: {
                       ...prev.syncedFrom,
                       snapshotId: result.snapshotId

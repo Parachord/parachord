@@ -169,20 +169,70 @@ Flow:
 | Provider | Semantics | How |
 |---|---|---|
 | **Spotify** | Full replace | `PUT /playlists/{id}/tracks` replaces; subsequent batches `POST` to append for >100 tracks. |
-| **Apple Music** | Full diff (add + remove) | `updatePlaylistTracks` fetches current remote tracks, diffs catalog IDs against the requested list, `DELETE`s removals one at a time via `DELETE /me/library/playlists/{id}/tracks/{libraryTrackId}`, then `POST`s additions in one batch. The DELETE endpoint is **undocumented** — Apple's public API only documents POST for this resource — but has been reliably used by third-party Apple Music clients for years. |
+| **Apple Music** | Full replace via PUT (best-effort) | `updatePlaylistTracks` fetches current remote tracks to compute a diff, then issues `PUT /v1/me/library/playlists/{id}/tracks` with the full desired tracklist in the body. Apple's public API documents only POST for this resource, but Cider and similar third-party clients use PUT here for replace-all semantics. If Apple rejects PUT on the public host with 401/403/405 (consistent with Apple's stated "DELETE/PUT on library resources not supported via public API" policy, per Apple Developer Forum thread 107807), the provider flips a session kill-switch and degrades to append-only — POSTs the new additions, leaves removals on the remote. Pure-additive changes (no removals, no duplicates to collapse) skip PUT entirely and use POST since POST is the documented path. |
+
+Apple Music playlist-level DELETE and PATCH (rename) are similarly documented-unsupported and return 401 in practice. `deletePlaylist` tries DELETE once and returns `{ success: false, reason: 'endpoint-unsupported', status }` on rejection — there is no rename fallback because PATCH returns the same 401. The only reliable path Cider uses for these operations is the private `amp-api.music.apple.com` host with an authority-header rewrite; Parachord has chosen not to depend on that undocumented host.
 
 Apple Music fallback behavior:
 
-- If DELETE returns HTTP 405 (Apple restricted or pulled the endpoint), the provider flips a module-scope `amRemovalUnsupportedRef.current = true` flag for the rest of the process. Subsequent `updatePlaylistTracks` calls skip the DELETE loop and silently fall back to append-only semantics. The flag resets on app restart, so if Apple restores the endpoint we recover automatically at the cost of one wasted 405 per session. No user-visible notice; this is an implementation detail.
-- If fetching current tracks fails (network, 429) before the diff, the call falls back to the pre-change append-only path: POST every requested catalog ID, no deletions.
-- DELETEs are serial with `getRateLimitDelay()` (~150ms) spacing to avoid 429 triggering. A first 429 retries once after `Retry-After`; a second 429 aborts the loop for that call without flipping the session flag.
+- `updatePlaylistTracks` tries PUT first when removals or duplicate-collapse are needed. On 401/403/405 it flips `amPutUnsupportedRef.current = true` for the rest of the process — subsequent calls skip straight to POST-append without retrying PUT. The flag resets on app restart so we re-probe if Apple's behavior changes.
+- If fetching current tracks fails (network, 429) before the diff, the call continues with an empty `currentCatalog` — treated as a fresh push; everything requested gets POSTed.
+- `sync:cleanup-duplicate-playlists` must tolerate `deletePlaylist` returning `{ success: false, reason: 'endpoint-unsupported' }`. The handler counts these separately (`unsupported`, `unsupportedManualRemoval[]`) so the renderer can surface "remove these manually in the Music app" alongside real deletion counts. The local relink phase still produces correct local state regardless of delete success.
 
 Consequences:
 
-- Calling `updatePlaylistTracks` with an empty array on Apple Music now genuinely clears the playlist (DELETEs every current row). The `deletePlaylist` fallback path (`rename to [Deleted] {id}` when the full-playlist DELETE returns 405/404) still skips clearing tracks first since the rename alone is sufficient to mark the playlist as deleted from the user's perspective.
-- Large deletions run one-per-call at ~150ms rate-limit spacing. Removing 500 tracks takes ~75 seconds. Common incremental deletions (1–20) complete in well under a second.
-- `DELETE` takes the **library-track ID** (e.g. `i.GE5rp8DTYkZdO5`), not the catalog ID. `transformTrack` stores this as `externalId` on each fetched remote row, so no extra plumbing is needed.
-- Android implementations: full diff is the target behavior. The undocumented endpoint works from Android too, same URL/headers. If Android prefers to start with append-only and add removal later, the diff-only path still works — the algorithm falls back naturally when the DELETE pass is skipped.
+- When PUT works, `updatePlaylistTracks` with an empty array genuinely clears the playlist. When PUT is rejected, the playlist only grows — removals stay on the remote until the user clears them in the Music app.
+- There is no per-track DELETE path any more; the prior `DELETE /tracks/{libraryTrackId}` implementation was based on an unverified claim. No third-party client actually uses that endpoint — Cider achieves removal by calling PUT on the parent resource with the new tracklist. Removed to avoid misleading failure modes.
+- **There is no reliable public-API path for playlist rename or full deletion.** Both return 401 on MusicKit-issued user tokens. Surface this to users as "remove it manually in the Music app" rather than retrying with PATCH.
+- Android implementations: same PUT-replace pattern, same URL/headers. DELETE/PATCH playlist endpoints will behave the same (return 401), so Android should also treat playlist deletion as best-effort.
+
+### Multi-Provider Mirror Propagation
+
+A playlist can be mirrored to multiple providers simultaneously (e.g. synced *from* Spotify and *to* both Spotify and Apple Music). When one mirror changes upstream, the update has to propagate through the local copy to the other mirrors. Three places cooperate to make this work — losing any one of them silently breaks propagation for that playlist:
+
+**1. `handlePull` must set `locallyModified: true` when other mirrors exist** (app.js L39818+). A pull replaces local tracks with the remote's. If the playlist also has `syncedTo` entries for *other* providers, those copies are now out of date relative to what we just pulled. The pull writes `locallyModified: hasOtherMirrors` (not a hardcoded `false`) so the next push loop picks it up. Without this, an Android-edit → Spotify → desktop pull would stop at the desktop and never reach Apple Music.
+
+```js
+const hasOtherMirrors = !!(playlist.syncedTo && Object.keys(playlist.syncedTo).some(
+  pid => pid !== provider && playlist.syncedTo[pid]?.externalId
+));
+const applyPull = prev => ({
+  ...prev, tracks: result.tracks, hasUpdates: false,
+  locallyModified: hasOtherMirrors,
+  ...
+});
+```
+
+**2. Local-content mutators must persist `locallyModified: true` in the same save that writes the new tracks.** `addTracksToPlaylist`, `removeTrackFromPlaylist`, `moveTrackInPlaylist` (app.js L17358+) used to flag the playlist via a separate React state update that never reached the store. Inline the flag into the object that `savePlaylistToStore` receives. Guard with `p.syncedFrom || p.syncedTo` so local-only playlists don't get flagged for nothing.
+
+```js
+const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+const updatedPlaylist = {
+  ...p, tracks: [...], lastModified: Date.now(),
+  ...(shouldFlag ? { locallyModified: true } : {})
+};
+savePlaylistToStore(updatedPlaylist);
+```
+
+**3. Post-sync clear logic must filter to `relevantMirrors`** (app.js L5903+) — enabled providers that actually have a `syncedTo[pid].externalId` entry. The old logic used `enabledProviders.every(pid => syncedTo[pid]?.syncedAt >= lastModified)` which silently failed when an enabled provider had no `syncedTo` entry (`undefined >= number` is `false`), leaving `locallyModified: true` forever and causing the next sync to re-push the same content:
+
+```js
+const relevantMirrors = enabledProviders.filter(pid =>
+  playlist.syncedTo[pid]?.externalId
+);
+if (relevantMirrors.length === 0) {
+  playlist.locallyModified = false;
+} else {
+  const allSynced = relevantMirrors.every(pid =>
+    (playlist.syncedTo[pid]?.syncedAt || 0) >= (playlist.lastModified || 0)
+  );
+  if (allSynced) playlist.locallyModified = false;
+}
+```
+
+**Main.js `sync:start` also flags on refill** (main.js L5680+). When the backend refills an empty playlist from a pulled provider and the playlist has other `syncedTo` mirrors, main.js writes `locallyModified: true` alongside the fresh tracks. Same rationale as Fix 1 but from the sync-start path that bypasses `handlePull`.
+
+End-to-end flow that all three enable: Android edit → Spotify remote → desktop `sync:start` or `handlePull` refills local with `locallyModified: true` → next push loop's `relevantMirrors` check sees AM is out of date → push loop issues PUT to AM → on success, `syncedTo[am].syncedAt` advances past `lastModified` → next cycle's clear logic sees `allSynced`, resets the flag.
 
 ### Sync IPC Surface
 
