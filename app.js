@@ -9497,8 +9497,12 @@ const Parachord = () => {
         results: result.results
       }));
 
-      // Auto-create local playlists and push collection items after manual sync
-      // Run after dialog updates to 'complete' so UI isn't blocked during track resolution
+      // Auto-create local playlists AND push updates for locally-modified
+      // playlists after a manual sync. Mirrors the background sync's
+      // create+push loop (L5814+) so the wizard's "Start Sync" button does
+      // the full bidirectional work instead of only creating missing remotes.
+      // Run after dialog updates to 'complete' so UI isn't blocked during
+      // track resolution.
       (async () => {
         console.log(`[Sync] Post-sync IIFE started for ${providerId}`);
 
@@ -9515,39 +9519,110 @@ const Parachord = () => {
               if (playlist.localOnly) continue;
               // Only skip if this playlist was pulled FROM this provider —
               // playlists pulled from a different provider must still be
-              // creatable on this one for multi-provider mirroring.
+              // creatable/pushable on this one for multi-provider mirroring.
               if (playlist.syncedFrom?.resolver === providerId) continue;
               if (playlist.id?.startsWith(`${providerId}-`)) continue;
-              if (playlist.syncedTo?.[providerId]) continue;
+              if (playlist.syncedTo?.[providerId]?.pendingAction) continue;
 
-              console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
-              try {
-                const createResult = await window.electron.sync.createPlaylist(
-                  providerId,
-                  playlist.title,
-                  playlist.description || '',
-                  playlist.tracks || [],
-                  playlist.id
-                );
-                if (createResult.success) {
-                  playlist.syncedTo = {
-                    ...playlist.syncedTo,
-                    [providerId]: {
-                      externalId: createResult.externalId,
-                      snapshotId: createResult.snapshotId,
-                      syncedAt: Date.now(),
-                      unresolvedTracks: createResult.unresolvedTracks || [],
-                      pendingAction: null
-                    }
-                  };
-                  playlistsChanged = true;
+              const syncInfo = playlist.syncedTo?.[providerId];
+
+              if (!syncInfo) {
+                // Playlist not yet created on this provider — create it
+                console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
+                try {
+                  const createResult = await window.electron.sync.createPlaylist(
+                    providerId,
+                    playlist.title,
+                    playlist.description || '',
+                    playlist.tracks || [],
+                    playlist.id
+                  );
+                  if (createResult.success) {
+                    playlist.syncedTo = {
+                      ...playlist.syncedTo,
+                      [providerId]: {
+                        externalId: createResult.externalId,
+                        snapshotId: createResult.snapshotId,
+                        syncedAt: Date.now(),
+                        unresolvedTracks: createResult.unresolvedTracks || [],
+                        pendingAction: null
+                      }
+                    };
+                    playlistsChanged = true;
+                  }
+                } catch (err) {
+                  console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
                 }
-              } catch (err) {
-                console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
+              } else if (playlist.locallyModified) {
+                // Playlist exists remotely and has local changes — push updates
+                console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
+                try {
+                  // Resolve tracks to provider-specific URIs before pushing
+                  let tracksForPush = playlist.tracks || [];
+                  try {
+                    const resolveResult = await window.electron.sync.resolveTracks(providerId, tracksForPush);
+                    if (resolveResult.success) {
+                      tracksForPush = resolveResult.resolved;
+                      playlist.syncedTo[providerId].unresolvedTracks = resolveResult.unresolved;
+                    }
+                  } catch (resolveErr) {
+                    console.warn(`[Sync] Track resolution failed for "${playlist.title}" on ${providerId}:`, resolveErr.message);
+                  }
+
+                  const pushResult = await window.electron.sync.pushPlaylist(
+                    providerId,
+                    syncInfo.externalId,
+                    tracksForPush,
+                    { name: playlist.title, description: playlist.description || '' }
+                  );
+                  if (pushResult?.success) {
+                    playlist.syncedTo[providerId] = {
+                      ...playlist.syncedTo[providerId],
+                      snapshotId: pushResult.snapshotId,
+                      syncedAt: Date.now()
+                    };
+                    playlistsChanged = true;
+                  } else if (pushResult?.error === 'PLAYLIST_NOT_FOUND' || pushResult?.error?.includes('404')) {
+                    playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
+                    playlistsChanged = true;
+                    console.warn(`[Sync] Remote playlist "${playlist.title}" was deleted on ${providerId}`);
+                  }
+                } catch (err) {
+                  if (err.message?.includes('404') || err.message?.includes('Not Found')) {
+                    playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
+                    playlistsChanged = true;
+                  }
+                  console.warn(`[Sync] Failed to push playlist "${playlist.title}" to ${providerId}:`, err.message);
+                }
               }
             }
 
+            // Reset locallyModified when every outbound mirror is up to date.
+            // Mirrors the background loop's clear logic (L5916+): relevantMirrors
+            // excludes the source provider since we never push to it, so its
+            // syncedAt never advances via the push loop.
             if (playlistsChanged) {
+              const enabledProviders = Object.entries(resolverSyncSettingsRef.current)
+                .filter(([, s]) => s.enabled)
+                .map(([id]) => id);
+
+              for (const playlist of allPlaylists) {
+                if (playlist.locallyModified && playlist.syncedTo) {
+                  const sourceProvider = playlist.syncedFrom?.resolver;
+                  const relevantMirrors = enabledProviders.filter(pid =>
+                    playlist.syncedTo[pid]?.externalId && pid !== sourceProvider
+                  );
+                  if (relevantMirrors.length === 0) {
+                    playlist.locallyModified = false;
+                  } else {
+                    const allSynced = relevantMirrors.every(pid =>
+                      (playlist.syncedTo[pid]?.syncedAt || 0) >= (playlist.lastModified || 0)
+                    );
+                    if (allSynced) playlist.locallyModified = false;
+                  }
+                }
+              }
+
               for (const playlist of allPlaylists) {
                 await window.electron.playlists.save(playlist);
               }

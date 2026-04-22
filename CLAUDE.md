@@ -115,12 +115,12 @@ Only if all three fail does `provider.createPlaylist` actually create a new remo
 
 ### In-Session Mutex
 
-The renderer has **two independent code paths** that can call `sync.createPlaylist`:
+The renderer has **two independent code paths** that call `sync.createPlaylist` and `sync.pushPlaylist`:
 
 - Background sync timer (every 15 min, app.js L5750+)
-- Manual sync post-IIFE after the wizard completes (app.js L9377+)
+- Manual sync post-IIFE after the wizard completes (app.js L9500+)
 
-Both loops read `local_playlists`, iterate, and push. Without coordination they race: both read a playlist without `syncedTo`, both call `sync.createPlaylist`, both create remotes.
+Both loops have the same structure: iterate `local_playlists`, for each one either create a remote (if no `syncedTo[providerId]`) or push updates (if `locallyModified`), then clear `locallyModified` when all mirrors are up to date. Keep them in sync — if you add a guard or branch to one, add it to the other. Without coordination they race: both read a playlist without `syncedTo`, both call `sync.createPlaylist`, both create remotes.
 
 **Mitigation:** `playlistSyncInProgressRef` (app.js L5700), a simple renderer-side boolean ref. Each path acquires it before the creation loop and releases in `finally`. If already held, the path skips with a log message. This is belt-and-suspenders with the IPC-level dedup above.
 
