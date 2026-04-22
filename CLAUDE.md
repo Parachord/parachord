@@ -277,6 +277,121 @@ End-to-end flow that all four enable: Android edit → Spotify remote → deskto
 - **Main.js `sync:start` clears `syncedFrom` when the remote no longer exists** — but only if the response looks complete (>70% of previously-synced playlists still present). Guards against mass-duplicate creation on partial API responses.
 - **Bulk save on Android** must guarantee `sync_playlist_links` writes are durable independently of playlist object writes (separate keys, separate transactions). The whole point of the map is to survive playlist-save bugs.
 
+### Android Parity Requirements
+
+This section is for the Android client — Parachord's sync logic must stay byte-compatible with the desktop so playlists round-trip correctly. Every rule here was learned from a real bug that broke propagation until it was fixed. Skipping any one silently breaks multi-provider sync for users on both platforms.
+
+**Apple Music provider must degrade gracefully on library-endpoint rejections.** Apple's public API (`api.music.apple.com`) rejects all of the following on user library resources with 401/403/405 — this is documented policy (Apple Developer Forum 107807), not a bug or a token issue:
+
+| Endpoint | Apple's response | Required Android behavior |
+|---|---|---|
+| `DELETE /me/library/playlists/{id}` | 401 | Do NOT throw. Return `{success: false, reason: 'endpoint-unsupported', status}`. Surface to user as "remove manually in the Music app." |
+| `DELETE /me/library/playlists/{id}/tracks/{libraryTrackId}` | Varies / unreliable | Do NOT implement. No third-party client actually uses this endpoint; Cider achieves removal by PUT on the parent resource. |
+| `PATCH /me/library/playlists/{id}` (rename/description) | 401 | Do NOT throw. Flip a session kill-switch, log once, return success-with-skipped. **Load-bearing** — the rename step runs before the track push in `sync:push-playlist`; a throw here aborts the track push too. |
+| `PUT /me/library/playlists/{id}/tracks` (replace) | 401 on many tokens | Do NOT throw. Flip a separate session kill-switch, log once, fall back to `POST` append for the additions only. Removals will persist on the remote — accept this, document it. |
+| `POST /me/library/playlists/{id}/tracks` (append) | 204 | Works. This is the only reliable write path. |
+
+Specifically on Android: if you find yourself writing `if (!response.isSuccessful()) throw new IOException(...)` around any of the PATCH/PUT/DELETE calls above, stop. That's the bug that killed desktop pushes for months. The function's contract must be "best-effort; never throw on documented-unsupported 401/403/405." Use two separate booleans (`amPutUnsupportedForSession`, `amPatchUnsupportedForSession`), not one shared flag — they're independent endpoints with independent kill-switches.
+
+**Push order in the "update existing remote playlist" path:**
+
+```
+1. PATCH (rename/description)   — wrap in try/catch; never abort on throw
+2. PUT or POST (tracks)         — this is the actual payload; must always run
+3. Fetch new snapshotId         — return to caller
+```
+
+The wrapping try/catch is defense-in-depth. Even if the PATCH function itself never throws under normal rejection, a network error or unexpected 5xx should also not kill the track push.
+
+**Push loop invariants (both background timer and post-wizard "Sync Now"):**
+
+```kotlin
+for (playlist in localPlaylists) {
+    if (playlist.localOnly) continue
+    // Provider-scoped guard — NOT `if (playlist.syncedFrom != null) continue`.
+    // A Spotify-imported playlist has syncedFrom.resolver == "spotify"
+    // and must still be pushable to Apple Music.
+    if (playlist.syncedFrom?.resolver == providerId) continue
+    if (playlist.id?.startsWith("$providerId-") == true) continue
+    if (playlist.syncedTo?.get(providerId)?.pendingAction != null) continue
+
+    val syncInfo = playlist.syncedTo?.get(providerId)
+    if (syncInfo == null) {
+        // Create new remote; link on success.
+        createRemote(playlist)
+    } else if (playlist.locallyModified) {
+        // Push updates; on 404 mark pendingAction = "remote-deleted".
+        pushToRemote(playlist, syncInfo.externalId)
+    }
+}
+
+// After the loop, clear locallyModified when every outbound mirror is
+// up to date. Exclude the source provider — we don't push to it.
+for (playlist in localPlaylists) {
+    if (!playlist.locallyModified || playlist.syncedTo == null) continue
+    val sourceProvider = playlist.syncedFrom?.resolver
+    val relevantMirrors = enabledProviders.filter { pid ->
+        playlist.syncedTo[pid]?.externalId != null && pid != sourceProvider
+    }
+    if (relevantMirrors.isEmpty()) {
+        playlist.locallyModified = false
+    } else if (relevantMirrors.all { pid ->
+        (playlist.syncedTo[pid]?.syncedAt ?: 0) >= (playlist.lastModified ?: 0)
+    }) {
+        playlist.locallyModified = false
+    }
+}
+```
+
+Both the background timer and any "sync now" action must run the full create-OR-push-update flow, not just create-if-missing. If you split them into two code paths, make sure both do the same work — don't let only the background timer push updates, or users won't see uploads until the next cadence tick.
+
+**`sync:start` equivalent — import path must preserve cross-provider `syncedFrom`.** When matching an imported remote to an existing local (via `syncedFrom.externalId` OR `syncedTo[providerId].externalId` OR id-pattern), the match can fire because the local is a *push target* for this provider with its pull source elsewhere:
+
+```kotlin
+// local.syncedFrom?.resolver == "spotify"
+// remote is from Apple Music, matched via local.syncedTo["applemusic"].externalId
+val isOwnPullSource = local.syncedFrom?.resolver == null
+    || local.syncedFrom.resolver == providerId
+
+if (isOwnPullSource) {
+    // Update syncedFrom, refill tracks if empty, etc. (standard path)
+} else {
+    // CROSS-PROVIDER PUSH MIRROR. Preserve local.syncedFrom as-is.
+    // Do NOT refetch tracks — the other provider is authoritative.
+    // Do NOT compute hasUpdates from snapshotId diff (snapshotIds from
+    // different providers aren't comparable).
+    // DO update syncSources[providerId].syncedAt.
+}
+```
+
+Clobbering the cross-provider `syncedFrom` orphans the local from its real pull source; the original provider will then see it as a new playlist on its next sync and create a duplicate remote.
+
+**Multi-provider mirror propagation — four cooperating pieces:**
+
+1. **Pull paths must set `locallyModified = true` when other mirrors exist.** Both the explicit "pull" action and the implicit refill-on-empty path. The predicate is `hasOtherMirrors = playlist.syncedTo.any { (pid, v) -> pid != currentProvider && v.externalId != null }`. Without this, an Android edit pulled through Spotify onto the desktop never reaches Apple Music — and vice versa for edits made on desktop that should reach Apple Music via Android's Spotify pull.
+
+2. **Every local-content mutator must persist `locallyModified = true` in the same save that writes the tracks.** If Android has `addTracksToPlaylist` / `removeTrackFromPlaylist` / `moveTrackInPlaylist` equivalents, inline the flag write — don't issue a separate state update that might not reach storage. Guard with `playlist.syncedFrom != null || playlist.syncedTo != null` so local-only playlists aren't flagged pointlessly.
+
+3. **Push-loop `syncedFrom` guard must be provider-scoped** (see above — `syncedFrom?.resolver == providerId`, not blanket).
+
+4. **Post-push clear logic filters to `relevantMirrors` excluding the source provider** (see the Kotlin snippet above).
+
+**Sync wizard / playlist-picker pre-check state**, if Android has one: seed the "checked" set from the union of saved `selectedPlaylistIds`, externalIds where any local has `syncedFrom.resolver == providerId`, and externalIds where any local has `syncedTo[providerId].externalId`. Don't seed only from the last-saved list — push-only mirrors that were never selected in the wizard will appear unchecked even though they're actively syncing.
+
+**Playlist data-model fields to preserve on every save:**
+
+```
+id, title, description, tracks,
+syncedFrom, syncedTo, syncSources,
+hasUpdates, locallyModified, lastModified,
+localOnly, sourceUrl, source, creator,
+createdAt, addedAt
+```
+
+Missing any one of these on any save path causes a specific class of bug — e.g., dropping `syncedTo` causes duplicate remote creation; dropping `locallyModified` causes the propagation chain to silently break.
+
+**Durable link map (`sync_playlist_links`):** Android MUST write this map in a separate transaction/key from the playlist object itself. Its entire purpose is to survive playlist-save bugs. A combined write defeats it.
+
 ### Track/Album/Artist Sync
 - After playback, fire-and-forget pushes to enabled sync providers
 - Checks `track.spotifyId` or `track.sources?.spotify?.spotifyId`
