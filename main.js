@@ -5992,9 +5992,16 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       }
     }
 
-    // Push metadata changes (name, description) if provided
+    // Push metadata changes (name, description) if provided.
+    // A failure here (e.g. Apple Music's PATCH-is-unsupported 401) must NOT
+    // abort the track push — the rename is best-effort, the tracks are the
+    // point. Swallow any throw and continue.
     if (metadata && provider.updatePlaylistDetails) {
-      await provider.updatePlaylistDetails(playlistExternalId, metadata, token);
+      try {
+        await provider.updatePlaylistDetails(playlistExternalId, metadata, token);
+      } catch (detailsErr) {
+        console.warn(`[Sync] updatePlaylistDetails failed for ${providerId} playlist ${playlistExternalId}; continuing with track push: ${detailsErr.message}`);
+      }
     }
 
     // Push track changes

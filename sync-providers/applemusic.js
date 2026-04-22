@@ -20,6 +20,13 @@ const APPLE_MUSIC_API_BASE = 'https://api.music.apple.com/v1';
 // restart so we re-probe after Apple or infra changes.
 const amPutUnsupportedRef = { current: false };
 
+// Session-scoped kill-switch for PATCH /me/library/playlists/{id}. Apple's
+// public API also rejects library-playlist PATCH (rename/description) with
+// 401/403/405 — same "library resources not supported" policy as PUT/DELETE.
+// On first rejection we flip this flag so subsequent pushes don't block on
+// the rename step and abort before tracks are pushed. Resets on restart.
+const amPatchUnsupportedRef = { current: false };
+
 /**
  * Normalize a string for ID generation (lowercase, remove special chars)
  */
@@ -833,8 +840,22 @@ const AppleMusicSyncProvider = {
     return catalogIds.length;
   },
 
-  // Update playlist name and description on Apple Music
+  // Update playlist name and description on Apple Music.
+  //
+  // Apple's public API rejects PATCH on library playlists with 401/403/405
+  // (documented as unsupported; see Apple Developer Forum thread 107807).
+  // This method therefore degrades gracefully rather than throwing: a
+  // rejection flips a session kill-switch so subsequent pushes skip the
+  // PATCH attempt entirely, which is load-bearing — `sync:push-playlist`
+  // runs this BEFORE the track push, and a throw here would abort the
+  // whole push before any tracks are uploaded. Returning success lets the
+  // track push proceed even though the rename didn't stick on the remote.
   async updatePlaylistDetails(playlistId, metadata, token) {
+    // Session kill-switch: we've already seen Apple reject PATCH this run.
+    if (amPatchUnsupportedRef.current) {
+      return { success: true, skipped: 'endpoint-unsupported' };
+    }
+
     const { developerToken, userToken } = JSON.parse(token);
 
     const attributes = {};
@@ -859,7 +880,14 @@ const AppleMusicSyncProvider = {
     );
 
     if (!resp.ok) {
-      throw new Error(`Failed to update Apple Music playlist details: ${resp.status}`);
+      if (resp.status === 401 || resp.status === 403 || resp.status === 405) {
+        amPatchUnsupportedRef.current = true;
+        console.warn(`[AppleMusic] PATCH /playlists returned ${resp.status} — disabling rename/description updates for this session. Track pushes will still run.`);
+        return { success: true, skipped: 'endpoint-unsupported', status: resp.status };
+      }
+      // Unexpected non-auth failure: surface it so the caller can decide.
+      console.warn(`[AppleMusic] PATCH /playlists failed with ${resp.status}; continuing without rename.`);
+      return { success: false, status: resp.status };
     }
 
     return { success: true };

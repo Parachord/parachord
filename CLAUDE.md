@@ -176,6 +176,7 @@ Apple Music playlist-level DELETE and PATCH (rename) are similarly documented-un
 Apple Music fallback behavior:
 
 - `updatePlaylistTracks` tries PUT first when removals or duplicate-collapse are needed. On 401/403/405 it flips `amPutUnsupportedRef.current = true` for the rest of the process — subsequent calls skip straight to POST-append without retrying PUT. The flag resets on app restart so we re-probe if Apple's behavior changes.
+- `updatePlaylistDetails` (PATCH name/description) must NOT throw on Apple's 401/403/405 — it's called by `sync:push-playlist` *before* the track push, so a throw would abort tracks too. Instead, flip `amPatchUnsupportedRef.current = true`, log once, and return `{success: true, skipped: 'endpoint-unsupported'}`. The rename silently no-ops for the session; the track push still runs. Main.js also wraps the `updatePlaylistDetails` call in a try/catch as defense-in-depth against future throws (e.g. network errors).
 - If fetching current tracks fails (network, 429) before the diff, the call continues with an empty `currentCatalog` — treated as a fresh push; everything requested gets POSTed.
 - `sync:cleanup-duplicate-playlists` must tolerate `deletePlaylist` returning `{ success: false, reason: 'endpoint-unsupported' }`. The handler counts these separately (`unsupported`, `unsupportedManualRemoval[]`) so the renderer can surface "remove these manually in the Music app" alongside real deletion counts. The local relink phase still produces correct local state regardless of delete success.
 
