@@ -1,6 +1,6 @@
 {
   "name": "parachord-desktop",
-  "version": "0.9.0-beta.10",
+  "version": "0.9.1-beta.1",
   "description": "Parachord Desktop - Multi-source music player with cross-platform resolver support",
   "main": "main.js",
   "scripts": {
