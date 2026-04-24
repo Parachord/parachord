@@ -39874,9 +39874,21 @@ useEffect(() => {
             if (!playlist?.syncedFrom) return null;
 
             const hasRemoteUpdates = playlist.hasUpdates;
-            const hasLocalChanges = playlist.locallyModified;
             const provider = playlist.syncedFrom.resolver;
             const providerName = provider === 'spotify' ? 'Spotify' : provider;
+
+            // `locallyModified: true` has two triggers: (a) the user edited
+            // local content, and (b) handlePull on a multi-mirror playlist
+            // sets it so the next push loop propagates the pull to OTHER
+            // mirrors. The push banner here targets the source provider
+            // (syncedFrom.resolver), so showing it for case (b) is a lie —
+            // pushing back to the source we just pulled from is a no-op
+            // (the push loop's provider-scoped syncedFrom guard correctly
+            // skips it). Gate on actual divergence from the source: local
+            // content is newer than the last time we agreed with it.
+            const sourceSyncedAt = playlist.syncSources?.[provider]?.syncedAt || 0;
+            const localLastModified = playlist.lastModified || 0;
+            const hasLocalChanges = !!playlist.locallyModified && localLastModified > sourceSyncedAt;
 
             // No sync needed
             if (!hasRemoteUpdates && !hasLocalChanges) return null;

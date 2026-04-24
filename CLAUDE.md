@@ -164,6 +164,8 @@ Flow:
 - `locallyModified=true` → banner shows as push (XSPF is ready to go upstream).
 - Conflict (both flags) → rendered as push (XSPF wins anyway).
 
+**Sync banner's push-state check must discount pull-induced `locallyModified`** (app.js L39876+). The banner is scoped to `syncedFrom.resolver` (the source provider). `locallyModified: true` has two triggers: (a) the user actually edited local content, and (b) `handlePull` on a multi-mirror playlist sets it so the next push loop propagates the pull to *other* mirrors (the multi-provider mirror-propagation fix). Treating case (b) as "push to source" shows a spurious "Push to Spotify" banner immediately after the user clicks "Pull from Spotify" — the push-to-source would be a no-op (the push loop's provider-scoped `syncedFrom` guard correctly skips it), but the banner doesn't know that. Gate `hasLocalChanges` on real divergence from the source: `playlist.locallyModified && lastModified > syncSources[sourceProvider].syncedAt`. `handlePull` sets both to the same `Date.now()` so the comparison is false right after a pull; a subsequent real edit bumps `lastModified` and flips it to true.
+
 ### Provider-Specific Push Semantics
 
 | Provider | Semantics | How |
