@@ -295,6 +295,8 @@ This section is for the Android client — Parachord's sync logic must stay byte
 
 Specifically on Android: if you find yourself writing `if (!response.isSuccessful()) throw new IOException(...)` around any of the PATCH/PUT/DELETE calls above, stop. That's the bug that killed desktop pushes for months. The function's contract must be "best-effort; never throw on documented-unsupported 401/403/405." Use two separate booleans (`amPutUnsupportedForSession`, `amPatchUnsupportedForSession`), not one shared flag — they're independent endpoints with independent kill-switches.
 
+**Do NOT retry-on-401 for any of the documented-unsupported endpoints.** A "defensive" refresh-and-retry on 401 looks harmless but introduces a worse failure mode: when the MusicKit bridge returns no fresh token during the retry attempt, the desktop's `buildAppleMusicRefreshCb` emits `applemusic:reauth-required` and force-walks the user through the System Settings revoke flow for an authorization that was never actually broken. Since the 401 is structural (Apple won't unblock the endpoint by handing you a fresh token), the retry can never succeed — it can only escalate a benign endpoint rejection into a phantom auth crisis. Go straight to the endpoint-unsupported return on the first 401. Same rule for Android: don't refresh-and-retry on 401 against these endpoints.
+
 **Push order in the "update existing remote playlist" path:**
 
 ```

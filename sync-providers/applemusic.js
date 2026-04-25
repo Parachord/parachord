@@ -363,35 +363,30 @@ const AppleMusicSyncProvider = {
    *
    * @param {string} playlistId - Apple Music library playlist ID
    * @param {string} token - JSON string with developerToken and userToken
-   * @param {function} [refreshTokenCb] - Optional async callback to refresh token on 401
+   * @param {function} [_refreshTokenCb] - Accepted for interface parity with other
+   *     providers but intentionally unused. Apple's public API rejects
+   *     `DELETE /me/library/playlists/{id}` with 401 as a permanent
+   *     endpoint-level restriction (Apple Developer Forum 107807) — a
+   *     refreshed user token cannot fix it. Calling the refresh callback
+   *     here was previously "defensive" but actively harmful: when the
+   *     MusicKit bridge happens to return no token during that refresh
+   *     attempt, `buildAppleMusicRefreshCb` emits `applemusic:reauth-required`,
+   *     and the user gets force-walked through the System Settings revoke
+   *     dance for an auth that was never broken. We now go straight to
+   *     the `endpoint-unsupported` return on 401/403/405.
    */
-  async deletePlaylist(playlistId, token, refreshTokenCb) {
-    const attemptDelete = async (currentToken) => {
-      const { developerToken, userToken } = JSON.parse(currentToken);
-      return fetch(
-        `${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlistId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${developerToken}`,
-            'Music-User-Token': userToken
-          }
+  async deletePlaylist(playlistId, token, _refreshTokenCb) {
+    const { developerToken, userToken } = JSON.parse(token);
+    const resp = await fetch(
+      `${APPLE_MUSIC_API_BASE}/me/library/playlists/${playlistId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${developerToken}`,
+          'Music-User-Token': userToken
         }
-      );
-    };
-
-    let resp = await attemptDelete(token);
-
-    // 401 is sometimes a stale session, so a single refresh+retry is
-    // cheap and occasionally helps. Apple more often returns 401 here as
-    // a permanent endpoint rejection; the retry is defensive.
-    if ((resp.status === 401 || resp.status === 403) && refreshTokenCb) {
-      const newToken = await refreshTokenCb();
-      if (newToken) {
-        token = newToken;
-        resp = await attemptDelete(token);
       }
-    }
+    );
 
     if (resp.ok || resp.status === 204 || resp.status === 202) {
       return { success: true };
