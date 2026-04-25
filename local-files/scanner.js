@@ -26,17 +26,55 @@ class FileScanner {
     console.log(`[LocalFiles] Starting scan of: ${folderPath}`);
 
     try {
+      // Verify the watch folder is actually accessible before doing
+      // anything destructive. If the volume is unmounted, the network share
+      // is offline, or permissions lapsed transiently, statSync throws —
+      // and we must NOT proceed to the diff-and-delete loop, otherwise an
+      // unreadable folder gets interpreted as "all files deleted" and we
+      // wipe the entire DB section for that folder. The user's library
+      // would then "reappear" on the next scan once the volume came back,
+      // matching real reports of disappearing/reappearing libraries.
+      try {
+        const rootStat = fs.statSync(folderPath);
+        if (!rootStat.isDirectory()) {
+          console.warn(`[LocalFiles] Watch root is not a directory: ${folderPath}; skipping scan to preserve existing DB entries.`);
+          return { processed: 0, added: 0, updated: 0, removed: 0, errors: 0, total: 0, skipped: 'not-a-directory' };
+        }
+      } catch (rootErr) {
+        console.warn(`[LocalFiles] Watch root unreadable (${rootErr.code || rootErr.message}); skipping scan to preserve existing DB entries: ${folderPath}`);
+        return { processed: 0, added: 0, updated: 0, removed: 0, errors: 0, total: 0, skipped: 'unreadable' };
+      }
+
       // First, collect all audio files
-      const files = await this.collectAudioFiles(folderPath);
+      const collectResult = await this.collectAudioFiles(folderPath);
+      if (!collectResult.ok) {
+        console.warn(`[LocalFiles] Root walk failed for ${folderPath}: ${collectResult.error}; skipping scan to preserve existing DB entries.`);
+        return { processed: 0, added: 0, updated: 0, removed: 0, errors: 0, total: 0, skipped: 'walk-failed' };
+      }
+      const files = collectResult.files;
       const fileSet = new Set(files);
       console.log(`[LocalFiles] Found ${files.length} audio files`);
 
-      // Remove stale entries (files that no longer exist at their paths)
-      let removed = 0;
+      // Existing rows for this folder.
       const existingTracks = this.db.db.prepare(
         `SELECT file_path FROM tracks WHERE file_path LIKE ?`
       ).all(folderPath + '%');
 
+      // Safety guard: if the folder previously had tracks but the scan
+      // finds zero, treat that as suspicious — almost always an
+      // environmental issue (volume mounted but empty, FS race during
+      // mount, permissions partially restricted) rather than a legit
+      // wholesale deletion. Refuse to delete and let the next scan
+      // re-evaluate. Mirrors the >70% completeness guard in sync:start.
+      if (files.length === 0 && existingTracks.length > 0) {
+        console.warn(`[LocalFiles] Scan returned 0 files for ${folderPath} but DB has ${existingTracks.length} entries; refusing to wipe. Re-run the scan manually if the folder is genuinely empty.`);
+        // Still update folder stats so we don't keep retrying immediately.
+        this.db.updateWatchFolderStats(folderPath, existingTracks.length);
+        return { processed: 0, added: 0, updated: 0, removed: 0, errors: 0, total: 0, skipped: 'empty-but-db-populated' };
+      }
+
+      // Remove stale entries (files that no longer exist at their paths)
+      let removed = 0;
       for (const track of existingTracks) {
         if (!fileSet.has(track.file_path)) {
           // File no longer exists at this path - remove from database
@@ -95,11 +133,20 @@ class FileScanner {
   async collectAudioFiles(folderPath) {
     const files = [];
 
-    const walk = async (dir) => {
+    // The root walk's success matters — a failure there means the folder
+    // is unreadable (unmounted, permissions, etc.) and the caller must
+    // NOT treat the empty list as authoritative. Failures inside subdirs
+    // are still tolerated (logged and skipped); we only escalate the
+    // root-level error.
+    const walk = async (dir, isRoot) => {
       let entries;
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
       } catch (error) {
+        if (isRoot) {
+          // Bubble up — caller decides whether to abort the scan.
+          throw error;
+        }
         console.error(`[LocalFiles] Cannot read directory ${dir}:`, error.message);
         return;
       }
@@ -117,15 +164,19 @@ class FileScanner {
             const stat = fs.lstatSync(fullPath);
             if (stat.isSymbolicLink()) continue;
           } catch (_) { /* skip inaccessible entries */ continue; }
-          await walk(fullPath);
+          await walk(fullPath, false);
         } else if (entry.isFile() && MetadataReader.isSupported(fullPath)) {
           files.push(fullPath);
         }
       }
     };
 
-    await walk(folderPath);
-    return files;
+    try {
+      await walk(folderPath, true);
+      return { ok: true, files };
+    } catch (error) {
+      return { ok: false, error: error.message || String(error), code: error.code };
+    }
   }
 
   async processFile(filePath) {

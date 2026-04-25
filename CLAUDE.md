@@ -484,6 +484,29 @@ Small icon button (`M4 4v5h.582m15.356 2A8...` — circular arrows) beside the A
 - **Outbound push failure must NOT roll back local state.** Local is authoritative; service write is best-effort.
 - **Startup sync should have a small delay (~5s).** Avoids thrashing the network during bulk cache load.
 
+## Local Files Library
+
+`local-files/` is a SQLite-backed scanner/indexer for music files in user-configured watch folders. DB lives at `userData/local-files.db`. Tables: `tracks` (metadata + paths) and `watch_folders` (configured roots).
+
+### Cadences
+
+- **Foreground:** chokidar real-time watcher per folder, `awaitWriteFinish` 2s, 2s debounce on event batches.
+- **Background:** chokidar watchers torn down (Electron throttles them aggressively), replaced with a 5-min `pollForChanges` interval that calls `scanner.scanFolder` on every enabled root.
+
+### Diff-and-delete invariant — DO NOT regress
+
+`scanner.scanFolder` does a tree walk, builds the current set of files, and removes DB entries not in that set. Three guards exist to prevent an unreadable folder (unmounted external drive, offline network share, transient permission lapse, iCloud offload race) from being interpreted as "all files deleted" and wiping the DB:
+
+1. **Pre-scan stat check.** `fs.statSync(folderPath)` before doing anything. If it throws or the path isn't a directory, return early with `skipped: 'unreadable'` / `'not-a-directory'`.
+2. **Root-walk error propagation.** `collectAudioFiles` returns `{ok: true|false, files|error}`. The recursive `walk` only swallows errors for *subdirectories*; failure on the root path bubbles up so the caller can abort. (Subdir failures still skip silently — those are usually individual unreadable folders, not whole-volume issues.)
+3. **Empty-but-DB-populated guard.** If the scan returns zero files but the DB has any entries for that folder, refuse to delete and log a warning. Mirrors the >70% completeness guard in `sync:start` for the same class of "looks like environmental, not a real change" pattern.
+
+Without these, a user with their music library on an external drive would see the entire scanned library disappear every time the drive disconnected, and reappear on the next 5-min poll once it reconnected. That was the symptom that surfaced the bug in user reports.
+
+### chokidar caveat
+
+The watcher (foreground mode) listens for individual `unlink` events and deletes per-file from the DB. Chokidar may fire a flood of `unlink` events when a watched volume disappears mid-session — there's currently no batched safeguard there equivalent to the scanFolder guard. If users still report disappearance with a foreground app, look at `processFileChange('unlink', ...)` next.
+
 ## State Persistence
 
 ### Bulk Load Pattern (L18740)
