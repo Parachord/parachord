@@ -4940,6 +4940,90 @@ function migrateSyncLinksFromPlaylists() {
 // and never touches the network.
 migrateSyncLinksFromPlaylists();
 
+// Startup heal: a regression in an earlier code path could rewrite
+// `syncedFrom` on a Spotify-imported playlist to point at another provider
+// (most often Apple Music, after a sync:start matched the local via
+// syncedTo[applemusic].externalId at a moment when syncedFrom was missing).
+// The current `isOwnPullSource` guard at sync:start prevents this going
+// forward, but existing corrupted state needs healing. The heuristic is
+// safe: imported playlist IDs are `${providerId}-${externalId}` by
+// construction (CLAUDE.md "Imported playlist ID convention"), so any
+// playlist whose ID starts with `spotify-` was, historically, imported
+// from Spotify and `syncedFrom.resolver` MUST be `spotify`. If it isn't,
+// we restore it and demote the wrong provider to a `syncedTo` mirror so
+// outbound sync to that provider keeps working.
+//
+// Idempotent: if `syncedFrom.resolver === 'spotify'` already, the function
+// is a no-op for that playlist. Same applies for the Apple Music inverse
+// (`applemusic-` prefix → syncedFrom must be applemusic) — symmetric so
+// either kind of regression heals.
+function healImportedSyncedFromMismatch() {
+  try {
+    const playlists = store.get('local_playlists') || [];
+    let healed = 0;
+    let demoted = 0;
+    const updated = playlists.map(p => {
+      if (!p.id) return p;
+      // Determine the implied source provider from the ID prefix.
+      let impliedProvider = null;
+      let externalId = null;
+      for (const provider of ['spotify', 'applemusic']) {
+        const prefix = `${provider}-`;
+        if (p.id.startsWith(prefix)) {
+          impliedProvider = provider;
+          externalId = p.id.slice(prefix.length);
+          break;
+        }
+      }
+      if (!impliedProvider) return p;
+      if (p.syncedFrom?.resolver === impliedProvider) return p;
+
+      const oldSyncedFrom = p.syncedFrom;
+      const newSyncedTo = { ...(p.syncedTo || {}) };
+
+      // Demote the wrong syncedFrom into syncedTo so we don't lose the link.
+      if (
+        oldSyncedFrom?.resolver
+        && oldSyncedFrom.resolver !== impliedProvider
+        && oldSyncedFrom.externalId
+      ) {
+        const otherProvider = oldSyncedFrom.resolver;
+        if (!newSyncedTo[otherProvider]?.externalId) {
+          newSyncedTo[otherProvider] = {
+            externalId: oldSyncedFrom.externalId,
+            snapshotId: oldSyncedFrom.snapshotId || null,
+            syncedAt: p.syncSources?.[otherProvider]?.syncedAt || Date.now(),
+            unresolvedTracks: [],
+            pendingAction: null,
+          };
+          demoted++;
+        }
+      }
+
+      healed++;
+      return {
+        ...p,
+        syncedFrom: {
+          resolver: impliedProvider,
+          externalId,
+          snapshotId: null,                 // next sync from impliedProvider repopulates
+          ownerId: oldSyncedFrom?.resolver === impliedProvider ? oldSyncedFrom.ownerId : null,
+        },
+        syncedTo: Object.keys(newSyncedTo).length > 0 ? newSyncedTo : undefined,
+        hasUpdates: false,
+        locallyModified: false,
+      };
+    });
+    if (healed > 0) {
+      store.set('local_playlists', updated);
+      console.log(`[Sync Heal] Restored syncedFrom on ${healed} imported playlist(s); demoted ${demoted} cross-provider link(s) to syncedTo`);
+    }
+  } catch (err) {
+    console.warn('[Sync Heal] Migration failed (non-fatal):', err.message);
+  }
+}
+healImportedSyncedFromMismatch();
+
 ipcMain.handle('playlists-delete-from-source', async (event, providerId, externalId) => {
   console.log(`=== Delete Playlist from Source: ${providerId}/${externalId} ===`);
   try {
