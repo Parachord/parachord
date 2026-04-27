@@ -112,7 +112,7 @@
     {
       "id": "applemusic",
       "name": "Apple Music",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "Parachord Team",
       "description": "Stream music via Apple Music with MusicKit. Requires Apple Music subscription and MusicKit developer token.",
       "icon": "🍎",

@@ -89,6 +89,80 @@ window.iTunesRateLimiter = (() => {
   };
 })();
 
+// Global rate limiter for native MusicKit catalog calls (api.music.apple.com).
+// Apple throttles /v1/catalog/{storefront}/search aggressively when fan-out is
+// high — e.g. background source enrichment for a 200-track queue used to fire
+// 200 parallel searches and hit a 429 cliff that also broke playback (because
+// /v1/catalog/songs/{id} fetches behind musicKit.play() got throttled too).
+// Cap concurrency, min-gap between starts, and back off on transient errors.
+window.nativeMusicKitLimiter = (() => {
+  const MAX_CONCURRENCY = 3;
+  const MIN_GAP_MS = 150;        // ~6-7 req/sec sustained at full concurrency
+  const COOLDOWN_MS = 8000;      // pause everything for this long after a burst of errors
+  const ERROR_THRESHOLD = 3;     // consecutive errors before tripping cooldown
+
+  let inFlight = 0;
+  let lastStartAt = 0;
+  let consecutiveErrors = 0;
+  let cooldownUntil = 0;
+  const pending = [];
+
+  const isThrottleError = (err) => {
+    const msg = (err?.message || String(err || '')).toLowerCase();
+    return msg.includes('429')
+      || msg.includes('rate')
+      || msg.includes('musicdatarequest')
+      || msg.includes('error 1'); // generic MusicKit data-request failure, often transient throttle
+  };
+
+  const drain = async () => {
+    while (pending.length > 0 && inFlight < MAX_CONCURRENCY) {
+      const now = Date.now();
+      if (now < cooldownUntil) {
+        setTimeout(drain, cooldownUntil - now);
+        return;
+      }
+      const sinceLast = now - lastStartAt;
+      if (sinceLast < MIN_GAP_MS) {
+        setTimeout(drain, MIN_GAP_MS - sinceLast);
+        return;
+      }
+      const job = pending.shift();
+      inFlight++;
+      lastStartAt = Date.now();
+      (async () => {
+        try {
+          const result = await job.fn();
+          consecutiveErrors = Math.max(0, consecutiveErrors - 1);
+          job.resolve(result);
+        } catch (err) {
+          if (isThrottleError(err)) {
+            consecutiveErrors++;
+            if (consecutiveErrors >= ERROR_THRESHOLD) {
+              cooldownUntil = Date.now() + COOLDOWN_MS;
+              console.warn(`[nativeMusicKitLimiter] ${consecutiveErrors} consecutive throttle errors — cooling down ${COOLDOWN_MS}ms`);
+              consecutiveErrors = 0;
+            }
+          }
+          job.reject(err);
+        } finally {
+          inFlight--;
+          drain();
+        }
+      })();
+    }
+  };
+
+  return {
+    run: (fn) => new Promise((resolve, reject) => {
+      pending.push({ fn, resolve, reject });
+      drain();
+    }),
+    getQueueLength: () => pending.length,
+    isCoolingDown: () => Date.now() < cooldownUntil,
+  };
+})();
+
 // Smart Links API URL - change this after deploying to Cloudflare
 // Default to the local dev server or deployed URL
 const SMART_LINKS_API_URL = 'https://go.parachord.com';
@@ -96,13 +170,17 @@ const SMART_LINKS_API_URL = 'https://go.parachord.com';
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
 window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 20) => {
-  // 1. Try native MusicKit (macOS) — no developer token needed, uses system Apple Music auth
+  // 1. Try native MusicKit (macOS) — no developer token needed, uses system Apple Music auth.
+  // All calls go through nativeMusicKitLimiter so a parallel fan-out (e.g. background
+  // source enrichment for a 200-track queue) can't blow past Apple's catalog rate limit.
   if (window.electron?.musicKit?.search) {
     try {
       const authStatus = await window.electron.musicKit.checkAuth();
       if (authStatus.success && authStatus.authorized) {
         console.log('[AppleMusicSearch] Using native MusicKit for:', query);
-        const result = await window.electron.musicKit.search(query, limit);
+        const result = await window.nativeMusicKitLimiter.run(
+          () => window.electron.musicKit.search(query, limit)
+        );
         if (result.success && Array.isArray(result.songs)) {
           return result.songs.map(song => ({
             id: 'applemusic-' + song.id,
@@ -237,7 +315,9 @@ window.appleMusicLookupSong = async (songId, storefront = 'us') => {
     if (status.configured && musicKitWeb.musicKit) {
       try {
         console.log('[AppleMusic] Catalog song lookup via MusicKit:', songId);
-        const result = await musicKitWeb.musicKit.api.music(`/v1/catalog/${storefront}/songs/${songId}`);
+        const result = await window.nativeMusicKitLimiter.run(
+          () => musicKitWeb.musicKit.api.music(`/v1/catalog/${storefront}/songs/${songId}`)
+        );
         const song = result.data.data?.[0];
         if (song) {
           return {
@@ -303,9 +383,11 @@ window.appleMusicLookupAlbum = async (albumId, storefront = 'us') => {
     if (status.configured && musicKitWeb.musicKit) {
       try {
         console.log('[AppleMusic] Catalog album lookup via MusicKit:', albumId);
-        const result = await musicKitWeb.musicKit.api.music(
-          `/v1/catalog/${storefront}/albums/${albumId}`,
-          { include: 'tracks' }
+        const result = await window.nativeMusicKitLimiter.run(
+          () => musicKitWeb.musicKit.api.music(
+            `/v1/catalog/${storefront}/albums/${albumId}`,
+            { include: 'tracks' }
+          )
         );
         const album = result.data.data?.[0];
         if (album) {
@@ -7723,17 +7805,19 @@ const Parachord = () => {
       }));
     };
 
-    // When MusicKit is configured, Apple Music uses the catalog API (no rate limit).
-    // Only fall back to sequential iTunes API processing when MusicKit isn't available.
-    const musicKitActive = window.isMusicKitAvailable ? window.isMusicKitAvailable() : false;
-
-    // Separate resolvers: Apple Music needs rate-limiting only when using iTunes API
-    const rateLimitedResolvers = musicKitActive ? [] : enabledResolvers.filter(r => r.id === 'applemusic');
-    const normalResolvers = musicKitActive ? enabledResolvers : enabledResolvers.filter(r => r.id !== 'applemusic');
-
-    if (musicKitActive) {
-      console.log(`🎵 MusicKit active — resolving all sources in parallel (no rate limiting)`);
-    }
+    // Apple Music's catalog API (api.music.apple.com) IS rate-limited — Apple
+    // throttles aggressively on parallel fan-out and the throttle leaks into
+    // playback (musicKit.play() also reads the catalog). The native MusicKit
+    // path self-throttles via nativeMusicKitLimiter inside
+    // appleMusicSearchWithMusicKit, so we can safely run applemusic alongside
+    // the parallel resolvers regardless of whether MusicKit is active. The
+    // iTunes-fallback path inside that wrapper goes through iTunesRateLimiter.
+    // This branch used to special-case applemusic into a sequential queue when
+    // MusicKit wasn't active; that's no longer necessary because the limiter
+    // covers both paths. Kept for clarity in case anyone re-introduces a
+    // pre-throttle codepath.
+    const rateLimitedResolvers = [];
+    const normalResolvers = enabledResolvers;
 
     // Resolve all tracks across normal resolvers in parallel (no batching needed)
     const normalPromise = Promise.all(tracks.map(async (track) => {
