@@ -278,6 +278,8 @@ End-to-end flow that all four enable: Android edit → Spotify remote → deskto
 - **Sync wizard pre-check seeds from push + pull state, not just saved selections.** `openSyncSetupModal` seeds `selectedPlaylists` from the union of `existingSettings.selectedPlaylistIds`, local playlists with `syncedFrom.resolver === providerId`, and local playlists with `syncedTo[providerId].externalId`. The last-saved list alone doesn't reflect playlists that were pushed to the provider without going through the wizard (e.g. locally created, then auto-pushed via the background loop). Combined with the cross-provider syncedFrom protection above, pre-checking a push-only mirror doesn't clobber its existing pull source.
 - **Main.js `sync:start` clears `syncedFrom` when the remote no longer exists** — but only if the response looks complete (>70% of previously-synced playlists still present). Guards against mass-duplicate creation on partial API responses.
 - **Bulk save on Android** must guarantee `sync_playlist_links` writes are durable independently of playlist object writes (separate keys, separate transactions). The whole point of the map is to survive playlist-save bugs.
+- **Imported-playlist ID prefix is load-bearing for the heal migration.** Imported playlists use `${providerId}-${externalId}`. The startup migration `healImportedSyncedFromMismatch` (main.js, runs alongside `migrateSyncLinksFromPlaylists`) treats the ID prefix as ground truth: if `id.startsWith('spotify-')` then `syncedFrom.resolver` MUST be `spotify`, period. If it isn't, the heal restores it and demotes the wrong provider's link to `syncedTo`. Don't ever construct a `${provider}-${externalId}`-shaped ID for a playlist that wasn't imported from that provider — the heal will misread it as corruption and rewrite `syncedFrom`. Symmetric for `applemusic-` and any future provider with import support.
+- **`syncedFrom` corruption is a known regression class, not a hypothetical.** A fleet of 54 Spotify-imported playlists were observed in production with `syncedFrom.resolver` rewritten to `applemusic` (or `undefined`). Root cause was a now-fixed code path (commit `9e8b1f3` added `isOwnPullSource` gating) but corrupted state survives until healed. The startup heal in main.js is idempotent and runs every launch — if any future regression (or cross-platform sync from a buggy Android client) reintroduces the corruption, the next desktop launch silently undoes it. Don't disable the heal as "no longer needed"; it's defense-in-depth for cross-platform data consistency.
 
 ### Android Parity Requirements
 
@@ -395,6 +397,62 @@ createdAt, addedAt
 Missing any one of these on any save path causes a specific class of bug — e.g., dropping `syncedTo` causes duplicate remote creation; dropping `locallyModified` causes the propagation chain to silently break.
 
 **Durable link map (`sync_playlist_links`):** Android MUST write this map in a separate transaction/key from the playlist object itself. Its entire purpose is to survive playlist-save bugs. A combined write defeats it.
+
+**Implement the imported-playlist `syncedFrom` heal.** Desktop runs `healImportedSyncedFromMismatch` on every launch (main.js, alongside `migrateSyncLinksFromPlaylists`). Android should run the equivalent — idempotent, runs at app startup, no network. The contract:
+
+```kotlin
+for (playlist in localPlaylists) {
+    val id = playlist.id ?: continue
+    val impliedProvider = when {
+        id.startsWith("spotify-") -> "spotify"
+        id.startsWith("applemusic-") -> "applemusic"
+        else -> null
+    } ?: continue
+
+    if (playlist.syncedFrom?.resolver == impliedProvider) continue
+
+    val externalId = id.substringAfter("$impliedProvider-")
+    val oldSyncedFrom = playlist.syncedFrom
+    val newSyncedTo = (playlist.syncedTo ?: emptyMap()).toMutableMap()
+
+    // Demote the wrong syncedFrom into syncedTo if not already present.
+    if (oldSyncedFrom?.resolver != null
+        && oldSyncedFrom.resolver != impliedProvider
+        && oldSyncedFrom.externalId != null
+        && newSyncedTo[oldSyncedFrom.resolver]?.externalId == null
+    ) {
+        newSyncedTo[oldSyncedFrom.resolver] = SyncedToEntry(
+            externalId = oldSyncedFrom.externalId,
+            snapshotId = oldSyncedFrom.snapshotId,
+            syncedAt = playlist.syncSources?.get(oldSyncedFrom.resolver)?.syncedAt
+                ?: System.currentTimeMillis(),
+            unresolvedTracks = emptyList(),
+            pendingAction = null
+        )
+    }
+
+    // Restore the correct syncedFrom and clear sync flags.
+    playlist.syncedFrom = SyncedFrom(
+        resolver = impliedProvider,
+        externalId = externalId,
+        snapshotId = null,           // next sync from impliedProvider repopulates
+        ownerId = if (oldSyncedFrom?.resolver == impliedProvider) oldSyncedFrom.ownerId else null
+    )
+    playlist.syncedTo = newSyncedTo.takeIf { it.isNotEmpty() }
+    playlist.hasUpdates = false
+    playlist.locallyModified = false
+}
+```
+
+Why both platforms need it: when one client has the bug and the other doesn't, the buggy one's writes propagate corruption to the healthy one via the shared remotes. With the heal on both sides, whichever client launches next undoes the damage. No-op on healthy data.
+
+**Apple Music catalog API IS rate-limited — throttle parallel calls.** `api.music.apple.com/v1/catalog/{storefront}/...` (search, songs/{id}, albums/{id}) has an aggressive edge throttle. The throttle is per-token/IP and leaks across endpoints: once a flood of `/search` calls trips it, subsequent `play()` calls (which read `/songs/{id}` internally) also fail with `MusicDataRequest.Error 1`. Symptoms: 429s on search, mysterious "data request failed" on play, JS-fallback path skipped because of a sticky kill-switch.
+
+Desktop fix: `nativeMusicKitLimiter` in app.js (concurrency 3, ≥150ms gap, 8s cooldown after 3 consecutive throttle errors). All catalog calls go through it.
+
+Android equivalent: any place that fans out per-track catalog calls (background source enrichment, library import resolution, etc.) MUST throttle. The trigger threshold isn't documented by Apple, but real-world data: 200+ parallel calls trips it instantly; 50 sustained does too over a few seconds. Sane defaults: concurrency 3-5, ≥100-200ms gap between starts, exponential backoff with circuit breaker on `429`/`MusicKit.MusicDataRequest.Error 1`/`MusicDataRequest`/timeout strings.
+
+The corollary: **don't make the JS-fallback or auth-failed kill-switch session-permanent.** Time-bound it (5-minute cooldown is what desktop uses now via `_appleMusicWebAuthFailedAt`). One transient catalog throttle should not permanently disable Apple Music for the rest of the session.
 
 ### Track/Album/Artist Sync
 - After playback, fire-and-forget pushes to enabled sync providers
