@@ -202,11 +202,82 @@ jobs:
 
       - name: Merge plugin changes into monorepo
         run: |
-          # Copy all .axe files (adds community plugins, updates existing ones)
-          cp /tmp/plugins-repo/*.axe plugins/ 2>/dev/null || true
+          # Version-aware .axe copy: never downgrade or sidegrade. Only adopt
+          # a plugins-repo .axe when (a) we don't have a local copy yet
+          # (community contribution), or (b) the remote version is STRICTLY
+          # GREATER than ours per semver. Otherwise the monorepo is the
+          # source of truth and we keep our copy.
+          #
+          # This prevents the failure mode where the forward-sync hasn't yet
+          # shipped our newer version to parachord-plugins, the daily
+          # reverse-sync sees stale data there, and proposes a downgrade PR.
+          # See PR #754 for the incident this guards against.
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
 
-          # Merge manifest: bring in community-only entries, update existing ones
-          # if the plugins repo version is newer
+            const REMOTE_DIR = '/tmp/plugins-repo';
+            const LOCAL_DIR = 'plugins';
+
+            const cmpSemver = (a, b) => {
+              // Returns >0 if a > b, <0 if a < b, 0 if equal. Tolerates
+              // pre-release tags by string-comparing the suffix after the
+              // numeric core; sufficient for our X.Y.Z versions.
+              const split = (v) => {
+                const [core, pre] = String(v || '0').split('-');
+                const nums = core.split('.').map(n => parseInt(n, 10) || 0);
+                while (nums.length < 3) nums.push(0);
+                return { nums, pre: pre || '' };
+              };
+              const A = split(a), B = split(b);
+              for (let i = 0; i < 3; i++) {
+                if (A.nums[i] !== B.nums[i]) return A.nums[i] - B.nums[i];
+              }
+              if (A.pre === B.pre) return 0;
+              if (!A.pre) return 1;   // release > prerelease
+              if (!B.pre) return -1;
+              return A.pre < B.pre ? -1 : 1;
+            };
+
+            const readVersion = (filePath) => {
+              try {
+                return JSON.parse(fs.readFileSync(filePath, 'utf8'))?.manifest?.version || null;
+              } catch {
+                return null;
+              }
+            };
+
+            if (!fs.existsSync(REMOTE_DIR)) { console.log('No remote plugins dir, skipping'); process.exit(0); }
+            if (!fs.existsSync(LOCAL_DIR)) fs.mkdirSync(LOCAL_DIR, { recursive: true });
+
+            const remoteFiles = fs.readdirSync(REMOTE_DIR).filter(f => f.endsWith('.axe'));
+            let copied = 0, skipped = 0, added = 0;
+
+            for (const f of remoteFiles) {
+              const remotePath = path.join(REMOTE_DIR, f);
+              const localPath = path.join(LOCAL_DIR, f);
+              const remoteVersion = readVersion(remotePath);
+              const localVersion = fs.existsSync(localPath) ? readVersion(localPath) : null;
+
+              if (localVersion === null) {
+                fs.copyFileSync(remotePath, localPath);
+                console.log(\`[+] Added community plugin: \${f} @ \${remoteVersion || '?'}\`);
+                added++;
+              } else if (remoteVersion && cmpSemver(remoteVersion, localVersion) > 0) {
+                fs.copyFileSync(remotePath, localPath);
+                console.log(\`[~] Updated \${f}: \${localVersion} → \${remoteVersion}\`);
+                copied++;
+              } else {
+                console.log(\`[=] Kept local \${f} @ \${localVersion} (remote: \${remoteVersion || '?'})\`);
+                skipped++;
+              }
+            }
+            console.log(\`Plugin sync summary: \${added} added, \${copied} updated, \${skipped} kept\`);
+          "
+
+          # Merge manifest: bring in community-only entries, never overwrite
+          # monorepo entries (those track the source-of-truth versions in
+          # plugins/*.axe via sync-repos.yml).
           node -e "
             const fs = require('fs');
 

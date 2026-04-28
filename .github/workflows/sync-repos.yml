@@ -42,9 +42,21 @@ jobs:
       - name: Check for extension changes
         id: check_changes
         if: github.event_name == 'push'
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
         run: |
-          # Get the list of changed files
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          # Diff over the FULL push range, not just HEAD~1..HEAD. A push can
+          # contain multiple commits; if the file change is in any commit
+          # below the top, HEAD~1..HEAD misses it and we'd skip the sync.
+          # See: https://github.com/Parachord/parachord/pull/754 for the
+          # incident this prevents.
+          if [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # New branch (or force-push from nothing) — treat all tracked files as changed
+            CHANGED_FILES=$(git ls-tree -r --name-only "$PUSH_AFTER")
+          else
+            CHANGED_FILES=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER" 2>/dev/null || echo "")
+          fi
 
           # Check if any extension files changed
           if echo "$CHANGED_FILES" | grep -q "^parachord-extension/"; then
@@ -118,9 +130,17 @@ jobs:
       - name: Check for Raycast extension changes
         id: check_changes
         if: github.event_name == 'push'
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
         run: |
-          # Get the list of changed files
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          # Diff over the FULL push range; HEAD~1..HEAD misses changes in
+          # earlier commits of a multi-commit push.
+          if [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            CHANGED_FILES=$(git ls-tree -r --name-only "$PUSH_AFTER")
+          else
+            CHANGED_FILES=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER" 2>/dev/null || echo "")
+          fi
 
           # Check if any Raycast extension files changed
           if echo "$CHANGED_FILES" | grep -q "^raycast-extension/"; then
@@ -194,9 +214,21 @@ jobs:
       - name: Check for plugin changes
         id: check_changes
         if: github.event_name == 'push'
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
         run: |
-          # Get the list of changed files
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          # Diff over the FULL push range, not just HEAD~1..HEAD. A push can
+          # contain multiple commits; if the plugin change is in any commit
+          # below the top, HEAD~1..HEAD misses it and we'd skip the sync —
+          # which is exactly how applemusic.axe 1.0.1 failed to ship to
+          # parachord-plugins on 2026-04-27, then got reverse-synced as a
+          # downgrade PR (#754) the next morning.
+          if [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            CHANGED_FILES=$(git ls-tree -r --name-only "$PUSH_AFTER")
+          else
+            CHANGED_FILES=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER" 2>/dev/null || echo "")
+          fi
 
           # Check if any plugin files or the manifest changed
           if echo "$CHANGED_FILES" | grep -q "^plugins/\|^marketplace-manifest.json"; then
