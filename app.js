@@ -10734,6 +10734,13 @@ const Parachord = () => {
                   deactivateListenAlongRef.current();
                 }
 
+                // Clear the prior queue so its in-flight background
+                // resolution doesn't compete with ours (Apple Music
+                // throttle, MusicBrainz 1-req/sec, etc.) and reset
+                // shuffle / originalQueueRef so stale state doesn't leak
+                // into the new playback.
+                clearQueue();
+
                 setCurrentQueue(queueTracks);
                 setPlaybackContext(context);
 
@@ -10767,6 +10774,9 @@ const Parachord = () => {
               try {
                 // Mode B: artist-only seed → existing similar-tracks spinoff
                 if (params.artist && !params.tracks && !params.url) {
+                  // Clear prior queue so its in-flight background resolution
+                  // doesn't compete with the new spinoff pool.
+                  clearQueue();
                   await startSpinoffRef.current({ artist: params.artist, title: params.title || null });
                   break;
                 }
@@ -10790,6 +10800,8 @@ const Parachord = () => {
                   showToast('Invalid refill URL: must be public http/https');
                   break;
                 }
+                // Clear prior queue (same rationale as above).
+                clearQueue();
                 await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl });
               } catch (err) {
                 console.error('play/radio failed:', err);
