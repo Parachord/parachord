@@ -33171,9 +33171,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     let parsed;
     try { parsed = JSON.parse(body); } catch { return { displayName: 'Tracks', tracks: [] }; }
-    if (parsed.playlist && Array.isArray(parsed.playlist.track)) {
-      const displayName = parsed.playlist.title || 'Tracks';
-      const tracks = parsed.playlist.track.map(parseJspfTrack).filter(Boolean);
+    // ListenBrainz lb-radio wraps the JSPF in `{payload: {jspf: {playlist}}}`.
+    // Unwrap to the bare JSPF shape so the existing JSPF branch handles it.
+    const jspfRoot = parsed.payload?.jspf || parsed;
+    if (jspfRoot.playlist && Array.isArray(jspfRoot.playlist.track)) {
+      const displayName = jspfRoot.playlist.title || 'Tracks';
+      const tracks = jspfRoot.playlist.track.map(parseJspfTrack).filter(Boolean);
       return { displayName, tracks: tracks.slice(0, MAX_TRACKS) };
     }
     if (Array.isArray(parsed.tracks)) {

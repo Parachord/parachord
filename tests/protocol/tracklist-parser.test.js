@@ -112,4 +112,25 @@ describe('parseProtocolTracklist', () => {
     const r = parseProtocolTracklist(xml, 'application/xspf+xml');
     expect(r.displayName).toBe('Tracks');
   });
+
+  test('unwraps ListenBrainz lb-radio payload.jspf envelope', () => {
+    const body = JSON.stringify({
+      payload: {
+        feedback: ["tag: using only seed tag 'shoegaze'."],
+        jspf: {
+          playlist: {
+            title: 'LB Radio for tag shoegaze on easy mode',
+            track: [
+              { title: 'Burst', creator: 'The Angelic Process', album: 'Solipsistic' },
+              { title: 'Sometimes', creator: 'My Bloody Valentine', album: 'Loveless' },
+            ],
+          },
+        },
+      },
+    });
+    const r = parseProtocolTracklist(body, 'application/json');
+    expect(r.displayName).toBe('LB Radio for tag shoegaze on easy mode');
+    expect(r.tracks).toHaveLength(2);
+    expect(r.tracks[0]).toMatchObject({ artist: 'The Angelic Process', title: 'Burst', album: 'Solipsistic' });
+  });
 });
