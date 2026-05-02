@@ -10736,13 +10736,26 @@ const Parachord = () => {
 
                 setCurrentQueue(queueTracks);
                 setPlaybackContext(context);
+
+                // Pre-resolve the first track via the standard pipeline so
+                // handlePlay has sources to pick from immediately. Without
+                // this, handlePlay falls back to its on-demand resolution
+                // path which can show "No Source Found" before background
+                // resolution has had a chance to populate.
+                try {
+                  await resolveTracksInBackground([firstTrack]);
+                } catch (err) {
+                  console.warn(`play/${playKind} first-track resolution error:`, err?.message);
+                }
                 await handlePlayRef.current(firstTrack);
                 showToast(`Playing ${playKind}: ${displayName}`);
 
-                // Kick off background resolution so resolver badges populate
-                // (without this, queue tracks render with empty shimmer
-                // placeholders since they came from MB metadata only).
-                resolveTracksInBackground([firstTrack, ...queueTracks]);
+                // Background-resolve the rest of the queue so badges fill in
+                // and auto-advanced tracks have sources ready.
+                if (queueTracks.length > 0) {
+                  resolveTracksInBackground(queueTracks)
+                    .catch(err => console.warn(`play/${playKind} queue resolution error:`, err?.message));
+                }
               } catch (err) {
                 console.error(`play/${playKind} failed:`, err);
                 showToast(`Play failed: ${err.message}`);
@@ -32253,14 +32266,48 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     }
 
-    const first = spinoffTracksRef.current.shift();
-    if (first) {
-      handlePlay(first, undefined, {
-        type: 'spinoff',
-        sourceTrack: { title: displayName || 'Radio', artist: '' },
-        refillUrl: refillUrl || null,
-      });
+    // Find a playable first track: pre-resolve via the resolver pipeline,
+    // skip tracks that no enabled resolver can match (common for obscure
+    // LB-radio results vs. user's available streaming services). Caps
+    // attempts so a fully-unresolvable pool doesn't loop forever.
+    let first = null;
+    let skipped = 0;
+    const MAX_SKIP = 5;
+    while (spinoffTracksRef.current.length > 0 && skipped < MAX_SKIP) {
+      const candidate = spinoffTracksRef.current.shift();
+      try {
+        await resolveTracksInBackground([candidate]);
+      } catch (err) {
+        console.warn('🔁 Resolution error for candidate, skipping:', err?.message);
+      }
+      const hasSources = candidate.sources && Object.keys(candidate.sources)
+        .filter(id => !candidate.sources[id]?.noMatch).length > 0;
+      if (hasSources) {
+        first = candidate;
+        break;
+      }
+      console.log(`🔁 No playable source for "${candidate.title}" by ${candidate.artist}, trying next`);
+      skipped++;
     }
+
+    if (!first) {
+      console.log(`🔁 Radio: no playable tracks found after ${skipped} attempts, exiting`);
+      exitSpinoff();
+      showToast(`No playable tracks for radio: ${displayName || 'Untitled'}`);
+      return;
+    }
+
+    // Background-resolve the remaining pool so future auto-advances are ready.
+    if (spinoffTracksRef.current.length > 0) {
+      resolveTracksInBackground([...spinoffTracksRef.current])
+        .catch(err => console.warn('🔁 Background pool resolution error:', err?.message));
+    }
+
+    handlePlay(first, undefined, {
+      type: 'spinoff',
+      sourceTrack: { title: displayName || 'Radio', artist: '' },
+      refillUrl: refillUrl || null,
+    });
   };
 
   // Start spinoff mode - play similar tracks based on current track,
