@@ -89,6 +89,49 @@ window.iTunesRateLimiter = (() => {
   };
 })();
 
+// SSRF guard for user-supplied URLs in parachord:// commands (import, play-*).
+// Rejects: non-http(s) schemes; literal IPs in loopback / RFC1918 / link-local
+// / CGNAT / cloud-metadata ranges; mDNS .local; IPv6 loopback / link-local /
+// ULA / IPv4-mapped.
+//
+// NOTE: Defends against literal-IP and well-known-hostname SSRF only.
+// Does NOT defend against DNS rebinding — a public hostname resolving to
+// 127.0.0.1 is accepted here. Callers in privileged contexts must additionally
+// fetch through a resolver that pins to the resolved IP, or accept this risk.
+//
+// SYNC: tests/helpers/url-safety.js — keep byte-identical with the body below.
+window.isPublicHttpUrl = (urlString) => {
+  if (typeof urlString !== 'string' || !urlString) return false;
+  let u;
+  try { u = new URL(urlString); } catch { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost' || host === 'localhost.') return false;
+  if (host.endsWith('.local') || host.endsWith('.local.')) return false;
+  if (host === '[::1]') return false;
+  if (host.startsWith('[') && host.endsWith(']')) {
+    const v6 = host.slice(1, -1);
+    if (v6 === '::' || v6 === '::1') return false;
+    if (/^fe[89ab][0-9a-f]?:/i.test(v6)) return false;
+    if (/^f[cd][0-9a-f]{2}:/i.test(v6)) return false;
+    if (/^::ffff:/i.test(v6)) return false;
+  }
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b, c, d] = [m[1], m[2], m[3], m[4]].map(Number);
+    if ([a, b, c, d].some(n => n > 255)) return false;
+    if (a === 0) return false;
+    if (a === 127) return false;
+    if (a === 10) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+  }
+  return true;
+};
+
 // Global rate limiter for native MusicKit catalog calls (api.music.apple.com).
 // Apple throttles /v1/catalog/{storefront}/search aggressively when fan-out is
 // high — e.g. background source enrichment for a 200-track queue used to fire
@@ -5316,6 +5359,9 @@ const Parachord = () => {
   const [spinoffAvailable, setSpinoffAvailable] = useState(null); // null = unchecked, true/false = checked
   const spinoffTracksRef = useRef([]); // Pool of similar tracks to play
   const spinoffPreviousContextRef = useRef(null); // Store previous playback context to restore on exit
+  const spinoffRefillUrlRef = useRef(null); // Optional refill endpoint for pool-based spinoff (parachord://play-radio)
+  const spinoffRefillEmptyCountRef = useRef(0); // Consecutive empty/failed refill attempts; stop after 3
+  const spinoffRefillLastFetchAtRef = useRef(0); // Timestamp of last refill attempt for 5s rate-limit
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
@@ -7160,6 +7206,7 @@ const Parachord = () => {
   const handlePreviousRef = useRef(null);
   const handlePlayPauseRef = useRef(null);
   const handlePlayRef = useRef(null);
+  const startSpinoffRef = useRef(null); // Ref to startSpinoff for use in protocol handler
   const resolveTrackRef = useRef(null); // Ref to resolveTrack for use in ChatCard
   const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
   const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
@@ -10438,6 +10485,145 @@ const Parachord = () => {
   useEffect(() => {
     if (!window.electron?.onProtocolUrl) return;
 
+    // Resolve any of the protocol play-input shapes into a normalized tracklist.
+    // Used by parachord://play-album, play-playlist, play-radio.
+    //
+    // Allowed shapes are command-specific (set via opts):
+    //   play-album    → mbid | spotify | applemusic | url | tracks | artist+title
+    //   play-playlist → url | tracks
+    //   play-radio    → url | tracks   (artist seed-mode is handled in the case body)
+    //
+    // Returns { displayName, tracks: [{artist, title, album?, mbid?, isrc?}], albumArt? }.
+    // Throws on hard failure (invalid URL, parse error, payload too large).
+    // An empty pool returns { tracks: [] } so the caller can decide how to surface it.
+    const resolveProtocolPlayInput = async (params, opts = {}) => {
+      const {
+        allowMbid = false,
+        allowProviderId = false,
+        allowArtistTitleAlbum = false,
+      } = opts;
+
+      // 1. MBID — MusicBrainz release-group lookup (album only).
+      if (allowMbid && params.mbid) {
+        if (!/^[a-f0-9-]{36}$/i.test(params.mbid)) {
+          throw new Error('Invalid MBID format');
+        }
+        // redirect: 'error' prevents SSRF via 3xx redirects to private hosts
+        // (isPublicHttpUrl only validates the initial URL, not the final destination).
+        const mbResp = await fetch(
+          `https://musicbrainz.org/ws/2/release?release-group=${encodeURIComponent(params.mbid)}&inc=recordings+artist-credits&limit=1&fmt=json`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' }, redirect: 'error' }
+        );
+        if (!mbResp.ok) throw new Error(`MusicBrainz lookup failed: ${mbResp.status}`);
+        const mbData = await mbResp.json();
+        const release = mbData.releases?.[0];
+        if (!release) return { displayName: 'Album', tracks: [] };
+        const albumArtist = release['artist-credit']?.[0]?.name;
+        const tracks = (release.media?.[0]?.tracks || []).map(t => {
+          const trackArtist = t['artist-credit']?.[0]?.name || albumArtist;
+          if (!trackArtist || !t.title) return null;
+          const out = { artist: trackArtist, title: t.title, album: release.title };
+          if (t.recording?.id) out.mbid = t.recording.id;
+          return out;
+        }).filter(Boolean);
+        return { displayName: `${albumArtist} — ${release.title}`, tracks };
+      }
+
+      // 2a. Spotify album lookup (album only). Use the loaded resolver's lookupAlbum.
+      if (allowProviderId && params.spotify) {
+        const resolvers = loadedResolversRef.current || [];
+        const spotify = resolvers.find(r => r.id === 'spotify');
+        if (!spotify || !spotify.lookupAlbum) {
+          throw new Error('Spotify resolver not available');
+        }
+        const config = await getResolverConfig('spotify');
+        const url = `https://open.spotify.com/album/${encodeURIComponent(params.spotify)}`;
+        const album = await spotify.lookupAlbum(url, config);
+        if (!album || !album.tracks) return { displayName: 'Album', tracks: [] };
+        return {
+          displayName: `${album.artist || ''} — ${album.name || 'Album'}`.trim().replace(/^—\s*/, ''),
+          albumArt: album.albumArt,
+          tracks: album.tracks.map(t => ({
+            artist: t.artist,
+            title: t.title,
+            album: album.name,
+            ...(t.spotifyId ? { spotifyId: t.spotifyId } : {}),
+          })).filter(t => t.artist && t.title),
+        };
+      }
+
+      // 2b. Apple Music album lookup (album only).
+      if (allowProviderId && params.applemusic && window.appleMusicLookupAlbum) {
+        const album = await window.appleMusicLookupAlbum(params.applemusic, 'us');
+        if (!album) return { displayName: 'Album', tracks: [] };
+        return {
+          displayName: `${album.artist || ''} — ${album.name || 'Album'}`.trim().replace(/^—\s*/, ''),
+          albumArt: album.albumArt,
+          tracks: (album.tracks || []).map(t => ({
+            artist: t.artist,
+            title: t.title,
+            album: album.name,
+            ...(t.appleMusicId ? { appleMusicId: t.appleMusicId } : {}),
+          })).filter(t => t.artist && t.title),
+        };
+      }
+
+      // 3. URL (XSPF or JSON).
+      if (params.url) {
+        if (!window.isPublicHttpUrl(params.url)) {
+          throw new Error('Invalid URL: must be public http/https');
+        }
+        const resp = await fetch(params.url, { redirect: 'error' });
+        if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
+        const ct = resp.headers.get('content-type') || '';
+        const body = await resp.text();
+        if (body.length > 100 * 1024) {
+          throw new Error('Tracklist response too large (max 100KB)');
+        }
+        return window.parseProtocolTracklist(body, ct);
+      }
+
+      // 4. Inline base64 JSON.
+      if (params.tracks) {
+        if (params.tracks.length > 100 * 1024) {
+          throw new Error('Inline tracks payload too large (max 100KB encoded)');
+        }
+        let decoded;
+        try { decoded = JSON.parse(atob(params.tracks)); }
+        catch { throw new Error('Invalid tracks payload (must be base64-encoded JSON)'); }
+        const arr = Array.isArray(decoded) ? decoded : decoded?.tracks;
+        if (!Array.isArray(arr)) throw new Error('tracks payload must be an array');
+        const MAX = 500;
+        const tracks = arr
+          .filter(t => t && t.artist && String(t.artist).trim() && t.title && String(t.title).trim())
+          .slice(0, MAX)
+          .map(t => {
+            const out = { artist: String(t.artist).trim(), title: String(t.title).trim() };
+            if (t.album && String(t.album).trim()) out.album = String(t.album).trim();
+            if (t.mbid && /^[a-f0-9-]{36}$/i.test(t.mbid)) out.mbid = t.mbid;
+            if (t.isrc && String(t.isrc).trim()) out.isrc = String(t.isrc).trim();
+            return out;
+          });
+        return { displayName: params.title || decoded?.title || 'Tracks', tracks };
+      }
+
+      // 5. artist+title fallback (album only — falls through to MB search).
+      if (allowArtistTitleAlbum && params.artist && params.title) {
+        const q = encodeURIComponent(`artist:"${params.artist}" AND release:"${params.title}"`);
+        const resp = await fetch(
+          `https://musicbrainz.org/ws/2/release-group?query=${q}&limit=1&fmt=json`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' }, redirect: 'error' }
+        );
+        if (!resp.ok) throw new Error(`MusicBrainz search failed: ${resp.status}`);
+        const data = await resp.json();
+        const rg = data['release-groups']?.[0];
+        if (!rg) return { displayName: `${params.artist} — ${params.title}`, tracks: [] };
+        return resolveProtocolPlayInput({ mbid: rg.id }, { allowMbid: true });
+      }
+
+      throw new Error('No resolvable input parameters');
+    };
+
     const cleanup = window.electron.onProtocolUrl(async (url) => {
       console.log('🔗 Protocol URL received:', url);
 
@@ -10468,6 +10654,77 @@ const Parachord = () => {
         switch (command) {
           // === Playback Control ===
           case 'play': {
+            // Sub-action routes: parachord://play/album, play/playlist, play/radio.
+            // No sub-action: parachord://play?artist=X&title=Y (single-track play).
+            const playKind = segments[0];
+
+            if (playKind === 'album' || playKind === 'playlist') {
+              try {
+                const { displayName, tracks, albumArt } = await resolveProtocolPlayInput(params, {
+                  allowMbid: playKind === 'album',
+                  allowProviderId: playKind === 'album',
+                  allowArtistTitleAlbum: playKind === 'album',
+                });
+                if (!tracks || tracks.length === 0) {
+                  showToast(`Nothing to play: ${displayName || 'Untitled'}`);
+                  break;
+                }
+                // Fisher-Yates shuffle when ?shuffle=1
+                let ordered = tracks;
+                if (params.shuffle === '1') {
+                  ordered = [...tracks];
+                  for (let i = ordered.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+                  }
+                }
+                const context = { type: `play/${playKind}`, name: displayName, ...(albumArt ? { albumArt } : {}) };
+                setCurrentQueue(ordered.slice(1));
+                await handlePlayRef.current(ordered[0], undefined, context);
+                showToast(`Playing ${playKind}: ${displayName}`);
+              } catch (err) {
+                console.error(`play/${playKind} failed:`, err);
+                showToast(`Play failed: ${err.message}`);
+              }
+              break;
+            }
+
+            if (playKind === 'radio') {
+              try {
+                // Mode B: artist-only seed → existing similar-tracks spinoff
+                if (params.artist && !params.tracks && !params.url) {
+                  await startSpinoffRef.current({ artist: params.artist, title: params.title || null });
+                  break;
+                }
+                // Mode C: inline tracks and/or URL-based refill
+                let initialPool = [];
+                let displayName = params.title || 'Radio';
+                if (params.tracks || params.url) {
+                  const r = await resolveProtocolPlayInput(params, {});
+                  initialPool = r.tracks || [];
+                  displayName = r.displayName || displayName;
+                }
+                if (params.shuffle === '1' && initialPool.length > 1) {
+                  initialPool = [...initialPool];
+                  for (let i = initialPool.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [initialPool[i], initialPool[j]] = [initialPool[j], initialPool[i]];
+                  }
+                }
+                const refillUrl = params.refill || params.url || null;
+                if (refillUrl && !window.isPublicHttpUrl(refillUrl)) {
+                  showToast('Invalid refill URL: must be public http/https');
+                  break;
+                }
+                await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl });
+              } catch (err) {
+                console.error('play/radio failed:', err);
+                showToast(`Radio failed: ${err.message}`);
+              }
+              break;
+            }
+
+            // Default: parachord://play?artist=X&title=Y (single-track play)
             if (params.artist && params.title) {
               const results = await searchResolvers(`${params.artist} ${params.title}`, {
                 earlyReturn: true,
@@ -10772,6 +11029,55 @@ const Parachord = () => {
             break;
           }
 
+          case 'listen-along': {
+            try {
+              const { service, user } = params;
+              if (!service || !user) {
+                showToast('listen-along requires service and user');
+                break;
+              }
+              if (!['listenbrainz', 'lastfm'].includes(service)) {
+                showToast(`Unknown listen-along service: ${service}`);
+                break;
+              }
+              const existingFriend = friendsRef.current.find(f =>
+                f.service === service && f.username?.toLowerCase() === user.toLowerCase()
+              );
+              let friend = existingFriend;
+              if (!friend) {
+                const cachedRecentTrack = await fetchTransientFriendNowPlaying(service, user);
+                if (!cachedRecentTrack) {
+                  showToast(`${user} is not currently listening on ${service === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`);
+                  break;
+                }
+                friend = {
+                  id: `transient:${service}:${user}`,
+                  service,
+                  username: user,
+                  displayName: user,
+                  cachedRecentTrack,
+                  transient: true,
+                };
+              } else if (!existingFriend.cachedRecentTrack) {
+                const cached = await fetchTransientFriendNowPlaying(service, user);
+                if (!cached) {
+                  showToast(`${user} is not currently listening on ${service === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`);
+                  break;
+                }
+                friend = { ...existingFriend, cachedRecentTrack: cached };
+              }
+              if (activateListenAlongRef.current) {
+                activateListenAlongRef.current(friend);
+              } else {
+                showToast('listen-along not yet ready');
+              }
+            } catch (err) {
+              console.error('listen-along failed:', err);
+              showToast(`listen-along failed: ${err.message}`);
+            }
+            break;
+          }
+
           case 'collection-radio': {
             if (handleStartCollectionStationRef.current) {
               handleStartCollectionStationRef.current();
@@ -10784,15 +11090,15 @@ const Parachord = () => {
             // parachord://import?url={xspf_url}
             // parachord://import?title={title}&creator={creator}&tracks={base64_json}
             if (params.url) {
+              if (!window.isPublicHttpUrl(params.url)) {
+                showToast('Import failed: only public http/https URLs are allowed');
+                break;
+              }
               let importUrl;
               try {
                 importUrl = new URL(params.url);
               } catch {
                 showToast('Import failed: invalid URL');
-                break;
-              }
-              if (!['http:', 'https:'].includes(importUrl.protocol)) {
-                showToast('Import failed: only HTTP/HTTPS URLs are allowed');
                 break;
               }
               showConfirmDialog({
@@ -16341,6 +16647,11 @@ ${trackListXml}
         const nextSimilar = spinoffTracksRef.current.shift();
         console.log(`🔀 Spinoff: playing next similar track "${nextSimilar.title}"`);
 
+        // Trigger refill in background when pool is low and refillUrl is set (fire-and-forget).
+        if (spinoffTracksRef.current.length < 3 && spinoffRefillUrlRef.current) {
+          refillSpinoffPool().catch(err => console.warn('refill error:', err));
+        }
+
         // Update pool visibility for resolution - next 5 tracks
         // Use track ID as key to avoid re-resolution when tracks shift
         const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t) => ({
@@ -16583,6 +16894,7 @@ ${trackListXml}
   useEffect(() => { handlePreviousRef.current = handlePrevious; });
   useEffect(() => { handlePlayPauseRef.current = handlePlayPause; });
   useEffect(() => { handlePlayRef.current = handlePlay; });
+  useEffect(() => { startSpinoffRef.current = startSpinoff; });
   useEffect(() => { getResolverConfigRef.current = getResolverConfig; });
 
   // Queue management functions
@@ -29569,6 +29881,45 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
+  const fetchTransientFriendNowPlaying = async (service, user) => {
+    if (service === 'listenbrainz') {
+      const resp = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(user)}/playing-now`);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const listen = data?.payload?.listens?.[0];
+      if (!listen) return null;
+      const m = listen.track_metadata;
+      if (!m?.track_name || !m?.artist_name) return null;
+      return {
+        name: m.track_name,
+        artist: m.artist_name,
+        album: m.release_name,
+        timestamp: Date.now(),
+      };
+    }
+    if (service === 'lastfm') {
+      const apiKey = await window.electron?.config?.get('LASTFM_API_KEY');
+      if (!apiKey) return null;
+      const resp = await fetch(
+        `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(user)}&api_key=${apiKey}&format=json&limit=1`
+      );
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const t = data?.recenttracks?.track;
+      const newest = Array.isArray(t) ? t[0] : t;
+      if (!newest) return null;
+      const isNowPlaying = newest['@attr']?.nowplaying === 'true';
+      if (!isNowPlaying) return null;
+      return {
+        name: newest.name,
+        artist: newest.artist?.['#text'] || newest.artist,
+        album: newest.album?.['#text'],
+        timestamp: Date.now(),
+      };
+    }
+    return null;
+  };
+
   // Activate listen-along mode for a friend
   const activateListenAlong = (friend) => {
     if (!friend || !friend.cachedRecentTrack) return;
@@ -31730,8 +32081,135 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Start spinoff mode - play similar tracks based on current track
+  // Refill spinoff pool from refillUrl (used by parachord://play-radio).
+  // Fire-and-forget: callers should not await; this is rate-limited and self-stops after 3 empties.
+  const keyForSpinoffDedup = (t) => {
+    if (t.mbid) return `mbid:${t.mbid}`;
+    if (t.isrc) return `isrc:${t.isrc}`;
+    return `at:${(t.artist || '').toLowerCase()}|${(t.title || '').toLowerCase()}`;
+  };
+
+  const refillSpinoffPool = async () => {
+    const url = spinoffRefillUrlRef.current;
+    if (!url) return;
+    const now = Date.now();
+    if (now - spinoffRefillLastFetchAtRef.current < 5000) return; // 5s soft rate-limit
+    spinoffRefillLastFetchAtRef.current = now;
+
+    try {
+      if (!window.isPublicHttpUrl || !window.isPublicHttpUrl(url)) {
+        console.warn('🔁 Refill URL failed SSRF check, stopping');
+        spinoffRefillUrlRef.current = null;
+        return;
+      }
+      const resp = await fetch(url, { redirect: 'error' });
+      if (!resp.ok) {
+        spinoffRefillEmptyCountRef.current++;
+        if (spinoffRefillEmptyCountRef.current >= 3) spinoffRefillUrlRef.current = null;
+        return;
+      }
+      const ct = resp.headers.get('content-type') || '';
+      const body = await resp.text();
+      if (body.length > 100 * 1024) {
+        console.warn('🔁 Refill response > 100KB, treating as empty');
+        spinoffRefillEmptyCountRef.current++;
+        if (spinoffRefillEmptyCountRef.current >= 3) spinoffRefillUrlRef.current = null;
+        return;
+      }
+      const parsed = (window.parseProtocolTracklist && window.parseProtocolTracklist(body, ct)) || { tracks: [] };
+      const tracks = parsed.tracks || [];
+
+      // Dedupe against existing pool by mbid → isrc → (artist|title) lowercase
+      const existing = new Set(spinoffTracksRef.current.map(keyForSpinoffDedup));
+      const fresh = tracks.filter(t => !existing.has(keyForSpinoffDedup(t)));
+
+      if (fresh.length === 0) {
+        spinoffRefillEmptyCountRef.current++;
+        if (spinoffRefillEmptyCountRef.current >= 3) {
+          console.log('🔁 Refill returned empty 3× in a row, stopping');
+          spinoffRefillUrlRef.current = null;
+        }
+        return;
+      }
+
+      spinoffRefillEmptyCountRef.current = 0;
+      spinoffTracksRef.current = [...spinoffTracksRef.current, ...fresh];
+      console.log(`🔁 Refilled spinoff pool with ${fresh.length} tracks`);
+    } catch (err) {
+      console.warn('🔁 Refill failed:', err && err.message);
+      spinoffRefillEmptyCountRef.current++;
+      if (spinoffRefillEmptyCountRef.current >= 3) spinoffRefillUrlRef.current = null;
+    }
+  };
+
+  // Activate spinoff from a pre-resolved track pool (parachord://play-radio path).
+  const activateSpinoffFromPool = async (initialPool, { displayName, refillUrl }) => {
+    if (!initialPool.length && !refillUrl) {
+      showToast(`No tracks for radio: ${displayName || 'Untitled'}`);
+      return;
+    }
+
+    // Save previous context to restore on exit (mirrors seed path)
+    if (playbackContext?.type !== 'listenAlong') {
+      spinoffPreviousContextRef.current = playbackContext;
+    } else {
+      spinoffPreviousContextRef.current = null;
+    }
+
+    setSpinoffMode(true);
+    setSpinoffSourceTrack({ title: displayName || 'Radio', artist: '' });
+    spinoffTracksRef.current = [...initialPool];
+    spinoffRefillUrlRef.current = refillUrl || null;
+    spinoffRefillEmptyCountRef.current = 0;
+    spinoffRefillLastFetchAtRef.current = 0;
+
+    registerPoolContext('spinoff', 5);
+    const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t) => ({
+      key: t.id || `${t.artist}-${t.title}`,
+      data: { track: t, artistName: t.artist || 'Unknown Artist' }
+    }));
+    updateSchedulerVisibility('spinoff', poolTracks);
+
+    setPlaybackContext({
+      type: 'spinoff',
+      sourceTrack: { title: displayName || 'Radio', artist: '' },
+      refillUrl: refillUrl || null,
+    });
+
+    showToast(`Playing radio: ${displayName || 'Untitled'}`);
+
+    // If pool was empty but refillUrl is set, fetch immediately for first batch.
+    if (initialPool.length === 0 && refillUrl) {
+      await refillSpinoffPool();
+      if (spinoffTracksRef.current.length === 0) {
+        console.log('🔁 Initial refill returned no tracks, exiting radio');
+        exitSpinoff();
+        showToast(`Radio source returned no tracks: ${displayName || 'Untitled'}`);
+        return;
+      }
+    }
+
+    const first = spinoffTracksRef.current.shift();
+    if (first) {
+      handlePlay(first, undefined, {
+        type: 'spinoff',
+        sourceTrack: { title: displayName || 'Radio', artist: '' },
+        refillUrl: refillUrl || null,
+      });
+    }
+  };
+
+  // Start spinoff mode - play similar tracks based on current track,
+  // OR play from a pre-resolved pool when called with { pool, displayName, refillUrl }.
   const startSpinoff = async (track) => {
+    // New path: pre-resolved pool (used by parachord://play-radio)
+    if (track && Array.isArray(track.pool)) {
+      return activateSpinoffFromPool(track.pool, {
+        displayName: track.displayName,
+        refillUrl: track.refillUrl || null,
+      });
+    }
+
     if (!track || !track.artist || !track.title) {
       console.log('🔀 Cannot start spinoff: missing track info');
       return;
@@ -31817,6 +32295,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const previousContext = spinoffPreviousContextRef.current;
     setPlaybackContext(previousContext);
     spinoffPreviousContextRef.current = null;
+    spinoffRefillUrlRef.current = null;
+    spinoffRefillEmptyCountRef.current = 0;
+    spinoffRefillLastFetchAtRef.current = 0;
     console.log('🔀 Spinoff state cleared, restored context:', previousContext?.type || 'none');
   };
 
@@ -32573,6 +33054,78 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         message: error.message
       });
     }
+  };
+
+  // SSRF-protected tracklist parser. Used by parachord://play-album, play-playlist,
+  // play-radio when fetching XSPF or JSPF/JSON endpoints.
+  // SYNC: tests/helpers/tracklist-parser.js — keep the JSON branch byte-identical.
+  // (XSPF branches diverge intentionally: this uses DOMParser; the test helper uses regex.)
+  window.parseProtocolTracklist = (body, contentType) => {
+    const MAX_TRACKS = 500;
+    const ct = (contentType || '').toLowerCase();
+
+    if (ct.includes('xml')) {
+      const doc = new DOMParser().parseFromString(body, 'application/xml');
+      if (doc.querySelector('parsererror')) return { displayName: 'Tracks', tracks: [] };
+      const displayName = doc.querySelector('playlist > title')?.textContent?.trim() || 'Tracks';
+      const tracks = Array.from(doc.querySelectorAll('trackList > track')).map(tEl => {
+        const title = tEl.querySelector('title')?.textContent?.trim();
+        const creator = tEl.querySelector('creator')?.textContent?.trim();
+        const album = tEl.querySelector('album')?.textContent?.trim();
+        if (!title || !creator) return null;
+        const t = { artist: creator, title };
+        if (album) t.album = album;
+        return t;
+      }).filter(Boolean);
+      return { displayName, tracks: tracks.slice(0, MAX_TRACKS) };
+    }
+
+    // === SYNC START: JSON branch — byte-identical with tests/helpers/tracklist-parser.js ===
+    const extractMbid = (identifier) => {
+      if (!identifier) return null;
+      const arr = Array.isArray(identifier) ? identifier : [identifier];
+      for (const id of arr) {
+        if (typeof id !== 'string') continue;
+        const m = id.match(/musicbrainz\.org\/(?:recording|track)\/([a-f0-9-]{36})/i);
+        if (m) return m[1];
+        if (/^[a-f0-9-]{36}$/i.test(id)) return id;
+      }
+      return null;
+    };
+    const parseJspfTrack = (t) => {
+      if (!t || typeof t !== 'object') return null;
+      const rawArtist = t.creator || t.artist;
+      const artist = Array.isArray(rawArtist) ? rawArtist.filter(x => typeof x === 'string').join(', ') : rawArtist;
+      const title = t.title;
+      if (!artist || !String(artist).trim() || !title || !String(title).trim()) return null;
+      const out = { artist: String(artist).trim(), title: String(title).trim() };
+      if (t.album && String(t.album).trim()) out.album = String(t.album).trim();
+      const mbid = extractMbid(t.identifier);
+      if (mbid) out.mbid = mbid;
+      return out;
+    };
+
+    let parsed;
+    try { parsed = JSON.parse(body); } catch { return { displayName: 'Tracks', tracks: [] }; }
+    if (parsed.playlist && Array.isArray(parsed.playlist.track)) {
+      const displayName = parsed.playlist.title || 'Tracks';
+      const tracks = parsed.playlist.track.map(parseJspfTrack).filter(Boolean);
+      return { displayName, tracks: tracks.slice(0, MAX_TRACKS) };
+    }
+    if (Array.isArray(parsed.tracks)) {
+      const tracks = parsed.tracks
+        .filter(t => t && t.artist && String(t.artist).trim() && t.title && String(t.title).trim())
+        .map(t => {
+          const out = { artist: String(t.artist).trim(), title: String(t.title).trim() };
+          if (t.album && String(t.album).trim()) out.album = String(t.album).trim();
+          if (t.mbid && /^[a-f0-9-]{36}$/i.test(t.mbid)) out.mbid = t.mbid;
+          if (t.isrc && String(t.isrc).trim()) out.isrc = String(t.isrc).trim();
+          return out;
+        });
+      return { displayName: parsed.title || 'Tracks', tracks: tracks.slice(0, MAX_TRACKS) };
+    }
+    return { displayName: 'Tracks', tracks: [] };
+    // === SYNC END ===
   };
 
   // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)

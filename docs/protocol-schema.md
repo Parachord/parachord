@@ -31,6 +31,10 @@ The HTTP endpoint is recommended for:
 | Category | Example URL |
 |----------|-------------|
 | Play track | `parachord://play?artist=Radiohead&title=Karma%20Police` |
+| Play album | `parachord://play/album?mbid=b1392450-e666-3926-a536-22c65f834433` |
+| Play playlist | `parachord://play/playlist?url=https://example.com/playlist.xspf` |
+| Play radio | `parachord://play/radio?url=https://api.listenbrainz.org/1/explore/lb-radio?prompt=tag%3Ashoegaze` |
+| Listen along | `parachord://listen-along?service=listenbrainz&user=mr_monkey` |
 | Pause | `parachord://control/pause` |
 | Add to queue | `parachord://queue/add?artist=Radiohead&title=Paranoid%20Android` |
 | Open artist | `parachord://artist/Radiohead` |
@@ -143,6 +147,143 @@ parachord://volume/{level}
 parachord://volume/75
 parachord://volume/0
 parachord://volume/100
+```
+
+---
+
+## External Source Playback
+
+A family of commands designed for external sites (ListenBrainz, lyric pages, blog embeds) to start playback in Parachord with a single click. All four accept overlapping input shapes so a publisher can use whatever identifier they have at hand:
+
+| Input | What it carries |
+|---|---|
+| `mbid` | MusicBrainz release-group ID (album commands only) |
+| `spotify` / `applemusic` | Provider catalog ID (album commands only) |
+| `url` | XSPF or JSPF/JSON tracklist endpoint |
+| `tracks` | Base64-encoded JSON array of `{artist, title, album?, mbid?, isrc?}` |
+| `artist` (+ `title`) | Search-by-name fallback |
+
+The four commands differ only in how they consume the resolved tracklist:
+
+| Command | Behavior | Refills |
+|---|---|---|
+| `play/album` | Plays in tracklist order | No |
+| `play/playlist` | Plays in given order (optionally shuffled) | No |
+| `play/radio` | Treats tracklist as initial pool; auto-extends from a refill URL | Yes |
+| `listen-along` | Syncs to a remote user's now-playing on LB or Last.fm | Driven by the remote user |
+
+> **No confirmation prompt.** Play actions are read-equivalent to clicking a Spotify or Apple Music share link; they only affect local playback state, are easily reversed (skip / pause), and don't write to the user's library. If a publisher wants to *save* a playlist to the user's library too, that's [`parachord://import`](#import-playlist) — which DOES prompt.
+
+### Play Album
+
+Play an album. Tracklist resolution priority: `mbid` → `spotify`/`applemusic` → `url` → `tracks` → `artist`+`title`.
+
+```
+parachord://play/album?mbid={release_group_mbid}
+parachord://play/album?spotify={album_id}
+parachord://play/album?applemusic={album_id}
+parachord://play/album?artist={artist}&title={album_title}
+parachord://play/album?url={xspf_or_json_url}
+parachord://play/album?tracks={base64_json}&title={display_name}
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `mbid` | Either this, a provider ID, `url`, `tracks`, or `artist`+`title` | MusicBrainz release-group ID |
+| `spotify` | " | Spotify album ID |
+| `applemusic` | " | Apple Music album ID |
+| `url` | " | URL to a hosted XSPF or JSPF/JSON tracklist (HTTP/HTTPS, public hosts only) |
+| `tracks` | " | Base64-encoded JSON array (same shape as `import` — see Track object format above) |
+| `artist` | With `title` | Album artist |
+| `title` | With `artist` | Album title |
+| `shuffle` | No | `1` to shuffle the album's tracks |
+
+**Example:**
+```
+parachord://play/album?artist=Radiohead&title=OK%20Computer
+parachord://play/album?mbid=b1392450-e666-3926-a536-22c65f834433
+```
+
+### Play Playlist
+
+Play a list of tracks. Same input shapes as `play/album` but without the album-only identifiers (`mbid`, `spotify`, `applemusic`).
+
+```
+parachord://play/playlist?url={xspf_or_json_url}
+parachord://play/playlist?tracks={base64_json}&title={display_name}
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `url` | Either `url` or `tracks` | URL to a hosted XSPF or JSPF/JSON tracklist |
+| `tracks` | " | Base64-encoded JSON array (max 100KB encoded, 500 tracks) |
+| `title` | No | Display name for the playlist context |
+| `creator` | No | Attribution shown in the playback context |
+| `shuffle` | No | `1` to shuffle |
+
+> Use `parachord://import` instead if you want the playlist saved to the user's library. `play/playlist` only plays — nothing persists.
+
+**Example:**
+```
+parachord://play/playlist?url=https%3A%2F%2Fexample.com%2Fmix.xspf
+```
+
+### Play Radio
+
+Play a never-ending pool. Differs from `play/playlist` in that the pool auto-extends from a refill URL when running low. Two seeding modes:
+
+**Mode B — seed from artist (or artist+title):** Parachord generates the pool using its existing in-app similar-tracks endpoint. Same UX as right-clicking a track and choosing "Spinoff."
+
+```
+parachord://play/radio?artist={artist}
+parachord://play/radio?artist={artist}&title={title}
+```
+
+**Mode C — externally curated pool:** the caller supplies the initial tracks (and optionally a refill URL). When the pool falls below 3 tracks remaining, Parachord re-fetches from the refill URL, dedupes against the existing pool, and appends new tracks. Refills stop after three consecutive empty fetches.
+
+```
+parachord://play/radio?url={refill_url}                              # initial pool fetched, refilled from same URL
+parachord://play/radio?tracks={base64_json}                          # static pool (no refill)
+parachord://play/radio?tracks={base64_json}&refill={refill_url}      # inline first-play, refills from refill_url
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `url` | Either this, `tracks`, or `artist` | Initial pool URL. If `refill` is omitted, this URL is also re-hit for refills. |
+| `tracks` | " | Base64-encoded JSON array of initial pool |
+| `refill` | No | URL to fetch additional tracks from when the pool runs low. If omitted, the radio is static after the initial pool exhausts (unless `url` was used). |
+| `artist` | Mode B | Seed artist |
+| `title` | Mode B (optional) | Seed track title within `artist` |
+| `shuffle` | No | `1` to shuffle the initial pool (Mode C only — Mode B's similarity ordering is preserved) |
+
+The refill endpoint can return either XSPF (`Content-Type: application/xml`/`application/xspf+xml`) or JSPF/JSON (`Content-Type: application/json`). For ListenBrainz integrators, `https://api.listenbrainz.org/1/explore/lb-radio?...` returns JSPF and works without modification.
+
+Refill rate-limit: minimum 5 seconds between fetches.
+
+**Example:**
+```
+parachord://play/radio?url=https%3A%2F%2Fapi.listenbrainz.org%2F1%2Fexplore%2Flb-radio%3Fprompt%3Dtag%3Ashoegaze%3Aeasy
+parachord://play/radio?artist=Slowdive
+```
+
+### Listen Along
+
+Start syncing playback to another user's now-playing on Last.fm or ListenBrainz. Reuses the in-app friend listen-along feature; if the user isn't in the local friends list, a transient friend record is constructed for the session.
+
+```
+parachord://listen-along?service={listenbrainz|lastfm}&user={username}
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `service` | Yes | `listenbrainz` or `lastfm` |
+| `user` | Yes | Username on that service |
+
+If the target user isn't currently listening, a toast surfaces "<user> is not currently listening on <service>." Otherwise listen-along activates immediately.
+
+**Example:**
+```
+parachord://listen-along?service=listenbrainz&user=mr_monkey
 ```
 
 ---
@@ -709,9 +850,10 @@ Protocol URLs can be triggered by **any application on the system** — a webpag
 ### Threat model
 
 - **Prompt injection via `chat`:** A malicious link could auto-send instructions to the AI DJ. Mitigated by requiring user confirmation before any prompt is sent, and capping prompt length at 500 characters.
-- **SSRF via `import`:** A crafted URL could make Parachord fetch an attacker-controlled or internal URL. Mitigated by validating the URL protocol (only HTTP/HTTPS allowed) and requiring user confirmation that shows the target hostname before fetching.
-- **Data stuffing via `import`:** An oversized base64 payload could consume memory or disk. Mitigated by capping the encoded payload at 100KB and limiting imports to 500 tracks.
-- **Silent side effects:** Commands like `play`, `queue/add`, `queue/clear`, `control/*`, `shuffle`, and `volume` execute without confirmation. These are considered low-risk since they only affect local playback state and are easily reversed.
+- **SSRF via URL parameters:** Crafted URLs in `import?url=`, `play/album?url=`, `play/playlist?url=`, or `play/radio?url=`/`refill=` could make Parachord fetch attacker-controlled or internal URLs. Mitigated by `isPublicHttpUrl` which rejects non-HTTP(S) schemes and any literal IP in the loopback (`127.0.0.0/8`, `0.0.0.0/8`, `::1`), RFC1918 (`10/8`, `172.16/12`, `192.168/16`), CGNAT (`100.64/10`), link-local (`169.254/16` — including the AWS/GCP/Azure cloud-metadata IP), `.local` mDNS, IPv6 link-local (`fe80::/10`), IPv6 ULA (`fc00::/7`), and IPv4-mapped IPv6 (`::ffff:0:0/96`) ranges. `import` additionally requires user confirmation showing the target hostname; `play-*` commands rely on the SSRF guard without confirmation since they only affect playback. **The guard does NOT defend against DNS rebinding** — a public hostname resolving to a private IP is accepted.
+- **Data stuffing via `import` / `play-*`:** An oversized base64 payload in `tracks` could consume memory or disk. `import` caps the encoded payload at 100KB and 500 tracks; `play/album` / `play/playlist` / `play/radio` apply the same caps.
+- **Silent side effects:** Commands like `play`, `play/album`, `play/playlist`, `play/radio`, `listen-along`, `queue/add`, `queue/clear`, `control/*`, `shuffle`, and `volume` execute without confirmation. These are considered low-risk since they only affect local playback state and are easily reversed (skip / pause / exit listen-along). `import` and `chat` are the two commands that DO prompt because they write to library state or send to the AI.
+- **Refill loop abuse via `play/radio`:** A misbehaving refill endpoint could be hammered if Parachord retried in a tight loop. Mitigated by a 5-second soft rate-limit between refill fetches and an automatic stop after three consecutive empty fetches.
 
 ### Input validation
 
