@@ -33,7 +33,7 @@ The HTTP endpoint is recommended for:
 | Play track | `parachord://play?artist=Radiohead&title=Karma%20Police` |
 | Play album | `parachord://play/album?mbid=b1392450-e666-3926-a536-22c65f834433` |
 | Play playlist | `parachord://play/playlist?url=https://example.com/playlist.xspf` |
-| Play radio | `parachord://play/radio?url=https://api.listenbrainz.org/1/explore/lb-radio?prompt=tag%3Ashoegaze` |
+| Play radio | `parachord://play/radio?url=https://api.listenbrainz.org/1/explore/lb-radio?prompt=tag%3Ashoegaze&mode=easy` |
 | Listen along | `parachord://listen-along?service=listenbrainz&user=mr_monkey` |
 | Pause | `parachord://control/pause` |
 | Add to queue | `parachord://queue/add?artist=Radiohead&title=Paranoid%20Android` |
@@ -264,7 +264,7 @@ Refill rate-limit: minimum 5 seconds between fetches.
 
 **Example:**
 ```
-parachord://play/radio?url=https%3A%2F%2Fapi.listenbrainz.org%2F1%2Fexplore%2Flb-radio%3Fprompt%3Dtag%3Ashoegaze%3Aeasy
+parachord://play/radio?url=https%3A%2F%2Fapi.listenbrainz.org%2F1%2Fexplore%2Flb-radio%3Fprompt%3Dtag%3Ashoegaze%26mode%3Deasy
 parachord://play/radio?artist=Slowdive
 ```
 
