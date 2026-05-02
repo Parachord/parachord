@@ -709,6 +709,31 @@ The client checks `cachedVersion !== marketplaceVersion` (main.js L3674). If you
 - Share button on user messages copies `https://parachord.com/go?uri=parachord://chat?prompt=...` to clipboard
 - `parachord.com/go` is a static redirect page (GitHub Pages) that handles `parachord://` protocol links from contexts that strip custom schemes (e.g., GitHub Discussions)
 
+## `parachord://` Protocol Surface
+
+Custom-scheme deep links handled at app.js's protocol switch (search `switch (command)` ~L10651). Public docs at [`docs/protocol-schema.md`](docs/protocol-schema.md).
+
+| Command | Inputs | Confirmation |
+|---|---|---|
+| `parachord://play` | `artist` + `title` | None |
+| `parachord://play-album` | `mbid` / `spotify` / `applemusic` / `url` / `tracks` / `artist`+`title` | None |
+| `parachord://play-playlist` | `url` / `tracks` (optional `title`, `creator`, `shuffle`) | None |
+| `parachord://play-radio` | `url` (also reused as refill) / `tracks`+`refill` / `artist`[+`title`] | None |
+| `parachord://listen-along` | `service`=`listenbrainz`\|`lastfm`, `user`=`<username>` | None |
+| `parachord://import` | `url` / `tracks` | Required (writes to library) |
+| `parachord://chat` | `prompt` | Required (sends to AI) |
+| `parachord://control/<action>`, `queue/<action>`, `shuffle/<state>`, `volume/<level>`, etc. | varies | None |
+
+**Shared input resolution** (`resolveProtocolPlayInput`, ~L10495): all `play-*` commands feed through one helper that turns `mbid`/provider IDs/url/tracks/artist+title into a normalized `{ displayName, tracks: [{artist, title, album?, mbid?, isrc?}], albumArt? }`. Priority: mbid → spotify → applemusic → url → tracks → artist+title. `opts.allowMbid` / `allowProviderId` / `allowArtistTitleAlbum` gate per-command (album-only shapes silently fall through for non-album commands).
+
+**Tracklist parser** (`window.parseProtocolTracklist`, ~L33048; SYNCed with `tests/helpers/tracklist-parser.js`): auto-detects XSPF (XML, DOMParser) / JSPF / generic JSON tracklist. JSPF identifier strings are MBID-validated (`/^[a-f0-9-]{36}$/i`). Inline tracks capped at 500; bodies capped at 100KB.
+
+**`play-radio` extends in-app spinoff** (`startSpinoff` overloaded to accept `{ pool, displayName, refillUrl }`, ~L32066). Refill loop polls the URL when pool falls below 3 tracks, soft-rate-limited to ≥5s between fetches; stops after 3 consecutive empty fetches. Mode B (`?artist=`) uses the existing similar-tracks endpoint; Mode C (`?url=` / `?tracks=`+`?refill=`) uses an externally-curated pool.
+
+**SSRF guard** (`window.isPublicHttpUrl`, ~L97): rejects non-HTTP(S), loopback, RFC1918, CGNAT (100.64/10), link-local 169.254/16 (incl. cloud-metadata IP), `.local` mDNS (with trailing-dot variants), IPv6 loopback / link-local fe80::/10 / ULA fc00::/7 / IPv4-mapped `::ffff:0:0/96`. Applied at four call sites: `resolveProtocolPlayInput` URL branch, `play-radio` upfront refill check, `refillSpinoffPool` re-check on every refill, and the `import` handler. Does NOT defend against DNS rebinding (documented). All protocol fetchers also pass `redirect: 'error'` to defend against 3xx-to-private redirects.
+
+**Listen-along** (`activateListenAlongRef.current(friend)`, ~L29637 wiring): the `listen-along` case looks up an existing friend; if none, fetches the user's now-playing via `fetchTransientFriendNowPlaying(service, user)` and constructs a transient friend record. LB uses `/1/user/{name}/playing-now`; Last.fm uses `user.getrecenttracks?limit=1` and checks `@attr.nowplaying === 'true'`.
+
 ## Common Patterns
 
 - **Refs for stale closure avoidance**: Most state values have a companion ref (e.g., `volumeRef`, `isPlayingRef`) synced via `useEffect`. Always use refs in async callbacks.
