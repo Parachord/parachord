@@ -10780,13 +10780,20 @@ const Parachord = () => {
                   await startSpinoffRef.current({ artist: params.artist, title: params.title || null });
                   break;
                 }
-                // Mode C: inline tracks and/or URL-based refill
+                // Mode C: inline tracks and/or URL-based refill.
+                // ?name= or ?title= is the canonical station name set by the
+                // publisher; prefer those over the parser's fallback (often
+                // "Tracks" for inline shapes, or the JSPF playlist title from
+                // a remote endpoint).
                 let initialPool = [];
-                let displayName = params.title || 'Radio';
+                const explicitName = params.name || params.title || null;
+                let displayName = explicitName || 'Radio';
                 if (params.tracks || params.url) {
                   const r = await resolveProtocolPlayInput(params, {});
                   initialPool = r.tracks || [];
-                  displayName = r.displayName || displayName;
+                  if (!explicitName) {
+                    displayName = r.displayName || displayName;
+                  }
                 }
                 if (params.shuffle === '1' && initialPool.length > 1) {
                   initialPool = [...initialPool];
@@ -61166,6 +61173,7 @@ useEffect(() => {
             playbackContext.type === 'aiPlaylist' ? 'Shuffleupagus' :
             playbackContext.type === 'history' ? 'History' :
             playbackContext.type === 'friend' ? `${playbackContext.name || 'Friend'}'s ${playbackContext.tab === 'topTracks' ? 'top tracks' : 'recent listens'}` :
+            playbackContext.type === 'spinoff' && !playbackContext.sourceTrack?.artist ? `${playbackContext.sourceTrack?.title || 'Radio'}` :
             playbackContext.type === 'spinoff' ? `spun off from "${playbackContext.sourceTrack?.title || 'Unknown'}" by ${playbackContext.sourceTrack?.artist || 'Unknown'}` :
             playbackContext.type === 'listenAlong' ? `${playbackContext.name || 'Friend'}` :
             playbackContext.type === 'url' ? playbackContext.name || 'External link' :
