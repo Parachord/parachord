@@ -6265,6 +6265,23 @@ const Parachord = () => {
   const homeFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for Home tab friend activity
   const sidebarFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for sidebar pinned friends
   const friendsRef = useRef(friends); // Ref for friends to avoid stale closures in polling
+  const metaServiceConfigsRef = useRef({}); // Ref for LB/Last.fm credentials in async protocol handlers
+
+  // Auto-attach the user's already-configured LB token when fetching from
+  // api.listenbrainz.org. LB requires `Authorization: Token <token>` on the
+  // lb-radio endpoint as of mid-2026 (anti-AI-scraper measure). Falls back
+  // to no auth if the user hasn't configured LB; the call will get its 401
+  // and surface via the standard "Fetch failed" error path.
+  const buildProtocolFetchHeaders = (url) => {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (host === 'api.listenbrainz.org') {
+        const token = metaServiceConfigsRef.current?.listenbrainz?.userToken;
+        if (token) return { Authorization: `Token ${token}` };
+      }
+    } catch { /* malformed URL — caller will reject elsewhere */ }
+    return {};
+  };
   const pinnedFriendIdsRef = useRef(pinnedFriendIds); // Ref for pinned IDs to avoid stale closures in polling
   const autoPinnedFriendIdsRef = useRef(autoPinnedFriendIds); // Ref for auto-pinned IDs to avoid stale closures in polling
   const [listenAlongFriend, setListenAlongFriend] = useState(null); // Friend object when in listen-along mode
@@ -7363,6 +7380,7 @@ const Parachord = () => {
   }, [volume]);
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
   useEffect(() => { friendsRef.current = friends; }, [friends]);
+  useEffect(() => { metaServiceConfigsRef.current = metaServiceConfigs; }, [metaServiceConfigs]);
   useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
   useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
@@ -10573,7 +10591,10 @@ const Parachord = () => {
         if (!window.isPublicHttpUrl(params.url)) {
           throw new Error('Invalid URL: must be public http/https');
         }
-        const resp = await fetch(params.url, { redirect: 'error' });
+        const resp = await fetch(params.url, {
+          redirect: 'error',
+          headers: buildProtocolFetchHeaders(params.url),
+        });
         if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
         const ct = resp.headers.get('content-type') || '';
         const body = await resp.text();
@@ -32102,7 +32123,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         spinoffRefillUrlRef.current = null;
         return;
       }
-      const resp = await fetch(url, { redirect: 'error' });
+      const resp = await fetch(url, {
+        redirect: 'error',
+        headers: buildProtocolFetchHeaders(url),
+      });
       if (!resp.ok) {
         spinoffRefillEmptyCountRef.current++;
         if (spinoffRefillEmptyCountRef.current >= 3) spinoffRefillUrlRef.current = null;

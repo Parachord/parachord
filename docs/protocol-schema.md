@@ -256,7 +256,9 @@ parachord://play/radio?tracks={base64_json}&refill={refill_url}      # inline fi
 | `title` | Mode B (optional) | Seed track title within `artist` |
 | `shuffle` | No | `1` to shuffle the initial pool (Mode C only — Mode B's similarity ordering is preserved) |
 
-The refill endpoint can return either XSPF (`Content-Type: application/xml`/`application/xspf+xml`) or JSPF/JSON (`Content-Type: application/json`). For ListenBrainz integrators, `https://api.listenbrainz.org/1/explore/lb-radio?...` returns JSPF and works without modification.
+The refill endpoint can return either XSPF (`Content-Type: application/xml`/`application/xspf+xml`) or JSPF/JSON (`Content-Type: application/json`). For ListenBrainz integrators, `https://api.listenbrainz.org/1/explore/lb-radio?...` returns JSPF.
+
+> **ListenBrainz auth.** As of mid-2026 the lb-radio endpoint requires `Authorization: Token <user_token>`. Parachord auto-attaches the user's already-configured LB token (the same one used for scrobbling and friends) on every request whose host is `api.listenbrainz.org`. Publishers don't need to add anything to the URL — if the user has LB configured, it just works. If not, the call returns 401 and surfaces a "Radio failed: Fetch failed: 401" toast.
 
 Refill rate-limit: minimum 5 seconds between fetches.
 
