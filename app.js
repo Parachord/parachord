@@ -10654,6 +10654,77 @@ const Parachord = () => {
         switch (command) {
           // === Playback Control ===
           case 'play': {
+            // Sub-action routes: parachord://play/album, play/playlist, play/radio.
+            // No sub-action: parachord://play?artist=X&title=Y (single-track play).
+            const playKind = segments[0];
+
+            if (playKind === 'album' || playKind === 'playlist') {
+              try {
+                const { displayName, tracks, albumArt } = await resolveProtocolPlayInput(params, {
+                  allowMbid: playKind === 'album',
+                  allowProviderId: playKind === 'album',
+                  allowArtistTitleAlbum: playKind === 'album',
+                });
+                if (!tracks || tracks.length === 0) {
+                  showToast(`Nothing to play: ${displayName || 'Untitled'}`);
+                  break;
+                }
+                // Fisher-Yates shuffle when ?shuffle=1
+                let ordered = tracks;
+                if (params.shuffle === '1') {
+                  ordered = [...tracks];
+                  for (let i = ordered.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+                  }
+                }
+                const context = { type: `play/${playKind}`, name: displayName, ...(albumArt ? { albumArt } : {}) };
+                setCurrentQueue(ordered.slice(1));
+                await handlePlayRef.current(ordered[0], undefined, context);
+                showToast(`Playing ${playKind}: ${displayName}`);
+              } catch (err) {
+                console.error(`play/${playKind} failed:`, err);
+                showToast(`Play failed: ${err.message}`);
+              }
+              break;
+            }
+
+            if (playKind === 'radio') {
+              try {
+                // Mode B: artist-only seed → existing similar-tracks spinoff
+                if (params.artist && !params.tracks && !params.url) {
+                  await startSpinoffRef.current({ artist: params.artist, title: params.title || null });
+                  break;
+                }
+                // Mode C: inline tracks and/or URL-based refill
+                let initialPool = [];
+                let displayName = params.title || 'Radio';
+                if (params.tracks || params.url) {
+                  const r = await resolveProtocolPlayInput(params, {});
+                  initialPool = r.tracks || [];
+                  displayName = r.displayName || displayName;
+                }
+                if (params.shuffle === '1' && initialPool.length > 1) {
+                  initialPool = [...initialPool];
+                  for (let i = initialPool.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [initialPool[i], initialPool[j]] = [initialPool[j], initialPool[i]];
+                  }
+                }
+                const refillUrl = params.refill || params.url || null;
+                if (refillUrl && !window.isPublicHttpUrl(refillUrl)) {
+                  showToast('Invalid refill URL: must be public http/https');
+                  break;
+                }
+                await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl });
+              } catch (err) {
+                console.error('play/radio failed:', err);
+                showToast(`Radio failed: ${err.message}`);
+              }
+              break;
+            }
+
+            // Default: parachord://play?artist=X&title=Y (single-track play)
             if (params.artist && params.title) {
               const results = await searchResolvers(`${params.artist} ${params.title}`, {
                 earlyReturn: true,
@@ -10954,73 +11025,6 @@ const Parachord = () => {
                   handleAiChatSendRef.current(prompt);
                 }
               });
-            }
-            break;
-          }
-
-          case 'play-album':
-          case 'play-playlist': {
-            try {
-              const { displayName, tracks, albumArt } = await resolveProtocolPlayInput(params, {
-                allowMbid: command === 'play-album',
-                allowProviderId: command === 'play-album',
-                allowArtistTitleAlbum: command === 'play-album',
-              });
-              if (!tracks || tracks.length === 0) {
-                showToast(`Nothing to play: ${displayName || 'Untitled'}`);
-                break;
-              }
-              // Fisher-Yates shuffle when ?shuffle=1
-              let ordered = tracks;
-              if (params.shuffle === '1') {
-                ordered = [...tracks];
-                for (let i = ordered.length - 1; i > 0; i--) {
-                  const j = Math.floor(Math.random() * (i + 1));
-                  [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
-                }
-              }
-              const context = { type: command, name: displayName, ...(albumArt ? { albumArt } : {}) };
-              setCurrentQueue(ordered.slice(1));
-              await handlePlayRef.current(ordered[0], undefined, context);
-              showToast(`Playing ${command === 'play-album' ? 'album' : 'playlist'}: ${displayName}`);
-            } catch (err) {
-              console.error(`${command} failed:`, err);
-              showToast(`Play failed: ${err.message}`);
-            }
-            break;
-          }
-
-          case 'play-radio': {
-            try {
-              // Mode B: artist-only seed → existing similar-tracks spinoff
-              if (params.artist && !params.tracks && !params.url) {
-                await startSpinoffRef.current({ artist: params.artist, title: params.title || null });
-                break;
-              }
-              // Mode C: inline tracks and/or URL-based refill
-              let initialPool = [];
-              let displayName = params.title || 'Radio';
-              if (params.tracks || params.url) {
-                const r = await resolveProtocolPlayInput(params, {});
-                initialPool = r.tracks || [];
-                displayName = r.displayName || displayName;
-              }
-              if (params.shuffle === '1' && initialPool.length > 1) {
-                initialPool = [...initialPool];
-                for (let i = initialPool.length - 1; i > 0; i--) {
-                  const j = Math.floor(Math.random() * (i + 1));
-                  [initialPool[i], initialPool[j]] = [initialPool[j], initialPool[i]];
-                }
-              }
-              const refillUrl = params.refill || params.url || null;
-              if (refillUrl && !window.isPublicHttpUrl(refillUrl)) {
-                showToast('Invalid refill URL: must be public http/https');
-                break;
-              }
-              await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl });
-            } catch (err) {
-              console.error('play-radio failed:', err);
-              showToast(`Radio failed: ${err.message}`);
             }
             break;
           }

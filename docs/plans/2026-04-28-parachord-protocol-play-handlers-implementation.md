@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add four `parachord://` deep-link commands (`play-album`, `play-playlist`, `play-radio`, `listen-along`) so external sites like ListenBrainz can embed Play-in-Parachord buttons.
+**Goal:** Add four `parachord://` deep-link commands (`play/album`, `play/playlist`, `play/radio`, `listen-along`) so external sites like ListenBrainz can embed Play-in-Parachord buttons.
 
-**Architecture:** Three commands (`play-album`, `play-playlist`, `play-radio`) share an input-resolution layer (rich ID → tracklist) and differ only in runtime consumption. `play-radio` adds URL-driven refill semantics by extending the existing in-app spinoff. `listen-along` constructs a transient friend object from `service+user` and reuses the existing `activateListenAlong` primitive. All work is in `app.js`; the OS-level protocol parsing already exists at `main.js:1540` and dispatches via `onProtocolUrl`.
+**Architecture:** Three commands (`play/album`, `play/playlist`, `play/radio`) share an input-resolution layer (rich ID → tracklist) and differ only in runtime consumption. `play/radio` adds URL-driven refill semantics by extending the existing in-app spinoff. `listen-along` constructs a transient friend object from `service+user` and reuses the existing `activateListenAlong` primitive. All work is in `app.js`; the OS-level protocol parsing already exists at `main.js:1540` and dispatches via `onProtocolUrl`.
 
 **Tech Stack:** Electron renderer (React, no JSX, `React.createElement`). Jest for tests. Existing helpers reused: `fetchReleaseData`, `handleImportPlaylistFromUrl`, `activateSpinoff` (extended), `activateListenAlong`.
 
@@ -21,7 +21,7 @@
 
 ## Task 1: Extract shared SSRF guard helper
 
-**Why:** Both the existing `import` handler and the new `play-radio` URL fetcher need to reject loopback, RFC1918, and `.local` URLs. Today the `import` handler does an inline check against http/https only — we need a stronger shared check.
+**Why:** Both the existing `import` handler and the new `play/radio` URL fetcher need to reject loopback, RFC1918, and `.local` URLs. Today the `import` handler does an inline check against http/https only — we need a stronger shared check.
 
 **Files:**
 - Create: `tests/protocol/url-safety.test.js`
@@ -52,7 +52,7 @@ describe('isPublicHttpUrl', () => {
   test.each([
     ['ftp://example.com/foo', 'non-http scheme'],
     ['file:///etc/passwd', 'file scheme'],
-    ['parachord://play-album', 'custom scheme'],
+    ['parachord://play/album', 'custom scheme'],
     ['javascript:alert(1)', 'javascript scheme'],
     ['http://localhost/foo', 'localhost'],
     ['http://127.0.0.1/foo', '127 loopback'],
@@ -168,7 +168,7 @@ git commit -m "Add isPublicHttpUrl SSRF guard for protocol URL fetches"
 
 ## Task 2: JSON tracklist parser (LB/JSPF + generic shapes)
 
-**Why:** `play-radio?url=<lb_radio_endpoint>` returns JSON, not XSPF. We auto-detect by `Content-Type` and parse both shapes.
+**Why:** `play/radio?url=<lb_radio_endpoint>` returns JSON, not XSPF. We auto-detect by `Content-Type` and parse both shapes.
 
 **Files:**
 - Create: `tests/protocol/tracklist-parser.test.js`
@@ -420,10 +420,10 @@ describe('protocol play-input dispatch', () => {
     expect(dispatchProtocolPlayInput({ tracks: 'YYY', artist: 'A', title: 'B' })).toBe('tracks');
     expect(dispatchProtocolPlayInput({ artist: 'A', title: 'B' })).toBe('artist+title');
   });
-  test('mbid ignored when not allowed (e.g. play-playlist)', () => {
+  test('mbid ignored when not allowed (e.g. play/playlist)', () => {
     expect(dispatchProtocolPlayInput({ mbid: 'X', url: 'http://a' }, { allowMbid: false })).toBe('url');
   });
-  test('artist-only allowed for play-radio mode B', () => {
+  test('artist-only allowed for play/radio mode B', () => {
     expect(dispatchProtocolPlayInput({ artist: 'Radiohead' }, { allowArtistOnly: true })).toBe('artist-only');
     expect(dispatchProtocolPlayInput({ artist: 'Radiohead' }, { allowArtistOnly: false })).toBe(null);
   });
@@ -448,12 +448,12 @@ Find the existing `useEffect` for protocol URLs (`grep -n "Protocol URL handler"
 
 ```js
 // Resolve any of the protocol play-input shapes into a normalized tracklist.
-// Used by parachord://play-album, play-playlist, play-radio.
+// Used by parachord://play/album, play/playlist, play/radio.
 //
 // Allowed shapes are command-specific:
-//   play-album    → mbid | spotify | applemusic | url | tracks | artist+title
-//   play-playlist → url | tracks | artist+title
-//   play-radio    → url | tracks | artist [+ title]   (artist-only seeds spinoff)
+//   play/album    → mbid | spotify | applemusic | url | tracks | artist+title
+//   play/playlist → url | tracks | artist+title
+//   play/radio    → url | tracks | artist [+ title]   (artist-only seeds spinoff)
 //
 // Returns { displayName, tracks, albumArt }.
 // Throws on hard failure (invalid URL, parse error). Empty pool returns
@@ -579,7 +579,7 @@ git commit -m "Add resolveProtocolPlayInput shared helper for play-* commands"
 
 ## Task 4: Extend `activateSpinoff` to accept a pre-resolved pool + refill URL
 
-**Why:** `play-radio` mode C hands a tracklist directly (with optional refill URL) instead of relying on Parachord's similar-tracks endpoint. The existing function only takes a single seed track.
+**Why:** `play/radio` mode C hands a tracklist directly (with optional refill URL) instead of relying on Parachord's similar-tracks endpoint. The existing function only takes a single seed track.
 
 **Files:**
 - Modify: `app.js` — `activateSpinoff` (around L31750, find via `const activateSpinoff =`).
@@ -769,7 +769,7 @@ git commit -m "Extend activateSpinoff to accept pre-resolved pool + refill URL"
 
 ---
 
-## Task 5: Add `play-album` and `play-playlist` switch cases
+## Task 5: Add `play/album` and `play/playlist` switch cases
 
 **Files:**
 - Modify: `app.js` — protocol URL handler `useEffect` (around L10437).
@@ -785,13 +785,13 @@ Find the `case 'collection-radio':` block, add the new cases before it.
 **Step 2: Add the shared case block**
 
 ```js
-case 'play-album':
-case 'play-playlist': {
+case 'play/album':
+case 'play/playlist': {
   try {
     const { displayName, tracks, albumArt } = await resolveProtocolPlayInput(params, {
-      allowMbid: command === 'play-album',
-      allowProviderId: command === 'play-album',
-      allowArtistTitleAlbum: command === 'play-album',
+      allowMbid: command === 'play/album',
+      allowProviderId: command === 'play/album',
+      allowArtistTitleAlbum: command === 'play/album',
     });
     if (!tracks.length) {
       showToast(`Nothing to play: ${displayName}`);
@@ -801,7 +801,7 @@ case 'play-playlist': {
     const context = { type: command, name: displayName, albumArt };
     setCurrentQueue(ordered.slice(1));
     await handlePlayRef.current(ordered[0], displayName, context);
-    showToast(`Playing ${command === 'play-album' ? 'album' : 'playlist'}: ${displayName}`);
+    showToast(`Playing ${command === 'play/album' ? 'album' : 'playlist'}: ${displayName}`);
   } catch (err) {
     showToast(`Play failed: ${err.message}`);
   }
@@ -824,7 +824,7 @@ for (let i = arr.length - 1; i > 0; i--) {
 Build the app (or run dev) and try:
 
 ```bash
-open "parachord://play-album?artist=Radiohead&title=OK%20Computer"
+open "parachord://play/album?artist=Radiohead&title=OK%20Computer"
 ```
 
 Expected: app activates, OK Computer's tracks load and start playing. Toast shows.
@@ -833,20 +833,20 @@ Expected: app activates, OK Computer's tracks load and start playing. Toast show
 
 ```bash
 git add app.js
-git commit -m "Add parachord://play-album and parachord://play-playlist commands"
+git commit -m "Add parachord://play/album and parachord://play/playlist commands"
 ```
 
 ---
 
-## Task 6: Add `play-radio` switch case
+## Task 6: Add `play/radio` switch case
 
 **Files:**
 - Modify: `app.js` — same switch.
 
-**Step 1: Add case immediately after `play-playlist`**
+**Step 1: Add case immediately after `play/playlist`**
 
 ```js
-case 'play-radio': {
+case 'play/radio': {
   try {
     // Mode B: artist-only seed → existing similar-tracks spinoff
     if (params.artist && !params.tracks && !params.url) {
@@ -878,11 +878,11 @@ case 'play-radio': {
 
 ```bash
 # Mode B (existing spinoff) — should work as before
-open "parachord://play-radio?artist=Radiohead"
+open "parachord://play/radio?artist=Radiohead"
 
 # Mode C with inline tracks
 TRACKS=$(echo '[{"artist":"Radiohead","title":"Karma Police"},{"artist":"Beck","title":"Loser"}]' | base64)
-open "parachord://play-radio?tracks=$TRACKS"
+open "parachord://play/radio?tracks=$TRACKS"
 ```
 
 Expected: spinoff banner shows, plays through pool.
@@ -891,7 +891,7 @@ Expected: spinoff banner shows, plays through pool.
 
 ```bash
 git add app.js
-git commit -m "Add parachord://play-radio command with refill support"
+git commit -m "Add parachord://play/radio command with refill support"
 ```
 
 ---
@@ -1061,14 +1061,14 @@ Custom-scheme deep links handled at app.js's protocol switch (around L10468):
 
 | Command | Inputs | Confirmation |
 |---|---|---|
-| `parachord://play-album` | `mbid` / `spotify` / `applemusic` / `url` / `tracks` / `artist`+`title` | None |
-| `parachord://play-playlist` | `url` / `tracks` | None |
-| `parachord://play-radio` | `url` (also reused as refill) / `tracks`+`refill` / `artist`[+`title`] | None |
+| `parachord://play/album` | `mbid` / `spotify` / `applemusic` / `url` / `tracks` / `artist`+`title` | None |
+| `parachord://play/playlist` | `url` / `tracks` | None |
+| `parachord://play/radio` | `url` (also reused as refill) / `tracks`+`refill` / `artist`[+`title`] | None |
 | `parachord://listen-along` | `service`=`listenbrainz`\|`lastfm`, `user`=`<username>` | None |
 | `parachord://import` | `url` / `tracks` | Required (writes to library) |
 | `parachord://chat` | `prompt` | Required (sends to AI) |
 
-`play-radio` extends in-app spinoff (`activateSpinoff`) to accept a pre-resolved pool with optional refill URL. Refill loop polls the URL when pool falls below 3 tracks, soft-rate-limited to ≥5s between fetches; stops after 3 consecutive empty fetches.
+`play/radio` extends in-app spinoff (`activateSpinoff`) to accept a pre-resolved pool with optional refill URL. Refill loop polls the URL when pool falls below 3 tracks, soft-rate-limited to ≥5s between fetches; stops after 3 consecutive empty fetches.
 
 URL params (`url` and `refill`) are gated by `window.isPublicHttpUrl` — same SSRF guard as the existing `import` handler.
 ```
@@ -1097,23 +1097,23 @@ gh pr create --title "Add parachord:// play handlers (album, playlist, radio, li
 ## Summary
 - Implements four new `parachord://` deep-link commands per design at `docs/plans/2026-04-28-parachord-protocol-play-handlers-design.md`
 - Shared input resolver (mbid / provider IDs / xspf url / inline tracks / artist+title) feeding three play-style commands
-- `play-radio` extends in-app spinoff with URL-driven refill, decoupling from Parachord's similar-tracks endpoint so LB-style sources can curate
+- `play/radio` extends in-app spinoff with URL-driven refill, decoupling from Parachord's similar-tracks endpoint so LB-style sources can curate
 - `listen-along` constructs a transient friend object and reuses existing in-app primitive
 - New SSRF guard `isPublicHttpUrl` for URL-fetching commands
 
 ## Test plan
-- [ ] `parachord://play-album?mbid=<known_mbid>` plays album
-- [ ] `parachord://play-album?artist=Radiohead&title=OK%20Computer` plays via MB search
-- [ ] `parachord://play-album?spotify=<id>` plays via Spotify (or surfaces a clear error if not yet wired)
-- [ ] `parachord://play-album?applemusic=<id>` plays via AM
-- [ ] `parachord://play-playlist?url=<xspf_url>` fetches XSPF and plays
-- [ ] `parachord://play-playlist?tracks=<base64>` plays inline list
-- [ ] `parachord://play-radio?url=<lb_radio_endpoint>` initial pool from URL, refills from same URL when low
-- [ ] `parachord://play-radio?tracks=<inline>&refill=<endpoint>` inline first, refills from endpoint
-- [ ] `parachord://play-radio?tracks=<inline>` static pool, ends silently when exhausted
-- [ ] `parachord://play-radio?artist=Radiohead` falls through to existing spinoff
+- [ ] `parachord://play/album?mbid=<known_mbid>` plays album
+- [ ] `parachord://play/album?artist=Radiohead&title=OK%20Computer` plays via MB search
+- [ ] `parachord://play/album?spotify=<id>` plays via Spotify (or surfaces a clear error if not yet wired)
+- [ ] `parachord://play/album?applemusic=<id>` plays via AM
+- [ ] `parachord://play/playlist?url=<xspf_url>` fetches XSPF and plays
+- [ ] `parachord://play/playlist?tracks=<base64>` plays inline list
+- [ ] `parachord://play/radio?url=<lb_radio_endpoint>` initial pool from URL, refills from same URL when low
+- [ ] `parachord://play/radio?tracks=<inline>&refill=<endpoint>` inline first, refills from endpoint
+- [ ] `parachord://play/radio?tracks=<inline>` static pool, ends silently when exhausted
+- [ ] `parachord://play/radio?artist=Radiohead` falls through to existing spinoff
 - [ ] `parachord://listen-along?service=listenbrainz&user=<known_active_user>` activates listen-along
-- [ ] SSRF: `parachord://play-playlist?url=http://localhost/foo` shows toast
+- [ ] SSRF: `parachord://play/playlist?url=http://localhost/foo` shows toast
 - [ ] Empty refill 3× → radio ends silently
 - [ ] Full Jest suite passes
 
@@ -1126,7 +1126,7 @@ EOF
 
 ## Out of scope (intentionally NOT in this plan)
 
-- `?save=1` on play-playlist (use `parachord://import` for that)
+- `?save=1` on play/playlist (use `parachord://import` for that)
 - Spotify album lookup wiring if no existing helper exists (dropped to follow-up)
 - Provider-specific radio modes other than LB (any JSON tracklist endpoint already works)
 - Confirmation prompts for play actions

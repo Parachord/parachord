@@ -9,9 +9,9 @@ The four new commands extend the existing protocol surface (chat, import, naviga
 ## URL surface
 
 ```
-parachord://play-album      ?mbid|spotify|applemusic | artist&title | url | tracks  [&shuffle=1]
-parachord://play-playlist    ?url | tracks | (artist&title)                          [&shuffle=1]
-parachord://play-radio       ?url | tracks[&refill] | artist[&title]                 [&shuffle=1]
+parachord://play/album      ?mbid|spotify|applemusic | artist&title | url | tracks  [&shuffle=1]
+parachord://play/playlist    ?url | tracks | (artist&title)                          [&shuffle=1]
+parachord://play/radio       ?url | tracks[&refill] | artist[&title]                 [&shuffle=1]
 parachord://listen-along     ?service=listenbrainz|lastfm  &user=<username>
 ```
 
@@ -19,24 +19,24 @@ All four commands accept a flexible identifier set. Resolution rules in priority
 
 1. **`mbid`** (album only) — MusicBrainz release-group ID. Fast, exact lookup via existing `fetchReleaseData`.
 2. **`spotify` / `applemusic`** (album only) — provider catalog IDs.
-3. **`url`** — XSPF or LB-style JSON endpoint. Fetched and parsed; for `play-radio`, this URL is also reused as the refill source unless `refill=` is provided.
+3. **`url`** — XSPF or LB-style JSON endpoint. Fetched and parsed; for `play/radio`, this URL is also reused as the refill source unless `refill=` is provided.
 4. **`tracks`** — base64-encoded JSON array `[{artist, title, album?, mbid?, isrc?}]`. Same shape as the existing `import?tracks=`.
 5. **`artist`+`title`** — fuzzy fallback. For album: search MusicBrainz release-groups (existing `album` handler logic). For radio: seed Parachord's existing in-app spinoff (mode B). Not used for playlist (a playlist needs an explicit list).
 
-After resolution, `play-album` / `play-playlist` set the queue and start playback at index 0. `play-radio` hands its tracks to spinoff as the initial pool with refill semantics (see below).
+After resolution, `play/album` / `play/playlist` set the queue and start playback at index 0. `play/radio` hands its tracks to spinoff as the initial pool with refill semantics (see below).
 
 ## Runtime behavior matrix
 
 | Command | Plays through tracklist | Auto-extends pool | Stops on | Confirmation |
 |---|---|---|---|---|
-| `play-album` | Yes (in order) | No | End of list | None |
-| `play-playlist` | Yes (in order, optionally shuffled) | No | End of list | None |
-| `play-radio` | Yes (in order, optionally shuffled) | Yes (see refill) | Refill returns empty 3× consecutively, OR initial source has no refill capability and pool exhausts | None |
+| `play/album` | Yes (in order) | No | End of list | None |
+| `play/playlist` | Yes (in order, optionally shuffled) | No | End of list | None |
+| `play/radio` | Yes (in order, optionally shuffled) | Yes (see refill) | Refill returns empty 3× consecutively, OR initial source has no refill capability and pool exhausts | None |
 | `listen-along` | N/A — syncs to remote user | Driven by remote user's now-playing | User stops it, or activates a different track | None |
 
 `save=1` and other library-mutating side effects are intentionally NOT supported. Saving is `parachord://import`'s job; keeping the verbs separate avoids privilege creep on link clicks.
 
-## play-radio refill semantics
+## play/radio refill semantics
 
 Three modes by param shape:
 
@@ -101,12 +101,12 @@ Reuses:
 ### New cases in the protocol switch (app.js:10468+)
 
 ```js
-case 'play-album':
-case 'play-playlist': {
+case 'play/album':
+case 'play/playlist': {
   const { displayName, tracks, albumArt } = await resolveProtocolPlayInput(params, {
-    allowMbid: command === 'play-album',
-    allowProviderId: command === 'play-album',
-    allowArtistTitleAlbum: command === 'play-album',
+    allowMbid: command === 'play/album',
+    allowProviderId: command === 'play/album',
+    allowArtistTitleAlbum: command === 'play/album',
   });
   if (!tracks.length) { showToast(`Nothing to play: ${displayName}`); break; }
   const ordered = params.shuffle === '1' ? shuffleArray(tracks) : tracks;
@@ -116,7 +116,7 @@ case 'play-playlist': {
   break;
 }
 
-case 'play-radio': {
+case 'play/radio': {
   if (params.artist && !params.tracks && !params.url) {
     // Mode B — seeded spinoff using Parachord's similar-tracks logic
     activateSpinoffRef.current({
@@ -192,24 +192,24 @@ All errors surface as toasts, never error dialogs (external links should fail pa
 
 Smoke tests via `open "parachord://..."` from terminal (macOS):
 
-- `play-album?mbid=<known_mbid>` — plays the album in tracklist order
-- `play-album?artist=Radiohead&title=OK%20Computer` — same, via search
-- `play-album?spotify=<id>` — same, via Spotify catalog
-- `play-album?applemusic=<id>` — same, via AM catalog
-- `play-album?...&shuffle=1` — same, but shuffled
-- `play-playlist?url=<xspf_url>` — fetches XSPF, plays
-- `play-playlist?tracks=<base64>` — plays inline list
-- `play-radio?url=<lb_radio_endpoint>` — initial pool from URL, refills from same URL when low
-- `play-radio?tracks=<base64>&refill=<endpoint>` — inline first, refills from endpoint
-- `play-radio?tracks=<base64>` — static pool, ends when exhausted
-- `play-radio?artist=Radiohead` — falls through to existing spinoff seeded path
+- `play/album?mbid=<known_mbid>` — plays the album in tracklist order
+- `play/album?artist=Radiohead&title=OK%20Computer` — same, via search
+- `play/album?spotify=<id>` — same, via Spotify catalog
+- `play/album?applemusic=<id>` — same, via AM catalog
+- `play/album?...&shuffle=1` — same, but shuffled
+- `play/playlist?url=<xspf_url>` — fetches XSPF, plays
+- `play/playlist?tracks=<base64>` — plays inline list
+- `play/radio?url=<lb_radio_endpoint>` — initial pool from URL, refills from same URL when low
+- `play/radio?tracks=<base64>&refill=<endpoint>` — inline first, refills from endpoint
+- `play/radio?tracks=<base64>` — static pool, ends when exhausted
+- `play/radio?artist=Radiohead` — falls through to existing spinoff seeded path
 - `listen-along?service=listenbrainz&user=mr_monkey` — activates listen-along with that user
-- SSRF: `play-playlist?url=http://localhost/foo` — toast `Invalid URL: must be public http/https`
+- SSRF: `play/playlist?url=http://localhost/foo` — toast `Invalid URL: must be public http/https`
 - Empty refill: mock endpoint returning `{tracks: []}` 3× → radio ends silently
 
 ## Out of scope
 
-- `?save=1` on play-playlist (use `parachord://import` for that)
+- `?save=1` on play/playlist (use `parachord://import` for that)
 - Provider-specific radio modes other than LB (anyone with a JSON tracklist endpoint already works)
 - Confirmation prompts for play actions (decided against — read-equivalent to share links)
 - Browser-extension integration (uses internal IPC, not protocol URLs)
