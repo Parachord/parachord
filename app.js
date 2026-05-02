@@ -5359,6 +5359,9 @@ const Parachord = () => {
   const [spinoffAvailable, setSpinoffAvailable] = useState(null); // null = unchecked, true/false = checked
   const spinoffTracksRef = useRef([]); // Pool of similar tracks to play
   const spinoffPreviousContextRef = useRef(null); // Store previous playback context to restore on exit
+  const spinoffRefillUrlRef = useRef(null); // Optional refill endpoint for pool-based spinoff (parachord://play-radio)
+  const spinoffRefillEmptyCountRef = useRef(0); // Consecutive empty/failed refill attempts; stop after 3
+  const spinoffRefillLastFetchAtRef = useRef(0); // Timestamp of last refill attempt for 5s rate-limit
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false); // Ref for isPlaying to use in async callbacks
   const [trackLoading, setTrackLoading] = useState(false); // True when loading a track to play
@@ -16520,6 +16523,11 @@ ${trackListXml}
       if (spinoffModeRef.current && spinoffTracksRef.current.length > 0) {
         const nextSimilar = spinoffTracksRef.current.shift();
         console.log(`🔀 Spinoff: playing next similar track "${nextSimilar.title}"`);
+
+        // Trigger refill in background when pool is low and refillUrl is set (fire-and-forget).
+        if (spinoffTracksRef.current.length < 3 && spinoffRefillUrlRef.current) {
+          refillSpinoffPool().catch(err => console.warn('refill error:', err));
+        }
 
         // Update pool visibility for resolution - next 5 tracks
         // Use track ID as key to avoid re-resolution when tracks shift
@@ -31910,8 +31918,135 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Start spinoff mode - play similar tracks based on current track
+  // Refill spinoff pool from refillUrl (used by parachord://play-radio).
+  // Fire-and-forget: callers should not await; this is rate-limited and self-stops after 3 empties.
+  const keyForSpinoffDedup = (t) => {
+    if (t.mbid) return `mbid:${t.mbid}`;
+    if (t.isrc) return `isrc:${t.isrc}`;
+    return `at:${(t.artist || '').toLowerCase()}|${(t.title || '').toLowerCase()}`;
+  };
+
+  const refillSpinoffPool = async () => {
+    const url = spinoffRefillUrlRef.current;
+    if (!url) return;
+    const now = Date.now();
+    if (now - spinoffRefillLastFetchAtRef.current < 5000) return; // 5s soft rate-limit
+    spinoffRefillLastFetchAtRef.current = now;
+
+    try {
+      if (!window.isPublicHttpUrl || !window.isPublicHttpUrl(url)) {
+        console.warn('🔁 Refill URL failed SSRF check, stopping');
+        spinoffRefillUrlRef.current = null;
+        return;
+      }
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        spinoffRefillEmptyCountRef.current++;
+        if (spinoffRefillEmptyCountRef.current >= 3) spinoffRefillUrlRef.current = null;
+        return;
+      }
+      const ct = resp.headers.get('content-type') || '';
+      const body = await resp.text();
+      if (body.length > 100 * 1024) {
+        console.warn('🔁 Refill response > 100KB, treating as empty');
+        spinoffRefillEmptyCountRef.current++;
+        if (spinoffRefillEmptyCountRef.current >= 3) spinoffRefillUrlRef.current = null;
+        return;
+      }
+      const parsed = (window.parseProtocolTracklist && window.parseProtocolTracklist(body, ct)) || { tracks: [] };
+      const tracks = parsed.tracks || [];
+
+      // Dedupe against existing pool by mbid → isrc → (artist|title) lowercase
+      const existing = new Set(spinoffTracksRef.current.map(keyForSpinoffDedup));
+      const fresh = tracks.filter(t => !existing.has(keyForSpinoffDedup(t)));
+
+      if (fresh.length === 0) {
+        spinoffRefillEmptyCountRef.current++;
+        if (spinoffRefillEmptyCountRef.current >= 3) {
+          console.log('🔁 Refill returned empty 3× in a row, stopping');
+          spinoffRefillUrlRef.current = null;
+        }
+        return;
+      }
+
+      spinoffRefillEmptyCountRef.current = 0;
+      spinoffTracksRef.current = [...spinoffTracksRef.current, ...fresh];
+      console.log(`🔁 Refilled spinoff pool with ${fresh.length} tracks`);
+    } catch (err) {
+      console.warn('🔁 Refill failed:', err && err.message);
+      spinoffRefillEmptyCountRef.current++;
+      if (spinoffRefillEmptyCountRef.current >= 3) spinoffRefillUrlRef.current = null;
+    }
+  };
+
+  // Activate spinoff from a pre-resolved track pool (parachord://play-radio path).
+  const activateSpinoffFromPool = async (initialPool, { displayName, refillUrl }) => {
+    if (!initialPool.length && !refillUrl) {
+      showToast(`No tracks for radio: ${displayName || 'Untitled'}`);
+      return;
+    }
+
+    // Save previous context to restore on exit (mirrors seed path)
+    if (playbackContext?.type !== 'listenAlong') {
+      spinoffPreviousContextRef.current = playbackContext;
+    } else {
+      spinoffPreviousContextRef.current = null;
+    }
+
+    setSpinoffMode(true);
+    setSpinoffSourceTrack({ title: displayName || 'Radio', artist: '' });
+    spinoffTracksRef.current = [...initialPool];
+    spinoffRefillUrlRef.current = refillUrl || null;
+    spinoffRefillEmptyCountRef.current = 0;
+    spinoffRefillLastFetchAtRef.current = 0;
+
+    registerPoolContext('spinoff', 5);
+    const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t) => ({
+      key: t.id || `${t.artist}-${t.title}`,
+      data: { track: t, artistName: t.artist || 'Unknown Artist' }
+    }));
+    updateSchedulerVisibility('spinoff', poolTracks);
+
+    setPlaybackContext({
+      type: 'spinoff',
+      sourceTrack: { title: displayName || 'Radio', artist: '' },
+      refillUrl: refillUrl || null,
+    });
+
+    showToast(`Playing radio: ${displayName || 'Untitled'}`);
+
+    // If pool was empty but refillUrl is set, fetch immediately for first batch.
+    if (initialPool.length === 0 && refillUrl) {
+      await refillSpinoffPool();
+      if (spinoffTracksRef.current.length === 0) {
+        console.log('🔁 Initial refill returned no tracks, exiting radio');
+        exitSpinoff();
+        showToast(`Radio source returned no tracks: ${displayName || 'Untitled'}`);
+        return;
+      }
+    }
+
+    const first = spinoffTracksRef.current.shift();
+    if (first) {
+      handlePlay(first, undefined, {
+        type: 'spinoff',
+        sourceTrack: { title: displayName || 'Radio', artist: '' },
+        refillUrl: refillUrl || null,
+      });
+    }
+  };
+
+  // Start spinoff mode - play similar tracks based on current track,
+  // OR play from a pre-resolved pool when called with { pool, displayName, refillUrl }.
   const startSpinoff = async (track) => {
+    // New path: pre-resolved pool (used by parachord://play-radio)
+    if (track && Array.isArray(track.pool)) {
+      return activateSpinoffFromPool(track.pool, {
+        displayName: track.displayName,
+        refillUrl: track.refillUrl || null,
+      });
+    }
+
     if (!track || !track.artist || !track.title) {
       console.log('🔀 Cannot start spinoff: missing track info');
       return;
@@ -31997,6 +32132,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const previousContext = spinoffPreviousContextRef.current;
     setPlaybackContext(previousContext);
     spinoffPreviousContextRef.current = null;
+    spinoffRefillUrlRef.current = null;
+    spinoffRefillEmptyCountRef.current = 0;
+    spinoffRefillLastFetchAtRef.current = 0;
     console.log('🔀 Spinoff state cleared, restored context:', previousContext?.type || 'none');
   };
 
