@@ -32247,7 +32247,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     setSpinoffMode(true);
     setSpinoffSourceTrack({ title: displayName || 'Radio', artist: '' });
-    spinoffTracksRef.current = [...initialPool];
+    // Tag every track with a stable id and an empty sources object —
+    // resolveTracksInBackground mutates `track.sources[resolverId]` and
+    // calls `Object.keys(track.sources)` (throws if undefined). Tracks
+    // from parseProtocolTracklist arrive without these fields.
+    const baseId = `protocol-radio-${Date.now()}`;
+    spinoffTracksRef.current = initialPool.map((t, i) => ({
+      ...t,
+      id: t.id || `${baseId}-${i}`,
+      sources: t.sources || {},
+    }));
     spinoffRefillUrlRef.current = refillUrl || null;
     spinoffRefillEmptyCountRef.current = 0;
     spinoffRefillLastFetchAtRef.current = 0;
@@ -32280,30 +32289,31 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     // Find a playable first track: pre-resolve via the resolver pipeline,
     // skip tracks that no enabled resolver can match (common for obscure
-    // LB-radio results vs. user's available streaming services). Caps
-    // attempts so a fully-unresolvable pool doesn't loop forever.
+    // LB-radio results, live recordings, remixes that aren't on Spotify
+    // or Apple Music). Caps attempts so a fully-unresolvable pool doesn't
+    // loop forever.
     let first = null;
     let skipped = 0;
-    const MAX_SKIP = 5;
+    const MAX_SKIP = 20;
     while (spinoffTracksRef.current.length > 0 && skipped < MAX_SKIP) {
       const candidate = spinoffTracksRef.current.shift();
       try {
         await resolveTracksInBackground([candidate]);
       } catch (err) {
-        console.warn('🔁 Resolution error for candidate, skipping:', err?.message);
+        console.warn(`🔁 Resolution threw for "${candidate.title}" by ${candidate.artist}:`, err?.message || err);
       }
-      const hasSources = candidate.sources && Object.keys(candidate.sources)
-        .filter(id => !candidate.sources[id]?.noMatch).length > 0;
-      if (hasSources) {
+      const sourceKeys = candidate.sources ? Object.keys(candidate.sources).filter(id => !candidate.sources[id]?.noMatch) : [];
+      if (sourceKeys.length > 0) {
+        console.log(`🔁 Found playable: "${candidate.title}" by ${candidate.artist} (sources: ${sourceKeys.join(', ')})`);
         first = candidate;
         break;
       }
-      console.log(`🔁 No playable source for "${candidate.title}" by ${candidate.artist}, trying next`);
+      console.log(`🔁 Skipping "${candidate.title}" by ${candidate.artist} — no playable source`);
       skipped++;
     }
 
     if (!first) {
-      console.log(`🔁 Radio: no playable tracks found after ${skipped} attempts, exiting`);
+      console.log(`🔁 Radio: no playable tracks found after ${skipped} attempts (${spinoffTracksRef.current.length} remaining in pool), exiting`);
       exitSpinoff();
       showToast(`No playable tracks for radio: ${displayName || 'Untitled'}`);
       return;
