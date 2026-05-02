@@ -10987,6 +10987,34 @@ const Parachord = () => {
             break;
           }
 
+          case 'play-radio': {
+            try {
+              // Mode B: artist-only seed → existing similar-tracks spinoff
+              if (params.artist && !params.tracks && !params.url) {
+                await startSpinoff({ artist: params.artist, title: params.title || null });
+                break;
+              }
+              // Mode C: inline tracks and/or URL-based refill
+              let initialPool = [];
+              let displayName = params.title || 'Radio';
+              if (params.tracks || params.url) {
+                const r = await resolveProtocolPlayInput(params, {});
+                initialPool = r.tracks || [];
+                displayName = r.displayName || displayName;
+              }
+              const refillUrl = params.refill || params.url || null;
+              if (refillUrl && !window.isPublicHttpUrl(refillUrl)) {
+                showToast('Invalid refill URL: must be public http/https');
+                break;
+              }
+              await startSpinoff({ pool: initialPool, displayName, refillUrl });
+            } catch (err) {
+              console.error('play-radio failed:', err);
+              showToast(`Radio failed: ${err.message}`);
+            }
+            break;
+          }
+
           case 'collection-radio': {
             if (handleStartCollectionStationRef.current) {
               handleStartCollectionStationRef.current();
