@@ -254,7 +254,7 @@ parachord://play-radio?tracks={base64_json}&refill={refill_url}      # inline fi
 | `refill` | No | URL to fetch additional tracks from when the pool runs low. If omitted, the radio is static after the initial pool exhausts (unless `url` was used). |
 | `artist` | Mode B | Seed artist |
 | `title` | Mode B (optional) | Seed track title within `artist` |
-| `shuffle` | No | `1` to shuffle the initial pool |
+| `shuffle` | No | `1` to shuffle the initial pool (Mode C only — Mode B's similarity ordering is preserved) |
 
 The refill endpoint can return either XSPF (`Content-Type: application/xml`/`application/xspf+xml`) or JSPF/JSON (`Content-Type: application/json`). For ListenBrainz integrators, `https://api.listenbrainz.org/1/explore/lb-radio?...` returns JSPF and works without modification.
 

@@ -7206,6 +7206,7 @@ const Parachord = () => {
   const handlePreviousRef = useRef(null);
   const handlePlayPauseRef = useRef(null);
   const handlePlayRef = useRef(null);
+  const startSpinoffRef = useRef(null); // Ref to startSpinoff for use in protocol handler
   const resolveTrackRef = useRef(null); // Ref to resolveTrack for use in ChatCard
   const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
   const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
@@ -10507,9 +10508,11 @@ const Parachord = () => {
         if (!/^[a-f0-9-]{36}$/i.test(params.mbid)) {
           throw new Error('Invalid MBID format');
         }
+        // redirect: 'error' prevents SSRF via 3xx redirects to private hosts
+        // (isPublicHttpUrl only validates the initial URL, not the final destination).
         const mbResp = await fetch(
           `https://musicbrainz.org/ws/2/release?release-group=${encodeURIComponent(params.mbid)}&inc=recordings+artist-credits&limit=1&fmt=json`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' } }
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' }, redirect: 'error' }
         );
         if (!mbResp.ok) throw new Error(`MusicBrainz lookup failed: ${mbResp.status}`);
         const mbData = await mbResp.json();
@@ -10570,7 +10573,7 @@ const Parachord = () => {
         if (!window.isPublicHttpUrl(params.url)) {
           throw new Error('Invalid URL: must be public http/https');
         }
-        const resp = await fetch(params.url);
+        const resp = await fetch(params.url, { redirect: 'error' });
         if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
         const ct = resp.headers.get('content-type') || '';
         const body = await resp.text();
@@ -10609,7 +10612,7 @@ const Parachord = () => {
         const q = encodeURIComponent(`artist:"${params.artist}" AND release:"${params.title}"`);
         const resp = await fetch(
           `https://musicbrainz.org/ws/2/release-group?query=${q}&limit=1&fmt=json`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' } }
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' }, redirect: 'error' }
         );
         if (!resp.ok) throw new Error(`MusicBrainz search failed: ${resp.status}`);
         const data = await resp.json();
@@ -10978,7 +10981,7 @@ const Parachord = () => {
               }
               const context = { type: command, name: displayName, ...(albumArt ? { albumArt } : {}) };
               setCurrentQueue(ordered.slice(1));
-              await handlePlay(ordered[0], undefined, context);
+              await handlePlayRef.current(ordered[0], undefined, context);
               showToast(`Playing ${command === 'play-album' ? 'album' : 'playlist'}: ${displayName}`);
             } catch (err) {
               console.error(`${command} failed:`, err);
@@ -10991,7 +10994,7 @@ const Parachord = () => {
             try {
               // Mode B: artist-only seed → existing similar-tracks spinoff
               if (params.artist && !params.tracks && !params.url) {
-                await startSpinoff({ artist: params.artist, title: params.title || null });
+                await startSpinoffRef.current({ artist: params.artist, title: params.title || null });
                 break;
               }
               // Mode C: inline tracks and/or URL-based refill
@@ -11002,12 +11005,19 @@ const Parachord = () => {
                 initialPool = r.tracks || [];
                 displayName = r.displayName || displayName;
               }
+              if (params.shuffle === '1' && initialPool.length > 1) {
+                initialPool = [...initialPool];
+                for (let i = initialPool.length - 1; i > 0; i--) {
+                  const j = Math.floor(Math.random() * (i + 1));
+                  [initialPool[i], initialPool[j]] = [initialPool[j], initialPool[i]];
+                }
+              }
               const refillUrl = params.refill || params.url || null;
               if (refillUrl && !window.isPublicHttpUrl(refillUrl)) {
                 showToast('Invalid refill URL: must be public http/https');
                 break;
               }
-              await startSpinoff({ pool: initialPool, displayName, refillUrl });
+              await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl });
             } catch (err) {
               console.error('play-radio failed:', err);
               showToast(`Radio failed: ${err.message}`);
@@ -11076,15 +11086,15 @@ const Parachord = () => {
             // parachord://import?url={xspf_url}
             // parachord://import?title={title}&creator={creator}&tracks={base64_json}
             if (params.url) {
+              if (!window.isPublicHttpUrl(params.url)) {
+                showToast('Import failed: only public http/https URLs are allowed');
+                break;
+              }
               let importUrl;
               try {
                 importUrl = new URL(params.url);
               } catch {
                 showToast('Import failed: invalid URL');
-                break;
-              }
-              if (!['http:', 'https:'].includes(importUrl.protocol)) {
-                showToast('Import failed: only HTTP/HTTPS URLs are allowed');
                 break;
               }
               showConfirmDialog({
@@ -16880,6 +16890,7 @@ ${trackListXml}
   useEffect(() => { handlePreviousRef.current = handlePrevious; });
   useEffect(() => { handlePlayPauseRef.current = handlePlayPause; });
   useEffect(() => { handlePlayRef.current = handlePlay; });
+  useEffect(() => { startSpinoffRef.current = startSpinoff; });
   useEffect(() => { getResolverConfigRef.current = getResolverConfig; });
 
   // Queue management functions
@@ -32087,7 +32098,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         spinoffRefillUrlRef.current = null;
         return;
       }
-      const resp = await fetch(url);
+      const resp = await fetch(url, { redirect: 'error' });
       if (!resp.ok) {
         spinoffRefillEmptyCountRef.current++;
         if (spinoffRefillEmptyCountRef.current >= 3) spinoffRefillUrlRef.current = null;

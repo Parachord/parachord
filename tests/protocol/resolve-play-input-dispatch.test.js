@@ -4,6 +4,12 @@
  * (Task 8). This test only verifies which branch FIRES for which params.
  */
 
+// SYNC: app.js — the dispatch fall-through chain in this test's local
+// `dispatchProtocolPlayInput` MUST match the priority order in
+// `resolveProtocolPlayInput` (mbid → spotify → applemusic → url → tracks
+// → artist+title). If you reorder the real implementation, update this
+// test's local helper to match.
+
 const dispatchProtocolPlayInput = (params, allowed = {}) => {
   const a = {
     allowMbid: false, allowProviderId: false,
