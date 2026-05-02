@@ -10819,6 +10819,17 @@ const Parachord = () => {
 
             // Default: parachord://play?artist=X&title=Y (single-track play)
             if (params.artist && params.title) {
+              // Match album/playlist/radio: tear down spinoff/listen-along
+              // and clear the prior queue so a single-track play replaces
+              // the playback context cleanly instead of injecting one
+              // track into whatever was already going.
+              if (spinoffModeRef.current && exitSpinoffRef.current) {
+                exitSpinoffRef.current();
+              }
+              if (listenAlongFriendRef.current && deactivateListenAlongRef.current) {
+                deactivateListenAlongRef.current();
+              }
+              clearQueue();
               const results = await searchResolvers(`${params.artist} ${params.title}`, {
                 earlyReturn: true,
                 targetArtist: params.artist,
