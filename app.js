@@ -10700,9 +10700,44 @@ const Parachord = () => {
                   }
                 }
                 const context = { type: `play/${playKind}`, name: displayName, ...(albumArt ? { albumArt } : {}) };
-                setCurrentQueue(ordered.slice(1));
-                await handlePlayRef.current(ordered[0], undefined, context);
+
+                // Tag every track so when the queue auto-advances, the banner
+                // stays correct (handlePlay reads from track._playbackContext).
+                // Also assign IDs and ensure sources is initialized — both are
+                // required for resolveTracksInBackground's flushToQueue() to
+                // match queue items by id and merge resolved sources back in.
+                const baseId = `protocol-play-${playKind}-${Date.now()}`;
+                const tagTrack = (t, i) => ({
+                  ...t,
+                  id: t.id || `${baseId}-${i}`,
+                  sources: t.sources || {},
+                  _playbackContext: context,
+                });
+                const firstTrack = tagTrack(ordered[0], 0);
+                const queueTracks = ordered.slice(1).map((t, i) => tagTrack(t, i + 1));
+
+                // Tear down any active spinoff or listen-along BEFORE setting
+                // our context. handlePlay's internal cleanup would otherwise
+                // restore the prior spinoff context (or null out for listen-
+                // along) AFTER our setPlaybackContext below — overriding the
+                // play/album banner we just set. Clearing first means
+                // handlePlay's exitSpinoff()/listen-along checks no-op.
+                if (spinoffModeRef.current && exitSpinoffRef.current) {
+                  exitSpinoffRef.current();
+                }
+                if (listenAlongFriendRef.current && deactivateListenAlongRef.current) {
+                  deactivateListenAlongRef.current();
+                }
+
+                setCurrentQueue(queueTracks);
+                setPlaybackContext(context);
+                await handlePlayRef.current(firstTrack);
                 showToast(`Playing ${playKind}: ${displayName}`);
+
+                // Kick off background resolution so resolver badges populate
+                // (without this, queue tracks render with empty shimmer
+                // placeholders since they came from MB metadata only).
+                resolveTracksInBackground([firstTrack, ...queueTracks]);
               } catch (err) {
                 console.error(`play/${playKind} failed:`, err);
                 showToast(`Play failed: ${err.message}`);
