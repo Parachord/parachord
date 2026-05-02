@@ -11015,6 +11015,55 @@ const Parachord = () => {
             break;
           }
 
+          case 'listen-along': {
+            try {
+              const { service, user } = params;
+              if (!service || !user) {
+                showToast('listen-along requires service and user');
+                break;
+              }
+              if (!['listenbrainz', 'lastfm'].includes(service)) {
+                showToast(`Unknown listen-along service: ${service}`);
+                break;
+              }
+              const existingFriend = friendsRef.current.find(f =>
+                f.service === service && f.username?.toLowerCase() === user.toLowerCase()
+              );
+              let friend = existingFriend;
+              if (!friend) {
+                const cachedRecentTrack = await fetchTransientFriendNowPlaying(service, user);
+                if (!cachedRecentTrack) {
+                  showToast(`${user} is not currently listening on ${service === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`);
+                  break;
+                }
+                friend = {
+                  id: `transient:${service}:${user}`,
+                  service,
+                  username: user,
+                  displayName: user,
+                  cachedRecentTrack,
+                  transient: true,
+                };
+              } else if (!existingFriend.cachedRecentTrack) {
+                const cached = await fetchTransientFriendNowPlaying(service, user);
+                if (!cached) {
+                  showToast(`${user} is not currently listening on ${service === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}`);
+                  break;
+                }
+                friend = { ...existingFriend, cachedRecentTrack: cached };
+              }
+              if (activateListenAlongRef.current) {
+                activateListenAlongRef.current(friend);
+              } else {
+                showToast('listen-along not yet ready');
+              }
+            } catch (err) {
+              console.error('listen-along failed:', err);
+              showToast(`listen-along failed: ${err.message}`);
+            }
+            break;
+          }
+
           case 'collection-radio': {
             if (handleStartCollectionStationRef.current) {
               handleStartCollectionStationRef.current();
@@ -29815,6 +29864,45 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       }
     }
+  };
+
+  const fetchTransientFriendNowPlaying = async (service, user) => {
+    if (service === 'listenbrainz') {
+      const resp = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(user)}/playing-now`);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const listen = data?.payload?.listens?.[0];
+      if (!listen) return null;
+      const m = listen.track_metadata;
+      if (!m?.track_name || !m?.artist_name) return null;
+      return {
+        name: m.track_name,
+        artist: m.artist_name,
+        album: m.release_name,
+        timestamp: Date.now(),
+      };
+    }
+    if (service === 'lastfm') {
+      const apiKey = await window.electron?.config?.get('LASTFM_API_KEY');
+      if (!apiKey) return null;
+      const resp = await fetch(
+        `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(user)}&api_key=${apiKey}&format=json&limit=1`
+      );
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const t = data?.recenttracks?.track;
+      const newest = Array.isArray(t) ? t[0] : t;
+      if (!newest) return null;
+      const isNowPlaying = newest['@attr']?.nowplaying === 'true';
+      if (!isNowPlaying) return null;
+      return {
+        name: newest.name,
+        artist: newest.artist?.['#text'] || newest.artist,
+        album: newest.album?.['#text'],
+        timestamp: Date.now(),
+      };
+    }
+    return null;
   };
 
   // Activate listen-along mode for a friend
