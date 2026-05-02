@@ -32618,6 +32618,74 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
+  // SSRF-protected tracklist parser. Used by parachord://play-album, play-playlist,
+  // play-radio when fetching XSPF or JSPF/JSON endpoints.
+  // SYNC: tests/helpers/tracklist-parser.js — keep the JSON branch byte-identical.
+  // (XSPF branches diverge intentionally: this uses DOMParser; the test helper uses regex.)
+  window.parseProtocolTracklist = (body, contentType) => {
+    const ct = (contentType || '').toLowerCase();
+
+    if (ct.includes('xml')) {
+      const doc = new DOMParser().parseFromString(body, 'application/xml');
+      const displayName = doc.querySelector('playlist > title')?.textContent?.trim() || 'Imported playlist';
+      const tracks = Array.from(doc.querySelectorAll('trackList > track')).map(tEl => {
+        const title = tEl.querySelector('title')?.textContent?.trim();
+        const creator = tEl.querySelector('creator')?.textContent?.trim();
+        const album = tEl.querySelector('album')?.textContent?.trim();
+        if (!title || !creator) return null;
+        const t = { artist: creator, title };
+        if (album) t.album = album;
+        return t;
+      }).filter(Boolean);
+      return { displayName, tracks };
+    }
+
+    // JSON branch — must stay byte-identical with tests/helpers/tracklist-parser.js
+    const extractMbid = (identifier) => {
+      if (!identifier) return null;
+      const arr = Array.isArray(identifier) ? identifier : [identifier];
+      for (const id of arr) {
+        if (typeof id !== 'string') continue;
+        const m = id.match(/musicbrainz\.org\/(?:recording|track)\/([a-f0-9-]+)/i);
+        if (m) return m[1];
+        if (/^[a-f0-9-]{36}$/i.test(id)) return id;
+      }
+      return null;
+    };
+    const parseJspfTrack = (t) => {
+      if (!t || typeof t !== 'object') return null;
+      const artist = t.creator || t.artist;
+      const title = t.title;
+      if (!artist || !title) return null;
+      const out = { artist, title };
+      if (t.album) out.album = t.album;
+      const mbid = extractMbid(t.identifier);
+      if (mbid) out.mbid = mbid;
+      return out;
+    };
+
+    let parsed;
+    try { parsed = JSON.parse(body); } catch { return { displayName: 'Tracks', tracks: [] }; }
+    if (parsed.playlist && Array.isArray(parsed.playlist.track)) {
+      const displayName = parsed.playlist.title || 'Tracks';
+      const tracks = parsed.playlist.track.map(parseJspfTrack).filter(Boolean);
+      return { displayName, tracks };
+    }
+    if (Array.isArray(parsed.tracks)) {
+      const tracks = parsed.tracks
+        .filter(t => t && t.artist && t.title)
+        .map(t => {
+          const out = { artist: t.artist, title: t.title };
+          if (t.album) out.album = t.album;
+          if (t.mbid) out.mbid = t.mbid;
+          if (t.isrc) out.isrc = t.isrc;
+          return out;
+        });
+      return { displayName: parsed.title || 'Tracks', tracks };
+    }
+    return { displayName: 'Tracks', tracks: [] };
+  };
+
   // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
   // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
   // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
