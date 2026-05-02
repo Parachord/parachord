@@ -32229,8 +32229,21 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       spinoffRefillEmptyCountRef.current = 0;
-      spinoffTracksRef.current = [...spinoffTracksRef.current, ...fresh];
-      console.log(`🔁 Refilled spinoff pool with ${fresh.length} tracks`);
+      // Tag refilled tracks with the same shape as the initial pool: stable
+      // id, empty sources (for resolveTracksInBackground), and the same
+      // _playbackContext as the existing pool tracks (so handlePlay's
+      // spinoff guard doesn't tear down spinoff mode when these are played).
+      const existingFirst = spinoffTracksRef.current[0];
+      const inheritedContext = existingFirst?._playbackContext || { type: 'spinoff' };
+      const refillBaseId = `protocol-radio-refill-${Date.now()}`;
+      const tagged = fresh.map((t, i) => ({
+        ...t,
+        id: t.id || `${refillBaseId}-${i}`,
+        sources: t.sources || {},
+        _playbackContext: inheritedContext,
+      }));
+      spinoffTracksRef.current = [...spinoffTracksRef.current, ...tagged];
+      console.log(`🔁 Refilled spinoff pool with ${tagged.length} tracks`);
     } catch (err) {
       console.warn('🔁 Refill failed:', err && err.message);
       spinoffRefillEmptyCountRef.current++;
@@ -32254,15 +32267,27 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     setSpinoffMode(true);
     setSpinoffSourceTrack({ title: displayName || 'Radio', artist: '' });
-    // Tag every track with a stable id and an empty sources object —
-    // resolveTracksInBackground mutates `track.sources[resolverId]` and
-    // calls `Object.keys(track.sources)` (throws if undefined). Tracks
-    // from parseProtocolTracklist arrive without these fields.
+    // Build the playback context first so we can tag every track with it.
+    // handlePlay reads track._playbackContext to decide whether to call
+    // exitSpinoff() — without the tag, the very first handlePlay call
+    // tears down spinoff mode (because !undefined?.type?.includes('spinoff')
+    // evaluates true) and restores playbackContext to null.
+    //
+    // Also: stable id + empty sources object are required for
+    // resolveTracksInBackground (mutates track.sources[resolverId] and
+    // calls Object.keys(track.sources) — throws if undefined). Tracks
+    // from parseProtocolTracklist arrive without any of these fields.
+    const radioContext = {
+      type: 'spinoff',
+      sourceTrack: { title: displayName || 'Radio', artist: '' },
+      refillUrl: refillUrl || null,
+    };
     const baseId = `protocol-radio-${Date.now()}`;
     spinoffTracksRef.current = initialPool.map((t, i) => ({
       ...t,
       id: t.id || `${baseId}-${i}`,
       sources: t.sources || {},
+      _playbackContext: radioContext,
     }));
     spinoffRefillUrlRef.current = refillUrl || null;
     spinoffRefillEmptyCountRef.current = 0;
@@ -32275,11 +32300,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }));
     updateSchedulerVisibility('spinoff', poolTracks);
 
-    setPlaybackContext({
-      type: 'spinoff',
-      sourceTrack: { title: displayName || 'Radio', artist: '' },
-      refillUrl: refillUrl || null,
-    });
+    setPlaybackContext(radioContext);
 
     showToast(`Playing radio: ${displayName || 'Untitled'}`);
 
