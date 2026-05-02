@@ -132,6 +132,21 @@ window.isPublicHttpUrl = (urlString) => {
   return true;
 };
 
+// Decode a base64 string as UTF-8 → JSON. The naive
+// `JSON.parse(atob(s))` is wrong for any payload containing non-ASCII
+// characters: atob returns a Latin-1 binary string, so UTF-8 sequences
+// like the U+2019 right single quote (bytes E2 80 99) get parsed as the
+// three Latin-1 chars `â€™` — visible as mangled titles in the queue.
+// Routes the bytes through TextDecoder('utf-8') first to round-trip
+// non-ASCII text correctly. Throws on invalid base64 or invalid JSON.
+window.decodeBase64Utf8Json = (b64) => {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const text = new TextDecoder('utf-8').decode(bytes);
+  return JSON.parse(text);
+};
+
 // Global rate limiter for native MusicKit catalog calls (api.music.apple.com).
 // Apple throttles /v1/catalog/{storefront}/search aggressively when fan-out is
 // high — e.g. background source enrichment for a 200-track queue used to fire
@@ -10615,7 +10630,7 @@ const Parachord = () => {
           throw new Error('Inline tracks payload too large (max 100KB encoded)');
         }
         let decoded;
-        try { decoded = JSON.parse(atob(params.tracks)); }
+        try { decoded = window.decodeBase64Utf8Json(params.tracks); }
         catch { throw new Error('Invalid tracks payload (must be base64-encoded JSON)'); }
         const arr = Array.isArray(decoded) ? decoded : decoded?.tracks;
         if (!Array.isArray(arr)) throw new Error('tracks payload must be an array');
@@ -11171,6 +11186,15 @@ const Parachord = () => {
                 friend = { ...existingFriend, cachedRecentTrack: cached };
               }
               if (activateListenAlongRef.current) {
+                // Match play/*: tear down spinoff + clear queue first so
+                // activateListenAlong's setPlaybackContext isn't overridden
+                // by handlePlay's internal spinoff cleanup running after.
+                // (Don't tear down a current listen-along — switching from
+                // friend A to friend B should just swap the friend ref.)
+                if (spinoffModeRef.current && exitSpinoffRef.current) {
+                  exitSpinoffRef.current();
+                }
+                clearQueue();
                 activateListenAlongRef.current(friend);
               } else {
                 showToast('listen-along not yet ready');
@@ -11230,7 +11254,7 @@ const Parachord = () => {
                   showToast('Import failed: payload too large');
                   break;
                 }
-                const decoded = JSON.parse(atob(params.tracks));
+                const decoded = window.decodeBase64Utf8Json(params.tracks);
                 const tracks = Array.isArray(decoded) ? decoded : (decoded.tracks || []);
                 if (tracks.length > 500) {
                   showToast('Import failed: too many tracks (max 500)');
