@@ -10481,6 +10481,143 @@ const Parachord = () => {
   useEffect(() => {
     if (!window.electron?.onProtocolUrl) return;
 
+    // Resolve any of the protocol play-input shapes into a normalized tracklist.
+    // Used by parachord://play-album, play-playlist, play-radio.
+    //
+    // Allowed shapes are command-specific (set via opts):
+    //   play-album    → mbid | spotify | applemusic | url | tracks | artist+title
+    //   play-playlist → url | tracks
+    //   play-radio    → url | tracks   (artist seed-mode is handled in the case body)
+    //
+    // Returns { displayName, tracks: [{artist, title, album?, mbid?, isrc?}], albumArt? }.
+    // Throws on hard failure (invalid URL, parse error, payload too large).
+    // An empty pool returns { tracks: [] } so the caller can decide how to surface it.
+    const resolveProtocolPlayInput = async (params, opts = {}) => {
+      const {
+        allowMbid = false,
+        allowProviderId = false,
+        allowArtistTitleAlbum = false,
+      } = opts;
+
+      // 1. MBID — MusicBrainz release-group lookup (album only).
+      if (allowMbid && params.mbid) {
+        if (!/^[a-f0-9-]{36}$/i.test(params.mbid)) {
+          throw new Error('Invalid MBID format');
+        }
+        const mbResp = await fetch(
+          `https://musicbrainz.org/ws/2/release?release-group=${encodeURIComponent(params.mbid)}&inc=recordings+artist-credits&limit=1&fmt=json`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' } }
+        );
+        if (!mbResp.ok) throw new Error(`MusicBrainz lookup failed: ${mbResp.status}`);
+        const mbData = await mbResp.json();
+        const release = mbData.releases?.[0];
+        if (!release) return { displayName: 'Album', tracks: [] };
+        const albumArtist = release['artist-credit']?.[0]?.name;
+        const tracks = (release.media?.[0]?.tracks || []).map(t => {
+          const trackArtist = t['artist-credit']?.[0]?.name || albumArtist;
+          if (!trackArtist || !t.title) return null;
+          const out = { artist: trackArtist, title: t.title, album: release.title };
+          if (t.recording?.id) out.mbid = t.recording.id;
+          return out;
+        }).filter(Boolean);
+        return { displayName: `${albumArtist} — ${release.title}`, tracks };
+      }
+
+      // 2a. Spotify album lookup (album only). Use the loaded resolver's lookupAlbum.
+      if (allowProviderId && params.spotify) {
+        const resolvers = loadedResolversRef.current || [];
+        const spotify = resolvers.find(r => r.id === 'spotify');
+        if (!spotify || !spotify.lookupAlbum) {
+          throw new Error('Spotify resolver not available');
+        }
+        const config = await getResolverConfig('spotify');
+        const url = `https://open.spotify.com/album/${encodeURIComponent(params.spotify)}`;
+        const album = await spotify.lookupAlbum(url, config);
+        if (!album || !album.tracks) return { displayName: 'Album', tracks: [] };
+        return {
+          displayName: `${album.artist || ''} — ${album.name || 'Album'}`.trim().replace(/^—\s*/, ''),
+          albumArt: album.albumArt,
+          tracks: album.tracks.map(t => ({
+            artist: t.artist,
+            title: t.title,
+            album: album.name,
+            ...(t.spotifyId ? { spotifyId: t.spotifyId } : {}),
+          })).filter(t => t.artist && t.title),
+        };
+      }
+
+      // 2b. Apple Music album lookup (album only).
+      if (allowProviderId && params.applemusic && window.appleMusicLookupAlbum) {
+        const album = await window.appleMusicLookupAlbum(params.applemusic, 'us');
+        if (!album) return { displayName: 'Album', tracks: [] };
+        return {
+          displayName: `${album.artist || ''} — ${album.name || 'Album'}`.trim().replace(/^—\s*/, ''),
+          albumArt: album.albumArt,
+          tracks: (album.tracks || []).map(t => ({
+            artist: t.artist,
+            title: t.title,
+            album: album.name,
+            ...(t.appleMusicId ? { appleMusicId: t.appleMusicId } : {}),
+          })).filter(t => t.artist && t.title),
+        };
+      }
+
+      // 3. URL (XSPF or JSON).
+      if (params.url) {
+        if (!window.isPublicHttpUrl(params.url)) {
+          throw new Error('Invalid URL: must be public http/https');
+        }
+        const resp = await fetch(params.url);
+        if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
+        const ct = resp.headers.get('content-type') || '';
+        const body = await resp.text();
+        if (body.length > 100 * 1024) {
+          throw new Error('Tracklist response too large (max 100KB)');
+        }
+        return window.parseProtocolTracklist(body, ct);
+      }
+
+      // 4. Inline base64 JSON.
+      if (params.tracks) {
+        if (params.tracks.length > 100 * 1024) {
+          throw new Error('Inline tracks payload too large (max 100KB encoded)');
+        }
+        let decoded;
+        try { decoded = JSON.parse(atob(params.tracks)); }
+        catch { throw new Error('Invalid tracks payload (must be base64-encoded JSON)'); }
+        const arr = Array.isArray(decoded) ? decoded : decoded?.tracks;
+        if (!Array.isArray(arr)) throw new Error('tracks payload must be an array');
+        const MAX = 500;
+        const tracks = arr
+          .filter(t => t && t.artist && String(t.artist).trim() && t.title && String(t.title).trim())
+          .slice(0, MAX)
+          .map(t => {
+            const out = { artist: String(t.artist).trim(), title: String(t.title).trim() };
+            if (t.album && String(t.album).trim()) out.album = String(t.album).trim();
+            if (t.mbid && /^[a-f0-9-]{36}$/i.test(t.mbid)) out.mbid = t.mbid;
+            if (t.isrc && String(t.isrc).trim()) out.isrc = String(t.isrc).trim();
+            return out;
+          });
+        return { displayName: params.title || decoded?.title || 'Tracks', tracks };
+      }
+
+      // 5. artist+title fallback (album only — falls through to MB search).
+      if (allowArtistTitleAlbum && params.artist && params.title) {
+        const q = encodeURIComponent(`artist:"${params.artist}" AND release:"${params.title}"`);
+        const resp = await fetch(
+          `https://musicbrainz.org/ws/2/release-group?query=${q}&limit=1&fmt=json`,
+          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' } }
+        );
+        if (!resp.ok) throw new Error(`MusicBrainz search failed: ${resp.status}`);
+        const data = await resp.json();
+        const rg = data['release-groups']?.[0];
+        if (!rg) return { displayName: `${params.artist} — ${params.title}`, tracks: [] };
+        return resolveProtocolPlayInput({ mbid: rg.id }, { allowMbid: true });
+      }
+
+      throw new Error('No resolvable input parameters');
+    };
+
     const cleanup = window.electron.onProtocolUrl(async (url) => {
       console.log('🔗 Protocol URL received:', url);
 
