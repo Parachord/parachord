@@ -89,6 +89,33 @@ window.iTunesRateLimiter = (() => {
   };
 })();
 
+// SSRF guard for protocol-link URL fetches (parachord://import, parachord://play-*).
+// Blocks loopback, RFC1918, .local mDNS, and non-http(s) schemes. Used by handlers
+// that fetch user-supplied URLs from external links — without this, an attacker
+// could craft a parachord:// link pointing at http://localhost/admin or
+// http://192.168.1.1/router and have the renderer fetch it.
+window.isPublicHttpUrl = (urlString) => {
+  if (typeof urlString !== 'string' || !urlString) return false;
+  let u;
+  try { u = new URL(urlString); } catch { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost') return false;
+  if (host.endsWith('.local')) return false;
+  if (host === '0.0.0.0' || host === '::1' || host === '[::1]') return false;
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b, c, d] = [m[1], m[2], m[3], m[4]].map(Number);
+    if ([a, b, c, d].some(n => n > 255)) return false;
+    if (a === 127) return false;
+    if (a === 10) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+  }
+  return true;
+};
+
 // Global rate limiter for native MusicKit catalog calls (api.music.apple.com).
 // Apple throttles /v1/catalog/{storefront}/search aggressively when fan-out is
 // high — e.g. background source enrichment for a 200-track queue used to fire
