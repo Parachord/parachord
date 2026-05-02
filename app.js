@@ -6266,17 +6266,21 @@ const Parachord = () => {
   const sidebarFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for sidebar pinned friends
   const friendsRef = useRef(friends); // Ref for friends to avoid stale closures in polling
   const metaServiceConfigsRef = useRef({}); // Ref for LB/Last.fm credentials in async protocol handlers
+  const scrobblerConfigsRef = useRef({}); // Ref for scrobbler plugin configs (canonical source of LB userToken)
 
   // Auto-attach the user's already-configured LB token when fetching from
   // api.listenbrainz.org. LB requires `Authorization: Token <token>` on the
-  // lb-radio endpoint as of mid-2026 (anti-AI-scraper measure). Falls back
-  // to no auth if the user hasn't configured LB; the call will get its 401
-  // and surface via the standard "Fetch failed" error path.
+  // lb-radio endpoint as of mid-2026 (anti-AI-scraper measure). The token
+  // lives in the scrobbler plugin's config (window.listenbrainzScrobbler) —
+  // mirrored into renderer state `scrobblerConfigs.listenbrainz.userToken`,
+  // which we ref-cache for sync access here. Falls back to no auth if the
+  // user hasn't configured LB; the call will get its 401 and surface via
+  // the standard "Fetch failed" error path.
   const buildProtocolFetchHeaders = (url) => {
     try {
       const host = new URL(url).hostname.toLowerCase();
       if (host === 'api.listenbrainz.org') {
-        const token = metaServiceConfigsRef.current?.listenbrainz?.userToken;
+        const token = scrobblerConfigsRef.current?.listenbrainz?.userToken;
         if (token) return { Authorization: `Token ${token}` };
       }
     } catch { /* malformed URL — caller will reject elsewhere */ }
@@ -7381,6 +7385,7 @@ const Parachord = () => {
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
   useEffect(() => { friendsRef.current = friends; }, [friends]);
   useEffect(() => { metaServiceConfigsRef.current = metaServiceConfigs; }, [metaServiceConfigs]);
+  useEffect(() => { scrobblerConfigsRef.current = scrobblerConfigs; }, [scrobblerConfigs]);
   useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
   useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
