@@ -10679,8 +10679,14 @@ const Parachord = () => {
                   }
                 }
                 const context = { type: `play/${playKind}`, name: displayName, ...(albumArt ? { albumArt } : {}) };
-                setCurrentQueue(ordered.slice(1));
-                await handlePlayRef.current(ordered[0], undefined, context);
+                // Tag every track with the context so when the auto-advance picks
+                // them out of the queue, the banner stays correct (handlePlay reads
+                // from `track._playbackContext`, not from a parameter).
+                const queueTracks = ordered.slice(1).map(t => ({ ...t, _playbackContext: context }));
+                const firstTrack = { ...ordered[0], _playbackContext: context };
+                setCurrentQueue(queueTracks);
+                setPlaybackContext(context);
+                await handlePlayRef.current(firstTrack);
                 showToast(`Playing ${playKind}: ${displayName}`);
               } catch (err) {
                 console.error(`play/${playKind} failed:`, err);
