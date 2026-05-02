@@ -10955,6 +10955,38 @@ const Parachord = () => {
             break;
           }
 
+          case 'play-album':
+          case 'play-playlist': {
+            try {
+              const { displayName, tracks, albumArt } = await resolveProtocolPlayInput(params, {
+                allowMbid: command === 'play-album',
+                allowProviderId: command === 'play-album',
+                allowArtistTitleAlbum: command === 'play-album',
+              });
+              if (!tracks || tracks.length === 0) {
+                showToast(`Nothing to play: ${displayName || 'Untitled'}`);
+                break;
+              }
+              // Fisher-Yates shuffle when ?shuffle=1
+              let ordered = tracks;
+              if (params.shuffle === '1') {
+                ordered = [...tracks];
+                for (let i = ordered.length - 1; i > 0; i--) {
+                  const j = Math.floor(Math.random() * (i + 1));
+                  [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+                }
+              }
+              const context = { type: command, name: displayName, ...(albumArt ? { albumArt } : {}) };
+              setCurrentQueue(ordered.slice(1));
+              await handlePlay(ordered[0], undefined, context);
+              showToast(`Playing ${command === 'play-album' ? 'album' : 'playlist'}: ${displayName}`);
+            } catch (err) {
+              console.error(`${command} failed:`, err);
+              showToast(`Play failed: ${err.message}`);
+            }
+            break;
+          }
+
           case 'collection-radio': {
             if (handleStartCollectionStationRef.current) {
               handleStartCollectionStationRef.current();
