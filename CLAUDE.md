@@ -734,6 +734,108 @@ Custom-scheme deep links handled at app.js's protocol switch (search `switch (co
 
 **Listen-along** (`activateListenAlongRef.current(friend)`, ~L29637 wiring): the `listen-along` case looks up an existing friend; if none, fetches the user's now-playing via `fetchTransientFriendNowPlaying(service, user)` and constructs a transient friend record. LB uses `/1/user/{name}/playing-now`; Last.fm uses `user.getrecenttracks?limit=1` and checks `@attr.nowplaying === 'true'`.
 
+### Android Parity Requirements (protocol play handlers)
+
+This section is for the Android client. Every rule was learned from a real bug; skipping any one breaks the corresponding command. The desktop equivalent is in `app.js`'s protocol switch and the `activateSpinoffFromPool` / `parseProtocolTracklist` / `resolveProtocolPlayInput` helpers — cross-reference if anything below is unclear.
+
+**Path-style URI convention is load-bearing.** Use `parachord://play/album`, `parachord://play/playlist`, `parachord://play/radio` — slash, not hyphen. `listen-along` stays hyphenated because it's a single feature noun, not a verb/object split. The existing protocol surface (`control/pause`, `queue/add`, `artist/<name>`, `album/<name>`, `settings/<tab>`, etc.) is path-style; matching that means publishers can predict the shape from the rest of the surface.
+
+**Input shape priority** (when multiple are present): `mbid` → `spotify` → `applemusic` → `url` → `tracks` → `artist`+`title`. Per-command gates: `play/album` allows all six; `play/playlist` allows only `url`/`tracks`; `play/radio` Mode B is `artist`[+`title`], Mode C is `url`/`tracks`[+`refill`].
+
+**Per-track tagging is mandatory before a track reaches `handlePlay` equivalent.** Every track in a play queue/pool MUST carry these three fields, or playback breaks in subtle ways:
+
+| Field | Why |
+|---|---|
+| `id` (stable string) | The background resolver's flushToQueue/scheduler equivalents look up tracks by id; refilled tracks need stable ids too. Convention: `protocol-radio-${timestamp}-${index}`. |
+| `sources: {}` (empty object, not `undefined`/`null`) | Resolver mutates `track.sources[resolverId]` and the queue UI calls `Object.keys(track.sources)` — throws on undefined. Tracks parsed from JSPF/JSON arrive without this field. |
+| `_playbackContext: { type: 'spinoff'/'play/album'/etc, name, ... }` | `handlePlay`'s "should I exit spinoff?" guard reads `track._playbackContext.type` — without the tag, the very first play torpedoes spinoff/listen-along mode and restores `playbackContext` to whatever was before (often null after a `clearQueue`). Net effect: empty queue, no banner, dead next button. |
+
+Refilled tracks (when LB radio returns a fresh batch mid-session) need the same three fields. Inherit `_playbackContext` from the existing pool's first track so it stays consistent.
+
+**Pre-resolve the first track via the standard resolver pipeline before handing to `handlePlay`.** Don't rely on `handlePlay`'s on-demand fallback resolution — for unresolvable tracks (obscure live cuts, remixes not on user's enabled providers) that path surfaces a "No Source Found" dialog before any background resolution can complete.
+
+- `play/album` / `play/playlist`: await resolution of the FIRST track only, then fire-and-forget the rest. If the first track has no sources after pre-resolve, show "Nothing to play."
+- `play/radio`: walk through the pool, await resolution of each candidate, skip if unresolvable. Cap at 20 attempts so a fully-unresolvable pool can't loop. After finding a playable first track, fire-and-forget resolution for the remainder.
+
+**State-machine teardown order matters.** When firing a play protocol command:
+
+1. Explicitly tear down active spinoff/listen-along (call `exitSpinoff` / `deactivateListenAlong` directly).
+2. Call `clearQueue` (resets shuffle state, makes prior background resolution writes harmless because they look up by track-id against an empty queue).
+3. Set the new queue + playback context.
+4. Pre-resolve the first track.
+5. Call `handlePlay`.
+
+If you skip step 1, `handlePlay`'s internal exitSpinoff/listen-along cleanup runs AFTER your `setPlaybackContext`, restoring the prior context and overriding your new one. If you skip step 2, the prior queue's in-flight background resolution keeps competing with your new resolve calls for Apple Music throttle / MusicBrainz rate-limit budget.
+
+**JSPF + LB lb-radio wrapper.** ListenBrainz wraps the JSPF response in `{ payload: { feedback, jspf: { playlist: { track: [...] } } } }`. Unwrap to the bare JSPF shape (`parsed.payload?.jspf || parsed`) before checking `playlist.track`. Failure mode if you don't: HTTP 200 + 0 tracks parsed → "no playable tracks for radio" toast.
+
+JSPF track fields:
+- `creator` (or `artist`) — required. Treat as artist. Accept array forms (some producers emit arrays); join with `", "`.
+- `title` — required.
+- `album` — optional.
+- `identifier` — optional, single string or array. Match `musicbrainz.org/(recording|track)/<36-char-uuid>` URL form OR a bare 36-char UUID. Reject malformed (e.g. `abc-123` is NOT a valid MBID even though pre-fix code accepted it).
+
+LB also embeds artist MBIDs in `track.extension['https://musicbrainz.org/doc/jspf#track'].artist_identifiers`. The desktop parser doesn't read those today (track recording MBID is what we need for resolution); Android can match the desktop's behavior or extend if useful.
+
+Generic JSON shape: `{ title?, tracks: [{artist, title, album?, mbid?, isrc?}] }`. Same MBID UUID validation; trim whitespace; reject empty fields.
+
+**Inline tracks: 100KB encoded cap, 500 tracks max** — same caps as `import` (existing constraint).
+
+**SSRF guard at every URL fetch site.** Reject:
+
+- Non-HTTP(S) schemes
+- Hosts: `localhost` / `localhost.` / any `*.local` / `*.local.` (case-insensitive)
+- IPv4: `0.0.0.0/8`, `127.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10` (CGNAT / Tailscale), `169.254.0.0/16` (link-local + cloud metadata IP `169.254.169.254`), `172.16.0.0/12`, `192.168.0.0/16`. Boundary cases `172.15.x.x` and `172.32.x.x` ARE public.
+- IPv6: bracketed `[::1]`, `[::]`, `[fe80::*]/10`, `[fc00::*]/7` (ULA), `[::ffff:*]/96` (IPv4-mapped). The URL parser canonicalizes decimal-int (`http://2130706433`) and octal (`http://0177.0.0.1`) forms to dotted-quad before the regex sees them — rely on that, don't try to canonicalize manually.
+
+Apply on every fetch — initial AND refills (a publisher could supply a public initial URL that 302s elsewhere). Use the platform's "redirect: error" / `redirect: manual` equivalent so 3xx-to-private redirects also fail. **Does NOT defend against DNS rebinding** (a public hostname resolving to a private IP is accepted) — document this as a known limitation, don't try to fix in the guard.
+
+**ListenBrainz auth token auto-attach.** As of mid-2026 the lb-radio endpoint requires `Authorization: Token <user_token>`. When the URL host is `api.listenbrainz.org`, auto-attach the user's already-configured LB token. **The token lives in the scrobbler plugin's config**, NOT in the basic "meta service" config:
+
+- Desktop reads it from `window.listenbrainzScrobbler.getConfig().userToken`.
+- Android equivalent: whatever store the LB scrobbler plugin writes its token into. The same store the user pasted their token into when they connected for scrobbling — there's typically a separate "meta service config" with just the username, but no token. Use the scrobbler-side store.
+
+If the user has no LB token configured, fall through with no auth header. The fetch will 401 and surface as "Radio failed: Fetch failed: 401" via the standard error path.
+
+**play/radio refill semantics.**
+
+- Trigger: pool < 3 tracks remaining.
+- Soft rate-limit: minimum 5 seconds between refill fetches.
+- Stop condition: 3 consecutive empty refills (counter resets when fresh tracks arrive). On HTTP error, increment empty counter too.
+- Dedup against existing pool by `mbid` → `isrc` → `(artist|title)` lowercase. If all refilled tracks dedupe to existing entries, count as empty.
+- Reset all refill state in `exitSpinoff` equivalent: refillUrl ref, empty counter, last-fetch timestamp.
+
+**`play/radio` Mode B vs Mode C dispatch.**
+
+- Mode B: `?artist=` (with no `tracks` and no `url`). Seeds Parachord's existing in-app similar-tracks endpoint — same path as right-click → Spinoff in the UI. Ignore `?refill=` for Mode B.
+- Mode C: `?url=` and/or `?tracks=` present. Externally-curated pool. `?refill=` overrides `?url=` for refill source; if neither, refill is disabled (static pool, ends when exhausted).
+
+**`?name=` for play/radio Mode C** is the publisher's canonical station name. Display priority: `params.name || params.title || parser's r.displayName || "Radio"`. Used in the toast and the "Playing" banner.
+
+**Pool-based spinoff banner rendering.** A pool-based spinoff has no source track (no specific song to "spin off from"), so its `sourceTrack.artist` is empty. The banner UI should branch on this: if `playbackContext.type === 'spinoff'` AND `!playbackContext.sourceTrack?.artist`, render just the station name (`sourceTrack.title`). Otherwise render the seed-mode "spun off from \"X\" by Y" template.
+
+**listen-along transient friend.** If the target user isn't in the local friends list, construct a transient friend record by fetching their now-playing:
+
+- ListenBrainz: `GET /1/user/{name}/playing-now` (auth required as of mid-2026 with `Authorization: Token <user_token>`). Read `payload.listens[0].track_metadata`.
+- Last.fm: `user.getrecenttracks?limit=1` (no auth, just API key). Track is "now playing" only when `@attr.nowplaying === "true"` on the response track object.
+
+If neither service returns a current track, surface "<user> is not currently listening on <service>." Don't error — a user simply not playing is the most common case and the UX should be calm.
+
+**The friend record needed by activateListenAlong:**
+
+```
+{
+  id: "transient:listenbrainz:foo",
+  service: "listenbrainz" | "lastfm",
+  username: "...",
+  displayName: "...",
+  cachedRecentTrack: { name, artist, album, timestamp },
+  transient: true,  // distinguishes from saved friends
+}
+```
+
+`cachedRecentTrack` is required (the activate function asserts it). Synthesize from the now-playing fetch: `{ name: track_name, artist: artist_name, album: release_name, timestamp: Date.now() }`.
+
 ## Common Patterns
 
 - **Refs for stale closure avoidance**: Most state values have a companion ref (e.g., `volumeRef`, `isPlayingRef`) synced via `useEffect`. Always use refs in async callbacks.
