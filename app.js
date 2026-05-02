@@ -32623,11 +32623,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // SYNC: tests/helpers/tracklist-parser.js — keep the JSON branch byte-identical.
   // (XSPF branches diverge intentionally: this uses DOMParser; the test helper uses regex.)
   window.parseProtocolTracklist = (body, contentType) => {
+    const MAX_TRACKS = 500;
     const ct = (contentType || '').toLowerCase();
 
     if (ct.includes('xml')) {
       const doc = new DOMParser().parseFromString(body, 'application/xml');
-      const displayName = doc.querySelector('playlist > title')?.textContent?.trim() || 'Imported playlist';
+      if (doc.querySelector('parsererror')) return { displayName: 'Tracks', tracks: [] };
+      const displayName = doc.querySelector('playlist > title')?.textContent?.trim() || 'Tracks';
       const tracks = Array.from(doc.querySelectorAll('trackList > track')).map(tEl => {
         const title = tEl.querySelector('title')?.textContent?.trim();
         const creator = tEl.querySelector('creator')?.textContent?.trim();
@@ -32637,16 +32639,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         if (album) t.album = album;
         return t;
       }).filter(Boolean);
-      return { displayName, tracks };
+      return { displayName, tracks: tracks.slice(0, MAX_TRACKS) };
     }
 
-    // JSON branch — must stay byte-identical with tests/helpers/tracklist-parser.js
+    // === SYNC START: JSON branch — byte-identical with tests/helpers/tracklist-parser.js ===
     const extractMbid = (identifier) => {
       if (!identifier) return null;
       const arr = Array.isArray(identifier) ? identifier : [identifier];
       for (const id of arr) {
         if (typeof id !== 'string') continue;
-        const m = id.match(/musicbrainz\.org\/(?:recording|track)\/([a-f0-9-]+)/i);
+        const m = id.match(/musicbrainz\.org\/(?:recording|track)\/([a-f0-9-]{36})/i);
         if (m) return m[1];
         if (/^[a-f0-9-]{36}$/i.test(id)) return id;
       }
@@ -32654,11 +32656,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     };
     const parseJspfTrack = (t) => {
       if (!t || typeof t !== 'object') return null;
-      const artist = t.creator || t.artist;
+      const rawArtist = t.creator || t.artist;
+      const artist = Array.isArray(rawArtist) ? rawArtist.filter(x => typeof x === 'string').join(', ') : rawArtist;
       const title = t.title;
-      if (!artist || !title) return null;
-      const out = { artist, title };
-      if (t.album) out.album = t.album;
+      if (!artist || !String(artist).trim() || !title || !String(title).trim()) return null;
+      const out = { artist: String(artist).trim(), title: String(title).trim() };
+      if (t.album && String(t.album).trim()) out.album = String(t.album).trim();
       const mbid = extractMbid(t.identifier);
       if (mbid) out.mbid = mbid;
       return out;
@@ -32669,21 +32672,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (parsed.playlist && Array.isArray(parsed.playlist.track)) {
       const displayName = parsed.playlist.title || 'Tracks';
       const tracks = parsed.playlist.track.map(parseJspfTrack).filter(Boolean);
-      return { displayName, tracks };
+      return { displayName, tracks: tracks.slice(0, MAX_TRACKS) };
     }
     if (Array.isArray(parsed.tracks)) {
       const tracks = parsed.tracks
-        .filter(t => t && t.artist && t.title)
+        .filter(t => t && t.artist && String(t.artist).trim() && t.title && String(t.title).trim())
         .map(t => {
-          const out = { artist: t.artist, title: t.title };
-          if (t.album) out.album = t.album;
-          if (t.mbid) out.mbid = t.mbid;
-          if (t.isrc) out.isrc = t.isrc;
+          const out = { artist: String(t.artist).trim(), title: String(t.title).trim() };
+          if (t.album && String(t.album).trim()) out.album = String(t.album).trim();
+          if (t.mbid && /^[a-f0-9-]{36}$/i.test(t.mbid)) out.mbid = t.mbid;
+          if (t.isrc && String(t.isrc).trim()) out.isrc = String(t.isrc).trim();
           return out;
         });
-      return { displayName: parsed.title || 'Tracks', tracks };
+      return { displayName: parsed.title || 'Tracks', tracks: tracks.slice(0, MAX_TRACKS) };
     }
     return { displayName: 'Tracks', tracks: [] };
+    // === SYNC END ===
   };
 
   // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
