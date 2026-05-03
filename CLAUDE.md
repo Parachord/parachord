@@ -458,6 +458,32 @@ The corollary: **don't make the JS-fallback or auth-failed kill-switch session-p
 - After playback, fire-and-forget pushes to enabled sync providers
 - Checks `track.spotifyId` or `track.sources?.spotify?.spotifyId`
 
+### Loved Tracks → ListenBrainz / Last.fm
+
+Optional opt-in cross-service love sync. Adding a track to the Parachord collection (`addTrackToCollection`, app.js L13339) → optionally push as a love to LB and/or LFM. Design doc: [`docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md`](docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md).
+
+**Two independent controls per service**, in each scrobbler's connected-state card:
+1. Toggle: "Push newly loved tracks to <service>" — gates live `addTrackToCollection` push.
+2. Button: "Backfill N loved tracks → <service>" — one-shot manual push of every collection track not yet pushed for that service.
+
+Both default off. Toggle and button are independent — user can enable just one, both, or neither.
+
+**Persistence keys:**
+- `scrobbler_love_push_enabled: { lastfm?: boolean, listenbrainz?: boolean }` — toggle state.
+- `love_pushed_keys: { [trackId]: { lastfm?: ts, listenbrainz?: ts } }` — idempotency cache. Written immediately after each successful push (not at end-of-batch) so a crashed backfill resumes naturally.
+
+**Invariants:**
+
+- **One-way only.** `removeTrackFromCollection` does NOT send `track.unlove` / `score=0`. Users may have independent love history on LB/LFM that we shouldn't mutate. Adds are pushed; removes never are.
+- **Remote love-date is "now."** Neither LB's `/1/feedback/recording-feedback` nor LFM's `track.love` accept a backdate. Backfilled loves appear on the remote as "loved at the time of the backfill click." The local `addedAt` is preserved. The completion toast doesn't apologize for this; the design doc records the rationale.
+- **MBID required for ListenBrainz.** `loveTrack` on the LB scrobbler validates `track.mbid` is a 36-char UUID. The push path (`pushLoveToScrobblers` and `runLoveBackfill` in app.js) calls `window.resolveMbidForLove(track)` which tries cached `track.mbid` first, then the [MBID Mapper](https://mapper.listenbrainz.org/mapping/lookup) (~4ms). If the mapper returns `confidence < 0.7` or no result, the LB push is skipped for that track but LFM still gets it (LFM only needs artist+title strings).
+- **Live push is fire-and-forget.** `addTrackToCollection` returns immediately; `pushLoveToScrobblers` runs in the background. Failures log to console but don't affect local collection state.
+- **Backfill walks `collectionData.tracks` sequentially** with a 1 req/sec soft rate-limit per service, filtering through `lovePushedKeysRef.current` so re-clicks are cheap. While running, the button is disabled and shows progress (`Pushing… 12/247`). Toast on completion summarizes pushed/skipped/failed counts.
+- **Libre.fm out of scope.** Toggle and button are hidden — LFM's `track.love` has no Libre.fm equivalent. Don't add it speculatively; the Libre.fm API surface differs.
+- **Scrobbler plugin contract.** Both `lastfmScrobbler.loveTrack(track)` and `listenbrainzScrobbler.loveTrack(track)` exist alongside `scrobble`/`updateNowPlaying`. They throw on hard errors (auth invalid, rate-limited 5xx). Callers must catch.
+
+**Android parity** for this feature follows the same shape: opt-in toggle + manual backfill button per service, same persistence key names (`scrobbler_love_push_enabled`, `love_pushed_keys`), same MBID-required-for-LB rule with mapper fallback, same one-way semantics. Match the desktop's `loveTrack` method shape on the scrobbler classes so the field-tested API stays consistent.
+
 ## Friend Sync (Last.fm + ListenBrainz)
 
 ### Overview

@@ -132,6 +132,25 @@ window.isPublicHttpUrl = (urlString) => {
   return true;
 };
 
+// Resolve a track to a recording MBID for ListenBrainz love submission.
+// Tries (1) cached track.mbid, (2) the MBID Mapper. Returns the MBID
+// string or null. ~4ms typical via the mapper. See
+// docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md.
+window.resolveMbidForLove = async (track) => {
+  if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return track.mbid;
+  if (!track?.artist || !track?.title) return null;
+  try {
+    const url = `https://mapper.listenbrainz.org/mapping/lookup?artist_credit_name=${encodeURIComponent(track.artist)}&recording_name=${encodeURIComponent(track.title)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data?.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(data.recording_mbid || '')) {
+      return data.recording_mbid;
+    }
+  } catch (e) { /* mapper down or rate-limited; treat as unresolved */ }
+  return null;
+};
+
 // Decode a base64 string as UTF-8 → JSON. The naive
 // `JSON.parse(atob(s))` is wrong for any payload containing non-ASCII
 // characters: atob returns a Latin-1 binary string, so UTF-8 sequences
@@ -2388,7 +2407,15 @@ const McpSettingsSection = () => {
 };
 
 // ScrobblerSettingsCard component - Settings card for individual scrobbler services
-const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange }) => {
+const ScrobblerSettingsCard = React.memo(({
+  scrobbler, config, onConfigChange,
+  lovePushEnabled = false,
+  onSetLovePushEnabled = null,
+  onRunBackfill = null,
+  backfillRunning = false,
+  backfillProgress = null,
+  unpushedCount = 0,
+}) => {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);
   const [tokenInput, setTokenInput] = useState('');
@@ -2640,11 +2667,43 @@ const ScrobblerSettingsCard = React.memo(({ scrobbler, config, onConfigChange })
         className: 'w-full py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 transition-colors'
       }, connecting ? 'Completing...' : 'Complete Authorization')
     ) : (
-      // Disconnect button (when connected)
-      React.createElement('button', {
-        onClick: handleDisconnect,
-        className: 'w-full py-2 px-4 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors'
-      }, 'Disconnect')
+      // Connected state: love-push controls (LB/LFM only) + Disconnect
+      React.createElement('div', { className: 'space-y-3' },
+        // Love-push toggle + backfill button (only for services that support it)
+        (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') && onSetLovePushEnabled &&
+          React.createElement('div', { className: 'border-t border-gray-200 pt-3 space-y-2' },
+            React.createElement('label', { className: 'flex items-center gap-2 text-sm cursor-pointer' },
+              React.createElement('input', {
+                type: 'checkbox',
+                checked: lovePushEnabled,
+                onChange: (e) => onSetLovePushEnabled(e.target.checked),
+                className: 'rounded text-purple-600 focus:ring-purple-500'
+              }),
+              React.createElement('span', { className: 'text-gray-700' },
+                `Push newly loved tracks to ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
+              )
+            ),
+            React.createElement('button', {
+              onClick: onRunBackfill,
+              disabled: backfillRunning || unpushedCount === 0,
+              className: 'w-full py-1.5 px-3 text-sm bg-purple-50 text-purple-700 rounded-lg font-medium hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+            },
+              backfillRunning && backfillProgress
+                ? `Pushing… ${backfillProgress.done}/${backfillProgress.total}`
+                : unpushedCount > 0
+                  ? `Backfill ${unpushedCount} loved track${unpushedCount === 1 ? '' : 's'} → ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
+                  : 'All loves already pushed'
+            ),
+            React.createElement('p', { className: 'text-xs text-gray-500' },
+              'Backfilled loves are stamped at the time of push (the remote service has no backdate API).'
+            )
+          ),
+        // Disconnect
+        React.createElement('button', {
+          onClick: handleDisconnect,
+          className: 'w-full py-2 px-4 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors'
+        }, 'Disconnect')
+      )
     )
   );
 });
@@ -5716,6 +5775,14 @@ const Parachord = () => {
   // Scrobbler settings state
   const [scrobblersInitialized, setScrobblersInitialized] = useState(false);
   const [scrobblerConfigs, setScrobblerConfigs] = useState({});
+  // Loved-tracks push (opt-in per service). See
+  // docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md.
+  const [scrobblerLovePushEnabled, setScrobblerLovePushEnabled] = useState({});
+  const scrobblerLovePushEnabledRef = useRef({});
+  const lovePushedKeysRef = useRef({}); // { [trackId]: { lastfm?: ts, listenbrainz?: ts } }
+  const [loveBackfillRunning, setLoveBackfillRunning] = useState({}); // { [service]: boolean }
+  const loveBackfillRunningRef = useRef({});
+  const [loveBackfillProgress, setLoveBackfillProgress] = useState({}); // { [service]: { done, total } }
   const [scrobblingEnabled, setScrobblingEnabled] = useState(true);
 
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
@@ -7086,6 +7153,7 @@ const Parachord = () => {
   const [draggingTrackForPlaylist, setDraggingTrackForPlaylist] = useState(null); // Track being dragged that could be dropped on playlist
   const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' | 'info', action?: { label: string, onClick: () => void } }
   const [collectionData, setCollectionData] = useState({ tracks: [], albums: [], artists: [] });
+  const collectionDataRef = useRef(collectionData);
   const [collectionLoading, setCollectionLoading] = useState(true);
 
   // Auto-select a populated collection tab when entering the library view
@@ -7401,6 +7469,8 @@ const Parachord = () => {
   useEffect(() => { friendsRef.current = friends; }, [friends]);
   useEffect(() => { metaServiceConfigsRef.current = metaServiceConfigs; }, [metaServiceConfigs]);
   useEffect(() => { scrobblerConfigsRef.current = scrobblerConfigs; }, [scrobblerConfigs]);
+  useEffect(() => { scrobblerLovePushEnabledRef.current = scrobblerLovePushEnabled; }, [scrobblerLovePushEnabled]);
+  useEffect(() => { collectionDataRef.current = collectionData; }, [collectionData]);
   useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
   useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
@@ -13383,7 +13453,148 @@ ${trackListXml}
           .catch(err => console.warn('[Sync] Failed to save track to Apple Music:', err.message));
       }
     }
+
+    // Push love to LB/LFM (opt-in per service). Fire-and-forget — local
+    // collection state is authoritative, remote love is best-effort.
+    pushLoveToScrobblers({ ...track, id: trackId }).catch(err => {
+      console.warn('[love-push] error:', err?.message || err);
+    });
   }, [saveCollection, showToast, showSidebarBadge]);
+
+  // Push a track's love to any service whose toggle is on. Idempotent
+  // via lovePushedKeysRef — if already pushed, skips silently. Persists
+  // checkpoints to electron-store immediately so backfill resumes
+  // correctly across restarts. Used by both the live-add path
+  // (addTrackToCollection above) and the manual backfill button.
+  const pushLoveToScrobblers = useCallback(async (track) => {
+    if (!track?.id) return;
+    const enabled = scrobblerLovePushEnabledRef.current || {};
+    const pushed = lovePushedKeysRef.current[track.id] || {};
+    const tasks = [];
+
+    // Last.fm
+    if (enabled.lastfm && !pushed.lastfm && window.lastfmScrobbler) {
+      tasks.push((async () => {
+        try {
+          const isEnabled = await window.lastfmScrobbler.isEnabled();
+          if (!isEnabled) return;
+          await window.lastfmScrobbler.loveTrack({
+            artist: track.artist, title: track.title,
+            mbid: track.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid) ? track.mbid : undefined,
+          });
+          await markLovePushed(track.id, 'lastfm');
+          console.log(`[love-push] LFM ✓ ${track.artist} – ${track.title}`);
+        } catch (err) {
+          console.warn(`[love-push] LFM failed for "${track.title}":`, err?.message || err);
+        }
+      })());
+    }
+
+    // ListenBrainz (needs MBID)
+    if (enabled.listenbrainz && !pushed.listenbrainz && window.listenbrainzScrobbler) {
+      tasks.push((async () => {
+        try {
+          const isEnabled = await window.listenbrainzScrobbler.isEnabled();
+          if (!isEnabled) return;
+          const mbid = await window.resolveMbidForLove(track);
+          if (!mbid) {
+            console.log(`[love-push] LB skip "${track.title}" — no MBID`);
+            return;
+          }
+          await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
+          await markLovePushed(track.id, 'listenbrainz');
+          console.log(`[love-push] LB ✓ ${track.artist} – ${track.title}`);
+        } catch (err) {
+          console.warn(`[love-push] LB failed for "${track.title}":`, err?.message || err);
+        }
+      })());
+    }
+
+    if (tasks.length > 0) await Promise.allSettled(tasks);
+  }, []);
+
+  // Persist a single love-pushed checkpoint. Keeps the ref hot and
+  // writes through to electron-store so a backfill mid-run survives
+  // a crash.
+  const markLovePushed = useCallback(async (trackId, service) => {
+    const next = {
+      ...lovePushedKeysRef.current,
+      [trackId]: { ...(lovePushedKeysRef.current[trackId] || {}), [service]: Date.now() },
+    };
+    lovePushedKeysRef.current = next;
+    try { await window.electron.store.set('love_pushed_keys', next); }
+    catch (e) { /* non-fatal: ref is still hot for this session */ }
+  }, []);
+
+  // Toggle the live-push setting for a service. No automatic backfill
+  // — the user has to click the backfill button explicitly.
+  const setLovePushEnabled = useCallback(async (service, enabled) => {
+    setScrobblerLovePushEnabled(prev => {
+      const next = { ...prev, [service]: !!enabled };
+      window.electron.store.set('scrobbler_love_push_enabled', next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  // Manual backfill: walks the collection, pushes any track not yet
+  // marked as pushed for this service. Soft rate-limit ~1 req/sec.
+  // Idempotency cache means re-clicks are cheap.
+  const runLoveBackfill = useCallback(async (service) => {
+    if (loveBackfillRunningRef.current[service]) return;
+    if (!['lastfm', 'listenbrainz'].includes(service)) return;
+    const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
+    if (!scrobbler) { showToast(`${service} scrobbler not loaded`); return; }
+    const isEnabled = await scrobbler.isEnabled();
+    if (!isEnabled) { showToast(`${service} not connected`); return; }
+
+    const tracks = (collectionDataRef.current?.tracks || []);
+    const todo = tracks.filter(t => !lovePushedKeysRef.current[t.id]?.[service]);
+    if (todo.length === 0) {
+      showToast(`Already up to date — no loves to push to ${service === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`);
+      return;
+    }
+
+    loveBackfillRunningRef.current = { ...loveBackfillRunningRef.current, [service]: true };
+    setLoveBackfillRunning(prev => ({ ...prev, [service]: true }));
+    setLoveBackfillProgress(prev => ({ ...prev, [service]: { done: 0, total: todo.length } }));
+
+    let pushed = 0, skipped = 0, failed = 0;
+    for (let i = 0; i < todo.length; i++) {
+      const track = todo[i];
+      try {
+        if (service === 'lastfm') {
+          await window.lastfmScrobbler.loveTrack({
+            artist: track.artist, title: track.title,
+            mbid: track.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid) ? track.mbid : undefined,
+          });
+          await markLovePushed(track.id, 'lastfm');
+          pushed++;
+        } else {
+          const mbid = await window.resolveMbidForLove(track);
+          if (!mbid) { skipped++; continue; }
+          await window.listenbrainzScrobbler.loveTrack({ ...track, mbid });
+          await markLovePushed(track.id, 'listenbrainz');
+          pushed++;
+        }
+      } catch (err) {
+        console.warn(`[love-backfill ${service}] failed for "${track.title}":`, err?.message || err);
+        failed++;
+      }
+      setLoveBackfillProgress(prev => ({ ...prev, [service]: { done: i + 1, total: todo.length } }));
+      // Soft rate-limit so we don't hammer the API
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    loveBackfillRunningRef.current = { ...loveBackfillRunningRef.current, [service]: false };
+    setLoveBackfillRunning(prev => ({ ...prev, [service]: false }));
+    setLoveBackfillProgress(prev => ({ ...prev, [service]: null }));
+
+    const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
+    let msg = `Backfilled ${pushed} love${pushed === 1 ? '' : 's'} to ${label}`;
+    if (skipped > 0) msg += ` (${skipped} skipped — no MBID)`;
+    if (failed > 0) msg += ` (${failed} failed)`;
+    showToast(msg);
+  }, [showToast, markLovePushed]);
 
   // Remove track from collection
   const removeTrackFromCollection = useCallback((track) => {
@@ -20322,7 +20533,9 @@ ${trackListXml}
         'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
         // Queue & tutorial
         'saved_queue', 'saved_playback_context', 'saved_shuffle_state',
-        'tutorial_completed', 'whats_new_dismissed_version'
+        'tutorial_completed', 'whats_new_dismissed_version',
+        // Loved-tracks push to LB/LFM (opt-in per service)
+        'scrobbler_love_push_enabled', 'love_pushed_keys'
       ];
       const d = window.electron.store.getBatch
         ? await window.electron.store.getBatch(allKeys)
@@ -20953,6 +21166,12 @@ ${trackListXml}
       const savedShuffleState = savedRememberQueue ? d['saved_shuffle_state'] : null;
       const tutorialCompleted = d['tutorial_completed'];
       const dismissedVersion = d['whats_new_dismissed_version'];
+
+      // Loved-tracks push to LB/LFM (opt-in per service)
+      const lovePushEnabled = d['scrobbler_love_push_enabled'] || {};
+      const lovePushedKeys = d['love_pushed_keys'] || {};
+      setScrobblerLovePushEnabled(lovePushEnabled);
+      lovePushedKeysRef.current = lovePushedKeys;
 
       // Restore saved queue if remember queue is enabled
       if (savedRememberQueue) {
@@ -56003,7 +56222,13 @@ useEffect(() => {
                         config: scrobblerConfigs['lastfm'],
                         onConfigChange: (id, newConfig) => {
                           setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
-                        }
+                        },
+                        lovePushEnabled: !!scrobblerLovePushEnabled.lastfm,
+                        onSetLovePushEnabled: (v) => setLovePushEnabled('lastfm', v),
+                        onRunBackfill: () => runLoveBackfill('lastfm'),
+                        backfillRunning: !!loveBackfillRunning.lastfm,
+                        backfillProgress: loveBackfillProgress.lastfm,
+                        unpushedCount: collectionData.tracks.filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
                       })
                   )
                 )
@@ -56291,7 +56516,13 @@ useEffect(() => {
                         config: scrobblerConfigs['listenbrainz'],
                         onConfigChange: (id, newConfig) => {
                           setScrobblerConfigs(prev => ({ ...prev, [id]: newConfig }));
-                        }
+                        },
+                        lovePushEnabled: !!scrobblerLovePushEnabled.listenbrainz,
+                        onSetLovePushEnabled: (v) => setLovePushEnabled('listenbrainz', v),
+                        onRunBackfill: () => runLoveBackfill('listenbrainz'),
+                        backfillRunning: !!loveBackfillRunning.listenbrainz,
+                        backfillProgress: loveBackfillProgress.listenbrainz,
+                        unpushedCount: collectionData.tracks.filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
                       })
                   )
                 )

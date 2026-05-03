@@ -105,6 +105,23 @@ class LastFmScrobbler extends BaseScrobbler {
     return true;
   }
 
+  // Mark a track as loved on Last.fm. Used by the optional opt-in
+  // "push loved tracks" feature (see docs/plans/2026-05-03-loved-tracks-
+  // scrobbler-push-design.md). track.love does not accept a backdate
+  // param — the remote stamps the love at the time of the call.
+  async loveTrack(track) {
+    if (!track || !track.artist || !track.title) {
+      throw new Error('loveTrack requires artist + title');
+    }
+    const params = {
+      artist: track.artist,
+      track: track.title,
+    };
+    if (track.mbid) params.mbid = track.mbid;
+    await this.apiRequest('track.love', params);
+    return true;
+  }
+
   // Get auth token for desktop auth flow
   async getAuthToken() {
     const response = await window.electron.proxyFetch(
