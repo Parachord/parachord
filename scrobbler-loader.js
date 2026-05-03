@@ -418,6 +418,34 @@ class ListenBrainzScrobbler extends BaseScrobbler {
     return true;
   }
 
+  // Submit love feedback to ListenBrainz. Used by the optional opt-in
+  // "push loved tracks" feature (see docs/plans/2026-05-03-loved-tracks-
+  // scrobbler-push-design.md). LB requires a recording_mbid — caller is
+  // responsible for resolving via track.mbid or the MBID Mapper before
+  // calling. /feedback/recording-feedback does not accept a backdate;
+  // the remote stamps "loved at" the call time.
+  async loveTrack(track) {
+    const config = await this.getConfig();
+    if (!config.userToken) {
+      throw new Error('ListenBrainz token not configured');
+    }
+    if (!track?.mbid || !/^[a-f0-9-]{36}$/i.test(track.mbid)) {
+      throw new Error('loveTrack requires track.mbid (36-char UUID)');
+    }
+    const response = await window.electron.proxyFetch(`${this.apiBase}/feedback/recording-feedback`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${config.userToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ recording_mbid: track.mbid, score: 1 })
+    });
+    if (!response.success) {
+      throw new Error(`ListenBrainz love failed: ${response.status || 'unknown'} - ${response.error || response.text}`);
+    }
+    return true;
+  }
+
   // Validate token by fetching user info
   async validateToken(token) {
     const response = await window.electron.proxyFetch(`${this.apiBase}/validate-token`, {
@@ -595,6 +623,23 @@ class LastFmScrobbler extends BaseScrobbler {
       'album[0]': track.album || undefined,
       'duration[0]': track.duration || undefined
     });
+    return true;
+  }
+
+  // Mark a track as loved on Last.fm. Used by the optional opt-in
+  // "push loved tracks" feature (see docs/plans/2026-05-03-loved-tracks-
+  // scrobbler-push-design.md). track.love does not accept a backdate
+  // param — the remote stamps the love at the time of the call.
+  async loveTrack(track) {
+    if (!track || !track.artist || !track.title) {
+      throw new Error('loveTrack requires artist + title');
+    }
+    const params = {
+      artist: track.artist,
+      track: track.title,
+    };
+    if (track.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) params.mbid = track.mbid;
+    await this.apiRequest('track.love', params);
     return true;
   }
 
