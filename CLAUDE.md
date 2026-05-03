@@ -767,6 +767,16 @@ Refilled tracks (when LB radio returns a fresh batch mid-session) need the same 
 
 If you skip step 1, `handlePlay`'s internal exitSpinoff/listen-along cleanup runs AFTER your `setPlaybackContext`, restoring the prior context and overriding your new one. If you skip step 2, the prior queue's in-flight background resolution keeps competing with your new resolve calls for Apple Music throttle / MusicBrainz rate-limit budget.
 
+**Apply the teardown to ALL commands that start playback**, not just the album/playlist/radio sub-actions. Concrete list of protocol commands that must do steps 1-2 before kicking off:
+
+- `parachord://play?artist=&title=` (single-track default)
+- `parachord://play/album`
+- `parachord://play/playlist`
+- `parachord://play/radio` (both Mode B and Mode C)
+- `parachord://listen-along` (tear down spinoff + clearQueue, but DON'T tear down listen-along — switching from friend A to friend B should swap, not terminate)
+
+Commands that do NOT clear the queue (intentionally): `queue/add` (additive), `control/*` (just transport), `shuffle/*`, `volume/*`, navigation cases (`artist/`, `album/`, `library`, etc. — these only navigate, they don't auto-play), `import` (writes to library, doesn't change current playback), `chat` (sends to AI). `collection-radio` delegates to the in-app starter, which is responsible for its own state hygiene — match the in-app behavior, don't add a separate clearQueue at the protocol layer.
+
 **JSPF + LB lb-radio wrapper.** ListenBrainz wraps the JSPF response in `{ payload: { feedback, jspf: { playlist: { track: [...] } } } }`. Unwrap to the bare JSPF shape (`parsed.payload?.jspf || parsed`) before checking `playlist.track`. Failure mode if you don't: HTTP 200 + 0 tracks parsed → "no playable tracks for radio" toast.
 
 JSPF track fields:
@@ -780,6 +790,28 @@ LB also embeds artist MBIDs in `track.extension['https://musicbrainz.org/doc/jsp
 Generic JSON shape: `{ title?, tracks: [{artist, title, album?, mbid?, isrc?}] }`. Same MBID UUID validation; trim whitespace; reject empty fields.
 
 **Inline tracks: 100KB encoded cap, 500 tracks max** — same caps as `import` (existing constraint).
+
+**Inline base64 tracks must be decoded as UTF-8.** The naive pattern `JSON.parse(atob(payload))` (and its Kotlin equivalent `JSON.parse(Base64.decode(payload).toString())` or `String(Base64.decode(payload))` without specifying a charset) treats the decoded bytes as Latin-1 / platform default — which silently mangles any UTF-8 multi-byte character: U+2019 right single quote (`'`) becomes `â€™`, em dashes become `â€"`, non-Latin scripts (Cyrillic, CJK, Arabic, etc.) become unreadable. Visible to the user as garbled track titles.
+
+**Correct decode (round-trip bytes through UTF-8):**
+
+```js
+// Web/Electron — desktop's window.decodeBase64Utf8Json
+const binary = atob(b64);
+const bytes = new Uint8Array(binary.length);
+for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+const text = new TextDecoder('utf-8').decode(bytes);
+const decoded = JSON.parse(text);
+```
+
+```kotlin
+// Android equivalent
+val bytes = android.util.Base64.decode(payload, android.util.Base64.DEFAULT)
+val text = String(bytes, Charsets.UTF_8)
+val decoded = JSONObject(text)  // or your JSON parser of choice
+```
+
+The same fix must be applied at every base64-decode call site that processes user-supplied JSON — both `parachord://import` and `parachord://play/album|playlist|radio` (the latter via the shared input resolver). Don't deduplicate naively across sites by reusing one helper without auditing its charset behavior.
 
 **SSRF guard at every URL fetch site.** Reject:
 
