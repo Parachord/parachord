@@ -5382,6 +5382,26 @@ ipcMain.handle('collection:save', async (event, collection) => {
 
   try {
     const collectionPath = path.join(app.getPath('userData'), 'collection.json');
+
+    // Backup-before-write so a wipe / corrupt save doesn't take the user's
+    // data with no recovery path. Issue #758. Three-deep rotation:
+    //   collection.json.bak    (last good)
+    //   collection.json.bak.1  (one save ago)
+    //   collection.json.bak.2  (two saves ago)
+    // Cheap insurance — the file is small JSON.
+    try {
+      const stat = await fsPromises.stat(collectionPath).catch(() => null);
+      if (stat && stat.size > 0) {
+        // rotate .bak.1 → .bak.2, .bak → .bak.1, current → .bak
+        await fsPromises.rename(`${collectionPath}.bak.1`, `${collectionPath}.bak.2`).catch(() => {});
+        await fsPromises.rename(`${collectionPath}.bak`, `${collectionPath}.bak.1`).catch(() => {});
+        await fsPromises.copyFile(collectionPath, `${collectionPath}.bak`);
+      }
+    } catch (backupErr) {
+      // Don't fail the save just because the backup rotation hit a snag.
+      console.warn('  ⚠️ Backup rotation failed (non-fatal):', backupErr.message);
+    }
+
     await fsPromises.writeFile(collectionPath, JSON.stringify(collection), 'utf8');
     console.log(`✅ Saved collection: ${collection.tracks?.length || 0} tracks, ${collection.albums?.length || 0} albums, ${collection.artists?.length || 0} artists`);
     return { success: true };

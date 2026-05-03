@@ -7155,6 +7155,7 @@ const Parachord = () => {
   const [collectionData, setCollectionData] = useState({ tracks: [], albums: [], artists: [] });
   const collectionDataRef = useRef(collectionData);
   const [collectionLoading, setCollectionLoading] = useState(true);
+  const collectionLoadingRef = useRef(true);
 
   // Auto-select a populated collection tab when entering the library view
   // This fixes the issue where sidebar navigation lands on an empty tab
@@ -7471,6 +7472,7 @@ const Parachord = () => {
   useEffect(() => { scrobblerConfigsRef.current = scrobblerConfigs; }, [scrobblerConfigs]);
   useEffect(() => { scrobblerLovePushEnabledRef.current = scrobblerLovePushEnabled; }, [scrobblerLovePushEnabled]);
   useEffect(() => { collectionDataRef.current = collectionData; }, [collectionData]);
+  useEffect(() => { collectionLoadingRef.current = collectionLoading; }, [collectionLoading]);
   useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
   useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
@@ -13219,15 +13221,32 @@ ${trackListXml}
 
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
-    if (window.electron?.collection?.save) {
-      try {
-        const result = await window.electron.collection.save(newData);
-        if (!result?.success) {
-          console.error('Collection save failed:', result?.error);
-        }
-      } catch (error) {
-        console.error('Collection save error:', error);
+    if (!window.electron?.collection?.save) return;
+
+    // Defense against the startup-race wipe: if the collection hasn't
+    // finished loading yet, refuse to write a wholesale-empty payload
+    // over a real on-disk collection. Catches the addTrackToCollection-
+    // before-loadCollection race documented in issue #758. Real
+    // intentional clears (user 'Remove all' button) should route through
+    // a separate confirmed code path, not this.
+    if (!newData) return;
+    const isWholesaleEmpty =
+      (newData.tracks?.length || 0) === 0 &&
+      (newData.albums?.length || 0) === 0 &&
+      (newData.artists?.length || 0) === 0;
+    if (isWholesaleEmpty && collectionLoadingRef.current) {
+      console.warn('[saveCollection] refusing to write empty collection before loadCollection completes (issue #758)');
+      console.warn('[saveCollection] caller stack:', new Error().stack?.split('\n').slice(1, 5).join('\n'));
+      return;
+    }
+
+    try {
+      const result = await window.electron.collection.save(newData);
+      if (!result?.success) {
+        console.error('Collection save failed:', result?.error);
       }
+    } catch (error) {
+      console.error('Collection save error:', error);
     }
   }, []);
 
@@ -56228,7 +56247,7 @@ useEffect(() => {
                         onRunBackfill: () => runLoveBackfill('lastfm'),
                         backfillRunning: !!loveBackfillRunning.lastfm,
                         backfillProgress: loveBackfillProgress.lastfm,
-                        unpushedCount: collectionData.tracks.filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
+                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
                       })
                   )
                 )
@@ -56522,7 +56541,7 @@ useEffect(() => {
                         onRunBackfill: () => runLoveBackfill('listenbrainz'),
                         backfillRunning: !!loveBackfillRunning.listenbrainz,
                         backfillProgress: loveBackfillProgress.listenbrainz,
-                        unpushedCount: collectionData.tracks.filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
+                        unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.listenbrainz).length,
                       })
                   )
                 )
