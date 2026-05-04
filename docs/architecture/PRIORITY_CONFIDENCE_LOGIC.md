@@ -1,264 +1,175 @@
-# Track Playback: Priority + Confidence Logic ✅
+# Track Playback: Confidence Floor + Priority + Confidence Logic
 
-## What Changed
+## Overview
 
-Updated track row click handler to intelligently select the best source based on BOTH resolver priority AND confidence score.
+Track playback selects the best source from a track's resolved `sources` map using a **three-stage gate**:
 
-## The Problem (Before)
+1. **Confidence floor** — drop wrong-artist / wrong-title results before they can compete
+2. **Priority** — among survivors, pick by user-configured resolver order
+3. **Confidence tiebreaker** — within the same priority tier, higher confidence wins
 
-**Before:** Track row clicks only considered resolver priority order:
-```javascript
-// Old logic - priority only
-const enabledResolverOrder = resolverOrder.filter(r => activeResolvers.includes(r));
-const bestResolver = enabledResolverOrder.find(r => availableResolvers.includes(r));
+This document covers stages 1–3 of the playback selection. Scoring (how `confidence` itself is computed) is documented in `CLAUDE.md` → "Match Confidence + Selection Floor".
+
+## Why a Confidence Floor
+
+Without a floor, **wrong-artist matches silently win.**
+
+```
+Resolver Order: [Spotify #1, Bandcamp #2]
+
+Track "Yesterday" by The Beatles, resolved sources:
+- Spotify: 0.50 confidence — wrong artist's "Yesterday"
+- Bandcamp: 0.95 confidence — exact match
 ```
 
-**Example Scenario:**
-```
-Resolver Order: [Spotify #1, Bandcamp #2, Qobuz #3]
+Old behavior (no floor): plays Spotify because it's #1 priority. The user gets a different artist's song that happens to share the title, with no warning.
 
-Track "Creep" resolved sources:
-- Spotify: 50% confidence (wrong version)
-- Bandcamp: 95% confidence (exact match)
-- Qobuz: 90% confidence (album version)
+New behavior (floor at 0.60): Spotify's 0.50 is dropped before the priority sort even runs. Bandcamp wins.
 
-OLD BEHAVIOR: ❌ Plays Spotify (50% confidence) because it's #1 priority
-```
+Confidence in this codebase is **categorical, not continuous**:
+- `0.95` — both artist AND title containment-match the target (correct match)
+- `0.50` — single-axis match (title-only or artist-only) — wrong song
+- `1.0` — direct-ID match (cached `spotifyId`, `appleMusicId`, etc.) — authoritative
 
-## The Solution (After)
-
-**After:** Sorts by priority FIRST, then by confidence WITHIN same priority:
-
-```javascript
-// New logic - priority + confidence
-const sortedSources = availableResolvers.map(resolverId => ({
-  resolverId,
-  source: sources[resolverId],
-  priority: resolverOrder.indexOf(resolverId),
-  confidence: sources[resolverId].confidence || 0
-}))
-.filter(s => activeResolvers.includes(s.resolverId))
-.sort((a, b) => {
-  // First: sort by priority (lower index = higher priority)
-  if (a.priority !== b.priority) {
-    return a.priority - b.priority;
-  }
-  // Second: if same priority, sort by confidence (higher = better)
-  return b.confidence - a.confidence;
-});
-
-const best = sortedSources[0];
-```
-
-**Same Scenario:**
-```
-Resolver Order: [Spotify #1, Bandcamp #2, Qobuz #3]
-
-Track "Creep" resolved sources:
-- Spotify: 50% confidence
-- Bandcamp: 95% confidence
-- Qobuz: 90% confidence
-
-NEW BEHAVIOR: ✅ Plays Spotify (50% confidence) because priority wins
-```
-
-**But if Spotify isn't available:**
-```
-Resolver Order: [Spotify #1, Bandcamp #2, Qobuz #3]
-
-Track "Obscure Track" resolved sources:
-- Bandcamp: 60% confidence (maybe?)
-- Qobuz: 95% confidence (definite match)
-
-NEW BEHAVIOR: ✅ Plays Bandcamp (60%) because #2 priority beats #3
-```
-
-**And if multiple resolvers have same priority:**
-```
-Resolver Order: [Group A (Spotify, Bandcamp), Qobuz]
-
-Track sources:
-- Spotify: 50% confidence (priority 0)
-- Bandcamp: 95% confidence (priority 0)
-- Qobuz: 90% confidence (priority 2)
-
-NEW BEHAVIOR: ✅ Plays Bandcamp (95%) because same priority, higher confidence
-```
+A 0.50 score literally means "wrong song." It must not reach selection. The floor at 0.60 cleanly separates 0.50 (drop) from 0.95+ (keep).
 
 ## The Algorithm
 
 ```
-FOR each resolved source:
-  1. Get priority from resolverOrder index (lower = better)
-  2. Get confidence from resolver match score (0-1)
-  
-SORT sources by:
-  1. Priority ascending (0, 1, 2, ...)
-  2. Confidence descending (0.95, 0.90, 0.85, ...)
-  
-PLAY the first source in sorted list
+FOR each resolved source on the track:
+  confidence = sources[resolverId].confidence || 0
+  priority   = resolverOrder.indexOf(resolverId)  // -1 → end of list
+
+FILTER sources to keep only those where:
+  resolverId is in activeResolvers (user-enabled)
+  confidence >= MIN_CONFIDENCE_THRESHOLD (0.6)
+  source not on the per-result blocklist
+
+SORT survivors by:
+  1. Preferred resolver (if track.preferredResolver set) wins
+  2. Priority ascending (0, 1, 2, ...)
+  3. Confidence descending (0.95, 0.50, ...) within same priority
+
+PLAY the first survivor.
 ```
 
-## Console Output
-
-**Before:**
-```
-Track row clicked: Creep
-🎵 Playing from spotify (priority #1)
-```
-
-**After:**
-```
-Track row clicked: Creep
-🎵 Playing from spotify (priority #1, confidence: 50%)
-```
-
-Or with better match:
-```
-Track row clicked: Creep
-🎵 Playing from bandcamp (priority #2, confidence: 95%)
-```
+Code lives in `handlePlay` (app.js L15170+, with the floor filter at L15184).
 
 ## Examples
 
-### Example 1: Priority Wins
+### Example 1: Floor protects against wrong-artist match
+
 ```
 Order: [Spotify #1, Bandcamp #2]
 Sources:
-- Spotify: 50% ← PLAYS THIS (priority #1)
-- Bandcamp: 95%
+- Spotify:  0.50 (wrong artist — dropped by floor)
+- Bandcamp: 0.95
+PLAYS: Bandcamp
 ```
 
-### Example 2: No Higher Priority Available
+This is the regression-test case. Pre-floor, Spotify won despite being the wrong song.
+
+### Example 2: Priority wins among survivors
+
+```
+Order: [Spotify #1, Bandcamp #2]
+Sources:
+- Spotify:  0.95 (correct match)
+- Bandcamp: 0.95 (also correct)
+PLAYS: Spotify (priority #1)
+```
+
+Both pass the floor. User's preferred order wins.
+
+### Example 3: Fallback to next priority
+
 ```
 Order: [Spotify #1, Bandcamp #2, Qobuz #3]
 Sources:
-- Bandcamp: 60% ← PLAYS THIS (highest available priority)
-- Qobuz: 95%
+- Spotify:  0.50 (wrong artist — dropped)
+- Bandcamp: 0.95
+- Qobuz:    0.95
+PLAYS: Bandcamp (next priority survivor)
 ```
 
-### Example 3: Confidence Breaks Tie
+### Example 4: Confidence breaks tie within priority tier
+
 ```
-Order: [Spotify #1, Bandcamp #1]  (same priority)
+Order: [Spotify #1, Bandcamp #1, Qobuz #2]   // Spotify and Bandcamp same tier
 Sources:
-- Spotify: 50%
-- Bandcamp: 95% ← PLAYS THIS (same priority, higher confidence)
+- Spotify:  0.95
+- Bandcamp: 1.00 (direct ID match)
+- Qobuz:    0.95
+PLAYS: Bandcamp (same tier, higher confidence)
 ```
 
-### Example 4: Multiple High-Confidence Sources
+### Example 5: All sources below floor → no source
+
 ```
-Order: [Spotify #1, Bandcamp #2, Qobuz #3]
+Order: [Spotify #1, Bandcamp #2]
 Sources:
-- Spotify: 95% ← PLAYS THIS (priority #1, also high confidence)
-- Bandcamp: 95%
-- Qobuz: 90%
+- Spotify:  0.50 (wrong artist)
+- Bandcamp: 0.50 (wrong title)
+PLAYS: nothing — "No Enabled Source" dialog
 ```
 
-## Resolver Icon Clicks (Manual Override)
+This surfaces when the resolvers genuinely couldn't find this track in any user-enabled service, even if they returned wrong-song matches that look superficially plausible.
 
-**Important:** Clicking specific resolver icons still bypasses this logic:
-```javascript
-// Resolver icon onClick
+## Manual Override
+
+Clicking a specific resolver icon (the small per-resolver play buttons on the track row) bypasses all of the above:
+
+```js
 onClick: (e) => {
   e.stopPropagation();
-  handlePlay(source); // Plays from THIS resolver, ignoring priority/confidence
+  handlePlay(specificSource); // ignores floor, priority, confidence
 }
 ```
 
-This allows users to manually override the automatic selection.
+If the user explicitly clicks "play from Bandcamp," they get Bandcamp regardless of confidence or priority. The icons themselves dim at low confidence (~L2108, L4183) so the user can see the resolver isn't confident, but the click still goes through.
 
-## User Experience
+## Background Resolution Also Gates
 
-### Automatic Play (Row Click or Play Icon):
-1. ✅ **Respects user's priority preferences**
-2. ✅ **Chooses best match within that priority**
-3. ✅ **Falls back to next priority if needed**
+The selection floor at `handlePlay` is the user-visible gate, but background resolution paths also gate at the same threshold so wrong-artist results never enter `track.sources` in the first place:
 
-### Manual Play (Resolver Icon Click):
-1. ✅ **User explicitly chooses which resolver**
-2. ✅ **Bypasses all automatic logic**
-3. ✅ **Direct control when needed**
+- Background normal-resolver pipeline (app.js L8027)
+- Rate-limited iTunes path (app.js L8056)
+- Per-track resolve flush (app.js L8170)
+- Five `calculateConfidence`-using sites in cache validation / collection resolution — these already used `calculateConfidence` and now benefit from its tightened semantics
 
-## Code Location
+This matters beyond playback: a wrong-artist result also pollutes `track.album` and `track.albumArt` via the fallback-fill logic. Skipping the attach keeps those fields clean.
 
-**File:** `app.js`
-**Line:** ~335-367
-**Function:** Track row onClick handler in ReleasePage
+## Tests
 
-```javascript
-onClick: () => {
-  // Sort by: 1) priority, 2) confidence
-  const sortedSources = availableResolvers.map(...)
-    .sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      return b.confidence - a.confidence;
-    });
-  
-  const best = sortedSources[0];
-  handlePlay(best.source);
-}
-```
+`tests/resolver/confidence-scoring.test.js` (27 tests) covers:
 
-## Testing
+- `normalizeStr` — case folding, punctuation stripping
+- `validateResolvedTrack` — both-axes containment, missing fields, empty inputs
+- `calculateConfidence` — 0.95 for both-match, 0.50 for single-axis, preserves direct-ID 1.0, rejects wrong-artist match even when resolver claims 1.0 confidence
+- `MIN_CONFIDENCE_THRESHOLD = 0.6` and the regression — wrong-artist 0.50 drops, correct 0.95 passes
 
-### Test Case 1: Priority Overrides Confidence
-```bash
-# Set resolver order: Spotify > Bandcamp
-# Go to album with track that has:
-#   - Spotify: 50% confidence
-#   - Bandcamp: 95% confidence
-# Click track row
-# Expected: Plays from Spotify (priority wins)
-```
+Mirrors `parachord-android/app/src/test/.../ConfidenceScoringTest.kt`.
 
-### Test Case 2: Confidence Breaks Tie
-```bash
-# Set resolver order: Spotify, Bandcamp (same priority level)
-# Go to album with track that has:
-#   - Spotify: 50% confidence
-#   - Bandcamp: 95% confidence
-# Click track row
-# Expected: Plays from Bandcamp (confidence breaks tie)
-```
+## Cross-Platform Invariant
 
-### Test Case 3: Fallback to Next Priority
-```bash
-# Set resolver order: Spotify > Bandcamp > Qobuz
-# Go to album where Spotify didn't find track:
-#   - Bandcamp: 60% confidence
-#   - Qobuz: 95% confidence
-# Click track row
-# Expected: Plays from Bandcamp (next available priority)
-```
+The desktop and Android clients must select the same source for the same track. The contract:
 
-### Test Case 4: Manual Override
-```bash
-# Same as Test Case 1, but click Bandcamp icon directly
-# Expected: Plays from Bandcamp (95% confidence)
-# User overrode the priority
-```
+| Platform | File | What it owns |
+|---|---|---|
+| Desktop (runtime) | `app.js` L149–166 + L24880 | `normalizeStr`, `validateResolvedTrack`, `MIN_CONFIDENCE_THRESHOLD`, `calculateConfidence` |
+| Desktop (test mirror) | `tests/helpers/confidence-scoring.js` | Same functions, byte-identical, `require`d by tests |
+| Android | `parachord-android/shared/src/commonMain/kotlin/com/parachord/shared/resolver/ResolverModels.kt` + `ResolverScoring.kt` | `scoreConfidence`, `validateResolvedTrack` equivalent, `MIN_CONFIDENCE_THRESHOLD` |
 
-## Benefits
+Drift on any platform produces inconsistent selection. The SYNC comments in each file flag where the others live.
 
-✅ **Smart Selection:** Best match within user's preferred services
-✅ **User Control:** Priority order respected first
-✅ **Quality:** Confidence prevents bad matches when possible
-✅ **Flexibility:** Manual override always available
-✅ **Transparent:** Console shows priority + confidence
+## History
 
-## Edge Cases Handled
+This logic was tightened on 2026-05-04 in response to a bug where the desktop's `calculateConfidence` ignored artist entirely (only compared title and duration). A search for "Yesterday" by The Beatles could resolve to a same-titled different-artist recording with 0.85 confidence; combined with no selection floor, the wrong source could win against a correct lower-priority resolver.
 
-1. **No sources:** Falls back to search
-2. **Disabled resolvers:** Filtered out before sorting
-3. **Missing confidence:** Defaults to 0
-4. **Same priority & confidence:** First in order wins
-5. **Resolver not in order:** Uses -1 (lowest priority)
+The fix:
+- Required both axes to substring-match in `calculateConfidence` (else 0.50)
+- Added `MIN_CONFIDENCE_THRESHOLD = 0.6` and applied it before the priority sort
+- Replaced three hardcoded `confidence: 0.9` stamps in background resolution with proper scoring + threshold check + skip-on-reject
+- Added `tests/resolver/confidence-scoring.test.js` mirroring Android's coverage
 
-## Summary
-
-Track playback now intelligently balances:
-- **Priority:** User's preferred resolver order
-- **Confidence:** Quality of the match
-- **Manual override:** Click specific resolver icon
-
-Result: **Best listening experience with smart defaults and full user control!** 🎵
+Android applied the same tightening (commit `8a31bf5: tighten scoreConfidence to match desktop's validateResolvedTrack gate`) — both platforms now share the same selection semantics.

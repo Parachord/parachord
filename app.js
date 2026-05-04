@@ -132,6 +132,39 @@ window.isPublicHttpUrl = (urlString) => {
   return true;
 };
 
+// Resolver match validation + minimum confidence threshold.
+//
+// SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
+// with that file. Cross-platform invariant: must match
+// parachord-android/shared/.../resolver/ResolverModels.kt and
+// ResolverScoring.kt#MIN_CONFIDENCE_THRESHOLD so desktop and Android pick the
+// same source for the same track.
+//
+// Bug history: prior to this gate, calculateConfidence ignored artist —
+// "Yesterday" by The Beatles could resolve to a same-titled different-artist
+// recording at 0.85 confidence. Combined with a missing source-selection
+// floor, the wrong-artist source could outrank a correct local file. The fix
+// requires BOTH axes to substring-match (else 0.50) and gates selection on
+// MIN_CONFIDENCE_THRESHOLD = 0.6.
+const normalizeStr = (s) => (s || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const validateResolvedTrack = (result, targetArtist, targetTitle) => {
+  if (!result || !result.artist || !result.title) return false;
+  const resultArtist = normalizeStr(result.artist);
+  const resultTitle = normalizeStr(result.title);
+  const normTargetArtist = normalizeStr(targetArtist);
+  const normTargetTitle = normalizeStr(targetTitle);
+  if (!resultArtist || !resultTitle || !normTargetArtist || !normTargetTitle) return false;
+  const artistMatches = resultArtist.includes(normTargetArtist) || normTargetArtist.includes(resultArtist);
+  const titleMatches = resultTitle.includes(normTargetTitle) || normTargetTitle.includes(resultTitle);
+  return artistMatches && titleMatches;
+};
+
+// Sources scoring below this floor are filtered out before the
+// resolver-priority sort runs. 0.50 (single-axis match) gets dropped;
+// 0.95 (both-axis match) passes.
+const MIN_CONFIDENCE_THRESHOLD = 0.6;
+
 // Resolve a track to a recording MBID for ListenBrainz love submission.
 // Tries (1) cached track.mbid, (2) the MBID Mapper. Returns the MBID
 // string or null. ~4ms typical via the mapper. See
@@ -7986,7 +8019,16 @@ const Parachord = () => {
           const config = await getResolverConfig(resolver.id);
           const result = await resolver.resolve(track.artist, track.title, track.album, config);
           if (result) {
-            track.sources[resolver.id] = { ...result, confidence: 0.9 };
+            // Score before stamping. Wrong-artist matches collapse to 0.50
+            // and the source-selection floor will drop them — but skip the
+            // attach entirely to keep `track.sources` clean and to avoid
+            // polluting album/art fallbacks with the wrong recording's data.
+            const confidence = calculateConfidence(track, result);
+            if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+              console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${track.artist}"`);
+              return;
+            }
+            track.sources[resolver.id] = { ...result, confidence };
             if (!track.album && result.album) track.album = result.album;
             if (!track.albumArt && result.albumArt) track.albumArt = result.albumArt;
             console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
@@ -8010,11 +8052,16 @@ const Parachord = () => {
             const config = await getResolverConfig(resolver.id);
             const result = await resolver.resolve(track.artist, track.title, track.album, config);
             if (result) {
-              track.sources[resolver.id] = { ...result, confidence: 0.9 };
-              if (!track.album && result.album) track.album = result.album;
-              if (!track.albumArt && result.albumArt) track.albumArt = result.albumArt;
-              console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
-              flushToQueue();
+              const confidence = calculateConfidence(track, result);
+              if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+                console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${track.artist}"`);
+              } else {
+                track.sources[resolver.id] = { ...result, confidence };
+                if (!track.album && result.album) track.album = result.album;
+                if (!track.albumArt && result.albumArt) track.albumArt = result.albumArt;
+                console.log(`  ✅ ${resolver.name}: Found "${track.title}"`);
+                flushToQueue();
+              }
             }
           } catch (error) {
             // Silently fail
@@ -8119,9 +8166,14 @@ const Parachord = () => {
           const config = await getResolverConfig(resolver.id);
           const result = await resolver.resolve(trackMeta.artist, trackMeta.title, trackMeta.album, config);
           if (result) {
+            const confidence = calculateConfidence(trackMeta, result);
+            if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+              console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${trackMeta.title}" by "${trackMeta.artist}"`);
+              return;
+            }
             resolvedTrack.sources[resolver.id] = {
               ...result,
-              confidence: 0.9
+              confidence
             };
             console.log(`  ✅ ${resolver.name}: Found match`);
             // Flush incrementally so each resolved source appears immediately
@@ -15124,6 +15176,12 @@ ${trackListXml}
         confidence: trackOrSource.sources[resId].confidence || 0
       }))
       .filter(s => currentActiveResolvers.includes(s.resolverId)) // Only enabled resolvers
+      // Drop wrong-song matches (single-axis title-only or artist-only matches
+      // score 0.50). Without this floor, a higher-priority resolver's wrong
+      // match outranks a lower-priority resolver's correct match because
+      // confidence is otherwise only a within-priority tiebreaker.
+      // Mirrors Android's ResolverScoring.MIN_CONFIDENCE_THRESHOLD.
+      .filter(s => s.confidence >= MIN_CONFIDENCE_THRESHOLD)
       .filter(s => {  // Filter blocklisted specific source results
         const src = s.source;
         const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.qobuzId || src.filePath || src.id || null) : null;
@@ -24808,25 +24866,31 @@ ${trackListXml}
     return () => playlistObserverRef.current?.disconnect();
   }, [selectedPlaylist?.id, playlistTracks, updateSchedulerVisibility, playlistScrollContainerReady]);
 
-  // Calculate confidence score for a match (0-1)
+  // Calculate confidence score for a resolver match (0-1).
+  //
+  // SYNC: tests/helpers/confidence-scoring.js — keep byte-identical with the
+  // body in that file. Cross-platform invariant: must match
+  // parachord-android/shared/.../resolver/ResolverModels.kt#scoreConfidence
+  // so desktop and Android pick the same source for the same track.
+  //
+  // Both axes (title AND artist) must containment-match the target, else the
+  // score collapses to 0.50 and the source-selection floor (0.6) drops it.
+  // Title-only or artist-only matches are wrong-song candidates and must not
+  // be allowed to outrank correct matches from lower-priority resolvers.
   const calculateConfidence = (originalTrack, foundTrack) => {
-    // If the resolver already provided a confidence score, use it
-    if (foundTrack.confidence && typeof foundTrack.confidence === 'number') {
+    if (!foundTrack) return 0.5;
+    const targetArtist = originalTrack?.artist || '';
+    const targetTitle = originalTrack?.title || '';
+    if (!validateResolvedTrack(foundTrack, targetArtist, targetTitle)) {
+      return 0.5;
+    }
+    // Both axes match. If the resolver provided its own confidence and it's
+    // already at or above the validated tier (e.g. direct-ID match at 1.0),
+    // trust it. Otherwise return the canonical validated score.
+    if (typeof foundTrack.confidence === 'number' && foundTrack.confidence >= 0.95) {
       return foundTrack.confidence;
     }
-
-    // Otherwise calculate based on title and duration match
-    const originalTitle = originalTrack.title?.toLowerCase() || '';
-    const foundTitle = foundTrack.title?.toLowerCase() || '';
-    const titleMatch = originalTitle && foundTitle && originalTitle === foundTitle;
-    const durationMatch = originalTrack.length && foundTrack.duration
-      ? Math.abs(originalTrack.length / 1000 - foundTrack.duration) < 10 // Within 10 seconds
-      : false;
-
-    if (titleMatch && durationMatch) return 0.95;
-    if (titleMatch) return 0.85;
-    if (durationMatch) return 0.70;
-    return 0.50;
+    return 0.95;
   };
 
   // Fetch album art suggestions from MusicBrainz/Cover Art Archive

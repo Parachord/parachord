@@ -134,7 +134,7 @@
 | A-17 | Resolution progress visible | Watch album load | Console shows "🔍 Starting resolution for X tracks..." |
 | A-18 | Multiple resolvers query | Album with tracks, 3+ resolvers enabled | Each track queries up to 2 resolvers in priority order |
 | A-19 | Resolver badges appear | Tracks finish resolving | Each track shows badges for found sources (Spotify, YouTube, etc.) |
-| A-20 | Confidence scoring works | View resolved tracks | Higher confidence sources appear first in manual override |
+| A-20 | Confidence scoring works | View resolved tracks | Higher confidence sources appear first in manual override; wrong-artist matches (0.50) never reach `track.sources` |
 | A-21 | Failed resolution handled | Track not found by any resolver | Track shows without resolver badges, play attempts on-demand resolution |
 
 ---
@@ -356,7 +356,9 @@
 | R-15 | Priority affects playback | Track with Spotify + YouTube, Spotify priority 1 | Plays from Spotify |
 | R-16 | Priority change affects next track | Reorder mid-playback, play next track | Next track uses new priority |
 | R-17 | Disabled resolvers excluded from priority | Disable #1 priority resolver | Falls back to #2 priority resolver |
-| R-18 | Priority with confidence | Track has Spotify (70% confidence) higher than YouTube (90% confidence) but lower priority | Plays Spotify (priority trumps confidence) |
+| R-18 | Priority with confidence | Track has Spotify (0.95 confidence) and YouTube (0.95 confidence), Spotify higher priority | Plays Spotify (priority trumps confidence within survivors) |
+| R-18a | Confidence floor drops wrong-artist match | Track "Yesterday" by Beatles, Spotify returns wrong-artist same-title (0.50 confidence), Bandcamp returns correct match (0.95) | Plays Bandcamp — Spotify dropped before priority sort runs |
+| R-18b | All sources below floor → no source | All resolvers return wrong-song matches (every source 0.50) | Surfaces "No Enabled Source" dialog rather than playing the wrong song |
 
 ### 5.4 Resolver Installation
 | Test ID | Test Case | Steps | Expected Result |

@@ -11,8 +11,27 @@ Main component: `const Parachord = () => { ... }` (L4951), rendered via `ReactDO
 ### Resolver System
 - Resolvers provide playback, search, and metadata (Spotify, Apple Music, SoundCloud, YouTube, Bandcamp, local files)
 - `CANONICAL_RESOLVER_ORDER` (L1266): `['spotify', 'applemusic', 'bandcamp', 'soundcloud', 'localfiles', 'youtube']`
-- Each track has a `sources` object keyed by resolver ID — playback picks the highest-priority available source
+- Each track has a `sources` object keyed by resolver ID — playback picks the highest-priority available source above the confidence floor
 - Resolvers loaded into `loadedResolversRef` (L7756) with `.play()`, `.search()`, `.capabilities`
+
+### Match Confidence + Selection Floor
+
+Source selection is a **two-stage gate**: validate, then sort. Without the floor, a higher-priority resolver's wrong-artist match silently outranks a correct lower-priority result, because confidence is otherwise only a within-priority tiebreaker.
+
+**Stage 1 — Validation.** `validateResolvedTrack(result, targetArtist, targetTitle)` (module-scope helper, app.js L151) returns true only when BOTH the artist and title containment-match the target after `normalizeStr` (lowercase + strip non-alphanumeric). Single-axis matches — same title, different artist; or same artist, different title — fail.
+
+**Stage 2 — Scoring.** `calculateConfidence(track, result)` (app.js L24880, inside `Parachord`) returns:
+- `0.95` — both axes pass `validateResolvedTrack`
+- `0.50` — single-axis match, or no match
+- `1.0` (or whatever the resolver supplied ≥ 0.95) — direct-ID match (cached `spotifyId`/`appleMusicId`/etc), preserved as-is
+
+**Stage 3 — Selection floor.** `MIN_CONFIDENCE_THRESHOLD = 0.6` (app.js L166). The source-selection sort (app.js L15184) drops sources below this floor BEFORE the priority sort runs. A 0.50 source never reaches selection.
+
+**Stage 4 — Priority + confidence sort.** Sources passing the floor sort by user-configured resolver priority; confidence is the within-priority tiebreaker.
+
+**Background resolution paths** (app.js L8027 normal, L8056 rate-limited iTunes, L8170 per-track flush) all gate on `MIN_CONFIDENCE_THRESHOLD` and skip the attach entirely (with a warn log) when a result fails. This prevents wrong-artist results from ever entering `track.sources` and from polluting `track.album` / `track.albumArt` fallback fields.
+
+**Cross-platform invariant.** `tests/helpers/confidence-scoring.js` is the test-side mirror of the app.js inline copies and the source-of-truth SYNC marker. The Kotlin equivalents live at `parachord-android/shared/.../resolver/ResolverModels.kt#scoreConfidence` and `ResolverScoring.kt#MIN_CONFIDENCE_THRESHOLD`. All four (desktop helper, desktop inline, Android, tests) must agree byte-for-byte on the gate semantics — drift on any platform produces inconsistent source selection between desktop and Android for the same track. Test cases at `tests/resolver/confidence-scoring.test.js` mirror Android's `ConfidenceScoringTest`.
 
 ### handlePlay (L13213)
 - Central async playback function; manages `playbackGenerationRef` to supersede stale requests
