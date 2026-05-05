@@ -17077,13 +17077,21 @@ ${trackListXml}
         updateSchedulerVisibility('spinoff', poolTracks);
         setSchedulerPlaybackIndex('spinoff', 0);
 
+        // Preserve the track's existing _playbackContext when present. Pool
+        // tracks from the protocol radio path (parachord://play/radio Mode C)
+        // arrive with a full radioContext including refillUrl; the seed-mode
+        // spinoff (Mode B / in-app right-click) tags tracks without
+        // _playbackContext, so we synthesize one as a fallback. Don't blindly
+        // rebuild — that drops refillUrl and any other context the radio
+        // setup put there.
+        const inheritedContext = nextSimilar._playbackContext || {
+          type: 'spinoff',
+          sourceTrack: spinoffSourceTrackRef.current,
+        };
         handlePlay({
           ...nextSimilar,
           sources: nextSimilar.sources || {}, // Ensure sources object exists for on-demand resolution
-          _playbackContext: {
-            type: 'spinoff',
-            sourceTrack: spinoffSourceTrackRef.current
-          }
+          _playbackContext: inheritedContext,
         });
         return;
       }
@@ -32684,17 +32692,35 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       return;
     }
 
-    // Background-resolve the remaining pool so future auto-advances are ready.
-    if (spinoffTracksRef.current.length > 0) {
-      resolveTracksInBackground([...spinoffTracksRef.current])
+    // Pre-resolve the next 2 lookahead tracks BEFORE handing the first track
+    // to handlePlay. Without this, on heavy-CPU systems track 2's resolution
+    // may not finish before track 1 ends — handlePlay then falls into the
+    // on-demand resolution path, which races against the previous track's
+    // teardown and produces the "skip after a couple of seconds" symptom.
+    // Awaiting two lookahead tracks adds bounded latency (~1s parallel) but
+    // makes the auto-advance path deterministic. The remainder is fire-and-
+    // forget — tracks 4+ resolve while track 1 plays, well before they're
+    // needed.
+    const LOOKAHEAD = 2;
+    const lookaheadTracks = spinoffTracksRef.current.slice(0, LOOKAHEAD);
+    if (lookaheadTracks.length > 0) {
+      try {
+        await resolveTracksInBackground(lookaheadTracks);
+      } catch (err) {
+        console.warn('🔁 Lookahead resolution error:', err?.message || err);
+      }
+    }
+    const remainingPool = spinoffTracksRef.current.slice(LOOKAHEAD);
+    if (remainingPool.length > 0) {
+      resolveTracksInBackground(remainingPool)
         .catch(err => console.warn('🔁 Background pool resolution error:', err?.message));
     }
 
-    handlePlay(first, undefined, {
-      type: 'spinoff',
-      sourceTrack: { title: displayName || 'Radio', artist: '' },
-      refillUrl: refillUrl || null,
-    });
+    // handlePlay only takes one arg; the radio context is already on the
+    // track via _playbackContext (tagged in the pool setup above) and in
+    // React state via setPlaybackContext(radioContext) earlier in this
+    // function. Don't pass extra args — they'd be silently dropped.
+    handlePlay(first);
   };
 
   // Start spinoff mode - play similar tracks based on current track,

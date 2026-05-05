@@ -800,7 +800,7 @@ Refilled tracks (when LB radio returns a fresh batch mid-session) need the same 
 **Pre-resolve the first track via the standard resolver pipeline before handing to `handlePlay`.** Don't rely on `handlePlay`'s on-demand fallback resolution — for unresolvable tracks (obscure live cuts, remixes not on user's enabled providers) that path surfaces a "No Source Found" dialog before any background resolution can complete.
 
 - `play/album` / `play/playlist`: await resolution of the FIRST track only, then fire-and-forget the rest. If the first track has no sources after pre-resolve, show "Nothing to play."
-- `play/radio`: walk through the pool, await resolution of each candidate, skip if unresolvable. Cap at 20 attempts so a fully-unresolvable pool can't loop. After finding a playable first track, fire-and-forget resolution for the remainder.
+- `play/radio`: walk through the pool, await resolution of each candidate, skip if unresolvable. Cap at 20 attempts so a fully-unresolvable pool can't loop. After finding a playable first track, **also await resolution of the next 2 lookahead tracks** before calling handlePlay; fire-and-forget resolution for the remainder. Without the lookahead, on heavy-CPU systems track 2's resolution may not finish before track 1 ends — handlePlay then falls into the on-demand resolution path which races against the previous track's teardown and produces a "skip after a couple of seconds" symptom. The bounded ~1s of extra latency before the first track plays is the right tradeoff for deterministic auto-advance.
 
 **State-machine teardown order matters.** When firing a play protocol command:
 
