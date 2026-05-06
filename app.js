@@ -7275,17 +7275,23 @@ const Parachord = () => {
     type: 'success', // 'success' | 'error' | 'info'
     title: '',
     message: '',
-    onConfirm: null
+    onConfirm: null,
+    actionButton: null, // optional: { label: string, onClick: () => void }
   });
 
-  // Helper to show styled confirmation dialogs
+  // Helper to show styled confirmation dialogs.
+  // options.actionButton (optional): { label, onClick } — renders an extra
+  // button alongside OK. Useful for "fix this" dialogs (e.g. "No Enabled
+  // Source" → "Open Resolver Settings"). The action also closes the dialog
+  // before invoking onClick so the user is taken straight to the target.
   const showConfirmDialog = (options) => {
     setConfirmDialog({
       show: true,
       type: options.type || 'info',
       title: options.title || '',
       message: options.message || '',
-      onConfirm: options.onConfirm || null
+      onConfirm: options.onConfirm || null,
+      actionButton: options.actionButton || null,
     });
   };
 
@@ -15258,7 +15264,11 @@ ${trackListXml}
           showConfirmDialog({
             type: 'error',
             title: 'No Source Found',
-            message: 'Could not find a playable source for this track. Try enabling more resolvers in settings.'
+            message: 'Could not find a playable source for this track. Try enabling more resolvers in settings.',
+            actionButton: {
+              label: 'Open Resolver Settings',
+              onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
+            },
           });
           return;
         }
@@ -15324,7 +15334,11 @@ ${trackListXml}
         showConfirmDialog({
           type: 'error',
           title: 'No Enabled Source',
-          message: 'This track has sources but none match your enabled resolvers. Check your resolver settings.'
+          message: 'This track has sources but none match your enabled resolvers. Check your resolver settings.',
+          actionButton: {
+            label: 'Open Resolver Settings',
+            onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); },
+          },
         });
         return;
       }
@@ -59960,15 +59974,45 @@ useEffect(() => {
             }
           }, confirmDialog.message)
         ),
-        // Footer with button
-        React.createElement('div', { style: { padding: '4px 24px 24px' } },
+        // Footer with button(s) — when actionButton is provided, renders it
+        // alongside OK as a secondary CTA. Used by "No Enabled Source"
+        // / "No Source Found" to surface a one-click jump to resolver
+        // settings (issue #762).
+        React.createElement('div', {
+          style: {
+            padding: '4px 24px 24px',
+            display: 'flex',
+            gap: '8px',
+            flexDirection: confirmDialog.actionButton ? 'row' : 'column',
+          }
+        },
+          confirmDialog.actionButton && React.createElement('button', {
+            onClick: () => {
+              const fn = confirmDialog.actionButton?.onClick;
+              closeConfirmDialog();
+              if (fn) fn();
+            },
+            className: 'transition-colors',
+            style: {
+              flex: 1,
+              padding: '12px 16px',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: 'var(--text-primary)',
+              backgroundColor: 'var(--card-secondary-bg, rgba(0,0,0,0.04))',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }
+          }, confirmDialog.actionButton.label || 'Action'),
           React.createElement('button', {
             onClick: () => {
               if (confirmDialog.onConfirm) confirmDialog.onConfirm();
               closeConfirmDialog();
             },
-            className: 'w-full transition-colors',
+            className: 'transition-colors',
             style: {
+              flex: 1,
               padding: '12px 16px',
               fontSize: '13px',
               fontWeight: '500',
