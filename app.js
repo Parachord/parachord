@@ -10860,6 +10860,37 @@ const Parachord = () => {
           // lookahead can take >5s on cold cache). The success/error toast
           // that follows replaces this one as soon as it fires.
           if (ackMessage) showToast(ackMessage, 'info', null, { duration: 30000 });
+
+          // Clear the playbar and show a loading placeholder so the prior
+          // track's info doesn't linger across the resolution gap. handlePlay
+          // overwrites currentTrack with the real track when it fires;
+          // failure paths in the catch block at the bottom of the switch
+          // clear the placeholder. Skip for `chat` (doesn't replace
+          // playback) and `import` (writes to library, doesn't play).
+          if (command === 'play' || command === 'listen-along') {
+            const placeholderTitle =
+              command === 'listen-along' ? `Connecting to ${params.user || 'friend'}…` :
+              playKind === 'album' ? (params.title || 'Loading album…') :
+              playKind === 'playlist' ? (params.title || 'Loading playlist…') :
+              playKind === 'radio' ? (params.name || params.title || 'Loading radio…') :
+              (params.title || 'Loading…');
+            const placeholderArtist =
+              playKind === 'album' || playKind === 'playlist' || playKind === 'radio' ? '' :
+              (params.artist || '');
+            setCurrentTrack({
+              id: `__protocol-loading-${Date.now()}`,
+              title: placeholderTitle,
+              artist: placeholderArtist,
+              status: 'resolving',
+              _protocolLoading: true,
+            });
+            setIsPlaying(false);
+            // Drives the playbar's existing shimmer/loading UI (used by
+            // handlePlay's empty-source on-demand resolution path). When
+            // handlePlay finally fires it'll setTrackLoading(true) again
+            // (no-op) and clear it on success or skip.
+            setTrackLoading(true);
+          }
         }
 
         // Execute the command
@@ -11509,6 +11540,11 @@ ${trackListXml}
       } catch (error) {
         console.error('🔗 Protocol URL error:', error);
         showToast(`Protocol error: ${error.message}`);
+        // Clear the loading placeholder if one was set; the toast surfaces
+        // the failure but the playbar shouldn't keep showing "Loading…"
+        // forever.
+        setCurrentTrack(prev => prev?._protocolLoading ? null : prev);
+        setTrackLoading(false);
       }
     });
 
