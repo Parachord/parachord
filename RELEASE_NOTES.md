@@ -1,18 +1,54 @@
-# Parachord v0.9.0-beta.8 (unreleased)
+# Parachord v0.9.1-beta.4
 
-**Release date:** TBD
+**Release date:** 2026-05-05
 
 ---
 
-## Apple Music Resilience
+## Resolver matching reliability
 
-- **Session error detection** — when native MusicKit playback fails (e.g. after a reboot requiring TOS acceptance), a toast guides the user to open Music.app to resolve the issue
-- **No more repeated login popups** — if MusicKit JS web authorization fails, the auth prompt is skipped for the rest of the session instead of popping up on every track
-- **Better native playback recovery** — `prepareToPlay()` + retry with diagnostic logging for native MusicKit errors
+A regression in the resolver-confidence logic was attaching wrong-artist matches as playable sources. The badge would render but selection at click time would silently drop the bad match — leaving the user with a "No Source Found" dialog despite a resolver icon being visible. Hardened across multiple paths:
 
-## Bug Fixes
+- **Both-axes match required** — `calculateConfidence` now requires title AND artist to containment-match (was title + duration; ignored artist entirely). Wrong-artist hits collapse to 0.5. Mirrors the Android client's earlier fix; both clients now share the same selection semantics. (#759)
+- **0.6 confidence floor at source selection** — wrong-song sources are dropped before the priority sort runs.
+- **All 8 resolution paths gated** — below-threshold sources never enter `track.sources` in the first place; no badge, no dropped-at-click surprise.
+- **Stale cached confidence values re-scored on hydration** — fixes the "No Enabled Source" dialog firing on tracks whose cached entries had legitimate sources but pre-fix low confidences.
+- **Badge dim is now relative-to-best** — when a track has both a 0.95 fuzzy match and a 1.0 direct-ID match, the 0.95 dims so users can see at a glance which resolver has the strongest match.
 
-- Fixed dynamic model fetching never triggering for Ollama, ChatGPT, and Gemini — the useEffect and onBlur handlers checked `resolver.listModels` on metadata-only objects where it was always undefined (#740)
+## Scrobbler & loved-tracks push
+
+- **Love-push toggle now persists across restarts.** `scrobbler_love_push_enabled` and `love_pushed_keys` were missing from the IPC store whitelist — writes were silently blocked at the IPC layer with the warning swallowed by the renderer. Toggle appeared to "uncheck itself" on every restart, and the backfill kept re-pushing the same loves because its idempotency cache never persisted. Existing user state self-heals on the first toggle re-check after upgrade.
+- **Last.fm scrobbling tolerates transient auth errors.** Last.fm occasionally returns error code 9 ("Invalid session") during transient backend hiccups (rate-limit windows, replication lag). Previously, a single such blip cleared the session and forced re-authentication. Now requires 3 consecutive auth errors before clearing; any successful API call resets the counter. Below threshold, scrobbles get queued for retry instead of dropped.
+
+## Protocol command UX
+
+Slow `parachord://` commands (play/album, play/playlist, play/radio, listen-along, etc.) used to leave the app appearing unresponsive for several seconds while the URL resolved into a tracklist. Three improvements:
+
+- **Acknowledgment toast** at the URL handler entry: "Loading album…", "Loading playlist…", "Loading radio[: name]…", "Looking up \"X\" by Y…", "Importing…", "Opening chat…", "Connecting to <user>…". Held for 30s so it stays visible through cold-cache resolution (URL fetch + JSPF parse + lookahead resolve, can take >5s).
+- **Playbar shows loading state immediately.** Prior track info clears and a shimmer placeholder appears with the best-known title — no more lingering "currently playing" info during the gap.
+- **Failed protocol commands clear the placeholder** instead of hanging on "Loading…" forever.
+
+## Auto-skip on playback failure
+
+In spinoff/radio sessions and queue auto-advance, a single unplayable track no longer interrupts playback with a modal. All 8 failure dialogs in `handlePlay` (No Source Found, No Enabled Source, Local Playback Error, SoundCloud Not Connected, SoundCloud Playback Error ×2, Track Re-resolved) auto-skip + advance when in an auto-advance context. User-initiated single-track plays still surface the dialog so you know what failed.
+
+## Radio Mode C reliability
+
+`parachord://play/radio` (externally-curated radio with `?url=` or `?tracks=`+`?refill=`) now pre-resolves the next 2 lookahead tracks before handing the first to handlePlay. Without the lookahead, on heavy-CPU systems track 2's resolution could miss the auto-advance window when track 1 ended — handlePlay would fall into the on-demand resolution path and race against the previous track's teardown, producing a "skip after a couple of seconds" symptom. Bounded ~1s of extra latency before the first track plays buys deterministic auto-advance.
+
+## "Open Resolver Settings" button (#762)
+
+When the "No Source Found" / "No Enabled Source" dialog DOES legitimately fire, it now has a one-click **Open Resolver Settings** button alongside OK — no more hunting through Settings → Plugins manually.
+
+## Resolver scheduler & priority work
+
+- **Release page no longer floods `resolveTrack` on load.** The bulk loop that resolved every album track at once (uncoordinated with the scheduler, racing against queue/hover priority) is gone. Visible tracks resolve at page priority via the existing IntersectionObserver-driven context; below-fold tracks resolve through background pre-resolution when the scheduler is idle.
+- **Page coverage audit:** queue (priority 1), hover (2), pool/spinoff (3), collection / release / playlist / search / recommendations / charts-songs / history / top-tracks / friend-history (all 4), pinned friends sidebar (5), background (6).
+
+## Other
+
+- `showToast` now accepts a `duration` option (in ms) to override the 3s/6s default — used by protocol acknowledgments.
+- Confirmation dialogs now support an optional `actionButton: { label, onClick }` — used by the resolver-settings shortcut above; available for any future "fix this" dialog.
+- Silenced harmless "updateVisibility called for unregistered context" warning that fired during page-navigation transitions when the IntersectionObserver microtask raced the context cleanup/re-register.
 
 ---
 

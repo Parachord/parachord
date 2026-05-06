@@ -928,3 +928,13 @@ If neither service returns a current track, surface "<user> is not currently lis
   - `duration: <ms>` — override the default auto-dismiss timeout. Default is 3000ms (or 6000ms when an `action` button is present). Use this when an in-flight acknowledgment toast may take longer than 3s to be replaced — e.g. protocol acknowledgments at the `parachord://` URL handler entry use `duration: 30000` so the "Loading album…" / "Loading radio…" / etc. toast holds across the resolution window (URL fetch + parse + N=2 lookahead resolve) until the success/error toast fires to replace it. Calling `showToast` again at any time replaces the current toast immediately, so a longer duration only matters when no follow-up is queued.
   - `action: { label, onClick }` — adds a button to the toast (extends default to 6000ms unless `duration` overrides).
 - **CSS variables for theming**: All colors use CSS vars, supporting light/dark themes.
+
+## Releasing
+
+When tagging a new version, three places must agree on the version string. Missing any one of them ships a build whose internal version disagrees with the git tag:
+
+1. `package.json` — `"version"` field.
+2. `package-lock.json` — TWO `"version"` fields at the top (root and the `packages.""` entry). Both must match `package.json`.
+3. `RELEASE_NOTES.md` — add a new entry at the top with `# Parachord vX.Y.Z` heading, release date, and grouped highlights. The in-app "What's New" modal renders this file (parsed via the bundled fallback or fetched from GitHub) so users see your bullet points on first launch after upgrade.
+
+Then commit (`X.Y.Z` is conventional for the commit subject), push, and `git tag vX.Y.Z` + `git push origin vX.Y.Z`. The CI build picks up from the tag.
