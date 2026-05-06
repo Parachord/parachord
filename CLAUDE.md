@@ -781,6 +781,8 @@ Custom-scheme deep links handled at app.js's protocol switch (search `switch (co
 
 **Listen-along** (`activateListenAlongRef.current(friend)`, ~L29637 wiring): the `listen-along` case looks up an existing friend; if none, fetches the user's now-playing via `fetchTransientFriendNowPlaying(service, user)` and constructs a transient friend record. LB uses `/1/user/{name}/playing-now`; Last.fm uses `user.getrecenttracks?limit=1` and checks `@attr.nowplaying === 'true'`.
 
+**Acknowledgment toast for slow commands** (~L10847): right after URL parsing, the protocol handler fires a `showToast(..., 'info', null, { duration: 30000 })` for `play`, `import`, `chat`, and `listen-along` (skipped for `control/*`, `queue/*`, `shuffle/*`, `volume/*`, navigation — those complete instantly). Per-command messages: "Loading album…" / "Loading playlist…" / `Loading radio${name ? \`: ${name}\` : ''}…` / `Looking up "${title}" by ${artist}…` / "Importing…" / "Opening chat…" / `Connecting to ${user}…`. The 30s duration covers the worst-case cold-cache resolution window (URL fetch + JSPF parse + N=2 lookahead resolve); the success or error toast that fires when work completes naturally replaces the acknowledgment. Without the long duration, the default 3s timeout would dismiss the loading toast mid-resolution and the user would see a several-second silent gap.
+
 ### Android Parity Requirements (protocol play handlers)
 
 This section is for the Android client. Every rule was learned from a real bug; skipping any one breaks the corresponding command. The desktop equivalent is in `app.js`'s protocol switch and the `activateSpinoffFromPool` / `parseProtocolTracklist` / `resolveProtocolPlayInput` helpers — cross-reference if anything below is unclear.
@@ -919,5 +921,8 @@ If neither service returns a current track, surface "<user> is not currently lis
 
 - **Refs for stale closure avoidance**: Most state values have a companion ref (e.g., `volumeRef`, `isPlayingRef`) synced via `useEffect`. Always use refs in async callbacks.
 - **Memoized sub-components**: `TrackRow` (L1375), `ResolverCard` (L2021), `FriendMiniPlaybar` (L3062) — defined outside main component via `React.memo`.
-- **Toast notifications**: `showToast(message, type)` for transient feedback.
+- **Toast notifications**: `showToast(message, type, action, options)` for transient feedback. The 4th `options` arg accepts:
+  - `persistent: true` — toast never auto-dismisses; stays until replaced by another `showToast` call or manually closed.
+  - `duration: <ms>` — override the default auto-dismiss timeout. Default is 3000ms (or 6000ms when an `action` button is present). Use this when an in-flight acknowledgment toast may take longer than 3s to be replaced — e.g. protocol acknowledgments at the `parachord://` URL handler entry use `duration: 30000` so the "Loading album…" / "Loading radio…" / etc. toast holds across the resolution window (URL fetch + parse + N=2 lookahead resolve) until the success/error toast fires to replace it. Calling `showToast` again at any time replaces the current toast immediately, so a longer duration only matters when no follow-up is queued.
+  - `action: { label, onClick }` — adds a button to the toast (extends default to 6000ms unless `duration` overrides).
 - **CSS variables for theming**: All colors use CSS vars, supporting light/dark themes.
