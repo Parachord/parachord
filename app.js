@@ -14873,6 +14873,25 @@ ${trackListXml}
     playbackGenerationRef.current++;
     const thisGeneration = playbackGenerationRef.current;
 
+    // In auto-advance contexts (handleNext-driven progression OR spinoff/radio
+    // mode) any playback failure should silently skip to the next track
+    // instead of disrupting the user with a dialog. spinoffModeRef captures
+    // protocol-radio and right-click-spinoff sessions; isAdvancingTrackRef
+    // captures handleNext flight for queue/album/playlist auto-advance. Call
+    // sites use this helper at every failure path: returns true when the
+    // failure was handled silently (caller should `return` immediately),
+    // false when the caller should fall through to its dialog.
+    const autoSkipIfAdvancing = (reason) => {
+      if (!(isAdvancingTrackRef.current || spinoffModeRef.current)) return false;
+      console.log(`⏭️ Auto-skip "${trackOrSource?.title || 'track'}" — ${reason}`);
+      setTrackLoading(false);
+      if (trackOrSource?.id) {
+        setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
+      }
+      setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
+      return true;
+    };
+
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
@@ -15199,18 +15218,7 @@ ${trackListXml}
           console.error('❌ No resolver found for track after on-demand resolution');
           setTrackLoading(false); // Clear loading state
           setCurrentTrack(prev => prev?.id === placeholderTrack.id ? { ...prev, status: 'error' } : prev);
-          // If we're in the middle of an auto-advance (handleNext invoked us),
-          // silently skip this track instead of dialog-ing the user. Mark it as
-          // error so the next handleNext walk skips it, then schedule another
-          // advance after the re-entrancy lock releases.
-          if (isAdvancingTrackRef.current) {
-            console.log(`⏭️ Auto-skip "${trackOrSource.title}" — no playable source`);
-            if (trackOrSource.id) {
-              setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
-            }
-            setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
-            return;
-          }
+          if (autoSkipIfAdvancing('no playable source')) return;
           showConfirmDialog({
             type: 'error',
             title: 'No Source Found',
@@ -15275,17 +15283,8 @@ ${trackListXml}
 
       if (sortedSources.length === 0) {
         console.error('❌ No enabled resolvers found for track. Available sources:', Object.keys(trackOrSource.sources), 'Active resolvers:', currentActiveResolvers);
+        if (autoSkipIfAdvancing('no enabled source matches')) return;
         setTrackLoading(false); // Clear loading state
-        // Auto-skip during auto-advance (handleNext) instead of disrupting the
-        // user with a dialog. See parallel branch above for rationale.
-        if (isAdvancingTrackRef.current) {
-          console.log(`⏭️ Auto-skip "${trackOrSource.title}" — no enabled source matches`);
-          if (trackOrSource.id) {
-            setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
-          }
-          setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
-          return;
-        }
         showConfirmDialog({
           type: 'error',
           title: 'No Enabled Source',
@@ -15439,6 +15438,7 @@ ${trackListXml}
             errorMessage = 'Error decoding the audio file. The file may be corrupted or use an unsupported format.';
           }
 
+          if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`)) return;
           showConfirmDialog({
             type: 'error',
             title: 'Playback Error',
@@ -15578,6 +15578,7 @@ ${trackListXml}
           }
         }
 
+        if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`)) return;
         showConfirmDialog({
           type: 'error',
           title: 'Playback Error',
@@ -15641,6 +15642,7 @@ ${trackListXml}
       const config = await getResolverConfig('soundcloud');
       if (!config.token) {
         console.error('❌ SoundCloud not authenticated');
+        if (autoSkipIfAdvancing('SoundCloud not authenticated')) return;
         setTrackLoading(false);
         showConfirmDialog({
           type: 'error',
@@ -15830,6 +15832,7 @@ ${trackListXml}
             } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
               errorMessage = 'Error decoding the audio stream.';
             }
+            if (autoSkipIfAdvancing(`SoundCloud playback: ${errorMessage}`)) return;
             showConfirmDialog({
               type: 'error',
               title: 'SoundCloud Playback Error',
@@ -15881,6 +15884,7 @@ ${trackListXml}
         }
       } catch (error) {
         console.error('❌ SoundCloud playback error:', error);
+        if (autoSkipIfAdvancing(`SoundCloud playback: ${error.message}`)) return;
         setTrackLoading(false);
         showConfirmDialog({
           type: 'error',
@@ -16247,6 +16251,7 @@ ${trackListXml}
           // Force refresh to bypass cache
           await resolveTrack(trackData, artistName, { forceRefresh: true });
 
+          if (autoSkipIfAdvancing('playback failed; re-resolved in background')) return;
           showConfirmDialog({
             type: 'info',
             title: 'Track Re-resolved',

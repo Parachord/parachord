@@ -40,6 +40,8 @@ Source selection is a **two-stage gate**: validate, then sort. Without the floor
 - Stops all competing audio (Spotify, Apple Music, browser, local, SoundCloud, YouTube, Bandcamp) before starting new track
 - Retry logic for Spotify: if `.play()` fails, retries after 2s with fresh token, then falls back to next resolver
 
+**Failure-path auto-skip in auto-advance contexts.** Near the top of `handlePlay` is `autoSkipIfAdvancing(reason)` which all 8 failure paths (No Source Found, No Enabled Source, Local Playback Error ×2, SoundCloud Not Connected, SoundCloud Playback Error ×2, Track Re-resolved) call before showing a dialog. The helper returns true when `isAdvancingTrackRef.current || spinoffModeRef.current` — i.e. handleNext is in flight, or we're inside a spinoff/radio session. In that case it logs `⏭️ Auto-skip "X" — <reason>`, marks the track's queue entry status: 'error' (no-op for spinoff-pool tracks since they aren't in the queue), schedules another `handleNext` via `setTimeout(... 600)` (after the 500ms re-entrancy lock releases), and returns true so the caller skips the dialog. User-initiated single-track plays from outside spinoff/auto-advance still surface the dialog as before. This makes radio/spinoff sessions resilient: a single unplayable track gets silently passed over instead of stopping playback with a modal.
+
 ### Spotify Playback Modes
 - **Browser (Web Playback SDK)**: In-app streaming, `streamingPlaybackActiveRef.current = true`
 - **Spotify Connect** (`playOnSpotifyConnect`, L32465): Controls external Spotify clients via REST API (`/v1/me/player` endpoints)
