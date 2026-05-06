@@ -165,6 +165,23 @@ const validateResolvedTrack = (result, targetArtist, targetTitle) => {
 // 0.95 (both-axis match) passes.
 const MIN_CONFIDENCE_THRESHOLD = 0.6;
 
+// Render-time helper: among a track's sources, find the highest confidence.
+// Used to drive relative-dim badge logic — a resolver whose result confidence
+// matches the per-track best renders at full opacity; lower-confidence
+// alternatives render dimmed so the user can tell at a glance which resolver
+// has the strongest match. Skips noMatch sentinels.
+const getBestSourceConfidence = (sources) => {
+  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return 0;
+  let best = 0;
+  for (const key of Object.keys(sources)) {
+    const s = sources[key];
+    if (!s || s.noMatch) continue;
+    const c = typeof s.confidence === 'number' ? s.confidence : 0;
+    if (c > best) best = c;
+  }
+  return best;
+};
+
 // Resolve a track to a recording MBID for ListenBrainz love submission.
 // Tries (1) cached track.mbid, (2) the MBID Mapper. Returns the MBID
 // string or null. ~4ms typical via the mapper. See
@@ -2116,37 +2133,42 @@ const VirtualizedQueueList = React.memo(({
             })
           )
         : availableSources.length > 0 ?
-          availableSources.map(resolverId => {
-            const resolver = allResolvers.find(r => r.id === resolverId);
-            if (!resolver) return null;
-            const source = track.sources?.[resolverId];
-            const confidence = source?.confidence || 0;
-            return React.createElement('button', {
-              key: resolverId,
-              onClick: (e) => {
-                e.stopPropagation();
-                handlePlay({ ...track, preferredResolver: resolverId });
-              },
-              className: 'no-drag',
-              style: {
-                width: '20px',
-                height: '20px',
-                borderRadius: '4px',
-                backgroundColor: resolver.color,
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: confidence > 0.8 ? 0.7 : 0.5,
-                filter: 'saturate(0.7)',
-                transition: 'opacity 0.15s, filter 0.15s, transform 0.1s'
-              },
-              onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = confidence > 0.8 ? '0.7' : '0.5'; e.currentTarget.style.filter = 'saturate(0.7)'; },
-              title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
-            }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-          })
+          (() => {
+            const bestConf = getBestSourceConfidence(track.sources);
+            return availableSources.map(resolverId => {
+              const resolver = allResolvers.find(r => r.id === resolverId);
+              if (!resolver) return null;
+              const source = track.sources?.[resolverId];
+              const confidence = source?.confidence || 0;
+              const isDim = confidence < bestConf;
+              const restingOpacity = isDim ? 0.5 : 0.7;
+              return React.createElement('button', {
+                key: resolverId,
+                onClick: (e) => {
+                  e.stopPropagation();
+                  handlePlay({ ...track, preferredResolver: resolverId });
+                },
+                className: 'no-drag',
+                style: {
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '4px',
+                  backgroundColor: resolver.color,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: restingOpacity,
+                  filter: 'saturate(0.7)',
+                  transition: 'opacity 0.15s, filter 0.15s, transform 0.1s'
+                },
+                onMouseEnter: (e) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; e.currentTarget.style.filter = 'saturate(1)'; },
+                onMouseLeave: (e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = String(restingOpacity); e.currentTarget.style.filter = 'saturate(0.7)'; },
+                title: `Play via ${resolver.name}${confidence ? ` (${Math.round(confidence * 100)}% match)` : ''}`
+              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+            });
+          })()
         :
           React.createElement('div', { className: 'flex items-center gap-1' },
             React.createElement('div', {
@@ -4165,13 +4187,14 @@ const ReleasePage = ({
                   });
 
                   // Show resolver icons for available sources (only if they support playback)
+                  const bestConf = getBestSourceConfidence(sources);
                   return sortedResolverIds.map(resolverId => {
                     const resolver = resolvers.find(r => r.id === resolverId);
                     if (!resolver || !resolver.play) return null;
-                    
+
                     const source = sources[resolverId];
                     const confidence = source.confidence || 0;
-                    
+
                     return React.createElement('button', {
                       key: resolverId,
                       className: 'no-drag',
@@ -4213,7 +4236,7 @@ const ReleasePage = ({
                         alignItems: 'center',
                         justifyContent: 'center',
                         pointerEvents: 'auto',
-                        opacity: confidence > 0.8 ? 1 : 0.6,
+                        opacity: confidence < bestConf ? 0.6 : 1,
                         transition: 'transform 0.1s'
                       },
                       onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -19823,11 +19846,13 @@ ${trackListXml}
         const result = await resolver.resolve(track.artist, track.title, track.album, config);
 
         if (result) {
-          track.sources[resolver.id] = {
-            ...result,
-            confidence: calculateConfidence(track, result)
-          };
-          console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(track.sources[resolver.id].confidence * 100).toFixed(0)}%)`);
+          const confidence = calculateConfidence(track, result);
+          if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+            console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${track.artist}"`);
+          } else {
+            track.sources[resolver.id] = { ...result, confidence };
+            console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
+          }
         }
       } catch (error) {
         console.error(`  ❌ ${resolver.name} resolve error:`, error);
@@ -23101,10 +23126,12 @@ ${trackListXml}
         const result = await resolver.resolve(artistName, track.title, track.album || null, config);
 
         if (result) {
-          freshSources[resolver.id] = {
-            ...result,
-            confidence: calculateConfidence(track, result)
-          };
+          const confidence = calculateConfidence(track, result);
+          if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+            console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
+          } else {
+            freshSources[resolver.id] = { ...result, confidence };
+          }
         }
       } catch (error) {
         console.error(`  ❌ ${resolver.name} validation error:`, error);
@@ -23361,11 +23388,15 @@ ${trackListXml}
           if (signal?.aborted) return;
 
           if (result) {
-            sources[resolver.id] = {
-              ...result,
-              confidence: calculateConfidence(track, result)
-            };
-            console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
+            const confidence = calculateConfidence(track, result);
+            if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+              console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
+              // Store no-match sentinel so this resolver isn't re-queried (treats wrong-song as no-match)
+              sources[resolver.id] = { noMatch: true, resolvedAt: now };
+            } else {
+              sources[resolver.id] = { ...result, confidence };
+              console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
+            }
           } else {
             // Store no-match sentinel so this resolver isn't re-queried on next resolution
             sources[resolver.id] = { noMatch: true, resolvedAt: now };
@@ -23453,13 +23484,15 @@ ${trackListXml}
           if (signal?.aborted) return;
 
           if (result) {
-            sources[resolver.id] = {
-              ...result,
-              confidence: calculateConfidence(track, result)
-            };
-            console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
-            if (resolver.id === 'localfiles') {
-              console.log(`  📁 LocalFiles source structure:`, JSON.stringify(sources[resolver.id], null, 2));
+            const confidence = calculateConfidence(track, result);
+            if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+              console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
+            } else {
+              sources[resolver.id] = { ...result, confidence };
+              console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
+              if (resolver.id === 'localfiles') {
+                console.log(`  📁 LocalFiles source structure:`, JSON.stringify(sources[resolver.id], null, 2));
+              }
             }
           } else {
             console.log(`  ⚪ ${resolver.name}: No match found`);
@@ -23621,11 +23654,13 @@ ${trackListXml}
         }
 
         if (result) {
-          sources[resolver.id] = {
-            ...result,
-            confidence: calculateConfidence(track, result)
-          };
-          console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(sources[resolver.id].confidence * 100).toFixed(0)}%)`);
+          const confidence = calculateConfidence(track, result);
+          if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+            console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
+            return; // skip-attach below floor; no flush
+          }
+          sources[resolver.id] = { ...result, confidence };
+          console.log(`  ✅ ${resolver.name}: Found match (confidence: ${(confidence * 100).toFixed(0)}%)`);
 
           // Flush to UI immediately so results appear as each resolver completes
           // Filter noMatch sentinels so icons don't flash for resolvers with no match
@@ -37569,46 +37604,48 @@ useEffect(() => {
                             style: { animationDelay: '0.1s' }
                           })
                         )
-                      : hasResolved ?
-                        Object.entries(resolvedSources)
-                          .filter(([resolverId]) => activeResolvers.includes(resolverId))
-                          .sort(([aId], [bId]) => {
-                            const aIndex = resolverOrder.indexOf(aId);
-                            const bIndex = resolverOrder.indexOf(bId);
-                            return aIndex - bIndex;
-                          })
-                          .map(([resolverId, source]) => {
-                            const resolver = allResolvers.find(r => r.id === resolverId);
-                            if (!resolver || !resolver.play) return null;
-                            return React.createElement('button', {
-                              key: resolverId,
-                              className: 'no-drag',
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                const tracksAfter = filteredTracks.slice(index + 1);
-                                const context = { type: 'search', name: searchQuery };
-                                setQueueWithContext(tracksAfter, context);
-                                handlePlay({ ...track, preferredResolver: resolverId });
-                              },
-                              style: {
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '4px',
-                                backgroundColor: resolver.color,
-                                border: 'none',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                pointerEvents: 'auto',
-                                opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
-                                transition: 'transform 0.1s'
-                              },
-                              onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                              onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                            }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                          })
+                      : hasResolved ? (() => {
+                          const bestConf = getBestSourceConfidence(resolvedSources);
+                          return Object.entries(resolvedSources)
+                            .filter(([resolverId]) => activeResolvers.includes(resolverId))
+                            .sort(([aId], [bId]) => {
+                              const aIndex = resolverOrder.indexOf(aId);
+                              const bIndex = resolverOrder.indexOf(bId);
+                              return aIndex - bIndex;
+                            })
+                            .map(([resolverId, source]) => {
+                              const resolver = allResolvers.find(r => r.id === resolverId);
+                              if (!resolver || !resolver.play) return null;
+                              return React.createElement('button', {
+                                key: resolverId,
+                                className: 'no-drag',
+                                onClick: (e) => {
+                                  e.stopPropagation();
+                                  const tracksAfter = filteredTracks.slice(index + 1);
+                                  const context = { type: 'search', name: searchQuery };
+                                  setQueueWithContext(tracksAfter, context);
+                                  handlePlay({ ...track, preferredResolver: resolverId });
+                                },
+                                style: {
+                                  width: '20px',
+                                  height: '20px',
+                                  borderRadius: '4px',
+                                  backgroundColor: resolver.color,
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  pointerEvents: 'auto',
+                                  opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                  transition: 'transform 0.1s'
+                                },
+                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                            });
+                        })()
                       :
                         null
                     )
@@ -41865,46 +41902,48 @@ useEffect(() => {
                               style: { animationDelay: '0.1s' }
                             })
                           )
-                        : hasResolved ?
-                          Object.entries(resolvedSources)
-                            .filter(([resolverId]) => activeResolvers.includes(resolverId))
-                            .sort(([aId], [bId]) => {
-                              const aIndex = resolverOrder.indexOf(aId);
-                              const bIndex = resolverOrder.indexOf(bId);
-                              return aIndex - bIndex;
-                            })
-                            .map(([resolverId, source]) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver || !resolver.play) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  const tracksAfter = playlistTracks.slice(index + 1);
-                                  const context = { type: 'playlist', id: selectedPlaylist?.id, name: selectedPlaylist?.title };
-                                  setQueueWithContext(tracksAfter, context);
-                                  handlePlay({ ...track, preferredResolver: resolverId });
-                                },
-                                style: {
-                                  width: '20px',
-                                  height: '20px',
-                                  borderRadius: '4px',
-                                  backgroundColor: resolver.color,
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  pointerEvents: 'auto',
-                                  opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
-                                  transition: 'transform 0.1s'
-                                },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                            })
+                        : hasResolved ? (() => {
+                            const bestConf = getBestSourceConfidence(resolvedSources);
+                            return Object.entries(resolvedSources)
+                              .filter(([resolverId]) => activeResolvers.includes(resolverId))
+                              .sort(([aId], [bId]) => {
+                                const aIndex = resolverOrder.indexOf(aId);
+                                const bIndex = resolverOrder.indexOf(bId);
+                                return aIndex - bIndex;
+                              })
+                              .map(([resolverId, source]) => {
+                                const resolver = allResolvers.find(r => r.id === resolverId);
+                                if (!resolver || !resolver.play) return null;
+                                return React.createElement('button', {
+                                  key: resolverId,
+                                  className: 'no-drag',
+                                  onClick: (e) => {
+                                    e.stopPropagation();
+                                    const tracksAfter = playlistTracks.slice(index + 1);
+                                    const context = { type: 'playlist', id: selectedPlaylist?.id, name: selectedPlaylist?.title };
+                                    setQueueWithContext(tracksAfter, context);
+                                    handlePlay({ ...track, preferredResolver: resolverId });
+                                  },
+                                  style: {
+                                    width: '20px',
+                                    height: '20px',
+                                    borderRadius: '4px',
+                                    backgroundColor: resolver.color,
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    pointerEvents: 'auto',
+                                    opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                    transition: 'transform 0.1s'
+                                  },
+                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                  title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                              });
+                          })()
                         :
                           // Show shimmer skeletons while resolving (match resolver icon size)
                           React.createElement('div', {
@@ -45343,6 +45382,7 @@ useEffect(() => {
 
                         if (hasExternalSources) {
                           // Show resolver icons only for enabled resolvers
+                          const bestConf = getBestSourceConfidence(sources);
                           return Object.entries(sources)
                             .filter(([resolverId, v]) => activeResolvers.includes(resolverId) && !v?.noMatch)
                             .sort(([aId], [bId]) => {
@@ -45374,7 +45414,7 @@ useEffect(() => {
                                   alignItems: 'center',
                                   justifyContent: 'center',
                                   pointerEvents: 'auto',
-                                  opacity: (source.confidence || 1) > 0.8 ? 1 : 0.6,
+                                  opacity: (source.confidence || 1) < bestConf ? 0.6 : 1,
                                   transition: 'transform 0.1s'
                                 },
                                 onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
@@ -46523,46 +46563,48 @@ useEffect(() => {
                             style: { animationDelay: '0.1s' }
                           })
                         )
-                      : hasResolved ?
-                        Object.entries(resolvedSources)
-                          .filter(([resolverId]) => activeResolvers.includes(resolverId))
-                          .sort(([aId], [bId]) => {
-                            const aIndex = resolverOrder.indexOf(aId);
-                            const bIndex = resolverOrder.indexOf(bId);
-                            return aIndex - bIndex;
-                          })
-                          .map(([resolverId, source]) => {
-                            const resolver = allResolvers.find(r => r.id === resolverId);
-                            if (!resolver || !resolver.play) return null;
-                            return React.createElement('button', {
-                              key: resolverId,
-                              className: 'no-drag',
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                const tracksAfter = filtered.slice(index + 1);
-                                const context = { type: 'lastfm-charts', name: 'Last.fm Charts' };
-                                setQueueWithContext(tracksAfter.map(t => ({ id: t.id, title: t.title, artist: t.artist, album: '' })), context);
-                                handlePlay({ ...track, id: track.id, title: track.title, artist: track.artist, album: '', preferredResolver: resolverId });
-                              },
-                              style: {
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '4px',
-                                backgroundColor: resolver.color,
-                                border: 'none',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                pointerEvents: 'auto',
-                                opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
-                                transition: 'transform 0.1s'
-                              },
-                              onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                              onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                              title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                            }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                          })
+                      : hasResolved ? (() => {
+                          const bestConf = getBestSourceConfidence(resolvedSources);
+                          return Object.entries(resolvedSources)
+                            .filter(([resolverId]) => activeResolvers.includes(resolverId))
+                            .sort(([aId], [bId]) => {
+                              const aIndex = resolverOrder.indexOf(aId);
+                              const bIndex = resolverOrder.indexOf(bId);
+                              return aIndex - bIndex;
+                            })
+                            .map(([resolverId, source]) => {
+                              const resolver = allResolvers.find(r => r.id === resolverId);
+                              if (!resolver || !resolver.play) return null;
+                              return React.createElement('button', {
+                                key: resolverId,
+                                className: 'no-drag',
+                                onClick: (e) => {
+                                  e.stopPropagation();
+                                  const tracksAfter = filtered.slice(index + 1);
+                                  const context = { type: 'lastfm-charts', name: 'Last.fm Charts' };
+                                  setQueueWithContext(tracksAfter.map(t => ({ id: t.id, title: t.title, artist: t.artist, album: '' })), context);
+                                  handlePlay({ ...track, id: track.id, title: track.title, artist: track.artist, album: '', preferredResolver: resolverId });
+                                },
+                                style: {
+                                  width: '20px',
+                                  height: '20px',
+                                  borderRadius: '4px',
+                                  backgroundColor: resolver.color,
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  pointerEvents: 'auto',
+                                  opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                  transition: 'transform 0.1s'
+                                },
+                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                            });
+                        })()
                       : null
                     )
                   );
@@ -48912,46 +48954,48 @@ useEffect(() => {
                                 style: { animationDelay: '0.1s' }
                               })
                             )
-                          : hasResolved ?
-                            Object.entries(resolvedSources)
-                              .filter(([resolverId]) => activeResolvers.includes(resolverId))
-                              .sort(([aId], [bId]) => {
-                                const aIndex = resolverOrder.indexOf(aId);
-                                const bIndex = resolverOrder.indexOf(bId);
-                                return aIndex - bIndex;
-                              })
-                              .map(([resolverId, source]) => {
-                                const resolver = allResolvers.find(r => r.id === resolverId);
-                                if (!resolver || !resolver.play) return null;
-                                return React.createElement('button', {
-                                  key: resolverId,
-                                  className: 'no-drag',
-                                  onClick: (e) => {
-                                    e.stopPropagation();
-                                    const tracksAfter = filteredTracks.slice(index + 1);
-                                    const context = { type: 'recommendations', name: 'Recommendations' };
-                                    setQueueWithContext(tracksAfter, context);
-                                    handlePlay({ ...track, preferredResolver: resolverId });
-                                  },
-                                  style: {
-                                    width: '20px',
-                                    height: '20px',
-                                    borderRadius: '4px',
-                                    backgroundColor: resolver.color,
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    pointerEvents: 'auto',
-                                    opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6,
-                                    transition: 'transform 0.1s'
-                                  },
-                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                  title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                              })
+                          : hasResolved ? (() => {
+                              const bestConf = getBestSourceConfidence(resolvedSources);
+                              return Object.entries(resolvedSources)
+                                .filter(([resolverId]) => activeResolvers.includes(resolverId))
+                                .sort(([aId], [bId]) => {
+                                  const aIndex = resolverOrder.indexOf(aId);
+                                  const bIndex = resolverOrder.indexOf(bId);
+                                  return aIndex - bIndex;
+                                })
+                                .map(([resolverId, source]) => {
+                                  const resolver = allResolvers.find(r => r.id === resolverId);
+                                  if (!resolver || !resolver.play) return null;
+                                  return React.createElement('button', {
+                                    key: resolverId,
+                                    className: 'no-drag',
+                                    onClick: (e) => {
+                                      e.stopPropagation();
+                                      const tracksAfter = filteredTracks.slice(index + 1);
+                                      const context = { type: 'recommendations', name: 'Recommendations' };
+                                      setQueueWithContext(tracksAfter, context);
+                                      handlePlay({ ...track, preferredResolver: resolverId });
+                                    },
+                                    style: {
+                                      width: '20px',
+                                      height: '20px',
+                                      borderRadius: '4px',
+                                      backgroundColor: resolver.color,
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      pointerEvents: 'auto',
+                                      opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                      transition: 'transform 0.1s'
+                                    },
+                                    onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                    onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                    title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                  }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                                });
+                            })()
                           :
                             // Show shimmer skeletons while resolving
                             React.createElement('div', {
@@ -49378,20 +49422,22 @@ useEffect(() => {
                               React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
                               React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                             )
-                          : hasResolved ?
-                            Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver || !resolver.play) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                            })
+                          : hasResolved ? (() => {
+                              const bestConf = getBestSourceConfidence(resolvedSources);
+                              return Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                const resolver = allResolvers.find(r => r.id === resolverId);
+                                if (!resolver || !resolver.play) return null;
+                                return React.createElement('button', {
+                                  key: resolverId,
+                                  className: 'no-drag',
+                                  onClick: (e) => { e.stopPropagation(); const tracksAfter = sorted.slice(index + 1); const context = { type: 'history', name: 'History' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                  title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                              });
+                            })()
                           :
                             React.createElement('div', { className: 'flex items-center gap-1' },
                               React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
@@ -49482,20 +49528,22 @@ useEffect(() => {
                         }, track.album || ''),
                         React.createElement('span', { className: 'text-right tabular-nums flex-shrink-0', style: { width: '80px', fontSize: '12px', color: 'var(--text-tertiary)' } }, `${track.playCount} plays`),
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '140px', flexShrink: 0, minHeight: '24px' } },
-                          hasResolved ?
-                            Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
-                              const resolver = allResolvers.find(r => r.id === resolverId);
-                              if (!resolver || !resolver.play) return null;
-                              return React.createElement('button', {
-                                key: resolverId,
-                                className: 'no-drag',
-                                onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
-                                onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                title: `Play from ${resolver.name}`
-                              }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                            })
+                          hasResolved ? (() => {
+                              const bestConf = getBestSourceConfidence(resolvedSources);
+                              return Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                const resolver = allResolvers.find(r => r.id === resolverId);
+                                if (!resolver || !resolver.play) return null;
+                                return React.createElement('button', {
+                                  key: resolverId,
+                                  className: 'no-drag',
+                                  onClick: (e) => { e.stopPropagation(); const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                  title: `Play from ${resolver.name}`
+                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                              });
+                            })()
                           :
                             React.createElement('div', { className: 'flex items-center gap-1' },
                               React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer' }),
@@ -50353,20 +50401,22 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
-                            : hasResolved ?
-                              Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
-                                const resolver = allResolvers.find(r => r.id === resolverId);
-                                if (!resolver || !resolver.play) return null;
-                                return React.createElement('button', {
-                                  key: resolverId,
-                                  className: 'no-drag',
-                                  onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
-                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                  title: `Play from ${resolver.name}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                              })
+                            : hasResolved ? (() => {
+                                const bestConf = getBestSourceConfidence(resolvedSources);
+                                return Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                  const resolver = allResolvers.find(r => r.id === resolverId);
+                                  if (!resolver || !resolver.play) return null;
+                                  return React.createElement('button', {
+                                    key: resolverId,
+                                    className: 'no-drag',
+                                    onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'recent' }; setQueueWithContext(tracksAfterRecent, context); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                    onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                    onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                    title: `Play from ${resolver.name}`
+                                  }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                                });
+                              })()
                             :
                               React.createElement('div', { className: 'flex items-center gap-1' },
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
@@ -50454,20 +50504,22 @@ useEffect(() => {
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
                               )
-                            : hasResolved ?
-                              Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
-                                const resolver = allResolvers.find(r => r.id === resolverId);
-                                if (!resolver || !resolver.play) return null;
-                                return React.createElement('button', {
-                                  key: resolverId,
-                                  className: 'no-drag',
-                                  onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
-                                  style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) > 0.8 ? 1 : 0.6, transition: 'transform 0.1s' },
-                                  onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                  onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                  title: `Play from ${resolver.name}`
-                                }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                              })
+                            : hasResolved ? (() => {
+                                const bestConf = getBestSourceConfidence(resolvedSources);
+                                return Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                  const resolver = allResolvers.find(r => r.id === resolverId);
+                                  if (!resolver || !resolver.play) return null;
+                                  return React.createElement('button', {
+                                    key: resolverId,
+                                    className: 'no-drag',
+                                    onClick: (e) => { e.stopPropagation(); const context = { type: 'friend', name: currentFriend?.name || 'Friend', tab: 'topTracks' }; setQueueWithContext(friendHistoryData.topTracks.slice(index + 1), context); handlePlay({ ...track, preferredResolver: resolverId }); },
+                                    style: { width: '20px', height: '20px', borderRadius: '4px', backgroundColor: resolver.color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto', opacity: (source.confidence || 0) < bestConf ? 0.6 : 1, transition: 'transform 0.1s' },
+                                    onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                                    onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                                    title: `Play from ${resolver.name}`
+                                  }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                                });
+                              })()
                             :
                               React.createElement('div', { className: 'flex items-center gap-1' },
                                 React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
