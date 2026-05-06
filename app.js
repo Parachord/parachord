@@ -10855,7 +10855,11 @@ const Parachord = () => {
           else if (command === 'import') ackMessage = 'Importing…';
           else if (command === 'chat') ackMessage = 'Opening chat…';
           else if (command === 'listen-along') ackMessage = `Connecting to ${params.user || 'friend'}…`;
-          if (ackMessage) showToast(ackMessage, 'info');
+          // Hold the acknowledgment for 30s so it stays visible through the
+          // entire resolution window (radio fetch + JSPF parse + N=2
+          // lookahead can take >5s on cold cache). The success/error toast
+          // that follows replaces this one as soon as it fires.
+          if (ackMessage) showToast(ackMessage, 'info', null, { duration: 30000 });
         }
 
         // Execute the command
@@ -12378,17 +12382,21 @@ ${trackListXml}
     }
   }, [isPlaying, currentTrack, browserPlaybackActive]);
 
-  // Auto-dismiss toast after 3 seconds (6 seconds if it has an action button, never if persistent)
+  // Auto-dismiss toast after a default of 3 seconds (6 if it has an action
+  // button, never if persistent). Callers can override with `duration` to
+  // hold the toast longer — useful for in-flight acknowledgments where the
+  // success/error toast that replaces it may take several seconds to fire
+  // (protocol play/album, play/radio, etc.).
   useEffect(() => {
     if (toast && !toast.persistent) {
-      const timeout = toast.action ? 6000 : 3000;
+      const timeout = toast.duration ?? (toast.action ? 6000 : 3000);
       const timer = setTimeout(() => setToast(null), timeout);
       return () => clearTimeout(timer);
     }
   }, [toast]);
 
-  const showToast = useCallback((message, type = 'success', action = null, { persistent = false } = {}) => {
-    setToast({ message, type, action, persistent });
+  const showToast = useCallback((message, type = 'success', action = null, { persistent = false, duration } = {}) => {
+    setToast({ message, type, action, persistent, duration });
   }, []);
 
   // Generate smart link for a track
