@@ -23296,8 +23296,20 @@ ${trackListXml}
       const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
       console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h, sources: ${Object.keys(cachedData.sources).join(', ')})`);
 
-      // Use cached sources immediately for fast UI (filter out noMatch sentinels)
-      const displaySources = filterNoMatch(cachedData.sources);
+      // Use cached sources immediately for fast UI (filter out noMatch sentinels).
+      // Re-score confidence under the current calculateConfidence semantics so
+      // pre-fix entries (which could carry stale 0.5/0.7/0.85 values from the
+      // old title+duration scoring) get refreshed before the floor filter at
+      // selection time drops them. Without this, the same cached entry that
+      // played fine pre-fix would be silently dropped at click time → "No
+      // Enabled Source" dialog despite the source data being valid.
+      const filteredCached = filterNoMatch(cachedData.sources);
+      const displaySources = {};
+      const targetTrackForScoring = { artist: artistName || track.artist || '', title: track.title || '' };
+      for (const [resolverId, source] of Object.entries(filteredCached)) {
+        const rescored = calculateConfidence(targetTrackForScoring, source);
+        displaySources[resolverId] = { ...source, confidence: rescored };
+      }
       setTrackSources(prev => ({
         ...prev,
         [trackKey]: displaySources
@@ -23332,10 +23344,21 @@ ${trackListXml}
     if (!cacheValid && hasRealPersistedSources && missingResolvers.length === 0) {
       console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
 
+      // Re-score confidence under current calculateConfidence semantics so any
+      // pre-fix entries with stale low scores get refreshed before the
+      // selection-time floor would drop them. See the cacheValid branch
+      // above for the full rationale.
+      const targetTrackForScoring = { artist: artistName || track.artist || '', title: track.title || '' };
+      const rescoredPersisted = {};
+      for (const [resolverId, source] of Object.entries(realPersistedSources)) {
+        const rescored = calculateConfidence(targetTrackForScoring, source);
+        rescoredPersisted[resolverId] = { ...source, confidence: rescored };
+      }
+
       // Use persisted sources and cache them in memory (filter noMatch for UI)
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: realPersistedSources
+        [trackKey]: rescoredPersisted
       }));
 
       trackSourcesCache.current[cacheKey] = {
