@@ -15167,6 +15167,18 @@ ${trackListXml}
           console.error('❌ No resolver found for track after on-demand resolution');
           setTrackLoading(false); // Clear loading state
           setCurrentTrack(prev => prev?.id === placeholderTrack.id ? { ...prev, status: 'error' } : prev);
+          // If we're in the middle of an auto-advance (handleNext invoked us),
+          // silently skip this track instead of dialog-ing the user. Mark it as
+          // error so the next handleNext walk skips it, then schedule another
+          // advance after the re-entrancy lock releases.
+          if (isAdvancingTrackRef.current) {
+            console.log(`⏭️ Auto-skip "${trackOrSource.title}" — no playable source`);
+            if (trackOrSource.id) {
+              setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
+            }
+            setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
+            return;
+          }
           showConfirmDialog({
             type: 'error',
             title: 'No Source Found',
@@ -15232,6 +15244,16 @@ ${trackListXml}
       if (sortedSources.length === 0) {
         console.error('❌ No enabled resolvers found for track. Available sources:', Object.keys(trackOrSource.sources), 'Active resolvers:', currentActiveResolvers);
         setTrackLoading(false); // Clear loading state
+        // Auto-skip during auto-advance (handleNext) instead of disrupting the
+        // user with a dialog. See parallel branch above for rationale.
+        if (isAdvancingTrackRef.current) {
+          console.log(`⏭️ Auto-skip "${trackOrSource.title}" — no enabled source matches`);
+          if (trackOrSource.id) {
+            setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
+          }
+          setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
+          return;
+        }
         showConfirmDialog({
           type: 'error',
           title: 'No Enabled Source',
