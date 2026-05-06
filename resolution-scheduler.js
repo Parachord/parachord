@@ -149,7 +149,13 @@
     updateVisibility(contextId, visibleTracks) {
       const context = this.contexts.get(contextId);
       if (!context) {
-        console.warn(`📋 Scheduler: updateVisibility called for unregistered context: ${contextId}`);
+        // Silently no-op. IntersectionObserver callbacks fire asynchronously,
+        // so during page-navigation transitions an in-flight callback can fire
+        // between the old context's cleanup and the new context's register.
+        // The caller can't prevent this without expensive synchronization;
+        // dropping the visibility update is the correct behavior — the next
+        // observer tick (or scroll event) will re-fire against the new
+        // context with the current visible set.
         return;
       }
       // Hot path — only log in debug mode to avoid console storm

@@ -14382,7 +14382,11 @@ ${trackListXml}
     // Only re-resolve if localfiles is an active resolver
     if (!activeResolvers.includes('localfiles')) return;
 
-    // Re-resolve release tracks if viewing an artist release
+    // Re-resolve release tracks if viewing an artist release.
+    // Uses forceRefresh: true to bypass the in-memory cache (the cached
+    // Spotify/AM source is fine; we want to ADD a localfiles source if one
+    // now exists). This is rare (only fires on watch-folder add), so
+    // bypassing the scheduler's priority queue is acceptable.
     if (currentRelease && currentRelease.tracks) {
       console.log('🔄 Local library changed, re-resolving release tracks...');
       const artistName = currentArtist?.name || 'Unknown Artist';
@@ -14391,7 +14395,7 @@ ${trackListXml}
       });
     }
 
-    // Re-resolve playlist tracks if viewing a playlist
+    // Re-resolve playlist tracks if viewing a playlist (same rationale).
     if (selectedPlaylist && playlistTracks.length > 0) {
       console.log('🔄 Local library changed, re-resolving playlist tracks...');
       playlistTracks.forEach(track => {
@@ -22614,14 +22618,14 @@ ${trackListXml}
       const artistNameForUpdate = artist?.name || artist || 'Unknown Artist';
       updateCollectionAlbumTrackCount(artistNameForUpdate, releaseData.title, tracks.length);
 
-      // Resolve release tracks directly (release pages are typically small, 10-20 tracks)
-      // Use the artist parameter passed to fetchReleaseData, not release.artist
-      const artistName = artist?.name || artist || 'Unknown Artist';
-      tracks.forEach(track => {
-        // Generate track ID matching what ReleasePage uses for source lookup
-        const trackId = `${artistName || 'unknown'}-${track.title || 'untitled'}-${releaseData.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
-        resolveTrack({ ...track, id: trackId }, artistName, {});
-      });
+      // Track resolution is handled by the `release-tracks` scheduler context
+      // (registered in the useEffect at L24151+). The IntersectionObserver
+      // there enqueues visible tracks at page priority (4), and below-fold
+      // tracks get picked up by background pre-resolution (priority 6) when
+      // the scheduler is otherwise idle. This avoids flooding resolveTrack
+      // with all N tracks at once on load — which would race against any
+      // higher-priority work (queue, hover) and hammer rate-limited resolvers
+      // for tracks the user may never scroll to.
 
       // Fetch album art in background (don't block track display)
       (async () => {
