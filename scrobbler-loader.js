@@ -580,17 +580,30 @@ class LastFmScrobbler extends BaseScrobbler {
       const errorCode = data.error;
       const errorMessage = data.message || 'Unknown error';
 
-      // Auth errors (9, 10, 26): session key invalid, API key invalid, or suspended
-      // These are permanent failures — clear credentials and notify UI to re-authenticate
+      // Auth errors (9, 10, 26): session key invalid, API key invalid, or suspended.
+      // Last.fm returns these for genuine session expiry but ALSO occasionally
+      // returns code 9 during transient backend hiccups (rate-limit windows,
+      // replication lag). To avoid killing a healthy session on a single
+      // transient blip, require 3 CONSECUTIVE auth errors before clearing.
+      // Any successful API request resets the counter.
       if (errorCode === 9 || errorCode === 10 || errorCode === 26) {
-        console.warn(`[${this.name}] Auth error ${errorCode}: ${errorMessage}. Clearing session key.`);
-        const config = await this.getConfig();
-        await this.setConfig({ ...config, sessionKey: null, enabled: false, authError: errorMessage });
-        window.dispatchEvent(new CustomEvent('scrobbler-auth-error', {
-          detail: { scrobblerId: this.id, errorCode, errorMessage }
-        }));
+        this._consecutiveAuthErrors = (this._consecutiveAuthErrors || 0) + 1;
+        const AUTH_ERROR_THRESHOLD = 3;
+        if (this._consecutiveAuthErrors >= AUTH_ERROR_THRESHOLD) {
+          console.warn(`[${this.name}] Auth error ${errorCode} (${this._consecutiveAuthErrors} consecutive): ${errorMessage}. Clearing session key.`);
+          const config = await this.getConfig();
+          await this.setConfig({ ...config, sessionKey: null, enabled: false, authError: errorMessage });
+          window.dispatchEvent(new CustomEvent('scrobbler-auth-error', {
+            detail: { scrobblerId: this.id, errorCode, errorMessage }
+          }));
+          this._consecutiveAuthErrors = 0;
+          const err = new Error(`${this.name} API error ${errorCode}: ${errorMessage}`);
+          err.authError = true;
+          throw err;
+        }
+        console.warn(`[${this.name}] Auth error ${errorCode} (${this._consecutiveAuthErrors}/${AUTH_ERROR_THRESHOLD}): ${errorMessage}. Treating as transient — will retry on next call.`);
         const err = new Error(`${this.name} API error ${errorCode}: ${errorMessage}`);
-        err.authError = true;
+        err.authErrorTransient = true;
         throw err;
       }
 
@@ -601,6 +614,11 @@ class LastFmScrobbler extends BaseScrobbler {
     if (!response.success) {
       throw new Error(`Last.fm API request failed: ${response.error || `HTTP ${response.status}`}`);
     }
+
+    // Successful response — reset the consecutive auth-error counter so any
+    // future transient code-9 blip doesn't get conflated with stale prior
+    // errors.
+    this._consecutiveAuthErrors = 0;
 
     return data;
   }
