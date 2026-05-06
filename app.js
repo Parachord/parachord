@@ -10838,6 +10838,26 @@ const Parachord = () => {
         const params = Object.fromEntries(parsed.searchParams);
         console.log('🔗 Parsed protocol URL:', { command, segments, params });
 
+        // Surface a quick acknowledgment toast for commands that involve
+        // network fetches or multi-step resolution (otherwise the app can
+        // appear unresponsive for several seconds while the protocol input
+        // resolves to a tracklist before handlePlay fires). Skip for fast
+        // commands (control/*, queue/*, shuffle/*, volume/*, navigation) —
+        // they complete instantly and a toast would just be noise.
+        const slowCommands = new Set(['play', 'import', 'chat', 'listen-along']);
+        if (slowCommands.has(command)) {
+          const playKind = command === 'play' ? segments[0] : null;
+          let ackMessage;
+          if (command === 'play' && playKind === 'album') ackMessage = 'Loading album…';
+          else if (command === 'play' && playKind === 'playlist') ackMessage = 'Loading playlist…';
+          else if (command === 'play' && playKind === 'radio') ackMessage = `Loading radio${params.name || params.title ? `: ${params.name || params.title}` : ''}…`;
+          else if (command === 'play') ackMessage = `Looking up "${params.title || ''}"${params.artist ? ` by ${params.artist}` : ''}…`;
+          else if (command === 'import') ackMessage = 'Importing…';
+          else if (command === 'chat') ackMessage = 'Opening chat…';
+          else if (command === 'listen-along') ackMessage = `Connecting to ${params.user || 'friend'}…`;
+          if (ackMessage) showToast(ackMessage, 'info');
+        }
+
         // Execute the command
         switch (command) {
           // === Playback Control ===
