@@ -22876,14 +22876,28 @@ ${trackListXml}
       const artistNameForUpdate = artist?.name || artist || 'Unknown Artist';
       updateCollectionAlbumTrackCount(artistNameForUpdate, releaseData.title, tracks.length);
 
-      // Track resolution is handled by the `release-tracks` scheduler context
-      // (registered in the useEffect at L24151+). The IntersectionObserver
-      // there enqueues visible tracks at page priority (4), and below-fold
-      // tracks get picked up by background pre-resolution (priority 6) when
-      // the scheduler is otherwise idle. This avoids flooding resolveTrack
-      // with all N tracks at once on load — which would race against any
-      // higher-priority work (queue, hover) and hammer rate-limited resolvers
-      // for tracks the user may never scroll to.
+      // Resolve all release tracks directly. This was previously removed
+      // (commit 2e6346a) in favor of relying solely on the release-tracks
+      // scheduler context + IntersectionObserver to enqueue tracks at page
+      // priority. That refactor silently broke album resolution because
+      // the registering useEffect's deps missed the partial→full
+      // setCurrentRelease transition (deps bug from commit 04692d20). We
+      // fixed the deps bug, and the IO chain now correctly enqueues
+      // visible tracks — but tracks were still observed not resolving
+      // (likely the scheduler is busy with friend / queue work at the
+      // time the album opens, and album tracks sit pending behind them).
+      //
+      // Restoring the direct loop makes album resolution UNCONDITIONAL
+      // and immediate. Release pages are typically small (10-20 tracks),
+      // so the bulk-flood concern from 2e6346a is minor. The scheduler
+      // context still registers via the useEffect; if a track is already
+      // pending or resolved, scheduler enqueue silently no-ops, so the
+      // two paths cooperate cleanly without double-work.
+      const artistName = artist?.name || artist || 'Unknown Artist';
+      tracks.forEach(track => {
+        const trackId = `${artistName || 'unknown'}-${track.title || 'untitled'}-${releaseData.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        resolveTrack({ ...track, id: trackId }, artistName, {});
+      });
 
       // Fetch album art in background (don't block track display)
       (async () => {
@@ -24444,12 +24458,8 @@ ${trackListXml}
     const releaseTitle = currentRelease.title;
     const releaseAlbumArt = currentRelease.albumArt;
 
-    console.log(`👁️  [release-tracks] Setting up observer (${releaseTracks.length} tracks, ${releaseTrackRowRefs.current.size} refs registered)`);
-
     releaseObserverRef.current = new IntersectionObserver(
       (entries) => {
-        const intersectingCount = entries.filter(e => e.isIntersecting).length;
-        console.log(`👁️  [release-tracks] IO callback: ${entries.length} entries, ${intersectingCount} intersecting`);
         let changed = false;
         entries.forEach(entry => {
           const trackId = entry.target.dataset.trackId;
@@ -24485,7 +24495,6 @@ ${trackListXml}
               });
             }
           });
-          console.log(`👁️  [release-tracks] Sending ${visibleTracks.length} visible tracks to scheduler`);
           updateSchedulerVisibility('release-tracks', visibleTracks);
         }
       },
@@ -24493,14 +24502,9 @@ ${trackListXml}
     );
 
     // Observe all existing track rows
-    let observedCount = 0;
     releaseTrackRowRefs.current.forEach((element) => {
-      if (element) {
-        releaseObserverRef.current.observe(element);
-        observedCount++;
-      }
+      if (element) releaseObserverRef.current.observe(element);
     });
-    console.log(`👁️  [release-tracks] Observed ${observedCount} row(s)`);
 
     return () => releaseObserverRef.current?.disconnect();
     // `currentRelease?.tracks` (truthiness) gates the same partial→full
