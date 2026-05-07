@@ -1525,7 +1525,9 @@ const loadBuiltinResolvers = async () => {
       });
 
       // Load cached plugins immediately
+      const tBuiltin = performance.now();
       const resolvers = await window.electron.resolvers.loadBuiltin();
+      console.log(`📁 loadBuiltin returned ${resolvers?.length || 0} resolvers in ${Math.round(performance.now() - tBuiltin)}ms IPC`);
       return resolvers;
     } catch (error) {
       console.error('❌ Failed to load plugins:', error);
@@ -12280,14 +12282,16 @@ ${trackListXml}
       setLibraryLoading(true);
       try {
         if (window.electron?.localFiles?.getAllTracks) {
+          const tLocal = performance.now();
           const localTracks = await window.electron.localFiles.getAllTracks();
+          const localMs = Math.round(performance.now() - tLocal);
           if (localTracks && localTracks.length > 0) {
-            console.log(`📚 Loaded ${localTracks.length} local tracks into library`);
+            console.log(`📚 Loaded ${localTracks.length} local tracks into library (${localMs}ms IPC)`);
             setLibrary(localTracks);
             // Background-enrich local library tracks with MBIDs, then fetch artwork for artless tracks
             enrichLocalTracksWithArtwork(localTracks).catch(() => {});
           } else {
-            console.log('📚 No local files found - library is empty');
+            console.log(`📚 No local files found - library is empty (${localMs}ms IPC)`);
             setLibrary([]);
           }
         } else {
@@ -12309,8 +12313,10 @@ ${trackListXml}
     // Load playlists from electron-store
     const loadPlaylistsFromStore = async () => {
       try {
+        const tPl = performance.now();
         const loadedPlaylists = await window.electron.playlists.load();
-        console.log(`📋 Loaded ${loadedPlaylists.length} playlist(s) from local storage`);
+        const plMs = Math.round(performance.now() - tPl);
+        console.log(`📋 Loaded ${loadedPlaylists.length} playlist(s) from local storage (${plMs}ms IPC)`);
 
         if (loadedPlaylists.length > 0) {
           // Playlists are already stored as full objects, just use them directly
@@ -34752,18 +34758,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       }
     };
-    // Defer Apple Music init until after first paint. The expensive bits
-    // (musicKitWeb.configure ~1.9s, library load ~1.3s, optional fetchUserToken)
-    // were running synchronously on mount and dominated the 3+ seconds of
-    // "Loading…" between cache-load and first interactive frame. Most users
-    // don't immediately click an Apple Music track — by the time they do,
-    // the auto-reconnect has already finished. The Apple Music settings
-    // panel may briefly show "not connected" before flipping to "Connected"
-    // when this completes. See issue #765.
-    const scheduleAppleMusicInit = window.requestIdleCallback
-      ? (cb) => window.requestIdleCallback(cb, { timeout: 5000 })
-      : (cb) => setTimeout(cb, 1000);
-    scheduleAppleMusicInit(() => { checkMusicKitAvailable(); });
+    // Run AM init eagerly. We previously deferred this to idle (#765) for a
+    // ~3s startup win, but the deferral broke resolver-badge confidence: the
+    // queue's restored tracks resolve before AM is in the active-resolvers
+    // list, attaching fresh fuzzy-match (0.95) sources that overwrite the
+    // cached direct-ID (1.0) sources. With Spotify at 1.0 and AM/SC/YT at
+    // 0.95, the relative-to-best dim logic dims everything except Spotify.
+    // The bigger startup cost is elsewhere (~11s renderer block from large
+    // IPC payloads); keep AM init synchronous until that's addressed in a
+    // way that doesn't regress badge state.
+    checkMusicKitAvailable();
   }, []);
 
   const appleMusicConnectingRef = useRef(false);
