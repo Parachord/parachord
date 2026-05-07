@@ -24409,7 +24409,16 @@ ${trackListXml}
     return () => collectionObserverRef.current?.disconnect();
   }, [activeView, collectionTab, library, collectionData.tracks, updateSchedulerVisibility, collectionScrollContainerReady]);
 
-  // Register page context for release page tracks resolution
+  // Register page context for release page tracks resolution.
+  //
+  // `currentRelease.tracks` is intentionally in the deps. fetchReleaseData
+  // calls setCurrentRelease TWICE with the same id: first with a partial
+  // record (tracks=null) for instant header rendering, then with the full
+  // tracks array once the MB fetch resolves. Without `tracks` in deps the
+  // second update doesn't re-trigger this effect (id is unchanged), so
+  // registerPageContext('release-tracks') never fires and the album-page
+  // tracks never get queued for resolution. Truthiness is enough — we
+  // only need to detect the null → populated transition.
   useEffect(() => {
     if (activeView === 'artist' && currentRelease && currentRelease.tracks) {
       const cleanup = registerPageContext('release-tracks');
@@ -24418,7 +24427,7 @@ ${trackListXml}
         cleanup();
       };
     }
-  }, [activeView, currentRelease?.id, registerPageContext, abortSchedulerContext]);
+  }, [activeView, currentRelease?.id, !!currentRelease?.tracks, registerPageContext, abortSchedulerContext]);
 
   // IntersectionObserver for release page tracks visibility
   useEffect(() => {
@@ -24484,7 +24493,12 @@ ${trackListXml}
     });
 
     return () => releaseObserverRef.current?.disconnect();
-  }, [activeView, currentRelease?.id, currentArtist?.name, updateSchedulerVisibility]);
+    // `currentRelease?.tracks` (truthiness) gates the same partial→full
+    // transition as the scheduler-context effect above. Without it, the
+    // IntersectionObserver is built when tracks=null (no rows to observe),
+    // and never rebuilt when tracks arrives a moment later — so no rows
+    // ever get observed and the scheduler sees no visibility updates.
+  }, [activeView, currentRelease?.id, !!currentRelease?.tracks, currentArtist?.name, updateSchedulerVisibility]);
 
   // Register sidebar context for friends sidebar visibility tracking
   useEffect(() => {
