@@ -84,30 +84,43 @@ body:
     attributes:
       label: Developer Logs
       description: |
-        Paste any relevant log output here. You can collect logs from two sources:
+        Paste any relevant log output here. The easiest path is the in-app diagnostic log:
 
-        **1. DevTools Console (renderer logs)**
-        Open Parachord, then open Developer Tools using one of the shortcuts below:
-        - **macOS**: `Cmd+Option+I` (or menu bar: **View > Toggle Developer Tools**)
-        - **Windows / Linux**: `Ctrl+Shift+I` or `F12` (or menu bar: **View > Toggle Developer Tools**)
+        **1. In-app diagnostic log (recommended — fastest, captures the most context)**
 
-        Click the **Console** tab, reproduce the issue, and copy any errors or warnings (shown in red/yellow).
+        Reproduce the issue, then immediately:
+        - **Menu bar**: **Help → Copy Diagnostic Log** (keyboard shortcut: `Cmd+Shift+L` on macOS, `Ctrl+Shift+L` on Windows/Linux)
+        - **OR** open **Settings → About → Diagnostics → Copy Diagnostic Log**
 
-        **2. Terminal Output (main process logs)**
+        Paste the result below. The dump captures the last ~2,000 console
+        entries with timestamps + a header showing your build and platform —
+        no DevTools needed. This works in packaged builds too.
+
+        **2. DevTools Console (only if asked, or for deeper debugging)**
+
+        Open Developer Tools:
+        - **macOS**: `Cmd+Option+I` (or **View → Toggle Developer Tools**)
+        - **Windows / Linux**: `Ctrl+Shift+I` or `F12`
+
+        Click the **Console** tab, reproduce, and copy errors/warnings (red/yellow lines).
+        Note: in packaged builds the diagnostic-log buffer above captures more than DevTools shows by default — prefer #1 unless you specifically need to see it live.
+
+        **3. Terminal output (main process logs — for sync, scrobbler, IPC issues)**
+
         Start Parachord from a terminal so you can capture main-process output:
-        - **macOS**: Open **Terminal.app** or **iTerm** and run: `/Applications/Parachord.app/Contents/MacOS/Parachord`  (or `npm start` if running from source)
-        - **Windows**: Open **Command Prompt** or **PowerShell**, navigate to the install directory, and run: `Parachord.exe`  (or `npm start` if running from source)
-        - **Linux**: Open a terminal and run: `parachord` or `./Parachord.AppImage`  (or `npm start` if running from source)
+        - **macOS**: `/Applications/Parachord.app/Contents/MacOS/Parachord` (or `npm start` if running from source)
+        - **Windows**: navigate to the install directory and run `Parachord.exe` (or `npm start`)
+        - **Linux**: `parachord` or `./Parachord.AppImage` (or `npm start`)
 
         Reproduce the issue, then copy the terminal output.
 
-        **3. App data directory (for crash logs or database issues)**
-        If asked by a maintainer, the app data directory is located at:
+        **4. App data directory (for crash logs or database issues — only if asked)**
+
         - **macOS**: `~/Library/Application Support/parachord-desktop/`
         - **Windows**: `%APPDATA%\parachord-desktop\`
         - **Linux**: `~/.config/parachord-desktop/`
       render: shell
-      placeholder: Paste log output here...
+      placeholder: Paste log output here (Help → Copy Diagnostic Log → Cmd/Ctrl+V)...
     validations:
       required: false
 
