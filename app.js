@@ -4118,6 +4118,10 @@ const ReleasePage = ({
             const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
             const sources = trackSources[trackId] || {};
             const availableResolvers = Object.keys(sources).filter(id => activeResolvers.includes(id) && !sources[id]?.noMatch);
+            // Tri-state for badge area: still-loading vs resolved-with-no-matches vs playable.
+            // Set to true ONLY when resolution definitively completed across all enabled
+            // resolvers and none returned a real match. Drives gray-out + skip-shimmer below.
+            const hasNoMatches = sources.__noMatchAll === true;
 
             // Build track object for drag/drop and playback
             const trackForDrag = {
@@ -4214,24 +4218,33 @@ const ReleasePage = ({
                 }
               }, isNowPlaying ? '▶' : String(track.position).padStart(2, '0')),
 
-              // Track title
+              // Track title — grays out when resolution definitively
+              // completed with no matches on any enabled service. Stays
+              // full-color while loading (sources empty but no __noMatchAll
+              // marker) so the user doesn't see a flash of "unavailable"
+              // before resolution finishes.
               React.createElement('span', {
                 className: 'flex-1 truncate transition-colors',
                 style: {
                   pointerEvents: 'none',
                   fontSize: '13px',
                   fontWeight: isNowPlaying ? '500' : '400',
-                  color: isNowPlaying ? 'var(--accent-primary)' : 'var(--text-primary)'
+                  color: isNowPlaying
+                    ? 'var(--accent-primary)'
+                    : (hasNoMatches ? 'var(--text-tertiary)' : 'var(--text-primary)'),
+                  opacity: hasNoMatches ? 0.6 : 1
                 }
               }, track.title),
 
-              // Duration
+              // Duration — also dims for unavailable rows so the whole row
+              // reads as "not playable" at a glance.
               track.length && React.createElement('span', {
                 className: 'flex-shrink-0 tabular-nums',
                 style: {
                   pointerEvents: 'none',
                   fontSize: '12px',
-                  color: 'var(--text-tertiary)'
+                  color: 'var(--text-tertiary)',
+                  opacity: hasNoMatches ? 0.6 : 1
                 }
               }, formatDuration(track.length)),
               
@@ -4245,7 +4258,18 @@ const ReleasePage = ({
                   const availableResolverIds = availableResolvers;
 
                   if (availableResolverIds.length === 0) {
-                    // Show shimmer skeletons while resolving (match resolver icon size)
+                    // Resolution definitively completed with no matches → render
+                    // a quiet "Unavailable" label instead of the loading shimmer
+                    // so the user can tell at a glance that this track isn't on
+                    // any of their enabled services.
+                    if (hasNoMatches) {
+                      return React.createElement('span', {
+                        className: 'text-xs italic',
+                        style: { color: 'var(--text-tertiary)', opacity: 0.7 },
+                        title: 'No match on any enabled streaming service'
+                      }, 'Unavailable');
+                    }
+                    // Otherwise: still resolving — show shimmer skeletons.
                     return React.createElement('div', {
                       className: 'flex items-center gap-1'
                     },
@@ -23615,10 +23639,30 @@ ${trackListXml}
       console.log(`  🔍 Cache check for "${track.title}": in-memory=${!!cachedData}, persisted=${persistedResolverIds.join(', ') || 'none'}, missing: ${missingResolvers.join(', ') || 'none'}`);
     }
 
-    // Helper to filter no-match sentinel entries before setting UI state
+    // Helper to filter no-match sentinel entries before setting UI state.
+    // Returns the real (non-noMatch) sources only — UI uses Object.keys to
+    // iterate playable resolvers.
     const filterNoMatch = (sources) => Object.fromEntries(
       Object.entries(sources).filter(([, v]) => v && !v.noMatch)
     );
+
+    // Helper that wraps filterNoMatch but distinguishes "still loading" from
+    // "tried, found nothing." When every cached entry is a noMatch sentinel
+    // (resolution completed across all active resolvers but none matched),
+    // we tag the display object with `__noMatchAll: true` so the UI can
+    // render a non-loading "no match" state (gray track name, no shimmer).
+    // Returns either the filtered real-sources object, OR a single-key
+    // {__noMatchAll: true} sentinel. Both shapes are safe for the UI's
+    // existing availableResolvers filter (the activeResolvers.includes()
+    // check naturally rejects '__noMatchAll').
+    const filterNoMatchForDisplay = (sources) => {
+      const filtered = filterNoMatch(sources);
+      if (Object.keys(filtered).length > 0) return filtered;
+      // Empty after filter — was the original empty (still loading) or
+      // was every entry a noMatch sentinel (resolved with no matches)?
+      const hadAnyEntry = sources && Object.keys(sources).length > 0;
+      return hadAnyEntry ? { __noMatchAll: true } : {};
+    };
 
     if (cacheValid) {
       const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
@@ -23660,9 +23704,16 @@ ${trackListXml}
         const rescored = calculateConfidence(targetTrackForScoring, source);
         displaySources[resolverId] = { ...source, confidence: rescored };
       }
+      // If the cache had entries but they were ALL noMatch sentinels, mark the
+      // UI state with __noMatchAll so rows render as "no match" (gray name,
+      // no shimmer) instead of "still loading" (shimmer).
+      const cacheHadEntries = cachedData.sources && Object.keys(cachedData.sources).length > 0;
+      const finalDisplay = (Object.keys(displaySources).length === 0 && cacheHadEntries)
+        ? { __noMatchAll: true }
+        : displaySources;
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: displaySources
+        [trackKey]: finalDisplay
       }));
 
       // Background validation: if cache is > 24 hours old, validate in background
@@ -23791,7 +23842,7 @@ ${trackListXml}
       // Filter noMatch sentinels for UI state, keep them in cache/persistence
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: filterNoMatch(sources)
+        [trackKey]: filterNoMatchForDisplay(sources)
       }));
 
       trackSourcesCache.current[cacheKey] = {
@@ -23892,7 +23943,7 @@ ${trackListXml}
       // Update state with combined sources (filter noMatch sentinels for UI)
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: filterNoMatch(sources)
+        [trackKey]: filterNoMatchForDisplay(sources)
       }));
 
       // Update cache with new sources
@@ -24107,15 +24158,25 @@ ${trackListXml}
       v: CACHE_SCHEMA_VERSION
     };
 
-    if (realSourceCount > 0 && trackKey) {
-      // Update UI with real sources only (no noMatch sentinels)
-      // Only when trackKey is defined to avoid trackSources["undefined"] pollution
+    if (trackKey) {
+      // Update UI with real sources only (no noMatch sentinels). When every
+      // resolver returned noMatch, write a `{__noMatchAll: true}` sentinel
+      // so the UI can render a "no match" state (gray name, no shimmer)
+      // instead of leaving the row stuck on the loading shimmer forever.
+      const totalAttempted = Object.keys(sources).length;
+      const finalDisplay = (realSourceCount === 0 && totalAttempted > 0)
+        ? { __noMatchAll: true }
+        : displaySources;
       setTrackSources(prev => ({
         ...prev,
-        [trackKey]: displaySources
+        [trackKey]: finalDisplay
       }));
 
-      console.log(`✅ Found ${realSourceCount} source(s) for: ${track.title} (cached)`);
+      if (realSourceCount > 0) {
+        console.log(`✅ Found ${realSourceCount} source(s) for: ${track.title} (cached)`);
+      } else if (totalAttempted > 0) {
+        console.log(`⚪ No matches found for: ${track.title} (${totalAttempted} resolvers tried)`);
+      }
     }
 
     // Persist sources (including noMatch sentinels) back to collection/playlist
