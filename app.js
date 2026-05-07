@@ -20861,8 +20861,25 @@ ${trackListXml}
       const newReleasesData = d['cache_new_releases'];
       const mbidMapperData = d['cache_mbid_mapper'];
 
-      const now = Date.now();
-
+      // Big-cache hydration — deferred via requestIdleCallback so first paint
+      // isn't blocked by Object.entries(...).filter(...) over MB-scale caches
+      // (album art, artist data, track sources, MBID mapper, charts, etc.)
+      // on populated installs. The remainder of this function continues
+      // synchronously: AI suggestions, view restoration, small-key
+      // preferences, and finally setCacheLoaded(true) which fires first
+      // paint. This idle callback then walks the big caches when the
+      // browser has slack — typically within ~100ms of first paint.
+      //
+      // Consumers of these refs (albumArtCache, artistDataCache, etc.) read
+      // with optional chaining everywhere, so the brief empty-cache window
+      // between first paint and hydration completion just falls back to
+      // network lookups (which were going to fire anyway for cache misses).
+      // See issue #764.
+      const scheduleIdle = window.requestIdleCallback
+        ? (cb) => window.requestIdleCallback(cb, { timeout: 1000 })
+        : (cb) => setTimeout(cb, 100);
+      scheduleIdle(() => {
+        const now = Date.now();
       // Load album art cache (keep full { url, timestamp } structure)
       if (albumArtData) {
         // Filter out expired and null entries — only keep valid URLs
@@ -20986,8 +21003,8 @@ ${trackListXml}
       // Load concerts cache
       const concertsData = d['cache_concerts'];
       if (concertsData && concertsData.events && concertsData.events.length > 0) {
-        const now = Date.now();
-        if (concertsData.timestamp && (now - concertsData.timestamp) < CACHE_TTL.concerts) {
+        const now2 = Date.now();
+        if (concertsData.timestamp && (now2 - concertsData.timestamp) < CACHE_TTL.concerts) {
           concertsCache.current = { events: concertsData.events, timestamp: concertsData.timestamp };
           setConcerts(concertsData.events);
           setConcertsLoaded(true);
@@ -21000,6 +21017,7 @@ ${trackListXml}
           console.log(`📦 Loaded ${concertsData.events.length} stale concerts from cache (will refresh)`);
         }
       }
+      }); // end scheduleIdle for big-cache hydration
 
       // AI suggestions and view restoration (already loaded in batch)
       const aiSuggestionsData = d['cache_ai_suggestions'];
