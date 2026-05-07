@@ -1862,6 +1862,16 @@ app.whenReady().then(() => {
             await shell.openExternal('https://github.com/Parachord/parachord/issues');
           }
         },
+        {
+          // Routes to window.copyDiagnosticLog() in the renderer; see
+          // app.js's diagnostic-log buffer block. Lets bug reporters
+          // attach a recent-history dump without opening DevTools.
+          label: 'Copy Diagnostic Log',
+          accelerator: process.platform === 'darwin' ? 'Cmd+Shift+L' : 'Ctrl+Shift+L',
+          click: () => {
+            safeSendToRenderer('menu-action', 'copy-diagnostic-log');
+          }
+        },
         { type: 'separator' },
         { role: 'forceReload' },
         { role: 'toggleDevTools' }

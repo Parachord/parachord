@@ -1,4 +1,89 @@
 // Parachord Desktop App - Electron Version
+
+// Diagnostic log ring buffer — see issue #769.
+//
+// Every console.log / console.warn / console.info call is appended to a
+// fixed-size ring buffer. In dev builds (window.electron.isDev === true)
+// the call is also forwarded to the real console so live debugging works
+// normally. In packaged prod builds, console.log and console.info are
+// routed ONLY to the buffer — no DevTools serialization, no string
+// formatting cost. console.warn always passes through (warnings are
+// useful even in prod). console.error is unmodified.
+//
+// The buffer is exposed via window.copyDiagnosticLog() — wired into a
+// "Copy Diagnostic Log" button in Settings → About so bug reporters can
+// paste a recent-history dump. The buffer holds the last 2000 entries.
+//
+// IMPORTANT: this block runs BEFORE any other code can call console.log,
+// so every subsequent console call is captured. Don't move it.
+(() => {
+  const MAX_ENTRIES = 2000;
+  const buffer = [];
+  // Snapshot the originals BEFORE we overwrite them. Order matters: any
+  // call site that already captured `console.log` (rare in renderer code,
+  // but defensive) keeps the original behavior; new sites get the wrapper.
+  const orig = {
+    log: console.log.bind(console),
+    warn: console.warn.bind(console),
+    info: (console.info || console.log).bind(console),
+    error: console.error.bind(console),
+  };
+  // window.electron is set up by preload.js; isDev is synchronous (read
+  // from __dirname at preload time). If preload hasn't run yet (test
+  // harness, etc.), default to dev mode so logs aren't silently dropped.
+  const isDev = (typeof window !== 'undefined' && window.electron) ? !!window.electron.isDev : true;
+
+  const push = (level, args) => {
+    buffer.push({ t: Date.now(), level, args });
+    if (buffer.length > MAX_ENTRIES) buffer.shift();
+  };
+
+  console.log = (...args) => { push('log', args); if (isDev) orig.log(...args); };
+  console.info = (...args) => { push('info', args); if (isDev) orig.info(...args); };
+  // warn always passes through — even in prod, warnings should surface
+  // when DevTools is open or when the OS log is being captured.
+  console.warn = (...args) => { push('warn', args); orig.warn(...args); };
+  // error: never wrap, never silence. Errors are signal at any tier.
+
+  // Format a buffer entry for clipboard / file dump. JSON-stringifies
+  // object args so structured state survives the round-trip.
+  const formatArg = (a) => {
+    if (a == null) return String(a);
+    if (typeof a === 'string') return a;
+    if (a instanceof Error) return `${a.name}: ${a.message}\n${a.stack || ''}`;
+    try { return JSON.stringify(a); } catch { return String(a); }
+  };
+
+  // Dump the buffer to clipboard. Returns the dump as a string and the
+  // entry count, in case a caller wants to also save to file.
+  window.copyDiagnosticLog = async () => {
+    const lines = buffer.map(e => {
+      const ts = new Date(e.t).toISOString();
+      const args = e.args.map(formatArg).join(' ');
+      return `[${ts}] [${e.level}] ${args}`;
+    });
+    const header = [
+      `Parachord Diagnostic Log`,
+      `Captured: ${new Date().toISOString()}`,
+      `Entries: ${lines.length}/${MAX_ENTRIES}`,
+      `Build: ${isDev ? 'dev' : 'packaged'}`,
+      `Platform: ${(typeof window !== 'undefined' && window.electron?.platform) || 'unknown'}`,
+      ``.padEnd(60, '-'),
+      ``,
+    ].join('\n');
+    const text = header + lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      orig.error('copyDiagnosticLog: clipboard write failed', err);
+    }
+    return { text, count: lines.length };
+  };
+
+  // Expose getter (no clipboard side-effect) for in-app rendering.
+  window.getDiagnosticLog = () => buffer.slice();
+})();
+
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 // Platform detection: only macOS uses a hidden title bar (titleBarStyle: 'hidden'),
@@ -10636,6 +10721,19 @@ const Parachord = () => {
         case 'check-for-updates':
           showToast('Checking for updates...');
           window.electron.updater?.check();
+          break;
+        case 'copy-diagnostic-log':
+          // Help → Copy Diagnostic Log (or Cmd/Ctrl+Shift+L). Routes to the
+          // ring-buffer dump installed at the top of app.js (see issue #769).
+          if (typeof window.copyDiagnosticLog === 'function') {
+            window.copyDiagnosticLog().then(({ count }) => {
+              showToast(`Copied ${count} log ${count === 1 ? 'entry' : 'entries'} to clipboard`);
+            }).catch(err => {
+              showToast(`Could not copy log: ${err.message || err}`, 'error');
+            });
+          } else {
+            showToast('Diagnostic log not available', 'error');
+          }
           break;
       }
     });
@@ -52675,6 +52773,57 @@ useEffect(() => {
                       textDecoration: 'none'
                     }
                   }, 'View on GitHub →')
+                ),
+
+                // Diagnostics — surfaces the in-memory log buffer for bug
+                // reporting. Captures the last ~2000 console.log/info/warn
+                // entries so users can paste a recent-history dump into a
+                // GitHub issue. See issue #769.
+                React.createElement('div', { style: { marginBottom: '24px' } },
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: 'var(--text-tertiary)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      marginBottom: '8px'
+                    }
+                  }, 'Diagnostics'),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginBottom: '12px'
+                    }
+                  },
+                    'Capture the last ~2,000 console entries for bug reports.'
+                  ),
+                  React.createElement('button', {
+                    onClick: async () => {
+                      if (typeof window.copyDiagnosticLog !== 'function') {
+                        showToast('Diagnostic log not available', 'error');
+                        return;
+                      }
+                      try {
+                        const { count } = await window.copyDiagnosticLog();
+                        showToast(`Copied ${count} log ${count === 1 ? 'entry' : 'entries'} to clipboard`);
+                      } catch (err) {
+                        showToast(`Could not copy log: ${err.message || err}`, 'error');
+                      }
+                    },
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--accent-primary)',
+                      fontWeight: '500',
+                      textDecoration: 'none',
+                      background: 'transparent',
+                      border: '1px solid var(--accent-primary)',
+                      borderRadius: '6px',
+                      padding: '6px 12px',
+                      cursor: 'pointer'
+                    }
+                  }, 'Copy Diagnostic Log')
                 ),
 
                 // Copyright

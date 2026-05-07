@@ -2,11 +2,23 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 console.log('Preload script loaded');
 
+// Synchronous dev-mode detection: packaged builds run from inside app.asar
+// (or app.asar.unpacked for native helpers). Used by the renderer's console-
+// buffer wrapper to decide whether to forward log/info calls to the real
+// console (dev) or only push them to the in-memory diagnostic buffer (prod).
+// Read once at preload time so it's stable for the renderer's lifetime.
+const __isDevBuild = !__dirname.includes('app.asar');
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electron', {
   // Platform identifier (darwin, win32, linux)
   platform: process.platform,
+
+  // Build mode (true when running unpackaged via `electron .`, false in
+  // packaged builds). Used for the diagnostic-log buffer's console-pass-
+  // through decision.
+  isDev: __isDevBuild,
 
   // Storage operations
   store: {
