@@ -20887,12 +20887,16 @@ ${trackListXml}
         ? window.electron.store.getBatch(keys)
         : Promise.all(keys.map(async k => [k, await window.electron.store.get(k)])).then(Object.fromEntries);
 
-      // First IPC: critical small keys only.
-      const d = await fetchBatch(criticalKeys);
-      // Second IPC: big caches, fired in idle (consumed inside the
-      // scheduleIdle block below). Kicked off here so the IPC can run
-      // in parallel with the small-key processing.
+      // Fire BOTH IPCs in parallel. Critical drives the rest of this
+      // function (and first paint); big-cache is awaited later inside
+      // the scheduleIdle block. Creating bigCachePromise *before* the
+      // first await is load-bearing — otherwise the second IPC doesn't
+      // dispatch until the first resolves, defeating the parallelism.
+      const t0 = performance.now();
+      const criticalPromise = fetchBatch(criticalKeys);
       const bigCachePromise = fetchBatch(BIG_CACHE_KEYS);
+      const d = await criticalPromise;
+      console.log(`📦 Critical IPC returned in ${Math.round(performance.now() - t0)}ms (${criticalKeys.length} keys)`);
 
       // Big-cache hydration — deferred via requestIdleCallback so first paint
       // isn't blocked by Object.entries(...).filter(...) over MB-scale caches
@@ -20917,12 +20921,14 @@ ${trackListXml}
         // (main has been parsing in the background while we did
         // small-key processing + first paint).
         let dCaches;
+        const tBig = performance.now();
         try {
           dCaches = await bigCachePromise;
         } catch (err) {
           console.warn('Big-cache fetch failed; refs stay empty:', err?.message || err);
           return;
         }
+        console.log(`📦 Big-cache IPC awaited in ${Math.round(performance.now() - tBig)}ms (since idle-cb fired); total since start ${Math.round(performance.now() - t0)}ms`);
         const albumArtData = dCaches['cache_album_art'];
         const artistData = dCaches['cache_artist_data'];
         const trackSourcesData = dCaches['cache_track_sources'];

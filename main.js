@@ -2555,11 +2555,16 @@ ipcMain.handle('store-get', (event, key) => {
 
 // Batch get — fetch multiple keys in a single IPC roundtrip
 ipcMain.handle('store-get-batch', (event, keys) => {
+  const t0 = Date.now();
   const result = {};
   for (const key of keys) {
     if (ALLOWED_STORE_KEYS.has(key)) {
       result[key] = store.get(key);
     }
+  }
+  const ms = Date.now() - t0;
+  if (ms > 50) {
+    console.log(`📦 store-get-batch (${keys.length} keys) took ${ms}ms`);
   }
   return result;
 });
