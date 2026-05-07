@@ -4258,17 +4258,12 @@ const ReleasePage = ({
                   const availableResolverIds = availableResolvers;
 
                   if (availableResolverIds.length === 0) {
-                    // Resolution definitively completed with no matches → render
-                    // a quiet "Unavailable" label instead of the loading shimmer
-                    // so the user can tell at a glance that this track isn't on
-                    // any of their enabled services.
-                    if (hasNoMatches) {
-                      return React.createElement('span', {
-                        className: 'text-xs italic',
-                        style: { color: 'var(--text-tertiary)', opacity: 0.7 },
-                        title: 'No match on any enabled streaming service'
-                      }, 'Unavailable');
-                    }
+                    // Resolution definitively completed with no matches →
+                    // render nothing in the badge area. The grayed-out track
+                    // title in the row already conveys "this track isn't
+                    // playable from any enabled service" — a redundant label
+                    // would just add noise.
+                    if (hasNoMatches) return null;
                     // Otherwise: still resolving — show shimmer skeletons.
                     return React.createElement('div', {
                       className: 'flex items-center gap-1'
