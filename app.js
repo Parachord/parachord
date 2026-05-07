@@ -22894,6 +22894,7 @@ ${trackListXml}
       // pending or resolved, scheduler enqueue silently no-ops, so the
       // two paths cooperate cleanly without double-work.
       const artistName = artist?.name || artist || 'Unknown Artist';
+      console.log(`🎵 [release] Triggering resolution for ${tracks.length} album tracks (artist=${artistName}, release=${releaseData.title})`);
       tracks.forEach(track => {
         const trackId = `${artistName || 'unknown'}-${track.title || 'untitled'}-${releaseData.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
         resolveTrack({ ...track, id: trackId }, artistName, {});
