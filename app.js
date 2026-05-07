@@ -9040,14 +9040,26 @@ const Parachord = () => {
     return null;
   };
 
-  // Generate a hash of current resolver settings for cache invalidation
+  // Generate a hash of current resolver settings for cache invalidation.
+  //
+  // Reads from refs (loadedResolversRef / activeResolversRef / resolverOrderRef)
+  // rather than React state, because callers fire BEFORE React has flushed
+  // the post-mount state updates that load resolvers. Concrete failure mode:
+  // album opens at startup → fetchReleaseData runs sync resolveTrack on 9
+  // tracks → those calls capture state-at-closure-time which still shows
+  // loadedResolvers as a stale subset → resolverHash gets written with the
+  // stale subset → moments later when state catches up, every subsequent
+  // call computes a different hash → "🔄 Resolver settings changed,
+  // re-resolving" fires for every track → 9 tracks × 6 resolvers = 54
+  // redundant resolver calls. Refs update synchronously inside their
+  // useEffect, so they reflect the true loaded set even mid-flush.
   const getResolverSettingsHash = () => {
-    // Only include resolvers that are both active AND loaded — an active resolver
-    // that hasn't loaded yet (e.g. newly added builtin like qobuz) shouldn't
-    // invalidate every cached entry by changing the hash.
-    const loadedIds = new Set(loadedResolvers.map(r => r.id));
-    const sortedActive = [...activeResolvers].filter(id => loadedIds.has(id)).sort().join(',');
-    const sortedOrder = [...resolverOrder].filter(id => loadedIds.has(id)).join(',');
+    const loaded = loadedResolversRef.current || loadedResolvers;
+    const active = activeResolversRef.current || activeResolvers;
+    const order = resolverOrderRef.current || resolverOrder;
+    const loadedIds = new Set(loaded.map(r => r.id));
+    const sortedActive = [...active].filter(id => loadedIds.has(id)).sort().join(',');
+    const sortedOrder = [...order].filter(id => loadedIds.has(id)).join(',');
     return `${sortedActive}|${sortedOrder}`;
   };
 
@@ -23425,7 +23437,13 @@ ${trackListXml}
         const result = await resolver.resolve(artistName, track.title, track.album || null, config);
 
         if (result) {
-          const confidence = calculateConfidence(track, result);
+          // Use the canonical (artistName, track.title) we asked for as the
+          // validation target — track.artist may be missing/stale for tracks
+          // synthesized from MB API responses (release pages) and would
+          // collapse confidence to 0.5 even when the resolver returned the
+          // correct match. See L9044 hash-fix commit for the related root
+          // cause that compounded this with redundant re-resolves.
+          const confidence = calculateConfidence({ artist: artistName, title: track.title }, result);
           if (confidence < MIN_CONFIDENCE_THRESHOLD) {
             console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
           } else {
@@ -23710,7 +23728,7 @@ ${trackListXml}
           if (signal?.aborted) return;
 
           if (result) {
-            const confidence = calculateConfidence(track, result);
+            const confidence = calculateConfidence({ artist: artistName, title: track.title }, result);
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
               console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
               // Store no-match sentinel so this resolver isn't re-queried (treats wrong-song as no-match)
@@ -23806,7 +23824,7 @@ ${trackListXml}
           if (signal?.aborted) return;
 
           if (result) {
-            const confidence = calculateConfidence(track, result);
+            const confidence = calculateConfidence({ artist: artistName, title: track.title }, result);
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
               console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
             } else {
@@ -23976,7 +23994,11 @@ ${trackListXml}
         }
 
         if (result) {
-          const confidence = calculateConfidence(track, result);
+          // Validate against the canonical (artistName, track.title) that we
+          // asked the resolver for — not against track.artist, which can be
+          // empty for synthesized release-page tracks and trigger a "doesn't
+          // match itself" rejection.
+          const confidence = calculateConfidence({ artist: artistName, title: track.title }, result);
           if (confidence < MIN_CONFIDENCE_THRESHOLD) {
             console.warn(`  ⚠️ ${resolver.name}: Rejecting "${result.title}" by "${result.artist}" — does not match "${track.title}" by "${artistName}"`);
             return; // skip-attach below floor; no flush
