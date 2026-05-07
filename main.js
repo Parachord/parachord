@@ -126,6 +126,25 @@ if (autoUpdater) {
 }
 
 const store = new Store();
+
+// Pre-warm electron-store on first construction so the 45MB-class config
+// JSON parse happens once, here, instead of inside the first IPC handler
+// (where it blocks renderer-initiated startup IPCs and is the visible
+// cause of multi-second startup gaps on populated installs). The store
+// internal lazy-loads on first .get(); calling .get() with any key forces
+// the parse now. The two specific keys we read are also the two largest
+// blobs in config.json (16MB local_playlists, 13MB cache_track_sources)
+// — touching them now ensures the IPC structured-clone serialization can
+// run from already-parsed in-memory state when the handler fires.
+const t_storeWarmStart = Date.now();
+try {
+  store.get('local_playlists');
+  store.get('cache_track_sources');
+  console.log(`📦 [main] Pre-warmed electron-store in ${Date.now() - t_storeWarmStart}ms`);
+} catch (e) {
+  console.warn('Store pre-warm failed:', e?.message || e);
+}
+
 let mainWindow;
 let authServer;
 const net = require('net');
@@ -4604,17 +4623,25 @@ ipcMain.handle('marketplace-download-resolver', async (event, url) => {
 // Playlist handlers - all playlists stored in electron-store (local_playlists key)
 ipcMain.handle('playlists-load', async () => {
   console.log('=== Load Playlists from electron-store ===');
-
+  const t0 = Date.now();
   try {
+    const tGet = Date.now();
     const playlists = store.get('local_playlists') || [];
+    const getMs = Date.now() - tGet;
 
     // Sort by addedAt descending (newest first) before returning
+    const tSort = Date.now();
     playlists.sort((a, b) => {
       const aTime = Number(a.addedAt) || Number(a.lastModified) || Number(a.createdAt) || 0;
       const bTime = Number(b.addedAt) || Number(b.lastModified) || Number(b.createdAt) || 0;
       return bTime - aTime;
     });
+    const sortMs = Date.now() - tSort;
 
+    const totalMs = Date.now() - t0;
+    if (totalMs > 100) {
+      console.log(`📋 [main] playlists-load: get=${getMs}ms sort=${sortMs}ms total=${totalMs}ms (count=${playlists.length})`);
+    }
     console.log(`✅ Loaded ${playlists.length} playlist(s) from electron-store`);
     return playlists;
   } catch (error) {
