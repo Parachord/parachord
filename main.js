@@ -720,7 +720,13 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
       webviewTag: false,  // Disabled for security — use BrowserView or iframes instead
-      backgroundThrottling: false  // Prevent renderer throttle/suspension when backgrounded (music player needs this)
+      backgroundThrottling: false,  // Prevent renderer throttle/suspension when backgrounded (music player needs this)
+      // Pass dev/prod signal to the sandboxed preload via process.argv.
+      // The preload reads this to decide whether the renderer's console
+      // wrapper forwards log/info to the real console (dev) or only to the
+      // diagnostic ring buffer (prod). __dirname is not available in
+      // sandboxed preloads, hence this argv-based path.
+      additionalArguments: [`--parachord-is-dev=${!app.isPackaged}`]
     },
     show: false
   });
