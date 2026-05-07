@@ -20832,12 +20832,39 @@ ${trackListXml}
     }
 
     try {
-      // Single IPC roundtrip for ALL keys (caches + settings + preferences)
-      const allKeys = [
-        // Caches
-        'cache_album_art', 'cache_artist_data', 'cache_track_sources', 'cache_artist_images', 'cache_mbid_mapper',
-        'cache_album_release_ids', 'cache_playlist_covers', 'cache_charts', 'cache_new_releases',
-        'cache_concerts', 'cache_ai_suggestions', 'cache_mbid_mapper', 'last_active_view',
+      // Two-tier load — see issue #764 follow-up.
+      //
+      // The first IPC (criticalKeys) is small + fast: ~30 keys totaling
+      // tens of KB. Drives view restoration, resolver settings, queue
+      // restore, and small preferences. Blocks first paint.
+      //
+      // The second IPC (BIG_CACHE_KEYS) fetches MB-scale JSON blobs:
+      // album art, artist data, track sources, MBID mapper, etc. On
+      // populated installs (10K+ entries) electron-store's synchronous
+      // disk-read + JSON.parse + IPC structured-clone of these payloads
+      // dominates startup time. Diagnostic-log measurement on a
+      // populated install showed ~11s spent here. Deferring the second
+      // IPC to requestIdleCallback gets first paint to render WITHOUT
+      // waiting for big-cache transit.
+      //
+      // The big-cache hydration block below is wrapped in
+      // scheduleIdle(), so it processes the second IPC's payload after
+      // first paint. Consumers of albumArtCache.current / etc. tolerate
+      // the brief empty-cache window with optional chaining +
+      // network-fallback paths.
+      const BIG_CACHE_KEYS = [
+        'cache_album_art', 'cache_artist_data', 'cache_track_sources',
+        'cache_artist_images', 'cache_mbid_mapper', 'cache_album_release_ids',
+        'cache_playlist_covers', 'cache_charts', 'cache_new_releases',
+        'cache_concerts',
+      ];
+      // cache_ai_suggestions stays in critical keys: it's typically tiny
+      // (single-digit albums + artists) and the AI recommendations panel
+      // on Home is one of the first things users look at, so populating
+      // it eagerly avoids a flash of empty state.
+      const criticalKeys = [
+        'last_active_view',
+        'cache_ai_suggestions',
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
@@ -20856,19 +20883,16 @@ ${trackListXml}
         // Loved-tracks push to LB/LFM (opt-in per service)
         'scrobbler_love_push_enabled', 'love_pushed_keys'
       ];
-      const d = window.electron.store.getBatch
-        ? await window.electron.store.getBatch(allKeys)
-        : Object.fromEntries(await Promise.all(allKeys.map(async k => [k, await window.electron.store.get(k)])));
+      const fetchBatch = (keys) => window.electron.store.getBatch
+        ? window.electron.store.getBatch(keys)
+        : Promise.all(keys.map(async k => [k, await window.electron.store.get(k)])).then(Object.fromEntries);
 
-      const albumArtData = d['cache_album_art'];
-      const artistData = d['cache_artist_data'];
-      const trackSourcesData = d['cache_track_sources'];
-      const artistImageData = d['cache_artist_images'];
-      const albumReleaseIdData = d['cache_album_release_ids'];
-      const playlistCoverData = d['cache_playlist_covers'];
-      const chartsData = d['cache_charts'];
-      const newReleasesData = d['cache_new_releases'];
-      const mbidMapperData = d['cache_mbid_mapper'];
+      // First IPC: critical small keys only.
+      const d = await fetchBatch(criticalKeys);
+      // Second IPC: big caches, fired in idle (consumed inside the
+      // scheduleIdle block below). Kicked off here so the IPC can run
+      // in parallel with the small-key processing.
+      const bigCachePromise = fetchBatch(BIG_CACHE_KEYS);
 
       // Big-cache hydration — deferred via requestIdleCallback so first paint
       // isn't blocked by Object.entries(...).filter(...) over MB-scale caches
@@ -20887,7 +20911,28 @@ ${trackListXml}
       const scheduleIdle = window.requestIdleCallback
         ? (cb) => window.requestIdleCallback(cb, { timeout: 1000 })
         : (cb) => setTimeout(cb, 100);
-      scheduleIdle(() => {
+      scheduleIdle(async () => {
+        // Await the second IPC kicked off above. By the time the idle
+        // callback fires, this promise is usually already resolved
+        // (main has been parsing in the background while we did
+        // small-key processing + first paint).
+        let dCaches;
+        try {
+          dCaches = await bigCachePromise;
+        } catch (err) {
+          console.warn('Big-cache fetch failed; refs stay empty:', err?.message || err);
+          return;
+        }
+        const albumArtData = dCaches['cache_album_art'];
+        const artistData = dCaches['cache_artist_data'];
+        const trackSourcesData = dCaches['cache_track_sources'];
+        const artistImageData = dCaches['cache_artist_images'];
+        const albumReleaseIdData = dCaches['cache_album_release_ids'];
+        const playlistCoverData = dCaches['cache_playlist_covers'];
+        const chartsData = dCaches['cache_charts'];
+        const newReleasesData = dCaches['cache_new_releases'];
+        const mbidMapperData = dCaches['cache_mbid_mapper'];
+
         const now = Date.now();
       // Load album art cache (keep full { url, timestamp } structure)
       if (albumArtData) {
