@@ -24448,6 +24448,8 @@ ${trackListXml}
 
     releaseObserverRef.current = new IntersectionObserver(
       (entries) => {
+        const intersectingCount = entries.filter(e => e.isIntersecting).length;
+        console.log(`👁️  [release-tracks] IO callback: ${entries.length} entries, ${intersectingCount} intersecting`);
         let changed = false;
         entries.forEach(entry => {
           const trackId = entry.target.dataset.trackId;
@@ -24483,6 +24485,7 @@ ${trackListXml}
               });
             }
           });
+          console.log(`👁️  [release-tracks] Sending ${visibleTracks.length} visible tracks to scheduler`);
           updateSchedulerVisibility('release-tracks', visibleTracks);
         }
       },
