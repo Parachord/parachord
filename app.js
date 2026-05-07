@@ -23611,6 +23611,24 @@ ${trackListXml}
 
     if (cacheValid) {
       const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
+
+      // Detect a poisoned cache: the entry is "valid" (hash matches, not
+      // expired) but every cached source is a noMatch sentinel. This is the
+      // signature left by the recent self-rejection bug — calculateConfidence
+      // was reading the wrong target artist, validation collapsed to 0.5,
+      // every resolver got marked noMatch, then re-resolved correctly later
+      // BUT the original cache entry retained the all-noMatch state. After
+      // restart the in-memory cache hydrates from disk and we hit this path
+      // with a "valid" cache that displays no badges and never re-tries.
+      // Force re-resolve so the cache rewrites with real sources.
+      const cachedRealSources = filterNoMatch(cachedData.sources);
+      if (Object.keys(cachedRealSources).length === 0 && Object.keys(cachedData.sources || {}).length > 0) {
+        console.log(`🔄 Cache for "${track.title}" is all-noMatch (poisoned by prior bug) — re-resolving`);
+        // Fall through to the active-resolver fan-out below by NOT returning early.
+        // First, invalidate the in-memory cache so the post-resolve write isn't
+        // a no-op. Persisted-store update happens at the end of resolution.
+        delete trackSourcesCache.current[cacheKey];
+      } else {
       if (DEBUG_RESOLUTION) console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h, sources: ${Object.keys(cachedData.sources).join(', ')})`);
 
       // Use cached sources immediately for fast UI (filter out noMatch sentinels).
@@ -23639,6 +23657,7 @@ ${trackListXml}
       }
 
       return displaySources;
+      } // close `else` (real cache hit branch); poisoned-cache path falls through to fresh resolve
     }
 
     // Check abort after cache check
