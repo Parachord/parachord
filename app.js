@@ -1507,12 +1507,21 @@ const loadBuiltinResolvers = async () => {
   if (window.electron?.resolvers?.loadBuiltin) {
     console.log('📁 Loading plugins from cache...');
     try {
-      // First sync with marketplace (in background, don't block)
-      syncPluginsWithMarketplace().then(async (pluginsUpdated) => {
-        if (pluginsUpdated) {
-          console.log('🔄 Plugins updated by marketplace sync — hot-reloading...');
-          window.dispatchEvent(new CustomEvent('parachord-plugins-updated'));
-        }
+      // Marketplace sync — defer to idle so its ~20s of background HTTP +
+      // version comparison + (occasionally) plugin downloads doesn't compete
+      // with foreground startup work. The cached plugins on disk are good
+      // enough for first paint; updates land on the next session OR via
+      // hot-reload event if the sync finishes in this session. See #765.
+      const scheduleMarketplaceSync = window.requestIdleCallback
+        ? (cb) => window.requestIdleCallback(cb, { timeout: 10000 })
+        : (cb) => setTimeout(cb, 5000);
+      scheduleMarketplaceSync(() => {
+        syncPluginsWithMarketplace().then(async (pluginsUpdated) => {
+          if (pluginsUpdated) {
+            console.log('🔄 Plugins updated by marketplace sync — hot-reloading...');
+            window.dispatchEvent(new CustomEvent('parachord-plugins-updated'));
+          }
+        });
       });
 
       // Load cached plugins immediately
@@ -34692,7 +34701,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       }
     };
-    checkMusicKitAvailable();
+    // Defer Apple Music init until after first paint. The expensive bits
+    // (musicKitWeb.configure ~1.9s, library load ~1.3s, optional fetchUserToken)
+    // were running synchronously on mount and dominated the 3+ seconds of
+    // "Loading…" between cache-load and first interactive frame. Most users
+    // don't immediately click an Apple Music track — by the time they do,
+    // the auto-reconnect has already finished. The Apple Music settings
+    // panel may briefly show "not connected" before flipping to "Connected"
+    // when this completes. See issue #765.
+    const scheduleAppleMusicInit = window.requestIdleCallback
+      ? (cb) => window.requestIdleCallback(cb, { timeout: 5000 })
+      : (cb) => setTimeout(cb, 1000);
+    scheduleAppleMusicInit(() => { checkMusicKitAvailable(); });
   }, []);
 
   const appleMusicConnectingRef = useRef(false);
