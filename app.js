@@ -8818,6 +8818,16 @@ const Parachord = () => {
   };
 
   // Cache TTLs (in milliseconds)
+  // Schema version for trackSourcesCache entries. Bumped when we fix a bug
+  // that produced systematically-wrong cached state (e.g. the self-rejection
+  // bug that wrote all-noMatch sentinels for tracks that did have valid
+  // matches). Old entries lacking this marker AND showing all-noMatch are
+  // assumed poisoned and re-resolved once. Entries written post-bump are
+  // trusted even when all-noMatch (legitimate "deep cut not on any service"
+  // case). Bump this number any time you ship a fix that could leave the
+  // existing cache with systematically-wrong sources.
+  const CACHE_SCHEMA_VERSION = 2;
+
   const CACHE_TTL = {
     albumArt: 90 * 24 * 60 * 60 * 1000,    // 90 days
     artistData: 30 * 24 * 60 * 60 * 1000,  // 30 days
@@ -23472,7 +23482,8 @@ ${trackListXml}
         trackSourcesCache.current[cacheKey] = {
           sources: freshSources,
           timestamp: Date.now(),
-          resolverHash: getResolverSettingsHash()
+          resolverHash: getResolverSettingsHash(),
+          v: CACHE_SCHEMA_VERSION
         };
 
         // Update UI with fresh sources
@@ -23612,21 +23623,25 @@ ${trackListXml}
     if (cacheValid) {
       const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
 
-      // Detect a poisoned cache: the entry is "valid" (hash matches, not
-      // expired) but every cached source is a noMatch sentinel. This is the
-      // signature left by the recent self-rejection bug — calculateConfidence
-      // was reading the wrong target artist, validation collapsed to 0.5,
-      // every resolver got marked noMatch, then re-resolved correctly later
-      // BUT the original cache entry retained the all-noMatch state. After
-      // restart the in-memory cache hydrates from disk and we hit this path
-      // with a "valid" cache that displays no badges and never re-tries.
-      // Force re-resolve so the cache rewrites with real sources.
+      // Detect a poisoned cache: an entry written by buggy old code where
+      // every source was tagged noMatch due to the self-rejection bug
+      // (calculateConfidence reading wrong target artist → 0.5 → reject).
+      //
+      // Distinguishing poisoned from legitimately-no-match: cache entries
+      // written by post-fix code carry `v: CACHE_SCHEMA_VERSION`. Old
+      // entries don't have `v`. If we see all-noMatch AND no version
+      // marker → assume poisoned, force one re-resolve. The post-resolve
+      // write tags it with the current version, so subsequent visits
+      // recognize it as a legitimate "tried everything, found nothing"
+      // entry and don't re-resolve. Without this version gate, tracks
+      // that legitimately have no matches anywhere (deep cuts on small
+      // labels) would re-resolve forever.
       const cachedRealSources = filterNoMatch(cachedData.sources);
-      if (Object.keys(cachedRealSources).length === 0 && Object.keys(cachedData.sources || {}).length > 0) {
-        console.log(`🔄 Cache for "${track.title}" is all-noMatch (poisoned by prior bug) — re-resolving`);
+      const isAllNoMatch = Object.keys(cachedRealSources).length === 0 && Object.keys(cachedData.sources || {}).length > 0;
+      const isPoisoned = isAllNoMatch && !cachedData.v;
+      if (isPoisoned) {
+        console.log(`🔄 Cache for "${track.title}" is all-noMatch with no version (poisoned by prior bug) — re-resolving`);
         // Fall through to the active-resolver fan-out below by NOT returning early.
-        // First, invalidate the in-memory cache so the post-resolve write isn't
-        // a no-op. Persisted-store update happens at the end of resolution.
         delete trackSourcesCache.current[cacheKey];
       } else {
       if (DEBUG_RESOLUTION) console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h, sources: ${Object.keys(cachedData.sources).join(', ')})`);
@@ -23673,7 +23688,8 @@ ${trackListXml}
       trackSourcesCache.current[cacheKey] = {
         sources: persistedSources,
         timestamp: now,
-        resolverHash: currentResolverHash
+        resolverHash: currentResolverHash,
+        v: CACHE_SCHEMA_VERSION
       };
       return {};
     }
@@ -23700,7 +23716,8 @@ ${trackListXml}
       trackSourcesCache.current[cacheKey] = {
         sources: persistedSources,
         timestamp: now,
-        resolverHash: currentResolverHash
+        resolverHash: currentResolverHash,
+        v: CACHE_SCHEMA_VERSION
       };
 
       // If sources were injected from top-level track fields (e.g., spotifyUri from sync)
@@ -23780,7 +23797,8 @@ ${trackListXml}
       trackSourcesCache.current[cacheKey] = {
         sources: sources,
         timestamp: now,
-        resolverHash: currentResolverHash
+        resolverHash: currentResolverHash,
+        v: CACHE_SCHEMA_VERSION
       };
 
       // Persist new sources (including noMatch sentinels) back to collection/playlist
@@ -23881,7 +23899,8 @@ ${trackListXml}
       trackSourcesCache.current[cacheKey] = {
         sources: sources,
         timestamp: Date.now(),
-        resolverHash: getResolverSettingsHash()
+        resolverHash: getResolverSettingsHash(),
+        v: CACHE_SCHEMA_VERSION
       };
 
       // Persist new sources back to collection if this track is in the collection
@@ -24084,7 +24103,8 @@ ${trackListXml}
     trackSourcesCache.current[cacheKey] = {
       sources: sources,
       timestamp: Date.now(),
-      resolverHash: getResolverSettingsHash()
+      resolverHash: getResolverSettingsHash(),
+      v: CACHE_SCHEMA_VERSION
     };
 
     if (realSourceCount > 0 && trackKey) {
@@ -30534,7 +30554,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       trackSourcesCache.current[cacheKey] = {
         sources,
         timestamp: Date.now(),
-        resolverHash: currentResolverHash
+        resolverHash: currentResolverHash,
+        v: CACHE_SCHEMA_VERSION
       };
       console.log(`👥 Friend track resolved with ${Object.keys(sources).length} sources`);
     }
