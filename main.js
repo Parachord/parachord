@@ -2553,18 +2553,36 @@ ipcMain.handle('store-get', (event, key) => {
   return store.get(key);
 });
 
-// Batch get — fetch multiple keys in a single IPC roundtrip
+// Batch get — fetch multiple keys in a single IPC roundtrip.
+//
+// Performance-critical: electron-store's .get(key) implementation is
+// `_.get(this.store, key)`, and the `store` getter is
+// `JSON.parse(JSON.stringify(this.#store))` — i.e., every single .get()
+// call deep-clones the ENTIRE underlying config. On populated installs
+// where config.json is ~45MB (ours: 16MB local_playlists + 13MB
+// cache_track_sources + 3.5MB cache_album_art + …), one clone takes
+// ~170ms. Doing 37 .get() calls in a loop = 37 × 170ms ≈ 6 seconds of
+// pure CPU on the main thread, blocking every other IPC handler. That
+// was the dominant component of the ~10s startup gap on populated
+// installs (measured on user's machine: 6315ms for 37-key critical
+// batch + 1707ms for 10-key big-cache batch ≈ 8s total).
+//
+// Fix: read `store.store` ONCE (one clone, ~170ms), then index into
+// the resulting object by key. N+1 work instead of N×N. Drops the
+// 6315ms case to ~200ms.
 ipcMain.handle('store-get-batch', (event, keys) => {
   const t0 = Date.now();
+  const data = store.store;
+  const cloneMs = Date.now() - t0;
   const result = {};
   for (const key of keys) {
     if (ALLOWED_STORE_KEYS.has(key)) {
-      result[key] = store.get(key);
+      result[key] = data[key];
     }
   }
   const ms = Date.now() - t0;
   if (ms > 50) {
-    console.log(`📦 store-get-batch (${keys.length} keys) took ${ms}ms`);
+    console.log(`📦 store-get-batch (${keys.length} keys) took ${ms}ms (clone=${cloneMs}ms)`);
   }
   return result;
 });

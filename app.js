@@ -24444,6 +24444,8 @@ ${trackListXml}
     const releaseTitle = currentRelease.title;
     const releaseAlbumArt = currentRelease.albumArt;
 
+    console.log(`👁️  [release-tracks] Setting up observer (${releaseTracks.length} tracks, ${releaseTrackRowRefs.current.size} refs registered)`);
+
     releaseObserverRef.current = new IntersectionObserver(
       (entries) => {
         let changed = false;
@@ -24488,9 +24490,14 @@ ${trackListXml}
     );
 
     // Observe all existing track rows
+    let observedCount = 0;
     releaseTrackRowRefs.current.forEach((element) => {
-      if (element) releaseObserverRef.current.observe(element);
+      if (element) {
+        releaseObserverRef.current.observe(element);
+        observedCount++;
+      }
     });
+    console.log(`👁️  [release-tracks] Observed ${observedCount} row(s)`);
 
     return () => releaseObserverRef.current?.disconnect();
     // `currentRelease?.tracks` (truthiness) gates the same partial→full
