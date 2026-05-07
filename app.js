@@ -165,6 +165,12 @@ const validateResolvedTrack = (result, targetArtist, targetTitle) => {
 // 0.95 (both-axis match) passes.
 const MIN_CONFIDENCE_THRESHOLD = 0.6;
 
+// Debug flags. Render-path / resolution-path logs are gated on these so they
+// don't fire dozens-to-hundreds of times per page load in normal operation.
+// Flip to true locally when troubleshooting that subsystem; do NOT commit a
+// `true` value. See issue #763.
+const DEBUG_RESOLUTION = false;
+
 // Render-time helper: among a track's sources, find the highest confidence.
 // Used to drive relative-dim badge logic — a resolver whose result confidence
 // matches the per-track best renders at full opacity; lower-confidence
@@ -4030,19 +4036,6 @@ const ReleasePage = ({
             // Check if this track is currently playing from this album
             const isCurrentTrack = currentTrack?.id === trackId;
             const isNowPlaying = isCurrentTrack && playbackContext?.type === 'album' && playbackContext?.id === release.id;
-
-            // Debug logging for first track only
-            if (index === 0) {
-              console.log('🎯 ReleasePage highlight check:', {
-                trackId,
-                currentTrackId: currentTrack?.id,
-                isCurrentTrack,
-                playbackContextType: playbackContext?.type,
-                playbackContextId: playbackContext?.id,
-                releaseId: release.id,
-                isNowPlaying
-              });
-            }
 
             return React.createElement('div', {
               key: index,
@@ -23392,7 +23385,7 @@ ${trackListXml}
       currentResolvers.find(r => r.id === id)?.capabilities?.resolve
     );
 
-    if (cachedData || hasValidPersistedSources) {
+    if (DEBUG_RESOLUTION && (cachedData || hasValidPersistedSources)) {
       console.log(`  🔍 Cache check for "${track.title}": in-memory=${!!cachedData}, persisted=${persistedResolverIds.join(', ') || 'none'}, missing: ${missingResolvers.join(', ') || 'none'}`);
     }
 
@@ -23403,7 +23396,7 @@ ${trackListXml}
 
     if (cacheValid) {
       const cacheAge = Math.floor((now - cachedData.timestamp) / (1000 * 60 * 60)); // hours
-      console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h, sources: ${Object.keys(cachedData.sources).join(', ')})`);
+      if (DEBUG_RESOLUTION) console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h, sources: ${Object.keys(cachedData.sources).join(', ')})`);
 
       // Use cached sources immediately for fast UI (filter out noMatch sentinels).
       // Re-score confidence under the current calculateConfidence semantics so
@@ -23441,7 +23434,7 @@ ${trackListXml}
     const realPersistedSources = filterNoMatch(persistedSources);
     const hasRealPersistedSources = Object.keys(realPersistedSources).length > 0;
     if (!cacheValid && hasValidPersistedSources && !hasRealPersistedSources && missingResolvers.length === 0) {
-      console.log(`📦 All persisted sources are noMatch for: ${track.title} — skipping re-resolve`);
+      if (DEBUG_RESOLUTION) console.log(`📦 All persisted sources are noMatch for: ${track.title} — skipping re-resolve`);
       // Cache the all-noMatch state in memory so we don't re-check persisted sources next time
       trackSourcesCache.current[cacheKey] = {
         sources: persistedSources,
@@ -23451,7 +23444,7 @@ ${trackListXml}
       return {};
     }
     if (!cacheValid && hasRealPersistedSources && missingResolvers.length === 0) {
-      console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
+      if (DEBUG_RESOLUTION) console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
 
       // Re-score confidence under current calculateConfidence semantics so any
       // pre-fix entries with stale low scores get refreshed before the
@@ -41853,19 +41846,6 @@ useEffect(() => {
                     const isDragging = playlistEditMode && draggedPlaylistTrack === index;
                     const isCurrentTrack = currentTrack?.id === track.id;
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'playlist' && playbackContext?.id === selectedPlaylist?.id;
-
-                    // Debug logging for first track only
-                    if (index === 0) {
-                      console.log('🎯 Playlist highlight check:', {
-                        trackId: track.id,
-                        currentTrackId: currentTrack?.id,
-                        isCurrentTrack,
-                        playbackContextType: playbackContext?.type,
-                        playbackContextId: playbackContext?.id,
-                        selectedPlaylistId: selectedPlaylist?.id,
-                        isNowPlaying
-                      });
-                    }
 
                     return React.createElement('div', {
                       key: track.id || index,
