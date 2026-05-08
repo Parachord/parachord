@@ -1,4 +1,6 @@
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const LocalFilesDatabase = require('./database');
 const FileScanner = require('./scanner');
 const FileWatcher = require('./watcher');
@@ -167,7 +169,7 @@ class LocalFilesService {
 
   // Format track for renderer
   formatTrackForRenderer(track) {
-    return {
+    const formatted = {
       id: `local-${track.id}`,
       title: track.title,
       artist: track.artist,
@@ -192,6 +194,38 @@ class LocalFilesService {
         }
       }
     };
+    // Sync warm-cache fast-path for album art (issue #786). Only checks
+    // already-extracted/already-existing files — no I/O beyond fs.existsSync,
+    // bounded at ~1ms per track on SSD. Cold cache (track has embedded art
+    // but cache hasn't been populated yet) returns no albumArt here; the
+    // renderer's lazy background extraction kicks in to warm the cache so
+    // subsequent loads pick it up. See LocalFilesService.resolveArtForTrack
+    // for the on-demand IPC entry point.
+    if (track.folder_art_path && fs.existsSync(track.folder_art_path)) {
+      formatted.albumArt = `file://${track.folder_art_path}`;
+    } else if (track.has_embedded_art && this.albumArt) {
+      const hash = crypto.createHash('md5').update(track.file_path).digest('hex');
+      const jpg = path.join(this.albumArt.cacheDir, `embedded-${hash}.jpg`);
+      const png = path.join(this.albumArt.cacheDir, `embedded-${hash}.png`);
+      if (fs.existsSync(jpg)) formatted.albumArt = `file://${jpg}`;
+      else if (fs.existsSync(png)) formatted.albumArt = `file://${png}`;
+    }
+    return formatted;
+  }
+
+  // On-demand art resolution. Used by the renderer's lazy background
+  // extraction loop to warm the cache for tracks that don't have a cached
+  // extraction yet (typical for fresh installs). Routes through the existing
+  // 5-tier resolver (embedded → folder → MB cache → CAA → null), which
+  // extracts and writes to cache as a side effect.
+  async resolveArtForTrack(track) {
+    if (!this.albumArt) return null;
+    try {
+      return await this.albumArt.resolveArt(track);
+    } catch (err) {
+      console.warn('[LocalFiles] resolveArtForTrack failed:', err && err.message ? err.message : err);
+      return null;
+    }
   }
 
   async formatTrackForRendererWithArt(track) {

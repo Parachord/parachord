@@ -18,9 +18,20 @@
 // See parachord-android/shared/.../ResolverScoring.kt header for the full
 // rationale.
 
-// Lowercase + strip everything but [a-z0-9]. Used for fuzzy comparison.
+// Case-fold + strip non-alphanumeric. Unicode-aware: decomposes accented
+// Latin (ö → o, café → cafe) via NFKD + combining-mark strip, preserves
+// non-Latin scripts (Japanese/Cyrillic/etc.) via \p{L}\p{N} keepset. The
+// previous regex `/[^a-z0-9]/g` collapsed Japanese/Cyrillic titles to ""
+// and lost umlauts instead of folding them. Cross-platform mirror: keep
+// byte-aligned with app.js#normalizeStr and the Kotlin equivalents on
+// Android.
 function normalizeStr(s) {
-  return (s || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+  return (s || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}]/gu, '');
 }
 
 // Containment check: either string contains the other (after normalization).

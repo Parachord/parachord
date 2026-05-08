@@ -1,3 +1,67 @@
+# Parachord v0.9.2
+
+**Release date:** 2026-05-08
+
+> Goodbye, "beta." Build numbers drop the suffix starting with this release. Same Parachord, cleaner version string.
+
+---
+
+
+## Achordion: community-powered match cache
+
+Parachord can now contribute verified resolver matches to [Achordion](https://achordion.xyz), a shared community cache of "this track on MusicBrainz = these streaming URLs." After a track plays at high confidence, its match is submitted so other Parachord users can skip the search step on the same track. No personal data is sent.
+
+- Ships on by default. Disable via the Plugins tab if you'd rather not contribute.
+- New **"View on Achordion"** right-click options on tracks, albums, and artists.
+- Share links and embed codes now go through Achordion for richer metadata and faster lookups.
+
+This is the **submit** half. The **consume** half — skipping live resolver searches when Achordion already has a hit — is coming next.
+
+## Faster, especially on big libraries
+
+A package of performance work, with the biggest wins on libraries with thousands of local files:
+
+- **Cold launch is noticeably snappier.** Heavy work (album art cache, artist data, Apple Music init, marketplace sync) now hydrates in the background instead of blocking the window from opening.
+- **Importing huge local libraries no longer freezes the app.** One user reported a 150k-track library locking things up for tens of seconds — that path is now smooth, with a progress toast so you know what's happening.
+- **Embedded album art shows up immediately.** If your local files have art baked into their ID3 tags or a sibling `cover.jpg`, it now appears in the library list right away instead of only when you play the track.
+- **DevTools is usable again.** Removed render-path log spam that was making the console unreadable on big libraries.
+
+## Album page fixes
+
+- Tracks now resolve correctly when you navigate directly to an album page (previously, some album views appeared empty).
+- Two slowness bugs in album resolution are gone — pages load substantially faster on slower connections.
+- Albums where no resolver could match any track now grey out the unavailable tracks, so you can tell at a glance what's reachable on your enabled providers.
+
+## Smarter, calmer track resolution
+
+The background work that figures out where each track is playable on your enabled services has been retuned to do less work, in a smarter order:
+
+- **Tracks you're looking at resolve first.** Whatever's on screen — the album you just opened, the playlist you're scrolling, the artist page you're browsing — gets priority over background pre-resolution. Hovered tracks jump the line; queued tracks jump even higher.
+- **No more flooding on album/release pages.** A bug was causing every track on a release page to fight for resolution at once, racing against your queue and slowing both down. Visible tracks now resolve in order; off-screen tracks wait their turn.
+- **Less churn at idle.** Background pre-resolution no longer constantly re-checks tracks that already have a confident source — it focuses on the unresolved ones and goes quiet when there's nothing to do.
+- **Stale match scores are re-evaluated on launch** so tracks resolved before the v0.9.1 confidence fixes get the benefit without you having to replay them.
+
+The net effect: less network and CPU activity, faster results where you're actually looking, and fewer mystery "No Source Found" dialogs from cached scores that no longer apply.
+
+## Listen-along works again
+
+Starting listen-along from the friends sidebar was silently failing for some friends after the v0.9.1 confidence-scoring changes. Fixed — listen-along is reliable again, including for tracks with non-Latin titles (Japanese, Cyrillic, etc.) which were also being dropped.
+
+## Better bug reports
+
+Settings now has a **"Copy Diagnostic Log"** button that grabs the last 2,000 log lines from this session. If you hit a bug, please attach the output to your bug report — it tells us a lot more than a screenshot.
+
+## Cache cleanup
+
+Fixed a subtle issue where some tracks appeared as "no resolver found a match" forever, even after upstream resolvers were fixed. Affected tracks now re-resolve cleanly once on next play.
+
+## Smaller things
+
+- "Copy link" hover button removed from Critical Darlings and Charts — it was crowding the UI.
+- Library scan now toasts progress so you can navigate away from the scan screen and still see what's happening.
+
+---
+
 # Parachord v0.9.1-beta.4
 
 **Release date:** 2026-05-05

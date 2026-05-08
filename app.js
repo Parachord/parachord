@@ -231,7 +231,24 @@ window.isPublicHttpUrl = (urlString) => {
 // floor, the wrong-artist source could outrank a correct local file. The fix
 // requires BOTH axes to substring-match (else 0.50) and gates selection on
 // MIN_CONFIDENCE_THRESHOLD = 0.6.
-const normalizeStr = (s) => (s || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+// Case-fold + strip non-alphanumeric. Unicode-aware: decomposes accented
+// Latin characters via NFKD then drops combining marks (ö → o, café → cafe),
+// preserves non-Latin letters and digits via Unicode property classes
+// (動物寓意譚 stays as-is instead of normalizing to ""). The previous regex
+// `/[^a-z0-9]/g` stripped ALL non-ASCII, which (a) silently broke validation
+// for Japanese/Cyrillic/etc. titles by collapsing them to empty strings, and
+// (b) lost umlauts/accents instead of folding them, causing false rejections
+// when a resolver returned the canonical accented form. Cross-platform
+// mirror: keep byte-aligned with tests/helpers/confidence-scoring.js#normalizeStr
+// and the Kotlin equivalents on Android (ResolverModels.kt#normalizeStr,
+// ResolverScoring.kt). Drift here breaks listen-along and source matching
+// for any track with non-Latin script in artist or title.
+const normalizeStr = (s) => (s || '')
+  .toString()
+  .toLowerCase()
+  .normalize('NFKD')
+  .replace(/\p{M}/gu, '')
+  .replace(/[^\p{L}\p{N}]/gu, '');
 
 const validateResolvedTrack = (result, targetArtist, targetTitle) => {
   if (!result || !result.artist || !result.title) return false;
@@ -256,22 +273,21 @@ const MIN_CONFIDENCE_THRESHOLD = 0.6;
 // `true` value. See issue #763.
 const DEBUG_RESOLUTION = false;
 
-// Render-time helper: among a track's sources, find the highest confidence.
-// Used to drive relative-dim badge logic — a resolver whose result confidence
-// matches the per-track best renders at full opacity; lower-confidence
-// alternatives render dimmed so the user can tell at a glance which resolver
-// has the strongest match. Skips noMatch sentinels.
-const getBestSourceConfidence = (sources) => {
-  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return 0;
-  let best = 0;
-  for (const key of Object.keys(sources)) {
-    const s = sources[key];
-    if (!s || s.noMatch) continue;
-    const c = typeof s.confidence === 'number' ? s.confidence : 0;
-    if (c > best) best = c;
-  }
-  return best;
-};
+// Render-time helper: returns the absolute confidence threshold below which
+// a resolver source's badge renders dimmed. The historical implementation
+// returned per-track best (relative-dim model: a 0.95 fuzzy-validated match
+// rendered dimmed when a sibling resolver had a 1.0 direct-ID match), which
+// misled users into reading "dimmed" as "wrong" — the dimmed match was
+// nearly always correct, just lower-confidence than a sibling. Flipped to
+// the absolute model on 2026-05-08: dim only when strictly below 0.95.
+// Since the upstream MIN_CONFIDENCE_THRESHOLD = 0.6 floor drops sub-floor
+// results before they reach `track.sources`, in normal operation the only
+// values present are 0.95 (fuzzy validated) and 1.0 (direct-ID), so under
+// the new rule nothing dims unless a resolver explicitly returned a
+// non-standard sub-0.95 confidence. The function signature is preserved
+// (takes `sources`, returns a number) so the 11 badge call sites compare
+// against `bestConf` unchanged. The argument is now ignored.
+const getBestSourceConfidence = (_sources) => 0.95;
 
 // Resolve a track to a recording MBID for ListenBrainz love submission.
 // Tries (1) cached track.mbid, (2) the MBID Mapper. Returns the MBID
@@ -289,6 +305,28 @@ window.resolveMbidForLove = async (track) => {
       return data.recording_mbid;
     }
   } catch (e) { /* mapper down or rate-limited; treat as unresolved */ }
+  return null;
+};
+
+// Resolve an album to a release MBID via the MBID Mapper, given the artist
+// and any recording from the album. Achordion's entity-link endpoint
+// accepts release MBIDs and maps them to the canonical release-group page
+// server-side, so this is sufficient for share-link generation. The mapper
+// is recording-keyed (no album-name lookup), so we feed it any track from
+// the album and read the `release_mbid` field off the response. Used by
+// publishCollectionSmartLink as a fallback when none of the upstream data
+// shapes (context-menu data, share-dropdown release object) carries an MBID.
+window.resolveAlbumMbidViaMapper = async (artist, anyRecordingTitle) => {
+  if (!artist || !anyRecordingTitle) return null;
+  try {
+    const url = `https://mapper.listenbrainz.org/mapping/lookup?artist_credit_name=${encodeURIComponent(artist)}&recording_name=${encodeURIComponent(anyRecordingTitle)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data?.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(data.release_mbid || '')) {
+      return data.release_mbid;
+    }
+  } catch (e) { /* mapper down or rate-limited */ }
   return null;
 };
 
@@ -380,10 +418,6 @@ window.nativeMusicKitLimiter = (() => {
     isCoolingDown: () => Date.now() < cooldownUntil,
   };
 })();
-
-// Smart Links API URL - change this after deploying to Cloudflare
-// Default to the local dev server or deployed URL
-const SMART_LINKS_API_URL = 'https://go.parachord.com';
 
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
@@ -1904,6 +1938,12 @@ chatgpt: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-1
   ),
   ticketmaster: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M7.5 7.5h3.2v-4h2.6v4H17v2.4h-3.7V16c0 1.1.4 1.6 1.4 1.6.7 0 1.4-.2 2.1-.5l.7 2.2c-1 .5-2.1.8-3.3.8-2.5 0-3.5-1.4-3.5-3.8V9.9H7.5V7.5z' })
+  ),
+  achordion: React.createElement('svg', { viewBox: '0 0 190 190', className: 'w-16 h-16', fill: 'none' },
+    React.createElement('circle', { cx: 95, cy: 95, r: 94.5, fill: '#273441', stroke: 'white' }),
+    React.createElement('path', { d: 'M88.5 48.7222C112.725 48.7222 133.5 69.5684 133.5 96.7222C133.5 123.876 112.725 144.722 88.5 144.722C64.2754 144.722 43.5 123.876 43.5 96.7222C43.5 69.5684 64.2754 48.7222 88.5 48.7222Z', stroke: 'white', strokeWidth: 27 }),
+    React.createElement('rect', { x: 122.5, y: 35.7222, width: 24, height: 122, fill: 'white', stroke: 'white' }),
+    React.createElement('path', { d: 'M148.5 29.5V37.1426H144.852V45.5H122.148V37.1426H118.5V29.5H148.5Z', fill: '#774BE9', stroke: 'white', strokeWidth: 3 })
   )
 };
 
@@ -4053,11 +4093,24 @@ const ReleasePage = ({
               React.createElement('button', {
                 onClick: () => {
                   setShareDropdownOpen(false);
+                  // Harvest any available MBID. release.id is typically the
+                  // release-group MBID for MB-derived discography; for Spotify
+                  // / Apple Music fallback paths it's prefixed (e.g.
+                  // "spotify-..."), so rely on the UUID-shape check inside
+                  // publishCollectionSmartLink to gate validity. First track's
+                  // releaseMbid (mapper-enriched) is a reliable fallback —
+                  // Achordion server-side maps release MBIDs to release-groups.
+                  const albumMbid = release.releaseGroupMbid
+                    || release.mbid
+                    || release.id
+                    || release.tracks?.[0]?.releaseMbid
+                    || null;
                   const collectionData = {
                     title: release.title,
                     artist: release.artist?.name || release.artist,
                     albumArt: release.albumArt,
                     type: 'album',
+                    mbid: albumMbid,
                     tracks: (release.tracks || []).map((t, i) => ({
                       title: t.title || 'Unknown',
                       artist: t.artist || release.artist?.name || null,
@@ -6184,6 +6237,17 @@ const Parachord = () => {
               try {
                 const allPlaylists = await window.electron.playlists.load();
                 let playlistsChanged = false;
+                // Track which specific playlists mutated so we save only those
+                // at the end. Saving all 142 sequentially used to pinwheel the
+                // app for tens of seconds — one .save() IPC per playlist, even
+                // for ones we didn't touch.
+                const modifiedPlaylistIds = new Set();
+                // Inter-IPC delay so a sync of dozens of playlists doesn't
+                // monopolize the main process and starve UI-related IPCs of
+                // service time. 250ms × ~10 changed playlists = 2.5s spread,
+                // which is fine for a 15-min background loop.
+                const SYNC_IPC_DELAY_MS = 250;
+                const breathe = () => new Promise(r => setTimeout(r, SYNC_IPC_DELAY_MS));
 
                 for (const playlist of allPlaylists) {
                   // Skip playlists that are local-only
@@ -6230,11 +6294,13 @@ const Parachord = () => {
                           }
                         };
                         playlistsChanged = true;
+                        modifiedPlaylistIds.add(playlist.id);
                         console.log(`[Sync] Created playlist "${playlist.title}" on ${providerId}: ${result.externalId}`);
                       }
                     } catch (err) {
                       console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
                     }
+                    await breathe();
                   } else if (playlist.locallyModified) {
                     // Playlist exists remotely and has local changes — push updates
                     console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
@@ -6264,19 +6330,23 @@ const Parachord = () => {
                           syncedAt: Date.now()
                         };
                         playlistsChanged = true;
+                        modifiedPlaylistIds.add(playlist.id);
                       } else if (pushResult?.error === 'PLAYLIST_NOT_FOUND' || pushResult?.error?.includes('404')) {
                         // Remote playlist was deleted
                         playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
                         playlistsChanged = true;
+                        modifiedPlaylistIds.add(playlist.id);
                         console.warn(`[Sync] Remote playlist "${playlist.title}" was deleted on ${providerId}`);
                       }
                     } catch (err) {
                       if (err.message?.includes('404') || err.message?.includes('Not Found')) {
                         playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
                         playlistsChanged = true;
+                        modifiedPlaylistIds.add(playlist.id);
                       }
                       console.warn(`[Sync] Failed to push playlist "${playlist.title}" to ${providerId}:`, err.message);
                     }
+                    await breathe();
                   }
                 }
 
@@ -6307,21 +6377,34 @@ const Parachord = () => {
                         // No outbound mirrors — the flag has no effect, clear
                         // it for consistency.
                         playlist.locallyModified = false;
+                        modifiedPlaylistIds.add(playlist.id);
                       } else {
                         const allSynced = relevantMirrors.every(pid =>
                           (playlist.syncedTo[pid]?.syncedAt || 0) >= (playlist.lastModified || 0)
                         );
                         if (allSynced) {
                           playlist.locallyModified = false;
+                          modifiedPlaylistIds.add(playlist.id);
                         }
                       }
                     }
                   }
 
-                  // Save all changes to disk and update UI
+                  // Save only the playlists that actually changed, with a
+                  // small breath between writes so the main-process disk-IO
+                  // queue doesn't starve UI-related IPCs (the pinwheel
+                  // pattern). Previously this loop awaited save() on every
+                  // playlist regardless of whether it mutated.
+                  let saveCount = 0;
                   for (const playlist of allPlaylists) {
+                    if (!modifiedPlaylistIds.has(playlist.id)) continue;
                     await window.electron.playlists.save(playlist);
+                    saveCount++;
+                    if (saveCount % 5 === 0) {
+                      await new Promise(r => setTimeout(r, 50));
+                    }
                   }
+                  console.log(`[Sync] Saved ${saveCount} modified playlist(s) of ${allPlaylists.length} total`);
                   // Preserve in-memory hosted playlists not yet persisted to disk
                   setPlaylists(prev => {
                     const diskIds = new Set(allPlaylists.map(p => p.id));
@@ -7853,11 +7936,56 @@ const Parachord = () => {
     }
   }, [selectedResolver?.id]);
 
-  // Listen for local files scan progress and library changes
+  // Listen for local files scan progress and library changes.
+  //
+  // Toast UX: the progress callback fires per-file in main.js, so a 150k-file
+  // scan would emit 150k IPC events and (unguarded) 150k toast updates.
+  // Throttle toast updates to ~250ms cadence — frequent enough to feel live,
+  // sparse enough that React doesn't spend a whole frame re-rendering the
+  // toast on every event. Settles to a "complete" toast 2s after the last
+  // progress event, which doubles as the only signal we have that the scan
+  // wrapped up (the scan service doesn't emit a distinct done event today).
   useEffect(() => {
     if (window.electron?.localFiles?.onScanProgress) {
+      let lastToastAt = 0;
+      let lastTotal = 0;
+      let firstEventForRun = true;
+      let completionTimer = null;
       window.electron.localFiles.onScanProgress((data) => {
+        // Always refresh the in-Settings progress-bar state — that render
+        // already exists and React batches state updates anyway.
         setScanProgress(data);
+        lastTotal = data.total || lastTotal;
+
+        const now = Date.now();
+        const isFirst = firstEventForRun;
+        firstEventForRun = false;
+        if (isFirst || (now - lastToastAt) >= 250) {
+          lastToastAt = now;
+          if (data.total > 0) {
+            showToast(
+              `Scanning library… ${data.current.toLocaleString()} / ${data.total.toLocaleString()}`,
+              'info',
+              null,
+              { persistent: true }
+            );
+          } else {
+            showToast('Scanning library…', 'info', null, { persistent: true });
+          }
+        }
+
+        // Reset/extend the completion timer on every event. When events stop
+        // arriving for 2s we treat the scan as done and show a success toast.
+        if (completionTimer) clearTimeout(completionTimer);
+        completionTimer = setTimeout(() => {
+          firstEventForRun = true;
+          completionTimer = null;
+          if (lastTotal > 0) {
+            showToast(`Library scan complete · ${lastTotal.toLocaleString()} files`, 'success');
+          } else {
+            showToast('Library scan complete', 'success');
+          }
+        }, 2000);
       });
     }
     if (window.electron?.localFiles?.onLibraryChanged) {
@@ -8969,6 +9097,72 @@ const Parachord = () => {
 
   // Enrich local file tracks with MBIDs, then fetch artwork for those missing it.
   // Two-phase: first MBID enrichment (fast, ~4ms each), then artwork fetch for artless tracks.
+  // Lazy embedded/folder art warmup. For tracks with `hasEmbeddedArt` (set
+  // by the local-files scan) but no resolved albumArt URL yet (cache cold),
+  // route them through main's `localFiles:resolveArt` IPC, which extracts
+  // the picture frame and writes a cache file. The result URL becomes the
+  // track's albumArt going forward — both via the immediate state update
+  // here and via the sync warm-cache fast-path on subsequent loads (since
+  // the cache file now exists; see formatTrackForRenderer in
+  // local-files/index.js). Concurrency-limited at 8 to avoid the bulk-
+  // Promise-allocation freeze that motivated issue #784.
+  //
+  // No network. Bounded by disk-write speed for the cache file (~1-5 ms
+  // per track on SSD). At 8 concurrent workers, 150k cold-cache tracks
+  // complete in ~3-15 minutes in the background; 10k tracks in ~10-60s.
+  // Successful resolutions are batched into setLibrary updates every 50
+  // resolved tracks so React isn't reconciling 150k single-prop edits.
+  const enrichLocalTracksWithEmbeddedArt = async (tracks) => {
+    if (!tracks || tracks.length === 0) return;
+    if (!window.electron?.localFiles?.resolveArt) return;
+    // Skip tracks that already have art (sync warm-cache fast-path landed it)
+    // or that don't have any local art source at all.
+    const candidates = tracks.filter(t =>
+      !t.albumArt && (t.hasEmbeddedArt || t.folderArtPath)
+    );
+    if (candidates.length === 0) return;
+
+    console.log(`🎨 [Local Art] Warming embedded/folder art for ${candidates.length} of ${tracks.length} tracks (background, throttled)…`);
+
+    const CONCURRENCY = 8;
+    const FLUSH_BATCH = 50;
+    let nextIdx = 0;
+    let pendingUpdates = [];
+    let totalResolved = 0;
+
+    const flush = () => {
+      if (pendingUpdates.length === 0) return;
+      const batch = pendingUpdates;
+      pendingUpdates = [];
+      const updateMap = new Map(batch.map(u => [u.id, u.albumArt]));
+      setLibrary(prev => prev.map(t => updateMap.has(t.id)
+        ? { ...t, albumArt: updateMap.get(t.id) }
+        : t
+      ));
+    };
+
+    const workers = Array.from({ length: CONCURRENCY }, async () => {
+      while (true) {
+        const idx = nextIdx++;
+        if (idx >= candidates.length) return;
+        const track = candidates[idx];
+        try {
+          const url = await window.electron.localFiles.resolveArt(track);
+          if (url) {
+            pendingUpdates.push({ id: track.id, albumArt: url });
+            totalResolved++;
+            if (pendingUpdates.length >= FLUSH_BATCH) flush();
+          }
+        } catch (err) {
+          // Silent — individual misses shouldn't poison the loop.
+        }
+      }
+    });
+    await Promise.all(workers);
+    flush();
+    console.log(`🎨 [Local Art] Warmup complete · resolved ${totalResolved} of ${candidates.length} candidates`);
+  };
+
   const enrichLocalTracksWithArtwork = async (tracks) => {
     if (!tracks || tracks.length === 0) return;
 
@@ -9213,8 +9407,13 @@ const Parachord = () => {
         const metaServicesWithConcerts = metaServiceAxes.filter(axe =>
           axe.capabilities?.concerts && axe.implementation?.searchArtistEvents
         );
+        // Meta services with playback-telemetry capability — fired on track start/scrobble
+        // via window.scrobbleManager. The plugin's init() self-registers with the manager.
+        const metaServicesWithPlaybackTelemetry = metaServiceAxes.filter(axe =>
+          axe.capabilities?.playbackTelemetry && axe.implementation?.init
+        );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat, ${metaServicesWithConcerts.length} with concerts)`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat, ${metaServicesWithConcerts.length} with concerts, ${metaServicesWithPlaybackTelemetry.length} with playback telemetry)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -9239,6 +9438,19 @@ const Parachord = () => {
           metaServicesWithConcerts.length > 0
             ? resolverLoader.current.loadResolvers(metaServicesWithConcerts).then(r =>
                 console.log(`🎫 Loaded ${r.length} concert service(s):`, r.map(s => s.name).join(', ')))
+            : Promise.resolve(),
+          metaServicesWithPlaybackTelemetry.length > 0
+            ? resolverLoader.current.loadResolvers(metaServicesWithPlaybackTelemetry).then(async r => {
+                // Run init() on each — that's where the plugin self-registers with scrobbleManager.
+                for (const axe of metaServicesWithPlaybackTelemetry) {
+                  try {
+                    await resolverLoader.current.initResolver(axe.manifest.id, {});
+                  } catch (e) {
+                    console.warn(`⚠️ Playback-telemetry init failed for ${axe.manifest.id}:`, e?.message || e);
+                  }
+                }
+                console.log(`📡 Loaded ${r.length} playback-telemetry service(s):`, r.map(s => s.name).join(', '));
+              })
             : Promise.resolve()
         ]);
 
@@ -9300,17 +9512,29 @@ const Parachord = () => {
           return !!(metaConfig?.enabled || metaConfig?.apiKey);
         });
 
-        // Re-load meta services with generate/chat capabilities into resolver loader
+        // Re-load meta services with generate/chat/playback-telemetry capabilities into resolver loader
         const withGenerate = filteredAxes.filter(axe =>
           axe.capabilities?.generate && axe.implementation?.generate);
         const withChat = filteredAxes.filter(axe =>
           axe.capabilities?.chat && axe.implementation?.chat);
+        const withPlaybackTelemetry = filteredAxes.filter(axe =>
+          axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
         await Promise.all([
           withGenerate.length > 0
             ? resolverLoaderRef.current.loadResolvers(withGenerate) : Promise.resolve(),
           withChat.length > 0
-            ? resolverLoaderRef.current.loadResolvers(withChat) : Promise.resolve()
+            ? resolverLoaderRef.current.loadResolvers(withChat) : Promise.resolve(),
+          withPlaybackTelemetry.length > 0
+            ? resolverLoaderRef.current.loadResolvers(withPlaybackTelemetry).then(async () => {
+                for (const axe of withPlaybackTelemetry) {
+                  try {
+                    await resolverLoaderRef.current.initResolver(axe.manifest.id, {});
+                  } catch (e) {
+                    console.warn(`⚠️ Playback-telemetry init (hot-reload) failed for ${axe.manifest.id}:`, e?.message || e);
+                  }
+                }
+              }) : Promise.resolve()
         ]);
 
         // Update meta services state so UI reflects new capabilities
@@ -9966,6 +10190,13 @@ const Parachord = () => {
           try {
             const allPlaylists = await window.electron.playlists.load();
             let playlistsChanged = false;
+            // Track which playlists actually mutated so the save loop only
+            // writes those — saving all 142 unconditionally caused the app
+            // to pinwheel for tens of seconds. Same pattern as the background
+            // sync loop above.
+            const modifiedPlaylistIds = new Set();
+            const SYNC_IPC_DELAY_MS = 250;
+            const breathe = () => new Promise(r => setTimeout(r, SYNC_IPC_DELAY_MS));
 
             for (const playlist of allPlaylists) {
               if (playlist.localOnly) continue;
@@ -10001,10 +10232,12 @@ const Parachord = () => {
                       }
                     };
                     playlistsChanged = true;
+                    modifiedPlaylistIds.add(playlist.id);
                   }
                 } catch (err) {
                   console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
                 }
+                await breathe();
               } else if (playlist.locallyModified) {
                 // Playlist exists remotely and has local changes — push updates
                 console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
@@ -10034,18 +10267,22 @@ const Parachord = () => {
                       syncedAt: Date.now()
                     };
                     playlistsChanged = true;
+                    modifiedPlaylistIds.add(playlist.id);
                   } else if (pushResult?.error === 'PLAYLIST_NOT_FOUND' || pushResult?.error?.includes('404')) {
                     playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
                     playlistsChanged = true;
+                    modifiedPlaylistIds.add(playlist.id);
                     console.warn(`[Sync] Remote playlist "${playlist.title}" was deleted on ${providerId}`);
                   }
                 } catch (err) {
                   if (err.message?.includes('404') || err.message?.includes('Not Found')) {
                     playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
                     playlistsChanged = true;
+                    modifiedPlaylistIds.add(playlist.id);
                   }
                   console.warn(`[Sync] Failed to push playlist "${playlist.title}" to ${providerId}:`, err.message);
                 }
+                await breathe();
               }
             }
 
@@ -10066,18 +10303,32 @@ const Parachord = () => {
                   );
                   if (relevantMirrors.length === 0) {
                     playlist.locallyModified = false;
+                    modifiedPlaylistIds.add(playlist.id);
                   } else {
                     const allSynced = relevantMirrors.every(pid =>
                       (playlist.syncedTo[pid]?.syncedAt || 0) >= (playlist.lastModified || 0)
                     );
-                    if (allSynced) playlist.locallyModified = false;
+                    if (allSynced) {
+                      playlist.locallyModified = false;
+                      modifiedPlaylistIds.add(playlist.id);
+                    }
                   }
                 }
               }
 
+              // Save only the playlists that actually changed, throttling
+              // every 5 saves to give the main process room to service
+              // unrelated IPCs (UI rendering, etc.).
+              let saveCount = 0;
               for (const playlist of allPlaylists) {
+                if (!modifiedPlaylistIds.has(playlist.id)) continue;
                 await window.electron.playlists.save(playlist);
+                saveCount++;
+                if (saveCount % 5 === 0) {
+                  await new Promise(r => setTimeout(r, 50));
+                }
               }
+              console.log(`[Sync] Saved ${saveCount} modified playlist(s) of ${allPlaylists.length} total`);
               setPlaylists(allPlaylists);
             }
           } catch (err) {
@@ -12329,8 +12580,24 @@ ${trackListXml}
           if (localTracks && localTracks.length > 0) {
             console.log(`📚 Loaded ${localTracks.length} local tracks into library (${localMs}ms IPC)`);
             setLibrary(localTracks);
-            // Background-enrich local library tracks with MBIDs, then fetch artwork for artless tracks
-            enrichLocalTracksWithArtwork(localTracks).catch(() => {});
+            // Always run the throttled embedded/folder art warmup — fast
+            // (no network, just main-process ID3 picture extraction +
+            // file-cache writes), bounded by concurrency cap, big payoff
+            // for users with well-tagged libraries (issue #786).
+            enrichLocalTracksWithEmbeddedArt(localTracks).catch(() => {});
+            // Bulk MBID + CAA enrichment is the slow path that froze the
+            // renderer at 150k tracks (#784): it fires Promise.all over
+            // tracks.length tracks with no concurrency cap, allocating
+            // 150k pending fetches in one tick. Cap usage to libraries
+            // small enough that the unbounded Promise.all is still safe;
+            // larger libraries skip it (their embedded/folder art covers
+            // most cases anyway). Once #784 lands a proper concurrency-
+            // limited version, this gate goes away.
+            if (localTracks.length > 10000) {
+              console.warn(`[Library] Skipping bulk MBID/CAA enrichment for ${localTracks.length} tracks (>10k threshold). Embedded/folder art still resolves via the warmup loop; see issue #784.`);
+            } else {
+              enrichLocalTracksWithArtwork(localTracks).catch(() => {});
+            }
           } else {
             console.log(`📚 No local files found - library is empty (${localMs}ms IPC)`);
             setLibrary([]);
@@ -12981,535 +13248,352 @@ ${trackListXml}
     showToast(`Smart link generated with ${resolvedCount} service${resolvedCount !== 1 ? 's' : ''}`);
   }, [showToast]);
 
-  // Publish smart link to cloud backend
-  const publishSmartLink = useCallback(async (track) => {
-    const query = `${track.artist || ''} ${track.title || ''}`.trim();
-    if (!query) {
-      showToast('Cannot publish link: missing track info', 'error');
+  // Copy a track's Achordion entity-page URL to the clipboard. Resolves to:
+  //   1. /recording/<mbid> via the entity-link endpoint when MBID is known
+  //      (cached on track or via the MBID Mapper fallback in the plugin)
+  //   2. /recording/lookup?artist=&title= when no MBID — Achordion handles
+  //      MB search server-side and 302s to the canonical recording page
+  //      (or /search on no match), so the share always produces a usable
+  //      URL even for obscure tracks the mapper misses.
+  //
+  // Bonus: if the user is sharing what they're currently listening to, fire
+  // window.achordion.submitNow(track) in parallel so the played-source
+  // resolver matches land in Achordion's cache immediately — bypasses the
+  // scrobble-manager's tier-2 timing gate. Recipients clicking the link get
+  // a fully-populated entity page right away. Background; clipboard copy
+  // doesn't wait for it. Skip this step for non-current-track shares since
+  // we have no playback evidence for those.
+  //
+  // Replaces the prior go.parachord.com smart-links backend, which fanned
+  // out per-resolver searches client-side and stored a custom redirect.
+  const publishSmartLink = useCallback(async (track, opts) => {
+    opts = opts || {};
+    const openInBrowser = !!opts.openInBrowser;
+    if (!track || (!track.artist && !track.title)) {
+      showToast(openInBrowser ? 'Cannot open link: missing track info' : 'Cannot copy link: missing track info', 'error');
       return;
     }
 
-    showToast('Publishing smart link...', 'info', null, { persistent: true });
+    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link...', 'info', null, { persistent: true });
 
-    // Search all active resolvers to get URLs
-    const resolvers = loadedResolversRef.current || [];
-    const activeResolverIds = activeResolversRef.current || [];
-    const resolvedUrls = {};
-    let resolvedAlbumArt = null; // Capture albumArt from search results as fallback
-
-    for (const resolver of resolvers) {
-      if (!activeResolverIds.includes(resolver.id)) continue;
-      if (!resolver.search) continue;
-
-      try {
-        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
-        const results = await resolver.search(query, config);
-        if (Array.isArray(results) && results.length > 0) {
-          const firstResult = results[0];
-
-          // Capture albumArt from search results if we don't have it yet
-          if (!resolvedAlbumArt && firstResult.albumArt) {
-            resolvedAlbumArt = firstResult.albumArt;
-          }
-
-          // Extract URL from various properties
-          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
-
-          // Construct URL from resolver-specific IDs if no direct URL
-          if (!url) {
-            if (firstResult.spotifyId) {
-              url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
-            } else if (firstResult.spotifyUri) {
-              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
-              if (match) url = `https://open.spotify.com/track/${match[1]}`;
-            } else if (firstResult.youtubeId) {
-              url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
-            } else if (firstResult.youtubeUrl) {
-              url = firstResult.youtubeUrl;
-            } else if (firstResult.soundcloudUrl) {
-              url = firstResult.soundcloudUrl;
-            } else if (firstResult.bandcampUrl) {
-              url = firstResult.bandcampUrl;
-            } else if (firstResult.appleMusicUrl) {
-              url = firstResult.appleMusicUrl;
-            } else if (firstResult.appleMusicId) {
-              url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
-            }
-          }
-
-          if (url) {
-            // Map resolver ID to service name
-            const id = resolver.id.toLowerCase();
-            let service = null;
-            if (id.includes('spotify')) service = 'spotify';
-            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
-            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
-            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
-            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
-            else if (id.includes('tidal')) service = 'tidal';
-            else if (id.includes('deezer')) service = 'deezer';
-
-            if (service) {
-              resolvedUrls[service] = url;
-              console.log(`[PublishSmartLink] Resolved ${service}: ${url}`);
-            }
-          }
-        }
-      } catch (err) {
-        console.error(`Resolver ${resolver.id} search error:`, err);
-      }
-    }
-
-    if (Object.keys(resolvedUrls).length === 0) {
-      showToast('No service links found for this track', 'error');
-      return;
-    }
-
-    // POST to smart links API
-    try {
-      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: track.title || query,
-          artist: track.artist || null,
-          albumArt: track.albumArt || resolvedAlbumArt || null,
-          type: 'track',
-          urls: resolvedUrls
+    // Kick off submit and entity-link fetch in parallel. We AWAIT both before
+    // copying the URL to the clipboard so Achordion's cache is guaranteed to
+    // be populated by the time the recipient clicks the shared URL — they
+    // land on a page that already has all the resolver matches instead of
+    // racing Achordion's Odesli/MB fallback resolution. The submit promise
+    // catches its own errors so a failed submit doesn't block the share —
+    // worst case the recipient gets the same fallback they'd have gotten
+    // without our pre-warm.
+    //
+    // Always fires regardless of whether this is the currently-playing
+    // track. For non-current shares, submit() itself decides whether to
+    // POST: it requires (a) a resolvable MBID and (b) at least one source
+    // in track.sources at confidence >= 0.95. Tracks that haven't been
+    // resolved yet skip naturally via the no-links gate and fall back to
+    // Achordion's own resolution at recipient click-time. Tracks that HAVE
+    // high-confidence sources from prior resolution submit them, since the
+    // user explicitly trusting the match enough to share it is itself
+    // evidence — same model as the loved-tracks scrobbler push.
+    const submitPromise = window.achordion?.submitNow
+      ? window.achordion.submitNow(track).catch(err => {
+          console.warn('[CopyLink] submitNow failed:', err);
+          return null;
         })
+      : Promise.resolve(null);
+
+    // Prefer the entity-link endpoint when an MBID is in hand; fall through
+    // to the lookup URL otherwise.
+    let url = null;
+    if (window.achordion?.fetchEntityLink) {
+      const result = await window.achordion.fetchEntityLink(track, { type: 'track' });
+      if (result.ok) url = result.url;
+    }
+    if (!url) {
+      const params = new URLSearchParams({
+        artist: track.artist || '',
+        title: track.title || ''
       });
+      url = `https://achordion.xyz/recording/lookup?${params.toString()}`;
+    }
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+    // Wait for the submit to complete before letting the user share. Total
+    // wait is max(fetchEntityLink, submitNow) since both ran in parallel.
+    // In the dedup case (already submitted this session) submitPromise
+    // resolves effectively instantly with no network hit.
+    await submitPromise;
+
+    if (openInBrowser) {
+      if (window.electron?.shell?.openExternal) {
+        window.electron.shell.openExternal(url);
+        showToast('Opened in browser');
+      } else {
+        showToast('Cannot open external URL', 'error');
       }
+      return;
+    }
 
-      const { url } = await response.json();
-
-      // Copy to clipboard
-      try {
-        await navigator.clipboard.writeText(url);
-        showToast('Smart link URL copied to clipboard!');
-      } catch (e) {
-        // Fallback: show in prompt
-        window.prompt('Copy this smart link URL:', url);
-      }
-
-    } catch (error) {
-      console.error('[PublishSmartLink] Error:', error);
-      showToast('Failed to publish link. Is the backend running?', 'error');
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Link copied to clipboard!');
+    } catch (e) {
+      window.prompt('Copy this link URL:', url);
     }
   }, [showToast]);
 
-  // Copy embed code for a track (publishes first, then copies iframe snippet)
+  // Copy a track's Achordion iframe embed code to the clipboard. Wraps the
+  // /api/embed-code endpoint via the achordion plugin's fetchEmbedCode helper,
+  // which handles MBID resolution (cached → MBID Mapper fallback) and bearer
+  // auth. Achordion ships the recommended dimensions and the full HTML snippet
+  // — we just paste. Replaces the prior go.parachord.com smart-links flow
+  // that fanned out per-resolver searches and built a hard-coded iframe.
   const copyEmbedCode = useCallback(async (track) => {
-    const query = `${track.artist || ''} ${track.title || ''}`.trim();
-    if (!query) {
+    if (!track || (!track.artist && !track.title)) {
       showToast('Cannot create embed: missing track info', 'error');
       return;
     }
-
-    showToast('Creating embed code...', 'info', null, { persistent: true });
-
-    // Search all active resolvers to get URLs
-    const resolvers = loadedResolversRef.current || [];
-    const activeResolverIds = activeResolversRef.current || [];
-    const resolvedUrls = {};
-    let resolvedAlbumArt = null; // Capture albumArt from search results as fallback
-
-    for (const resolver of resolvers) {
-      if (!activeResolverIds.includes(resolver.id)) continue;
-      if (!resolver.search) continue;
-
-      try {
-        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
-        const results = await resolver.search(query, config);
-        if (Array.isArray(results) && results.length > 0) {
-          const firstResult = results[0];
-
-          // Capture albumArt from search results if we don't have it yet
-          if (!resolvedAlbumArt && firstResult.albumArt) {
-            resolvedAlbumArt = firstResult.albumArt;
-          }
-
-          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
-
-          if (!url) {
-            if (firstResult.spotifyId) {
-              url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
-            } else if (firstResult.spotifyUri) {
-              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
-              if (match) url = `https://open.spotify.com/track/${match[1]}`;
-            } else if (firstResult.youtubeId) {
-              url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
-            } else if (firstResult.youtubeUrl) {
-              url = firstResult.youtubeUrl;
-            } else if (firstResult.soundcloudUrl) {
-              url = firstResult.soundcloudUrl;
-            } else if (firstResult.bandcampUrl) {
-              url = firstResult.bandcampUrl;
-            } else if (firstResult.appleMusicUrl) {
-              url = firstResult.appleMusicUrl;
-            } else if (firstResult.appleMusicId) {
-              url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
-            }
-          }
-
-          if (url) {
-            const id = resolver.id.toLowerCase();
-            let service = null;
-            if (id.includes('spotify')) service = 'spotify';
-            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
-            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
-            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
-            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
-            else if (id.includes('tidal')) service = 'tidal';
-            else if (id.includes('deezer')) service = 'deezer';
-
-            if (service) {
-              resolvedUrls[service] = url;
-            }
-          }
-        }
-      } catch (err) {
-        console.error(`Resolver ${resolver.id} search error:`, err);
-      }
-    }
-
-    if (Object.keys(resolvedUrls).length === 0) {
-      showToast('No service links found for this track', 'error');
+    if (!window.achordion?.fetchEmbedCode) {
+      showToast('Achordion plugin not loaded', 'error');
       return;
     }
-
-    // POST to smart links API
+    showToast('Creating embed code...', 'info', null, { persistent: true });
+    const result = await window.achordion.fetchEmbedCode(track, { entity: 'track' });
+    if (!result.ok) {
+      const reason = result.reason === 'no-mbid'
+        ? 'Could not resolve MusicBrainz ID for this track'
+        : `Achordion embed lookup failed (${result.reason})`;
+      showToast(reason, 'error');
+      return;
+    }
     try {
-      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: track.title || query,
-          artist: track.artist || null,
-          albumArt: track.albumArt || resolvedAlbumArt || null,
-          type: 'track',
-          urls: resolvedUrls
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const { url, id } = await response.json();
-
-      // Generate iframe embed code
-      const embedCode = `<iframe src="${url}/embed" width="400" height="152" frameborder="0" style="border-radius: 8px;" allow="encrypted-media"></iframe>`;
-
-      // Copy to clipboard
-      try {
-        await navigator.clipboard.writeText(embedCode);
-        showToast('Embed code copied to clipboard!');
-      } catch (e) {
-        // Fallback: show in prompt
-        window.prompt('Copy this embed code:', embedCode);
-      }
-
-    } catch (error) {
-      console.error('[CopyEmbedCode] Error:', error);
-      showToast('Failed to create embed. Is the backend running?', 'error');
+      await navigator.clipboard.writeText(result.html);
+      showToast('Embed code copied to clipboard!');
+    } catch (e) {
+      window.prompt('Copy this embed code:', result.html);
     }
   }, [showToast]);
 
-  // Helper: resolve a single track query across all active resolvers, returning { urls, albumArt }
-  const resolveTrackUrls = useCallback(async (query) => {
-    const resolvers = loadedResolversRef.current || [];
-    const activeResolverIds = activeResolversRef.current || [];
-    const resolvedUrls = {};
-    let resolvedAlbumArt = null;
-
-    for (const resolver of resolvers) {
-      if (!activeResolverIds.includes(resolver.id)) continue;
-      if (!resolver.search) continue;
-
-      try {
-        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
-        const results = await resolver.search(query, config);
-        if (Array.isArray(results) && results.length > 0) {
-          const firstResult = results[0];
-
-          if (!resolvedAlbumArt && firstResult.albumArt) {
-            resolvedAlbumArt = firstResult.albumArt;
-          }
-
-          let url = firstResult.url || firstResult.externalUrl || firstResult.streamUrl;
-          if (!url) {
-            if (firstResult.spotifyId) url = `https://open.spotify.com/track/${firstResult.spotifyId}`;
-            else if (firstResult.spotifyUri) {
-              const match = firstResult.spotifyUri.match(/spotify:track:([a-zA-Z0-9]+)/);
-              if (match) url = `https://open.spotify.com/track/${match[1]}`;
-            }
-            else if (firstResult.youtubeId) url = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
-            else if (firstResult.youtubeUrl) url = firstResult.youtubeUrl;
-            else if (firstResult.soundcloudUrl) url = firstResult.soundcloudUrl;
-            else if (firstResult.bandcampUrl) url = firstResult.bandcampUrl;
-            else if (firstResult.appleMusicUrl) url = firstResult.appleMusicUrl;
-            else if (firstResult.appleMusicId) url = `https://music.apple.com/song/${firstResult.appleMusicId}`;
-          }
-
-          if (url) {
-            const id = resolver.id.toLowerCase();
-            let service = null;
-            if (id.includes('spotify')) service = 'spotify';
-            else if (id.includes('youtube') || id.includes('yt')) service = 'youtube';
-            else if (id.includes('soundcloud') || id.includes('sc')) service = 'soundcloud';
-            else if (id.includes('bandcamp') || id.includes('bc')) service = 'bandcamp';
-            else if (id.includes('apple') || id.includes('itunes')) service = 'appleMusic';
-            else if (id.includes('tidal')) service = 'tidal';
-            else if (id.includes('deezer')) service = 'deezer';
-
-            if (service) resolvedUrls[service] = url;
-          }
-        }
-      } catch (err) {
-        // Skip failed resolvers
-      }
-    }
-
-    return { urls: resolvedUrls, albumArt: resolvedAlbumArt };
-  }, []);
-
-  // Helper: resolve album-level URLs (album pages, not individual tracks) across all active resolvers
-  const resolveAlbumUrls = useCallback(async (query) => {
-    const resolvers = loadedResolversRef.current || [];
-    const activeResolverIds = activeResolversRef.current || [];
-    const resolvedUrls = {};
-    let resolvedAlbumArt = null;
-
-    for (const resolver of resolvers) {
-      if (!activeResolverIds.includes(resolver.id)) continue;
-      if (!resolver.search) continue;
-
-      try {
-        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
-        const results = await resolver.search(query, config);
-        if (Array.isArray(results) && results.length > 0) {
-          const firstResult = results[0];
-
-          if (!resolvedAlbumArt && firstResult.albumArt) {
-            resolvedAlbumArt = firstResult.albumArt;
-          }
-
-          // Extract album-level URLs instead of track URLs
-          let albumUrl = null;
-          const id = resolver.id.toLowerCase();
-          let service = null;
-          if (id.includes('spotify')) {
-            service = 'spotify';
-            if (firstResult.spotifyAlbumId) {
-              albumUrl = `https://open.spotify.com/album/${firstResult.spotifyAlbumId}`;
-            }
-          } else if (id.includes('apple') || id.includes('itunes')) {
-            service = 'appleMusic';
-            if (firstResult.appleMusicAlbumUrl) {
-              albumUrl = firstResult.appleMusicAlbumUrl;
-            } else if (firstResult.collectionId) {
-              albumUrl = `https://music.apple.com/album/${firstResult.collectionId}`;
-            }
-          } else if (id.includes('bandcamp') || id.includes('bc')) {
-            service = 'bandcamp';
-            // Bandcamp track URLs are like https://artist.bandcamp.com/track/name
-            // Album URLs are like https://artist.bandcamp.com/album/name
-            // We can't derive album slug from track URL, so use track URL as fallback
-            if (firstResult.bandcampUrl) {
-              albumUrl = firstResult.bandcampUrl;
-            }
-          } else if (id.includes('youtube') || id.includes('yt')) {
-            service = 'youtube';
-            // YouTube has no album pages; use the video URL as fallback
-            if (firstResult.youtubeUrl) albumUrl = firstResult.youtubeUrl;
-            else if (firstResult.youtubeId) albumUrl = `https://www.youtube.com/watch?v=${firstResult.youtubeId}`;
-          } else if (id.includes('soundcloud') || id.includes('sc')) {
-            service = 'soundcloud';
-            if (firstResult.soundcloudUrl) albumUrl = firstResult.soundcloudUrl;
-          } else if (id.includes('tidal')) {
-            service = 'tidal';
-          } else if (id.includes('deezer')) {
-            service = 'deezer';
-          }
-
-          if (service && albumUrl) resolvedUrls[service] = albumUrl;
-        }
-      } catch (err) {
-        // Skip failed resolvers
-      }
-    }
-
-    return { urls: resolvedUrls, albumArt: resolvedAlbumArt };
-  }, []);
-
-  // Publish smart link for an album or playlist (with per-track resolver matches)
-  const publishCollectionSmartLink = useCallback(async (collection) => {
+  // Copy a collection's Achordion entity-page URL to the clipboard.
+  //
+  // Albums (and 'release' / 'collection-album') resolve to /release-group/<mbid>
+  // when an MBID is on hand, otherwise /release-group/lookup?artist=&title= —
+  // Achordion handles MB search server-side and 302s to the canonical page.
+  // Achordion's entity-link endpoint accepts BOTH release-group MBIDs and
+  // release MBIDs for type=album (release MBIDs are mapped server-side to
+  // the canonical release-group page), so we can pass any of: explicit
+  // release-group MBID, mapper-enriched releaseMbid (specific edition),
+  // or the generic `id` field on collection data — Achordion sorts it out.
+  //
+  // Playlists are deferred: Achordion's entity-link surface only covers
+  // artist / release-group / recording. There's no canonical playlist URL to
+  // share until we add a parachord:// playlist sharing path; surfacing this
+  // honestly via a toast for now so users aren't confused by silent no-ops.
+  //
+  // Replaces the prior go.parachord.com smart-links backend, which fanned out
+  // per-track resolver searches client-side and posted the whole tracklist.
+  const publishCollectionSmartLink = useCallback(async (collection, opts) => {
+    opts = opts || {};
+    const openInBrowser = !!opts.openInBrowser;
     if (!collection || !collection.title) {
-      showToast('Cannot publish link: missing collection info', 'error');
+      showToast(openInBrowser ? 'Cannot open link: missing collection info' : 'Cannot copy link: missing collection info', 'error');
+      return;
+    }
+    if (collection.type === 'playlist') {
+      showToast(openInBrowser ? 'View on Achordion isn\'t supported for playlists yet' : 'Copy link for playlists isn\'t supported yet', 'info');
       return;
     }
 
-    let tracks = collection.tracks || [];
-    const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
+    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link...', 'info', null, { persistent: true });
 
-    // If tracks weren't prefetched in time (race condition), fetch them now
-    if (tracks.length === 0 && collection.type !== 'playlist' && collection.artist) {
-      showToast('Fetching album tracklist...', 'info', null, { persistent: true });
-      tracks = await fetchAlbumTracksFromMusicBrainz(collection.artist, collection.title, collection.albumArt);
+    // Try entity-link if we have any MBID; otherwise fall through to
+    // /release-group/lookup. Order: explicit release-group MBID, then
+    // mapper-enriched release MBID (Achordion maps to release-group),
+    // then generic id (typically the rg MBID from MB-derived data).
+    // Final fallback: live MBID-mapper call against any track of the album
+    // — Critical Darlings RSS, Apple/Last.fm chart entries, and other
+    // sources without upstream MBIDs all reach this path. Mapper returns
+    // a release MBID (specific edition); Achordion's server-side mapping
+    // takes it to the canonical release-group page.
+    let url = null;
+    let mbidCandidate = collection.releaseGroupMbid
+      || collection.mbid
+      || collection.releaseMbid
+      || collection.id
+      || null;
+    let validMbid = mbidCandidate && /^[a-f0-9-]{36}$/i.test(mbidCandidate);
+    if (!validMbid && collection.artist && Array.isArray(collection.tracks) && collection.tracks.length > 0) {
+      // Use the first track that has both artist and title set as the
+      // mapper seed — for Critical Darlings/Charts the per-track artist
+      // sometimes falls back to the album-level artist.
+      const seedTrack = collection.tracks.find(t => (t.artist || collection.artist) && t.title) || null;
+      if (seedTrack && typeof window.resolveAlbumMbidViaMapper === 'function') {
+        const seedArtist = seedTrack.artist || collection.artist;
+        console.log('[CopyLink] no upstream album mbid — trying mapper with seed track:', seedArtist, '—', seedTrack.title);
+        const mapped = await window.resolveAlbumMbidViaMapper(seedArtist, seedTrack.title);
+        if (mapped) {
+          mbidCandidate = mapped;
+          validMbid = true;
+          console.log('[CopyLink] mapper resolved album → release mbid:', mapped);
+        }
+      }
+    }
+    if (mbidCandidate && !validMbid) {
+      console.log('[CopyLink] album mbid candidate is not a UUID — falling through to lookup URL:', mbidCandidate);
+    }
+    if (!mbidCandidate) {
+      console.log('[CopyLink] no album mbid available — falling through to lookup URL. collection keys:', Object.keys(collection).join(','));
+    }
+    if (validMbid && window.achordion?.fetchEntityLink) {
+      const result = await window.achordion.fetchEntityLink(
+        { mbid: mbidCandidate, artist: collection.artist, title: collection.title },
+        { type: 'album' }
+      );
+      if (result.ok) url = result.url;
+    }
+    if (!url) {
+      const params = new URLSearchParams({
+        artist: collection.artist || '',
+        title: collection.title
+      });
+      url = `https://achordion.xyz/release-group/lookup?${params.toString()}`;
     }
 
-    showToast(`Resolving ${tracks.length} tracks for ${typeLabel} smart link...`, 'info', null, { persistent: true });
+    if (openInBrowser) {
+      if (window.electron?.shell?.openExternal) {
+        window.electron.shell.openExternal(url);
+        showToast('Opened in browser');
+      } else {
+        showToast('Cannot open external URL', 'error');
+      }
+      return;
+    }
 
     try {
-      // Resolve all tracks in parallel (much faster than sequential)
-      const trackPromises = tracks.map(async (track) => {
-        const query = `${track.artist || collection.artist || ''} ${track.title || ''}`.trim();
-        if (!query) return { ...track, urls: {} };
-        try {
-          const { urls, albumArt: trackAlbumArt } = await resolveTrackUrls(query);
-          console.log(`[CollectionSmartLink] Track "${track.title}": ${Object.keys(urls).length} services resolved`);
-          return { ...track, urls, albumArt: trackAlbumArt || null };
-        } catch (err) {
-          console.error(`[CollectionSmartLink] Failed to resolve "${track.title}":`, err);
-          return { ...track, urls: {}, albumArt: null };
-        }
-      });
-
-      // Also resolve top-level album/playlist URLs in parallel with tracks
-      const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
-      const albumUrlsPromise = resolveAlbumUrls(topLevelQuery).catch(err => {
-        console.error('[CollectionSmartLink] Failed to resolve album URLs:', err);
-        return { urls: {}, albumArt: null };
-      });
-
-      const [resolvedTracks, { urls: topLevelUrls, albumArt: resolvedAlbumArt }] = await Promise.all([
-        Promise.all(trackPromises),
-        albumUrlsPromise
-      ]);
-
-      // POST to smart links API
-      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: collection.title,
-          artist: collection.artist || null,
-          creator: collection.creator || null,
-          albumArt: collection.albumArt || resolvedAlbumArt || null,
-          type: collection.type || 'album',
-          urls: Object.keys(topLevelUrls).length > 0 ? topLevelUrls : null,
-          tracks: resolvedTracks.map(t => ({
-            title: t.title,
-            artist: t.artist || null,
-            duration: t.duration || null,
-            trackNumber: t.trackNumber || null,
-            urls: t.urls,
-            albumArt: t.albumArt || null
-          }))
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const { url } = await response.json();
-
-      // Copy to clipboard
-      try {
-        await navigator.clipboard.writeText(url);
-        showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} smart link URL copied to clipboard!`);
-      } catch (e) {
-        window.prompt(`Copy this ${typeLabel} smart link URL:`, url);
-      }
-
-    } catch (error) {
-      console.error('[PublishCollectionSmartLink] Error:', error);
-      showToast('Failed to publish link. Is the backend running?', 'error');
+      await navigator.clipboard.writeText(url);
+      showToast('Link copied to clipboard!');
+    } catch (e) {
+      window.prompt('Copy this link URL:', url);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showToast, resolveTrackUrls, resolveAlbumUrls]);
+  }, [showToast]);
 
-  // Copy embed code for an album or playlist
+  // Copy an artist's Achordion entity-page URL to the clipboard. Resolves to:
+  //   1. /artist/<mbid> via the entity-link endpoint when the artist MBID is
+  //      known. We try the MBID Mapper cache first (any prior recording by
+  //      this artist that's been mapped already gives us their MBID for
+  //      free) before considering further resolution.
+  //   2. /artist/lookup?name=<name> as the fallback. Achordion does an MB
+  //      artist search server-side and 302s to the canonical page.
+  // No submit-on-share path here — submissions are recording-keyed; an
+  // artist-level share has no per-recording playback evidence to push.
+  const publishArtistSmartLink = useCallback(async (artist, opts) => {
+    opts = opts || {};
+    const openInBrowser = !!opts.openInBrowser;
+    if (!artist || !artist.name) {
+      showToast(openInBrowser ? 'Cannot open link: missing artist info' : 'Cannot copy link: missing artist info', 'error');
+      return;
+    }
+
+    showToast(openInBrowser ? 'Opening Achordion…' : 'Copying link...', 'info', null, { persistent: true });
+
+    let url = null;
+    const cachedMbid = typeof getArtistMbidFromMapperCache === 'function'
+      ? getArtistMbidFromMapperCache(artist.name)
+      : null;
+    const validMbid = cachedMbid && /^[a-f0-9-]{36}$/i.test(cachedMbid);
+
+    if (validMbid && window.achordion?.fetchEntityLink) {
+      const result = await window.achordion.fetchEntityLink(
+        { mbid: cachedMbid, artist: artist.name, title: '' },
+        { type: 'artist' }
+      );
+      if (result.ok) url = result.url;
+    }
+    if (!url) {
+      const params = new URLSearchParams({ name: artist.name });
+      url = `https://achordion.xyz/artist/lookup?${params.toString()}`;
+    }
+
+    if (openInBrowser) {
+      if (window.electron?.shell?.openExternal) {
+        window.electron.shell.openExternal(url);
+        showToast('Opened in browser');
+      } else {
+        showToast('Cannot open external URL', 'error');
+      }
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Link copied to clipboard!');
+    } catch (e) {
+      window.prompt('Copy this link URL:', url);
+    }
+  }, [showToast]);
+
+  // Copy an album's Achordion iframe embed code to the clipboard. Same shape
+  // as copyEmbedCode but for type='album', with the same MBID resolution
+  // chain as publishCollectionSmartLink (explicit MBID → mapper-from-first-
+  // track fallback). Achordion's /api/embed-code endpoint accepts release
+  // MBIDs and maps them server-side to release-group, so the mapper's
+  // release_mbid is sufficient.
+  //
+  // Playlists are deferred (Achordion has no playlist entity surface yet —
+  // see issue #775); show the same toast as the playlist Copy-link path.
   const copyCollectionEmbedCode = useCallback(async (collection) => {
     if (!collection || !collection.title) {
       showToast('Cannot create embed: missing collection info', 'error');
       return;
     }
-
-    let tracks = collection.tracks || [];
-    const typeLabel = collection.type === 'playlist' ? 'playlist' : 'album';
-
-    // If tracks weren't prefetched in time (race condition), fetch them now
-    if (tracks.length === 0 && collection.type !== 'playlist' && collection.artist) {
-      showToast('Fetching album tracklist...', 'info', null, { persistent: true });
-      tracks = await fetchAlbumTracksFromMusicBrainz(collection.artist, collection.title, collection.albumArt);
+    if (collection.type === 'playlist') {
+      showToast('Embed code for playlists isn\'t supported yet', 'info');
+      return;
+    }
+    if (!window.achordion?.fetchEmbedCode) {
+      showToast('Achordion plugin not loaded', 'error');
+      return;
     }
 
-    showToast(`Creating ${typeLabel} embed code...`, 'info', null, { persistent: true });
+    showToast('Creating embed code...', 'info', null, { persistent: true });
 
-    // Resolve each track
-    const resolvedTracks = [];
-    for (const track of tracks) {
-      const query = `${track.artist || collection.artist || ''} ${track.title || ''}`.trim();
-      if (!query) {
-        resolvedTracks.push({ ...track, urls: {} });
-        continue;
+    // Resolve a usable MBID. Same precedence as publishCollectionSmartLink.
+    let mbid = collection.releaseGroupMbid
+      || collection.mbid
+      || collection.releaseMbid
+      || collection.id
+      || null;
+    let validMbid = mbid && /^[a-f0-9-]{36}$/i.test(mbid);
+    if (!validMbid && collection.artist && Array.isArray(collection.tracks) && collection.tracks.length > 0) {
+      const seedTrack = collection.tracks.find(t => (t.artist || collection.artist) && t.title) || null;
+      if (seedTrack && typeof window.resolveAlbumMbidViaMapper === 'function') {
+        const seedArtist = seedTrack.artist || collection.artist;
+        const mapped = await window.resolveAlbumMbidViaMapper(seedArtist, seedTrack.title);
+        if (mapped) {
+          mbid = mapped;
+          validMbid = true;
+        }
       }
-      const { urls } = await resolveTrackUrls(query);
-      resolvedTracks.push({ ...track, urls });
     }
 
-    // Resolve top-level URLs
-    const topLevelQuery = `${collection.artist || ''} ${collection.title || ''}`.trim();
-    const { urls: topLevelUrls, albumArt: resolvedAlbumArt } = await resolveTrackUrls(topLevelQuery);
+    if (!validMbid) {
+      showToast('Could not resolve MusicBrainz ID for this album', 'error');
+      return;
+    }
 
-    // POST to smart links API
+    const result = await window.achordion.fetchEmbedCode(
+      { mbid: mbid, artist: collection.artist, title: collection.title },
+      { entity: 'album' }
+    );
+    if (!result.ok) {
+      showToast(`Achordion embed lookup failed (${result.reason})`, 'error');
+      return;
+    }
     try {
-      const response = await fetch(`${SMART_LINKS_API_URL}/api/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: collection.title,
-          artist: collection.artist || null,
-          albumArt: collection.albumArt || resolvedAlbumArt || null,
-          type: collection.type || 'album',
-          urls: Object.keys(topLevelUrls).length > 0 ? topLevelUrls : null,
-          tracks: resolvedTracks.map(t => ({
-            title: t.title,
-            artist: t.artist || null,
-            duration: t.duration || null,
-            trackNumber: t.trackNumber || null,
-            urls: t.urls
-          }))
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const { url } = await response.json();
-
-      // Generate iframe embed code
-      const embedCode = `<iframe src="${url}/embed" width="400" height="152" frameborder="0" style="border-radius: 8px;" allow="encrypted-media"></iframe>`;
-
-      try {
-        await navigator.clipboard.writeText(embedCode);
-        showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} embed code copied to clipboard!`);
-      } catch (e) {
-        window.prompt(`Copy this ${typeLabel} embed code:`, embedCode);
-      }
-
-    } catch (error) {
-      console.error('[CopyCollectionEmbedCode] Error:', error);
-      showToast('Failed to create embed. Is the backend running?', 'error');
+      await navigator.clipboard.writeText(result.html);
+      showToast('Embed code copied to clipboard!');
+    } catch (e) {
+      window.prompt('Copy this embed code:', result.html);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showToast, resolveTrackUrls]);
+  }, [showToast]);
 
   // Save collection to disk
   const saveCollection = useCallback(async (newData) => {
@@ -14436,13 +14520,23 @@ ${trackListXml}
         } else if (data.action === 'stop-listen-along') {
           if (deactivateListenAlongRef.current) deactivateListenAlongRef.current();
         } else if (data.action === 'publish-smart-link' && data.track) {
-          // Publish smart link to cloud backend
+          // Copy track link to clipboard
           publishSmartLink(data.track);
+        } else if (data.action === 'publish-artist-smart-link' && data.artist) {
+          // Copy artist link to clipboard
+          publishArtistSmartLink(data.artist);
+        } else if (data.action === 'view-on-achordion-track' && data.track) {
+          // Open track's Achordion entity page in browser
+          publishSmartLink(data.track, { openInBrowser: true });
+        } else if (data.action === 'view-on-achordion-artist' && data.artist) {
+          publishArtistSmartLink(data.artist, { openInBrowser: true });
+        } else if (data.action === 'view-on-achordion-collection' && data.collection) {
+          publishCollectionSmartLink(data.collection, { openInBrowser: true });
         } else if (data.action === 'copy-embed-code' && data.track) {
           // Copy iframe embed code to clipboard
           copyEmbedCode(data.track);
         } else if (data.action === 'publish-collection-smart-link' && data.collection) {
-          // Publish album/playlist smart link with tracklist
+          // Copy album/playlist link to clipboard
           publishCollectionSmartLink(data.collection);
         } else if (data.action === 'copy-collection-embed-code' && data.collection) {
           // Copy album/playlist embed code
@@ -14450,7 +14544,7 @@ ${trackListXml}
         }
       });
     }
-  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection, publishSmartLink, copyEmbedCode, publishCollectionSmartLink, copyCollectionEmbedCode]);
+  }, [addTrackToCollection, addAlbumToCollection, addArtistToCollection, removeTrackFromCollection, removeAlbumFromCollection, removeArtistFromCollection, publishSmartLink, publishArtistSmartLink, copyEmbedCode, publishCollectionSmartLink, copyCollectionEmbedCode]);
 
   // Add multiple tracks to collection
   const addTracksToCollection = useCallback((tracks) => {
@@ -15232,7 +15326,11 @@ ${trackListXml}
           .filter(r => r && r.capabilities?.resolve);
 
         // Helper to validate resolved track matches requested metadata
-        const normalizeStr = s => s?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+        // Inline duplicate of the module-scope normalizeStr (app.js L234).
+        // Same Unicode-aware shape: NFKD + strip combining marks + keep only
+        // \p{L}/\p{N}. Must stay in lockstep with the module-scope helper
+        // and the test/Android mirrors.
+        const normalizeStr = s => (s || '').toString().toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]/gu, '');
         const validateResolvedTrack = (result, targetArtist, targetTitle) => {
           if (!result || !result.artist || !result.title) return false;
           const resultArtist = normalizeStr(result.artist);
@@ -15303,7 +15401,10 @@ ${trackListXml}
             if (bestMatch) {
               freshSources[resolver.id] = {
                 ...bestMatch,
-                confidence: bestMatch.confidence || 0.9,
+                // Canonical "both-axis fuzzy validated" tier; matches
+                // calculateConfidence and tests/helpers/confidence-scoring.js.
+                // Resolver-supplied higher values (e.g. 1.0 direct-ID) are preserved.
+                confidence: bestMatch.confidence || 0.95,
                 resolvedAt: Date.now()
               };
             }
@@ -24337,6 +24438,18 @@ ${trackListXml}
   const backgroundPlaylistIndex = useRef({ playlistIdx: 0, trackIdx: 0 }); // Track progress through playlists
   const backgroundBatchCount = useRef(0); // How many batches have been processed (for ramp-up)
   const backgroundStartTime = useRef(Date.now()); // When the app started (for startup grace period)
+  // User-activity timestamp — used to pause background pre-resolution while
+  // the user is actively interacting. Without this, the idle callback fires
+  // continuously (whenever the scheduler queue clears) and queues 25 more
+  // tracks, which competes with UI work for CPU + IPC. With it, resolution
+  // pauses during interaction and resumes during natural reading pauses.
+  const lastUserActivityRef = useRef(Date.now());
+  // Self-retry timer for the activity gate. The scheduler fires the idle
+  // callback exactly once per idle transition, so if we early-return due to
+  // user activity, work would pause forever until the next genuine
+  // queue-drain event. This timer re-invokes the callback after a short
+  // wait so resolution resumes once activity dies down.
+  const backgroundRetryTimerRef = useRef(null);
 
   useEffect(() => {
     // Register background context
@@ -24345,19 +24458,61 @@ ${trackListXml}
     // Record startup time for grace period
     backgroundStartTime.current = Date.now();
 
+    // User-activity listeners. Passive + capture for scroll so any nested
+    // scrollable also bumps the timestamp. Bumping is cheap (one Date.now()
+    // + assignment) so we don't bother debouncing.
+    const onUserActivity = () => { lastUserActivityRef.current = Date.now(); };
+    window.addEventListener('mousemove', onUserActivity, { passive: true });
+    window.addEventListener('mousedown', onUserActivity, { passive: true });
+    window.addEventListener('keydown', onUserActivity, { passive: true });
+    window.addEventListener('wheel', onUserActivity, { passive: true });
+    window.addEventListener('scroll', onUserActivity, { passive: true, capture: true });
+    window.addEventListener('touchstart', onUserActivity, { passive: true });
+
     // Set up idle callback to pre-resolve collection and playlist tracks
-    resolutionScheduler.setOnIdleCallback(() => {
+    const idleCallback = () => {
       const now = Date.now();
+
+      // Schedule a retry of this callback in `delayMs`. Used when we skip
+      // due to startup grace, user activity, or no resolvers — the
+      // scheduler won't re-fire on its own, so we need to wake ourselves.
+      const retryAfter = (delayMs) => {
+        if (backgroundRetryTimerRef.current) clearTimeout(backgroundRetryTimerRef.current);
+        backgroundRetryTimerRef.current = setTimeout(() => {
+          backgroundRetryTimerRef.current = null;
+          // Only retry if the scheduler is still idle (no pending work).
+          // If the scheduler picked up other work in the meantime, IT will
+          // call us back via setOnIdleCallback when it next goes idle.
+          idleCallback();
+        }, delayMs);
+      };
 
       // Startup grace period: wait 30 seconds before starting background resolution
       // to avoid flooding APIs while the user is still loading/interacting with the app
       const timeSinceStart = now - backgroundStartTime.current;
-      if (timeSinceStart < 30000) return;
+      if (timeSinceStart < 30000) {
+        retryAfter(30000 - timeSinceStart);
+        return;
+      }
+
+      // User-activity gate: skip if the user has been active in the last 3
+      // seconds. Resolution work isn't urgent, but the IPC + render churn it
+      // generates IS — pausing during interaction keeps the UI responsive.
+      // 3s threshold catches deliberate pauses (reading, listening) without
+      // making continuous mouse-hover starve resolution forever.
+      const timeSinceActivity = now - lastUserActivityRef.current;
+      if (timeSinceActivity < 3000) {
+        retryAfter(3000);
+        return;
+      }
 
       const currentActiveResolvers = activeResolversRef.current || [];
 
       // Skip if no active resolvers
-      if (currentActiveResolvers.length === 0) return;
+      if (currentActiveResolvers.length === 0) {
+        retryAfter(10000);
+        return;
+      }
 
       // Ramp up batch size: start small (5) and increase to 25 over the first few batches
       const batchSize = backgroundBatchCount.current < 3 ? 5 : 25;
@@ -24460,14 +24615,30 @@ ${trackListXml}
         for (const { key, data } of tracksToResolve) {
           resolutionScheduler.enqueue(key, 'background', data);
         }
+      } else {
+        // Nothing to enqueue this tick (everything in collection + playlists
+        // is already resolved or queued). Re-check periodically in case the
+        // user adds new tracks.
+        retryAfter(60000);
       }
 
       backgroundBatchCount.current++;
-    });
+    };
+    resolutionScheduler.setOnIdleCallback(idleCallback);
 
     return () => {
       resolutionScheduler.setOnIdleCallback(null);
       resolutionScheduler.unregisterContext('background');
+      if (backgroundRetryTimerRef.current) {
+        clearTimeout(backgroundRetryTimerRef.current);
+        backgroundRetryTimerRef.current = null;
+      }
+      window.removeEventListener('mousemove', onUserActivity);
+      window.removeEventListener('mousedown', onUserActivity);
+      window.removeEventListener('keydown', onUserActivity);
+      window.removeEventListener('wheel', onUserActivity);
+      window.removeEventListener('scroll', onUserActivity, true);
+      window.removeEventListener('touchstart', onUserActivity);
     };
   }, []); // Stable effect - idle callback reads from refs for fresh data
 
@@ -26259,6 +26430,16 @@ ${trackListXml}
           } else {
             showToast(`${name} is already enabled`, 'info');
           }
+          return;
+        }
+
+        // Bundled meta-services (e.g. Achordion playback-telemetry) are loaded
+        // into the metaServices state at app start, not into loadedResolvers.
+        // For these, "install" is a no-op — they're already running once bundled
+        // and removed from `uninstalled_resolvers`.
+        const existingMetaService = metaServices.find(s => s.id === id);
+        if (existingMetaService) {
+          showToast(`${name} enabled`, 'success');
           return;
         }
 
@@ -33830,12 +34011,48 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Right-click handler for page headers — shows a tooltip-styled context menu
+  // Right-click handler for page headers — shows a tooltip-styled context menu.
+  // Always offers "Copy parachord:// link" (the power-user deep link). When the
+  // current view has an Achordion-mappable entity (artist page, optionally with
+  // a release drilldown), also offers "Copy link" up front, which routes to
+  // the standard Achordion entity URL via publishArtist/CollectionSmartLink —
+  // so right-click here gives the same result as right-clicking the entity in
+  // a list and choosing Copy link.
   const copyParachordLink = (e) => {
     e.preventDefault();
     e.stopPropagation();
     const link = getParachordLink();
-    setParachordLinkMenu({ x: e.clientX, y: e.clientY, link });
+    let achordionShare = null;
+    if (activeView === 'artist') {
+      if (currentRelease && currentArtist?.name) {
+        const collection = {
+          title: currentRelease.title,
+          artist: currentArtist.name,
+          albumArt: currentRelease.albumArt || null,
+          type: 'album',
+          // currentRelease.id is typically the release-group MBID for MB-derived
+          // discography; if it ever happens to be a release MBID, Achordion
+          // server-side maps it. Either way the entity-link path gives us a
+          // direct URL instead of /release-group/lookup.
+          mbid: currentRelease.releaseGroupMbid || currentRelease.mbid || currentRelease.id || null
+        };
+        achordionShare = {
+          run: () => publishCollectionSmartLink(collection),
+          runView: () => publishCollectionSmartLink(collection, { openInBrowser: true })
+        };
+      } else if (currentArtist?.name) {
+        const artist = {
+          id: (currentArtist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          name: currentArtist.name,
+          image: artistImage
+        };
+        achordionShare = {
+          run: () => publishArtistSmartLink(artist),
+          runView: () => publishArtistSmartLink(artist, { openInBrowser: true })
+        };
+      }
+    }
+    setParachordLinkMenu({ x: e.clientX, y: e.clientY, link, achordionShare });
   };
 
   const navigateBack = () => {
@@ -45213,6 +45430,231 @@ useEffect(() => {
                 }, 'Start Radio')
               )
           ),
+          // Filter bar — promoted out of scroll container so the virtualized
+          // collection-tracks list inside can be a direct child of the
+          // scroll element at scrollTop=0, eliminating the scrollMargin
+          // offset class of bug. See issue #781.
+          React.createElement('div', {
+            className: 'flex items-center px-6 py-3',
+            style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
+          },
+            // Sort dropdown (moved to left)
+            React.createElement('div', { className: 'relative' },
+              React.createElement('button', {
+                onClick: (e) => { e.stopPropagation(); setCollectionSortDropdownOpen(!collectionSortDropdownOpen); },
+                className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
+              },
+                React.createElement('span', null, getCollectionSortOptions(collectionTab).find(o => o.value === collectionSort[collectionTab])?.label || 'Sort'),
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              // Dropdown menu
+              collectionSortDropdownOpen && React.createElement('div', {
+                className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
+              },
+                getCollectionSortOptions(collectionTab).map(option =>
+                  React.createElement('button', {
+                    key: option.value,
+                    onClick: (e) => {
+                      e.stopPropagation();
+                      setCollectionSort(prev => ({ ...prev, [collectionTab]: option.value }));
+                      setCollectionSortDropdownOpen(false);
+                    },
+                    className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
+                      collectionSort[collectionTab] === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
+                    }`
+                  },
+                    option.label,
+                    collectionSort[collectionTab] === option.value && React.createElement('svg', {
+                      className: 'w-4 h-4',
+                      fill: 'none',
+                      viewBox: '0 0 24 24',
+                      stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
+                    )
+                  )
+                )
+              )
+            ),
+            // Spacer
+            React.createElement('div', { className: 'flex-1' }),
+            // Search toggle/field
+            React.createElement('div', { className: 'flex items-center' },
+              collectionSearchOpen ?
+                React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
+                  React.createElement('input', {
+                    type: 'text',
+                    value: collectionSearch,
+                    onChange: (e) => setCollectionSearch(e.target.value),
+                    onBlur: () => {
+                      if (!collectionSearch.trim()) {
+                        setCollectionSearchOpen(false);
+                      }
+                    },
+                    autoFocus: true,
+                    placeholder: 'Filter...',
+                    className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
+                    style: { width: '150px' }
+                  }),
+                  collectionSearch && React.createElement('button', {
+                    onClick: () => {
+                      setCollectionSearch('');
+                      setCollectionSearchOpen(false);
+                    },
+                    className: 'ml-2 text-gray-400 hover:text-gray-600'
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
+                    )
+                  )
+                )
+              :
+                React.createElement('button', {
+                  onClick: () => setCollectionSearchOpen(true),
+                  className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
+                },
+                  React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
+                  )
+                )
+            ),
+            // Sync Collection button with provider dropdown (hide on friends tab)
+            collectionTab !== 'friends' && React.createElement('div', {
+              style: { position: 'relative', marginLeft: '12px' }
+            },
+              React.createElement('button', {
+                onClick: () => setSyncMenuOpen(!syncMenuOpen),
+                className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
+                style: {
+                  backgroundColor: Object.values(resolverSyncSettings).some(s => s?.enabled) ? '#06b6d4' : 'var(--nav-inactive)',
+                  color: '#ffffff',
+                  border: 'none',
+                  cursor: 'pointer'
+                },
+                title: 'Sync your music library'
+              },
+                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
+                ),
+                Object.values(resolverSyncSettings).some(s => s?.enabled) ? 'Synced' : 'Sync',
+                React.createElement('svg', { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
+                )
+              ),
+              // Provider dropdown menu
+              syncMenuOpen && React.createElement('div', {
+                style: {
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '4px',
+                  width: '200px',
+                  backgroundColor: 'var(--card-bg)',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+                  border: '1px solid var(--border-subtle)',
+                  zIndex: 50,
+                  overflow: 'hidden'
+                }
+              },
+                Object.entries(syncProviderConfig).map(([pid, config]) =>
+                  React.createElement('button', {
+                    key: pid,
+                    onClick: () => { setSyncMenuOpen(false); openSyncSetupModal(pid); },
+                    style: {
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '10px 14px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'background-color 100ms ease'
+                    },
+                    onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
+                    onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
+                  },
+                    React.createElement('div', {
+                      style: {
+                        width: '28px', height: '28px', borderRadius: '8px',
+                        backgroundColor: config.color,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0
+                      }
+                    },
+                      React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: pid === 'spotify' ? '0 0 24 24' : '0 0 122.88 122.88', fill: '#ffffff' },
+                        pid === 'spotify'
+                          ? React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+                          : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
+                      )
+                    ),
+                    config.name,
+                    resolverSyncSettings[pid]?.enabled && React.createElement('span', {
+                      style: {
+                        marginLeft: 'auto',
+                        width: '8px', height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: '#22c55e'
+                      }
+                    })
+                  )
+                )
+              ),
+              // Click-away to close dropdown
+              syncMenuOpen && React.createElement('div', {
+                style: { position: 'fixed', inset: 0, zIndex: 49 },
+                onClick: () => setSyncMenuOpen(false)
+              })
+            ),
+            // Sync friends button in header (only on friends tab).
+            // Manually triggers inbound pull from Last.fm + ListenBrainz.
+            // Disabled when no credentials exist; shows spinner during fetch.
+            collectionTab === 'friends' && (() => {
+              const lastfmConfig = metaServiceConfigs.lastfm;
+              const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+              const hasCreds = !!(lastfmConfig?.username || listenbrainzConfig?.username);
+              return React.createElement('button', {
+                onClick: () => syncFriendsFromServices({ silent: false }),
+                disabled: friendSyncInProgress || !hasCreds,
+                title: hasCreds
+                  ? 'Sync friends from Last.fm and ListenBrainz'
+                  : 'Connect Last.fm or ListenBrainz in Settings to sync friends',
+                className: 'ml-3 p-1.5 text-gray-500 hover:text-gray-700 transition-colors',
+                style: { opacity: friendSyncInProgress || !hasCreds ? 0.4 : 1, cursor: hasCreds ? 'pointer' : 'not-allowed' }
+              },
+                friendSyncInProgress
+                  ? React.createElement('svg', {
+                      className: 'w-5 h-5 animate-spin',
+                      fill: 'none', viewBox: '0 0 24 24'
+                    },
+                      React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
+                      React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
+                    )
+                  : React.createElement('svg', {
+                      className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                    )
+              );
+            })(),
+            // Add Friend button in header (only on friends tab)
+            collectionTab === 'friends' && React.createElement('button', {
+              onClick: () => setAddFriendModalOpen(true),
+              className: 'ml-3 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+            },
+              React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
+              ),
+              'Add Friend'
+            )
+          ),
+
           // Scrollable content area
           React.createElement('div', {
             ref: (el) => {
@@ -45232,382 +45674,10 @@ useEffect(() => {
               }
             }
           },
-            // Sticky filter bar
-            React.createElement('div', {
-              className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-            },
-              // Sort dropdown (moved to left)
-              React.createElement('div', { className: 'relative' },
-                React.createElement('button', {
-                  onClick: (e) => { e.stopPropagation(); setCollectionSortDropdownOpen(!collectionSortDropdownOpen); },
-                  className: 'flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors'
-                },
-                  React.createElement('span', null, getCollectionSortOptions(collectionTab).find(o => o.value === collectionSort[collectionTab])?.label || 'Sort'),
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                // Dropdown menu
-                collectionSortDropdownOpen && React.createElement('div', {
-                  className: 'absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg py-1 min-w-[160px] z-30 border border-gray-200'
-                },
-                  getCollectionSortOptions(collectionTab).map(option =>
-                    React.createElement('button', {
-                      key: option.value,
-                      onClick: (e) => {
-                        e.stopPropagation();
-                        setCollectionSort(prev => ({ ...prev, [collectionTab]: option.value }));
-                        setCollectionSortDropdownOpen(false);
-                      },
-                      className: `w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center justify-between ${
-                        collectionSort[collectionTab] === option.value ? 'text-gray-900 font-medium' : 'text-gray-600'
-                      }`
-                    },
-                      option.label,
-                      collectionSort[collectionTab] === option.value && React.createElement('svg', {
-                        className: 'w-4 h-4',
-                        fill: 'none',
-                        viewBox: '0 0 24 24',
-                        stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5 13l4 4L19 7' })
-                      )
-                    )
-                  )
-                )
-              ),
-              // Spacer
-              React.createElement('div', { className: 'flex-1' }),
-              // Search toggle/field
-              React.createElement('div', { className: 'flex items-center' },
-                collectionSearchOpen ?
-                  React.createElement('div', { className: 'flex items-center border border-gray-300 rounded-full px-3 py-[5px] filter-pill' },
-                    React.createElement('input', {
-                      type: 'text',
-                      value: collectionSearch,
-                      onChange: (e) => setCollectionSearch(e.target.value),
-                      onBlur: () => {
-                        if (!collectionSearch.trim()) {
-                          setCollectionSearchOpen(false);
-                        }
-                      },
-                      autoFocus: true,
-                      placeholder: 'Filter...',
-                      className: 'bg-transparent text-gray-700 text-sm placeholder-gray-400 outline-none',
-                      style: { width: '150px' }
-                    }),
-                    collectionSearch && React.createElement('button', {
-                      onClick: () => {
-                        setCollectionSearch('');
-                        setCollectionSearchOpen(false);
-                      },
-                      className: 'ml-2 text-gray-400 hover:text-gray-600'
-                    },
-                      React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M6 18L18 6M6 6l12 12' })
-                      )
-                    )
-                  )
-                :
-                  React.createElement('button', {
-                    onClick: () => setCollectionSearchOpen(true),
-                    className: 'p-1.5 text-gray-400 hover:text-gray-600 transition-colors'
-                  },
-                    React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' })
-                    )
-                  )
-              ),
-              // Sync Collection button with provider dropdown (hide on friends tab)
-              collectionTab !== 'friends' && React.createElement('div', {
-                style: { position: 'relative', marginLeft: '12px' }
-              },
-                React.createElement('button', {
-                  onClick: () => setSyncMenuOpen(!syncMenuOpen),
-                  className: 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5',
-                  style: {
-                    backgroundColor: Object.values(resolverSyncSettings).some(s => s?.enabled) ? '#06b6d4' : 'var(--nav-inactive)',
-                    color: '#ffffff',
-                    border: 'none',
-                    cursor: 'pointer'
-                  },
-                  title: 'Sync your music library'
-                },
-                  React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
-                  ),
-                  Object.values(resolverSyncSettings).some(s => s?.enabled) ? 'Synced' : 'Sync',
-                  React.createElement('svg', { className: 'w-3 h-3', style: { marginLeft: '2px', opacity: 0.8 }, fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2.5, d: 'M19 9l-7 7-7-7' })
-                  )
-                ),
-                // Provider dropdown menu
-                syncMenuOpen && React.createElement('div', {
-                  style: {
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: '4px',
-                    width: '200px',
-                    backgroundColor: 'var(--card-bg)',
-                    borderRadius: '12px',
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-                    border: '1px solid var(--border-subtle)',
-                    zIndex: 50,
-                    overflow: 'hidden'
-                  }
-                },
-                  Object.entries(syncProviderConfig).map(([pid, config]) =>
-                    React.createElement('button', {
-                      key: pid,
-                      onClick: () => { setSyncMenuOpen(false); openSyncSetupModal(pid); },
-                      style: {
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        padding: '10px 14px',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        color: 'var(--text-primary)',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'background-color 100ms ease'
-                      },
-                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
-                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
-                    },
-                      React.createElement('div', {
-                        style: {
-                          width: '28px', height: '28px', borderRadius: '8px',
-                          backgroundColor: config.color,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          flexShrink: 0
-                        }
-                      },
-                        React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: pid === 'spotify' ? '0 0 24 24' : '0 0 122.88 122.88', fill: '#ffffff' },
-                          pid === 'spotify'
-                            ? React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
-                            : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
-                        )
-                      ),
-                      config.name,
-                      resolverSyncSettings[pid]?.enabled && React.createElement('span', {
-                        style: {
-                          marginLeft: 'auto',
-                          width: '8px', height: '8px',
-                          borderRadius: '50%',
-                          backgroundColor: '#22c55e'
-                        }
-                      })
-                    )
-                  )
-                ),
-                // Click-away to close dropdown
-                syncMenuOpen && React.createElement('div', {
-                  style: { position: 'fixed', inset: 0, zIndex: 49 },
-                  onClick: () => setSyncMenuOpen(false)
-                })
-              ),
-              // Sync friends button in header (only on friends tab).
-              // Manually triggers inbound pull from Last.fm + ListenBrainz.
-              // Disabled when no credentials exist; shows spinner during fetch.
-              collectionTab === 'friends' && (() => {
-                const lastfmConfig = metaServiceConfigs.lastfm;
-                const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-                const hasCreds = !!(lastfmConfig?.username || listenbrainzConfig?.username);
-                return React.createElement('button', {
-                  onClick: () => syncFriendsFromServices({ silent: false }),
-                  disabled: friendSyncInProgress || !hasCreds,
-                  title: hasCreds
-                    ? 'Sync friends from Last.fm and ListenBrainz'
-                    : 'Connect Last.fm or ListenBrainz in Settings to sync friends',
-                  className: 'ml-3 p-1.5 text-gray-500 hover:text-gray-700 transition-colors',
-                  style: { opacity: friendSyncInProgress || !hasCreds ? 0.4 : 1, cursor: hasCreds ? 'pointer' : 'not-allowed' }
-                },
-                  friendSyncInProgress
-                    ? React.createElement('svg', {
-                        className: 'w-5 h-5 animate-spin',
-                        fill: 'none', viewBox: '0 0 24 24'
-                      },
-                        React.createElement('circle', { className: 'opacity-25', cx: '12', cy: '12', r: '10', stroke: 'currentColor', strokeWidth: '4' }),
-                        React.createElement('path', { className: 'opacity-75', fill: 'currentColor', d: 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z' })
-                      )
-                    : React.createElement('svg', {
-                        className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
-                      },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
-                      )
-                );
-              })(),
-              // Add Friend button in header (only on friends tab)
-              collectionTab === 'friends' && React.createElement('button', {
-                onClick: () => setAddFriendModalOpen(true),
-                className: 'ml-3 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
-              },
-                React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                  React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 4v16m8-8H4' })
-                ),
-                'Add Friend'
-              )
-            ),
-            // Content with padding
-            React.createElement('div', { className: 'p-6' },
-              // Artists tab
-            collectionTab === 'artists' && (() => {
-              // Cards will appear with their own shimmer animations when data is ready
-              if (collectionLoading) {
-                return null;
-              }
-
-              const filtered = filterCollectionItems(collectionData.artists, 'artists');
-              const sorted = sortCollectionItems(filtered, 'artists');
-
-              if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No artists match your search')
-                );
-              }
-
-              if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No artists yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag artists here to add them to your collection')
-                );
-              }
-
-              return React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
-                style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
-              },
-                sorted.map((artist, index) =>
-                  React.createElement(CollectionArtistCard, {
-                    key: artist.name,
-                    artist: { ...artist, trackCount: 0 },
-                    getArtistImage: getArtistImage,
-                    onNavigate: () => fetchArtistData(artist.name),
-                    onPlayTopTracks: async (artist) => {
-                      setTrackLoading(true);
-                      const tracks = await getArtistTopTracks(artist.name);
-                      if (tracks.length > 0) {
-                        const context = { type: 'artist', name: artist.name };
-                        const [firstTrack, ...remainingTracks] = tracks;
-                        // Tag the first track with context so queue navigation works correctly
-                        const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                        setQueueWithContext(remainingTracks, context, true);
-                        handlePlay(taggedFirstTrack);
-                      } else {
-                        setTrackLoading(false);
-                        showToast(`No top tracks found for ${artist.name}`, 'error');
-                      }
-                    },
-                    onAddToQueue: async (artist) => {
-                      const tracks = await getArtistTopTracks(artist.name);
-                      if (tracks.length > 0) {
-                        addToQueue(tracks, { type: 'artist', name: artist.name });
-                        showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
-                      } else {
-                        showToast(`No top tracks found for ${artist.name}`, 'error');
-                      }
-                    },
-                    animationDelay: Math.min(index * 30, 300)
-                  })
-                )
-              );
-            })(),
-
-            // Albums tab
-            collectionTab === 'albums' && (() => {
-              // Cards will appear with their own shimmer animations when data is ready
-              if (collectionLoading) {
-                return null;
-              }
-
-              const filtered = filterCollectionItems(collectionData.albums, 'albums');
-              const sorted = sortCollectionItems(filtered, 'albums');
-
-              if (sorted.length === 0 && collectionSearch) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No albums match your search')
-                );
-              }
-
-              if (sorted.length === 0) {
-                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
-                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
-                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
-                  ),
-                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No albums yet'),
-                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag albums here to add them to your collection')
-                );
-              }
-
-              return React.createElement('div', {
-                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
-                style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
-              },
-                sorted.map((album, index) =>
-                  React.createElement(CollectionAlbumCard, {
-                    key: `${album.title}-${album.artist}-${index}`,
-                    album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
-                    getAlbumArt: getAlbumArt,
-                    onNavigate: () => handleCollectionAlbumClick(album),
-                    onAddToPlaylist: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        setAddToPlaylistPanel({
-                          open: true,
-                          tracks: albumTracks,
-                          sourceName: `${albumData.title} by ${albumData.artist}`,
-                          sourceType: 'album'
-                        });
-                      }
-                    },
-                    onPlay: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        setTrackLoading(true);
-                        const context = { type: 'album', name: albumData.title, artist: albumData.artist };
-                        const [firstTrack, ...remainingTracks] = albumTracks;
-                        setQueueWithContext(remainingTracks, context, true);
-                        handlePlay(firstTrack);
-                      }
-                    },
-                    onAddToQueue: (albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      if (albumTracks.length > 0) {
-                        addToQueue(albumTracks, { type: 'album', name: albumData.title, artist: albumData.artist });
-                        showToast(`Added ${albumTracks.length} tracks from ${albumData.title}`, 'success');
-                      }
-                    },
-                    onContextMenu: (e, albumData) => {
-                      const albumTracks = collectionData.tracks
-                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
-                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
-                      window.electron?.contextMenu?.showTrackMenu({
-                        type: 'collection-album',
-                        album: albumData,
-                        tracks: albumTracks
-                      });
-                    },
-                    animationDelay: Math.min(index * 30, 300)
-                  })
-                )
-              );
-            })(),
-
-            // Tracks tab (existing implementation with filter/sort applied)
+            // Tracks tab — direct child of the scroll container (no
+            // padding wrapper above) so the eventual virtualized list
+            // sees scrollTop=0 cleanly. Other tabs stay inside the p-6
+            // wrapper below for their padding.
             collectionTab === 'tracks' && (() => {
               if (libraryLoading || collectionLoading) {
                 // Skeleton loaders while loading - matches new rounded row style
@@ -45981,6 +46051,158 @@ useEffect(() => {
               );
             })(),
 
+            collectionTab !== 'tracks' && React.createElement('div', { className: 'p-6' },
+              // Artists tab
+            collectionTab === 'artists' && (() => {
+              // Cards will appear with their own shimmer animations when data is ready
+              if (collectionLoading) {
+                return null;
+              }
+
+              const filtered = filterCollectionItems(collectionData.artists, 'artists');
+              const sorted = sortCollectionItems(filtered, 'artists');
+
+              if (sorted.length === 0 && collectionSearch) {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No artists match your search')
+                );
+              }
+
+              if (sorted.length === 0) {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' })
+                  ),
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No artists yet'),
+                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag artists here to add them to your collection')
+                );
+              }
+
+              return React.createElement('div', {
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
+                style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
+              },
+                sorted.map((artist, index) =>
+                  React.createElement(CollectionArtistCard, {
+                    key: artist.name,
+                    artist: { ...artist, trackCount: 0 },
+                    getArtistImage: getArtistImage,
+                    onNavigate: () => fetchArtistData(artist.name),
+                    onPlayTopTracks: async (artist) => {
+                      setTrackLoading(true);
+                      const tracks = await getArtistTopTracks(artist.name);
+                      if (tracks.length > 0) {
+                        const context = { type: 'artist', name: artist.name };
+                        const [firstTrack, ...remainingTracks] = tracks;
+                        // Tag the first track with context so queue navigation works correctly
+                        const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
+                        setQueueWithContext(remainingTracks, context, true);
+                        handlePlay(taggedFirstTrack);
+                      } else {
+                        setTrackLoading(false);
+                        showToast(`No top tracks found for ${artist.name}`, 'error');
+                      }
+                    },
+                    onAddToQueue: async (artist) => {
+                      const tracks = await getArtistTopTracks(artist.name);
+                      if (tracks.length > 0) {
+                        addToQueue(tracks, { type: 'artist', name: artist.name });
+                        showToast(`Added ${tracks.length} tracks from ${artist.name}`, 'success');
+                      } else {
+                        showToast(`No top tracks found for ${artist.name}`, 'error');
+                      }
+                    },
+                    animationDelay: Math.min(index * 30, 300)
+                  })
+                )
+              );
+            })(),
+
+            // Albums tab
+            collectionTab === 'albums' && (() => {
+              // Cards will appear with their own shimmer animations when data is ready
+              if (collectionLoading) {
+                return null;
+              }
+
+              const filtered = filterCollectionItems(collectionData.albums, 'albums');
+              const sorted = sortCollectionItems(filtered, 'albums');
+
+              if (sorted.length === 0 && collectionSearch) {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500' }, 'No albums match your search')
+                );
+              }
+
+              if (sorted.length === 0) {
+                return React.createElement('div', { className: 'flex-1 flex flex-col items-center justify-center text-gray-400 py-20' },
+                  React.createElement('svg', { className: 'w-16 h-16 mb-4 text-gray-300', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                    React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 1.5, d: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3' })
+                  ),
+                  React.createElement('p', { className: 'text-lg font-medium text-gray-500 mb-2' }, 'No albums yet'),
+                  React.createElement('p', { className: 'text-sm text-gray-400' }, 'Drag albums here to add them to your collection')
+                );
+              }
+
+              return React.createElement('div', {
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-5',
+                style: { minHeight: 'calc(100vh - 160px)', alignContent: 'start' }  // Ensure enough scroll area to prevent header bounce
+              },
+                sorted.map((album, index) =>
+                  React.createElement(CollectionAlbumCard, {
+                    key: `${album.title}-${album.artist}-${index}`,
+                    album: { ...album, trackCount: album.trackCount ?? collectionData.tracks.filter(t => t.artist === album.artist && t.album === album.title).length },
+                    getAlbumArt: getAlbumArt,
+                    onNavigate: () => handleCollectionAlbumClick(album),
+                    onAddToPlaylist: (albumData) => {
+                      const albumTracks = collectionData.tracks
+                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
+                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                      if (albumTracks.length > 0) {
+                        setAddToPlaylistPanel({
+                          open: true,
+                          tracks: albumTracks,
+                          sourceName: `${albumData.title} by ${albumData.artist}`,
+                          sourceType: 'album'
+                        });
+                      }
+                    },
+                    onPlay: (albumData) => {
+                      const albumTracks = collectionData.tracks
+                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
+                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                      if (albumTracks.length > 0) {
+                        setTrackLoading(true);
+                        const context = { type: 'album', name: albumData.title, artist: albumData.artist };
+                        const [firstTrack, ...remainingTracks] = albumTracks;
+                        setQueueWithContext(remainingTracks, context, true);
+                        handlePlay(firstTrack);
+                      }
+                    },
+                    onAddToQueue: (albumData) => {
+                      const albumTracks = collectionData.tracks
+                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
+                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                      if (albumTracks.length > 0) {
+                        addToQueue(albumTracks, { type: 'album', name: albumData.title, artist: albumData.artist });
+                        showToast(`Added ${albumTracks.length} tracks from ${albumData.title}`, 'success');
+                      }
+                    },
+                    onContextMenu: (e, albumData) => {
+                      const albumTracks = collectionData.tracks
+                        .filter(t => t.artist === albumData.artist && t.album === albumData.title)
+                        .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                      window.electron?.contextMenu?.showTrackMenu({
+                        type: 'collection-album',
+                        album: albumData,
+                        tracks: albumTracks
+                      });
+                    },
+                    animationDelay: Math.min(index * 30, 300)
+                  })
+                )
+              );
+            })(),
             // Friends tab
             collectionTab === 'friends' && (() => {
               // Only show friends saved to collection (savedToCollection !== false for backwards compatibility)
@@ -46815,7 +47037,7 @@ useEffect(() => {
                         React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
                         )
-                      )
+                      ),
                     )
                   ),
                   // Album/Track info - refined typography
@@ -47996,7 +48218,7 @@ useEffect(() => {
                       React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
                         React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
                       )
-                    )
+                    ),
                   )
                 ),
                 // Album info - right column - refined typography
@@ -60249,55 +60471,109 @@ useEffect(() => {
       )
     ),
 
-    // Parachord:// link context menu (power-user feature, tooltip-styled)
-    parachordLinkMenu && React.createElement('div', {
-      className: 'fixed inset-0 z-[70]',
-      onClick: () => setParachordLinkMenu(null),
-      onContextMenu: (e) => { e.preventDefault(); setParachordLinkMenu(null); },
-      style: { cursor: 'default' }
-    },
-      React.createElement('div', {
-        onClick: (e) => {
-          e.stopPropagation();
-          navigator.clipboard.writeText(parachordLinkMenu.link).then(() => {
-            showToast(`Copied ${parachordLinkMenu.link}`, 'success');
-          }).catch(() => {
-            showToast('Failed to copy link', 'error');
-          });
-          setParachordLinkMenu(null);
-        },
-        style: {
-          position: 'fixed',
-          left: `${parachordLinkMenu.x}px`,
-          top: `${parachordLinkMenu.y}px`,
-          padding: '8px 14px',
-          fontSize: '12px',
-          fontWeight: '500',
-          color: '#ffffff',
-          backgroundColor: 'var(--tooltip-bg)',
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)',
-          whiteSpace: 'nowrap',
-          cursor: 'pointer',
-          userSelect: 'none',
-          zIndex: 9999
-        },
-        onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--tooltip-bg)'; },
-        onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--tooltip-bg)'; }
+    // Page-header context menu (power-user feature, tooltip-styled).
+    // Always offers "Copy parachord:// link"; when the current view maps to
+    // an Achordion entity (artist or album), shows "Copy link" first.
+    parachordLinkMenu && (() => {
+      const itemStyle = {
+        padding: '8px 14px',
+        fontSize: '12px',
+        fontWeight: '500',
+        color: '#ffffff',
+        whiteSpace: 'nowrap',
+        cursor: 'pointer',
+        userSelect: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      };
+      const copyIcon = () => React.createElement('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24',
+        fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+        strokeLinecap: 'round', strokeLinejoin: 'round'
       },
-        React.createElement('span', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-          React.createElement('svg', {
-            width: 14, height: 14, viewBox: '0 0 24 24',
-            fill: 'none', stroke: 'currentColor', strokeWidth: 2,
-            strokeLinecap: 'round', strokeLinejoin: 'round'
+        React.createElement('rect', { x: 9, y: 9, width: 13, height: 13, rx: 2, ry: 2 }),
+        React.createElement('path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' })
+      );
+      const items = [];
+      if (parachordLinkMenu.achordionShare) {
+        items.push(
+          React.createElement('div', {
+            key: 'achordion',
+            onClick: (e) => {
+              e.stopPropagation();
+              try { parachordLinkMenu.achordionShare.run(); } catch (err) { console.warn('[CopyLink] menu run failed:', err); }
+              setParachordLinkMenu(null);
+            },
+            style: itemStyle,
+            onMouseEnter: (e) => { e.currentTarget.style.opacity = '0.85'; },
+            onMouseLeave: (e) => { e.currentTarget.style.opacity = '1'; }
+          }, copyIcon(), 'Copy link')
+        );
+        if (parachordLinkMenu.achordionShare.runView) {
+          items.push(
+            React.createElement('div', {
+              key: 'achordion-view',
+              onClick: (e) => {
+                e.stopPropagation();
+                try { parachordLinkMenu.achordionShare.runView(); } catch (err) { console.warn('[ViewAchordion] menu run failed:', err); }
+                setParachordLinkMenu(null);
+              },
+              style: itemStyle,
+              onMouseEnter: (e) => { e.currentTarget.style.opacity = '0.85'; },
+              onMouseLeave: (e) => { e.currentTarget.style.opacity = '1'; }
+            },
+              React.createElement('svg', {
+                width: 14, height: 14, viewBox: '0 0 24 24',
+                fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+                strokeLinecap: 'round', strokeLinejoin: 'round'
+              },
+                React.createElement('path', { d: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' }),
+                React.createElement('polyline', { points: '15 3 21 3 21 9' }),
+                React.createElement('line', { x1: 10, y1: 14, x2: 21, y2: 3 })
+              ),
+              'View on Achordion'
+            )
+          );
+        }
+      }
+      items.push(
+        React.createElement('div', {
+          key: 'parachord',
+          onClick: (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(parachordLinkMenu.link).then(() => {
+              showToast(`Copied ${parachordLinkMenu.link}`, 'success');
+            }).catch(() => {
+              showToast('Failed to copy link', 'error');
+            });
+            setParachordLinkMenu(null);
           },
-            React.createElement('rect', { x: 9, y: 9, width: 13, height: 13, rx: 2, ry: 2 }),
-            React.createElement('path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' })
-          ),
-          'Copy Parachord:// link'
-        )
-      )
-    ),
+          style: itemStyle,
+          onMouseEnter: (e) => { e.currentTarget.style.opacity = '0.85'; },
+          onMouseLeave: (e) => { e.currentTarget.style.opacity = '1'; }
+        }, copyIcon(), 'Copy parachord:// link')
+      );
+      return React.createElement('div', {
+        className: 'fixed inset-0 z-[70]',
+        onClick: () => setParachordLinkMenu(null),
+        onContextMenu: (e) => { e.preventDefault(); setParachordLinkMenu(null); },
+        style: { cursor: 'default' }
+      },
+        React.createElement('div', {
+          style: {
+            position: 'fixed',
+            left: `${parachordLinkMenu.x}px`,
+            top: `${parachordLinkMenu.y}px`,
+            backgroundColor: 'var(--tooltip-bg)',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)',
+            overflow: 'hidden',
+            zIndex: 9999
+          }
+        }, ...items)
+      );
+    })(),
 
     // Confirmation Dialog Modal - refined styling
     confirmDialog.show && React.createElement('div', {

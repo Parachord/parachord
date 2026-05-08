@@ -4286,18 +4286,49 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     }
   }
 
-  // Add Smart Link options for tracks, releases, playlists, and collection albums
-  if (data.type === 'track' || data.type === 'release' || data.type === 'playlist' || data.type === 'collection-album') {
+  // Add Copy-link options for tracks, releases, artists, and collection albums.
+  // Playlists are deliberately excluded — Achordion has no playlist entity
+  // surface yet, so we hide the menu item rather than show one that errors.
+  if (data.type === 'track' || data.type === 'release' || data.type === 'artist' || data.type === 'collection-album') {
     menuItems.push({ type: 'separator' });
 
     if (data.type === 'track') {
       // Single track smart link
       menuItems.push({
-        label: 'Publish Smart Link',
+        label: 'Copy link',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
             action: 'publish-smart-link',
             track: data.track
+          });
+        }
+      });
+      menuItems.push({
+        label: 'View on Achordion',
+        click: () => {
+          safeSendToRenderer('track-context-menu-action', {
+            action: 'view-on-achordion-track',
+            track: data.track
+          });
+        }
+      });
+
+    } else if (data.type === 'artist') {
+      menuItems.push({
+        label: 'Copy link',
+        click: () => {
+          safeSendToRenderer('track-context-menu-action', {
+            action: 'publish-artist-smart-link',
+            artist: data.artist
+          });
+        }
+      });
+      menuItems.push({
+        label: 'View on Achordion',
+        click: () => {
+          safeSendToRenderer('track-context-menu-action', {
+            action: 'view-on-achordion-artist',
+            artist: data.artist
           });
         }
       });
@@ -4307,12 +4338,29 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       const isPlaylist = data.type === 'playlist';
       const collectionArtist = data.album?.artist || data.artist || data.tracks?.[0]?.artist || null;
       const collectionArt = data.album?.art || data.albumArt || data.tracks?.[0]?.albumArt || null;
+      // Harvest any available album MBID. Achordion's entity-link endpoint
+      // accepts both release-group and release MBIDs for type=album (release
+      // MBIDs are mapped server-side to the canonical release-group page),
+      // so any of these wires us into a direct /release-group/<mbid> URL
+      // instead of falling through to /release-group/lookup. Fields, in
+      // priority order: explicit album MBID fields → the data.id at this
+      // level (typically a release-group MBID for MB-derived album data) →
+      // the first track's releaseMbid (mapper-enriched specific edition).
+      const albumMbid = data.album?.mbid
+        || data.album?.releaseGroupMbid
+        || data.album?.id
+        || data.mbid
+        || data.releaseGroupMbid
+        || (data.type === 'release' || data.type === 'collection-album' ? data.id : null)
+        || data.tracks?.[0]?.releaseMbid
+        || null;
       const collectionData = {
         title: data.name || data.title || data.album?.title,
         artist: collectionArtist,
         creator: data.creator || null,
         albumArt: collectionArt,
         type: isPlaylist ? 'playlist' : 'album',
+        mbid: albumMbid,
         tracks: (data.tracks || []).map((t, i) => ({
           title: t.title || 'Unknown',
           artist: t.artist || collectionArtist || null,
@@ -4322,7 +4370,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       };
 
       menuItems.push({
-        label: 'Publish Smart Link',
+        label: 'Copy link',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
             action: 'publish-collection-smart-link',
@@ -4330,6 +4378,19 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
           });
         }
       });
+      // Playlists: Achordion has no entity surface yet (issue #775), so the
+      // View-on-Achordion item only makes sense for albums.
+      if (!isPlaylist) {
+        menuItems.push({
+          label: 'View on Achordion',
+          click: () => {
+            safeSendToRenderer('track-context-menu-action', {
+              action: 'view-on-achordion-collection',
+              collection: collectionData
+            });
+          }
+        });
+      }
 
     }
   }
@@ -5325,6 +5386,29 @@ ipcMain.handle('localFiles:removeWatchFolder', async (event, folderPath) => {
 ipcMain.handle('localFiles:getWatchFolders', async () => {
   const service = await waitForLocalFilesService();
   return service.getWatchFolders();
+});
+
+// On-demand album-art resolution for a single track. Used by the renderer's
+// lazy background extraction loop to warm the cache for tracks that have
+// embedded/folder art but haven't been extracted yet. The track payload is
+// the renderer-shaped track (camelCase fields like `hasEmbeddedArt`,
+// `folderArtPath`, `filePath`); resolveArt accepts both shapes.
+ipcMain.handle('localFiles:resolveArt', async (_event, track) => {
+  const service = await waitForLocalFilesService();
+  if (!service || !track) return null;
+  // Translate renderer's camelCase fields back to the snake_case the
+  // resolver expects, in case the renderer-side fields are the only ones set.
+  const dbShaped = {
+    file_path: track.filePath || track.file_path,
+    has_embedded_art: track.hasEmbeddedArt ? 1 : (track.has_embedded_art || 0),
+    folder_art_path: track.folderArtPath || track.folder_art_path,
+    musicbrainz_release_id: track.musicbrainzReleaseId || track.musicbrainz_release_id,
+    musicbrainz_art_url: track.musicbrainzArtUrl || track.musicbrainz_art_url,
+    id: typeof track.id === 'string' && track.id.startsWith('local-')
+      ? track.id.slice('local-'.length)
+      : track.id
+  };
+  return service.resolveArtForTrack(dbShaped);
 });
 
 ipcMain.handle('localFiles:rescanAll', async () => {

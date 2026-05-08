@@ -31,7 +31,7 @@ Source selection is a **two-stage gate**: validate, then sort. Without the floor
 
 **All resolution paths gate on `MIN_CONFIDENCE_THRESHOLD`** and skip the attach entirely (with a warn log) when a result fails — three background paths (app.js L8027 normal, L8056 rate-limited iTunes, L8170 per-track flush) plus five `calculateConfidence`-using sites (search-page `resolveRecording` ~L19828, validation pipeline ~L23106, missing-resolver flush ~L23368, bandcamp-shortcut path ~L23464, scheduler flush ~L23634). All eight follow the same pattern: `const confidence = calculateConfidence(track, result); if (confidence < MIN_CONFIDENCE_THRESHOLD) skip-and-warn; else attach`. This prevents wrong-artist results from ever entering `track.sources` (and so from rendering pale resolver badges) and from polluting `track.album` / `track.albumArt` fallback fields.
 
-**Badge dim logic is relative-to-best, not absolute.** `getBestSourceConfidence(sources)` (app.js L171) returns the highest confidence among a track's sources. Each badge renders dimmed (opacity 0.6) when its confidence is strictly less than that best, full otherwise — `(source.confidence || 0) < bestConf ? 0.6 : 1`. This works because once the threshold gate above drops below-floor sources, the only remaining values are 0.95 (validated match) and 1.0 (direct-ID). When a track has both a 0.95 fuzzy match and a 1.0 direct-ID match, the 0.95 dims so the user can see at a glance which resolver has the strongest match. Single-source tracks render at full (best === self). Applied at all 11 badge call sites (TrackRow + 10 list-view variants).
+**Badge dim logic is absolute (≥ 0.95 = full opacity), not relative-to-best.** `getBestSourceConfidence(sources)` (app.js ~L264) returns the constant `0.95` regardless of input. Each badge renders dimmed (opacity 0.6) when its confidence is strictly less than 0.95, full otherwise — `(source.confidence || 0) < bestConf ? 0.6 : 1`. Since the upstream `MIN_CONFIDENCE_THRESHOLD = 0.6` floor drops sub-floor results before they reach `track.sources`, in normal operation the only values present are 0.95 (fuzzy validated) and 1.0 (direct-ID), so nothing dims unless a resolver explicitly returns a non-standard sub-0.95 value. The function signature is preserved (takes `sources`, returns a number) so the 11 badge call sites compile unchanged; the argument is ignored. **Historical note:** the prior relative-to-best model dimmed a 0.95 fuzzy match whenever a sibling resolver had 1.0, which users read as "wrong" when the match was actually correct — flipped to absolute on 2026-05-08. Applied at all 11 badge call sites (TrackRow + 10 list-view variants).
 
 **Cross-platform invariant.** `tests/helpers/confidence-scoring.js` is the test-side mirror of the app.js inline copies and the source-of-truth SYNC marker. The Kotlin equivalents live at `parachord-android/shared/.../resolver/ResolverModels.kt#scoreConfidence` and `ResolverScoring.kt#MIN_CONFIDENCE_THRESHOLD`. All four (desktop helper, desktop inline, Android, tests) must agree byte-for-byte on the gate semantics — drift on any platform produces inconsistent source selection between desktop and Android for the same track. Test cases at `tests/resolver/confidence-scoring.test.js` mirror Android's `ConfidenceScoringTest`.
 
@@ -706,6 +706,36 @@ Tracks are enriched with these fields throughout the app:
 - Release details (`/ws/2/release/{id}?inc=recordings`) — need full tracklist, mapper only maps single recordings
 - Album art (`/ws/2/release?query=...`) — need release ID for Cover Art Archive
 - Global search (artist/album/track) — open-ended queries need MB's fuzzy search, not mapper's exact lookup
+
+## Achordion Pre-resolution Plugin
+
+`plugins/achordion.axe` — bundled, default-on. Submits confirmed-on-playback `recording-MBID → external-streaming-URL` mappings to Achordion's match cache (POST `https://achordion.xyz/api/track-links/submit`). Each entry stored 90 days with `source: "parachord"`, which outranks Achordion's own Odesli + MB url-rel lookups. Spec: [achordion AGENTS.md L484-507](../achordion/AGENTS.md). Design notes: [docs/plans/look-at-achordion-agents-md-eventual-book.md](docs/plans/look-at-achordion-agents-md-eventual-book.md). This is the **submit half**; the consume half (skip live resolver search on a cache hit) is future work pending an Achordion GET endpoint.
+
+**Plugin shape.** `manifest.type: "meta-service"`, `capabilities.playbackTelemetry: true`. `init()` self-registers a scrobbler-shaped object (`{id, isEnabled, updateNowPlaying, scrobble}`) with `window.scrobbleManager`. `cleanup()` unregisters. The capability filter + `initResolver()` invocation lives in app.js next to the existing `withGenerate`/`withChat`/`withConcerts` branches in *both* the cold-load (`initResolvers`, ~L9216) and the marketplace hot-reload (`handlePluginsUpdated`, ~L9325) — keep those two paths in lockstep when adding any new playback-telemetry-shaped plugin.
+
+**Tiered trigger** — derived from each track's `bestConfidence(track.sources)`:
+| Confidence | Hook | Why |
+|---|---|---|
+| `>= 1.0` (direct-ID match — cached `spotifyId`/`appleMusicId`/etc) | `updateNowPlaying` (track-start) | By definition correct from a prior validated resolution; submit immediately. |
+| `>= 0.95` (fuzzy `validateResolvedTrack` pass) | `scrobble` (at scrobble-manager threshold: ≥50% of track or 4min, whichever is sooner) | Containment-match has edge cases (Live/remix/etc); playback-duration is the evidence the match was correct. |
+| `< 0.95` | never | Already gate-dropped by `MIN_CONFIDENCE_THRESHOLD` upstream of `track.sources` (see "Match Confidence + Selection Floor"). |
+
+**Inherited filter from scrobbleManager:** tracks with `duration < 30` are excluded from both hooks (see `scrobble-manager.js` L67). Affects tier-1 too — a 25s ambient piece with a verified Spotify ID won't submit. Acceptable trade-off for using existing infrastructure; revisit if coverage matters.
+
+**Submission rules** (inside the plugin):
+1. Require `track.mbid`. The MBID Mapper enrichment provides it; a track that hasn't gotten a mapper hit yet at fire time is silently dropped (no retry — the next play of the same track will catch it).
+2. In-session dedup via a `Set<mbid>` so loops/replays don't re-POST.
+3. Build `links[]` from `track.sources`: Spotify (`https://open.spotify.com/track/{spotifyId}`), Apple Music (`appleMusicUrl` if present, else `https://music.apple.com/us/song/{appleMusicId}`), Bandcamp (`bandcampUrl`/`url`), SoundCloud (`soundcloudUrl`/`permalink_url`/`url`), YouTube (`https://www.youtube.com/watch?v={youtubeId}`). Local files skipped (not shareable). Sources with `noMatch` skipped.
+4. Skip if `links.length === 0`.
+5. POST with `Authorization: Bearer <embedded-token>`. On 401, flip session-scoped `authFailed = true` and suppress all further submissions until restart (mirrors the Apple Music `_appleMusicWebAuthFailedAt` pattern).
+
+**Bearer token** is embedded as a string constant in `implementation.init`. Generated with `crypto.randomBytes(32).toString('base64url')` plus a `parachord_` prefix so Achordion can identify Parachord-client traffic distinctly. ASAR-extractable; same blast radius as any in-binary secret. Achordion server reads matching value from `PARACHORD_TRACK_LINKS_TOKEN` env var.
+
+**Token rotation** if leaked: generate a new value, swap it in `plugins/achordion.axe`, bump `manifest.version` *and* `marketplace-manifest.json` version (both required — see "Critical: Both Files Must Be Updated"), push to main. Marketplace sync fans out to every install on next launch. Coordinate with Achordion owner so the new token is accepted before old installs become invalid (or accept both for an overlap window).
+
+**Disable path for users:** uninstall the plugin via the Plugins UI (writes to `uninstalled_resolvers`). No bespoke "Pre-resolution" toggle exists; the plugin's own `isEnabled()` returns `true` unconditionally.
+
+**Cross-platform parity.** Android client should mirror the same submit semantics if/when it adds Achordion writes — same endpoint, same bearer token (or a sibling `parachord_android_*` token if Achordion wants to distinguish), same tiered confidence gates derived from `ResolverScoring.kt`. The MBID requirement is non-negotiable on both platforms.
 
 ## Plugin (`.axe`) Marketplace System
 

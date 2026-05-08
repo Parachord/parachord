@@ -485,6 +485,30 @@
         "events",
         "tours"
       ]
+    },
+    {
+      "id": "achordion",
+      "name": "Achordion",
+      "type": "meta-service",
+      "version": "1.0.7",
+      "author": "Parachord Team",
+      "description": "Speed up resolver matches across the community. After a verified playback, sends the recording's MusicBrainz ID and streaming-service URLs to Achordion's match cache so other Parachord users can skip the search step. No personal data is sent.",
+      "icon": "📡",
+      "color": "#7c3aed",
+      "homepage": "https://achordion.xyz",
+      "capabilities": {
+        "playbackTelemetry": true
+      },
+      "requiresAuth": false,
+      "builtin": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/achordion.axe",
+      "category": "metadata",
+      "tags": [
+        "metadata",
+        "community",
+        "performance",
+        "pre-resolution"
+      ]
     }
   ],
   "categories": [

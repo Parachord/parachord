@@ -29,10 +29,24 @@ describe('normalizeStr', () => {
     expect(normalizeStr('  Hello  World  ')).toBe('helloworld');
   });
 
-  test('strips diacritics-adjacent punctuation but keeps base letters', () => {
-    // Note: Latin extended chars are stripped because they fall outside [a-z0-9].
-    // This is intentional and matches desktop's existing normalizeStr.
-    expect(normalizeStr('Björk')).toBe('bjrk');
+  test('folds Latin diacritics to base letters', () => {
+    // Accented Latin chars decompose via NFKD then drop combining marks,
+    // so the base letter survives. Previously this stripped accented chars
+    // entirely (Björk → bjrk), which caused false rejections when a resolver
+    // returned the canonical accented form against a stripped target.
+    expect(normalizeStr('Björk')).toBe('bjork');
+    expect(normalizeStr('café')).toBe('cafe');
+    expect(normalizeStr('José González')).toBe('josegonzalez');
+    expect(normalizeStr('österreich')).toBe('osterreich');
+  });
+
+  test('preserves non-Latin scripts', () => {
+    // \p{L}/\p{N} keepset preserves CJK/Cyrillic/Arabic/etc. Previously
+    // these all collapsed to "", which made validateResolvedTrack reject
+    // every match for tracks with non-Latin titles (the listen-along bug
+    // for users with diverse music libraries).
+    expect(normalizeStr('動物寓意譚')).toBe('動物寓意譚');
+    expect(normalizeStr('В лунном сиянии')).toBe('влунномсиянии');
   });
 
   test('handles null and undefined', () => {
