@@ -15437,12 +15437,24 @@ ${trackListXml}
       const preferredResolver = trackOrSource.preferredResolver;
       const trackArtistNorm = (trackOrSource.artist || '').toLowerCase().trim();
       const trackTitleNorm = (trackOrSource.title || '').toLowerCase().trim();
-      const sortedSources = availableResolvers.map(resId => ({
-        resolverId: resId,
-        source: trackOrSource.sources[resId],
-        priority: currentResolverOrder.indexOf(resId),
-        confidence: trackOrSource.sources[resId].confidence || 0
-      }))
+      const sortedSources = availableResolvers.map(resId => {
+        const src = trackOrSource.sources[resId];
+        // Defense in depth: cached sources from older code paths (notably
+        // pre-fix resolveFriendTrack) may lack a `confidence` field. Without
+        // this fallback they'd evaluate to 0 and get dropped by the floor
+        // filter below — even when they'd validate cleanly. Re-score on the
+        // fly using the canonical (track artist, track title) target so
+        // legacy cache entries survive until they age out (7-day TTL).
+        const confidence = typeof src?.confidence === 'number'
+          ? src.confidence
+          : calculateConfidence({ artist: trackOrSource.artist, title: trackOrSource.title }, src);
+        return {
+          resolverId: resId,
+          source: src,
+          priority: currentResolverOrder.indexOf(resId),
+          confidence
+        };
+      })
       .filter(s => currentActiveResolvers.includes(s.resolverId)) // Only enabled resolvers
       // Drop wrong-song matches (single-axis title-only or artist-only matches
       // score 0.50). Without this floor, a higher-priority resolver's wrong
@@ -30597,8 +30609,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const resolved = await resolver.resolve(track.artist, track.name, null, config);
 
         if (resolved) {
+          // Score the result the same way the rest of the resolution paths do.
+          // Without this step the source has no `confidence` field, and
+          // handlePlay's source-selection floor (`s.confidence >= 0.6`) drops
+          // it as if it were a wrong-axis match. Symptom: clicking
+          // listen-along on a friend whose now-playing was previously cached
+          // would silently fail (handlePlay reaches "No Enabled Source" and
+          // shows a dialog, but the source data is fine — it just lacks a
+          // confidence value). All other resolution paths (resolveTrack,
+          // resolveTracksInBackground, validateCachedSources) already do
+          // this; resolveFriendTrack was the odd one out.
+          const confidence = calculateConfidence({ artist: track.artist, title: track.name }, resolved);
+          if (confidence < MIN_CONFIDENCE_THRESHOLD) {
+            console.warn(`  ⚠️ ${resolver.name}: Rejecting friend-track match "${resolved.title}" by "${resolved.artist}" — does not match "${track.name}" by "${track.artist}"`);
+            continue;
+          }
           console.log(`  ✅ ${resolver.name}: Found match for friend track`);
-          sources[resolverId] = resolved;
+          sources[resolverId] = { ...resolved, confidence };
         }
       } catch (error) {
         console.error(`  ❌ ${resolver.name} resolve error:`, error);
