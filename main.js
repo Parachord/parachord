@@ -5034,6 +5034,115 @@ ipcMain.handle('sync-links:remove', async (event, localPlaylistId, providerId) =
   return { success: true };
 });
 
+// ---------------------------------------------------------------------------
+// Achordion playlist-links submission (LB-anchored mirror map)
+// ---------------------------------------------------------------------------
+//
+// After a successful LB-anchored playlist sync write (create or push), submit
+// the playlist's mirror links to Achordion's /api/playlist-links/submit. The
+// ListenBrainz MBID is the cross-platform anchor for Achordion's keyspace:
+// either Parachord pushed local→LB (so syncedTo.listenbrainz.externalId is
+// the MBID) or Parachord imported LB→local (so syncedFrom.externalId is the
+// MBID). Either path lets Achordion stitch a Spotify/Apple Music/LB mirror
+// together by the LB MBID. Submission is fire-and-forget — sync success
+// must not depend on this network call.
+//
+// Bearer token is shared with track-links/submit (plugins/achordion.axe).
+const ACHORDION_BEARER = 'parachord_rgOgj2trN2KeIovar9DYA-yOCRkxgO6KlSyAo_jHtgg';
+const ACHORDION_PLAYLIST_LINKS_URL = 'https://achordion.xyz/api/playlist-links/submit';
+
+async function pushPlaylistLinksToAchordion(localPlaylist) {
+  if (!localPlaylist) return;
+  const links = [];
+  const syncedTo = localPlaylist.syncedTo || {};
+  if (syncedTo.spotify?.externalId) {
+    links.push({
+      host: 'open.spotify.com',
+      url: `https://open.spotify.com/playlist/${syncedTo.spotify.externalId}`,
+      label: 'Spotify',
+    });
+  }
+  if (syncedTo.applemusic?.externalId) {
+    links.push({
+      host: 'music.apple.com',
+      url: `https://music.apple.com/library/playlist/${syncedTo.applemusic.externalId}`,
+      label: 'Apple Music',
+    });
+  }
+  if (syncedTo.listenbrainz?.externalId) {
+    links.push({
+      host: 'listenbrainz.org',
+      url: `https://listenbrainz.org/playlist/${syncedTo.listenbrainz.externalId}`,
+      label: 'ListenBrainz',
+    });
+  }
+  // The LB MBID is the cross-platform anchor for Achordion's keyspace.
+  // It can come from either syncedTo (Parachord pushed local→LB) or
+  // syncedFrom (Parachord imported LB→local). Either works as the key.
+  const lbMbid = syncedTo.listenbrainz?.externalId
+    || (localPlaylist.syncedFrom?.resolver === 'listenbrainz' && localPlaylist.syncedFrom.externalId);
+  if (!lbMbid || links.length === 0) return;
+
+  const payload = {
+    mbid: lbMbid,
+    name: localPlaylist.title,
+    creatorName: localPlaylist.creator || null,
+    trackCount: Array.isArray(localPlaylist.tracks) ? localPlaylist.tracks.length : undefined,
+    links,
+  };
+
+  try {
+    const res = await fetch(ACHORDION_PLAYLIST_LINKS_URL, {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ACHORDION_BEARER}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (res && res.status === 401) {
+      // Token mismatch — log and move on; do NOT escalate to user UI.
+      console.warn('[achordion] playlist-links submit returned 401 (auth) — skipping');
+      return;
+    }
+    if (res && !res.ok) {
+      console.warn(`[achordion] playlist-links submit returned HTTP ${res.status} for mbid=${lbMbid}`);
+      return;
+    }
+    console.log(`[achordion] playlist-links submitted: mbid=${lbMbid} links=${links.length}`);
+  } catch (err) {
+    console.warn('[achordion] playlist-links submit failed:', err && err.message ? err.message : err);
+  }
+}
+
+// Build a localPlaylist-shaped object for pushPlaylistLinksToAchordion from
+// main-process state (sync_playlist_links + the just-completed write). Used
+// at the sync:create-playlist / sync:push-playlist call sites where we don't
+// have the full renderer-side playlist object.
+function buildLocalPlaylistMirrorContext({ localPlaylistId, providerId, externalId, name, tracks, syncedFromOverride }) {
+  // Start with all known mirrors from the durable link map.
+  const allLinks = (localPlaylistId && getSyncLinks()[localPlaylistId]) || {};
+  const syncedTo = {};
+  for (const [pid, entry] of Object.entries(allLinks)) {
+    if (entry?.externalId) {
+      syncedTo[pid] = { externalId: entry.externalId };
+    }
+  }
+  // Overlay the just-written link in case sync_playlist_links hasn't been
+  // updated yet for this op (defense-in-depth).
+  if (providerId && externalId) {
+    syncedTo[providerId] = { externalId };
+  }
+  return {
+    title: name,
+    tracks: Array.isArray(tracks) ? tracks : [],
+    syncedTo,
+    syncedFrom: syncedFromOverride || null,
+    creator: null,
+  };
+}
+
 // Relink orphaned local playlists to matching remotes by name.
 //
 // A local playlist is "orphaned" for a provider when:
@@ -6461,6 +6570,36 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
 
     // Push track changes
     const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token);
+
+    // Fire-and-forget: if this push touched an LB-anchored playlist (either
+    // we just pushed to LB, OR the local has an LB mirror via sync_playlist_links),
+    // tell Achordion about the playlist's mirror set. Look up the local
+    // playlist id by reverse-scanning sync_playlist_links.
+    try {
+      let localPlaylistId = null;
+      const allLinks = getSyncLinks();
+      for (const [lpId, byProvider] of Object.entries(allLinks)) {
+        if (byProvider?.[providerId]?.externalId === playlistExternalId) {
+          localPlaylistId = lpId;
+          break;
+        }
+      }
+      const lbInvolved = providerId === 'listenbrainz'
+        || (localPlaylistId && allLinks[localPlaylistId]?.listenbrainz?.externalId);
+      if (lbInvolved) {
+        const ctx = buildLocalPlaylistMirrorContext({
+          localPlaylistId,
+          providerId,
+          externalId: playlistExternalId,
+          name: metadata?.name,
+          tracks,
+        });
+        pushPlaylistLinksToAchordion(ctx);
+      }
+    } catch (e) {
+      console.warn('[achordion] post-push submit prep failed:', e && e.message ? e.message : e);
+    }
+
     return { success: true, snapshotId: result.snapshotId };
   } catch (error) {
     // Detect remote playlist deletion (404)
@@ -6536,6 +6675,21 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         setSyncLink(localPlaylistId, providerId, existing.externalId);
       }
       console.log(`[Sync] Linked "${name}" to existing ${providerId} playlist ${existing.externalId} (via ${source})`);
+
+      // Fire-and-forget Achordion playlist-links submit when LB is involved.
+      const lbInvolved = providerId === 'listenbrainz'
+        || (localPlaylistId && getSyncLinks()[localPlaylistId]?.listenbrainz?.externalId);
+      if (lbInvolved) {
+        const ctx = buildLocalPlaylistMirrorContext({
+          localPlaylistId,
+          providerId,
+          externalId: existing.externalId,
+          name,
+          tracks,
+        });
+        pushPlaylistLinksToAchordion(ctx);
+      }
+
       return {
         success: true,
         externalId: existing.externalId,
@@ -6644,6 +6798,23 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
           console.warn(`[Sync] Playlist "${name}" created on ${providerId} but failed to add tracks: ${trackError.message}`);
           unresolved = tracks.map(t => ({ artist: t.artist, title: t.title }));
         }
+      }
+
+      // Fire-and-forget: tell Achordion about this playlist's mirror set if
+      // LB is involved. Either the just-created remote IS the LB MBID, or
+      // we have a stored LB link for this local playlist via sync_playlist_links.
+      const lbInvolved = providerId === 'listenbrainz'
+        || (localPlaylistId && getSyncLinks()[localPlaylistId]?.listenbrainz?.externalId);
+      if (lbInvolved) {
+        const ctx = buildLocalPlaylistMirrorContext({
+          localPlaylistId,
+          providerId,
+          externalId,
+          name,
+          tracks,
+        });
+        // Do NOT await — fire-and-forget.
+        pushPlaylistLinksToAchordion(ctx);
       }
 
       return {
