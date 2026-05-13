@@ -13759,7 +13759,32 @@ ${trackListXml}
       return;
     }
     if (collection.type === 'playlist') {
-      showToast(openInBrowser ? 'View on Achordion isn\'t supported for playlists yet' : 'Copy link for playlists isn\'t supported yet', 'info');
+      // Playlist sharing requires a ListenBrainz MBID anchor — that's the
+      // cross-platform identifier Achordion keys its playlist-links cache on.
+      const lbMbid = collection.syncedTo?.listenbrainz?.externalId
+        || (collection.syncedFrom?.resolver === 'listenbrainz' && collection.syncedFrom.externalId);
+      if (!lbMbid) {
+        showToast(
+          'Sync this playlist to ListenBrainz first to enable sharing via Achordion.',
+          'info',
+        );
+        return;
+      }
+      let url = `https://achordion.xyz/playlist/${lbMbid}`; // fallback
+      if (window.achordion?.fetchEntityLink) {
+        const result = await window.achordion.fetchEntityLink(
+          { mbid: lbMbid },
+          { type: 'playlist' },
+        );
+        if (result.ok) url = result.url;
+      }
+      if (openInBrowser) {
+        window.electron?.shell?.openExternal?.(url);
+        showToast('Opened in browser');
+      } else {
+        await navigator.clipboard.writeText(url);
+        showToast('Link copied to clipboard!');
+      }
       return;
     }
 
@@ -55360,7 +55385,7 @@ useEffect(() => {
                           const text = typeof msg.content === 'string' ? msg.content : '';
                           const truncated = text.slice(0, 500);
                           const uri = `parachord://chat?prompt=${encodeURIComponent(truncated)}`;
-                          const link = `https://parachord.com/go?uri=${encodeURIComponent(uri)}`;
+                          const link = `https://achordion.xyz/go?uri=${encodeURIComponent(uri)}`;
                           navigator.clipboard?.writeText(link).then(() => {
                             showToast('Copied shareable prompt link!', 'success');
                           }).catch(() => {
