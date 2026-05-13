@@ -6357,6 +6357,20 @@ const Parachord = () => {
                   const syncInfo = playlist.syncedTo?.[providerId];
 
                   if (!syncInfo) {
+                    // LB-specific opt-in. Without this gate, enabling LB sync
+                    // would auto-create one LB playlist per non-localOnly local
+                    // playlist on first run — potentially 100+ private LB
+                    // playlists the user never asked for. Default off; the
+                    // wizard exposes a "Push my Parachord playlists to LB"
+                    // checkbox to opt in. Spotify/AM are unaffected (their
+                    // wizard doesn't render the checkbox and the setting
+                    // defaults to true for them, preserving existing behavior).
+                    // Already-linked playlists (those with syncedTo[lb]) are
+                    // NOT gated here — they still get update pushes via the
+                    // `else if (playlist.locallyModified)` branch below.
+                    if (providerId === 'listenbrainz' && currentSettings[providerId]?.pushLocalPlaylists !== true) {
+                      continue;
+                    }
                     // Playlist not yet created on this provider — create it
                     console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
                     try {
@@ -10451,7 +10465,13 @@ const Parachord = () => {
         syncTracks: existingSettings?.syncTracks ?? true,
         syncAlbums: existingSettings?.syncAlbums ?? true,
         syncArtists: existingSettings?.syncArtists ?? true,
-        syncPlaylists: existingSettings?.syncPlaylists ?? true
+        syncPlaylists: existingSettings?.syncPlaylists ?? true,
+        // LB-specific opt-in: by default, do NOT auto-create LB playlists for
+        // every non-localOnly local playlist. Users enabling LB sync would
+        // otherwise get 100+ private LB playlists they never asked for.
+        // Spotify/AM keep their existing default-on behavior. Updates to
+        // already-linked playlists still propagate regardless of this flag.
+        pushLocalPlaylists: existingSettings?.pushLocalPlaylists ?? (providerId === 'listenbrainz' ? false : true)
       },
       progress: null,
       results: null,
@@ -10571,6 +10591,16 @@ const Parachord = () => {
               const syncInfo = playlist.syncedTo?.[providerId];
 
               if (!syncInfo) {
+                // LB-specific opt-in. Mirrors the background-sync push loop's
+                // gate (see comment at L~6357) — must stay in lockstep with it
+                // per CLAUDE.md ("Push-loop syncedFrom guard must be
+                // provider-scoped" extends to any guard added to the loop).
+                // The wizard's pushLocalPlaylists checkbox writes through to
+                // syncSetupModal.settings, which is the `settings` destructured
+                // at L~10465 — that's what we read here.
+                if (providerId === 'listenbrainz' && settings?.pushLocalPlaylists !== true) {
+                  continue;
+                }
                 // Playlist not yet created on this provider — create it
                 console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
                 try {
@@ -61832,7 +61862,48 @@ useEffect(() => {
                   ).length === 0 && React.createElement('div', {
                     style: { textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)', fontSize: '13px' }
                   }, syncSetupModal.playlistFilter === 'owned' ? 'No playlists created by you' : 'No playlists you\'re following')
+                ),
+            // LB-only opt-in to also auto-create new LB playlists for every
+            // local Parachord playlist that doesn't yet have an LB mirror.
+            // Default OFF so a fresh LB connection doesn't dump 100+ private
+            // playlists onto the user's LB account. Already-linked playlists
+            // (with syncedTo.listenbrainz) keep getting update pushes
+            // regardless. Spotify/AM don't render this — their behavior is
+            // unchanged.
+            syncSetupModal.providerId === 'listenbrainz' && React.createElement('label', {
+              className: 'flex items-start gap-3 cursor-pointer transition-colors',
+              style: {
+                marginTop: '8px',
+                padding: '14px 16px',
+                backgroundColor: syncSetupModal.settings.pushLocalPlaylists ? `${syncProviderConfig.listenbrainz?.color || '#353070'}10` : 'var(--hover-bg-default)',
+                borderRadius: '12px',
+                border: syncSetupModal.settings.pushLocalPlaylists ? `1px solid ${syncProviderConfig.listenbrainz?.color || '#353070'}4D` : '1px solid var(--border-subtle)'
+              }
+            },
+              React.createElement('input', {
+                type: 'checkbox',
+                checked: !!syncSetupModal.settings.pushLocalPlaylists,
+                onChange: (e) => setSyncSetupModal(prev => ({
+                  ...prev,
+                  settings: { ...prev.settings, pushLocalPlaylists: e.target.checked }
+                })),
+                style: {
+                  width: '18px',
+                  height: '18px',
+                  marginTop: '2px',
+                  accentColor: syncProviderConfig.listenbrainz?.color || '#353070',
+                  cursor: 'pointer',
+                  flexShrink: 0
+                }
+              }),
+              React.createElement('div', null,
+                React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Push my Parachord playlists to ListenBrainz'),
+                React.createElement('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.4' } },
+                  'Creates new LB playlists for any Parachord playlist not already synced. ',
+                  'Default off — your existing LB playlists are unaffected, and already-linked playlists still receive updates.'
                 )
+              )
+            )
           ),
 
           // Syncing step
