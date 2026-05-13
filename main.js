@@ -1570,6 +1570,9 @@ if (!gotTheLock) {
 app.whenReady().then(() => {
   console.log('=== Electron App Starting ===');
 
+  // Begin periodic in-app announcements fetch
+  startAnnouncementsPolling();
+
   // Register as default handler for parachord:// protocol
   if (process.defaultApp) {
     if (process.argv.length >= 2) {
@@ -2540,6 +2543,9 @@ const ALLOWED_STORE_KEYS = new Set([
   'suppressed_sync_playlists',
   'theme_preference',
   'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version',
+  'cached_announcements', 'dismissed_announcement_ids',
+  'playlists_sort',
+  'hidden_friend_keys',
 ]);
 
 // Sensitive keys that should only be accessed by dedicated IPC handlers
@@ -2603,6 +2609,163 @@ ipcMain.handle('store-delete', (event, key) => {
   }
   store.delete(key);
   return true;
+});
+
+// ─── In-app announcements ────────────────────────────────────────────────────
+// Polls a public JSON file on achordion.xyz for product announcements
+// (banner notifications). The fetched payload is cached in electron-store
+// (`cached_announcements`); user dismissals are tracked by id in
+// `dismissed_announcement_ids`. The renderer reads both via existing
+// store IPC. Refreshes are pushed via the `announcements:updated` event.
+//
+// Schema (announcements.json):
+//   [
+//     {
+//       "id": "2026-05-08-launch-discord",   // required, stable; dismissals key off this
+//       "severity": "info" | "success" | "warn" | "error",   // default 'info'
+//       "title": "string",                    // required
+//       "body":  "string",                    // optional
+//       "icon":  "📡",                         // optional — emoji or short glyph (≤4 chars)
+//       "iconUrl": "https://...png",          // optional — small image (https only); preferred over icon
+//       "cta":   { "label": "string", "url": "https://..." }, // optional
+//       "minVersion": "0.9.2",                // optional inclusive lower bound
+//       "maxVersion": "1.0.0",                // optional inclusive upper bound
+//       "expiresAt": "2026-06-01T00:00:00Z"   // optional ISO-8601
+//     }
+//   ]
+const ANNOUNCEMENTS_URL = 'https://achordion.xyz/api/announcements';
+const ANNOUNCEMENTS_INITIAL_DELAY_MS = 10 * 1000; // ~10s after launch
+// Refetch on window focus only when this much time has passed since the last
+// successful fetch — covers the "user kept the app open for days" case
+// without burning per-hour requests for installs that already restart often.
+const ANNOUNCEMENTS_FOCUS_STALE_MS = 6 * 60 * 60 * 1000; // 6h
+
+const isPlainAnnouncement = (a) => {
+  if (!a || typeof a !== 'object') return false;
+  if (typeof a.id !== 'string' || !a.id.trim()) return false;
+  if (typeof a.title !== 'string' || !a.title.trim()) return false;
+  if (a.severity != null && typeof a.severity !== 'string') return false;
+  if (a.body != null && typeof a.body !== 'string') return false;
+  if (a.icon != null) {
+    if (typeof a.icon !== 'string' || a.icon.length > 4) return false;
+  }
+  if (a.iconUrl != null) {
+    if (typeof a.iconUrl !== 'string') return false;
+    if (!/^https:\/\//i.test(a.iconUrl)) return false; // https only — banner is rendered, no mixed-content
+  }
+  if (a.cta != null) {
+    if (typeof a.cta !== 'object') return false;
+    if (typeof a.cta.label !== 'string' || typeof a.cta.url !== 'string') return false;
+    if (!/^https?:\/\//i.test(a.cta.url)) return false;
+  }
+  return true;
+};
+
+const fetchAnnouncements = async (reason = 'scheduled') => {
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetch(ANNOUNCEMENTS_URL, {
+      signal: ctrl.signal,
+      redirect: 'error',
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) returned HTTP ${res.status}`);
+      return;
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (!/json/i.test(ct)) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) returned non-JSON content-type: ${ct}`);
+      return;
+    }
+    const text = await res.text();
+    if (text.length > 64 * 1024) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) payload too large: ${text.length} bytes — ignored`);
+      return;
+    }
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) invalid JSON:`, e.message);
+      return;
+    }
+    if (!Array.isArray(data)) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) not an array`);
+      return;
+    }
+    const items = data.filter(isPlainAnnouncement).slice(0, 20);
+    const payload = { fetchedAt: Date.now(), items };
+    store.set('cached_announcements', payload);
+    console.log(`📢 [Announcements] Fetched (${reason}): ${items.length} item(s)${data.length !== items.length ? ` (${data.length - items.length} dropped as malformed)` : ''}`);
+    BrowserWindow.getAllWindows().forEach(win => {
+      try { win.webContents.send('announcements:updated', payload); } catch (_) {}
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.warn(`📢 [Announcements] Fetch (${reason}) timed out`);
+    } else {
+      console.warn(`📢 [Announcements] Fetch (${reason}) failed:`, err && err.message ? err.message : err);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+let announcementsLastFetchAt = 0;
+let announcementsStarted = false;
+const fetchAnnouncementsTracked = async (reason) => {
+  await fetchAnnouncements(reason);
+  announcementsLastFetchAt = Date.now();
+};
+const startAnnouncementsPolling = () => {
+  if (announcementsStarted) return;
+  announcementsStarted = true;
+  // Initial fetch ~10s after launch — gives the renderer time to register
+  // the broadcast listener before main pushes the first payload.
+  setTimeout(() => fetchAnnouncementsTracked('initial'), ANNOUNCEMENTS_INITIAL_DELAY_MS);
+  // No setInterval polling. Refetch only when the window regains focus AND
+  // enough time has passed since the last fetch to be worth the round-trip.
+  app.on('browser-window-focus', () => {
+    const stale = Date.now() - announcementsLastFetchAt > ANNOUNCEMENTS_FOCUS_STALE_MS;
+    if (stale) fetchAnnouncementsTracked('focus');
+  });
+};
+
+ipcMain.handle('announcements:refresh', () => fetchAnnouncementsTracked('manual'));
+
+// Engagement telemetry posted from the renderer when a banner is viewed,
+// dismissed, or its CTA is clicked. Best-effort: errors are logged and
+// swallowed so a failed telemetry call never affects the UI.
+const ANNOUNCEMENTS_EVENT_URL = 'https://achordion.xyz/api/announcements/event';
+ipcMain.handle('announcements:record-event', async (_event, payload) => {
+  if (!payload || typeof payload.id !== 'string' || typeof payload.event !== 'string') {
+    return { ok: false, reason: 'invalid-payload' };
+  }
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch(ANNOUNCEMENTS_EVENT_URL, {
+      method: 'POST',
+      signal: ctrl.signal,
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ id: payload.id, event: payload.event })
+    });
+    if (!res.ok) {
+      console.warn(`📢 [Announcements] Event POST returned HTTP ${res.status} for ${payload.event}/${payload.id}`);
+      return { ok: false, reason: `status-${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    if (err && err.name !== 'AbortError') {
+      console.warn(`📢 [Announcements] Event POST failed for ${payload.event}/${payload.id}:`, err.message || err);
+    }
+    return { ok: false, reason: 'network' };
+  } finally {
+    clearTimeout(timeout);
+  }
 });
 
 ipcMain.handle('store-clear', async () => {
@@ -5871,19 +6034,44 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               const existingTracks = currentPlaylists[idx].tracks || [];
               const isEmpty = existingTracks.length === 0;
 
-              if (hasTrackUpdates) {
-                console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
-              }
+              // Determine whether this provider is the canonical pull source.
+              // Two categories of "not the pull source" silence the log:
+              //   1. Cross-provider push mirrors (syncedFrom.resolver points to
+              //      a different provider; matched via syncedTo[providerId]) —
+              //      snapshotIds aren't comparable across services.
+              //   2. Locally-created push mirrors (syncedFrom undefined; matched
+              //      via syncedTo[providerId]) — there's no pull source at all.
+              // Only when syncedFrom.resolver STRICTLY matches the provider does
+              // this provider own the pull contract; that's the only case where
+              // "has updates" carries meaning. (Note: the downstream isOwnPullSource
+              // check still uses the permissive form to preserve first-time-link
+              // semantics for state writes; the log just needs to be stricter.)
+              const preRefreshIsOwnPullSource = localPlaylist.syncedFrom?.resolver === providerId;
 
-              // Refetch tracks if the playlist is empty (e.g. from a previously
-              // failed sync that saved the playlist shell without tracks) —
-              // but only if we're the canonical pull source. Cross-provider
-              // push mirrors (matched via syncedTo[providerId].externalId but
-              // with syncedFrom pointing at a different provider) get their
-              // tracks from that other provider's pull; refetching from here
-              // would overwrite them and break round-trip mirroring.
-              const preRefreshIsOwnPullSource = !localPlaylist.syncedFrom?.resolver
-                || localPlaylist.syncedFrom.resolver === providerId;
+              // Track-count match: cheap content fingerprint to suppress
+              // false-positive "has updates" flags. Two scenarios this covers:
+              //   1. Heal-induced null snapshot (commit dd63f97 nulls snapshotId
+              //      when it restores syncedFrom; first sync after that sees a
+              //      null vs real-snapshot mismatch).
+              //   2. **Apple Music snapshot churn**: AM frequently re-issues
+              //      snapshotIds for editorial / system playlists ("My Shazam
+              //      Tracks", curated Apple-editorial picks, the Rewind / Radio
+              //      Paradise / NTS-style hosted feeds) even when the tracklist
+              //      hasn't changed. Spotify's snapshotId is rock-solid; AM's
+              //      is not. Count-match catches both cases.
+              // Tradeoff accepted: we miss the rare "AM swapped one track for
+              // another, same count" case. For user-owned playlists that's
+              // vanishingly rare; for editorial playlists the user can refresh
+              // manually if they suspect drift.
+              const trackCountMatches =
+                remotePlaylist.trackCount != null
+                && existingTracks.length === remotePlaylist.trackCount;
+
+              if (preRefreshIsOwnPullSource && hasTrackUpdates && !trackCountMatches) {
+                console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
+              } else if (preRefreshIsOwnPullSource && hasTrackUpdates && trackCountMatches) {
+                console.log(`[Sync] Adopting remote snapshotId for "${remotePlaylist.name}" (track count matches: ${existingTracks.length})`);
+              }
               let tracks = existingTracks;
               if (isEmpty && preRefreshIsOwnPullSource) {
                 console.log(`[Sync] Playlist "${remotePlaylist.name}" has 0 tracks, refetching...`);
@@ -5925,8 +6113,19 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // Re-check after refresh — the user may have already pulled this update.
               // Only meaningful when we're the pull source; otherwise snapshotIds
               // come from different providers and aren't comparable.
+              //
+              // Track-count check on the FRESH playlist (after the store re-read
+              // above). Same rationale as the earlier `trackCountMatches`: covers
+              // both heal-induced null snapshots and Apple Music's churning
+              // snapshotIds. Counting from current.tracks (not existingTracks)
+              // picks up the case where a previously-empty playlist just got
+              // refilled in the isEmpty branch above.
+              const freshTrackCountMatches =
+                remotePlaylist.trackCount != null
+                && (current.tracks?.length || 0) === remotePlaylist.trackCount;
               const stillHasUpdates = isOwnPullSource
-                && current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
+                && current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId
+                && !freshTrackCountMatches;
 
               // If we backfilled tracks for a previously-empty playlist AND
               // the playlist is mirrored to providers other than this one, the

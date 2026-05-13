@@ -289,6 +289,37 @@ const DEBUG_RESOLUTION = false;
 // against `bestConf` unchanged. The argument is now ignored.
 const getBestSourceConfidence = (_sources) => 0.95;
 
+// Extension-aware "this file's format isn't supported" message used by both
+// HTML5-audio error handlers (loadlocal-file playback + post-play catch
+// blocks). Chromium's built-in audio decoders cover MP3, AAC, OGG/Vorbis,
+// Opus, and PCM (16-bit) reliably; high-bit-depth and high-sample-rate
+// FLAC and WAV files frequently fail with MEDIA_ERR_SRC_NOT_SUPPORTED.
+//
+// Previously this code path emitted `Try converting to MP3 or FLAC` for
+// every unknown extension — including .flac files — producing the
+// nonsensical "your FLAC file is unsupported; convert it to FLAC"
+// message users were seeing on Japanese audiophile rips (typically
+// 24-bit/96kHz FLAC, which Chromium can't decode).
+const unsupportedAudioMessage = (ext) => {
+  const e = (ext || '').toLowerCase();
+  if (e === 'wav') {
+    return 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or 16-bit FLAC for playback.';
+  }
+  if (e === 'flac') {
+    return 'This FLAC file is likely 24-bit or high sample rate (≥88.2kHz). The built-in player only supports 16-bit FLAC at 44.1/48kHz. Convert with `ffmpeg -i input.flac -sample_fmt s16 -ar 48000 output.flac` (or use MP3 / AAC).';
+  }
+  if (e === 'mp3') {
+    return 'This MP3 file appears corrupted or uses an unsupported variant. Try re-encoding it with a standard MP3 encoder.';
+  }
+  if (e === 'ogg' || e === 'oga' || e === 'opus' || e === 'aac' || e === 'm4a') {
+    return `This ${e.toUpperCase()} file is corrupted or uses an unsupported variant. Try converting to MP3 or 16-bit FLAC.`;
+  }
+  if (e === 'wma' || e === 'aiff' || e === 'alac' || e === 'ape' || e === 'dsf' || e === 'dff') {
+    return `${e.toUpperCase()} is not supported by the built-in player. Convert to MP3 or 16-bit FLAC at 44.1/48kHz.`;
+  }
+  return `This ${e ? e.toUpperCase() : 'audio'} file uses an unsupported format. Try converting to MP3 or 16-bit FLAC.`;
+};
+
 // Resolve a track to a recording MBID for ListenBrainz love submission.
 // Tries (1) cached track.mbid, (2) the MBID Mapper. Returns the MBID
 // string or null. ~4ms typical via the mapper. See
@@ -5939,6 +5970,8 @@ const Parachord = () => {
   const [whatsNewDismissedVersion, setWhatsNewDismissedVersion] = useState(null); // Last version user dismissed What's New for
   const [whatsNewHighlights, setWhatsNewHighlights] = useState([]); // Parsed release note highlights
   const [appVersion, setAppVersion] = useState(null); // Current app version from electron
+  const [announcements, setAnnouncements] = useState([]); // In-app banner items fetched from achordion.xyz
+  const [dismissedAnnouncementIds, setDismissedAnnouncementIds] = useState([]); // Persisted dismissals (array; checked as a Set inline)
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
@@ -6173,16 +6206,19 @@ const Parachord = () => {
   const playlistSyncInProgressRef = useRef(false);
 
   useEffect(() => {
-    const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
+    const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes — timer cadence + default staleness gate
+    const BACKGROUND_MIN_STALENESS = 5 * 60 * 1000; // tighter staleness for background-triggered runs
+    const BACKGROUND_DELAY = 30 * 1000; // wait 30s after blur before syncing — cancels if user returns
     const INITIAL_DELAY = 60 * 1000; // 60 seconds — let the app fully load first
 
-    const runBackgroundSync = async () => {
+    const runBackgroundSync = async (opts = {}) => {
+      const minStaleness = typeof opts.minStaleness === 'number' ? opts.minStaleness : SYNC_INTERVAL;
       const currentSettings = resolverSyncSettingsRef.current;
       // Check each enabled provider
       for (const [providerId, settings] of Object.entries(currentSettings)) {
         if (settings.enabled) {
-          // Skip if last sync was recent (within the sync interval)
-          if (settings.lastSyncAt && (Date.now() - settings.lastSyncAt) < SYNC_INTERVAL) {
+          // Skip if last sync was recent (within the staleness threshold for this run)
+          if (settings.lastSyncAt && (Date.now() - settings.lastSyncAt) < minStaleness) {
             console.log(`[Sync] Skipping background sync for ${providerId} — last sync was ${Math.round((Date.now() - settings.lastSyncAt) / 60000)}m ago`);
             continue;
           }
@@ -6548,16 +6584,68 @@ const Parachord = () => {
     };
 
     // Delay initial sync to let the app fully load and become interactive
-    const initialSyncTimeout = setTimeout(runBackgroundSync, INITIAL_DELAY);
+    const initialSyncTimeout = setTimeout(() => runBackgroundSync(), INITIAL_DELAY);
 
     // Set up interval
-    const intervalId = setInterval(runBackgroundSync, SYNC_INTERVAL);
+    const intervalId = setInterval(() => runBackgroundSync(), SYNC_INTERVAL);
+
+    // Background-triggered refresh: when the window LOSES focus, schedule
+    // a sync for BACKGROUND_DELAY seconds later. If the user comes back
+    // before then, cancel — they didn't actually leave. Net effect: heavy
+    // sync work runs while the user is away, never on resume.
+    //
+    // Rationale: an earlier iteration triggered sync on FOREGROUND, which
+    // produced visible pinwheel + CPU spike right when the user wanted the
+    // app responsive (~35s of IPC churn for users with hundreds of
+    // playlists). User feedback was unambiguous: "I want more work done
+    // while I'm not using the app, not when I want it to feel most
+    // responsive." Inverted accordingly.
+    //
+    // Notes:
+    //   - The 15-min timer (above) still runs regardless of focus state.
+    //     This handler is purely additive: it catches the case where the
+    //     user backgrounds the app mid-cycle, so sync can happen during
+    //     their absence rather than at the next idle timer tick.
+    //   - Per-provider `lastSyncAt < minStaleness` gate inside
+    //     runBackgroundSync prevents double-fetching when the timer
+    //     already synced recently.
+    //   - We DON'T cancel an already-running sync on focus — too risky
+    //     (could leave half-written state). We only cancel the *pending*
+    //     setTimeout. If the user returns mid-sync, they may still see
+    //     residual IPC activity for a few seconds — accept that vs the
+    //     complexity of safe cancellation.
+    let pendingBackgroundSync = null;
+    const handleBackground = () => {
+      if (pendingBackgroundSync) clearTimeout(pendingBackgroundSync);
+      pendingBackgroundSync = setTimeout(() => {
+        pendingBackgroundSync = null;
+        runBackgroundSync({ minStaleness: BACKGROUND_MIN_STALENESS });
+      }, BACKGROUND_DELAY);
+    };
+    const handleForeground = () => {
+      if (pendingBackgroundSync) {
+        clearTimeout(pendingBackgroundSync);
+        pendingBackgroundSync = null;
+      }
+    };
+    if (window.electron?.app?.onBackground) {
+      window.electron.app.onBackground(handleBackground);
+    }
+    if (window.electron?.app?.onForeground) {
+      window.electron.app.onForeground(handleForeground);
+    }
 
     return () => {
       clearTimeout(initialSyncTimeout);
       clearInterval(intervalId);
+      if (pendingBackgroundSync) clearTimeout(pendingBackgroundSync);
+      // No unsubscribe path on app.onForeground/onBackground in preload
+      // (multi-listener safe); they detach when the renderer tears down.
     };
   }, []); // Stable effect — reads settings from ref
+
+  // (Slow-trickle cross-resolver enrichment moved past the `cacheLoaded`
+  // useState declaration to avoid the deps-array TDZ. See below near L9720.)
 
   // Friends state
   const [friends, setFriends] = useState([]);
@@ -9711,6 +9799,173 @@ const Parachord = () => {
       window.electron.localFiles.getWatchFolders().then(setWatchFolders);
     }
   }, [cacheLoaded]);
+
+  // In-app announcements: subscribe to fresh fetches from main process.
+  // Cached items hydrate via the bulk-load batch above; this keeps the banner
+  // current as the launch + focus refresh updates the cache.
+  useEffect(() => {
+    if (!cacheLoaded || !window.electron?.announcements?.onUpdated) return;
+    console.log('📢 Listener registered for announcements:updated broadcasts');
+    const unsubscribe = window.electron.announcements.onUpdated((payload) => {
+      const count = Array.isArray(payload?.items) ? payload.items.length : 0;
+      const ids = Array.isArray(payload?.items) ? payload.items.map(a => a?.id).join(',') : '';
+      console.log(`📢 Broadcast received: ${count} item(s) [${ids}]`);
+      if (payload && Array.isArray(payload.items)) {
+        setAnnouncements(payload.items);
+      }
+    });
+    return () => { try { unsubscribe && unsubscribe(); } catch (_) {} };
+  }, [cacheLoaded]);
+
+  // ─── Slow-trickle cross-resolver enrichment ────────────────────────────
+  //
+  // Walks the collection at strictly idle priority and resolves tracks that
+  // have at least one source but are missing slots for some enabled
+  // resolvers. Runs ONE track every TRICKLE_INTERVAL_MS, only when the
+  // window is unfocused — mirroring the "do work while user is away"
+  // principle we apply to background sync.
+  //
+  // Why this exists: the eager-enrichment gate in resolveTrack (search for
+  // `hasLocalfilesSource`) skips missing-resolver fills for localfiles-
+  // backed tracks during library navigation, which stops a Bandcamp-search
+  // burst that pinwheels the app for users with many local-only tracks.
+  // Without a second path to enrich those tracks, local-only listeners
+  // would never contribute streaming-URL mappings to Achordion's match
+  // cache. This loop closes that gap — passing `forceEnrichment: true`
+  // bypasses the gate so the same resolution work happens, just stretched
+  // over hours of background time instead of seconds of foreground burst.
+  //
+  // Tracking: `enrichmentAttemptedRef` records track IDs we've already tried
+  // this session, so a single attempt per track per launch — keeps the load
+  // bounded even on huge collections and lets the persistence layer record
+  // noMatch sentinels that prevent re-querying across launches.
+  //
+  // Placed AFTER the `cacheLoaded` useState declaration to avoid a deps-
+  // array TDZ — React evaluates the deps array synchronously during render
+  // before later useState lines run, so this effect cannot live near its
+  // logically-related background-sync useEffect higher in the file.
+  const enrichmentAttemptedRef = useRef(new Set());
+  const enrichmentWindowFocusedRef = useRef(true);
+  useEffect(() => {
+    if (!cacheLoaded) return;
+
+    const TRICKLE_INTERVAL_MS = 10 * 1000; // 1 track every 10s
+    const STARTUP_DELAY_MS = 90 * 1000;    // hold off until after the app settles
+
+    let intervalId = null;
+
+    const findCandidate = () => {
+      const tracks = collectionTracksRef.current || [];
+      const enabled = (activeResolversRef.current || []).filter(id => id !== 'localfiles');
+      if (enabled.length === 0 || tracks.length === 0) return null;
+
+      const attempted = enrichmentAttemptedRef.current;
+      for (const t of tracks) {
+        if (!t || !t.id || attempted.has(t.id)) continue;
+        const sources = t.sources || {};
+        const sourceKeys = Object.keys(sources);
+        if (sourceKeys.length === 0) continue; // Truly unresolved — leave to normal scheduler
+        const hasReal = sourceKeys.some(k => sources[k] && !sources[k].noMatch);
+        if (!hasReal) continue;
+        const missing = enabled.some(r => !sources[r]);
+        if (!missing) continue;
+        return t;
+      }
+      return null;
+    };
+
+    const tick = async () => {
+      if (enrichmentWindowFocusedRef.current) return;
+      const track = findCandidate();
+      if (!track) return;
+      enrichmentAttemptedRef.current.add(track.id);
+      try {
+        await resolveTrack(track, track.artist || track.artistName || 'Unknown Artist', { forceEnrichment: true });
+      } catch (err) {
+        // Swallow — best-effort. Persistence layer captures noMatch sentinels.
+      }
+    };
+
+    const startupTimeout = setTimeout(() => {
+      intervalId = setInterval(tick, TRICKLE_INTERVAL_MS);
+    }, STARTUP_DELAY_MS);
+
+    const handleForeground = () => { enrichmentWindowFocusedRef.current = true; };
+    const handleBackground = () => { enrichmentWindowFocusedRef.current = false; };
+    if (window.electron?.app?.onForeground) window.electron.app.onForeground(handleForeground);
+    if (window.electron?.app?.onBackground) window.electron.app.onBackground(handleBackground);
+
+    return () => {
+      clearTimeout(startupTimeout);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [cacheLoaded]);
+
+  // Fire-and-forget telemetry recorder. Best-effort — failures are
+  // logged in main and never propagate to UI state.
+  const announcementViewedThisSessionRef = useRef(new Set());
+  const recordAnnouncementEvent = (id, event) => {
+    if (!id || !event) return;
+    if (window.electron?.announcements?.recordEvent) {
+      window.electron.announcements.recordEvent(id, event).catch(() => {});
+    }
+  };
+
+  const dismissAnnouncement = async (id) => {
+    if (!id) return;
+    recordAnnouncementEvent(id, 'dismiss');
+    setDismissedAnnouncementIds(prev => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      if (window.electron?.store?.set) {
+        window.electron.store.set('dismissed_announcement_ids', next).catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  // Filter cached announcements down to what's currently relevant: not
+  // dismissed, not expired, version range matches. Sorted by id descending
+  // so a publisher can use date-prefixed ids ("2026-05-08-...") to control
+  // ordering. The banner UI shows only the first item; dismissing it
+  // surfaces the next.
+  const compareSemver3 = (a, b) => {
+    const pa = String(a || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+    const pb = String(b || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) {
+      if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+    }
+    return 0;
+  };
+  const activeAnnouncements = useMemo(() => {
+    if (!Array.isArray(announcements) || announcements.length === 0) return [];
+    const now = Date.now();
+    const dismissed = new Set(dismissedAnnouncementIds);
+    return announcements
+      .filter(a => a && typeof a.id === 'string' && !dismissed.has(a.id))
+      .filter(a => {
+        if (!a.expiresAt) return true;
+        const t = Date.parse(a.expiresAt);
+        return Number.isFinite(t) ? t > now : true;
+      })
+      .filter(a => {
+        if (!appVersion) return true;
+        if (a.minVersion && compareSemver3(appVersion, a.minVersion) < 0) return false;
+        if (a.maxVersion && compareSemver3(appVersion, a.maxVersion) > 0) return false;
+        return true;
+      })
+      .sort((a, b) => String(b.id).localeCompare(String(a.id)));
+  }, [announcements, dismissedAnnouncementIds, appVersion]);
+
+  // Fire a 'view' event the first time each banner id renders this session.
+  // Re-renders for the same id (state updates, focus refetches) don't double-count.
+  useEffect(() => {
+    const top = activeAnnouncements[0];
+    if (!top || !top.id) return;
+    if (announcementViewedThisSessionRef.current.has(top.id)) return;
+    announcementViewedThisSessionRef.current.add(top.id);
+    recordAnnouncementEvent(top.id, 'view');
+  }, [activeAnnouncements]);
 
   // Listen for sync progress
   useEffect(() => {
@@ -14939,6 +15194,15 @@ ${trackListXml}
     }
   }, [playlistsViewMode, cacheLoaded]);
 
+  // Persist playlists sort preference (mirrors view-mode pattern; cacheLoaded
+  // gate prevents the default 'added' from clobbering the saved value during
+  // hydration before setPlaylistsSort fires).
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('playlists_sort', playlistsSort);
+    }
+  }, [playlistsSort, cacheLoaded]);
+
   // Persist concerts location preference (text, coords, radius)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
@@ -15737,11 +16001,7 @@ ${trackListXml}
             const track = localFilePlaybackTrackRef.current;
             const filePath = track?.filePath || track?.sources?.localfiles?.filePath || '';
             const ext = filePath.split('.').pop()?.toLowerCase();
-            if (ext === 'wav') {
-              errorMessage = 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or FLAC for playback.';
-            } else {
-              errorMessage = `This ${ext?.toUpperCase() || 'audio'} file uses an unsupported format. Try converting to MP3 or FLAC.`;
-            }
+            errorMessage = unsupportedAudioMessage(ext);
           } else if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
             errorMessage = 'Network error while loading the file. The file may have been moved or deleted.';
           } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
@@ -15881,11 +16141,7 @@ ${trackListXml}
         if (error.name === 'NotSupportedError' || error.message?.includes('no supported source')) {
           const filePath = sourceToPlay.filePath || sourceToPlay.fileUrl || '';
           const ext = filePath.split('.').pop()?.toLowerCase();
-          if (ext === 'wav') {
-            errorMessage = 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or FLAC for playback.';
-          } else {
-            errorMessage = `This ${ext?.toUpperCase() || 'audio'} file uses an unsupported format. Try converting to MP3 or FLAC.`;
-          }
+          errorMessage = unsupportedAudioMessage(ext);
         }
 
         if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`)) return;
@@ -21041,7 +21297,11 @@ ${trackListXml}
         'saved_queue', 'saved_playback_context', 'saved_shuffle_state',
         'tutorial_completed', 'whats_new_dismissed_version',
         // Loved-tracks push to LB/LFM (opt-in per service)
-        'scrobbler_love_push_enabled', 'love_pushed_keys'
+        'scrobbler_love_push_enabled', 'love_pushed_keys',
+        // In-app announcements (banner)
+        'cached_announcements', 'dismissed_announcement_ids',
+        // Playlists page sort preference
+        'playlists_sort'
       ];
       const fetchBatch = (keys) => window.electron.store.getBatch
         ? window.electron.store.getBatch(keys)
@@ -21456,6 +21716,7 @@ ${trackListXml}
       const savedRememberQueue = d['remember_queue'];
       const savedShowDiscoveryBadges = d['show_discovery_badges'];
       const savedPlaylistsViewMode = d['playlists_view_mode'];
+      const savedPlaylistsSort = d['playlists_sort'];
       const savedAiIncludeHistory = d['ai_include_history'];
       const savedBlocklist = d['recommendation_blocklist'];
       const savedResolverBlocklist = d['resolver_blocklist'];
@@ -21657,6 +21918,10 @@ ${trackListXml}
         setPlaylistsViewMode(savedPlaylistsViewMode);
         console.log('📦 Loaded playlists view mode:', savedPlaylistsViewMode);
       }
+      if (savedPlaylistsSort && typeof savedPlaylistsSort === 'string') {
+        setPlaylistsSort(savedPlaylistsSort);
+        console.log('📦 Loaded playlists sort:', savedPlaylistsSort);
+      }
 
       // Load AI include history preference
       if (savedAiIncludeHistory !== undefined) {
@@ -21768,6 +22033,17 @@ ${trackListXml}
         if (result.success && result.highlights.length > 0) {
           setWhatsNewHighlights(result.highlights);
         }
+      }
+
+      // In-app announcements: hydrate cached banner items + dismissed-id list
+      const cachedAnn = d['cached_announcements'];
+      if (cachedAnn && Array.isArray(cachedAnn.items)) {
+        setAnnouncements(cachedAnn.items);
+        console.log(`📢 Loaded ${cachedAnn.items.length} cached announcement(s)`);
+      }
+      const dismissedAnn = d['dismissed_announcement_ids'];
+      if (Array.isArray(dismissedAnn)) {
+        setDismissedAnnouncementIds(dismissedAnn);
       }
 
       // Mark cache as loaded — resolver auth checks may still be in-flight (non-blocking).
@@ -23641,7 +23917,7 @@ ${trackListXml}
   // Resolve a single track across all active resolvers
   // isQueueResolution: when true, this is a priority queue resolution that won't yield
   const resolveTrack = async (track, artistName, options = {}) => {
-    const { forceRefresh = false, isQueueResolution = false, signal, playlistId } = options;
+    const { forceRefresh = false, isQueueResolution = false, signal, playlistId, forceEnrichment = false } = options;
 
     // Validate required parameters
     if (!track || !track.title) {
@@ -23841,6 +24117,31 @@ ${trackListXml}
     // every resolver has already been tried and found nothing — don't re-query.
     const realPersistedSources = filterNoMatch(persistedSources);
     const hasRealPersistedSources = Object.keys(realPersistedSources).length > 0;
+    // Eager-enrichment gate (localfiles-specific): if the track has a
+    // localfiles source backed by a real file on disk, it's instantly
+    // playable AND a local-only track is unlikely to also exist on streaming
+    // services (Bandcamp/Spotify/AM). Treat it the same as the "all resolvers
+    // covered" case below — use persisted sources, skip burst-querying the
+    // remaining slots.
+    //
+    // Scoped specifically to localfiles (not all confidence-1.0 sources)
+    // because a confidence-1.0 Spotify match IS interesting to also try on
+    // Apple Music etc. — the user has cross-platform intent. A localfiles
+    // match is just "this file is on disk"; cross-resolver enrichment is
+    // speculative and almost always returns 0 results.
+    //
+    // For a user with 376 local FLACs + Bandcamp enabled, the old behavior
+    // fired one Bandcamp search per track at ~150ms cadence on every library
+    // load — all returning 0 results. This gate stops that burst.
+    //
+    // Speculative cross-resolver enrichment for local tracks will run
+    // separately at idle priority (see follow-up ticket).
+    const localfilesSource = realPersistedSources.localfiles;
+    const hasLocalfilesSource = !!(
+      localfilesSource
+      && !localfilesSource.noMatch
+      && (typeof localfilesSource.confidence !== 'number' || localfilesSource.confidence >= 1.0)
+    );
     if (!cacheValid && hasValidPersistedSources && !hasRealPersistedSources && missingResolvers.length === 0) {
       if (DEBUG_RESOLUTION) console.log(`📦 All persisted sources are noMatch for: ${track.title} — skipping re-resolve`);
       // Cache the all-noMatch state in memory so we don't re-check persisted sources next time
@@ -23852,7 +24153,7 @@ ${trackListXml}
       };
       return {};
     }
-    if (!cacheValid && hasRealPersistedSources && missingResolvers.length === 0) {
+    if (!cacheValid && hasRealPersistedSources && (missingResolvers.length === 0 || (hasLocalfilesSource && !forceEnrichment))) {
       if (DEBUG_RESOLUTION) console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
 
       // Re-score confidence under current calculateConfidence semantics so any
@@ -23897,7 +24198,11 @@ ${trackListXml}
       return realPersistedSources;
     }
 
-    // If we have valid persisted sources but missing resolvers, query only the missing ones
+    // If we have valid persisted sources but missing resolvers, query only the
+    // missing ones. Note: when `hasPlayableSource` is true, the use-persisted-
+    // sources branch above already returned; this only fires when no source is
+    // playable yet (e.g. all matches are 0.95 fuzzy and adding another resolver
+    // might find a 1.0 direct-ID match).
     if (!cacheValid && hasValidPersistedSources && missingResolvers.length > 0) {
       console.log(`🔍 Persisted sources found but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
 
@@ -37022,6 +37327,89 @@ useEffect(() => {
           className: 'h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10 drag',
           style: { pointerEvents: 'auto' }
         }),
+
+        // In-app announcement banner (one at a time; dismiss surfaces next)
+        activeAnnouncements.length > 0 && (() => {
+          const ann = activeAnnouncements[0];
+          const sev = ann.severity || 'info';
+          const palette = {
+            info:    { bg: '#2563eb', fg: '#ffffff' },
+            success: { bg: '#16a34a', fg: '#ffffff' },
+            warn:    { bg: '#d97706', fg: '#ffffff' },
+            error:   { bg: '#dc2626', fg: '#ffffff' }
+          }[sev] || { bg: '#2563eb', fg: '#ffffff' };
+          // Icon/image: prefer iconUrl (https-only image), fall back to icon glyph.
+          // Image errors silently swap to the glyph (or nothing) via onError.
+          const iconUrlOk = typeof ann.iconUrl === 'string' && /^https:\/\//i.test(ann.iconUrl);
+          const iconText = typeof ann.icon === 'string' && ann.icon.length > 0 && ann.icon.length <= 4 ? ann.icon : null;
+          const iconNode = iconUrlOk
+            ? React.createElement('img', {
+                src: ann.iconUrl,
+                alt: '',
+                referrerPolicy: 'no-referrer',
+                onError: (e) => { try { e.currentTarget.style.display = 'none'; } catch (_) {} },
+                style: { width: '20px', height: '20px', flexShrink: 0, marginTop: '1px', borderRadius: '4px', objectFit: 'cover' }
+              })
+            : iconText
+              ? React.createElement('div', {
+                  style: { fontSize: '16px', lineHeight: '20px', flexShrink: 0, marginTop: '1px' }
+                }, iconText)
+              : null;
+          return React.createElement('div', {
+            key: ann.id,
+            className: 'flex items-start gap-3 px-4 py-2.5 flex-shrink-0',
+            style: {
+              backgroundColor: palette.bg,
+              color: palette.fg,
+              fontSize: '13px',
+              marginTop: isMac ? '32px' : 0
+            }
+          },
+            iconNode,
+            React.createElement('div', { className: 'flex-1 min-w-0' },
+              React.createElement('div', { style: { fontWeight: 600 } }, ann.title),
+              ann.body && React.createElement('div', { style: { opacity: 0.9, marginTop: '2px' } }, ann.body)
+            ),
+            ann.cta && ann.cta.url && /^https?:\/\//i.test(ann.cta.url) && React.createElement('button', {
+              onClick: () => {
+                recordAnnouncementEvent(ann.id, 'cta-click');
+                if (window.electron?.shell?.openExternal) {
+                  window.electron.shell.openExternal(ann.cta.url);
+                } else {
+                  window.open(ann.cta.url, '_blank', 'noopener,noreferrer');
+                }
+              },
+              style: {
+                padding: '4px 12px',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                borderRadius: '6px',
+                color: palette.fg,
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0
+              }
+            }, ann.cta.label),
+            React.createElement('button', {
+              onClick: () => dismissAnnouncement(ann.id),
+              'aria-label': 'Dismiss announcement',
+              title: 'Dismiss',
+              style: {
+                background: 'transparent',
+                border: 'none',
+                color: palette.fg,
+                opacity: 0.85,
+                cursor: 'pointer',
+                padding: '0 4px',
+                fontSize: '18px',
+                lineHeight: 1,
+                flexShrink: 0
+              }
+            }, '×')
+          );
+        })(),
 
     // External Track Prompt Modal - refined styling
     showExternalPrompt && pendingExternalTrack && React.createElement('div', {

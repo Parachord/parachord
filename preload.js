@@ -338,6 +338,17 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // In-app announcements (banner notifications fetched from achordion.xyz)
+  announcements: {
+    refresh: () => ipcRenderer.invoke('announcements:refresh'),
+    recordEvent: (id, event) => ipcRenderer.invoke('announcements:record-event', { id, event }),
+    onUpdated: (callback) => {
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on('announcements:updated', handler);
+      return () => ipcRenderer.removeListener('announcements:updated', handler);
+    }
+  },
+
   // Collection operations (favorites)
   collection: {
     load: () => ipcRenderer.invoke('collection:load'),
