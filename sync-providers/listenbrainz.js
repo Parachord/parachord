@@ -221,25 +221,34 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
   }
 
   // ── Step 2: Fetch current remote (for both clear count AND merge) ──
+  //
+  // Failure-mode handling matters here: a silent-catch on 5xx would let
+  // the function proceed with `currentLen=0`, skip the delete step, and
+  // add tracks on top of unfetched-but-existing remote tracks → silent
+  // DUPLICATES. So we distinguish:
+  //   - 404 → remote playlist was deleted; return early so caller can
+  //           flag `pendingAction: 'remote-deleted'` (matches AM pattern)
+  //   - Other non-OK / network error → throw, force the caller to retry
   let remoteSnapshotDate = null;
   let remoteTracks = [];
   let currentLen = 0;
-  try {
-    const cur = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
-      headers: authHeaders(token),
-    });
-    if (cur.ok) {
-      const data = await cur.json();
-      const p = data?.playlist || {};
-      remoteSnapshotDate = p.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
-        || p.date
-        || null;
-      remoteTracks = Array.isArray(p.track) ? p.track : [];
-      currentLen = remoteTracks.length;
-    }
-  } catch {
-    // Non-fatal; treat as 0 → add-only.
+  const cur = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
+    headers: authHeaders(token),
+  });
+  if (cur.status === 404) {
+    return { snapshotId: null, unresolvedTracks, remoteDeleted: true };
   }
+  if (!cur.ok) {
+    const text = await cur.text().catch(() => '');
+    throw new Error(`LB fetch current playlist returned ${cur.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await cur.json();
+  const p = data?.playlist || {};
+  remoteSnapshotDate = p.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+    || p.date
+    || null;
+  remoteTracks = Array.isArray(p.track) ? p.track : [];
+  currentLen = remoteTracks.length;
 
   // ── Step 3: Merge-before-push (collaborative case) ─────────────────
   //
