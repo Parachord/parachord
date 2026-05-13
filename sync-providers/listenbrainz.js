@@ -375,6 +375,22 @@ async function deletePlaylist(playlistMbid, token) {
   return { success: true };
 }
 
+// Cheap remote auth check — hits /1/validate-token. Mirrors the
+// `checkAuth(token) -> boolean` contract spotify.js and applemusic.js export
+// so `provider.checkAuth(token)` in main.js's `sync:check-auth` handler
+// works uniformly across providers.
+async function checkAuth(token) {
+  if (!token) return false;
+  try {
+    const res = await fetch(`${LB_BASE}/1/validate-token`, { headers: authHeaders(token) });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return !!data?.valid;
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
   id: 'listenbrainz',
   // Sibling providers (spotify.js, applemusic.js) export `displayName`, and
@@ -382,6 +398,7 @@ module.exports = {
   // Match that contract.
   displayName: 'ListenBrainz',
   capabilities,
+  checkAuth,
   fetchPlaylists,
   fetchPlaylistTracks,
   createPlaylist,

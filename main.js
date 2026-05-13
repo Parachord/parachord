@@ -5293,7 +5293,8 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
   try {
     const providers = {
       spotify: require('./sync-providers/spotify'),
-      applemusic: require('./sync-providers/applemusic')
+      applemusic: require('./sync-providers/applemusic'),
+      listenbrainz: require('./sync-providers/listenbrainz')
     };
 
     const provider = providers[providerId];
@@ -5314,6 +5315,11 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
       if (developerToken && userToken) {
         token = JSON.stringify({ developerToken, userToken });
       }
+    } else if (providerId === 'listenbrainz') {
+      // LB user token lives in the scrobbler-side config, not a separate
+      // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
 
     if (!token) {
@@ -5791,6 +5797,14 @@ ipcMain.handle('sync:check-auth', async (event, providerId) => {
           : 'Missing user token (please reconnect Apple Music)';
       return { authenticated: false, error: reason };
     }
+  } else if (providerId === 'listenbrainz') {
+    // LB user token lives in the scrobbler-side config, not a separate
+    // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
+    if (!token) {
+      return { authenticated: false, error: 'No ListenBrainz user token configured (set it in the ListenBrainz scrobbler settings)' };
+    }
   }
 
   if (!token) {
@@ -5825,6 +5839,9 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
   }
 
   if (!token) {
@@ -6279,6 +6296,9 @@ ipcMain.handle('sync:fetch-playlists', async (event, providerId) => {
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
   }
 
   if (!token) {
@@ -6317,6 +6337,9 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
   }
 
   if (!token) {
@@ -6380,6 +6403,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
   }
 
   if (!token) {
@@ -6472,6 +6498,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       if (developerToken && userToken) {
         token = JSON.stringify({ developerToken, userToken });
       }
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
 
     if (!token) {
@@ -6646,6 +6675,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       if (developerToken && userToken) {
         token = JSON.stringify({ developerToken, userToken });
       }
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
 
     if (!token) {
@@ -6693,6 +6725,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       // Apple Music token refresh: try to fetch a fresh user token via the
       // native MusicKit bridge when a 401 occurs (expired user token).
       refreshTokenCb = buildAppleMusicRefreshCb(token, (newToken) => { token = newToken; });
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
 
     if (!token) {
@@ -7078,6 +7113,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
       const userToken = store.get('applemusic_user_token');
       if (developerToken && userToken) token = JSON.stringify({ developerToken, userToken });
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
     if (!token) return { success: false, error: 'Not authenticated' };
 
@@ -7102,6 +7140,11 @@ function getSyncProviderToken(providerId) {
     if (developerToken && userToken) {
       return JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    // LB user token lives in the scrobbler-side config, not a separate
+    // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    return cfg.userToken || null;
   }
   return null;
 }
