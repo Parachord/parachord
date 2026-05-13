@@ -29,10 +29,26 @@ function authHeaders(token) {
 
 async function getUserName(token) {
   // GET /1/validate-token returns { user_name, valid }
-  const res = await fetch(`${LB_BASE}/1/validate-token`, { headers: authHeaders(token) });
-  if (!res.ok) throw new Error(`LB validate-token returned ${res.status}`);
+  // Diagnostic logging to surface why validate-token disagrees with itself
+  // across call sites — token works in fetchPlaylists but fails in createPlaylist.
+  const tokenPreview = token ? `${String(token).slice(0, 8)}...(len=${String(token).length})` : 'NULL/EMPTY';
+  let res;
+  try {
+    res = await fetch(`${LB_BASE}/1/validate-token`, { headers: authHeaders(token) });
+  } catch (err) {
+    console.warn(`[LB] validate-token fetch threw for token ${tokenPreview}:`, err && err.message ? err.message : err);
+    throw err;
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.warn(`[LB] validate-token returned HTTP ${res.status} for token ${tokenPreview}; body: ${body.slice(0, 300)}`);
+    throw new Error(`LB validate-token returned ${res.status}`);
+  }
   const data = await res.json();
-  if (!data.valid || !data.user_name) throw new Error('LB token invalid');
+  if (!data.valid || !data.user_name) {
+    console.warn(`[LB] validate-token rejected token ${tokenPreview}; response: ${JSON.stringify(data).slice(0, 300)}`);
+    throw new Error('LB token invalid');
+  }
   return data.user_name;
 }
 
