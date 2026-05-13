@@ -228,6 +228,7 @@ Flow:
 |---|---|---|
 | **Spotify** | Full replace | `PUT /playlists/{id}/tracks` replaces; subsequent batches `POST` to append for >100 tracks. |
 | **Apple Music** | Full replace via PUT (best-effort) | `updatePlaylistTracks` fetches current remote tracks to compute a diff, then issues `PUT /v1/me/library/playlists/{id}/tracks` with the full desired tracklist in the body. Apple's public API documents only POST for this resource, but Cider and similar third-party clients use PUT here for replace-all semantics. If Apple rejects PUT on the public host with 401/403/405 (consistent with Apple's stated "DELETE/PUT on library resources not supported via public API" policy, per Apple Developer Forum thread 107807), the provider flips a session kill-switch and degrades to append-only — POSTs the new additions, leaves removals on the remote. Pure-additive changes (no removals, no duplicates to collapse) skip PUT entirely and use POST since POST is the documented path. |
+| **ListenBrainz** | Clear + add | `POST /1/playlist/<mbid>/item/delete` removes all, then `POST /1/playlist/<mbid>/item/add` adds the new list in 100-track batches. No full-replace PUT exists. JSPF format on the wire; recording MBID is the per-track identifier — tracks without a resolvable MBID are skipped and surfaced via `unresolvedTracks`. |
 
 Apple Music playlist-level DELETE and PATCH (rename) are similarly documented-unsupported and return 401 in practice. `deletePlaylist` tries DELETE once and returns `{ success: false, reason: 'endpoint-unsupported', status }` on rejection — there is no rename fallback because PATCH returns the same 401. The only reliable path Cider uses for these operations is the private `amp-api.music.apple.com` host with an authority-header rewrite; Parachord has chosen not to depend on that undocumented host.
 
@@ -244,6 +245,24 @@ Consequences:
 - There is no per-track DELETE path any more; the prior `DELETE /tracks/{libraryTrackId}` implementation was based on an unverified claim. No third-party client actually uses that endpoint — Cider achieves removal by calling PUT on the parent resource with the new tracklist. Removed to avoid misleading failure modes.
 - **There is no reliable public-API path for playlist rename or full deletion.** Both return 401 on MusicKit-issued user tokens. Surface this to users as "remove it manually in the Music app" rather than retrying with PATCH.
 - Android implementations: same PUT-replace pattern, same URL/headers. DELETE/PATCH playlist endpoints will behave the same (return 401), so Android should also treat playlist deletion as best-effort.
+
+### ListenBrainz Specifics
+
+- **Token source.** The token comes from the scrobbler-side config (`scrobbler-config-listenbrainz.userToken`), NOT a separate meta-service config. Single source of truth — see "ListenBrainz auth token auto-attach" earlier in this file for the same rule on the lb-radio path.
+
+- **Default private.** `createPlaylist` hard-codes `extension['https://musicbrainz.org/doc/jspf#playlist'].public = false`. No user-facing toggle in v1. If the user makes the playlist public on listenbrainz.org directly, subsequent Parachord pushes don't override (we only set `public` on create, not on update-details).
+
+- **MBID-or-skip.** Every track pushed to LB must have a recording MBID. Tracks without one are run through the MBID Mapper (≥0.7 confidence required); unresolved tracks are collected into `syncedTo.listenbrainz.unresolvedTracks` for the UI to surface. Surfacing TBD; for v1 it's just persisted state.
+
+- **Cross-service collaboration.** LB's collaborators-extension list enables a Spotify user and an AM user to share an LB playlist where either's edits propagate via LB to both streaming services. Bob (AM user, collaborator on Alice's LB playlist) imports the playlist into his Parachord; his local edits push back to LB (via the refined push-loop guards documented elsewhere) AND to his own AM. Alice's next sync pulls his edits and pushes to her Spotify. The marquee feature.
+
+- **Snapshot proxy.** LB doesn't return a `snapshotId` per playlist. We use the JSPF extension's `last_modified_at` field (falling back to `playlist.date` only when it's missing) as the comparison anchor for `hasUpdates` detection. `playlist.date` alone would be wrong because per JSPF spec it's the creation date, not last-modified — it never advances on edits.
+
+- **Achordion playlist-links push.** After any successful sync write that touches an LB-anchored playlist (create or update), main.js fires `pushPlaylistLinksToAchordion(localPlaylist)` to `POST https://achordion.xyz/api/playlist-links/submit`. Fire-and-forget; same 401-suppression pattern as the track-links submit. The payload is keyed on the LB playlist MBID; Achordion stores it for 90 days and renders the mirror links on `/playlist/<mbid>`.
+
+- **Push-loop guard refinement.** Both the `syncedFrom`-based guard AND the id-prefix guard in the push loops (app.js, two sites each) now skip-unless-genuine-local-edits when the source provider matches the push target. The discriminator is `locallyModified && lastModified > syncSources[sourceProvider].syncedAt` (real edits, not handlePull artifact). This makes collaborative round-trip possible — without it, Bob's edits to Alice's LB-imported playlist would never push back to LB.
+
+- **Shared-playlist badge.** When `playlist.syncedFrom?.isCollaborator === true`, the UI renders a small "SHARED" pill in the playlist row (both grid and table views) AND in the detail header. Surfaces to the user that their edits propagate to other collaborators.
 
 ### Multi-Provider Mirror Propagation
 
@@ -509,6 +528,17 @@ Desktop fix: `nativeMusicKitLimiter` in app.js (concurrency 3, ≥150ms gap, 8s 
 Android equivalent: any place that fans out per-track catalog calls (background source enrichment, library import resolution, etc.) MUST throttle. The trigger threshold isn't documented by Apple, but real-world data: 200+ parallel calls trips it instantly; 50 sustained does too over a few seconds. Sane defaults: concurrency 3-5, ≥100-200ms gap between starts, exponential backoff with circuit breaker on `429`/`MusicKit.MusicDataRequest.Error 1`/`MusicDataRequest`/timeout strings.
 
 The corollary: **don't make the JS-fallback or auth-failed kill-switch session-permanent.** Time-bound it (5-minute cooldown is what desktop uses now via `_appleMusicWebAuthFailedAt`). One transient catalog throttle should not permanently disable Apple Music for the rest of the session.
+
+**ListenBrainz Android parity**
+
+- Same JSPF + recording-MBID semantics. Recording MBID is mandatory for every pushed track; mapper fallback with 0.7 confidence floor.
+- Same default-private (`public: false` on create only, never override on update).
+- Token from scrobbler-side store, NOT a meta-service store.
+- Same clear-then-add update path (no full-replace PUT exists).
+- Snapshot anchor is `extension.last_modified_at || playlist.date` (NOT the other way around — `playlist.date` is creation-only).
+- Cross-service collaboration: collaborators-extension list enables write-back; Android should also refine its push-loop guards (syncedFrom + id-prefix) to allow push-back-to-source when the user has genuine local edits (`locallyModified && lastModified > syncSources[source].syncedAt`).
+- Achordion playlist-links push from Android: same endpoint, same bearer, same payload shape. Submits the LB MBID as the cross-platform anchor.
+- Shared-playlist badge: when fetched playlist has `isCollaborator: true`, surface a "SHARED" affordance in the UI.
 
 ### Track/Album/Artist Sync
 - After playback, fire-and-forget pushes to enabled sync providers
