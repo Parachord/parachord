@@ -27,7 +27,19 @@ function authHeaders(token) {
   };
 }
 
+// Per-token cache of the LB username so a single sync run (which makes N
+// playlist-create + N playlist-update calls) doesn't fire 2N /1/validate-token
+// GETs in quick succession. Without this cache, syncing 142 playlists meant
+// 284 LB API calls just for username lookup — enough to trip the LB
+// per-IP throttle around the ~10th-15th playlist.
+//
+// Cache survives across calls within the renderer's lifetime; cleared by
+// process restart. Token is the cache key so a token-rotation correctly
+// invalidates the prior cached username.
+const _usernameCache = new Map();
+
 async function getUserName(token) {
+  if (token && _usernameCache.has(token)) return _usernameCache.get(token);
   // GET /1/validate-token returns { user_name, valid }
   // Diagnostic logging to surface why validate-token disagrees with itself
   // across call sites — token works in fetchPlaylists but fails in createPlaylist.
@@ -49,6 +61,7 @@ async function getUserName(token) {
     console.warn(`[LB] validate-token rejected token ${tokenPreview}; response: ${JSON.stringify(data).slice(0, 300)}`);
     throw new Error('LB token invalid');
   }
+  if (token) _usernameCache.set(token, data.user_name);
   return data.user_name;
 }
 
