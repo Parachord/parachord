@@ -36,6 +36,32 @@ async function getUserName(token) {
   return data.user_name;
 }
 
+// Resolve a single track to a recording MBID. Tries (1) track.mbid, (2)
+// MBID Mapper. Returns the MBID or null. The mapper is fast (~4ms) and
+// the result is opportunistically cached by callers via the existing
+// `cache_mbid_mapper` electron-store key — but here in main-process
+// sync-provider code we just hit the mapper directly each time. The
+// renderer-side enrichment loop populates the cache for the next pass.
+async function resolveTrackMbid(track) {
+  if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return track.mbid;
+  if (!track?.artist || !track?.title) return null;
+  try {
+    const url = new URL('https://mapper.listenbrainz.org/mapping/lookup');
+    url.searchParams.set('artist_credit_name', track.artist);
+    url.searchParams.set('recording_name', track.title);
+    if (track.album) url.searchParams.set('release_name', track.album);
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.recording_mbid && typeof data.confidence === 'number' && data.confidence >= 0.7) {
+      return data.recording_mbid;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Stubs for now; filled in by Tasks 7–11 ──
 async function fetchPlaylists(token, _onProgress, _refreshToken) {
   const userName = await getUserName(token);
@@ -127,7 +153,53 @@ async function fetchPlaylistTracks(playlistMbid, token, _onProgress, _refreshTok
   });
 }
 async function createPlaylist(name, description, tracks, token) {
-  throw new Error('createPlaylist not implemented yet');
+  const userName = await getUserName(token);
+  const resolvedTracks = [];
+  const unresolvedTracks = [];
+  for (const t of tracks || []) {
+    const mbid = await resolveTrackMbid(t);
+    if (mbid) {
+      resolvedTracks.push({
+        identifier: [`https://musicbrainz.org/recording/${mbid}`],
+        title: t.title || '',
+        creator: t.artist || '',
+      });
+    } else {
+      unresolvedTracks.push({ artist: t.artist, title: t.title, album: t.album });
+    }
+  }
+  const body = {
+    playlist: {
+      title: name,
+      annotation: description || '',
+      extension: {
+        'https://musicbrainz.org/doc/jspf#playlist': {
+          // Default-private. Hard-coded; see CLAUDE.md "ListenBrainz Playlist
+          // Sync" section for rationale and the user-toggle follow-up.
+          public: false,
+          creator: userName,
+        },
+      },
+      track: resolvedTracks,
+    },
+  };
+  const res = await fetch(`${LB_BASE}/1/playlist/create`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`LB createPlaylist returned ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const externalId = data?.playlist_mbid;
+  if (!externalId) throw new Error('LB createPlaylist: no playlist_mbid in response');
+  return {
+    externalId,
+    snapshotId: null,  // LB doesn't return one on create; first fetchPlaylists tick populates
+    unresolvedTracks,
+  };
 }
 async function updatePlaylistTracks(playlistMbid, tracks, token) {
   throw new Error('updatePlaylistTracks not implemented yet');
