@@ -198,22 +198,16 @@ async function fetchPlaylistTracks(playlistMbid, token, _onProgress, _refreshTok
     };
   });
 }
-async function createPlaylist(name, description, tracks, token) {
+// Signature `(name, description, token)` matches the sibling spotify.js /
+// applemusic.js providers — main.js's `sync:create-playlist` handler calls
+// `provider.createPlaylist(name, description, token)` then separately calls
+// `provider.updatePlaylistTracks(externalId, tracks, token)` to push tracks.
+// LB technically supports both create-empty + push-tracks AND create-with-
+// tracks in one POST, but matching the sibling contract keeps the call site
+// uniform across providers (no special-casing in main.js). Track MBID
+// resolution happens inside `updatePlaylistTracks`, not here.
+async function createPlaylist(name, description, token) {
   const userName = await getUserName(token);
-  const resolvedTracks = [];
-  const unresolvedTracks = [];
-  for (const t of tracks || []) {
-    const mbid = await resolveTrackMbid(t);
-    if (mbid) {
-      resolvedTracks.push({
-        identifier: [`https://musicbrainz.org/recording/${mbid}`],
-        title: t.title || '',
-        creator: t.artist || '',
-      });
-    } else {
-      unresolvedTracks.push({ artist: t.artist, title: t.title, album: t.album });
-    }
-  }
   const body = {
     playlist: {
       title: name,
@@ -226,7 +220,7 @@ async function createPlaylist(name, description, tracks, token) {
           creator: userName,
         },
       },
-      track: resolvedTracks,
+      track: [],
     },
   };
   const res = await fetch(`${LB_BASE}/1/playlist/create`, {
@@ -244,7 +238,6 @@ async function createPlaylist(name, description, tracks, token) {
   return {
     externalId,
     snapshotId: null,  // LB doesn't return one on create; first fetchPlaylists tick populates
-    unresolvedTracks,
   };
 }
 async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
