@@ -6322,7 +6322,23 @@ const Parachord = () => {
                   // (e.g. "applemusic-p.XXXXX"). Even if syncedFrom was cleared due to
                   // an incomplete API response, we must not re-create these on the same
                   // provider — that would produce duplicates.
-                  if (playlist.id?.startsWith(`${providerId}-`)) continue;
+                  //
+                  // Defense-in-depth twin of the syncedFrom guard above (L~6310). Same
+                  // collaborative-push-back exemption applies: if the id implies this
+                  // provider but the user has genuine local edits to contribute, let
+                  // the push proceed. Without this exemption the id-prefix guard fires
+                  // after the syncedFrom refinement and the collaborative path remains
+                  // unreachable for imported playlists (e.g. id = `listenbrainz-<mbid>`).
+                  {
+                    const idImpliesThisProvider = playlist.id?.startsWith(`${providerId}-`);
+                    if (idImpliesThisProvider) {
+                      const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
+                      const hasGenuineLocalEdits = playlist.locallyModified
+                        && (playlist.lastModified || 0) > sourceSyncedAt;
+                      if (!hasGenuineLocalEdits) continue;
+                      // Fall through: push back to source IS warranted (collaborative case).
+                    }
+                  }
 
                   // Skip playlists with pending actions
                   if (playlist.syncedTo?.[providerId]?.pendingAction) continue;
@@ -10492,7 +10508,18 @@ const Parachord = () => {
                   // Fall through: push back to source IS warranted (collaborative case).
                 }
               }
-              if (playlist.id?.startsWith(`${providerId}-`)) continue;
+              // Defense-in-depth twin of the syncedFrom guard above; see L~6325 for
+              // the full block-comment rationale. Same collaborative-push-back exemption.
+              {
+                const idImpliesThisProvider = playlist.id?.startsWith(`${providerId}-`);
+                if (idImpliesThisProvider) {
+                  const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
+                  const hasGenuineLocalEdits = playlist.locallyModified
+                    && (playlist.lastModified || 0) > sourceSyncedAt;
+                  if (!hasGenuineLocalEdits) continue;
+                  // Fall through: push back to source IS warranted (collaborative case).
+                }
+              }
               if (playlist.syncedTo?.[providerId]?.pendingAction) continue;
 
               const syncInfo = playlist.syncedTo?.[providerId];
