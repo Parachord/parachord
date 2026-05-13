@@ -201,8 +201,137 @@ async function createPlaylist(name, description, tracks, token) {
     unresolvedTracks,
   };
 }
-async function updatePlaylistTracks(playlistMbid, tracks, token) {
-  throw new Error('updatePlaylistTracks not implemented yet');
+async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
+  const { knownSnapshotId, mergeWithRemote = false } = opts;
+
+  // ── Step 1: Resolve all incoming tracks to MBIDs ───────────────────
+  const resolvedTracks = [];
+  const unresolvedTracks = [];
+  for (const t of tracks || []) {
+    const mbid = await resolveTrackMbid(t);
+    if (mbid) {
+      resolvedTracks.push({
+        identifier: [`https://musicbrainz.org/recording/${mbid}`],
+        title: t.title || '',
+        creator: t.artist || '',
+      });
+    } else {
+      unresolvedTracks.push({ artist: t.artist, title: t.title, album: t.album });
+    }
+  }
+
+  // ── Step 2: Fetch current remote (for both clear count AND merge) ──
+  let remoteSnapshotDate = null;
+  let remoteTracks = [];
+  let currentLen = 0;
+  try {
+    const cur = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
+      headers: authHeaders(token),
+    });
+    if (cur.ok) {
+      const data = await cur.json();
+      const p = data?.playlist || {};
+      remoteSnapshotDate = p.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+        || p.date
+        || null;
+      remoteTracks = Array.isArray(p.track) ? p.track : [];
+      currentLen = remoteTracks.length;
+    }
+  } catch {
+    // Non-fatal; treat as 0 → add-only.
+  }
+
+  // ── Step 3: Merge-before-push (collaborative case) ─────────────────
+  //
+  // If the caller signals this is a collaborative playlist AND the remote
+  // snapshot has advanced since we last knew about it, someone else
+  // (another collaborator) made changes between our last pull and this
+  // push. Union the unfamiliar remote additions into our outbound payload
+  // so we don't wipe their work.
+  //
+  // "Unfamiliar" = present in remote, identified by recording MBID, not
+  // in our local resolved set. This loses fine-grained ordering for
+  // foreign additions (they end up appended) but preserves their
+  // existence — the priority is data preservation over ordering.
+  if (
+    mergeWithRemote
+    && knownSnapshotId
+    && remoteSnapshotDate
+    && remoteSnapshotDate !== knownSnapshotId
+  ) {
+    const localMbidSet = new Set(
+      resolvedTracks
+        .map(t => {
+          const id = Array.isArray(t.identifier) ? t.identifier[0] : t.identifier;
+          const m = String(id || '').match(/recording\/([a-f0-9-]{36})/i);
+          return m ? m[1] : null;
+        })
+        .filter(Boolean),
+    );
+    let foreignAdded = 0;
+    for (const rt of remoteTracks) {
+      const ids = Array.isArray(rt.identifier) ? rt.identifier : (rt.identifier ? [rt.identifier] : []);
+      let mbid = null;
+      for (const id of ids) {
+        const m = String(id).match(/recording\/([a-f0-9-]{36})/i);
+        if (m) { mbid = m[1]; break; }
+      }
+      if (!mbid || localMbidSet.has(mbid)) continue;
+      resolvedTracks.push({
+        identifier: [`https://musicbrainz.org/recording/${mbid}`],
+        title: rt.title || '',
+        creator: rt.creator || '',
+      });
+      foreignAdded++;
+    }
+    if (foreignAdded > 0) {
+      console.log(`[LB] Merged ${foreignAdded} foreign track(s) from collaborator(s) before push`);
+    }
+  }
+
+  // ── Step 4: Clear remote (same pattern as the rest of the file) ───
+  if (currentLen > 0) {
+    const delRes = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/item/delete`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ index: 0, count: currentLen }),
+    });
+    if (!delRes.ok) {
+      const text = await delRes.text().catch(() => '');
+      throw new Error(`LB clear tracks returned ${delRes.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  // ── Step 5: Add the merged set in batches ──────────────────────────
+  const BATCH = 100;
+  for (let i = 0; i < resolvedTracks.length; i += BATCH) {
+    const batch = resolvedTracks.slice(i, i + BATCH);
+    const addRes = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/item/add`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ playlist: { track: batch } }),
+    });
+    if (!addRes.ok) {
+      const text = await addRes.text().catch(() => '');
+      throw new Error(`LB add tracks returned ${addRes.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  // ── Step 6: Re-fetch fresh snapshot anchor ─────────────────────────
+  let newSnapshotId = null;
+  try {
+    const cur = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
+      headers: authHeaders(token),
+    });
+    if (cur.ok) {
+      const data = await cur.json();
+      newSnapshotId = data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+        || data?.playlist?.date
+        || null;
+    }
+  } catch {}
+
+  return { snapshotId: newSnapshotId, unresolvedTracks };
 }
 async function updatePlaylistDetails(playlistMbid, details, token) {
   throw new Error('updatePlaylistDetails not implemented yet');
