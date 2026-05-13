@@ -6030,7 +6030,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 resolver: providerId,
                 externalId: remotePlaylist.externalId,
                 snapshotId: remotePlaylist.snapshotId,
-                ownerId: remotePlaylist.ownerId
+                ownerId: remotePlaylist.ownerId,
+                isCollaborator: !!remotePlaylist.isCollaborator
               },
               hasUpdates: false,
               locallyModified: false,
@@ -6176,7 +6177,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                       resolver: providerId,
                       externalId: remotePlaylist.externalId,
                       snapshotId: stillHasUpdates ? current.syncedFrom?.snapshotId : remotePlaylist.snapshotId,
-                      ownerId: remotePlaylist.ownerId
+                      ownerId: remotePlaylist.ownerId,
+                      isCollaborator: !!remotePlaylist.isCollaborator
                     }
                   : current.syncedFrom,
                 hasUpdates: stillHasUpdates ? true : current.hasUpdates,

@@ -41997,7 +41997,25 @@ useEffect(() => {
                 textTransform: 'uppercase'
               },
               onContextMenu: copyParachordLink
-            }, selectedPlaylist.title)
+            }, selectedPlaylist.title),
+            // SHARED badge — appears when the user is a collaborator on a
+            // synced playlist (currently only LB exposes this).
+            selectedPlaylist.syncedFrom?.isCollaborator === true && React.createElement('span', {
+              className: 'shared-playlist-badge',
+              title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+              style: {
+                fontSize: '10px',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                backgroundColor: 'var(--accent-secondary, #6366f1)',
+                color: 'var(--accent-secondary-fg, #fff)',
+                fontWeight: 600,
+                marginLeft: '6px',
+                display: 'inline-block',
+                verticalAlign: 'middle',
+                letterSpacing: '0.05em'
+              }
+            }, 'SHARED')
           )
         ),
 
@@ -43668,7 +43686,25 @@ useEffect(() => {
                         color: 'var(--text-primary)',
                         marginTop: '6px'
                       }
-                    }, playlist.title),
+                    },
+                      playlist.title,
+                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
+                        className: 'shared-playlist-badge',
+                        title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+                        style: {
+                          fontSize: '10px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: 'var(--accent-secondary, #6366f1)',
+                          color: 'var(--accent-secondary-fg, #fff)',
+                          fontWeight: 600,
+                          marginLeft: '6px',
+                          display: 'inline-block',
+                          verticalAlign: 'middle',
+                          letterSpacing: '0.05em'
+                        }
+                      }, 'SHARED')
+                    ),
                     React.createElement('div', {
                       className: 'truncate',
                       style: {
@@ -43811,7 +43847,25 @@ useEffect(() => {
                   ),
                   // Playlist name
                   React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' }, playlist.title),
+                    React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' },
+                      playlist.title,
+                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
+                        className: 'shared-playlist-badge',
+                        title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+                        style: {
+                          fontSize: '10px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: 'var(--accent-secondary, #6366f1)',
+                          color: 'var(--accent-secondary-fg, #fff)',
+                          fontWeight: 600,
+                          marginLeft: '6px',
+                          display: 'inline-block',
+                          verticalAlign: 'middle',
+                          letterSpacing: '0.05em'
+                        }
+                      }, 'SHARED')
+                    ),
                     playlist.creator && React.createElement('div', { className: 'text-sm text-gray-500 truncate' }, playlist.creator)
                   ),
                   // Hosted badge (only for actual hosted XSPF, not Spotify/Apple Music imports)
