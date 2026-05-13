@@ -122,6 +122,36 @@ async function fetchPlaylists(token, _onProgress, _refreshToken) {
     if (items.length < PAGE_SIZE) break;
     offset += items.length;
   }
+
+  // LB's user-playlists endpoint returns "JSPF metadata without recordings"
+  // (per https://listenbrainz.readthedocs.io/en/latest/users/api/playlist.html),
+  // so `p.track` above is always `[]` and there's no `track_count` field
+  // anywhere in the response — verified empirically against the live API:
+  // the root carries `playlist_count` (count of playlists, not tracks) and
+  // the JSPF extension has `last_modified_at`/`creator`/`public` only.
+  //
+  // To populate trackCount we issue a per-playlist fetch against
+  // GET /1/playlist/{mbid}, which DOES return the full track array. Done
+  // sequentially after the main pagination loop so the wizard can show
+  // the playlist names immediately while counts fill in. Worst case is N
+  // round-trips (~100ms each), bounded by the listing's `playlist_count`.
+  for (const pl of playlists) {
+    if (pl.trackCount > 0) continue;
+    try {
+      const res = await fetch(
+        `${LB_BASE}/1/playlist/${encodeURIComponent(pl.externalId)}`,
+        { headers: authHeaders(token) },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const tracks = data?.playlist?.track;
+        if (Array.isArray(tracks)) pl.trackCount = tracks.length;
+      }
+    } catch {
+      // Non-fatal; leave trackCount as 0 for this one.
+    }
+  }
+
   return { playlists };
 }
 async function fetchPlaylistTracks(playlistMbid, token, _onProgress, _refreshToken) {
