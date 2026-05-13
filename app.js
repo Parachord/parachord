@@ -6294,7 +6294,29 @@ const Parachord = () => {
                   // synced from a *different* provider (e.g. imported from Spotify)
                   // must still be pushable to other providers (e.g. Apple Music),
                   // otherwise multi-provider mirror propagation breaks.
-                  if (playlist.syncedFrom?.resolver === providerId) continue;
+                  //
+                  // EXCEPTION — collaborative playlists (e.g. LB-imported playlists
+                  // where the local user is a collaborator, not the owner): genuine
+                  // local edits MUST round-trip back to the source so other
+                  // collaborators see them. Discriminate "real local edits" from
+                  // the artificial `locallyModified=true` that handlePull sets for
+                  // multi-mirror propagation by comparing `lastModified` against
+                  // the source's last syncedAt — handlePull sets both to the same
+                  // timestamp so the comparison is false right after a pull; a
+                  // subsequent real edit bumps `lastModified` and flips it true.
+                  // Same reasoning as the sync banner's push-state check (see
+                  // CLAUDE.md "Sync banner's push-state check must discount
+                  // pull-induced locallyModified").
+                  {
+                    const sourceProvider = playlist.syncedFrom?.resolver;
+                    if (sourceProvider === providerId) {
+                      const sourceSyncedAt = playlist.syncSources?.[sourceProvider]?.syncedAt || 0;
+                      const hasGenuineLocalEdits = playlist.locallyModified
+                        && (playlist.lastModified || 0) > sourceSyncedAt;
+                      if (!hasGenuineLocalEdits) continue;
+                      // Fall through: push back to source IS warranted (collaborative case).
+                    }
+                  }
 
                   // Skip playlists whose ID indicates they originated from this provider
                   // (e.g. "applemusic-p.XXXXX"). Even if syncedFrom was cleared due to
@@ -10458,7 +10480,18 @@ const Parachord = () => {
               // Only skip if this playlist was pulled FROM this provider —
               // playlists pulled from a different provider must still be
               // creatable/pushable on this one for multi-provider mirroring.
-              if (playlist.syncedFrom?.resolver === providerId) continue;
+              // Collaborative-push-back exception applies here too; see the
+              // block comment at the background-sync push loop above (L~6297).
+              {
+                const sourceProvider = playlist.syncedFrom?.resolver;
+                if (sourceProvider === providerId) {
+                  const sourceSyncedAt = playlist.syncSources?.[sourceProvider]?.syncedAt || 0;
+                  const hasGenuineLocalEdits = playlist.locallyModified
+                    && (playlist.lastModified || 0) > sourceSyncedAt;
+                  if (!hasGenuineLocalEdits) continue;
+                  // Fall through: push back to source IS warranted (collaborative case).
+                }
+              }
               if (playlist.id?.startsWith(`${providerId}-`)) continue;
               if (playlist.syncedTo?.[providerId]?.pendingAction) continue;
 
