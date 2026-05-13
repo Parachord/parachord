@@ -98,8 +98,33 @@ async function fetchPlaylists(token, _onProgress, _refreshToken) {
   }
   return { playlists };
 }
-async function fetchPlaylistTracks(playlistMbid, token /*, _onProgress, refreshToken */) {
-  throw new Error('fetchPlaylistTracks not implemented yet');
+async function fetchPlaylistTracks(playlistMbid, token, _onProgress, _refreshToken) {
+  const res = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error(`LB fetchPlaylistTracks returned ${res.status}`);
+  const data = await res.json();
+  const tracks = Array.isArray(data?.playlist?.track) ? data.playlist.track : [];
+  return tracks.map((t, i) => {
+    // JSPF identifier can be a string OR an array of strings (per JSPF spec).
+    // Handle both. We extract the recording MBID from the MusicBrainz URL.
+    const ids = Array.isArray(t.identifier) ? t.identifier : (t.identifier ? [t.identifier] : []);
+    let mbid = null;
+    for (const id of ids) {
+      const m = String(id).match(/musicbrainz\.org\/recording\/([a-f0-9-]{36})/i);
+      if (m) { mbid = m[1]; break; }
+    }
+    return {
+      id: `listenbrainz-track-${playlistMbid}-${i}`,
+      title: t.title || '',
+      artist: t.creator || '',
+      album: t.album || undefined,
+      duration: typeof t.duration === 'number' ? t.duration / 1000 : undefined, // JSPF ms → s
+      mbid,
+      addedAt: Date.now(),  // JSPF doesn't carry per-track add timestamps
+      sources: {},
+    };
+  });
 }
 async function createPlaylist(name, description, tracks, token) {
   throw new Error('createPlaylist not implemented yet');
