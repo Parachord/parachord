@@ -6195,7 +6195,9 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 && existingTracks.length === remotePlaylist.trackCount;
 
               if (preRefreshIsOwnPullSource && hasTrackUpdates && !trackCountMatches) {
-                console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
+                // Surface both counts so we can tell whether AM is reporting a
+                // changed count vs missing trackCount vs same-count-but-different-snapshot.
+                console.log(`[Sync] Playlist has updates: ${remotePlaylist.name} (local=${existingTracks.length}, remote=${remotePlaylist.trackCount ?? 'NULL'}, localSnap=${(localPlaylist.syncedFrom?.snapshotId || '').slice(0,12) || 'NULL'}, remoteSnap=${(remotePlaylist.snapshotId || '').slice(0,12) || 'NULL'})`);
               } else if (preRefreshIsOwnPullSource && hasTrackUpdates && trackCountMatches) {
                 console.log(`[Sync] Adopting remote snapshotId for "${remotePlaylist.name}" (track count matches: ${existingTracks.length})`);
               }
