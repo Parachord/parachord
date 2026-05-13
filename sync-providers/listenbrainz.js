@@ -58,7 +58,10 @@ async function deletePlaylist(playlistMbid, token) {
 
 module.exports = {
   id: 'listenbrainz',
-  name: 'ListenBrainz',
+  // Sibling providers (spotify.js, applemusic.js) export `displayName`, and
+  // main.js's sync-provider listing reads `p.displayName` (main.js:5756).
+  // Match that contract.
+  displayName: 'ListenBrainz',
   capabilities,
   fetchPlaylists,
   fetchPlaylistTracks,
