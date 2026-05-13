@@ -691,7 +691,7 @@ async function fetchPlaylists(token, _onProgress, _refreshToken) {
         // badge (Task 14-bis). Owner-only playlists have it false.
         isCollaborator,
         collaborators,
-        snapshotId: p.date || ext.last_modified_at || null,
+        snapshotId: ext.last_modified_at || p.date || null,
         trackCount: Array.isArray(p.track) ? p.track.length : 0,
         // Surface visibility so the wizard / cleanup UI can show it
         isPublic: !!ext.public,
@@ -948,8 +948,8 @@ async function updatePlaylistTracks(playlistMbid, tracks, token) {
     });
     if (cur.ok) {
       const data = await cur.json();
-      newSnapshotId = data?.playlist?.date
-        || data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+      newSnapshotId = data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+        || data?.playlist?.date
         || null;
     }
   } catch {
@@ -1131,8 +1131,8 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
     if (cur.ok) {
       const data = await cur.json();
       const p = data?.playlist || {};
-      remoteSnapshotDate = p.date
-        || p.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+      remoteSnapshotDate = p.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+        || p.date
         || null;
       remoteTracks = Array.isArray(p.track) ? p.track : [];
       currentLen = remoteTracks.length;
@@ -1225,8 +1225,8 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
     });
     if (cur.ok) {
       const data = await cur.json();
-      newSnapshotId = data?.playlist?.date
-        || data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+      newSnapshotId = data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+        || data?.playlist?.date
         || null;
     }
   } catch {}

@@ -67,7 +67,10 @@ async function fetchPlaylists(token, _onProgress, _refreshToken) {
       const creator = (p.creator || '').toLowerCase();
       const userLower = userName.toLowerCase();
       const collaborators = Array.isArray(ext.collaborators)
-        ? ext.collaborators.map(c => String(c).toLowerCase())
+        ? ext.collaborators
+            .map(c => typeof c === 'string' ? c : (c?.name || c?.user_name || ''))
+            .filter(Boolean)
+            .map(c => c.toLowerCase())
         : [];
       const isOwnedByUser = creator === userLower || collaborators.includes(userLower);
       const isCollaborator = !!collaborators.length && creator !== userLower && collaborators.includes(userLower);
@@ -84,7 +87,7 @@ async function fetchPlaylists(token, _onProgress, _refreshToken) {
         // badge (Task 13-bis). Owner-only playlists have it false.
         isCollaborator,
         collaborators,
-        snapshotId: p.date || ext.last_modified_at || null,
+        snapshotId: ext.last_modified_at || p.date || null,
         trackCount: Array.isArray(p.track) ? p.track.length : 0,
         // Surface visibility so the wizard / cleanup UI can show it
         isPublic: !!ext.public,
