@@ -343,10 +343,36 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
   return { snapshotId: newSnapshotId, unresolvedTracks };
 }
 async function updatePlaylistDetails(playlistMbid, details, token) {
-  throw new Error('updatePlaylistDetails not implemented yet');
+  const body = {
+    playlist: {
+      title: details?.name ?? details?.title,
+      annotation: details?.description ?? '',
+    },
+  };
+  const res = await fetch(`${LB_BASE}/1/playlist/edit/${encodeURIComponent(playlistMbid)}`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    // Don't throw — see CLAUDE.md "Apple Music fallback behavior" rationale.
+    // Track-push happens AFTER details-push in sync:push-playlist; a throw
+    // here would abort the track push too. Log + return success-with-skip.
+    console.warn(`[LB] updatePlaylistDetails returned ${res.status}: ${text.slice(0, 200)}`);
+    return { success: true, skipped: `status-${res.status}` };
+  }
+  return { success: true };
 }
 async function deletePlaylist(playlistMbid, token) {
-  throw new Error('deletePlaylist not implemented yet');
+  const res = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/delete`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  });
+  if (!res.ok) {
+    return { success: false, reason: `status-${res.status}` };
+  }
+  return { success: true };
 }
 
 module.exports = {
