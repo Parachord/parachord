@@ -6176,22 +6176,34 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               const preRefreshIsOwnPullSource = localPlaylist.syncedFrom?.resolver === providerId;
 
               // Track-count match: cheap content fingerprint to suppress
-              // false-positive "has updates" flags. Two scenarios this covers:
-              //   1. Heal-induced null snapshot (commit dd63f97 nulls snapshotId
-              //      when it restores syncedFrom; first sync after that sees a
-              //      null vs real-snapshot mismatch).
-              //   2. **Apple Music snapshot churn**: AM frequently re-issues
-              //      snapshotIds for editorial / system playlists ("My Shazam
-              //      Tracks", curated Apple-editorial picks, the Rewind / Radio
-              //      Paradise / NTS-style hosted feeds) even when the tracklist
-              //      hasn't changed. Spotify's snapshotId is rock-solid; AM's
-              //      is not. Count-match catches both cases.
-              // Tradeoff accepted: we miss the rare "AM swapped one track for
-              // another, same count" case. For user-owned playlists that's
-              // vanishingly rare; for editorial playlists the user can refresh
-              // manually if they suspect drift.
+              // false-positive "has updates" flags from **Apple Music's
+              // snapshotId churn** — AM re-issues snapshotIds for editorial /
+              // system playlists ("My Shazam Tracks", curated picks, Rewind /
+              // Radio Paradise / NTS-style hosted feeds) even when the
+              // tracklist hasn't changed.
+              //
+              // **Scoped to AM only.** Spotify's snapshotId is rock-solid AND
+              // its algorithmic playlists (Daily Brew, Discover Weekly,
+              // Release Radar) have a FIXED track count with rotating
+              // content — applying count-match there would silently suppress
+              // legitimate daily updates. LB's snapshot anchor
+              // (extension.last_modified_at) is similarly reliable; no need.
+              //
+              // Tradeoff accepted (AM only): we miss the rare "AM swapped one
+              // track for another, same count" case. For user-owned playlists
+              // that's vanishingly rare; for editorial playlists the user can
+              // refresh manually if they suspect drift.
+              //
+              // Note: the heal-induced null-snapshot case (commit dd63f97
+              // nulls snapshotId when restoring syncedFrom) used to share this
+              // suppression. After this narrowing, Spotify/LB-imported
+              // playlists post-heal will fire "has updates" once on the next
+              // sync — the user clicks pull, snapshotId repopulates, and
+              // subsequent syncs are quiet. One-shot pain, but never silently
+              // wrong.
               const trackCountMatches =
-                remotePlaylist.trackCount != null
+                providerId === 'applemusic'
+                && remotePlaylist.trackCount != null
                 && existingTracks.length === remotePlaylist.trackCount;
 
               if (preRefreshIsOwnPullSource && hasTrackUpdates && !trackCountMatches) {
@@ -6244,13 +6256,16 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // come from different providers and aren't comparable.
               //
               // Track-count check on the FRESH playlist (after the store re-read
-              // above). Same rationale as the earlier `trackCountMatches`: covers
-              // both heal-induced null snapshots and Apple Music's churning
-              // snapshotIds. Counting from current.tracks (not existingTracks)
-              // picks up the case where a previously-empty playlist just got
-              // refilled in the isEmpty branch above.
+              // above). Same provider-scoping as the earlier `trackCountMatches`:
+              // AM only — Spotify's algorithmic playlists (Daily Brew, Discover
+              // Weekly, Release Radar) have fixed-count rotating content and
+              // would be silently suppressed if we applied this everywhere.
+              // Counting from current.tracks (not existingTracks) picks up the
+              // case where a previously-empty playlist just got refilled in the
+              // isEmpty branch above.
               const freshTrackCountMatches =
-                remotePlaylist.trackCount != null
+                providerId === 'applemusic'
+                && remotePlaylist.trackCount != null
                 && (current.tracks?.length || 0) === remotePlaylist.trackCount;
               const stillHasUpdates = isOwnPullSource
                 && current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId
