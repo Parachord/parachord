@@ -24,6 +24,8 @@
  * @property {function(): Object|null} getCurrentTrack - Get current track
  * @property {function(): Array} getQueue - Get current queue
  * @property {function(): boolean} getIsPlaying - Get playback state
+ * @property {function(number): Promise<{success: boolean, supported?: boolean, error?: string}>} handleSeek - Seek to a position (ms) within the current track
+ * @property {function(): {position_ms: number, duration_ms: number, supported: boolean}} getCurrentPosition - Get current playback position (ms) and duration (ms)
  * @property {function(): Array} getPlaylists - Get all playlists
  * @property {function(string): Object|null} findPlaylist - Find playlist by name
  * @property {function(string, Array): void} addTracksToPlaylist - Add tracks to playlist
@@ -147,6 +149,64 @@ const controlTool = {
       default:
         return { success: false, error: `Unknown action: ${action}` };
     }
+  }
+};
+
+/**
+ * Seek to a specific position within the currently playing track.
+ *
+ * Supported playback paths (mirrors the playbar slider in app.js):
+ *   - Local files, SoundCloud, YouTube, Bandcamp (HTML5 audio)
+ *   - Apple Music (native MusicKit and MusicKit JS)
+ *
+ * Not supported: Spotify (Web Playback SDK and Spotify Connect both lack
+ * seek in the current playback wiring). Callers receive `supported: false`
+ * with no error so they can degrade gracefully.
+ *
+ * @type {Tool}
+ */
+const seekTool = {
+  name: 'seek',
+  description: 'Seek the currently playing track to a specific position. Returns {success, supported}. Not all playback paths support seek (notably Spotify); callers should handle supported=false.',
+  parameters: {
+    type: 'object',
+    properties: {
+      offset_ms: {
+        type: 'number',
+        description: 'Target position within the track, in milliseconds from the start. Clamped to [0, duration].'
+      }
+    },
+    required: ['offset_ms']
+  },
+  execute: async ({ offset_ms }, context) => {
+    if (typeof context.handleSeek !== 'function') {
+      return { success: false, supported: false, error: 'seek not wired in this build' };
+    }
+    const result = await context.handleSeek(Number(offset_ms) || 0);
+    return result ?? { success: true };
+  }
+};
+
+/**
+ * Read the current playback position and duration. Used by external sync
+ * clients (e.g. Office Jukebox companion) to keep multiple listeners aligned.
+ *
+ * @type {Tool}
+ */
+const getPositionTool = {
+  name: 'get_position',
+  description: 'Get the current playback position and track duration in milliseconds. Returns {position_ms, duration_ms, supported}.',
+  parameters: { type: 'object', properties: {} },
+  execute: async (_args, context) => {
+    if (typeof context.getCurrentPosition !== 'function') {
+      return { position_ms: 0, duration_ms: 0, supported: false };
+    }
+    const pos = context.getCurrentPosition() || {};
+    return {
+      position_ms: Number(pos.position_ms) || 0,
+      duration_ms: Number(pos.duration_ms) || 0,
+      supported: pos.supported !== false
+    };
   }
 };
 
@@ -695,6 +755,8 @@ const deletePlaylistTool = {
 const djTools = [
   playTool,
   controlTool,
+  seekTool,
+  getPositionTool,
   searchTool,
   queueAddTool,
   queueClearTool,
