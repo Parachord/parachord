@@ -10491,6 +10491,23 @@ const Parachord = () => {
       selectedPlaylistIds: selectedPlaylists
     });
 
+    // Also update the React-state mirror of these settings. Without this, the
+    // background-sync push loop (which reads from `resolverSyncSettingsRef.current`)
+    // continues to see whatever was loaded at app startup — so newly-toggled flags
+    // like `pushLocalPlaylists` are persisted to disk but invisible to the
+    // background loop until the next app launch. The post-wizard IIFE itself is
+    // unaffected (it captures `settings` via closure), but the 15-minute background
+    // cadence needs the ref in sync.
+    setResolverSyncSettings(prev => ({
+      ...prev,
+      [providerId]: {
+        ...prev[providerId],
+        enabled: true,
+        ...settings,
+        selectedPlaylistIds: selectedPlaylists
+      }
+    }));
+
     setSyncSetupModal(prev => ({ ...prev, step: 'syncing' }));
 
     const result = await window.electron.sync.start(providerId, {
