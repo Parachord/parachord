@@ -401,79 +401,70 @@ window.decodeBase64Utf8Json = (b64) => {
   return JSON.parse(text);
 };
 
+// `createLimiter` and `wrapResolverSearchesWithLimiter` live in
+// resolver-limiter.js (loaded via <script> ahead of app.js in index.html)
+// and are exposed as `window.createLimiter` /
+// `window.wrapResolverSearchesWithLimiter`. We instantiate the two
+// limiters this file uses below, and reference the wrap helper at every
+// resolver-load site.
+
 // Global rate limiter for native MusicKit catalog calls (api.music.apple.com).
 // Apple throttles /v1/catalog/{storefront}/search aggressively when fan-out is
 // high — e.g. background source enrichment for a 200-track queue used to fire
 // 200 parallel searches and hit a 429 cliff that also broke playback (because
 // /v1/catalog/songs/{id} fetches behind musicKit.play() got throttled too).
 // Cap concurrency, min-gap between starts, and back off on transient errors.
-window.nativeMusicKitLimiter = (() => {
-  const MAX_CONCURRENCY = 3;
-  const MIN_GAP_MS = 150;        // ~6-7 req/sec sustained at full concurrency
-  const COOLDOWN_MS = 8000;      // pause everything for this long after a burst of errors
-  const ERROR_THRESHOLD = 3;     // consecutive errors before tripping cooldown
-
-  let inFlight = 0;
-  let lastStartAt = 0;
-  let consecutiveErrors = 0;
-  let cooldownUntil = 0;
-  const pending = [];
-
-  const isThrottleError = (err) => {
+window.nativeMusicKitLimiter = window.createLimiter({
+  name: 'nativeMusicKitLimiter',
+  maxConcurrency: 3,
+  minGapMs: 150,        // ~6-7 req/sec sustained at full concurrency
+  cooldownMs: 8000,     // pause everything after a burst of errors
+  errorThreshold: 3,    // consecutive errors before tripping cooldown
+  isThrottleError: (err) => {
     const msg = (err?.message || String(err || '')).toLowerCase();
     return msg.includes('429')
       || msg.includes('rate')
       || msg.includes('musicdatarequest')
       || msg.includes('error 1'); // generic MusicKit data-request failure, often transient throttle
-  };
+  }
+});
 
-  const drain = async () => {
-    while (pending.length > 0 && inFlight < MAX_CONCURRENCY) {
-      const now = Date.now();
-      if (now < cooldownUntil) {
-        setTimeout(drain, cooldownUntil - now);
-        return;
-      }
-      const sinceLast = now - lastStartAt;
-      if (sinceLast < MIN_GAP_MS) {
-        setTimeout(drain, MIN_GAP_MS - sinceLast);
-        return;
-      }
-      const job = pending.shift();
-      inFlight++;
-      lastStartAt = Date.now();
-      (async () => {
-        try {
-          const result = await job.fn();
-          consecutiveErrors = Math.max(0, consecutiveErrors - 1);
-          job.resolve(result);
-        } catch (err) {
-          if (isThrottleError(err)) {
-            consecutiveErrors++;
-            if (consecutiveErrors >= ERROR_THRESHOLD) {
-              cooldownUntil = Date.now() + COOLDOWN_MS;
-              console.warn(`[nativeMusicKitLimiter] ${consecutiveErrors} consecutive throttle errors — cooling down ${COOLDOWN_MS}ms`);
-              consecutiveErrors = 0;
-            }
-          }
-          job.reject(err);
-        } finally {
-          inFlight--;
-          drain();
-        }
-      })();
-    }
-  };
-
-  return {
-    run: (fn) => new Promise((resolve, reject) => {
-      pending.push({ fn, resolve, reject });
-      drain();
-    }),
-    getQueueLength: () => pending.length,
-    isCoolingDown: () => Date.now() < cooldownUntil,
-  };
-})();
+// Global rate limiter for non-AM resolver search fan-out (parachord#797).
+// Covers YouTube, SoundCloud, Bandcamp (and any future search-capable
+// resolver that hits a CDN-backed search endpoint).
+//
+// Why a single SHARED limiter across resolvers rather than per-resolver:
+// these resolvers share the renderer's network thread pool, the Chromium
+// per-origin socket pool (some share CDN origins), and the CPU budget for
+// JSON parsing + match validation. Per-resolver limiters at concurrency
+// 4 each could blow through 12+ concurrent requests, defeating the point.
+//
+// What's NOT throttled here:
+//   - applemusic: has its own dedicated limiter above (different
+//     rate-limit profile)
+//   - spotify: has its own per-token budget, not currently a burst issue
+//   - localfiles: in-process, no network
+//   - Spotify-search-via-/v1/search: covered by Spotify's own rate budget
+//
+// The 4 concurrency cap + 100ms gap maps to ~10 req/sec sustained at full
+// concurrency across the three resolvers combined. That's well below the
+// CDN edge thresholds we've seen drop connections (the `net_error -100`
+// SSL handshake floods in main-process logs).
+window.globalResolverLimiter = window.createLimiter({
+  name: 'globalResolverLimiter',
+  maxConcurrency: 4,
+  minGapMs: 100,
+  cooldownMs: 5000,
+  errorThreshold: 3,
+  isThrottleError: (err) => {
+    const msg = (err?.message || String(err || '')).toLowerCase();
+    return msg.includes('429')
+      || msg.includes('rate limit')
+      || msg.includes('connection closed')
+      || msg.includes('econnreset')
+      || msg.includes('timeout');
+  }
+});
 
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
@@ -9675,6 +9666,10 @@ const Parachord = () => {
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
+        // Wrap non-AM/Spotify/localfiles resolver searches with the global
+        // concurrency limiter (parachord#797). Idempotent — safe across
+        // re-loads. See block comment at `globalResolverLimiter` declaration.
+        window.wrapResolverSearchesWithLimiter(resolvers);
         setLoadedResolvers(resolvers);
         resolverLoaderRef.current = resolverLoader.current;
         console.log(`✅ Loaded ${resolvers.length} resolver plugins:`, resolvers.map(r => r.name).join(', '));
@@ -9737,6 +9732,8 @@ const Parachord = () => {
         
         try {
           const resolvers = await resolverLoader.current.loadResolvers(FALLBACK_RESOLVERS);
+          // Same wrapping as the primary load path (parachord#797).
+          window.wrapResolverSearchesWithLimiter(resolvers);
           setLoadedResolvers(resolvers);
           resolverLoaderRef.current = resolverLoader.current;
           console.log(`✅ Loaded ${resolvers.length} fallback resolvers`);
@@ -26836,10 +26833,13 @@ ${trackListXml}
       try {
                 axe._filename = filename;
         const newResolverInstance = await resolverLoader.current.loadResolver(axe);
-        
+        // Wrap the newly-loaded resolver's search through the global limiter
+        // (parachord#797) — same treatment as the primary load path.
+        window.wrapResolverSearchesWithLimiter([newResolverInstance]);
+
         if (existing) {
           // Replace existing resolver
-          setLoadedResolvers(prev => prev.map(r => 
+          setLoadedResolvers(prev => prev.map(r =>
             r.id === resolverId ? newResolverInstance : r
           ));
           console.log(`🔄 Updated resolver: ${resolverName}`);
@@ -27046,7 +27046,10 @@ ${trackListXml}
         // Check FALLBACK_RESOLVERS
         const fallbackResolver = FALLBACK_RESOLVERS.find(r => r.manifest?.id === id);
         if (fallbackResolver) {
-          setLoadedResolvers(prev => [...prev, { ...fallbackResolver, id, name, enabled: true, weight: prev.length }]);
+          const instance = { ...fallbackResolver, id, name, enabled: true };
+          // Wrap through the global limiter (parachord#797) before mounting.
+          window.wrapResolverSearchesWithLimiter([instance]);
+          setLoadedResolvers(prev => [...prev, { ...instance, weight: prev.length }]);
           setResolverOrder(prev => [...prev, id]);
           setActiveResolvers(prev => [...prev, id]);
           showToast(`${name} enabled`, 'success');
@@ -27158,6 +27161,9 @@ ${trackListXml}
         }
       } else {
         const newResolverInstance = await resolverLoader.current.loadResolver(axe);
+        // Wrap content-resolver search through the global limiter
+        // (parachord#797). Idempotent.
+        window.wrapResolverSearchesWithLimiter([newResolverInstance]);
 
         if (existing) {
           setLoadedResolvers(prev => prev.map(r =>
