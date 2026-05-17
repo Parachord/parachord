@@ -5,7 +5,184 @@
  * Spotify library sync, pagination, diff calculation, rate limiting.
  */
 
-const { canShortCircuitPlaylistUpdate } = require('../../sync-engine');
+const { canShortCircuitPlaylistUpdate, staggerPlaylistsForCycle } = require('../../sync-engine');
+
+describe('staggerPlaylistsForCycle (oldest-stale-first batching, see parachord#800)', () => {
+  // Helper to build a remote-shape playlist (what fetchPlaylists returns).
+  const remote = (externalId) => ({ externalId, name: `Playlist ${externalId}` });
+
+  // Helper to build a local-shape playlist (what's in `local_playlists`).
+  const local = ({ id, externalId, syncedAt, hasUpdates, lastModified }) => ({
+    id: id || `spotify-${externalId}`,
+    title: `Playlist ${externalId}`,
+    syncedFrom: { resolver: 'spotify', externalId },
+    syncSources: syncedAt != null ? { spotify: { syncedAt } } : {},
+    hasUpdates: !!hasUpdates,
+    lastModified: lastModified || 0
+  });
+
+  test('returns all when count <= batchSize', () => {
+    const selected = [remote('a'), remote('b'), remote('c')];
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: [],
+      providerId: 'spotify',
+      batchSize: 10
+    });
+    expect(result).toHaveLength(3);
+  });
+
+  test('takes top N when count > batchSize', () => {
+    const selected = Array.from({ length: 50 }, (_, i) => remote(`p${i}`));
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: [],
+      providerId: 'spotify',
+      batchSize: 15
+    });
+    expect(result).toHaveLength(15);
+  });
+
+  test('hasUpdates playlists come first regardless of syncedAt', () => {
+    const selected = [remote('a'), remote('b'), remote('c')];
+    const locals = [
+      local({ externalId: 'a', syncedAt: 1000 }),                       // fresh, no updates
+      local({ externalId: 'b', syncedAt: 500, hasUpdates: true }),      // older, but has updates
+      local({ externalId: 'c', syncedAt: 100 }),                        // oldest, no updates
+    ];
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: locals,
+      providerId: 'spotify',
+      batchSize: 2
+    });
+    expect(result[0].externalId).toBe('b'); // hasUpdates wins
+    expect(result[1].externalId).toBe('c'); // then oldest syncedAt
+  });
+
+  test('among non-hasUpdates, oldest syncedAt comes first', () => {
+    const selected = [remote('a'), remote('b'), remote('c')];
+    const locals = [
+      local({ externalId: 'a', syncedAt: 3000 }),
+      local({ externalId: 'b', syncedAt: 1000 }),
+      local({ externalId: 'c', syncedAt: 2000 }),
+    ];
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: locals,
+      providerId: 'spotify',
+      batchSize: 3
+    });
+    expect(result.map(r => r.externalId)).toEqual(['b', 'c', 'a']);
+  });
+
+  test('never-synced playlists (no syncSources entry) sort to top via 0-syncedAt', () => {
+    const selected = [remote('new'), remote('old'), remote('newer')];
+    const locals = [
+      // 'new' has no local entry — first import; treated as syncedAt 0
+      local({ externalId: 'old', syncedAt: 100 }),
+      local({ externalId: 'newer', syncedAt: 200 }),
+    ];
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: locals,
+      providerId: 'spotify',
+      batchSize: 3
+    });
+    expect(result[0].externalId).toBe('new');   // no local match → 0 syncedAt → top
+    expect(result[1].externalId).toBe('old');
+    expect(result[2].externalId).toBe('newer');
+  });
+
+  test('lastModified descending breaks ties in syncedAt', () => {
+    const selected = [remote('a'), remote('b'), remote('c')];
+    const locals = [
+      local({ externalId: 'a', syncedAt: 1000, lastModified: 500 }),
+      local({ externalId: 'b', syncedAt: 1000, lastModified: 2000 }),
+      local({ externalId: 'c', syncedAt: 1000, lastModified: 1000 }),
+    ];
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: locals,
+      providerId: 'spotify',
+      batchSize: 3
+    });
+    // All same syncedAt → lastModified desc: b > c > a
+    expect(result.map(r => r.externalId)).toEqual(['b', 'c', 'a']);
+  });
+
+  test('matches local playlist via syncedFrom.externalId', () => {
+    const selected = [remote('xyz')];
+    const locals = [
+      local({ externalId: 'xyz', syncedAt: 999 })
+    ];
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: locals,
+      providerId: 'spotify',
+      batchSize: 1
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].externalId).toBe('xyz');
+  });
+
+  test('matches local playlist via syncedTo[providerId].externalId (push mirror)', () => {
+    const selected = [remote('am-id-1')];
+    const locals = [
+      {
+        id: 'spotify-something',
+        title: 'Push mirror',
+        syncedFrom: { resolver: 'spotify', externalId: 'spotify-something' },
+        syncedTo: { applemusic: { externalId: 'am-id-1', syncedAt: 500 } },
+        syncSources: { applemusic: { syncedAt: 500 } },
+        hasUpdates: false,
+        lastModified: 0
+      }
+    ];
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: locals,
+      providerId: 'applemusic',
+      batchSize: 1
+    });
+    expect(result[0].externalId).toBe('am-id-1');
+  });
+
+  test('does not mutate the input array', () => {
+    const selected = [remote('z'), remote('a'), remote('m')];
+    const before = selected.map(r => r.externalId);
+    staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: [],
+      providerId: 'spotify',
+      batchSize: 10
+    });
+    expect(selected.map(r => r.externalId)).toEqual(before);
+  });
+
+  test('handles empty selectedRemote', () => {
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: [],
+      localPlaylists: [],
+      providerId: 'spotify',
+      batchSize: 15
+    });
+    expect(result).toEqual([]);
+  });
+
+  test('falls back to default batchSize when omitted', () => {
+    const selected = Array.from({ length: 30 }, (_, i) => remote(`p${i}`));
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: [],
+      providerId: 'spotify'
+      // batchSize omitted
+    });
+    // Default batch size; just verify it's a sensible cap (< 30 since input is 30).
+    expect(result.length).toBeLessThanOrEqual(30);
+    expect(result.length).toBeGreaterThan(0);
+  });
+});
 
 describe('canShortCircuitPlaylistUpdate (inbound sync optimization, see parachord#796)', () => {
   // Helper to build a "happy path" local + remote pair where short-circuit

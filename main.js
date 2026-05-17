@@ -6141,10 +6141,31 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       const { playlists: remotePlaylists } = await provider.fetchPlaylists(token, null, refreshToken);
       const suppressedPlaylists = store.get('suppressed_sync_playlists') || {};
       const suppressedForProvider = suppressedPlaylists[providerId] || [];
-      const selectedRemote = remotePlaylists.filter(p =>
+      const allSelectedRemote = remotePlaylists.filter(p =>
         settings.selectedPlaylistIds.includes(p.externalId) &&
         !suppressedForProvider.includes(p.externalId)
       );
+
+      // Stagger across cycles (parachord#800). Background sync processes
+      // the top N oldest-stale-first per cycle; over 4-5 cycles the whole
+      // selection gets covered. Explicit full-sync paths (wizard "Sync
+      // Now", cleanup-duplicates, etc.) bypass via `options.fullSync` so
+      // they still see every selected playlist in one run.
+      //
+      // The sort is provider-scoped (`syncSources[providerId].syncedAt`),
+      // so each provider's stagger queue is independent — a Spotify-stale
+      // playlist gets priority on Spotify's next cycle without competing
+      // with AM's separate queue.
+      const selectedRemote = options.fullSync
+        ? allSelectedRemote
+        : SyncEngine.staggerPlaylistsForCycle({
+            selectedRemote: allSelectedRemote,
+            localPlaylists: currentPlaylists,
+            providerId
+          });
+      if (!options.fullSync && selectedRemote.length < allSelectedRemote.length) {
+        console.log(`[Sync] Staggered ${providerId}: processing ${selectedRemote.length}/${allSelectedRemote.length} oldest-stale this cycle (remainder defers to next cycle)`);
+      }
 
       let playlistsAdded = 0;
       let playlistsUpdated = 0;

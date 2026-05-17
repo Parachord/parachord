@@ -10614,11 +10614,15 @@ const Parachord = () => {
 
     setSyncSetupModal(prev => ({ ...prev, step: 'syncing' }));
 
+    // Wizard "Sync Now" is explicit user intent — bypass the per-cycle
+    // playlist staggering (parachord#800) so every selected playlist is
+    // visited in this one run rather than spread over 4-5 background cycles.
     const result = await window.electron.sync.start(providerId, {
       settings: {
         ...settings,
         selectedPlaylistIds: selectedPlaylists
-      }
+      },
+      fullSync: true
     });
 
     if (result.success) {
@@ -35842,7 +35846,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           window.electron.syncSettings?.load().then(syncSettings => {
             if (syncSettings?.applemusic?.enabled) {
               console.log('[Sync] Apple Music re-authenticated with sync enabled, triggering immediate sync');
-              window.electron.sync.start('applemusic', { settings: syncSettings.applemusic }).then(result => {
+              // Re-auth catch-up — user just reconnected, treat as full sync
+              // so they don't have to wait 4-5 background cycles (parachord#800).
+              window.electron.sync.start('applemusic', { settings: syncSettings.applemusic, fullSync: true }).then(result => {
                 if (result?.success && result.collection) {
                   const incoming = {
                     tracks: result.collection.tracks || [],
@@ -35965,7 +35971,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           window.electron.syncSettings?.load().then(syncSettings => {
             if (syncSettings?.applemusic?.enabled) {
               console.log('[Sync] Apple Music re-authenticated with sync enabled, triggering immediate sync');
-              window.electron.sync.start('applemusic', { settings: syncSettings.applemusic }).then(result => {
+              // Re-auth catch-up — user just reconnected, treat as full sync
+              // so they don't have to wait 4-5 background cycles (parachord#800).
+              window.electron.sync.start('applemusic', { settings: syncSettings.applemusic, fullSync: true }).then(result => {
                 if (result?.success && result.collection) {
                   const incoming = {
                     tracks: result.collection.tracks || [],
@@ -36387,7 +36395,9 @@ useEffect(() => {
         window.electron.syncSettings?.load().then(syncSettings => {
           if (syncSettings?.spotify?.enabled) {
             console.log('[Sync] Spotify re-authenticated with sync enabled, triggering immediate sync');
-            window.electron.sync.start('spotify', { settings: syncSettings.spotify }).then(result => {
+            // Re-auth catch-up — user just reconnected, treat as full sync
+            // (parachord#800).
+            window.electron.sync.start('spotify', { settings: syncSettings.spotify, fullSync: true }).then(result => {
               if (result?.success && result.collection) {
                 const incoming = {
                   tracks: result.collection.tracks || [],
@@ -62434,7 +62444,9 @@ useEffect(() => {
                   try {
                     const authStatus = await window.electron.sync.checkAuth(providerId);
                     if (authStatus.authenticated) {
-                      const result = await window.electron.sync.start(providerId, { settings });
+                      // Explicit "Sync Now" button — bypass per-cycle stagger
+                      // so the user gets a full sweep (parachord#800).
+                      const result = await window.electron.sync.start(providerId, { settings, fullSync: true });
                       if (result.success && result.collection) {
                         latestCollection = result.collection;
                       }

@@ -179,6 +179,20 @@ The handlers use `window.electron.app.onBackground` / `onForeground` (preload br
 
 **Partial-save semantics.** When the playlist loop is cancelled mid-iteration, `local_playlists` IS written with the in-memory state (so playlists already processed get their `syncedAt` advanced) but the `syncedFrom`-clearing pass is SKIPPED (we may not have visited every selected playlist; clearing based on a partial iteration could mass-clear playlists that haven't been verified-missing-from-remote yet). The next non-cancelled sync re-runs the clearing pass over the full set.
 
+### Staggered playlist sync per cycle (parachord#800)
+
+`sync:start`'s inbound playlist loop processes the **top N oldest-stale playlists** per cycle rather than every selected playlist. With 50 selected × 15-min cadence × batch=15, the whole selection rolls through in ~2.5h worst-case. Most users don't notice; cross-platform power-users get a manual escape via "Sync Now."
+
+`staggerPlaylistsForCycle` (sync-engine/index.js) is the pure sort+slice helper. Sort order:
+
+1. `hasUpdates: true` first — user is waiting on a pending pull.
+2. `syncSources[providerId].syncedAt` ascending — oldest-stale next. Playlists with no local entry sort to top (first-time imports run on the first cycle after wizard selection).
+3. `lastModified` descending — breaks ties; recent local edits get sync priority over dormant playlists.
+
+**Full-sync bypass** via `options.fullSync = true` on the `sync:start` IPC. All renderer-side user-initiated sync paths pass it: wizard "Sync Now" (post-config + post-syncing-complete), Spotify/AM re-auth catch-up triggers. `runBackgroundSync` does NOT pass it — that's the cadenced path the stagger targets.
+
+The clearing pass for "remote playlist no longer exists" still runs against the FULL fetched `remotePlaylists` (not the staggered subset), so deleted-on-remote detection is unaffected by which subset we iterate.
+
 ### In-Session Mutex
 
 The renderer has **two independent code paths** that call `sync.createPlaylist` and `sync.pushPlaylist`:
