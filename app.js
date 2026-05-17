@@ -289,6 +289,37 @@ const DEBUG_RESOLUTION = false;
 // against `bestConf` unchanged. The argument is now ignored.
 const getBestSourceConfidence = (_sources) => 0.95;
 
+// Extension-aware "this file's format isn't supported" message used by both
+// HTML5-audio error handlers (loadlocal-file playback + post-play catch
+// blocks). Chromium's built-in audio decoders cover MP3, AAC, OGG/Vorbis,
+// Opus, and PCM (16-bit) reliably; high-bit-depth and high-sample-rate
+// FLAC and WAV files frequently fail with MEDIA_ERR_SRC_NOT_SUPPORTED.
+//
+// Previously this code path emitted `Try converting to MP3 or FLAC` for
+// every unknown extension — including .flac files — producing the
+// nonsensical "your FLAC file is unsupported; convert it to FLAC"
+// message users were seeing on Japanese audiophile rips (typically
+// 24-bit/96kHz FLAC, which Chromium can't decode).
+const unsupportedAudioMessage = (ext) => {
+  const e = (ext || '').toLowerCase();
+  if (e === 'wav') {
+    return 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or 16-bit FLAC for playback.';
+  }
+  if (e === 'flac') {
+    return 'This FLAC file is likely 24-bit or high sample rate (≥88.2kHz). The built-in player only supports 16-bit FLAC at 44.1/48kHz. Convert with `ffmpeg -i input.flac -sample_fmt s16 -ar 48000 output.flac` (or use MP3 / AAC).';
+  }
+  if (e === 'mp3') {
+    return 'This MP3 file appears corrupted or uses an unsupported variant. Try re-encoding it with a standard MP3 encoder.';
+  }
+  if (e === 'ogg' || e === 'oga' || e === 'opus' || e === 'aac' || e === 'm4a') {
+    return `This ${e.toUpperCase()} file is corrupted or uses an unsupported variant. Try converting to MP3 or 16-bit FLAC.`;
+  }
+  if (e === 'wma' || e === 'aiff' || e === 'alac' || e === 'ape' || e === 'dsf' || e === 'dff') {
+    return `${e.toUpperCase()} is not supported by the built-in player. Convert to MP3 or 16-bit FLAC at 44.1/48kHz.`;
+  }
+  return `This ${e ? e.toUpperCase() : 'audio'} file uses an unsupported format. Try converting to MP3 or 16-bit FLAC.`;
+};
+
 // Resolve a track to a recording MBID for ListenBrainz love submission.
 // Tries (1) cached track.mbid, (2) the MBID Mapper. Returns the MBID
 // string or null. ~4ms typical via the mapper. See
@@ -5939,6 +5970,8 @@ const Parachord = () => {
   const [whatsNewDismissedVersion, setWhatsNewDismissedVersion] = useState(null); // Last version user dismissed What's New for
   const [whatsNewHighlights, setWhatsNewHighlights] = useState([]); // Parsed release note highlights
   const [appVersion, setAppVersion] = useState(null); // Current app version from electron
+  const [announcements, setAnnouncements] = useState([]); // In-app banner items fetched from achordion.xyz
+  const [dismissedAnnouncementIds, setDismissedAnnouncementIds] = useState([]); // Persisted dismissals (array; checked as a Set inline)
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
@@ -6048,6 +6081,17 @@ const Parachord = () => {
       capabilities: { tracks: true, albums: true, artists: false, playlists: true },
       icon: React.createElement('svg', { className: 'w-6 h-6', viewBox: '0 0 122.88 122.88', fill: '#ffffff' },
         React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
+      )
+    },
+    listenbrainz: {
+      name: 'ListenBrainz',
+      color: '#353070',
+      colorHover: '#4a4496',
+      // LB sync only supports playlists today (no liked-songs / saved-albums / artist-follow API parity).
+      capabilities: { tracks: false, albums: false, artists: false, playlists: true },
+      icon: React.createElement('svg', { className: 'w-6 h-6', viewBox: '0 0 146 160', fill: '#ffffff' },
+        React.createElement('path', { d: 'm75.354 7.823v144l61-35v-74z' }),
+        React.createElement('path', { d: 'm70.354 7.823-61 35v74l61 35z' })
       )
     }
   };
@@ -6173,16 +6217,19 @@ const Parachord = () => {
   const playlistSyncInProgressRef = useRef(false);
 
   useEffect(() => {
-    const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
+    const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes — timer cadence + default staleness gate
+    const BACKGROUND_MIN_STALENESS = 5 * 60 * 1000; // tighter staleness for background-triggered runs
+    const BACKGROUND_DELAY = 30 * 1000; // wait 30s after blur before syncing — cancels if user returns
     const INITIAL_DELAY = 60 * 1000; // 60 seconds — let the app fully load first
 
-    const runBackgroundSync = async () => {
+    const runBackgroundSync = async (opts = {}) => {
+      const minStaleness = typeof opts.minStaleness === 'number' ? opts.minStaleness : SYNC_INTERVAL;
       const currentSettings = resolverSyncSettingsRef.current;
       // Check each enabled provider
       for (const [providerId, settings] of Object.entries(currentSettings)) {
         if (settings.enabled) {
-          // Skip if last sync was recent (within the sync interval)
-          if (settings.lastSyncAt && (Date.now() - settings.lastSyncAt) < SYNC_INTERVAL) {
+          // Skip if last sync was recent (within the staleness threshold for this run)
+          if (settings.lastSyncAt && (Date.now() - settings.lastSyncAt) < minStaleness) {
             console.log(`[Sync] Skipping background sync for ${providerId} — last sync was ${Math.round((Date.now() - settings.lastSyncAt) / 60000)}m ago`);
             continue;
           }
@@ -6258,13 +6305,51 @@ const Parachord = () => {
                   // synced from a *different* provider (e.g. imported from Spotify)
                   // must still be pushable to other providers (e.g. Apple Music),
                   // otherwise multi-provider mirror propagation breaks.
-                  if (playlist.syncedFrom?.resolver === providerId) continue;
+                  //
+                  // EXCEPTION — collaborative playlists (e.g. LB-imported playlists
+                  // where the local user is a collaborator, not the owner): genuine
+                  // local edits MUST round-trip back to the source so other
+                  // collaborators see them. Discriminate "real local edits" from
+                  // the artificial `locallyModified=true` that handlePull sets for
+                  // multi-mirror propagation by comparing `lastModified` against
+                  // the source's last syncedAt — handlePull sets both to the same
+                  // timestamp so the comparison is false right after a pull; a
+                  // subsequent real edit bumps `lastModified` and flips it true.
+                  // Same reasoning as the sync banner's push-state check (see
+                  // CLAUDE.md "Sync banner's push-state check must discount
+                  // pull-induced locallyModified").
+                  {
+                    const sourceProvider = playlist.syncedFrom?.resolver;
+                    if (sourceProvider === providerId) {
+                      const sourceSyncedAt = playlist.syncSources?.[sourceProvider]?.syncedAt || 0;
+                      const hasGenuineLocalEdits = playlist.locallyModified
+                        && (playlist.lastModified || 0) > sourceSyncedAt;
+                      if (!hasGenuineLocalEdits) continue;
+                      // Fall through: push back to source IS warranted (collaborative case).
+                    }
+                  }
 
                   // Skip playlists whose ID indicates they originated from this provider
                   // (e.g. "applemusic-p.XXXXX"). Even if syncedFrom was cleared due to
                   // an incomplete API response, we must not re-create these on the same
                   // provider — that would produce duplicates.
-                  if (playlist.id?.startsWith(`${providerId}-`)) continue;
+                  //
+                  // Defense-in-depth twin of the syncedFrom guard above (L~6310). Same
+                  // collaborative-push-back exemption applies: if the id implies this
+                  // provider but the user has genuine local edits to contribute, let
+                  // the push proceed. Without this exemption the id-prefix guard fires
+                  // after the syncedFrom refinement and the collaborative path remains
+                  // unreachable for imported playlists (e.g. id = `listenbrainz-<mbid>`).
+                  {
+                    const idImpliesThisProvider = playlist.id?.startsWith(`${providerId}-`);
+                    if (idImpliesThisProvider) {
+                      const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
+                      const hasGenuineLocalEdits = playlist.locallyModified
+                        && (playlist.lastModified || 0) > sourceSyncedAt;
+                      if (!hasGenuineLocalEdits) continue;
+                      // Fall through: push back to source IS warranted (collaborative case).
+                    }
+                  }
 
                   // Skip playlists with pending actions
                   if (playlist.syncedTo?.[providerId]?.pendingAction) continue;
@@ -6272,6 +6357,20 @@ const Parachord = () => {
                   const syncInfo = playlist.syncedTo?.[providerId];
 
                   if (!syncInfo) {
+                    // LB-specific opt-in. Without this gate, enabling LB sync
+                    // would auto-create one LB playlist per non-localOnly local
+                    // playlist on first run — potentially 100+ private LB
+                    // playlists the user never asked for. Default off; the
+                    // wizard exposes a "Push my Parachord playlists to LB"
+                    // checkbox to opt in. Spotify/AM are unaffected (their
+                    // wizard doesn't render the checkbox and the setting
+                    // defaults to true for them, preserving existing behavior).
+                    // Already-linked playlists (those with syncedTo[lb]) are
+                    // NOT gated here — they still get update pushes via the
+                    // `else if (playlist.locallyModified)` branch below.
+                    if (providerId === 'listenbrainz' && currentSettings[providerId]?.pushLocalPlaylists !== true) {
+                      continue;
+                    }
                     // Playlist not yet created on this provider — create it
                     console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
                     try {
@@ -6548,16 +6647,68 @@ const Parachord = () => {
     };
 
     // Delay initial sync to let the app fully load and become interactive
-    const initialSyncTimeout = setTimeout(runBackgroundSync, INITIAL_DELAY);
+    const initialSyncTimeout = setTimeout(() => runBackgroundSync(), INITIAL_DELAY);
 
     // Set up interval
-    const intervalId = setInterval(runBackgroundSync, SYNC_INTERVAL);
+    const intervalId = setInterval(() => runBackgroundSync(), SYNC_INTERVAL);
+
+    // Background-triggered refresh: when the window LOSES focus, schedule
+    // a sync for BACKGROUND_DELAY seconds later. If the user comes back
+    // before then, cancel — they didn't actually leave. Net effect: heavy
+    // sync work runs while the user is away, never on resume.
+    //
+    // Rationale: an earlier iteration triggered sync on FOREGROUND, which
+    // produced visible pinwheel + CPU spike right when the user wanted the
+    // app responsive (~35s of IPC churn for users with hundreds of
+    // playlists). User feedback was unambiguous: "I want more work done
+    // while I'm not using the app, not when I want it to feel most
+    // responsive." Inverted accordingly.
+    //
+    // Notes:
+    //   - The 15-min timer (above) still runs regardless of focus state.
+    //     This handler is purely additive: it catches the case where the
+    //     user backgrounds the app mid-cycle, so sync can happen during
+    //     their absence rather than at the next idle timer tick.
+    //   - Per-provider `lastSyncAt < minStaleness` gate inside
+    //     runBackgroundSync prevents double-fetching when the timer
+    //     already synced recently.
+    //   - We DON'T cancel an already-running sync on focus — too risky
+    //     (could leave half-written state). We only cancel the *pending*
+    //     setTimeout. If the user returns mid-sync, they may still see
+    //     residual IPC activity for a few seconds — accept that vs the
+    //     complexity of safe cancellation.
+    let pendingBackgroundSync = null;
+    const handleBackground = () => {
+      if (pendingBackgroundSync) clearTimeout(pendingBackgroundSync);
+      pendingBackgroundSync = setTimeout(() => {
+        pendingBackgroundSync = null;
+        runBackgroundSync({ minStaleness: BACKGROUND_MIN_STALENESS });
+      }, BACKGROUND_DELAY);
+    };
+    const handleForeground = () => {
+      if (pendingBackgroundSync) {
+        clearTimeout(pendingBackgroundSync);
+        pendingBackgroundSync = null;
+      }
+    };
+    if (window.electron?.app?.onBackground) {
+      window.electron.app.onBackground(handleBackground);
+    }
+    if (window.electron?.app?.onForeground) {
+      window.electron.app.onForeground(handleForeground);
+    }
 
     return () => {
       clearTimeout(initialSyncTimeout);
       clearInterval(intervalId);
+      if (pendingBackgroundSync) clearTimeout(pendingBackgroundSync);
+      // No unsubscribe path on app.onForeground/onBackground in preload
+      // (multi-listener safe); they detach when the renderer tears down.
     };
   }, []); // Stable effect — reads settings from ref
+
+  // (Slow-trickle cross-resolver enrichment moved past the `cacheLoaded`
+  // useState declaration to avoid the deps-array TDZ. See below near L9720.)
 
   // Friends state
   const [friends, setFriends] = useState([]);
@@ -9712,6 +9863,173 @@ const Parachord = () => {
     }
   }, [cacheLoaded]);
 
+  // In-app announcements: subscribe to fresh fetches from main process.
+  // Cached items hydrate via the bulk-load batch above; this keeps the banner
+  // current as the launch + focus refresh updates the cache.
+  useEffect(() => {
+    if (!cacheLoaded || !window.electron?.announcements?.onUpdated) return;
+    console.log('📢 Listener registered for announcements:updated broadcasts');
+    const unsubscribe = window.electron.announcements.onUpdated((payload) => {
+      const count = Array.isArray(payload?.items) ? payload.items.length : 0;
+      const ids = Array.isArray(payload?.items) ? payload.items.map(a => a?.id).join(',') : '';
+      console.log(`📢 Broadcast received: ${count} item(s) [${ids}]`);
+      if (payload && Array.isArray(payload.items)) {
+        setAnnouncements(payload.items);
+      }
+    });
+    return () => { try { unsubscribe && unsubscribe(); } catch (_) {} };
+  }, [cacheLoaded]);
+
+  // ─── Slow-trickle cross-resolver enrichment ────────────────────────────
+  //
+  // Walks the collection at strictly idle priority and resolves tracks that
+  // have at least one source but are missing slots for some enabled
+  // resolvers. Runs ONE track every TRICKLE_INTERVAL_MS, only when the
+  // window is unfocused — mirroring the "do work while user is away"
+  // principle we apply to background sync.
+  //
+  // Why this exists: the eager-enrichment gate in resolveTrack (search for
+  // `hasLocalfilesSource`) skips missing-resolver fills for localfiles-
+  // backed tracks during library navigation, which stops a Bandcamp-search
+  // burst that pinwheels the app for users with many local-only tracks.
+  // Without a second path to enrich those tracks, local-only listeners
+  // would never contribute streaming-URL mappings to Achordion's match
+  // cache. This loop closes that gap — passing `forceEnrichment: true`
+  // bypasses the gate so the same resolution work happens, just stretched
+  // over hours of background time instead of seconds of foreground burst.
+  //
+  // Tracking: `enrichmentAttemptedRef` records track IDs we've already tried
+  // this session, so a single attempt per track per launch — keeps the load
+  // bounded even on huge collections and lets the persistence layer record
+  // noMatch sentinels that prevent re-querying across launches.
+  //
+  // Placed AFTER the `cacheLoaded` useState declaration to avoid a deps-
+  // array TDZ — React evaluates the deps array synchronously during render
+  // before later useState lines run, so this effect cannot live near its
+  // logically-related background-sync useEffect higher in the file.
+  const enrichmentAttemptedRef = useRef(new Set());
+  const enrichmentWindowFocusedRef = useRef(true);
+  useEffect(() => {
+    if (!cacheLoaded) return;
+
+    const TRICKLE_INTERVAL_MS = 10 * 1000; // 1 track every 10s
+    const STARTUP_DELAY_MS = 90 * 1000;    // hold off until after the app settles
+
+    let intervalId = null;
+
+    const findCandidate = () => {
+      const tracks = collectionTracksRef.current || [];
+      const enabled = (activeResolversRef.current || []).filter(id => id !== 'localfiles');
+      if (enabled.length === 0 || tracks.length === 0) return null;
+
+      const attempted = enrichmentAttemptedRef.current;
+      for (const t of tracks) {
+        if (!t || !t.id || attempted.has(t.id)) continue;
+        const sources = t.sources || {};
+        const sourceKeys = Object.keys(sources);
+        if (sourceKeys.length === 0) continue; // Truly unresolved — leave to normal scheduler
+        const hasReal = sourceKeys.some(k => sources[k] && !sources[k].noMatch);
+        if (!hasReal) continue;
+        const missing = enabled.some(r => !sources[r]);
+        if (!missing) continue;
+        return t;
+      }
+      return null;
+    };
+
+    const tick = async () => {
+      if (enrichmentWindowFocusedRef.current) return;
+      const track = findCandidate();
+      if (!track) return;
+      enrichmentAttemptedRef.current.add(track.id);
+      try {
+        await resolveTrack(track, track.artist || track.artistName || 'Unknown Artist', { forceEnrichment: true });
+      } catch (err) {
+        // Swallow — best-effort. Persistence layer captures noMatch sentinels.
+      }
+    };
+
+    const startupTimeout = setTimeout(() => {
+      intervalId = setInterval(tick, TRICKLE_INTERVAL_MS);
+    }, STARTUP_DELAY_MS);
+
+    const handleForeground = () => { enrichmentWindowFocusedRef.current = true; };
+    const handleBackground = () => { enrichmentWindowFocusedRef.current = false; };
+    if (window.electron?.app?.onForeground) window.electron.app.onForeground(handleForeground);
+    if (window.electron?.app?.onBackground) window.electron.app.onBackground(handleBackground);
+
+    return () => {
+      clearTimeout(startupTimeout);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [cacheLoaded]);
+
+  // Fire-and-forget telemetry recorder. Best-effort — failures are
+  // logged in main and never propagate to UI state.
+  const announcementViewedThisSessionRef = useRef(new Set());
+  const recordAnnouncementEvent = (id, event) => {
+    if (!id || !event) return;
+    if (window.electron?.announcements?.recordEvent) {
+      window.electron.announcements.recordEvent(id, event).catch(() => {});
+    }
+  };
+
+  const dismissAnnouncement = async (id) => {
+    if (!id) return;
+    recordAnnouncementEvent(id, 'dismiss');
+    setDismissedAnnouncementIds(prev => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      if (window.electron?.store?.set) {
+        window.electron.store.set('dismissed_announcement_ids', next).catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  // Filter cached announcements down to what's currently relevant: not
+  // dismissed, not expired, version range matches. Sorted by id descending
+  // so a publisher can use date-prefixed ids ("2026-05-08-...") to control
+  // ordering. The banner UI shows only the first item; dismissing it
+  // surfaces the next.
+  const compareSemver3 = (a, b) => {
+    const pa = String(a || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+    const pb = String(b || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) {
+      if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+    }
+    return 0;
+  };
+  const activeAnnouncements = useMemo(() => {
+    if (!Array.isArray(announcements) || announcements.length === 0) return [];
+    const now = Date.now();
+    const dismissed = new Set(dismissedAnnouncementIds);
+    return announcements
+      .filter(a => a && typeof a.id === 'string' && !dismissed.has(a.id))
+      .filter(a => {
+        if (!a.expiresAt) return true;
+        const t = Date.parse(a.expiresAt);
+        return Number.isFinite(t) ? t > now : true;
+      })
+      .filter(a => {
+        if (!appVersion) return true;
+        if (a.minVersion && compareSemver3(appVersion, a.minVersion) < 0) return false;
+        if (a.maxVersion && compareSemver3(appVersion, a.maxVersion) > 0) return false;
+        return true;
+      })
+      .sort((a, b) => String(b.id).localeCompare(String(a.id)));
+  }, [announcements, dismissedAnnouncementIds, appVersion]);
+
+  // Fire a 'view' event the first time each banner id renders this session.
+  // Re-renders for the same id (state updates, focus refetches) don't double-count.
+  useEffect(() => {
+    const top = activeAnnouncements[0];
+    if (!top || !top.id) return;
+    if (announcementViewedThisSessionRef.current.has(top.id)) return;
+    announcementViewedThisSessionRef.current.add(top.id);
+    recordAnnouncementEvent(top.id, 'view');
+  }, [activeAnnouncements]);
+
   // Listen for sync progress
   useEffect(() => {
     const unsubscribe = window.electron.sync.onProgress((progress) => {
@@ -9928,6 +10246,27 @@ const Parachord = () => {
 
   // Open sync setup modal
   const openSyncSetupModal = async (providerId) => {
+    // ListenBrainz: token comes from the scrobbler plugin's config, NOT a
+    // separate sync OAuth flow. If the user hasn't connected LB for
+    // scrobbling yet, point them at Settings → Plugins (where the LB
+    // scrobbler card lives) rather than introducing a parallel auth path.
+    // See CLAUDE.md "ListenBrainz auth token auto-attach".
+    if (providerId === 'listenbrainz') {
+      const lbCfg = await window.electron.store.get('scrobbler-config-listenbrainz').catch(() => null);
+      const lbAuthenticated = !!lbCfg?.userToken;
+      if (!lbAuthenticated) {
+        showToast(
+          'Connect ListenBrainz in Settings → Plugins first.',
+          'warning',
+          { label: 'Open Settings', onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); } },
+          { duration: 8000 }
+        );
+        return;
+      }
+      // Authenticated — skip the legacy `sync.checkAuth` path below (which
+      // would just re-validate the same token) and fall through to settings load.
+    }
+
     // For Apple Music, ensure user token is available in electron-store before checking auth
     if (providerId === 'applemusic') {
       const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
@@ -10069,6 +10408,20 @@ const Parachord = () => {
           return;
         }
       }
+      // ListenBrainz: token in scrobbler config was validated by main but the
+      // LB server rejected it (revoked/regenerated). Send the user back to the
+      // scrobbler card to re-paste a fresh token.
+      if (providerId === 'listenbrainz') {
+        const reason = authStatus.error || 'Token rejected by ListenBrainz';
+        console.error('[Sync] ListenBrainz auth failed:', reason);
+        showToast(
+          `ListenBrainz sync failed: ${reason}. Re-paste your token in Settings → Plugins.`,
+          'error',
+          { label: 'Open Settings', onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); } },
+          { duration: 8000 }
+        );
+        return;
+      }
     }
 
     // Load existing settings
@@ -10112,7 +10465,13 @@ const Parachord = () => {
         syncTracks: existingSettings?.syncTracks ?? true,
         syncAlbums: existingSettings?.syncAlbums ?? true,
         syncArtists: existingSettings?.syncArtists ?? true,
-        syncPlaylists: existingSettings?.syncPlaylists ?? true
+        syncPlaylists: existingSettings?.syncPlaylists ?? true,
+        // LB-specific opt-in: by default, do NOT auto-create LB playlists for
+        // every non-localOnly local playlist. Users enabling LB sync would
+        // otherwise get 100+ private LB playlists they never asked for.
+        // Spotify/AM keep their existing default-on behavior. Updates to
+        // already-linked playlists still propagate regardless of this flag.
+        pushLocalPlaylists: existingSettings?.pushLocalPlaylists ?? (providerId === 'listenbrainz' ? false : true)
       },
       progress: null,
       results: null,
@@ -10131,6 +10490,23 @@ const Parachord = () => {
       ...settings,
       selectedPlaylistIds: selectedPlaylists
     });
+
+    // Also update the React-state mirror of these settings. Without this, the
+    // background-sync push loop (which reads from `resolverSyncSettingsRef.current`)
+    // continues to see whatever was loaded at app startup — so newly-toggled flags
+    // like `pushLocalPlaylists` are persisted to disk but invisible to the
+    // background loop until the next app launch. The post-wizard IIFE itself is
+    // unaffected (it captures `settings` via closure), but the 15-minute background
+    // cadence needs the ref in sync.
+    setResolverSyncSettings(prev => ({
+      ...prev,
+      [providerId]: {
+        ...prev[providerId],
+        enabled: true,
+        ...settings,
+        selectedPlaylistIds: selectedPlaylists
+      }
+    }));
 
     setSyncSetupModal(prev => ({ ...prev, step: 'syncing' }));
 
@@ -10203,13 +10579,45 @@ const Parachord = () => {
               // Only skip if this playlist was pulled FROM this provider —
               // playlists pulled from a different provider must still be
               // creatable/pushable on this one for multi-provider mirroring.
-              if (playlist.syncedFrom?.resolver === providerId) continue;
-              if (playlist.id?.startsWith(`${providerId}-`)) continue;
+              // Collaborative-push-back exception applies here too; see the
+              // block comment at the background-sync push loop above (L~6297).
+              {
+                const sourceProvider = playlist.syncedFrom?.resolver;
+                if (sourceProvider === providerId) {
+                  const sourceSyncedAt = playlist.syncSources?.[sourceProvider]?.syncedAt || 0;
+                  const hasGenuineLocalEdits = playlist.locallyModified
+                    && (playlist.lastModified || 0) > sourceSyncedAt;
+                  if (!hasGenuineLocalEdits) continue;
+                  // Fall through: push back to source IS warranted (collaborative case).
+                }
+              }
+              // Defense-in-depth twin of the syncedFrom guard above; see L~6325 for
+              // the full block-comment rationale. Same collaborative-push-back exemption.
+              {
+                const idImpliesThisProvider = playlist.id?.startsWith(`${providerId}-`);
+                if (idImpliesThisProvider) {
+                  const sourceSyncedAt = playlist.syncSources?.[providerId]?.syncedAt || 0;
+                  const hasGenuineLocalEdits = playlist.locallyModified
+                    && (playlist.lastModified || 0) > sourceSyncedAt;
+                  if (!hasGenuineLocalEdits) continue;
+                  // Fall through: push back to source IS warranted (collaborative case).
+                }
+              }
               if (playlist.syncedTo?.[providerId]?.pendingAction) continue;
 
               const syncInfo = playlist.syncedTo?.[providerId];
 
               if (!syncInfo) {
+                // LB-specific opt-in. Mirrors the background-sync push loop's
+                // gate (see comment at L~6357) — must stay in lockstep with it
+                // per CLAUDE.md ("Push-loop syncedFrom guard must be
+                // provider-scoped" extends to any guard added to the loop).
+                // The wizard's pushLocalPlaylists checkbox writes through to
+                // syncSetupModal.settings, which is the `settings` destructured
+                // at L~10465 — that's what we read here.
+                if (providerId === 'listenbrainz' && settings?.pushLocalPlaylists !== true) {
+                  continue;
+                }
                 // Playlist not yet created on this provider — create it
                 console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
                 try {
@@ -13398,7 +13806,32 @@ ${trackListXml}
       return;
     }
     if (collection.type === 'playlist') {
-      showToast(openInBrowser ? 'View on Achordion isn\'t supported for playlists yet' : 'Copy link for playlists isn\'t supported yet', 'info');
+      // Playlist sharing requires a ListenBrainz MBID anchor — that's the
+      // cross-platform identifier Achordion keys its playlist-links cache on.
+      const lbMbid = collection.syncedTo?.listenbrainz?.externalId
+        || (collection.syncedFrom?.resolver === 'listenbrainz' && collection.syncedFrom.externalId);
+      if (!lbMbid) {
+        showToast(
+          'Sync this playlist to ListenBrainz first to enable sharing via Achordion.',
+          'info',
+        );
+        return;
+      }
+      let url = `https://achordion.xyz/playlist/${lbMbid}`; // fallback
+      if (window.achordion?.fetchEntityLink) {
+        const result = await window.achordion.fetchEntityLink(
+          { mbid: lbMbid },
+          { type: 'playlist' },
+        );
+        if (result.ok) url = result.url;
+      }
+      if (openInBrowser) {
+        window.electron?.shell?.openExternal?.(url);
+        showToast('Opened in browser');
+      } else {
+        await navigator.clipboard.writeText(url);
+        showToast('Link copied to clipboard!');
+      }
       return;
     }
 
@@ -14939,6 +15372,15 @@ ${trackListXml}
     }
   }, [playlistsViewMode, cacheLoaded]);
 
+  // Persist playlists sort preference (mirrors view-mode pattern; cacheLoaded
+  // gate prevents the default 'added' from clobbering the saved value during
+  // hydration before setPlaylistsSort fires).
+  useEffect(() => {
+    if (cacheLoaded && window.electron?.store) {
+      window.electron.store.set('playlists_sort', playlistsSort);
+    }
+  }, [playlistsSort, cacheLoaded]);
+
   // Persist concerts location preference (text, coords, radius)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
@@ -15737,11 +16179,7 @@ ${trackListXml}
             const track = localFilePlaybackTrackRef.current;
             const filePath = track?.filePath || track?.sources?.localfiles?.filePath || '';
             const ext = filePath.split('.').pop()?.toLowerCase();
-            if (ext === 'wav') {
-              errorMessage = 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or FLAC for playback.';
-            } else {
-              errorMessage = `This ${ext?.toUpperCase() || 'audio'} file uses an unsupported format. Try converting to MP3 or FLAC.`;
-            }
+            errorMessage = unsupportedAudioMessage(ext);
           } else if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
             errorMessage = 'Network error while loading the file. The file may have been moved or deleted.';
           } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
@@ -15881,11 +16319,7 @@ ${trackListXml}
         if (error.name === 'NotSupportedError' || error.message?.includes('no supported source')) {
           const filePath = sourceToPlay.filePath || sourceToPlay.fileUrl || '';
           const ext = filePath.split('.').pop()?.toLowerCase();
-          if (ext === 'wav') {
-            errorMessage = 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or FLAC for playback.';
-          } else {
-            errorMessage = `This ${ext?.toUpperCase() || 'audio'} file uses an unsupported format. Try converting to MP3 or FLAC.`;
-          }
+          errorMessage = unsupportedAudioMessage(ext);
         }
 
         if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`)) return;
@@ -21041,7 +21475,11 @@ ${trackListXml}
         'saved_queue', 'saved_playback_context', 'saved_shuffle_state',
         'tutorial_completed', 'whats_new_dismissed_version',
         // Loved-tracks push to LB/LFM (opt-in per service)
-        'scrobbler_love_push_enabled', 'love_pushed_keys'
+        'scrobbler_love_push_enabled', 'love_pushed_keys',
+        // In-app announcements (banner)
+        'cached_announcements', 'dismissed_announcement_ids',
+        // Playlists page sort preference
+        'playlists_sort'
       ];
       const fetchBatch = (keys) => window.electron.store.getBatch
         ? window.electron.store.getBatch(keys)
@@ -21456,6 +21894,7 @@ ${trackListXml}
       const savedRememberQueue = d['remember_queue'];
       const savedShowDiscoveryBadges = d['show_discovery_badges'];
       const savedPlaylistsViewMode = d['playlists_view_mode'];
+      const savedPlaylistsSort = d['playlists_sort'];
       const savedAiIncludeHistory = d['ai_include_history'];
       const savedBlocklist = d['recommendation_blocklist'];
       const savedResolverBlocklist = d['resolver_blocklist'];
@@ -21657,6 +22096,10 @@ ${trackListXml}
         setPlaylistsViewMode(savedPlaylistsViewMode);
         console.log('📦 Loaded playlists view mode:', savedPlaylistsViewMode);
       }
+      if (savedPlaylistsSort && typeof savedPlaylistsSort === 'string') {
+        setPlaylistsSort(savedPlaylistsSort);
+        console.log('📦 Loaded playlists sort:', savedPlaylistsSort);
+      }
 
       // Load AI include history preference
       if (savedAiIncludeHistory !== undefined) {
@@ -21768,6 +22211,17 @@ ${trackListXml}
         if (result.success && result.highlights.length > 0) {
           setWhatsNewHighlights(result.highlights);
         }
+      }
+
+      // In-app announcements: hydrate cached banner items + dismissed-id list
+      const cachedAnn = d['cached_announcements'];
+      if (cachedAnn && Array.isArray(cachedAnn.items)) {
+        setAnnouncements(cachedAnn.items);
+        console.log(`📢 Loaded ${cachedAnn.items.length} cached announcement(s)`);
+      }
+      const dismissedAnn = d['dismissed_announcement_ids'];
+      if (Array.isArray(dismissedAnn)) {
+        setDismissedAnnouncementIds(dismissedAnn);
       }
 
       // Mark cache as loaded — resolver auth checks may still be in-flight (non-blocking).
@@ -23641,7 +24095,7 @@ ${trackListXml}
   // Resolve a single track across all active resolvers
   // isQueueResolution: when true, this is a priority queue resolution that won't yield
   const resolveTrack = async (track, artistName, options = {}) => {
-    const { forceRefresh = false, isQueueResolution = false, signal, playlistId } = options;
+    const { forceRefresh = false, isQueueResolution = false, signal, playlistId, forceEnrichment = false } = options;
 
     // Validate required parameters
     if (!track || !track.title) {
@@ -23841,6 +24295,31 @@ ${trackListXml}
     // every resolver has already been tried and found nothing — don't re-query.
     const realPersistedSources = filterNoMatch(persistedSources);
     const hasRealPersistedSources = Object.keys(realPersistedSources).length > 0;
+    // Eager-enrichment gate (localfiles-specific): if the track has a
+    // localfiles source backed by a real file on disk, it's instantly
+    // playable AND a local-only track is unlikely to also exist on streaming
+    // services (Bandcamp/Spotify/AM). Treat it the same as the "all resolvers
+    // covered" case below — use persisted sources, skip burst-querying the
+    // remaining slots.
+    //
+    // Scoped specifically to localfiles (not all confidence-1.0 sources)
+    // because a confidence-1.0 Spotify match IS interesting to also try on
+    // Apple Music etc. — the user has cross-platform intent. A localfiles
+    // match is just "this file is on disk"; cross-resolver enrichment is
+    // speculative and almost always returns 0 results.
+    //
+    // For a user with 376 local FLACs + Bandcamp enabled, the old behavior
+    // fired one Bandcamp search per track at ~150ms cadence on every library
+    // load — all returning 0 results. This gate stops that burst.
+    //
+    // Speculative cross-resolver enrichment for local tracks will run
+    // separately at idle priority (see follow-up ticket).
+    const localfilesSource = realPersistedSources.localfiles;
+    const hasLocalfilesSource = !!(
+      localfilesSource
+      && !localfilesSource.noMatch
+      && (typeof localfilesSource.confidence !== 'number' || localfilesSource.confidence >= 1.0)
+    );
     if (!cacheValid && hasValidPersistedSources && !hasRealPersistedSources && missingResolvers.length === 0) {
       if (DEBUG_RESOLUTION) console.log(`📦 All persisted sources are noMatch for: ${track.title} — skipping re-resolve`);
       // Cache the all-noMatch state in memory so we don't re-check persisted sources next time
@@ -23852,7 +24331,7 @@ ${trackListXml}
       };
       return {};
     }
-    if (!cacheValid && hasRealPersistedSources && missingResolvers.length === 0) {
+    if (!cacheValid && hasRealPersistedSources && (missingResolvers.length === 0 || (hasLocalfilesSource && !forceEnrichment))) {
       if (DEBUG_RESOLUTION) console.log(`📦 Using persisted sources for: ${track.title} (sources: ${persistedResolverIds.join(', ')})`);
 
       // Re-score confidence under current calculateConfidence semantics so any
@@ -23897,7 +24376,11 @@ ${trackListXml}
       return realPersistedSources;
     }
 
-    // If we have valid persisted sources but missing resolvers, query only the missing ones
+    // If we have valid persisted sources but missing resolvers, query only the
+    // missing ones. Note: when `hasPlayableSource` is true, the use-persisted-
+    // sources branch above already returned; this only fires when no source is
+    // playable yet (e.g. all matches are 0.95 fuzzy and adding another resolver
+    // might find a 1.0 direct-ID match).
     if (!cacheValid && hasValidPersistedSources && missingResolvers.length > 0) {
       console.log(`🔍 Persisted sources found but missing ${missingResolvers.length} resolver(s), querying: ${missingResolvers.join(', ')}`);
 
@@ -37023,6 +37506,89 @@ useEffect(() => {
           style: { pointerEvents: 'auto' }
         }),
 
+        // In-app announcement banner (one at a time; dismiss surfaces next)
+        activeAnnouncements.length > 0 && (() => {
+          const ann = activeAnnouncements[0];
+          const sev = ann.severity || 'info';
+          const palette = {
+            info:    { bg: '#2563eb', fg: '#ffffff' },
+            success: { bg: '#16a34a', fg: '#ffffff' },
+            warn:    { bg: '#d97706', fg: '#ffffff' },
+            error:   { bg: '#dc2626', fg: '#ffffff' }
+          }[sev] || { bg: '#2563eb', fg: '#ffffff' };
+          // Icon/image: prefer iconUrl (https-only image), fall back to icon glyph.
+          // Image errors silently swap to the glyph (or nothing) via onError.
+          const iconUrlOk = typeof ann.iconUrl === 'string' && /^https:\/\//i.test(ann.iconUrl);
+          const iconText = typeof ann.icon === 'string' && ann.icon.length > 0 && ann.icon.length <= 4 ? ann.icon : null;
+          const iconNode = iconUrlOk
+            ? React.createElement('img', {
+                src: ann.iconUrl,
+                alt: '',
+                referrerPolicy: 'no-referrer',
+                onError: (e) => { try { e.currentTarget.style.display = 'none'; } catch (_) {} },
+                style: { width: '20px', height: '20px', flexShrink: 0, marginTop: '1px', borderRadius: '4px', objectFit: 'cover' }
+              })
+            : iconText
+              ? React.createElement('div', {
+                  style: { fontSize: '16px', lineHeight: '20px', flexShrink: 0, marginTop: '1px' }
+                }, iconText)
+              : null;
+          return React.createElement('div', {
+            key: ann.id,
+            className: 'flex items-start gap-3 px-4 py-2.5 flex-shrink-0',
+            style: {
+              backgroundColor: palette.bg,
+              color: palette.fg,
+              fontSize: '13px',
+              marginTop: isMac ? '32px' : 0
+            }
+          },
+            iconNode,
+            React.createElement('div', { className: 'flex-1 min-w-0' },
+              React.createElement('div', { style: { fontWeight: 600 } }, ann.title),
+              ann.body && React.createElement('div', { style: { opacity: 0.9, marginTop: '2px' } }, ann.body)
+            ),
+            ann.cta && ann.cta.url && /^https?:\/\//i.test(ann.cta.url) && React.createElement('button', {
+              onClick: () => {
+                recordAnnouncementEvent(ann.id, 'cta-click');
+                if (window.electron?.shell?.openExternal) {
+                  window.electron.shell.openExternal(ann.cta.url);
+                } else {
+                  window.open(ann.cta.url, '_blank', 'noopener,noreferrer');
+                }
+              },
+              style: {
+                padding: '4px 12px',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                borderRadius: '6px',
+                color: palette.fg,
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0
+              }
+            }, ann.cta.label),
+            React.createElement('button', {
+              onClick: () => dismissAnnouncement(ann.id),
+              'aria-label': 'Dismiss announcement',
+              title: 'Dismiss',
+              style: {
+                background: 'transparent',
+                border: 'none',
+                color: palette.fg,
+                opacity: 0.85,
+                cursor: 'pointer',
+                padding: '0 4px',
+                fontSize: '18px',
+                lineHeight: 1,
+                flexShrink: 0
+              }
+            }, '×')
+          );
+        })(),
+
     // External Track Prompt Modal - refined styling
     showExternalPrompt && pendingExternalTrack && React.createElement('div', {
       className: 'fixed inset-0 flex items-center justify-center z-50',
@@ -41549,7 +42115,25 @@ useEffect(() => {
                 textTransform: 'uppercase'
               },
               onContextMenu: copyParachordLink
-            }, selectedPlaylist.title)
+            }, selectedPlaylist.title),
+            // SHARED badge — appears when the user is a collaborator on a
+            // synced playlist (currently only LB exposes this).
+            selectedPlaylist.syncedFrom?.isCollaborator === true && React.createElement('span', {
+              className: 'shared-playlist-badge',
+              title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+              style: {
+                fontSize: '10px',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                backgroundColor: 'var(--accent-secondary, #6366f1)',
+                color: 'var(--accent-secondary-fg, #fff)',
+                fontWeight: 600,
+                marginLeft: '6px',
+                display: 'inline-block',
+                verticalAlign: 'middle',
+                letterSpacing: '0.05em'
+              }
+            }, 'SHARED')
           )
         ),
 
@@ -43220,7 +43804,25 @@ useEffect(() => {
                         color: 'var(--text-primary)',
                         marginTop: '6px'
                       }
-                    }, playlist.title),
+                    },
+                      playlist.title,
+                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
+                        className: 'shared-playlist-badge',
+                        title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+                        style: {
+                          fontSize: '10px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: 'var(--accent-secondary, #6366f1)',
+                          color: 'var(--accent-secondary-fg, #fff)',
+                          fontWeight: 600,
+                          marginLeft: '6px',
+                          display: 'inline-block',
+                          verticalAlign: 'middle',
+                          letterSpacing: '0.05em'
+                        }
+                      }, 'SHARED')
+                    ),
                     React.createElement('div', {
                       className: 'truncate',
                       style: {
@@ -43363,7 +43965,25 @@ useEffect(() => {
                   ),
                   // Playlist name
                   React.createElement('div', { className: 'flex-1 min-w-0' },
-                    React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' }, playlist.title),
+                    React.createElement('div', { className: 'font-medium text-gray-900 truncate group-hover:text-green-600 transition-colors' },
+                      playlist.title,
+                      playlist.syncedFrom?.isCollaborator === true && React.createElement('span', {
+                        className: 'shared-playlist-badge',
+                        title: "You're a collaborator on this playlist — your edits sync to other collaborators",
+                        style: {
+                          fontSize: '10px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: 'var(--accent-secondary, #6366f1)',
+                          color: 'var(--accent-secondary-fg, #fff)',
+                          fontWeight: 600,
+                          marginLeft: '6px',
+                          display: 'inline-block',
+                          verticalAlign: 'middle',
+                          letterSpacing: '0.05em'
+                        }
+                      }, 'SHARED')
+                    ),
                     playlist.creator && React.createElement('div', { className: 'text-sm text-gray-500 truncate' }, playlist.creator)
                   ),
                   // Hosted badge (only for actual hosted XSPF, not Spotify/Apple Music imports)
@@ -45588,9 +46208,18 @@ useEffect(() => {
                         flexShrink: 0
                       }
                     },
-                      React.createElement('svg', { style: { width: '16px', height: '16px' }, viewBox: pid === 'spotify' ? '0 0 24 24' : '0 0 122.88 122.88', fill: '#ffffff' },
+                      React.createElement('svg', {
+                        style: { width: '16px', height: '16px' },
+                        viewBox: pid === 'spotify' ? '0 0 24 24' : pid === 'listenbrainz' ? '0 0 146 160' : '0 0 122.88 122.88',
+                        fill: '#ffffff'
+                      },
                         pid === 'spotify'
                           ? React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+                          : pid === 'listenbrainz'
+                          ? [
+                              React.createElement('path', { key: 'r', d: 'm75.354 7.823v144l61-35v-74z' }),
+                              React.createElement('path', { key: 'l', d: 'm70.354 7.823-61 35v74l61 35z' })
+                            ]
                           : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
                       )
                     ),
@@ -53001,11 +53630,16 @@ useEffect(() => {
                           },
                             React.createElement('svg', {
                               style: { width: '12px', height: '12px' },
-                              viewBox: pid === 'spotify' ? '0 0 24 24' : '0 0 122.88 122.88',
+                              viewBox: pid === 'spotify' ? '0 0 24 24' : pid === 'listenbrainz' ? '0 0 146 160' : '0 0 122.88 122.88',
                               fill: '#ffffff'
                             },
                               pid === 'spotify'
                                 ? React.createElement('path', { d: 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z' })
+                                : pid === 'listenbrainz'
+                                ? [
+                                    React.createElement('path', { key: 'r', d: 'm75.354 7.823v144l61-35v-74z' }),
+                                    React.createElement('path', { key: 'l', d: 'm70.354 7.823-61 35v74l61 35z' })
+                                  ]
                                 : React.createElement('path', { d: 'M47.76,86.16v-38.4c0-1.44,0.8-2.32,2.4-2.64l33.12-6.72c1.76-0.32,2.72,0.48,2.88,2.4v29.28c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96c7.2-2.64,8.4-9.6,8.4-16.56V21.12c0,0,0-4.8-4.08-3.6l-40.8,8.4c0,0-3.12,0.48-3.12,4.32v48.72c0,2.4-3.6,4-10.8,4.8c-13.68,2.16-11.52,25.2,7.2,18.96C46.56,100.08,47.76,93.12,47.76,86.16z' })
                             )
                           ),
@@ -53018,7 +53652,7 @@ useEffect(() => {
                     Object.entries(syncProviderConfig).filter(([pid]) => resolverSyncSettings[pid]?.enabled).length === 0 &&
                       React.createElement('p', {
                         style: { fontSize: '13px', color: 'var(--text-tertiary)', fontStyle: 'italic' }
-                      }, 'No sync providers connected. Enable library sync for Spotify or Apple Music first.')
+                      }, 'No sync providers connected. Enable library sync for Spotify, Apple Music, or ListenBrainz first.')
                   )
                 ),
 
@@ -54798,7 +55432,7 @@ useEffect(() => {
                           const text = typeof msg.content === 'string' ? msg.content : '';
                           const truncated = text.slice(0, 500);
                           const uri = `parachord://chat?prompt=${encodeURIComponent(truncated)}`;
-                          const link = `https://parachord.com/go?uri=${encodeURIComponent(uri)}`;
+                          const link = `https://achordion.xyz/go?uri=${encodeURIComponent(uri)}`;
                           navigator.clipboard?.writeText(link).then(() => {
                             showToast('Copied shareable prompt link!', 'success');
                           }).catch(() => {
@@ -61245,7 +61879,48 @@ useEffect(() => {
                   ).length === 0 && React.createElement('div', {
                     style: { textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)', fontSize: '13px' }
                   }, syncSetupModal.playlistFilter === 'owned' ? 'No playlists created by you' : 'No playlists you\'re following')
+                ),
+            // LB-only opt-in to also auto-create new LB playlists for every
+            // local Parachord playlist that doesn't yet have an LB mirror.
+            // Default OFF so a fresh LB connection doesn't dump 100+ private
+            // playlists onto the user's LB account. Already-linked playlists
+            // (with syncedTo.listenbrainz) keep getting update pushes
+            // regardless. Spotify/AM don't render this — their behavior is
+            // unchanged.
+            syncSetupModal.providerId === 'listenbrainz' && React.createElement('label', {
+              className: 'flex items-start gap-3 cursor-pointer transition-colors',
+              style: {
+                marginTop: '8px',
+                padding: '14px 16px',
+                backgroundColor: syncSetupModal.settings.pushLocalPlaylists ? `${syncProviderConfig.listenbrainz?.color || '#353070'}10` : 'var(--hover-bg-default)',
+                borderRadius: '12px',
+                border: syncSetupModal.settings.pushLocalPlaylists ? `1px solid ${syncProviderConfig.listenbrainz?.color || '#353070'}4D` : '1px solid var(--border-subtle)'
+              }
+            },
+              React.createElement('input', {
+                type: 'checkbox',
+                checked: !!syncSetupModal.settings.pushLocalPlaylists,
+                onChange: (e) => setSyncSetupModal(prev => ({
+                  ...prev,
+                  settings: { ...prev.settings, pushLocalPlaylists: e.target.checked }
+                })),
+                style: {
+                  width: '18px',
+                  height: '18px',
+                  marginTop: '2px',
+                  accentColor: syncProviderConfig.listenbrainz?.color || '#353070',
+                  cursor: 'pointer',
+                  flexShrink: 0
+                }
+              }),
+              React.createElement('div', null,
+                React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Push my Parachord playlists to ListenBrainz'),
+                React.createElement('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.4' } },
+                  'Creates new LB playlists for any Parachord playlist not already synced. ',
+                  'Default off — your existing LB playlists are unaffected, and already-linked playlists still receive updates.'
                 )
+              )
+            )
           ),
 
           // Syncing step

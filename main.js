@@ -1570,6 +1570,9 @@ if (!gotTheLock) {
 app.whenReady().then(() => {
   console.log('=== Electron App Starting ===');
 
+  // Begin periodic in-app announcements fetch
+  startAnnouncementsPolling();
+
   // Register as default handler for parachord:// protocol
   if (process.defaultApp) {
     if (process.argv.length >= 2) {
@@ -2540,6 +2543,9 @@ const ALLOWED_STORE_KEYS = new Set([
   'suppressed_sync_playlists',
   'theme_preference',
   'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version',
+  'cached_announcements', 'dismissed_announcement_ids',
+  'playlists_sort',
+  'hidden_friend_keys',
 ]);
 
 // Sensitive keys that should only be accessed by dedicated IPC handlers
@@ -2603,6 +2609,163 @@ ipcMain.handle('store-delete', (event, key) => {
   }
   store.delete(key);
   return true;
+});
+
+// ─── In-app announcements ────────────────────────────────────────────────────
+// Polls a public JSON file on achordion.xyz for product announcements
+// (banner notifications). The fetched payload is cached in electron-store
+// (`cached_announcements`); user dismissals are tracked by id in
+// `dismissed_announcement_ids`. The renderer reads both via existing
+// store IPC. Refreshes are pushed via the `announcements:updated` event.
+//
+// Schema (announcements.json):
+//   [
+//     {
+//       "id": "2026-05-08-launch-discord",   // required, stable; dismissals key off this
+//       "severity": "info" | "success" | "warn" | "error",   // default 'info'
+//       "title": "string",                    // required
+//       "body":  "string",                    // optional
+//       "icon":  "📡",                         // optional — emoji or short glyph (≤4 chars)
+//       "iconUrl": "https://...png",          // optional — small image (https only); preferred over icon
+//       "cta":   { "label": "string", "url": "https://..." }, // optional
+//       "minVersion": "0.9.2",                // optional inclusive lower bound
+//       "maxVersion": "1.0.0",                // optional inclusive upper bound
+//       "expiresAt": "2026-06-01T00:00:00Z"   // optional ISO-8601
+//     }
+//   ]
+const ANNOUNCEMENTS_URL = 'https://achordion.xyz/api/announcements';
+const ANNOUNCEMENTS_INITIAL_DELAY_MS = 10 * 1000; // ~10s after launch
+// Refetch on window focus only when this much time has passed since the last
+// successful fetch — covers the "user kept the app open for days" case
+// without burning per-hour requests for installs that already restart often.
+const ANNOUNCEMENTS_FOCUS_STALE_MS = 6 * 60 * 60 * 1000; // 6h
+
+const isPlainAnnouncement = (a) => {
+  if (!a || typeof a !== 'object') return false;
+  if (typeof a.id !== 'string' || !a.id.trim()) return false;
+  if (typeof a.title !== 'string' || !a.title.trim()) return false;
+  if (a.severity != null && typeof a.severity !== 'string') return false;
+  if (a.body != null && typeof a.body !== 'string') return false;
+  if (a.icon != null) {
+    if (typeof a.icon !== 'string' || a.icon.length > 4) return false;
+  }
+  if (a.iconUrl != null) {
+    if (typeof a.iconUrl !== 'string') return false;
+    if (!/^https:\/\//i.test(a.iconUrl)) return false; // https only — banner is rendered, no mixed-content
+  }
+  if (a.cta != null) {
+    if (typeof a.cta !== 'object') return false;
+    if (typeof a.cta.label !== 'string' || typeof a.cta.url !== 'string') return false;
+    if (!/^https?:\/\//i.test(a.cta.url)) return false;
+  }
+  return true;
+};
+
+const fetchAnnouncements = async (reason = 'scheduled') => {
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetch(ANNOUNCEMENTS_URL, {
+      signal: ctrl.signal,
+      redirect: 'error',
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) returned HTTP ${res.status}`);
+      return;
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (!/json/i.test(ct)) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) returned non-JSON content-type: ${ct}`);
+      return;
+    }
+    const text = await res.text();
+    if (text.length > 64 * 1024) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) payload too large: ${text.length} bytes — ignored`);
+      return;
+    }
+    let data;
+    try { data = JSON.parse(text); }
+    catch (e) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) invalid JSON:`, e.message);
+      return;
+    }
+    if (!Array.isArray(data)) {
+      console.warn(`📢 [Announcements] Fetch (${reason}) not an array`);
+      return;
+    }
+    const items = data.filter(isPlainAnnouncement).slice(0, 20);
+    const payload = { fetchedAt: Date.now(), items };
+    store.set('cached_announcements', payload);
+    console.log(`📢 [Announcements] Fetched (${reason}): ${items.length} item(s)${data.length !== items.length ? ` (${data.length - items.length} dropped as malformed)` : ''}`);
+    BrowserWindow.getAllWindows().forEach(win => {
+      try { win.webContents.send('announcements:updated', payload); } catch (_) {}
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.warn(`📢 [Announcements] Fetch (${reason}) timed out`);
+    } else {
+      console.warn(`📢 [Announcements] Fetch (${reason}) failed:`, err && err.message ? err.message : err);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+let announcementsLastFetchAt = 0;
+let announcementsStarted = false;
+const fetchAnnouncementsTracked = async (reason) => {
+  await fetchAnnouncements(reason);
+  announcementsLastFetchAt = Date.now();
+};
+const startAnnouncementsPolling = () => {
+  if (announcementsStarted) return;
+  announcementsStarted = true;
+  // Initial fetch ~10s after launch — gives the renderer time to register
+  // the broadcast listener before main pushes the first payload.
+  setTimeout(() => fetchAnnouncementsTracked('initial'), ANNOUNCEMENTS_INITIAL_DELAY_MS);
+  // No setInterval polling. Refetch only when the window regains focus AND
+  // enough time has passed since the last fetch to be worth the round-trip.
+  app.on('browser-window-focus', () => {
+    const stale = Date.now() - announcementsLastFetchAt > ANNOUNCEMENTS_FOCUS_STALE_MS;
+    if (stale) fetchAnnouncementsTracked('focus');
+  });
+};
+
+ipcMain.handle('announcements:refresh', () => fetchAnnouncementsTracked('manual'));
+
+// Engagement telemetry posted from the renderer when a banner is viewed,
+// dismissed, or its CTA is clicked. Best-effort: errors are logged and
+// swallowed so a failed telemetry call never affects the UI.
+const ANNOUNCEMENTS_EVENT_URL = 'https://achordion.xyz/api/announcements/event';
+ipcMain.handle('announcements:record-event', async (_event, payload) => {
+  if (!payload || typeof payload.id !== 'string' || typeof payload.event !== 'string') {
+    return { ok: false, reason: 'invalid-payload' };
+  }
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch(ANNOUNCEMENTS_EVENT_URL, {
+      method: 'POST',
+      signal: ctrl.signal,
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ id: payload.id, event: payload.event })
+    });
+    if (!res.ok) {
+      console.warn(`📢 [Announcements] Event POST returned HTTP ${res.status} for ${payload.event}/${payload.id}`);
+      return { ok: false, reason: `status-${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    if (err && err.name !== 'AbortError') {
+      console.warn(`📢 [Announcements] Event POST failed for ${payload.event}/${payload.id}:`, err.message || err);
+    }
+    return { ok: false, reason: 'network' };
+  } finally {
+    clearTimeout(timeout);
+  }
 });
 
 ipcMain.handle('store-clear', async () => {
@@ -4871,6 +5034,115 @@ ipcMain.handle('sync-links:remove', async (event, localPlaylistId, providerId) =
   return { success: true };
 });
 
+// ---------------------------------------------------------------------------
+// Achordion playlist-links submission (LB-anchored mirror map)
+// ---------------------------------------------------------------------------
+//
+// After a successful LB-anchored playlist sync write (create or push), submit
+// the playlist's mirror links to Achordion's /api/playlist-links/submit. The
+// ListenBrainz MBID is the cross-platform anchor for Achordion's keyspace:
+// either Parachord pushed local→LB (so syncedTo.listenbrainz.externalId is
+// the MBID) or Parachord imported LB→local (so syncedFrom.externalId is the
+// MBID). Either path lets Achordion stitch a Spotify/Apple Music/LB mirror
+// together by the LB MBID. Submission is fire-and-forget — sync success
+// must not depend on this network call.
+//
+// Bearer token is shared with track-links/submit (plugins/achordion.axe).
+const ACHORDION_BEARER = 'parachord_rgOgj2trN2KeIovar9DYA-yOCRkxgO6KlSyAo_jHtgg';
+const ACHORDION_PLAYLIST_LINKS_URL = 'https://achordion.xyz/api/playlist-links/submit';
+
+async function pushPlaylistLinksToAchordion(localPlaylist) {
+  if (!localPlaylist) return;
+  const links = [];
+  const syncedTo = localPlaylist.syncedTo || {};
+  if (syncedTo.spotify?.externalId) {
+    links.push({
+      host: 'open.spotify.com',
+      url: `https://open.spotify.com/playlist/${syncedTo.spotify.externalId}`,
+      label: 'Spotify',
+    });
+  }
+  if (syncedTo.applemusic?.externalId) {
+    links.push({
+      host: 'music.apple.com',
+      url: `https://music.apple.com/library/playlist/${syncedTo.applemusic.externalId}`,
+      label: 'Apple Music',
+    });
+  }
+  if (syncedTo.listenbrainz?.externalId) {
+    links.push({
+      host: 'listenbrainz.org',
+      url: `https://listenbrainz.org/playlist/${syncedTo.listenbrainz.externalId}`,
+      label: 'ListenBrainz',
+    });
+  }
+  // The LB MBID is the cross-platform anchor for Achordion's keyspace.
+  // It can come from either syncedTo (Parachord pushed local→LB) or
+  // syncedFrom (Parachord imported LB→local). Either works as the key.
+  const lbMbid = syncedTo.listenbrainz?.externalId
+    || (localPlaylist.syncedFrom?.resolver === 'listenbrainz' && localPlaylist.syncedFrom.externalId);
+  if (!lbMbid || links.length === 0) return;
+
+  const payload = {
+    mbid: lbMbid,
+    name: localPlaylist.title,
+    creatorName: localPlaylist.creator || null,
+    trackCount: Array.isArray(localPlaylist.tracks) ? localPlaylist.tracks.length : undefined,
+    links,
+  };
+
+  try {
+    const res = await fetch(ACHORDION_PLAYLIST_LINKS_URL, {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ACHORDION_BEARER}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (res && res.status === 401) {
+      // Token mismatch — log and move on; do NOT escalate to user UI.
+      console.warn('[achordion] playlist-links submit returned 401 (auth) — skipping');
+      return;
+    }
+    if (res && !res.ok) {
+      console.warn(`[achordion] playlist-links submit returned HTTP ${res.status} for mbid=${lbMbid}`);
+      return;
+    }
+    console.log(`[achordion] playlist-links submitted: mbid=${lbMbid} links=${links.length}`);
+  } catch (err) {
+    console.warn('[achordion] playlist-links submit failed:', err && err.message ? err.message : err);
+  }
+}
+
+// Build a localPlaylist-shaped object for pushPlaylistLinksToAchordion from
+// main-process state (sync_playlist_links + the just-completed write). Used
+// at the sync:create-playlist / sync:push-playlist call sites where we don't
+// have the full renderer-side playlist object.
+function buildLocalPlaylistMirrorContext({ localPlaylistId, providerId, externalId, name, tracks, syncedFromOverride }) {
+  // Start with all known mirrors from the durable link map.
+  const allLinks = (localPlaylistId && getSyncLinks()[localPlaylistId]) || {};
+  const syncedTo = {};
+  for (const [pid, entry] of Object.entries(allLinks)) {
+    if (entry?.externalId) {
+      syncedTo[pid] = { externalId: entry.externalId };
+    }
+  }
+  // Overlay the just-written link in case sync_playlist_links hasn't been
+  // updated yet for this op (defense-in-depth).
+  if (providerId && externalId) {
+    syncedTo[providerId] = { externalId };
+  }
+  return {
+    title: name,
+    tracks: Array.isArray(tracks) ? tracks : [],
+    syncedTo,
+    syncedFrom: syncedFromOverride || null,
+    creator: null,
+  };
+}
+
 // Relink orphaned local playlists to matching remotes by name.
 //
 // A local playlist is "orphaned" for a provider when:
@@ -5130,7 +5402,8 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
   try {
     const providers = {
       spotify: require('./sync-providers/spotify'),
-      applemusic: require('./sync-providers/applemusic')
+      applemusic: require('./sync-providers/applemusic'),
+      listenbrainz: require('./sync-providers/listenbrainz')
     };
 
     const provider = providers[providerId];
@@ -5151,6 +5424,11 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
       if (developerToken && userToken) {
         token = JSON.stringify({ developerToken, userToken });
       }
+    } else if (providerId === 'listenbrainz') {
+      // LB user token lives in the scrobbler-side config, not a separate
+      // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
 
     if (!token) {
@@ -5628,6 +5906,14 @@ ipcMain.handle('sync:check-auth', async (event, providerId) => {
           : 'Missing user token (please reconnect Apple Music)';
       return { authenticated: false, error: reason };
     }
+  } else if (providerId === 'listenbrainz') {
+    // LB user token lives in the scrobbler-side config, not a separate
+    // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
+    if (!token) {
+      return { authenticated: false, error: 'No ListenBrainz user token configured (set it in the ListenBrainz scrobbler settings)' };
+    }
   }
 
   if (!token) {
@@ -5662,6 +5948,9 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
   }
 
   if (!token) {
@@ -5850,7 +6139,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 resolver: providerId,
                 externalId: remotePlaylist.externalId,
                 snapshotId: remotePlaylist.snapshotId,
-                ownerId: remotePlaylist.ownerId
+                ownerId: remotePlaylist.ownerId,
+                isCollaborator: !!remotePlaylist.isCollaborator
               },
               hasUpdates: false,
               locallyModified: false,
@@ -5867,23 +6157,125 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
             // Existing playlist - update metadata and check for track updates
             const idx = currentPlaylists.findIndex(p => p.id === localPlaylist.id);
             if (idx >= 0) {
+              // Hoisted re-read: pick up any concurrent renderer writes for
+              // this playlist BEFORE deciding short-circuit vs. full branch.
+              // Without this, the short-circuit below would use the L6090
+              // snapshot and clobber a concurrent renderer edit (e.g. user
+              // removed a track) at end-of-loop store.set. electron-store
+              // caches the parsed array, so this read is near-free.
+              //
+              // The full branch keeps its own inner re-read (post-
+              // fetchPlaylistTracks) to cover the narrower window of a
+              // concurrent edit during the track-fetch IPC. Both reads are
+              // defensive; both are cheap.
+              {
+                const freshPlaylists = store.get('local_playlists') || [];
+                const freshPlaylist = freshPlaylists.find(p => p.id === localPlaylist.id);
+                if (freshPlaylist) {
+                  currentPlaylists[idx] = freshPlaylist;
+                }
+              }
+
+              // Short-circuit unchanged playlists (parachord#796). When the
+              // playlist hasn't drifted on either side AND no metadata backfill
+              // is pending AND owner/collaborator state is stable, skip the
+              // spread-rewrite work and just bump syncedAt. This shrinks the
+              // in-memory mutation footprint of a steady-state sync (where
+              // most selected playlists haven't actually changed) and keeps
+              // the staleness timestamp accurate for #800's oldest-stale-first
+              // sort. Modest CPU win; the bigger sync-perf levers are in
+              // #797 (resolver concurrency) and #798 (push-loop idle deferral).
+              if (SyncEngine.canShortCircuitPlaylistUpdate({
+                localPlaylist: currentPlaylists[idx],
+                remotePlaylist,
+                providerId
+              })) {
+                const cur = currentPlaylists[idx];
+                currentPlaylists[idx] = {
+                  ...cur,
+                  syncSources: {
+                    ...cur.syncSources,
+                    [providerId]: {
+                      ...cur.syncSources?.[providerId],
+                      syncedAt: Date.now()
+                    }
+                  }
+                };
+                continue;
+              }
+
               const hasTrackUpdates = localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
               const existingTracks = currentPlaylists[idx].tracks || [];
               const isEmpty = existingTracks.length === 0;
 
-              if (hasTrackUpdates) {
-                console.log(`[Sync] Playlist has updates: ${remotePlaylist.name}`);
-              }
+              // Determine whether this provider is the canonical pull source.
+              // Two categories of "not the pull source" silence the log:
+              //   1. Cross-provider push mirrors (syncedFrom.resolver points to
+              //      a different provider; matched via syncedTo[providerId]) —
+              //      snapshotIds aren't comparable across services.
+              //   2. Locally-created push mirrors (syncedFrom undefined; matched
+              //      via syncedTo[providerId]) — there's no pull source at all.
+              // Only when syncedFrom.resolver STRICTLY matches the provider does
+              // this provider own the pull contract; that's the only case where
+              // "has updates" carries meaning. (Note: the downstream isOwnPullSource
+              // check still uses the permissive form to preserve first-time-link
+              // semantics for state writes; the log just needs to be stricter.)
+              const preRefreshIsOwnPullSource = localPlaylist.syncedFrom?.resolver === providerId;
 
-              // Refetch tracks if the playlist is empty (e.g. from a previously
-              // failed sync that saved the playlist shell without tracks) —
-              // but only if we're the canonical pull source. Cross-provider
-              // push mirrors (matched via syncedTo[providerId].externalId but
-              // with syncedFrom pointing at a different provider) get their
-              // tracks from that other provider's pull; refetching from here
-              // would overwrite them and break round-trip mirroring.
-              const preRefreshIsOwnPullSource = !localPlaylist.syncedFrom?.resolver
-                || localPlaylist.syncedFrom.resolver === providerId;
+              // Snapshot-divergence suppression covers two distinct cases
+              // where "snapshotIds differ" does NOT mean "content drifted":
+              //
+              // 1. **AM snapshotId churn** (any provider's pull source). AM
+              //    re-issues snapshotIds for editorial / system playlists
+              //    ("My Shazam Tracks", curated picks, Rewind / Radio
+              //    Paradise / NTS-style hosted feeds) even when the tracklist
+              //    hasn't changed. Use track-count as a cheap content
+              //    fingerprint: same count = treat as unchanged, adopt the
+              //    new snapshotId silently. Tradeoff: miss the rare "AM
+              //    swapped one track for another, same count" case. For
+              //    user-owned playlists that's vanishingly rare; for
+              //    editorial playlists the user can refresh manually if
+              //    they suspect drift.
+              //
+              //    **Scoped to AM only.** Spotify's snapshotId is rock-solid;
+              //    its algorithmic / 3rd-party-rotated playlists (Daily Brew
+              //    via SmartPlaylists, Discover Weekly, Release Radar) keep
+              //    a FIXED track count with rotating content — applying
+              //    count-match there would silently suppress legitimate
+              //    daily updates. LB's snapshot anchor
+              //    (extension.last_modified_at) is similarly reliable.
+              //
+              // 2. **Heal-induced null snapshot** (all providers). The
+              //    startup heal `healImportedSyncedFromMismatch` (main.js,
+              //    runs every launch) nulls syncedFrom.snapshotId when
+              //    restoring a corrupted resolver field — the contract is
+              //    "next sync from the canonical provider repopulates."
+              //    Without this branch, every post-heal sync would flag
+              //    these playlists "has updates" forever (stillHasUpdates
+              //    stays true → snapshotId never advances → next sync sees
+              //    same diff). Adopt silently to honor the heal contract.
+              //    Tradeoff: lose the signal for any content drift that
+              //    happened BETWEEN the corruption and the heal. Accepted
+              //    because (a) heal runs on every launch — drift window is
+              //    bounded, (b) the alternative is perpetual log spam and
+              //    permanently-set hasUpdates flags on a fleet of playlists
+              //    the user already isn't reviewing.
+              const localSnapPresent = !!localPlaylist.syncedFrom?.snapshotId;
+              const isHealInducedNull = !localSnapPresent;
+              const isAmCountChurnMatch =
+                providerId === 'applemusic'
+                && remotePlaylist.trackCount != null
+                && existingTracks.length === remotePlaylist.trackCount;
+              const silentlyAdopt = isHealInducedNull || isAmCountChurnMatch;
+
+              if (preRefreshIsOwnPullSource && hasTrackUpdates && !silentlyAdopt) {
+                // Surface both counts so we can tell whether AM is reporting a
+                // changed count vs missing trackCount vs same-count-but-different-snapshot.
+                console.log(`[Sync] Playlist has updates: ${remotePlaylist.name} (local=${existingTracks.length}, remote=${remotePlaylist.trackCount ?? 'NULL'}, localSnap=${(localPlaylist.syncedFrom?.snapshotId || '').slice(0,12) || 'NULL'}, remoteSnap=${(remotePlaylist.snapshotId || '').slice(0,12) || 'NULL'})`);
+              } else if (preRefreshIsOwnPullSource && hasTrackUpdates && silentlyAdopt) {
+                const reason = isHealInducedNull ? 'heal-induced null snapshot' : `track count matches: ${existingTracks.length}`;
+                console.log(`[Sync] Adopting remote snapshotId for "${remotePlaylist.name}" (${reason})`);
+              }
               let tracks = existingTracks;
               if (isEmpty && preRefreshIsOwnPullSource) {
                 console.log(`[Sync] Playlist "${remotePlaylist.name}" has 0 tracks, refetching...`);
@@ -5925,8 +6317,21 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // Re-check after refresh — the user may have already pulled this update.
               // Only meaningful when we're the pull source; otherwise snapshotIds
               // come from different providers and aren't comparable.
+              //
+              // Same two-arm suppression as the earlier log-firing decision
+              // (heal-induced null snapshot, AM track-count churn). Counting
+              // from current.tracks (not existingTracks) picks up the case
+              // where a previously-empty playlist just got refilled in the
+              // isEmpty branch above.
+              const freshIsHealInducedNull = !current.syncedFrom?.snapshotId;
+              const freshIsAmCountChurnMatch =
+                providerId === 'applemusic'
+                && remotePlaylist.trackCount != null
+                && (current.tracks?.length || 0) === remotePlaylist.trackCount;
+              const freshSilentlyAdopt = freshIsHealInducedNull || freshIsAmCountChurnMatch;
               const stillHasUpdates = isOwnPullSource
-                && current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
+                && current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId
+                && !freshSilentlyAdopt;
 
               // If we backfilled tracks for a previously-empty playlist AND
               // the playlist is mirrored to providers other than this one, the
@@ -5960,7 +6365,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                       resolver: providerId,
                       externalId: remotePlaylist.externalId,
                       snapshotId: stillHasUpdates ? current.syncedFrom?.snapshotId : remotePlaylist.snapshotId,
-                      ownerId: remotePlaylist.ownerId
+                      ownerId: remotePlaylist.ownerId,
+                      isCollaborator: !!remotePlaylist.isCollaborator
                     }
                   : current.syncedFrom,
                 hasUpdates: stillHasUpdates ? true : current.hasUpdates,
@@ -6080,6 +6486,9 @@ ipcMain.handle('sync:fetch-playlists', async (event, providerId) => {
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
   }
 
   if (!token) {
@@ -6118,6 +6527,9 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
   }
 
   if (!token) {
@@ -6181,6 +6593,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     if (developerToken && userToken) {
       token = JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    token = cfg.userToken || null;
   }
 
   if (!token) {
@@ -6234,6 +6649,36 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
 
     // Push track changes
     const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token);
+
+    // Fire-and-forget: if this push touched an LB-anchored playlist (either
+    // we just pushed to LB, OR the local has an LB mirror via sync_playlist_links),
+    // tell Achordion about the playlist's mirror set. Look up the local
+    // playlist id by reverse-scanning sync_playlist_links.
+    try {
+      let localPlaylistId = null;
+      const allLinks = getSyncLinks();
+      for (const [lpId, byProvider] of Object.entries(allLinks)) {
+        if (byProvider?.[providerId]?.externalId === playlistExternalId) {
+          localPlaylistId = lpId;
+          break;
+        }
+      }
+      const lbInvolved = providerId === 'listenbrainz'
+        || (localPlaylistId && allLinks[localPlaylistId]?.listenbrainz?.externalId);
+      if (lbInvolved) {
+        const ctx = buildLocalPlaylistMirrorContext({
+          localPlaylistId,
+          providerId,
+          externalId: playlistExternalId,
+          name: metadata?.name,
+          tracks,
+        });
+        pushPlaylistLinksToAchordion(ctx);
+      }
+    } catch (e) {
+      console.warn('[achordion] post-push submit prep failed:', e && e.message ? e.message : e);
+    }
+
     return { success: true, snapshotId: result.snapshotId };
   } catch (error) {
     // Detect remote playlist deletion (404)
@@ -6273,6 +6718,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       if (developerToken && userToken) {
         token = JSON.stringify({ developerToken, userToken });
       }
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
 
     if (!token) {
@@ -6306,6 +6754,21 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         setSyncLink(localPlaylistId, providerId, existing.externalId);
       }
       console.log(`[Sync] Linked "${name}" to existing ${providerId} playlist ${existing.externalId} (via ${source})`);
+
+      // Fire-and-forget Achordion playlist-links submit when LB is involved.
+      const lbInvolved = providerId === 'listenbrainz'
+        || (localPlaylistId && getSyncLinks()[localPlaylistId]?.listenbrainz?.externalId);
+      if (lbInvolved) {
+        const ctx = buildLocalPlaylistMirrorContext({
+          localPlaylistId,
+          providerId,
+          externalId: existing.externalId,
+          name,
+          tracks,
+        });
+        pushPlaylistLinksToAchordion(ctx);
+      }
+
       return {
         success: true,
         externalId: existing.externalId,
@@ -6416,6 +6879,23 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         }
       }
 
+      // Fire-and-forget: tell Achordion about this playlist's mirror set if
+      // LB is involved. Either the just-created remote IS the LB MBID, or
+      // we have a stored LB link for this local playlist via sync_playlist_links.
+      const lbInvolved = providerId === 'listenbrainz'
+        || (localPlaylistId && getSyncLinks()[localPlaylistId]?.listenbrainz?.externalId);
+      if (lbInvolved) {
+        const ctx = buildLocalPlaylistMirrorContext({
+          localPlaylistId,
+          providerId,
+          externalId,
+          name,
+          tracks,
+        });
+        // Do NOT await — fire-and-forget.
+        pushPlaylistLinksToAchordion(ctx);
+      }
+
       return {
         success: true,
         externalId,
@@ -6447,6 +6927,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       if (developerToken && userToken) {
         token = JSON.stringify({ developerToken, userToken });
       }
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
 
     if (!token) {
@@ -6494,6 +6977,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       // Apple Music token refresh: try to fetch a fresh user token via the
       // native MusicKit bridge when a 401 occurs (expired user token).
       refreshTokenCb = buildAppleMusicRefreshCb(token, (newToken) => { token = newToken; });
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
 
     if (!token) {
@@ -6879,6 +7365,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
       const userToken = store.get('applemusic_user_token');
       if (developerToken && userToken) token = JSON.stringify({ developerToken, userToken });
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      token = cfg.userToken || null;
     }
     if (!token) return { success: false, error: 'Not authenticated' };
 
@@ -6903,6 +7392,11 @@ function getSyncProviderToken(providerId) {
     if (developerToken && userToken) {
       return JSON.stringify({ developerToken, userToken });
     }
+  } else if (providerId === 'listenbrainz') {
+    // LB user token lives in the scrobbler-side config, not a separate
+    // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    return cfg.userToken || null;
   }
   return null;
 }

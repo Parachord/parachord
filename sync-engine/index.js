@@ -6,11 +6,13 @@
 
 const SpotifySyncProvider = require('../sync-providers/spotify');
 const AppleMusicSyncProvider = require('../sync-providers/applemusic');
+const ListenBrainzSyncProvider = require('../sync-providers/listenbrainz');
 
 // Registry of available sync providers
 const providers = {
   spotify: SpotifySyncProvider,
-  applemusic: AppleMusicSyncProvider
+  applemusic: AppleMusicSyncProvider,
+  listenbrainz: ListenBrainzSyncProvider
 };
 
 /**
@@ -282,11 +284,89 @@ const calculatePlaylistDiff = (remotePlaylists, localPlaylists, selectedIds, pro
   return { toAdd, toUpdate, toRemove, unchanged };
 };
 
+/**
+ * Decide whether the inbound playlist update branch in sync:start can be
+ * short-circuited for a given (localPlaylist, remotePlaylist, providerId).
+ *
+ * A short-circuit means: the playlist hasn't changed on either side, no
+ * metadata backfills are needed, and ownership/collaborator state is stable.
+ * The caller can skip the heavy fresh-read + spread-rewrite + isOwnPullSource
+ * recomputation work, and only bump `syncSources[providerId].syncedAt`.
+ *
+ * This is the tier-1 perf win from parachord#796 (epic #803). Real CPU
+ * savings are modest because the dominant per-iteration cost is the
+ * `store.get('local_playlists')` fresh-read for concurrent-write protection,
+ * which still has to happen for changed playlists. The win here is avoiding
+ * the spread allocation + downstream rewrite for the typical case where most
+ * selected playlists haven't drifted since the last sync, plus more accurate
+ * `syncedAt` accounting for the staleness sort in #800.
+ *
+ * Returns true ONLY if ALL of the following hold:
+ *   - snapshotIds match (no track-level updates available)
+ *   - local has tracks (not the empty-playlist refill path)
+ *   - this provider IS the canonical pull source (resolver matches)
+ *   - local snapshotId is present (not heal-induced null requiring adoption)
+ *   - remote ownerId matches local syncedFrom.ownerId
+ *   - remote isCollaborator matches local syncedFrom.isCollaborator
+ *   - local.creator is either set OR remote has nothing to backfill from
+ *   - local.source is set (no backfill needed)
+ *
+ * If any condition fails, the caller MUST fall through to the full update
+ * branch to avoid losing legitimate state updates.
+ *
+ * Pure / deterministic / no I/O. Safe to call N times per sync without cost.
+ *
+ * @param {Object} args
+ * @param {Object} args.localPlaylist - The local playlist record (pre-fresh-read).
+ * @param {Object} args.remotePlaylist - The provider's reported playlist shape.
+ * @param {string} args.providerId - The provider running this sync iteration.
+ * @returns {boolean}
+ */
+const canShortCircuitPlaylistUpdate = ({ localPlaylist, remotePlaylist, providerId }) => {
+  if (!localPlaylist || !remotePlaylist || !providerId) return false;
+
+  // Snapshots must match. This is the primary signal of "nothing changed."
+  // Mismatch handles both real updates and AM count-churn / heal-null adoption.
+  if (localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId) return false;
+
+  // Empty-tracks case routes to the refill path; cannot short-circuit.
+  const tracks = localPlaylist.tracks;
+  if (!Array.isArray(tracks) || tracks.length === 0) return false;
+
+  // Must be the canonical pull source. Cross-provider mirrors (matched via
+  // syncedTo[providerId]) and locally-created push mirrors (no syncedFrom)
+  // still need the full branch to compute isOwnPullSource correctly.
+  if (localPlaylist.syncedFrom?.resolver !== providerId) return false;
+
+  // Heal-induced null snapshot needs silent-adopt path. The equality check
+  // above would actually have passed if remote also had null/undefined, so
+  // be explicit here to keep the contract obvious and prevent false short-
+  // circuits if a provider ever starts returning null snapshotIds.
+  if (!localPlaylist.syncedFrom?.snapshotId) return false;
+
+  // Ownership / collaborator state changes need to flow into syncedFrom.
+  // Normalize via `!!` so legacy records (undefined isCollaborator) compare
+  // as false rather than triggering a spurious "state changed" branch.
+  if (localPlaylist.syncedFrom?.ownerId !== remotePlaylist.ownerId) return false;
+  const localCollab = !!localPlaylist.syncedFrom?.isCollaborator;
+  const remoteCollab = !!remotePlaylist.isCollaborator;
+  if (localCollab !== remoteCollab) return false;
+
+  // Metadata backfills. If `creator` is missing locally AND remote has an
+  // ownerName to populate it with, we'd backfill in the full branch —
+  // can't short-circuit. Same for `source`.
+  if (!localPlaylist.creator && remotePlaylist.ownerName) return false;
+  if (!localPlaylist.source) return false;
+
+  return true;
+};
+
 module.exports = {
   getProvider,
   getAllProviders,
   calculateDiff,
   applyDiff,
   syncDataType,
-  calculatePlaylistDiff
+  calculatePlaylistDiff,
+  canShortCircuitPlaylistUpdate
 };

@@ -42,6 +42,18 @@ Source selection is a **two-stage gate**: validate, then sort. Without the floor
 
 **Failure-path auto-skip in auto-advance contexts.** Near the top of `handlePlay` is `autoSkipIfAdvancing(reason)` which all 8 failure paths (No Source Found, No Enabled Source, Local Playback Error ×2, SoundCloud Not Connected, SoundCloud Playback Error ×2, Track Re-resolved) call before showing a dialog. The helper returns true when `isAdvancingTrackRef.current || spinoffModeRef.current` — i.e. handleNext is in flight, or we're inside a spinoff/radio session. In that case it logs `⏭️ Auto-skip "X" — <reason>`, marks the track's queue entry status: 'error' (no-op for spinoff-pool tracks since they aren't in the queue), schedules another `handleNext` via `setTimeout(... 600)` (after the 500ms re-entrancy lock releases), and returns true so the caller skips the dialog. User-initiated single-track plays from outside spinoff/auto-advance still surface the dialog as before. This makes radio/spinoff sessions resilient: a single unplayable track gets silently passed over instead of stopping playback with a modal.
 
+### Cross-Resolver Enrichment (Eager Gate + Slow Trickle)
+
+When a track has a persisted source from one resolver but is missing slots for other enabled resolvers, `resolveTrack` (app.js ~L23809) has two complementary code paths for filling those missing slots. The split exists because of a real performance regression — a user with 376 local FLACs and Bandcamp enabled saw ~1 minute of pinwheel + constant CPU on every library navigation, because library-page navigation tagged 374 tracks at page-priority and the scheduler walked them all firing Bandcamp searches that returned 0 every time.
+
+**Eager gate (foreground, in-handler):** If the persisted sources include a `localfiles` source with no `noMatch` flag and confidence ≥ 1.0, the missing-resolver fill is skipped entirely. Localfiles confidence-1.0 means "this file exists on disk and plays" — cross-resolver enrichment for it is speculative (the user's obscure Japanese reggae rip is unlikely to also be on Bandcamp) and the burst pattern destroys UX. **Scoped specifically to `localfiles`**, not all confidence-1.0 sources: a confidence-1.0 Spotify match (cached spotifyId from sync) DOES carry cross-platform intent — those still fire the eager fill, because finding the matching Apple Music ID is useful.
+
+**Slow trickle (background, separate useEffect):** A setInterval-driven loop walks `collectionTracksRef.current` looking for tracks with at least one real source but missing some enabled non-localfiles resolver. Fires `resolveTrack(..., { forceEnrichment: true })` on at most one candidate every 10 seconds, ONLY while the window is unfocused (mirroring the "do work while user is away" principle from background sync). The `forceEnrichment` option flips the gate inside resolveTrack so the same fill code path runs, just stretched over hours instead of seconds. Per-session `enrichmentAttemptedRef: Set<trackId>` prevents re-trying within a launch; cross-launch dedup is handled by the existing `noMatch` sentinel persistence in `cache_track_sources`.
+
+This split preserves the Achordion contribution path: local-only listeners playing tracks that DO exist on streaming services eventually get those mappings resolved (during background time) and submitted to Achordion's match cache. See [parachord#791](https://github.com/Parachord/parachord/issues/791) for the polish backlog (negative cache per-(resolver, artist), telemetry, integration with ResolutionScheduler vs the parallel setInterval).
+
+**Critical placement note:** the slow-trickle useEffect references `cacheLoaded` in its dep array, so it MUST live AFTER the `useState` line that declares `cacheLoaded` (~L9066). It's intentionally separated from its logical sibling (the background-sync useEffect around L6177) for this reason. See the placement comment in app.js and the React useEffect TDZ note in [Common Patterns](#common-patterns).
+
 ### Spotify Playback Modes
 - **Browser (Web Playback SDK)**: In-app streaming, `streamingPlaybackActiveRef.current = true`
 - **Spotify Connect** (`playOnSpotifyConnect`, L32465): Controls external Spotify clients via REST API (`/v1/me/player` endpoints)
@@ -136,11 +148,32 @@ All remote-playlist writes flow through the `sync:create-playlist` IPC handler (
 
 Only if all three fail does `provider.createPlaylist` actually create a new remote. On success, both `sync_playlist_links` and the caller's `syncedTo` must be populated.
 
+### Background Sync Cadence
+
+Three triggers fire `runBackgroundSync` (app.js, ~L6177 `useEffect`). The function takes an optional `{ minStaleness }` so the per-provider `lastSyncAt < threshold` gate can be tightened or relaxed without forking the function body.
+
+| Trigger | Cadence | Staleness gate | Why |
+|---|---|---|---|
+| Initial | 60s after app start | 15 min | Catch playlists that changed while the app was closed; delayed so the renderer is interactive first. |
+| Timer | every 15 min | 15 min | Floor cadence — runs regardless of focus state. |
+| Window **blur** | 30s after losing focus, cancelled if user returns first | **5 min** (tighter) | Heavy work happens while the user is away. They come back to fresh state with zero on-resume cost. |
+
+**Do NOT trigger on foreground / focus.** An earlier iteration fired sync on `onForeground` to catch the "left app open all day, walk back" case. Net effect: ~35 seconds of IPC churn (multi-provider library fetch + 142 playlists × 250ms inter-IPC delay) started exactly when the user wanted the app responsive. Visible pinwheel + CPU spike on resume, force-quit territory. Inverted to `onBackground` — heavy work now happens during the user's absence, not their return.
+
+Two-layer dedup keeps blur-triggered runs cheap:
+
+- **Outer (blur path only):** 30s `setTimeout` that the foreground handler cancels — prevents sync from firing on brief Cmd+Tab blurs.
+- **Inner (all paths):** `settings.lastSyncAt < minStaleness` — prevents redundant API calls per provider regardless of trigger.
+
+Net effect for an always-open user: blur for >30s → sync fires while they're gone, completes before they return. Blur for <30s (quick Cmd+Tab) → pending sync cancelled, never fires. Sync never coincides with active app use.
+
+The handlers use `window.electron.app.onBackground` / `onForeground` (preload bridges `app-background` / `app-foreground` IPC). No unsubscribe paths are exposed by the preload (multi-listener safe); they detach when the renderer tears down. Mid-sync foreground events are NOT cancelled — too risky to interrupt a running save — only pending `setTimeout`s. A user who returns mid-sync may still see residual IPC activity for a few seconds; accepted vs the complexity of safe cancellation.
+
 ### In-Session Mutex
 
 The renderer has **two independent code paths** that call `sync.createPlaylist` and `sync.pushPlaylist`:
 
-- Background sync timer (every 15 min, app.js L5750+)
+- Background sync timer (every 15 min, plus initial-run + focus-triggered, all sharing `runBackgroundSync` at app.js ~L6177)
 - Manual sync post-IIFE after the wizard completes (app.js L9500+)
 
 Both loops have the same structure: iterate `local_playlists`, for each one either create a remote (if no `syncedTo[providerId]`) or push updates (if `locallyModified`), then clear `locallyModified` when all mirrors are up to date. Keep them in sync — if you add a guard or branch to one, add it to the other. Without coordination they race: both read a playlist without `syncedTo`, both call `sync.createPlaylist`, both create remotes.
@@ -195,6 +228,7 @@ Flow:
 |---|---|---|
 | **Spotify** | Full replace | `PUT /playlists/{id}/tracks` replaces; subsequent batches `POST` to append for >100 tracks. |
 | **Apple Music** | Full replace via PUT (best-effort) | `updatePlaylistTracks` fetches current remote tracks to compute a diff, then issues `PUT /v1/me/library/playlists/{id}/tracks` with the full desired tracklist in the body. Apple's public API documents only POST for this resource, but Cider and similar third-party clients use PUT here for replace-all semantics. If Apple rejects PUT on the public host with 401/403/405 (consistent with Apple's stated "DELETE/PUT on library resources not supported via public API" policy, per Apple Developer Forum thread 107807), the provider flips a session kill-switch and degrades to append-only — POSTs the new additions, leaves removals on the remote. Pure-additive changes (no removals, no duplicates to collapse) skip PUT entirely and use POST since POST is the documented path. |
+| **ListenBrainz** | Clear + add | `POST /1/playlist/<mbid>/item/delete` removes all, then `POST /1/playlist/<mbid>/item/add` adds the new list in 100-track batches. No full-replace PUT exists. JSPF format on the wire; recording MBID is the per-track identifier — tracks without a resolvable MBID are skipped and surfaced via `unresolvedTracks`. |
 
 Apple Music playlist-level DELETE and PATCH (rename) are similarly documented-unsupported and return 401 in practice. `deletePlaylist` tries DELETE once and returns `{ success: false, reason: 'endpoint-unsupported', status }` on rejection — there is no rename fallback because PATCH returns the same 401. The only reliable path Cider uses for these operations is the private `amp-api.music.apple.com` host with an authority-header rewrite; Parachord has chosen not to depend on that undocumented host.
 
@@ -211,6 +245,24 @@ Consequences:
 - There is no per-track DELETE path any more; the prior `DELETE /tracks/{libraryTrackId}` implementation was based on an unverified claim. No third-party client actually uses that endpoint — Cider achieves removal by calling PUT on the parent resource with the new tracklist. Removed to avoid misleading failure modes.
 - **There is no reliable public-API path for playlist rename or full deletion.** Both return 401 on MusicKit-issued user tokens. Surface this to users as "remove it manually in the Music app" rather than retrying with PATCH.
 - Android implementations: same PUT-replace pattern, same URL/headers. DELETE/PATCH playlist endpoints will behave the same (return 401), so Android should also treat playlist deletion as best-effort.
+
+### ListenBrainz Specifics
+
+- **Token source.** The token comes from the scrobbler-side config (`scrobbler-config-listenbrainz.userToken`), NOT a separate meta-service config. Single source of truth — see "ListenBrainz auth token auto-attach" earlier in this file for the same rule on the lb-radio path.
+
+- **Default private.** `createPlaylist` hard-codes `extension['https://musicbrainz.org/doc/jspf#playlist'].public = false`. No user-facing toggle in v1. If the user makes the playlist public on listenbrainz.org directly, subsequent Parachord pushes don't override (we only set `public` on create, not on update-details).
+
+- **MBID-or-skip.** Every track pushed to LB must have a recording MBID. Tracks without one are run through the MBID Mapper (≥0.7 confidence required); unresolved tracks are collected into `syncedTo.listenbrainz.unresolvedTracks` for the UI to surface. Surfacing TBD; for v1 it's just persisted state.
+
+- **Cross-service collaboration.** LB's collaborators-extension list enables a Spotify user and an AM user to share an LB playlist where either's edits propagate via LB to both streaming services. Bob (AM user, collaborator on Alice's LB playlist) imports the playlist into his Parachord; his local edits push back to LB (via the refined push-loop guards documented elsewhere) AND to his own AM. Alice's next sync pulls his edits and pushes to her Spotify. The marquee feature.
+
+- **Snapshot proxy.** LB doesn't return a `snapshotId` per playlist. We use the JSPF extension's `last_modified_at` field (falling back to `playlist.date` only when it's missing) as the comparison anchor for `hasUpdates` detection. `playlist.date` alone would be wrong because per JSPF spec it's the creation date, not last-modified — it never advances on edits.
+
+- **Achordion playlist-links push.** After any successful sync write that touches an LB-anchored playlist (create or update), main.js fires `pushPlaylistLinksToAchordion(localPlaylist)` to `POST https://achordion.xyz/api/playlist-links/submit`. Fire-and-forget; same 401-suppression pattern as the track-links submit. The payload is keyed on the LB playlist MBID; Achordion stores it for 90 days and renders the mirror links on `/playlist/<mbid>`.
+
+- **Push-loop guard refinement.** Both the `syncedFrom`-based guard AND the id-prefix guard in the push loops (app.js, two sites each) now skip-unless-genuine-local-edits when the source provider matches the push target. The discriminator is `locallyModified && lastModified > syncSources[sourceProvider].syncedAt` (real edits, not handlePull artifact). This makes collaborative round-trip possible — without it, Bob's edits to Alice's LB-imported playlist would never push back to LB.
+
+- **Shared-playlist badge.** When `playlist.syncedFrom?.isCollaborator === true`, the UI renders a small "SHARED" pill in the playlist row (both grid and table views) AND in the detail header. Surfaces to the user that their edits propagate to other collaborators.
 
 ### Multi-Provider Mirror Propagation
 
@@ -303,6 +355,7 @@ End-to-end flow that all four enable: Android edit → Spotify remote → deskto
 - **Bulk save on Android** must guarantee `sync_playlist_links` writes are durable independently of playlist object writes (separate keys, separate transactions). The whole point of the map is to survive playlist-save bugs.
 - **Imported-playlist ID prefix is load-bearing for the heal migration.** Imported playlists use `${providerId}-${externalId}`. The startup migration `healImportedSyncedFromMismatch` (main.js, runs alongside `migrateSyncLinksFromPlaylists`) treats the ID prefix as ground truth: if `id.startsWith('spotify-')` then `syncedFrom.resolver` MUST be `spotify`, period. If it isn't, the heal restores it and demotes the wrong provider's link to `syncedTo`. Don't ever construct a `${provider}-${externalId}`-shaped ID for a playlist that wasn't imported from that provider — the heal will misread it as corruption and rewrite `syncedFrom`. Symmetric for `applemusic-` and any future provider with import support.
 - **`syncedFrom` corruption is a known regression class, not a hypothetical.** A fleet of 54 Spotify-imported playlists were observed in production with `syncedFrom.resolver` rewritten to `applemusic` (or `undefined`). Root cause was a now-fixed code path (commit `9e8b1f3` added `isOwnPullSource` gating) but corrupted state survives until healed. The startup heal in main.js is idempotent and runs every launch — if any future regression (or cross-platform sync from a buggy Android client) reintroduces the corruption, the next desktop launch silently undoes it. Don't disable the heal as "no longer needed"; it's defense-in-depth for cross-platform data consistency.
+- **Heal contract: null-snapshot silent repopulation.** The heal nulls `syncedFrom.snapshotId` when restoring a corrupted resolver field, on the contract that the next sync from the canonical provider silently adopts the live remote snapshotId. The inbound sync at `sync:start` honors this by treating `!localPlaylist.syncedFrom?.snapshotId` as a silent-adoption signal (`silentlyAdopt = isHealInducedNull || isAmCountChurnMatch`) for *all* providers — not just AM. Without this arm, post-heal playlists would flag "has updates" on every sync forever, because `stillHasUpdates` stays true → snapshotId never advances → the next sync sees the same diff. Tradeoff: lose the signal for any content drift that occurred between the corruption and the heal. Accepted because (a) heal runs on every launch so the drift window is bounded, (b) the alternative is perpetual log spam and permanently-set hasUpdates flags across a fleet of playlists the user isn't reviewing. Distinct from the AM track-count churn suppression which is Spotify-disallowed (Daily Brew via SmartPlaylists, Discover Weekly, Release Radar have fixed-count rotating content).
 
 ### Android Parity Requirements
 
@@ -477,6 +530,17 @@ Android equivalent: any place that fans out per-track catalog calls (background 
 
 The corollary: **don't make the JS-fallback or auth-failed kill-switch session-permanent.** Time-bound it (5-minute cooldown is what desktop uses now via `_appleMusicWebAuthFailedAt`). One transient catalog throttle should not permanently disable Apple Music for the rest of the session.
 
+**ListenBrainz Android parity**
+
+- Same JSPF + recording-MBID semantics. Recording MBID is mandatory for every pushed track; mapper fallback with 0.7 confidence floor.
+- Same default-private (`public: false` on create only, never override on update).
+- Token from scrobbler-side store, NOT a meta-service store.
+- Same clear-then-add update path (no full-replace PUT exists).
+- Snapshot anchor is `extension.last_modified_at || playlist.date` (NOT the other way around — `playlist.date` is creation-only).
+- Cross-service collaboration: collaborators-extension list enables write-back; Android should also refine its push-loop guards (syncedFrom + id-prefix) to allow push-back-to-source when the user has genuine local edits (`locallyModified && lastModified > syncSources[source].syncedAt`).
+- Achordion playlist-links push from Android: same endpoint, same bearer, same payload shape. Submits the LB MBID as the cross-platform anchor.
+- Shared-playlist badge: when fetched playlist has `isCollaborator: true`, surface a "SHARED" affordance in the UI.
+
 ### Track/Album/Artist Sync
 - After playback, fire-and-forget pushes to enabled sync providers
 - Checks `track.spotifyId` or `track.sources?.spotify?.spotifyId`
@@ -616,6 +680,22 @@ Without these, a user with their music library on an external drive would see th
 
 The watcher (foreground mode) listens for individual `unlink` events and deletes per-file from the DB. Chokidar may fire a flood of `unlink` events when a watched volume disappears mid-session — there's currently no batched safeguard there equivalent to the scanFolder guard. If users still report disappearance with a foreground app, look at `processFileChange('unlink', ...)` next.
 
+### Library Load Performance
+
+Big libraries (50k–150k tracks) used to freeze the app for tens of seconds during enrichment. Three changes keep load reasonable across the size range:
+
+**Sync warm-cache fast-path for album art.** `formatTrackForRenderer` (local-files/index.js) returns `file://` URLs for `folder_art_path` and the embedded-art cache file (`cache/embedded-<md5(file_path)>.{jpg,png}`) if they exist on disk — no IPC, no extraction. Tracks with already-extracted art render with art immediately on library load.
+
+**Lazy embedded-art warmup** (`enrichLocalTracksWithEmbeddedArt`, app.js ~L9100). For tracks that have embedded ID3 art or sibling `cover.jpg` but no extracted cache entry yet, an 8-way concurrency-limited background loop walks them, calls the new `localFiles:resolveArt` IPC (`resolveArtForTrack(track)` in local-files/index.js), and patches the renderer's library state in batches of 50. Runs unconditionally on every library load — costs nothing for small libraries, pays the extraction cost lazily for big ones.
+
+**Size-gated bulk MBID + Cover Art Archive enrichment.** The existing `enrichLocalTracksWithArtwork` path (MBID mapper + CAA fetch for every track) is now gated behind a 10,000-track threshold. Above that, the loop is skipped with a warning log; per-track MBID enrichment still happens lazily on play. The full big-library fix is tracked at [parachord#784](https://github.com/Parachord/parachord/issues/784); the lazy `local-art://` custom-protocol follow-up to the embedded-art work is at [parachord#787](https://github.com/Parachord/parachord/issues/787).
+
+**Library scan progress toast.** Throttled at 250ms so navigating away from the scan screen mid-import still shows scan status. Prevents the "did it freeze?" reaction.
+
+### IPC field translation for resolveArt
+
+`localFiles:resolveArt` (main.js) accepts the renderer-shaped track payload (camelCase: `filePath`, `hasEmbeddedArt`, `folderArtPath`, `musicbrainzReleaseId`, `musicbrainzArtUrl`) and translates to the snake_case the resolver expects (`file_path`, `has_embedded_art`, `folder_art_path`, etc.) before calling `service.resolveArtForTrack(dbShaped)`. The renderer-side track may strip the `local-` prefix from `id`; the handler restores it for DB lookups. Forward-compatible: passing the raw snake_case shape also works since the handler reads from both keys.
+
 ## State Persistence
 
 ### Bulk Load Pattern (L18740)
@@ -707,6 +787,50 @@ Tracks are enriched with these fields throughout the app:
 - Album art (`/ws/2/release?query=...`) — need release ID for Cover Art Archive
 - Global search (artist/album/track) — open-ended queries need MB's fuzzy search, not mapper's exact lookup
 
+## Scrobbling: inline core, plugin contract for the rest
+
+The three OAuth-based scrobblers (Last.fm, ListenBrainz, Libre.fm) live **inline** in [scrobbler-loader.js](scrobbler-loader.js) — `ScrobbleManager` plus `BaseScrobbler` and one subclass per service, all in one ~600-line file. They are NOT loaded as `.axe` plugins despite the existence of [plugins/lastfm.axe](plugins/lastfm.axe), [plugins/listenbrainz.axe](plugins/listenbrainz.axe), and [plugins/librefm.axe](plugins/librefm.axe) — those `.axe` files declare `type: "meta-service"` with `capabilities: { recommendations: true, metadata: true }` and cover only the *read* half (recommendations, library metadata). The *write* half (now-playing pings + scrobble submissions) stays inline.
+
+### Why inline for the write path
+
+1. **Code shape doesn't fit `.axe`.** A `.axe` is a JSON file whose `implementation.init` is a stringified function. That works for additive, mostly-stateless logic (Achordion's submit flow, AI providers). It's awkward for stateful 600-line classes with retry queues, OAuth state machines, persisted tokens, and protocol-callback wiring.
+
+2. **Privileged-path coupling.** Each scrobbler needs:
+   - `window.electron.proxyFetch` for token-exchange CORS bypass
+   - `electron.store` for persisted user tokens (key per provider)
+   - Protocol-handler registration for `parachord://lastfm-callback` (and friends)
+   - Polling for OAuth-completion detection (commit `a380040`)
+   - main.js IPC handlers that have to know each provider specifically (endpoint allowlist, token rotation)
+   
+   These can't be added by an `.axe` alone — main.js has to ship support, which means a desktop release ships with the scrobbler anyway. Bundling closes the loop.
+
+3. **Marketplace hot-push is wrong for load-bearing code.** A bad Achordion `.axe` push = "submit pipeline idle this session." A bad scrobbler push = "user's plays don't scrobble until next desktop release." For users who scrobble, that's the central feature — risk profile too asymmetric for the marketplace path.
+
+4. **Earlier modular attempt didn't pan out.** There's a `scrobblers/` directory + `scrobble-manager.js` (a separate older copy) still in the tree. Commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd) is the explicit consolidation: *"The app uses ScrobbleManager from scrobbler-loader.js (not the separate scrobble-manager.js file)"* — keeping two implementations in sync was a recurring source of bugs. The `scrobblers/` files are functionally dead; treat `scrobbler-loader.js` as the source of truth.
+
+### What CAN come from an `.axe`
+
+The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, scrobble, updateNowPlaying })` — public, stable. Achordion uses it via `capabilities.playbackTelemetry: true` (see Achordion Pre-resolution Plugin below). Anything that's:
+
+- Additive (a new write target — Maloja, Spotify-history-as-a-source, custom analytics)
+- Mostly stateless (no OAuth, no persistent retry queue)
+- Doesn't need new main.js IPC
+
+…can ship as a `.axe`. The capability filter + `initResolver()` invocation lives in app.js's cold-load (`initResolvers`, ~L9216) and marketplace hot-reload (`handlePluginsUpdated`, ~L9325) paths — keep those two in lockstep when adding any new playback-telemetry-shaped plugin (same rule as `withGenerate` / `withChat` / `withConcerts`).
+
+### Where to look
+
+| Concern | File |
+|---|---|
+| Track-state machine, retry queue, plugin dispatch | [scrobbler-loader.js](scrobbler-loader.js) — `ScrobbleManager` |
+| Last.fm scrobbler | [scrobbler-loader.js](scrobbler-loader.js) — `LastFmScrobbler` |
+| ListenBrainz scrobbler | [scrobbler-loader.js](scrobbler-loader.js) — `ListenBrainzScrobbler` |
+| Libre.fm scrobbler | [scrobbler-loader.js](scrobbler-loader.js) — `LibreFmScrobbler` |
+| Recommendations / library metadata for those services | `plugins/lastfm.axe`, `listenbrainz.axe`, `librefm.axe` (meta-service) |
+| Playback-telemetry plugin (Achordion) | [plugins/achordion.axe](plugins/achordion.axe) |
+| Loved-tracks push toggles + backfill | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` |
+| Stale ignore | `scrobblers/` directory and `scrobble-manager.js` — superseded by scrobbler-loader.js (see commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
+
 ## Achordion Pre-resolution Plugin
 
 `plugins/achordion.axe` — bundled, default-on. Submits confirmed-on-playback `recording-MBID → external-streaming-URL` mappings to Achordion's match cache (POST `https://achordion.xyz/api/track-links/submit`). Each entry stored 90 days with `source: "parachord"`, which outranks Achordion's own Odesli + MB url-rel lookups. Spec: [achordion AGENTS.md L484-507](../achordion/AGENTS.md). Design notes: [docs/plans/look-at-achordion-agents-md-eventual-book.md](docs/plans/look-at-achordion-agents-md-eventual-book.md). This is the **submit half**; the consume half (skip live resolver search on a cache hit) is future work pending an Achordion GET endpoint.
@@ -720,7 +844,7 @@ Tracks are enriched with these fields throughout the app:
 | `>= 0.95` (fuzzy `validateResolvedTrack` pass) | `scrobble` (at scrobble-manager threshold: ≥50% of track or 4min, whichever is sooner) | Containment-match has edge cases (Live/remix/etc); playback-duration is the evidence the match was correct. |
 | `< 0.95` | never | Already gate-dropped by `MIN_CONFIDENCE_THRESHOLD` upstream of `track.sources` (see "Match Confidence + Selection Floor"). |
 
-**Inherited filter from scrobbleManager:** tracks with `duration < 30` are excluded from both hooks (see `scrobble-manager.js` L67). Affects tier-1 too — a 25s ambient piece with a verified Spotify ID won't submit. Acceptable trade-off for using existing infrastructure; revisit if coverage matters.
+**Inherited filter from scrobbleManager:** tracks with `duration < 30` are excluded from both hooks (see [scrobbler-loader.js:75](scrobbler-loader.js)). Affects tier-1 too — a 25s ambient piece with a verified Spotify ID won't submit. Acceptable trade-off for using existing infrastructure; revisit if coverage matters.
 
 **Submission rules** (inside the plugin):
 1. Require `track.mbid`. The MBID Mapper enrichment provides it; a track that hasn't gotten a mapper hit yet at fire time is silently dropped (no retry — the next play of the same track will catch it).
@@ -736,6 +860,84 @@ Tracks are enriched with these fields throughout the app:
 **Disable path for users:** uninstall the plugin via the Plugins UI (writes to `uninstalled_resolvers`). No bespoke "Pre-resolution" toggle exists; the plugin's own `isEnabled()` returns `true` unconditionally.
 
 **Cross-platform parity.** Android client should mirror the same submit semantics if/when it adds Achordion writes — same endpoint, same bearer token (or a sibling `parachord_android_*` token if Achordion wants to distinguish), same tiered confidence gates derived from `ResolverScoring.kt`. The MBID requirement is non-negotiable on both platforms.
+
+## In-App Announcements
+
+Public banner notifications fetched from Achordion. Used to push messages (releases, Discord invite, incidents) to every Parachord install without shipping a build.
+
+### Architecture
+
+- **Source of truth:** Upstash Redis key `announcements:json` (a JSON-encoded array). Edit it via the Upstash Data Browser UI; avoid the CLI when values contain apostrophes or other shell-fighting characters (the CLI's outer single-quote breaks on inner `'`).
+- **Endpoint:** `GET https://achordion.xyz/api/announcements` ([app/api/announcements/route.ts](../../achordion/app/api/announcements/route.ts) in the achordion repo). Reads the Redis key, validates with the same zod schema the desktop client uses, returns the array. Cache headers: `public, s-maxage=60, stale-while-revalidate=600` — edits propagate within ~60s. Public, unauthenticated; gating would just be ceremony.
+- **Desktop fetcher:** main.js, ~10s after `app.whenReady()` and on `browser-window-focus` when the last fetch is older than 6h. NO setInterval polling — earlier iteration polled every 1h, dropped to launch+focus-gated to cut request volume ~95% with no behavioural loss for product announcements.
+- **Cache:** electron-store key `cached_announcements = { fetchedAt, items }`. Hydrates the renderer at bulk-load time so the banner can render before the first fetch fires. Updated on every successful fetch.
+- **Dismissals:** electron-store key `dismissed_announcement_ids = string[]`. Per-id-once. The renderer's `activeAnnouncements` filter strips dismissed/expired/version-mismatched entries; the first remaining item renders.
+
+### Schema
+
+```jsonc
+{
+  "id": "2026-05-08-launch-discord",  // required, stable; dismissals key off this
+  "title": "string",                  // required
+  "severity": "info" | "success" | "warn" | "error",  // default 'info'
+  "body": "string",                   // optional
+  "icon": "📡",                        // optional, ≤4 chars (emoji/glyph)
+  "iconUrl": "https://...png",        // optional, https-only, rendered 20×20
+  "cta": { "label": "string", "url": "https://..." },  // optional
+  "minVersion": "0.9.2",              // optional inclusive lower bound
+  "maxVersion": "1.0.0",              // optional inclusive upper bound
+  "expiresAt": "2026-06-01T00:00:00Z" // optional ISO-8601
+}
+```
+
+`iconUrl` takes precedence over `icon`; on image error the banner silently falls back to `icon` (or nothing). Multiple items: id-sort descending wins (date-prefixed ids = recency-sorted), banner shows one at a time, dismiss surfaces the next.
+
+### Per-id-once dismissal is a testing footgun
+
+Once a user dismisses id X, X never re-shows for them — even if the server re-publishes the exact same id with new content. This is correct production behaviour (a fixed, stale banner shouldn't keep appearing), but during testing it looks like "the system is broken." If a banner doesn't appear:
+
+1. Check `await window.electron.store.get('dismissed_announcement_ids')` — if your test id is in there, the filter is correctly suppressing it.
+2. Either bump the id (`-v2`, `-v3`, etc.) for each test push, OR clear the dismissed list: `await window.electron.store.set('dismissed_announcement_ids', [])`.
+
+Recommend always changing the id when iterating during dev so you exercise the same code path real users will hit.
+
+### Manual refresh
+
+`await window.electron.announcements.refresh()` (DevTools) forces a fetch regardless of the focus-stale gate. Returns the cached payload after the fetch lands. Use this during testing instead of waiting for focus or restarting.
+
+### Renderer-side diagnostic logs
+
+When `cacheLoaded` flips, the renderer logs `📢 Listener registered for announcements:updated broadcasts`. When main pushes a fresh payload, it logs `📢 Broadcast received: N item(s) [<ids>]`. Absence of either tells you which side the wiring is broken on.
+
+### Cross-process flow
+
+Main fetches → writes `cached_announcements` to electron-store → broadcasts `announcements:updated` via `webContents.send` to every BrowserWindow → renderer's `electron.announcements.onUpdated` listener fires → `setAnnouncements(payload.items)` → `activeAnnouncements` re-derives → banner re-renders. Listener registers in a `useEffect([cacheLoaded])` so it can't miss the broadcast as long as the renderer is up before the 10s mark (it always is — bulk-load completes much earlier).
+
+### Editing flow
+
+1. Upstash Console → Data Browser → key `announcements:json` → paste new JSON array → Save.
+2. Within ~60s (CDN cache), `https://achordion.xyz/api/announcements` returns the new array.
+3. Users pick it up at next launch (fast path) or on window focus after 6h (slow path), or instantly via manual refresh during testing.
+
+To clear the banner everywhere: `DEL announcements:json` or `SET announcements:json '[]'`.
+
+### Engagement telemetry
+
+Three events fire from the desktop client over the announcement's life:
+
+- **`view`** — first time the banner is painted in a session (deduped per id via `announcementViewedThisSessionRef`; re-renders, focus refetches, etc. don't double-count).
+- **`dismiss`** — user clicks the × on the banner. Fires before the dismissed-id-list write so a failed counter increment can't strand the dismissal.
+- **`cta-click`** — user clicks the CTA button. Fires before the URL opens.
+
+All three POST to `https://achordion.xyz/api/announcements/event` with `{ id, event }`. Counters are stored as a Redis hash per id: `ann:event:<id> = { view, dismiss, cta-click }`. Read in the Upstash Data Browser via `HGETALL ann:event:<id>` or via `GET https://achordion.xyz/api/announcements/event?id=<id>` which returns `{ id, view, dismiss, "cta-click" }` with absent fields normalised to 0.
+
+**Privacy:** events carry no client identifier, no version, no IP. The IP is read at the edge for rate-limiting only and never persisted. Counters are aggregate-only — there's no path to attribute a dismiss to a specific install.
+
+**Reliability:** the event POST is fire-and-forget with a 4s timeout, `redirect: 'error'`, and full error swallow. Counter writes failing never affect UI state. The endpoint accepts a 200 even when Redis is unconfigured (local dev) so the desktop client doesn't see errors during achordion development without an Upstash backend.
+
+**Rate limit:** 60/min/IP via `lib/rate-limit.ts`'s `announcement-event` kind. Real users emit at most a handful per banner shown; the limit blocks scripts trying to inflate counters.
+
+**Not captured:** time-to-dismiss, time-to-CTA, whether the user dismissed *before or after* clicking CTA, banner impression duration. Add these later if a specific question needs them — don't over-instrument speculatively.
 
 ## Plugin (`.axe`) Marketplace System
 
@@ -958,6 +1160,7 @@ If neither service returns a current track, surface "<user> is not currently lis
   - `duration: <ms>` — override the default auto-dismiss timeout. Default is 3000ms (or 6000ms when an `action` button is present). Use this when an in-flight acknowledgment toast may take longer than 3s to be replaced — e.g. protocol acknowledgments at the `parachord://` URL handler entry use `duration: 30000` so the "Loading album…" / "Loading radio…" / etc. toast holds across the resolution window (URL fetch + parse + N=2 lookahead resolve) until the success/error toast fires to replace it. Calling `showToast` again at any time replaces the current toast immediately, so a longer duration only matters when no follow-up is queued.
   - `action: { label, onClick }` — adds a button to the toast (extends default to 6000ms unless `duration` overrides).
 - **CSS variables for theming**: All colors use CSS vars, supporting light/dark themes.
+- **useEffect dep array TDZ trap**: React evaluates a `useEffect`'s deps array synchronously during render — so any variable referenced in the deps array must be declared before the `useEffect` call site in source order. The callback body itself runs after render and captures by closure, so it can freely reference later-declared `const` / function values; only the deps array is constrained. Practical implication: if you're adding a new effect that depends on, say, `cacheLoaded` (declared at app.js ~L9066), the effect must live below that line. Logical-grouping with other related effects sometimes loses to this constraint — see the Cross-Resolver Enrichment slow-trickle effect, which lives in the cacheLoaded-effects cluster (~L9818) rather than next to its sibling background-sync effect (~L6177). A leading comment at the natural placement point ("moved past the cacheLoaded declaration — see L9820") keeps future readers from being surprised.
 
 ## Releasing
 

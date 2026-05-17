@@ -5,6 +5,126 @@
  * Spotify library sync, pagination, diff calculation, rate limiting.
  */
 
+const { canShortCircuitPlaylistUpdate } = require('../../sync-engine');
+
+describe('canShortCircuitPlaylistUpdate (inbound sync optimization, see parachord#796)', () => {
+  // Helper to build a "happy path" local + remote pair where short-circuit
+  // should return true. Each test overrides the relevant field.
+  const makePair = (overrides = {}) => {
+    const local = {
+      id: 'spotify-abc123',
+      title: 'Test Playlist',
+      tracks: [{ id: 't1' }, { id: 't2' }],
+      creator: 'someuser',
+      source: 'spotify-import',
+      syncedFrom: {
+        resolver: 'spotify',
+        externalId: 'abc123',
+        snapshotId: 'snap_xyz',
+        ownerId: 'someuser',
+        isCollaborator: false
+      },
+      ...overrides.local
+    };
+    const remote = {
+      externalId: 'abc123',
+      name: 'Test Playlist',
+      snapshotId: 'snap_xyz', // matches local
+      ownerId: 'someuser',
+      ownerName: 'someuser',
+      isOwnedByUser: true,
+      isCollaborator: false,
+      trackCount: 2,
+      ...overrides.remote
+    };
+    return { local, remote, providerId: 'spotify', ...overrides.rest };
+  };
+
+  test('returns true when snapshots match, owner stable, metadata complete', () => {
+    const { local, remote, providerId } = makePair();
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(true);
+  });
+
+  test('returns false when snapshotIds differ', () => {
+    const { local, remote, providerId } = makePair({ remote: { snapshotId: 'snap_NEW' } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns false when local has no tracks (needs refill path)', () => {
+    const { local, remote, providerId } = makePair({ local: { tracks: [] } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns false when syncedFrom.resolver is a different provider (cross-provider mirror)', () => {
+    const { local, remote, providerId } = makePair({
+      local: { syncedFrom: { resolver: 'applemusic', externalId: 'abc123', snapshotId: 'snap_xyz', ownerId: 'someuser', isCollaborator: false } }
+    });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns false when local has no syncedFrom (locally-created push mirror)', () => {
+    const { local, remote, providerId } = makePair({ local: { syncedFrom: null } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns false when local snapshotId is null (heal-induced — needs silent-adopt)', () => {
+    const { local, remote, providerId } = makePair({
+      local: { syncedFrom: { resolver: 'spotify', externalId: 'abc123', snapshotId: null, ownerId: 'someuser', isCollaborator: false } }
+    });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns false when ownerId changed on remote', () => {
+    const { local, remote, providerId } = makePair({ remote: { ownerId: 'DIFFERENT_USER' } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns false when collaborator status changed on remote (false -> true)', () => {
+    const { local, remote, providerId } = makePair({ remote: { isCollaborator: true } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns false when collaborator status changed on remote (true -> false)', () => {
+    const { local, remote, providerId } = makePair({
+      local: { syncedFrom: { resolver: 'spotify', externalId: 'abc123', snapshotId: 'snap_xyz', ownerId: 'someuser', isCollaborator: true } }
+    });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns false when creator needs backfill (local null, remote has ownerName)', () => {
+    const { local, remote, providerId } = makePair({ local: { creator: null } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns true when creator is null on both sides (no backfill possible)', () => {
+    const { local, remote, providerId } = makePair({ local: { creator: null }, remote: { ownerName: null } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(true);
+  });
+
+  test('returns false when source needs backfill (local null)', () => {
+    const { local, remote, providerId } = makePair({ local: { source: null } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('returns true even when remote.isCollaborator is undefined (treated as false to match local false)', () => {
+    const { local, remote, providerId } = makePair({ remote: { isCollaborator: undefined } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(true);
+  });
+
+  test('returns false when local.syncedFrom.isCollaborator is undefined but remote is true', () => {
+    const { local, remote, providerId } = makePair({
+      local: { syncedFrom: { resolver: 'spotify', externalId: 'abc123', snapshotId: 'snap_xyz', ownerId: 'someuser' } },
+      remote: { isCollaborator: true }
+    });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+
+  test('handles missing tracks field as empty (forces full path)', () => {
+    const { local, remote, providerId } = makePair({ local: { tracks: undefined } });
+    expect(canShortCircuitPlaylistUpdate({ localPlaylist: local, remotePlaylist: remote, providerId })).toBe(false);
+  });
+});
+
 describe('Sync Engine', () => {
   describe('Provider Registration', () => {
     let syncEngine;
