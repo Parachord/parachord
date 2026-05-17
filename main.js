@@ -6157,6 +6157,53 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
             // Existing playlist - update metadata and check for track updates
             const idx = currentPlaylists.findIndex(p => p.id === localPlaylist.id);
             if (idx >= 0) {
+              // Hoisted re-read: pick up any concurrent renderer writes for
+              // this playlist BEFORE deciding short-circuit vs. full branch.
+              // Without this, the short-circuit below would use the L6090
+              // snapshot and clobber a concurrent renderer edit (e.g. user
+              // removed a track) at end-of-loop store.set. electron-store
+              // caches the parsed array, so this read is near-free.
+              //
+              // The full branch keeps its own inner re-read (post-
+              // fetchPlaylistTracks) to cover the narrower window of a
+              // concurrent edit during the track-fetch IPC. Both reads are
+              // defensive; both are cheap.
+              {
+                const freshPlaylists = store.get('local_playlists') || [];
+                const freshPlaylist = freshPlaylists.find(p => p.id === localPlaylist.id);
+                if (freshPlaylist) {
+                  currentPlaylists[idx] = freshPlaylist;
+                }
+              }
+
+              // Short-circuit unchanged playlists (parachord#796). When the
+              // playlist hasn't drifted on either side AND no metadata backfill
+              // is pending AND owner/collaborator state is stable, skip the
+              // spread-rewrite work and just bump syncedAt. This shrinks the
+              // in-memory mutation footprint of a steady-state sync (where
+              // most selected playlists haven't actually changed) and keeps
+              // the staleness timestamp accurate for #800's oldest-stale-first
+              // sort. Modest CPU win; the bigger sync-perf levers are in
+              // #797 (resolver concurrency) and #798 (push-loop idle deferral).
+              if (SyncEngine.canShortCircuitPlaylistUpdate({
+                localPlaylist: currentPlaylists[idx],
+                remotePlaylist,
+                providerId
+              })) {
+                const cur = currentPlaylists[idx];
+                currentPlaylists[idx] = {
+                  ...cur,
+                  syncSources: {
+                    ...cur.syncSources,
+                    [providerId]: {
+                      ...cur.syncSources?.[providerId],
+                      syncedAt: Date.now()
+                    }
+                  }
+                };
+                continue;
+              }
+
               const hasTrackUpdates = localPlaylist.syncedFrom?.snapshotId !== remotePlaylist.snapshotId;
               const existingTracks = currentPlaylists[idx].tracks || [];
               const isEmpty = existingTracks.length === 0;
