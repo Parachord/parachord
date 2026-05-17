@@ -267,6 +267,31 @@ const validateResolvedTrack = (result, targetArtist, targetTitle) => {
 // 0.95 (both-axis match) passes.
 const MIN_CONFIDENCE_THRESHOLD = 0.6;
 
+// Yield the renderer thread to the browser's idle scheduler. Used by the
+// sync push loops (parachord#798) to interleave per-playlist IPCs with user
+// input handling, scroll/animation frames, and other React work. Without
+// this, a sync touching 50+ playlists × ~250ms per iteration ties up the
+// renderer for tens of seconds even though the `await breathe()` already
+// yields the event loop — React's commit work that would otherwise be
+// scheduled during a sync run gets perpetually deferred behind the next
+// iteration's microtask queue. requestIdleCallback explicitly tells the
+// browser "let other queued work go first."
+//
+// The `timeout` ensures sync still makes forward progress when the renderer
+// is genuinely busy (active interaction, large reflow). 2000ms is generous
+// enough to never feel like sync is stalled, tight enough that a totally-
+// pegged renderer doesn't completely block sync.
+//
+// Falls back to `setTimeout(r, 16)` (~1 frame) on rare platforms where
+// requestIdleCallback is unavailable. Current Electron has it natively.
+const yieldToIdle = (timeoutMs = 2000) => new Promise(resolve => {
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(resolve, { timeout: timeoutMs });
+  } else {
+    setTimeout(resolve, 16);
+  }
+});
+
 // Debug flags. Render-path / resolution-path logs are gated on these so they
 // don't fire dozens-to-hundreds of times per page load in normal operation.
 // Flip to true locally when troubleshooting that subsystem; do NOT commit a
@@ -6297,6 +6322,11 @@ const Parachord = () => {
                 const breathe = () => new Promise(r => setTimeout(r, SYNC_IPC_DELAY_MS));
 
                 for (const playlist of allPlaylists) {
+                  // Yield to the renderer's idle scheduler before each
+                  // iteration so user interactions get responsive frames
+                  // even mid-sync. See parachord#798 + the `yieldToIdle`
+                  // helper at the top of this file.
+                  await yieldToIdle();
                   // Skip playlists that are local-only
                   if (playlist.localOnly) continue;
 
@@ -6493,10 +6523,14 @@ const Parachord = () => {
                   // small breath between writes so the main-process disk-IO
                   // queue doesn't starve UI-related IPCs (the pinwheel
                   // pattern). Previously this loop awaited save() on every
-                  // playlist regardless of whether it mutated.
+                  // playlist regardless of whether it mutated. Also yields
+                  // to the renderer idle scheduler before each save so
+                  // user interactions get responsive frames during the
+                  // save burst (parachord#798).
                   let saveCount = 0;
                   for (const playlist of allPlaylists) {
                     if (!modifiedPlaylistIds.has(playlist.id)) continue;
+                    await yieldToIdle();
                     await window.electron.playlists.save(playlist);
                     saveCount++;
                     if (saveCount % 5 === 0) {
@@ -10575,6 +10609,12 @@ const Parachord = () => {
             const breathe = () => new Promise(r => setTimeout(r, SYNC_IPC_DELAY_MS));
 
             for (const playlist of allPlaylists) {
+              // Yield to the renderer's idle scheduler before each iteration
+              // so user interactions get responsive frames mid-sync. See
+              // parachord#798 + the `yieldToIdle` helper at the top of this
+              // file. Mirrors the same yield in the background-sync push
+              // loop above.
+              await yieldToIdle();
               if (playlist.localOnly) continue;
               // Only skip if this playlist was pulled FROM this provider —
               // playlists pulled from a different provider must still be
@@ -10726,10 +10766,14 @@ const Parachord = () => {
 
               // Save only the playlists that actually changed, throttling
               // every 5 saves to give the main process room to service
-              // unrelated IPCs (UI rendering, etc.).
+              // unrelated IPCs (UI rendering, etc.). Also yields to the
+              // renderer idle scheduler before each save so user
+              // interactions get responsive frames during the save burst
+              // (parachord#798).
               let saveCount = 0;
               for (const playlist of allPlaylists) {
                 if (!modifiedPlaylistIds.has(playlist.id)) continue;
+                await yieldToIdle();
                 await window.electron.playlists.save(playlist);
                 saveCount++;
                 if (saveCount % 5 === 0) {
