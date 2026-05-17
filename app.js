@@ -6241,6 +6241,22 @@ const Parachord = () => {
   // without syncedTo[providerId], and both create it on the remote — producing duplicates.
   const playlistSyncInProgressRef = useRef(false);
 
+  // Cancel-on-focus infrastructure (parachord#799).
+  //
+  // `backgroundSyncInFlightRef` tracks which provider IDs currently have an
+  // in-flight `sync.start` IPC fired from `runBackgroundSync`. The
+  // foreground handler reads this to know which providers to send
+  // `sync.cancel` to — the wizard's manual sync path doesn't touch this
+  // ref, so wizard syncs are exempt from focus-cancel as designed.
+  //
+  // `backgroundSyncCancelledRef` is the within-renderer flag that the
+  // background sync provider-loop AND its push-loop iterations check
+  // between iterations. Foreground sets it true; the next iteration sees
+  // it and bails. Reset to false at the start of each new background sync
+  // run.
+  const backgroundSyncInFlightRef = useRef(new Set());
+  const backgroundSyncCancelledRef = useRef(false);
+
   useEffect(() => {
     const SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes — timer cadence + default staleness gate
     const BACKGROUND_MIN_STALENESS = 5 * 60 * 1000; // tighter staleness for background-triggered runs
@@ -6248,10 +6264,19 @@ const Parachord = () => {
     const INITIAL_DELAY = 60 * 1000; // 60 seconds — let the app fully load first
 
     const runBackgroundSync = async (opts = {}) => {
+      // Reset cancellation state for this run. The foreground handler
+      // flips this true to interrupt long-running background syncs —
+      // see parachord#799 + `backgroundSyncCancelledRef` declaration.
+      backgroundSyncCancelledRef.current = false;
       const minStaleness = typeof opts.minStaleness === 'number' ? opts.minStaleness : SYNC_INTERVAL;
       const currentSettings = resolverSyncSettingsRef.current;
       // Check each enabled provider
       for (const [providerId, settings] of Object.entries(currentSettings)) {
+        // Honor cancel-on-focus: skip remaining providers if the user came back.
+        if (backgroundSyncCancelledRef.current) {
+          console.log('[Sync] Background sync cancelled on foreground — skipping remaining providers');
+          break;
+        }
         if (settings.enabled) {
           // Skip if last sync was recent (within the staleness threshold for this run)
           if (settings.lastSyncAt && (Date.now() - settings.lastSyncAt) < minStaleness) {
@@ -6262,7 +6287,20 @@ const Parachord = () => {
             const authStatus = await window.electron.sync.checkAuth(providerId);
             if (authStatus.authenticated) {
               console.log(`[Sync] Starting background sync for ${providerId}`);
-              const result = await window.electron.sync.start(providerId, { settings });
+              // Track this provider as in-flight so the foreground handler
+              // knows to send sync.cancel for it. Cleared in `finally`
+              // regardless of how the sync resolves.
+              backgroundSyncInFlightRef.current.add(providerId);
+              let result;
+              try {
+                result = await window.electron.sync.start(providerId, { settings });
+              } finally {
+                backgroundSyncInFlightRef.current.delete(providerId);
+              }
+              if (result?.cancelled) {
+                console.log(`[Sync] ${providerId} sync cancelled mid-flight — stopping run`);
+                break;
+              }
               if (result.success) {
                 if (result.collection) {
                   // Compare incoming collection against current state before updating UI.
@@ -6322,6 +6360,13 @@ const Parachord = () => {
                 const breathe = () => new Promise(r => setTimeout(r, SYNC_IPC_DELAY_MS));
 
                 for (const playlist of allPlaylists) {
+                  // Cancel-on-focus: drop out mid-push if the user returned
+                  // (parachord#799). Anything already pushed stays; the
+                  // remainder defers to the next sync cycle.
+                  if (backgroundSyncCancelledRef.current) {
+                    console.log(`[Sync] Push loop cancelled on foreground for ${providerId}`);
+                    break;
+                  }
                   // Yield to the renderer's idle scheduler before each
                   // iteration so user interactions get responsive frames
                   // even mid-sync. See parachord#798 + the `yieldToIdle`
@@ -6530,6 +6575,13 @@ const Parachord = () => {
                   let saveCount = 0;
                   for (const playlist of allPlaylists) {
                     if (!modifiedPlaylistIds.has(playlist.id)) continue;
+                    // Cancel-on-focus also drops out of the save loop
+                    // (parachord#799). Already-saved playlists stick;
+                    // remaining defer to the next cycle.
+                    if (backgroundSyncCancelledRef.current) {
+                      console.log(`[Sync] Save loop cancelled on foreground for ${providerId} (saved ${saveCount} so far)`);
+                      break;
+                    }
                     await yieldToIdle();
                     await window.electron.playlists.save(playlist);
                     saveCount++;
@@ -6720,9 +6772,30 @@ const Parachord = () => {
       }, BACKGROUND_DELAY);
     };
     const handleForeground = () => {
+      // Cancel any pending blur-triggered sync that hasn't fired yet.
       if (pendingBackgroundSync) {
         clearTimeout(pendingBackgroundSync);
         pendingBackgroundSync = null;
+      }
+      // Cancel any in-flight background sync (parachord#799). The wizard's
+      // manual sync path doesn't add to `backgroundSyncInFlightRef`, so
+      // user-initiated syncs run to completion regardless of focus state.
+      //
+      // Two-layer cancellation:
+      //   1. Flip the renderer-side ref so the provider loop + push loop
+      //      bail at their next iteration check (cheap, no IPC).
+      //   2. Fire sync.cancel for each in-flight provider so the main
+      //      process can short-circuit its phase-by-phase inbound sync
+      //      and save partial progress.
+      if (backgroundSyncInFlightRef.current.size > 0) {
+        const inFlight = [...backgroundSyncInFlightRef.current];
+        backgroundSyncCancelledRef.current = true;
+        console.log(`[Sync] Cancelling in-flight background sync on focus: ${inFlight.join(', ')}`);
+        for (const pid of inFlight) {
+          if (window.electron?.sync?.cancel) {
+            window.electron.sync.cancel(pid).catch(() => {});
+          }
+        }
       }
     };
     if (window.electron?.app?.onBackground) {

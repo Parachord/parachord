@@ -6009,6 +6009,16 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     }
   };
 
+  // Cancellation check (parachord#799). The renderer's foreground handler
+  // fires `sync.cancel(providerId)` on window focus to interrupt long-running
+  // background syncs. This helper is checked at every phase boundary AND
+  // between playlist iterations; when it flips true we short-circuit to the
+  // save phase, preserve any progress already made (collection.json write +
+  // partial local_playlists updates), and return a `cancelled: true` result.
+  // The wizard's manual sync path is not affected — the renderer only sends
+  // cancel for syncs it started via `runBackgroundSync`.
+  const isCancelled = () => !!activeSyncs.get(providerId)?.cancelled;
+
   const fsPromises = require('fs').promises;
 
   try {
@@ -6017,6 +6027,37 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
 
     // Load current collection
     const collectionPath = path.join(app.getPath('userData'), 'collection.json');
+
+    // Build a "save-partial-and-return" helper that runs collection.json
+    // write + lastSyncAt bump + result construction. Called from every
+    // cancellation point so partial progress is durable.
+    const finalizeCancelled = async (collectionState, resultsState) => {
+      try {
+        sendProgress({ phase: 'cancelled', message: 'Sync cancelled' });
+        await fsPromises.writeFile(collectionPath, JSON.stringify(collectionState), 'utf8');
+      } catch (err) {
+        console.warn(`[Sync] Cancellation save failed for ${providerId}:`, err.message);
+      }
+      // Bump lastSyncAt even for partial syncs so the staleness gate
+      // doesn't immediately re-trigger another full run. The next cycle
+      // picks up whatever still needs work.
+      const partialSyncSettings = store.get('resolver_sync_settings') || {};
+      partialSyncSettings[providerId] = {
+        ...partialSyncSettings[providerId],
+        lastSyncAt: Date.now()
+      };
+      store.set('resolver_sync_settings', partialSyncSettings);
+      const hasChanges = Object.values(resultsState).some(r =>
+        r && ((r.added || 0) > 0 || (r.removed || 0) > 0 || (r.updated || 0) > 0)
+      );
+      console.log(`[Sync] ${providerId} cancelled — partial progress saved`);
+      return {
+        success: true,
+        cancelled: true,
+        results: resultsState,
+        collection: hasChanges ? collectionState : null
+      };
+    };
     let collection;
     try {
       const content = await fsPromises.readFile(collectionPath, 'utf8');
@@ -6046,6 +6087,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       console.log(`[Sync] Skipping tracks sync. syncTracks=${settings.syncTracks}, capabilities.tracks=${provider.capabilities.tracks}`);
     }
 
+    if (isCancelled()) return await finalizeCancelled(collection, results);
+
     // Sync albums
     if (settings.syncAlbums !== false && provider.capabilities.albums) {
       sendProgress({ phase: 'fetching', type: 'albums', message: 'Fetching saved albums...' });
@@ -6065,6 +6108,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       console.log(`[Sync] Skipping albums sync. syncAlbums=${settings.syncAlbums}, capabilities.albums=${provider.capabilities.albums}`);
     }
 
+    if (isCancelled()) return await finalizeCancelled(collection, results);
+
     // Sync artists
     if (settings.syncArtists !== false && provider.capabilities.artists) {
       sendProgress({ phase: 'fetching', type: 'artists', message: 'Fetching followed artists...' });
@@ -6083,6 +6128,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     } else {
       console.log(`[Sync] Skipping artists sync. syncArtists=${settings.syncArtists}, capabilities.artists=${provider.capabilities.artists}`);
     }
+
+    if (isCancelled()) return await finalizeCancelled(collection, results);
 
     // Sync playlists
     if (settings.syncPlaylists && settings.selectedPlaylistIds?.length > 0 && provider.capabilities.playlists) {
@@ -6104,6 +6151,19 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       let playlistsFailed = 0;
 
       for (let i = 0; i < selectedRemote.length; i++) {
+        // Per-iteration cancellation check (parachord#799). Save partial
+        // progress before bailing — currentPlaylists already holds the
+        // in-memory mutations for playlists processed so far. Skip the
+        // syncedFrom-clearing pass below since we may not have visited
+        // every selected playlist; deferring it to the next non-cancelled
+        // sync is safer than clearing based on a partial iteration.
+        if (isCancelled()) {
+          store.set('local_playlists', currentPlaylists);
+          results.playlists = { added: playlistsAdded, updated: playlistsUpdated, failed: playlistsFailed, cancelled: true, processedCount: i };
+          console.log(`[Sync] ${providerId} playlist sync cancelled at ${i}/${selectedRemote.length} — partial progress saved`);
+          return await finalizeCancelled(collection, results);
+        }
+
         const remotePlaylist = selectedRemote[i];
         sendProgress({ phase: 'playlists', current: i + 1, total: selectedRemote.length, providerId });
 

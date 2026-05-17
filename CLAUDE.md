@@ -167,7 +167,17 @@ Two-layer dedup keeps blur-triggered runs cheap:
 
 Net effect for an always-open user: blur for >30s → sync fires while they're gone, completes before they return. Blur for <30s (quick Cmd+Tab) → pending sync cancelled, never fires. Sync never coincides with active app use.
 
-The handlers use `window.electron.app.onBackground` / `onForeground` (preload bridges `app-background` / `app-foreground` IPC). No unsubscribe paths are exposed by the preload (multi-listener safe); they detach when the renderer tears down. Mid-sync foreground events are NOT cancelled — too risky to interrupt a running save — only pending `setTimeout`s. A user who returns mid-sync may still see residual IPC activity for a few seconds; accepted vs the complexity of safe cancellation.
+The handlers use `window.electron.app.onBackground` / `onForeground` (preload bridges `app-background` / `app-foreground` IPC). No unsubscribe paths are exposed by the preload (multi-listener safe); they detach when the renderer tears down.
+
+**Cancel-on-focus** (parachord#799). Mid-sync foreground events DO cancel the in-flight background sync now — earlier doc said otherwise; that note is obsolete. Two-layer mechanism:
+
+1. **Renderer side** holds `backgroundSyncInFlightRef` (Set of provider IDs with active `sync.start` IPCs) and `backgroundSyncCancelledRef` (boolean flag). The foreground handler flips the flag true and fires `window.electron.sync.cancel(providerId)` for each in-flight provider. The next iteration of the provider loop and any in-flight push loop checks the flag and bails.
+
+2. **Main process** `sync:start` IPC handler checks `activeSyncs.get(providerId)?.cancelled` at every phase boundary (after tracks / after albums / after artists / before playlists) and per-iteration inside the playlist loop. When the flag flips, it runs `finalizeCancelled(collection, results)` which writes the partial collection to disk, bumps `lastSyncAt` so the staleness gate doesn't immediately re-fire, and returns `{success: true, cancelled: true, results, collection}`. Anything mutated in memory before the cancellation point sticks; remaining work defers to the next non-cancelled sync.
+
+**Wizard sync is exempt.** The wizard's manual `sync.start` doesn't go through `runBackgroundSync` and doesn't add to `backgroundSyncInFlightRef`, so foreground events don't cancel it. The user is engaged with the wizard; their sync runs to completion regardless.
+
+**Partial-save semantics.** When the playlist loop is cancelled mid-iteration, `local_playlists` IS written with the in-memory state (so playlists already processed get their `syncedAt` advanced) but the `syncedFrom`-clearing pass is SKIPPED (we may not have visited every selected playlist; clearing based on a partial iteration could mass-clear playlists that haven't been verified-missing-from-remote yet). The next non-cancelled sync re-runs the clearing pass over the full set.
 
 ### In-Session Mutex
 
