@@ -361,6 +361,102 @@ const canShortCircuitPlaylistUpdate = ({ localPlaylist, remotePlaylist, provider
   return true;
 };
 
+// Default batch size for staggered playlist sync. With ~50 selected playlists
+// and the 15-min background cadence, 15 per cycle covers everything in roughly
+// 2.5 hours worst-case. Tune via the explicit `batchSize` argument if needed.
+const DEFAULT_STAGGER_BATCH_SIZE = 15;
+
+/**
+ * Stagger selected remote playlists across multiple sync cycles
+ * (parachord#800, part of epic #803). Returns the top N playlists for
+ * this cycle, sorted "oldest stale first" with hasUpdates jumping the
+ * queue and lastModified breaking ties.
+ *
+ * Why: today every sync cycle processes ALL selected remote playlists
+ * for the provider. With 50+ playlists × 3 providers, that's 150+
+ * remote-list comparisons + per-playlist update logic per cycle, every
+ * 15 minutes. Most of that work finds nothing changed (see
+ * `canShortCircuitPlaylistUpdate` for the cheap-iter win). Staggering
+ * cuts the *volume* of work per cycle: only the oldest-stale N get
+ * processed; the rest defer to the next cycle. Over 4-5 cycles the
+ * whole selection is covered.
+ *
+ * Sort order:
+ *   1. `hasUpdates: true` first — user is waiting on a pending pull.
+ *   2. `syncSources[providerId].syncedAt` ascending — oldest-stale next.
+ *      Playlists with no local entry (never imported) treat as 0,
+ *      which floats them to the top of this tier (so first-time
+ *      imports happen on the first cycle after wizard selection).
+ *   3. `lastModified` descending — breaks ties; recent local edits get
+ *      sync priority over dormant playlists.
+ *
+ * Caller is expected to bypass staggering entirely for explicit
+ * full-sync paths (wizard "Sync Now", cleanup-duplicates, etc.) by
+ * NOT calling this helper for those flows.
+ *
+ * Pure / deterministic / no I/O. Does NOT mutate inputs — returns a
+ * new sorted-and-sliced array.
+ *
+ * @param {Object} args
+ * @param {Array} args.selectedRemote - Remote playlists already filtered to
+ *   the user's selected set. Each entry has at minimum `externalId`.
+ * @param {Array} args.localPlaylists - The full `local_playlists` array
+ *   loaded from store at the top of `sync:start`. Used to look up
+ *   `syncSources[providerId].syncedAt`, `hasUpdates`, `lastModified`
+ *   for the staleness sort.
+ * @param {string} args.providerId - Provider running this sync iteration.
+ *   Used both as the syncSources sub-key and for matching local
+ *   playlists via `syncedFrom.externalId` / `syncedTo[providerId].externalId`.
+ * @param {number} [args.batchSize=DEFAULT_STAGGER_BATCH_SIZE] - Max
+ *   playlists to process this cycle.
+ * @returns {Array} Sorted and sliced subset of `selectedRemote`.
+ */
+const staggerPlaylistsForCycle = ({
+  selectedRemote,
+  localPlaylists,
+  providerId,
+  batchSize = DEFAULT_STAGGER_BATCH_SIZE
+}) => {
+  if (!Array.isArray(selectedRemote) || selectedRemote.length === 0) return [];
+
+  // Build externalId → local-playlist map so we don't O(N²) for each
+  // remote in the comparator. A single remote can match either via
+  // syncedFrom (we pulled FROM this provider for this playlist) or
+  // via syncedTo (we pushed TO this provider — i.e. push mirror).
+  const localByExternalId = new Map();
+  if (Array.isArray(localPlaylists)) {
+    for (const p of localPlaylists) {
+      if (!p) continue;
+      if (p.syncedFrom?.externalId) {
+        localByExternalId.set(p.syncedFrom.externalId, p);
+      }
+      const pushedId = p.syncedTo?.[providerId]?.externalId;
+      if (pushedId) {
+        localByExternalId.set(pushedId, p);
+      }
+    }
+  }
+
+  const sorted = [...selectedRemote].sort((a, b) => {
+    const localA = localByExternalId.get(a.externalId);
+    const localB = localByExternalId.get(b.externalId);
+    // 1. hasUpdates first
+    const updA = !!localA?.hasUpdates;
+    const updB = !!localB?.hasUpdates;
+    if (updA !== updB) return updA ? -1 : 1;
+    // 2. Oldest syncedAt next (missing → 0 → top)
+    const tsA = localA?.syncSources?.[providerId]?.syncedAt || 0;
+    const tsB = localB?.syncSources?.[providerId]?.syncedAt || 0;
+    if (tsA !== tsB) return tsA - tsB;
+    // 3. lastModified desc breaks ties (recent local edits → priority)
+    const lmA = localA?.lastModified || 0;
+    const lmB = localB?.lastModified || 0;
+    return lmB - lmA;
+  });
+
+  return sorted.slice(0, batchSize);
+};
+
 module.exports = {
   getProvider,
   getAllProviders,
@@ -368,5 +464,7 @@ module.exports = {
   applyDiff,
   syncDataType,
   calculatePlaylistDiff,
-  canShortCircuitPlaylistUpdate
+  canShortCircuitPlaylistUpdate,
+  staggerPlaylistsForCycle,
+  DEFAULT_STAGGER_BATCH_SIZE
 };

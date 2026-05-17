@@ -169,6 +169,20 @@ Net effect for an always-open user: blur for >30s → sync fires while they're g
 
 The handlers use `window.electron.app.onBackground` / `onForeground` (preload bridges `app-background` / `app-foreground` IPC). No unsubscribe paths are exposed by the preload (multi-listener safe); they detach when the renderer tears down. Mid-sync foreground events are NOT cancelled — too risky to interrupt a running save — only pending `setTimeout`s. A user who returns mid-sync may still see residual IPC activity for a few seconds; accepted vs the complexity of safe cancellation.
 
+### Staggered playlist sync per cycle (parachord#800)
+
+`sync:start`'s inbound playlist loop processes the **top N oldest-stale playlists** per cycle rather than every selected playlist. With 50 selected × 15-min cadence × batch=15, the whole selection rolls through in ~2.5h worst-case. Most users don't notice; cross-platform power-users get a manual escape via "Sync Now."
+
+`staggerPlaylistsForCycle` (sync-engine/index.js) is the pure sort+slice helper. Sort order:
+
+1. `hasUpdates: true` first — user is waiting on a pending pull.
+2. `syncSources[providerId].syncedAt` ascending — oldest-stale next. Playlists with no local entry sort to top (first-time imports run on the first cycle after wizard selection).
+3. `lastModified` descending — breaks ties; recent local edits get sync priority over dormant playlists.
+
+**Full-sync bypass** via `options.fullSync = true` on the `sync:start` IPC. All renderer-side user-initiated sync paths pass it: wizard "Sync Now" (post-config + post-syncing-complete), Spotify/AM re-auth catch-up triggers. `runBackgroundSync` does NOT pass it — that's the cadenced path the stagger targets.
+
+The clearing pass for "remote playlist no longer exists" still runs against the FULL fetched `remotePlaylists` (not the staggered subset), so deleted-on-remote detection is unaffected by which subset we iterate.
+
 ### In-Session Mutex
 
 The renderer has **two independent code paths** that call `sync.createPlaylist` and `sync.pushPlaylist`:
