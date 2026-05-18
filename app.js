@@ -11584,7 +11584,79 @@ const Parachord = () => {
           getCurrentTrack: () => currentTrackRef.current,
           getQueue: () => currentQueueRef.current || [],
           getIsPlaying: () => isPlayingRef.current,
-          blockRecommendation: () => {}
+          blockRecommendation: () => {},
+          // Seek the active playback engine to a position (ms within the track).
+          // Mirrors the playbar slider's onChange — only the same engines that
+          // support seek there support it here. Spotify (Web SDK + Connect) is
+          // not currently seekable; returns {supported:false} to let callers
+          // (e.g. external sync clients) degrade gracefully.
+          handleSeek: async (offsetMs) => {
+            const track = currentTrackRef.current;
+            if (!track) return { success: false, supported: false, error: 'no track' };
+            const activeResolver = track._activeResolver || determineResolverIdFromTrack(track);
+            if (activeResolver === 'spotify') {
+              return { success: false, supported: false, error: 'spotify seek not supported' };
+            }
+            const positionSec = Math.max(0, Number(offsetMs) / 1000);
+            let touched = false;
+            if (audioRef.current && (track?.sources?.localfiles || track?.sources?.soundcloud || track?.sources?.youtube || track?.sources?.bandcamp || activeResolver === 'soundcloud' || activeResolver === 'youtube' || activeResolver === 'bandcamp' || activeResolver === 'localfiles')) {
+              audioRef.current.currentTime = positionSec;
+              touched = true;
+            }
+            if (activeResolver === 'applemusic') {
+              if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+                window._appleMusicPreviewAudio.currentTime = positionSec;
+                touched = true;
+              }
+              try {
+                appleMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: true };
+              } catch {}
+              if (window.electron?.musicKit?.seek) {
+                try { await window.electron.musicKit.seek(positionSec); touched = true; } catch {}
+              }
+              if (window.getMusicKitWeb) {
+                try {
+                  const mk = window.getMusicKitWeb();
+                  if (mk?.seek) { await mk.seek(positionSec); touched = true; }
+                } catch {}
+              }
+            }
+            if (!touched) return { success: false, supported: false, error: 'no seekable engine for active resolver' };
+            return { success: true, supported: true, position_ms: Math.round(positionSec * 1000) };
+          },
+          // Read current playback offset + duration in ms. Tries HTML5 audio
+          // first; falls back to the Apple Music interpolated baseline; finally
+          // the track's reported duration. Returns supported:false for
+          // playback paths that don't expose a position (Spotify Connect).
+          getCurrentPosition: () => {
+            const track = currentTrackRef.current;
+            const audio = audioRef.current;
+            const audioPositionSec = audio?.currentTime;
+            const audioDurationSec = audio?.duration;
+            if (typeof audioPositionSec === 'number' && audioPositionSec > 0) {
+              return {
+                position_ms: Math.round(audioPositionSec * 1000),
+                duration_ms: Math.round(((audioDurationSec || track?.duration || 0) * 1000)),
+                supported: true
+              };
+            }
+            try {
+              const b = appleMusicProgressBaselineRef.current;
+              if (b && b.timestamp) {
+                const elapsedSec = b.isPlaying ? b.progress + (Date.now() - b.timestamp) / 1000 : b.progress;
+                return {
+                  position_ms: Math.round(Math.max(0, elapsedSec) * 1000),
+                  duration_ms: Math.round((track?.duration || 0) * 1000),
+                  supported: true
+                };
+              }
+            } catch {}
+            return {
+              position_ms: 0,
+              duration_ms: Math.round((track?.duration || 0) * 1000),
+              supported: false
+            };
+          }
         };
         const result = await executeDjTool(toolName, args, context);
         window.electron.mcp.respond(requestId, result);
