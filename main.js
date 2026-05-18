@@ -5062,10 +5062,25 @@ async function pushPlaylistLinksToAchordion(localPlaylist) {
       label: 'Spotify',
     });
   }
-  if (syncedTo.applemusic?.externalId) {
+  // Apple Music: only submit if we have a verified-public URL. The library
+  // playlist ID format (`p.XXXX`) only resolves at
+  // `https://music.apple.com/library/playlist/<id>`, which is the OWNER'S
+  // private library view — non-owners get "This playlist isn't available."
+  // Since Achordion's whole purpose is rendering links for non-owners
+  // visiting `/playlist/<mbid>`, submitting an owner-only URL is worse than
+  // omitting (renders a clickable "Listen on Apple Music" button that 404s
+  // for every visitor except the playlist's creator).
+  //
+  // A separately-published Apple Music URL exists for playlists the user
+  // manually shares from the Music app (`pl.u-XXXX` form, exposed via
+  // share-sheet, not via the public library API). If we later capture
+  // and persist that URL on `syncedTo.applemusic.publicUrl`, surface it
+  // here. Until then, AM is intentionally omitted from cross-platform
+  // mirror submissions. Tracked at TODO follow-up issue.
+  if (syncedTo.applemusic?.publicUrl) {
     links.push({
       host: 'music.apple.com',
-      url: `https://music.apple.com/library/playlist/${syncedTo.applemusic.externalId}`,
+      url: syncedTo.applemusic.publicUrl,
       label: 'Apple Music',
     });
   }
@@ -5083,13 +5098,25 @@ async function pushPlaylistLinksToAchordion(localPlaylist) {
     || (localPlaylist.syncedFrom?.resolver === 'listenbrainz' && localPlaylist.syncedFrom.externalId);
   if (!lbMbid || links.length === 0) return;
 
-  const payload = {
-    mbid: lbMbid,
-    name: localPlaylist.title,
-    creatorName: localPlaylist.creator || null,
-    trackCount: Array.isArray(localPlaylist.tracks) ? localPlaylist.tracks.length : undefined,
-    links,
-  };
+  // Build the payload with `name`/`creatorName` ONLY when they're non-empty
+  // strings. Achordion's zod schema declares these as `.optional()` — accepts
+  // string OR omitted, but NOT `null`. Sending `creatorName: null` causes a
+  // 400 "invalid body" with a `[pl-links] submit: invalid body —
+  // creatorName: Expected string, received null` line in Achordion's logs
+  // (no signal visible from the Parachord side). This was the root cause of
+  // empty Upstash playlist-links storage despite the submit code firing —
+  // every submission was silently rejected because `buildLocalPlaylistMirrorContext`
+  // hardcodes `creator: null`, which then surfaced as `creatorName: null` here.
+  const payload = { mbid: lbMbid, links };
+  if (typeof localPlaylist.title === 'string' && localPlaylist.title.trim()) {
+    payload.name = localPlaylist.title.trim().slice(0, 500);
+  }
+  if (typeof localPlaylist.creator === 'string' && localPlaylist.creator.trim()) {
+    payload.creatorName = localPlaylist.creator.trim().slice(0, 200);
+  }
+  if (Array.isArray(localPlaylist.tracks)) {
+    payload.trackCount = localPlaylist.tracks.length;
+  }
 
   try {
     const res = await fetch(ACHORDION_PLAYLIST_LINKS_URL, {
@@ -5120,6 +5147,14 @@ async function pushPlaylistLinksToAchordion(localPlaylist) {
 // main-process state (sync_playlist_links + the just-completed write). Used
 // at the sync:create-playlist / sync:push-playlist call sites where we don't
 // have the full renderer-side playlist object.
+//
+// Pulls `title` and `creator` from `local_playlists` when available so the
+// Achordion submission carries real metadata. The caller's `name` is used
+// as a fallback for `title` (covers freshly-created playlists that may not
+// have synced to disk yet) but `creator` falls back to undefined rather
+// than null — pushPlaylistLinksToAchordion omits the field entirely when
+// it isn't a non-empty string, which is what Achordion's zod schema
+// expects (`.optional()` rejects explicit null).
 function buildLocalPlaylistMirrorContext({ localPlaylistId, providerId, externalId, name, tracks, syncedFromOverride }) {
   // Start with all known mirrors from the durable link map.
   const allLinks = (localPlaylistId && getSyncLinks()[localPlaylistId]) || {};
@@ -5134,12 +5169,27 @@ function buildLocalPlaylistMirrorContext({ localPlaylistId, providerId, external
   if (providerId && externalId) {
     syncedTo[providerId] = { externalId };
   }
+
+  // Look up the on-disk local playlist to recover real `creator` and to
+  // backfill `title` if the caller didn't pass `name`. Cheap — the
+  // local_playlists array is already cached in electron-store's in-memory
+  // parsed form.
+  let storedTitle, storedCreator;
+  if (localPlaylistId) {
+    const playlists = store.get('local_playlists') || [];
+    const stored = playlists.find(p => p.id === localPlaylistId);
+    if (stored) {
+      storedTitle = stored.title;
+      storedCreator = stored.creator;
+    }
+  }
+
   return {
-    title: name,
+    title: name || storedTitle,
     tracks: Array.isArray(tracks) ? tracks : [],
     syncedTo,
     syncedFrom: syncedFromOverride || null,
-    creator: null,
+    creator: storedCreator,
   };
 }
 
