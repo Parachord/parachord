@@ -78,9 +78,18 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
 };
 
 /**
- * Make an authenticated Spotify API request with pagination support
+ * Make an authenticated Spotify API request with pagination support.
+ *
+ * `isCancelled` is an optional 0-arg predicate polled at the start of each
+ * paginate iteration (parachord#820). When it returns true mid-fetch, the
+ * helper returns `null` to signal "abort — discard partial result." Callers
+ * map a null return to a null `fetchTracks`/`fetchAlbums`/`fetchArtists`
+ * result, which `syncDataType` interprets as "no change to apply" — safe
+ * because the next phase-boundary cancel check in `sync:start` will fire
+ * within milliseconds and route to `finalizeCancelled`.
  */
-const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshToken, _retryCount = 0) => {
+const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshToken, _retryCount = 0, isCancelled = null) => {
+  if (isCancelled?.()) return null;
   const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
 
   // Validate pagination URLs stay on the expected host
@@ -106,7 +115,7 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
       // Rate limited - get retry-after header
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-      return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1);
+      return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1, isCancelled);
     }
     // Retry on transient server errors (502, 503, 504) with exponential backoff
     if ([502, 503, 504].includes(response.status)) {
@@ -115,14 +124,14 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
       }
       const delay = Math.min(1000 * Math.pow(2, _retryCount), 30000);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1);
+      return spotifyFetch(endpoint, token, allItems, onProgress, refreshToken, _retryCount + 1, isCancelled);
     }
     // Only refresh on 401 (expired token). 403 means insufficient scopes —
     // refreshing gives the same scopes, so retrying would be wasteful.
     if (response.status === 401 && refreshToken) {
       const newToken = await refreshToken();
       if (newToken) {
-        return spotifyFetch(endpoint, newToken, allItems, onProgress, null, 0);
+        return spotifyFetch(endpoint, newToken, allItems, onProgress, null, 0, isCancelled);
       }
     }
     if (response.status === 401) {
@@ -146,7 +155,7 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
   if (data.next) {
     // Small delay to avoid rate limiting
     await new Promise(resolve => setTimeout(resolve, 100));
-    return spotifyFetch(data.next, token, combined, onProgress, refreshToken, 0);
+    return spotifyFetch(data.next, token, combined, onProgress, refreshToken, 0, isCancelled);
   }
 
   return combined;
@@ -266,7 +275,7 @@ const SpotifySyncProvider = {
    * returns null when the remote total matches AND the most recent track
    * is the same (no changes → skip full fetch).
    */
-  async fetchTracks(token, onProgress, refreshToken, { localSyncedCount, localLatestExternalId } = {}) {
+  async fetchTracks(token, onProgress, refreshToken, { localSyncedCount, localLatestExternalId, isCancelled } = {}) {
     // Quick check: 1 API call to see if the library size or most recent track changed
     if (localSyncedCount !== undefined) {
       const probe = await spotifyRequest('/me/tracks?limit=1', token, { refreshToken });
@@ -281,7 +290,11 @@ const SpotifySyncProvider = {
         console.log(`[Spotify] Track count same (${probe.total}) but latest track differs: remote ${remoteLatestId} vs local ${localLatestExternalId}`);
       }
     }
-    const items = await spotifyFetch('/me/tracks?limit=50', token, [], onProgress, refreshToken);
+    const items = await spotifyFetch('/me/tracks?limit=50', token, [], onProgress, refreshToken, 0, isCancelled);
+    // spotifyFetch returns null when isCancelled fires mid-paginate. Propagate
+    // up — syncDataType treats null as "no change to apply", and sync:start's
+    // next phase-boundary check exits via finalizeCancelled.
+    if (items === null) return null;
     return items.map(item => transformTrack(item, item.added_at));
   },
 
@@ -289,7 +302,7 @@ const SpotifySyncProvider = {
    * Fetch all saved albums from Spotify.
    * Returns null when remote count and latest album match (no changes).
    */
-  async fetchAlbums(token, onProgress, refreshToken, { localSyncedCount, localLatestExternalId } = {}) {
+  async fetchAlbums(token, onProgress, refreshToken, { localSyncedCount, localLatestExternalId, isCancelled } = {}) {
     if (localSyncedCount !== undefined) {
       const probe = await spotifyRequest('/me/albums?limit=1', token, { refreshToken });
       const remoteLatestId = probe.items?.[0]?.album?.id || null;
@@ -303,7 +316,8 @@ const SpotifySyncProvider = {
         console.log(`[Spotify] Album count same (${probe.total}) but latest album differs: remote ${remoteLatestId} vs local ${localLatestExternalId}`);
       }
     }
-    const items = await spotifyFetch('/me/albums?limit=50', token, [], onProgress, refreshToken);
+    const items = await spotifyFetch('/me/albums?limit=50', token, [], onProgress, refreshToken, 0, isCancelled);
+    if (items === null) return null;
     return items.map(transformAlbum);
   },
 
@@ -311,7 +325,7 @@ const SpotifySyncProvider = {
    * Fetch all followed artists from Spotify.
    * Returns null when remote count and latest artist match (no changes).
    */
-  async fetchArtists(token, onProgress, refreshToken, { localSyncedCount, localLatestExternalId } = {}) {
+  async fetchArtists(token, onProgress, refreshToken, { localSyncedCount, localLatestExternalId, isCancelled } = {}) {
     // Quick count check for artists (first page includes total)
     if (localSyncedCount !== undefined) {
       const probeData = await spotifyRequest('/me/following?type=artist&limit=1', token, { refreshToken });
@@ -325,9 +339,12 @@ const SpotifySyncProvider = {
         console.log(`[Spotify] Artist count changed: remote ${remoteTotal} vs local ${localSyncedCount}`);
       }
     }
-    // Artists use cursor-based pagination, different from other endpoints
+    // Artists use cursor-based pagination, different from other endpoints.
+    // Same isCancelled gating as spotifyFetch (parachord#820): poll between
+    // pages and return null on cancel so the partial result is discarded.
     let currentRefreshToken = refreshToken;
     const fetchArtistsPage = async (after = null, allArtists = []) => {
+      if (isCancelled?.()) return null;
       const url = `/me/following?type=artist&limit=50${after ? `&after=${after}` : ''}`;
       const data = await spotifyRequest(url, token, { refreshToken: currentRefreshToken });
       // Only allow one refresh attempt across all pages
@@ -349,6 +366,7 @@ const SpotifySyncProvider = {
     };
 
     const artists = await fetchArtistsPage();
+    if (artists === null) return null;
     return artists.map(transformArtist);
   },
 

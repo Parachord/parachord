@@ -5,7 +5,7 @@
  * Spotify library sync, pagination, diff calculation, rate limiting.
  */
 
-const { canShortCircuitPlaylistUpdate, staggerPlaylistsForCycle } = require('../../sync-engine');
+const { canShortCircuitPlaylistUpdate, staggerPlaylistsForCycle, syncDataType } = require('../../sync-engine');
 
 describe('staggerPlaylistsForCycle (oldest-stale-first batching, see parachord#800)', () => {
   // Helper to build a remote-shape playlist (what fetchPlaylists returns).
@@ -1358,5 +1358,80 @@ describe('Track Removal with Special Characters', () => {
       collectionTracks
     );
     expect(result.removed).toBe(true);
+  });
+});
+
+describe('syncDataType isCancelled propagation (parachord#820)', () => {
+  // Minimal provider stub. fetchTracks consults the isCancelled callback from
+  // the options bag the same way the real Spotify/AM providers do, mirroring
+  // the mid-paginate cancel path: when isCancelled fires, return null so
+  // syncDataType treats the result as "no change to apply" rather than
+  // computing a diff against partial data.
+  const makeProvider = ({ trackData = [], onFetch = null } = {}) => ({
+    id: 'spotify',
+    fetchTracks: jest.fn(async (token, onProgress, refreshToken, opts = {}) => {
+      if (onFetch) onFetch();
+      if (opts.isCancelled?.()) return null;
+      return trackData;
+    }),
+    fetchAlbums: jest.fn(async () => []),
+    fetchArtists: jest.fn(async () => [])
+  });
+
+  const localTrack = (id) => ({
+    id, title: `t${id}`, artist: `a${id}`, album: `A${id}`,
+    syncSources: { spotify: { syncedAt: 100 } }
+  });
+
+  test('returns localData unchanged with stats 0/0/0/N when isCancelled fires before fetch', async () => {
+    const local = [localTrack('1'), localTrack('2'), localTrack('3')];
+    const provider = makeProvider({ trackData: [localTrack('1')] }); // would-be removal of 2,3
+
+    const result = await syncDataType(
+      provider, 'token', 'tracks', local, () => {}, null,
+      () => true  // already cancelled
+    );
+
+    expect(result.data).toBe(local); // same reference — no diff applied
+    expect(result.stats).toEqual({ added: 0, removed: 0, updated: 0, unchanged: 3 });
+  });
+
+  test('passes isCancelled through fetchOptions to the provider', async () => {
+    const isCancelled = jest.fn(() => false);
+    const provider = makeProvider({ trackData: [] });
+
+    await syncDataType(provider, 'token', 'tracks', [], () => {}, null, isCancelled);
+
+    expect(provider.fetchTracks).toHaveBeenCalledWith(
+      'token',
+      expect.any(Function),
+      null,
+      expect.objectContaining({ isCancelled })
+    );
+  });
+
+  test('omitting isCancelled is backward-compatible (provider receives undefined)', async () => {
+    const provider = makeProvider({ trackData: [] });
+
+    await syncDataType(provider, 'token', 'tracks', [], () => {}, null);
+
+    const opts = provider.fetchTracks.mock.calls[0][3];
+    expect(opts.isCancelled).toBeUndefined();
+  });
+
+  test('full diff still applies when isCancelled never fires', async () => {
+    const local = [localTrack('1')];
+    const provider = makeProvider({ trackData: [
+      { id: '1', title: 't1', artist: 'a1', album: 'A1' },
+      { id: '2', title: 't2', artist: 'a2', album: 'A2' }
+    ]});
+
+    const result = await syncDataType(
+      provider, 'token', 'tracks', local, () => {}, null,
+      () => false
+    );
+
+    expect(result.stats.added).toBe(1);
+    expect(result.data.length).toBe(2);
   });
 });

@@ -6078,7 +6078,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         'tracks',
         collection.tracks || [],
         (p) => sendProgress({ phase: 'fetching', type: 'tracks', ...p }),
-        refreshToken
+        refreshToken,
+        isCancelled  // parachord#820: poll between paginated pages
       );
       console.log(`[Sync] Track sync complete. Output: ${trackResult.data.length} tracks. Stats:`, trackResult.stats);
       collection.tracks = trackResult.data;
@@ -6099,7 +6100,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         'albums',
         collection.albums || [],
         (p) => sendProgress({ phase: 'fetching', type: 'albums', ...p }),
-        refreshToken
+        refreshToken,
+        isCancelled
       );
       console.log(`[Sync] Album sync complete. Output: ${albumResult.data.length} albums. Stats:`, albumResult.stats);
       collection.albums = albumResult.data;
@@ -6120,7 +6122,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         'artists',
         collection.artists || [],
         (p) => sendProgress({ phase: 'fetching', type: 'artists', ...p }),
-        refreshToken
+        refreshToken,
+        isCancelled
       );
       console.log(`[Sync] Artist sync complete. Output: ${artistResult.data.length} artists. Stats:`, artistResult.stats);
       collection.artists = artistResult.data;
