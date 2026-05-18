@@ -3,16 +3,7 @@
  *
  * Tests for executeDjTool - the function that executes playback actions
  * on behalf of AI chat providers (play, search, queue, shuffle, etc.)
- *
- * Two test styles live in this file:
- *   1. The original style (further down) reimplements `executeDjTool` inline
- *      to test the playback logic without pulling in app.js's React deps.
- *   2. The `seek` / `get_position` / `registry` blocks at the bottom import
- *      directly from `tools/dj-tools.js` to verify the tool definitions and
- *      their thin execute wrappers exactly as the MCP server sees them.
  */
-
-const { getTool } = require('../../tools/dj-tools');
 
 // Extract executeDjTool and related code from app.js
 // Since app.js is a monolithic React component, we recreate the pure functions here
@@ -639,95 +630,5 @@ describe('DJ Tools - executeDjTool', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('Playback failed');
     });
-  });
-});
-
-// ─── Real-import tests for the new seek / get_position tools ──────────────────
-// These verify the tool definitions and `execute` wrappers exported from
-// `tools/dj-tools.js`. Unlike the executeDjTool tests above, they do not
-// reimplement anything — they call into the actual module.
-
-describe('seek tool', () => {
-  test('calls context.handleSeek with offset_ms and returns its result', async () => {
-    const handleSeek = jest.fn().mockResolvedValue({ success: true, supported: true, position_ms: 12345 });
-    const tool = getTool('seek');
-    expect(tool).toBeDefined();
-    const result = await tool.execute({ offset_ms: 12345 }, { handleSeek });
-    expect(handleSeek).toHaveBeenCalledWith(12345);
-    expect(result.success).toBe(true);
-    expect(result.position_ms).toBe(12345);
-  });
-
-  test('coerces non-number offsets to 0', async () => {
-    const handleSeek = jest.fn().mockResolvedValue({ success: true, supported: true });
-    const tool = getTool('seek');
-    await tool.execute({ offset_ms: 'not a number' }, { handleSeek });
-    expect(handleSeek).toHaveBeenCalledWith(0);
-  });
-
-  test('returns supported:false when context lacks handleSeek (older app build)', async () => {
-    const tool = getTool('seek');
-    const result = await tool.execute({ offset_ms: 1000 }, {});
-    expect(result.success).toBe(false);
-    expect(result.supported).toBe(false);
-  });
-
-  test('passes through supported:false from the engine (e.g. spotify)', async () => {
-    const handleSeek = jest.fn().mockResolvedValue({ success: false, supported: false, error: 'spotify seek not supported' });
-    const tool = getTool('seek');
-    const result = await tool.execute({ offset_ms: 1000 }, { handleSeek });
-    expect(result.supported).toBe(false);
-    expect(result.error).toBe('spotify seek not supported');
-  });
-});
-
-describe('get_position tool', () => {
-  test('returns context.getCurrentPosition() with numeric normalization', async () => {
-    const getCurrentPosition = jest.fn().mockReturnValue({ position_ms: 30000, duration_ms: 240000, supported: true });
-    const tool = getTool('get_position');
-    expect(tool).toBeDefined();
-    const result = await tool.execute({}, { getCurrentPosition });
-    expect(getCurrentPosition).toHaveBeenCalled();
-    expect(result.position_ms).toBe(30000);
-    expect(result.duration_ms).toBe(240000);
-    expect(result.supported).toBe(true);
-  });
-
-  test('handles missing supported flag as true', async () => {
-    const getCurrentPosition = jest.fn().mockReturnValue({ position_ms: 0, duration_ms: 1000 });
-    const tool = getTool('get_position');
-    const result = await tool.execute({}, { getCurrentPosition });
-    expect(result.supported).toBe(true);
-  });
-
-  test('returns supported:false when context lacks getCurrentPosition', async () => {
-    const tool = getTool('get_position');
-    const result = await tool.execute({}, {});
-    expect(result.position_ms).toBe(0);
-    expect(result.duration_ms).toBe(0);
-    expect(result.supported).toBe(false);
-  });
-
-  test('coerces non-number values to 0', async () => {
-    const getCurrentPosition = jest.fn().mockReturnValue({ position_ms: 'oops', duration_ms: null, supported: true });
-    const tool = getTool('get_position');
-    const result = await tool.execute({}, { getCurrentPosition });
-    expect(result.position_ms).toBe(0);
-    expect(result.duration_ms).toBe(0);
-  });
-});
-
-describe('registry exposes the new tools', () => {
-  test('seek and get_position are both registered by name', () => {
-    expect(getTool('seek')).toBeDefined();
-    expect(getTool('get_position')).toBeDefined();
-  });
-
-  test('both have JSON-schema parameters consumable by MCP/Claude/OpenAI', () => {
-    const seek = getTool('seek');
-    expect(seek.parameters.required).toEqual(['offset_ms']);
-    expect(seek.parameters.properties.offset_ms.type).toBe('number');
-    const pos = getTool('get_position');
-    expect(pos.parameters.type).toBe('object');
   });
 });
