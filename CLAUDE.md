@@ -148,6 +148,22 @@ All remote-playlist writes flow through the `sync:create-playlist` IPC handler (
 
 Only if all three fail does `provider.createPlaylist` actually create a new remote. On success, both `sync_playlist_links` and the caller's `syncedTo` must be populated.
 
+### Sync performance invariants (epic #803)
+
+Five tier-1 + tier-2 fixes addressing the 120% CPU spike + pinwheel users used to see on every background sync. Each is independent but mutually-reinforcing — touch any of the related code paths with awareness of the others.
+
+- **Skip-unchanged playlists** (parachord#796). `sync-engine/index.js` exposes `canShortCircuitPlaylistUpdate({localPlaylist, remotePlaylist, providerId})` — pure predicate returning true when an inbound playlist update can skip the spread-rewrite work (snapshotIds match AND no metadata backfill pending AND owner/collaborator state stable). Called inside `sync:start`'s inbound playlist loop in main.js. Don't bypass without good reason — the savings compound with #800 staggering.
+
+- **Resolver concurrency cap** (parachord#797). `resolver-limiter.js` (loaded via index.html `<script>` before app.js) exposes `createLimiter()` factory + `window.globalResolverLimiter` (concurrency 4, minGap 100ms, cooldown on consecutive throttle errors). Each non-AM/Spotify/localfiles resolver's `.search` method is wrapped via `window.wrapResolverSearchesWithLimiter` at load time — including in the marketplace hot-add paths in app.js. Any new content resolver registered through `loadResolver` inherits the limiter automatically. Don't bypass for new resolvers without considering the renderer's shared socket pool + JSON-parse + match-validation budget. Skip set is `{applemusic, spotify, localfiles}`: AM has its own dedicated limiter, Spotify has a per-token budget, localfiles is in-process.
+
+- **Renderer push loop yields to idle** (parachord#798). The 4 sync-related iteration sites in app.js (background-sync push loop, background-sync inner save loop, post-wizard IIFE push loop, post-wizard IIFE inner save loop) wrap each iteration in `await yieldToIdle()` — a thin Promise-wrapper around `window.requestIdleCallback` with a `setTimeout(r, 16)` fallback. Any new sync-related iteration (e.g. future orchestrator at #802) should yield similarly. The 2000ms timeout in `yieldToIdle` ensures sync still makes forward progress when the renderer is genuinely busy.
+
+- **Cancel-on-focus** (parachord#799). See "Background Sync Cadence" below — the dedicated subsection covers the two-layer renderer+main coordination and partial-save semantics.
+
+- **Staggered playlist sync per cycle** (parachord#800). See "Staggered playlist sync per cycle" below.
+
+When designing new sync features (#801 per-playlist store keys, #802 orchestrator refactor, or anything else): consider how the new code interacts with all five invariants. The push-loop yields and cancel-on-focus checks especially need to be preserved in any code that iterates `local_playlists` with per-item IPCs.
+
 ### Background Sync Cadence
 
 Three triggers fire `runBackgroundSync` (app.js, ~L6177 `useEffect`). The function takes an optional `{ minStaleness }` so the per-provider `lastSyncAt < threshold` gate can be tightened or relaxed without forking the function body.
@@ -169,7 +185,7 @@ Net effect for an always-open user: blur for >30s → sync fires while they're g
 
 The handlers use `window.electron.app.onBackground` / `onForeground` (preload bridges `app-background` / `app-foreground` IPC). No unsubscribe paths are exposed by the preload (multi-listener safe); they detach when the renderer tears down.
 
-**Cancel-on-focus** (parachord#799). Mid-sync foreground events DO cancel the in-flight background sync now — earlier doc said otherwise; that note is obsolete. Two-layer mechanism:
+**Cancel-on-focus** (parachord#799). Mid-sync foreground events cancel the in-flight background sync. Two-layer mechanism:
 
 1. **Renderer side** holds `backgroundSyncInFlightRef` (Set of provider IDs with active `sync.start` IPCs) and `backgroundSyncCancelledRef` (boolean flag). The foreground handler flips the flag true and fires `window.electron.sync.cancel(providerId)` for each in-flight provider. The next iteration of the provider loop and any in-flight push loop checks the flag and bails.
 
