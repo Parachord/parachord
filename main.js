@@ -5051,6 +5051,59 @@ ipcMain.handle('sync-links:remove', async (event, localPlaylistId, providerId) =
 const ACHORDION_BEARER = 'parachord_rgOgj2trN2KeIovar9DYA-yOCRkxgO6KlSyAo_jHtgg';
 const ACHORDION_PLAYLIST_LINKS_URL = 'https://achordion.xyz/api/playlist-links/submit';
 
+// Slugify a playlist title for Apple Music share URLs. AM's share URL form is
+// `https://music.apple.com/us/playlist/<slug>/<pl.u-id>`. The slug is for
+// readability — AM redirects to the canonical slug regardless of what you
+// pass, but matching their convention keeps things stable.
+function slugifyForAppleMusic(title) {
+  if (typeof title !== 'string') return 'playlist';
+  return title
+    .toLowerCase()
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')  // strip diacritics
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100)
+    || 'playlist';
+}
+
+// Fetch the public-share URL for an Apple Music library playlist by reading
+// `attributes.playParams.globalId` (the `pl.u-XXXX` form) and combining with
+// a title slug. Returns `null` when the globalId isn't yet available (newly-
+// created playlists may take a few seconds before iCloud Music Library
+// reflects them) or when AM auth is missing.
+async function fetchAppleMusicPublicPlaylistUrl(libraryId) {
+  if (!libraryId) return null;
+  // Acquire AM credentials the same way every other AM IPC handler does.
+  if (!generatedMusicKitToken) {
+    await musicKitTokenReady;
+  }
+  const developerToken = generatedMusicKitToken
+    || process.env.MUSICKIT_DEVELOPER_TOKEN
+    || store.get('applemusic_developer_token');
+  const userToken = store.get('applemusic_user_token');
+  if (!developerToken || !userToken) return null;
+
+  const res = await fetch(`https://api.music.apple.com/v1/me/library/playlists/${encodeURIComponent(libraryId)}`, {
+    headers: {
+      'Authorization': `Bearer ${developerToken}`,
+      'Music-User-Token': userToken,
+    },
+  });
+  if (!res.ok) {
+    // 404 happens for playlists not yet reflected in iCloud Music Library, or
+    // when the user has revoked AM access. Either way, return null and let
+    // the caller omit the AM link rather than send a broken URL.
+    return null;
+  }
+  const data = await res.json();
+  const item = Array.isArray(data?.data) ? data.data[0] : null;
+  const globalId = item?.attributes?.playParams?.globalId;
+  const name = item?.attributes?.name;
+  if (!globalId || typeof globalId !== 'string' || !globalId.startsWith('pl.')) return null;
+  const slug = slugifyForAppleMusic(name);
+  return `https://music.apple.com/us/playlist/${slug}/${globalId}`;
+}
+
 async function pushPlaylistLinksToAchordion(localPlaylist) {
   if (!localPlaylist) return;
   const links = [];
@@ -5062,27 +5115,27 @@ async function pushPlaylistLinksToAchordion(localPlaylist) {
       label: 'Spotify',
     });
   }
-  // Apple Music: only submit if we have a verified-public URL. The library
-  // playlist ID format (`p.XXXX`) only resolves at
-  // `https://music.apple.com/library/playlist/<id>`, which is the OWNER'S
+  // Apple Music: the library playlist ID (`p.XXXX`) only resolves at
+  // `https://music.apple.com/library/playlist/<id>`, which is the owner's
   // private library view — non-owners get "This playlist isn't available."
-  // Since Achordion's whole purpose is rendering links for non-owners
-  // visiting `/playlist/<mbid>`, submitting an owner-only URL is worse than
-  // omitting (renders a clickable "Listen on Apple Music" button that 404s
-  // for every visitor except the playlist's creator).
-  //
-  // A separately-published Apple Music URL exists for playlists the user
-  // manually shares from the Music app (`pl.u-XXXX` form, exposed via
-  // share-sheet, not via the public library API). If we later capture
-  // and persist that URL on `syncedTo.applemusic.publicUrl`, surface it
-  // here. Until then, AM is intentionally omitted from cross-platform
-  // mirror submissions. Tracked at TODO follow-up issue.
-  if (syncedTo.applemusic?.publicUrl) {
-    links.push({
-      host: 'music.apple.com',
-      url: syncedTo.applemusic.publicUrl,
-      label: 'Apple Music',
-    });
+  // The shareable URL form is
+  // `https://music.apple.com/us/playlist/<slug>/<pl.u-XXXX>` where the
+  // `pl.u-` ID is Apple Music's catalog reflection of the library playlist
+  // (auto-generated for every iCloud-synced playlist; no explicit "publish"
+  // step). That ID is exposed via `attributes.playParams.globalId` on the
+  // LibraryPlaylists resource. Fetch it on demand and construct the URL.
+  if (syncedTo.applemusic?.externalId) {
+    try {
+      const amPublicUrl = await fetchAppleMusicPublicPlaylistUrl(syncedTo.applemusic.externalId);
+      if (amPublicUrl) {
+        links.push({ host: 'music.apple.com', url: amPublicUrl, label: 'Apple Music' });
+      } else {
+        console.log(`[achordion] AM publicUrl unavailable for ${syncedTo.applemusic.externalId} — omitting AM link`);
+      }
+    } catch (err) {
+      console.warn(`[achordion] AM publicUrl fetch failed for ${syncedTo.applemusic.externalId}: ${err && err.message ? err.message : err}`);
+      // Omit AM link rather than send the owner-only library URL.
+    }
   }
   if (syncedTo.listenbrainz?.externalId) {
     links.push({
