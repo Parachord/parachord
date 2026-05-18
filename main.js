@@ -5062,10 +5062,25 @@ async function pushPlaylistLinksToAchordion(localPlaylist) {
       label: 'Spotify',
     });
   }
-  if (syncedTo.applemusic?.externalId) {
+  // Apple Music: only submit if we have a verified-public URL. The library
+  // playlist ID format (`p.XXXX`) only resolves at
+  // `https://music.apple.com/library/playlist/<id>`, which is the OWNER'S
+  // private library view — non-owners get "This playlist isn't available."
+  // Since Achordion's whole purpose is rendering links for non-owners
+  // visiting `/playlist/<mbid>`, submitting an owner-only URL is worse than
+  // omitting (renders a clickable "Listen on Apple Music" button that 404s
+  // for every visitor except the playlist's creator).
+  //
+  // A separately-published Apple Music URL exists for playlists the user
+  // manually shares from the Music app (`pl.u-XXXX` form, exposed via
+  // share-sheet, not via the public library API). If we later capture
+  // and persist that URL on `syncedTo.applemusic.publicUrl`, surface it
+  // here. Until then, AM is intentionally omitted from cross-platform
+  // mirror submissions. Tracked at TODO follow-up issue.
+  if (syncedTo.applemusic?.publicUrl) {
     links.push({
       host: 'music.apple.com',
-      url: `https://music.apple.com/library/playlist/${syncedTo.applemusic.externalId}`,
+      url: syncedTo.applemusic.publicUrl,
       label: 'Apple Music',
     });
   }
