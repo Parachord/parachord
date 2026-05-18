@@ -46,7 +46,11 @@ const generateTrackId = (artist, title, album) => {
  */
 const MAX_RETRIES = 5;
 
-const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [], onProgress, _retryCount = 0) => {
+const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [], onProgress, _retryCount = 0, isCancelled = null) => {
+  // Mid-paginate cancel hook (parachord#820). When `isCancelled?.()` fires,
+  // return null so the caller treats the result as "no change to apply"; the
+  // next phase-boundary check in `sync:start` then routes to finalizeCancelled.
+  if (isCancelled?.()) return null;
   const url = endpoint.startsWith('http') ? endpoint : `${APPLE_MUSIC_API_BASE}${endpoint}`;
 
   // Validate pagination URLs stay on the expected host
@@ -72,7 +76,7 @@ const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [
       }
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
       await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-      return appleMusicFetch(endpoint, developerToken, userToken, allItems, onProgress, _retryCount + 1);
+      return appleMusicFetch(endpoint, developerToken, userToken, allItems, onProgress, _retryCount + 1, isCancelled);
     }
     if (response.status === 401 || response.status === 403) {
       throw new Error('Apple Music token expired or unauthorized. Please reconnect your Apple Music account.');
@@ -96,7 +100,7 @@ const appleMusicFetch = async (endpoint, developerToken, userToken, allItems = [
     const nextUrl = data.next.startsWith('http')
       ? data.next
       : `https://api.music.apple.com${data.next}`;
-    return appleMusicFetch(nextUrl, developerToken, userToken, combined, onProgress, 0);
+    return appleMusicFetch(nextUrl, developerToken, userToken, combined, onProgress, 0, isCancelled);
   }
 
   return combined;
@@ -204,30 +208,38 @@ const AppleMusicSyncProvider = {
    * @param {string} token - JSON string with { developerToken, userToken }
    * @param {function} onProgress - Progress callback
    */
-  async fetchTracks(token, onProgress) {
+  async fetchTracks(token, onProgress, _refreshToken, { isCancelled } = {}) {
     const { developerToken, userToken } = JSON.parse(token);
     const items = await appleMusicFetch(
       '/me/library/songs?limit=100',
       developerToken,
       userToken,
       [],
-      onProgress
+      onProgress,
+      0,
+      isCancelled
     );
+    // appleMusicFetch returns null when isCancelled fires; propagate up so
+    // syncDataType treats it as "no change" (parachord#820).
+    if (items === null) return null;
     return items.map(transformTrack);
   },
 
   /**
    * Fetch all saved albums from Apple Music
    */
-  async fetchAlbums(token, onProgress) {
+  async fetchAlbums(token, onProgress, _refreshToken, { isCancelled } = {}) {
     const { developerToken, userToken } = JSON.parse(token);
     const items = await appleMusicFetch(
       '/me/library/albums?limit=100',
       developerToken,
       userToken,
       [],
-      onProgress
+      onProgress,
+      0,
+      isCancelled
     );
+    if (items === null) return null;
     return items.map(transformAlbum);
   },
 

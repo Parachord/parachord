@@ -155,9 +155,18 @@ const applyDiff = (collectionItems, diff) => {
 };
 
 /**
- * Sync a specific data type (tracks, albums, artists) for a provider
+ * Sync a specific data type (tracks, albums, artists) for a provider.
+ *
+ * `isCancelled` (optional) is a 0-arg predicate the provider's pagination
+ * loop can poll between pages so a `sync:cancel` IPC takes effect within
+ * one page of latency (~1s) instead of waiting for the entire library
+ * fetch to complete (~90s for a 2,600-track Spotify library). When
+ * cancellation fires mid-paginate, the provider returns `null` to signal
+ * "no usable result — treat as unchanged"; the next phase-boundary
+ * `isCancelled()` check in `sync:start` then routes to `finalizeCancelled`
+ * and the run exits without applying a partial diff. See parachord#820.
  */
-const syncDataType = async (provider, token, dataType, localData, onProgress, refreshToken) => {
+const syncDataType = async (provider, token, dataType, localData, onProgress, refreshToken, isCancelled) => {
   // Count how many local items came from this provider (for incremental check)
   const syncedItems = localData.filter(item => item.syncSources?.[provider.id]);
   const localSyncedCount = syncedItems.length;
@@ -167,7 +176,11 @@ const syncDataType = async (provider, token, dataType, localData, onProgress, re
     const latestDate = latest ? (latest.addedAt || latest.syncSources?.[provider.id]?.addedAt || 0) : 0;
     return itemDate > latestDate ? item : latest;
   }, null);
-  const fetchOptions = { localSyncedCount, localLatestExternalId: mostRecentItem?.externalId || null };
+  const fetchOptions = {
+    localSyncedCount,
+    localLatestExternalId: mostRecentItem?.externalId || null,
+    isCancelled
+  };
 
   // Fetch remote data
   let remoteData;
