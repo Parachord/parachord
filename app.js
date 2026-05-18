@@ -2415,6 +2415,106 @@ const VirtualizedQueueList = React.memo(({
   );
 });
 
+// VirtualizedLibraryTracksList — windowed rendering for the Library "Tracks"
+// tab (parachord#783). Mirrors `VirtualizedQueueList`'s pattern but with a
+// container-wrapping approach that keeps the row-rendering callback
+// virtualization-agnostic: the parent component owns the row markup, this
+// component owns the positioning + virtualizer machinery.
+//
+// Why this exists: collection tracks list can be 2,000+ items. Without
+// virtualization, every state change touching collection state walks the
+// whole React tree. Windowing keeps mounted nodes to ~30 (viewport + overscan).
+//
+// Notes for future maintainers:
+//   - The scroll container ref must point to a `flex-1 overflow-y-auto`
+//     element WITHOUT `contain: strict` (size containment confuses the
+//     virtualizer's clientHeight measurement). The Library scroll container
+//     conditionally relaxes to `contain: layout` only when on tracks tab.
+//   - Falls back to plain non-virtualized render when ReactVirtual isn't
+//     loaded OR when tracks.length < virtualizationThreshold (default 100)
+//     — sub-threshold lists don't benefit from the overhead.
+//   - `renderRow(track, index, virtualRow)` is called by the parent. The
+//     wrapper handles positioning so the parent's row markup stays
+//     identical to the non-virtualized version.
+const VirtualizedLibraryTracksList = React.memo(({
+  tracks,
+  parentRef,
+  renderRow,
+  estimatedRowHeight = 56,
+  overscan = 8,
+  virtualizationThreshold = 100
+}) => {
+  // CRITICAL: `useVirtualizer` MUST be called unconditionally on every
+  // render (Rules of Hooks). The earlier guard `typeof ReactVirtual !==
+  // 'undefined' && parentRef?.current` made the hook conditional on a
+  // value that changes between renders (ref starts null, becomes the
+  // DOM node after the ref-callback fires) — React then complains about
+  // hook-order mismatch and the list comes up blank. Mirror the queue
+  // list's pattern: only the module-level `typeof ReactVirtual` check
+  // gates the call; the ref-readiness is handled inside `getScrollElement`
+  // (which the virtualizer is OK to receive `null` from until layout
+  // settles).
+  const virtualizer = typeof ReactVirtual !== 'undefined'
+    ? ReactVirtual.useVirtualizer({
+        count: tracks.length,
+        getScrollElement: () => parentRef?.current || null,
+        estimateSize: () => estimatedRowHeight,
+        overscan
+      })
+    : null;
+
+  const virtualItems = virtualizer ? virtualizer.getVirtualItems() : [];
+
+  // Fallback to plain non-virtualized render in ANY of these cases:
+  //   - ReactVirtual not loaded (CDN failure)
+  //   - tracks.length < virtualizationThreshold (no benefit, just overhead)
+  //   - virtualItems is empty (virtualizer hasn't computed a visible range
+  //     yet — happens on the renders before its internal ResizeObserver
+  //     fires, AND in pathological cases where it never settles)
+  //
+  // This makes the worst case identical to the pre-#783 behavior (user
+  // sees the full plain list, just without windowing perf). When the
+  // virtualizer DOES eventually produce items, we transition to the
+  // windowed path on the next render. Never blank.
+  if (!virtualizer || tracks.length < virtualizationThreshold || virtualItems.length === 0) {
+    return React.createElement('div', {
+      className: 'space-y-0',
+      style: { minHeight: 'calc(100vh - 160px)' }
+    },
+      tracks.map((track, index) => renderRow(track, index, null))
+    );
+  }
+
+  return React.createElement('div', {
+    style: {
+      height: `${virtualizer.getTotalSize()}px`,
+      width: '100%',
+      position: 'relative'
+    }
+  },
+    virtualItems.map(virtualRow => {
+      const track = tracks[virtualRow.index];
+      if (!track) return null;
+      // Wrap each row in an absolute-positioned, measureElement-ref'd div
+      // so the parent's `renderRow` markup stays virtualization-agnostic.
+      // The wrapper's height tracks the rendered row's actual height via
+      // measureElement; virtualizer corrects its size estimates over time.
+      return React.createElement('div', {
+        key: track.id || track.filePath || virtualRow.index,
+        'data-index': virtualRow.index,
+        ref: virtualizer.measureElement,
+        style: {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          transform: `translateY(${virtualRow.start}px)`
+        }
+      }, renderRow(track, virtualRow.index, virtualRow));
+    })
+  );
+});
+
 // ResolverCard component - Tomahawk-style colored card with centered logo
 // Four user-facing states:
 //   1. Enabled (full color, checkmark, priority number)
@@ -7913,6 +8013,30 @@ const Parachord = () => {
   const collectionScrollContainerRef = useRef(null);
   const collectionTracksRef = useRef([]); // Ref to access current tracks in observer callback
   const [collectionScrollContainerReady, setCollectionScrollContainerReady] = useState(false)
+
+  // Stable ref-callback for the collection scroll container. The naive form
+  // `ref={(el) => { ... }}` produces a new arrow on every render, which causes
+  // React to detach-then-attach the ref every commit. The detach phase sets
+  // `collectionScrollContainerRef.current = null` BEFORE child useLayoutEffect
+  // hooks run, and the attach phase only sets it back to the element AFTER.
+  // Inside that gap, `VirtualizedLibraryTracksList`'s `useVirtualizer`
+  // (via react-virtual's `_willUpdate`) calls our `getScrollElement`, which
+  // reads `parentRef.current` — and observes null on every single render.
+  // Net effect: the virtualizer's internal `scrollElement` never gets set,
+  // `observeElementRect` never runs, `vItems` stays empty forever.
+  //
+  // A stable callback (`useCallback` with `[]` deps) is identity-equal across
+  // renders, so React only invokes it on actual mount/unmount of the DOM
+  // element — no per-render detach/attach cycle. The queue list works for
+  // this exact reason (it passes a useRef object directly, no inline
+  // callback); we can't do that here because we need the setState
+  // side-effect, but stable callback achieves the same property.
+  // See parachord#783 for the diagnostic trail.
+  const handleCollectionScrollContainerRef = useCallback((el) => {
+    collectionScrollContainerRef.current = el;
+    if (el) setCollectionScrollContainerReady(true);
+    else setCollectionScrollContainerReady(false);
+  }, []);
 
   // Refs for persisting resolved sources back to collection and playlists (debounced)
   const pendingCollectionSourceUpdates = useRef({}); // Map of trackId -> sources to merge
@@ -46417,16 +46541,24 @@ useEffect(() => {
             )
           ),
 
-          // Scrollable content area
+          // Scrollable content area.
+          //
+          // `contain: strict` is layout-/paint-isolation for the other three
+          // tabs (artists/albums/friends) — small perf win for those routes.
+          // The tracks tab uses `@tanstack/react-virtual` (see
+          // VirtualizedLibraryTracksList, parachord#783); `contain: size`
+          // interacts poorly with the virtualizer's measurement of
+          // `getScrollElement().clientHeight` when the scroll container is
+          // `flex-1`-sized inside a flex column. Two prior virtualization
+          // attempts (per #783) came up blank for this reason. Conditionally
+          // relax to `layout` only when on tracks tab — keeps the isolation
+          // benefit for the other tabs without breaking the virtualizer.
           React.createElement('div', {
-            ref: (el) => {
-              collectionScrollContainerRef.current = el;
-              if (el && !collectionScrollContainerReady) {
-                setCollectionScrollContainerReady(true);
-              }
-            },
+            ref: handleCollectionScrollContainerRef,
             className: 'flex-1 overflow-y-auto scrollable-content',
-            style: { minHeight: 0, contain: 'strict' },
+            style: collectionTab === 'tracks'
+              ? { minHeight: 0 }
+              : { minHeight: 0, contain: 'strict' },
             onScroll: (e) => {
               const scrollTop = e.target.scrollTop;
               if (scrollTop > 50 && !collectionHeaderCollapsed) {
@@ -46530,11 +46662,13 @@ useEffect(() => {
                 );
               }
 
-              return React.createElement('div', {
-                className: 'space-y-0',
-                style: { minHeight: 'calc(100vh - 160px)' }  // Ensure enough scroll area to prevent header bounce
-              },
-                sorted.map((track, index) => {
+              // Windowed render (parachord#783). Below the virtualization
+              // threshold (~100 tracks) the helper falls back to a plain
+              // map, so small libraries see no change in DOM shape.
+              return React.createElement(VirtualizedLibraryTracksList, {
+                tracks: sorted,
+                parentRef: collectionScrollContainerRef,
+                renderRow: (track, index) => {
                   // Merge track.sources (e.g., localfiles) with resolved sources from trackSources state
                   const effectiveSources = Object.fromEntries(
                     Object.entries({ ...(track.sources || {}), ...(trackSources[track.id] || {}) }).filter(([, v]) => v && !v.noMatch)
@@ -46809,8 +46943,8 @@ useEffect(() => {
                       })()
                     )
                   );
-                })
-              );
+                }
+              });
             })(),
 
             collectionTab !== 'tracks' && React.createElement('div', { className: 'p-6' },
