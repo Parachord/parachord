@@ -2415,28 +2415,43 @@ const VirtualizedQueueList = React.memo(({
   );
 });
 
-// VirtualizedLibraryTracksList — windowed rendering for the Library "Tracks"
-// tab (parachord#783). Mirrors `VirtualizedQueueList`'s pattern but with a
-// container-wrapping approach that keeps the row-rendering callback
-// virtualization-agnostic: the parent component owns the row markup, this
-// component owns the positioning + virtualizer machinery.
+// VirtualizedTrackList — generic windowed rendering for any track list
+// (parachord#783, extended in #767 to playlist/search/charts/history/
+// friend-history views). Mirrors `VirtualizedQueueList`'s pattern but
+// with a container-wrapping approach that keeps the row-rendering
+// callback virtualization-agnostic: the parent component owns the row
+// markup, this component owns the positioning + virtualizer machinery.
 //
-// Why this exists: collection tracks list can be 2,000+ items. Without
-// virtualization, every state change touching collection state walks the
-// whole React tree. Windowing keeps mounted nodes to ~30 (viewport + overscan).
+// Why this exists: collection / playlist / charts track lists can be
+// hundreds-to-thousands of items. Without virtualization, every state
+// change walks the whole React tree. Windowing keeps mounted nodes to
+// ~30 (viewport + overscan).
 //
 // Notes for future maintainers:
-//   - The scroll container ref must point to a `flex-1 overflow-y-auto`
-//     element WITHOUT `contain: strict` (size containment confuses the
-//     virtualizer's clientHeight measurement). The Library scroll container
-//     conditionally relaxes to `contain: layout` only when on tracks tab.
-//   - Falls back to plain non-virtualized render when ReactVirtual isn't
-//     loaded OR when tracks.length < virtualizationThreshold (default 100)
-//     — sub-threshold lists don't benefit from the overhead.
-//   - `renderRow(track, index, virtualRow)` is called by the parent. The
-//     wrapper handles positioning so the parent's row markup stays
+//   - The scroll container ref-callback MUST be stable across renders
+//     (e.g. via `useCallback` with `[]` deps, OR pass a `useRef` object
+//     directly to `ref={}`). An inline arrow on the scroll container's
+//     ref creates a per-render detach/attach cycle in React's commit
+//     phase; the detach phase nulls the ref BEFORE child useLayoutEffect
+//     hooks run, and the virtualizer's `_willUpdate` reads null → the
+//     internal `scrollElement` never gets set → `vItems` perpetually
+//     `[]`. This was the root cause of two prior failed virtualization
+//     attempts on the Library tab (#783 commit message has the
+//     full diagnostic trail).
+//   - Avoid `contain: strict` (= `size + layout + style + paint`) on
+//     the scroll container — `size` containment can confuse the
+//     virtualizer's clientHeight measurement when combined with
+//     `flex-1` sizing. Either drop containment entirely on the tab
+//     using the virtualizer, or use a definite pixel height on the
+//     scroll container.
+//   - Falls back to plain non-virtualized render when ReactVirtual
+//     isn't loaded, when `tracks.length < virtualizationThreshold`
+//     (default 100), or transiently when virtualItems is empty (before
+//     the virtualizer's observers settle).
+//   - `renderRow(track, index, virtualRow)` is called by the parent.
+//     The wrapper handles positioning so the parent's row markup stays
 //     identical to the non-virtualized version.
-const VirtualizedLibraryTracksList = React.memo(({
+const VirtualizedTrackList = React.memo(({
   tracks,
   parentRef,
   renderRow,
@@ -8014,12 +8029,24 @@ const Parachord = () => {
   const collectionTracksRef = useRef([]); // Ref to access current tracks in observer callback
   const [collectionScrollContainerReady, setCollectionScrollContainerReady] = useState(false)
 
+  // Separate ref for the playlist tracklist's actual scroll viewport.
+  // The existing `playlistScrollContainerRef` is set on an outer
+  // `overflow: hidden` wrapper and serves the IntersectionObserver's
+  // root option. The inner `overflowY: auto` tracklist column is what
+  // actually scrolls — that's what the virtualizer needs to observe.
+  // Stable useCallback (per the #783 fix) so React doesn't detach/attach
+  // every render and starve the virtualizer's _willUpdate.
+  const playlistTracksScrollRef = useRef(null);
+  const handlePlaylistTracksScrollRef = useCallback((el) => {
+    playlistTracksScrollRef.current = el;
+  }, []);
+
   // Stable ref-callback for the collection scroll container. The naive form
   // `ref={(el) => { ... }}` produces a new arrow on every render, which causes
   // React to detach-then-attach the ref every commit. The detach phase sets
   // `collectionScrollContainerRef.current = null` BEFORE child useLayoutEffect
   // hooks run, and the attach phase only sets it back to the element AFTER.
-  // Inside that gap, `VirtualizedLibraryTracksList`'s `useVirtualizer`
+  // Inside that gap, `VirtualizedTrackList`'s `useVirtualizer`
   // (via react-virtual's `_willUpdate`) calls our `getScrollElement`, which
   // reads `parentRef.current` — and observes null on every single render.
   // Net effect: the virtualizer's internal `scrollElement` never gets set,
@@ -8036,6 +8063,16 @@ const Parachord = () => {
     collectionScrollContainerRef.current = el;
     if (el) setCollectionScrollContainerReady(true);
     else setCollectionScrollContainerReady(false);
+  }, []);
+
+  // Same stable-ref-callback pattern for the search detail scroll container.
+  // The previous inline `ref={(el) => { ... }}` would have starved any
+  // virtualizer placed inside it for the same reason; the search-tracks
+  // list now uses VirtualizedTrackList so we need the stable identity.
+  const handleSearchScrollContainerRef = useCallback((el) => {
+    searchScrollContainerRef.current = el;
+    if (el) setSearchScrollContainerReady(true);
+    else setSearchScrollContainerReady(false);
   }, []);
 
   // Refs for persisting resolved sources back to collection and playlists (debounced)
@@ -38376,12 +38413,7 @@ useEffect(() => {
           ),
           // Scrollable content area - single column layout with grids/lists
           React.createElement('div', {
-            ref: (el) => {
-              searchScrollContainerRef.current = el;
-              if (el && !searchScrollContainerReady) {
-                setSearchScrollContainerReady(true);
-              }
-            },
+            ref: handleSearchScrollContainerRef,
             className: 'flex-1 overflow-y-auto bg-white scrollable-content',
             onScroll: handleSearchDetailScroll
           },
@@ -39046,8 +39078,10 @@ useEffect(() => {
                   filteredTracks.sort((a, b) => (b.duration || 0) - (a.duration || 0));
                 }
 
-                return filteredTracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
-                  ...filteredTracks.map((track, index) => {
+                return filteredTracks.length > 0 && React.createElement(VirtualizedTrackList, {
+                  tracks: filteredTracks,
+                  parentRef: searchScrollContainerRef,
+                  renderRow: (track, index) => {
                     // Use track.id to look up resolved sources from trackSources state
                     const resolvedSources = trackSources[track.id] || track.sources || {};
                     const hasResolved = Object.keys(resolvedSources).length > 0;
@@ -39252,8 +39286,8 @@ useEffect(() => {
                         null
                     )
                   );
-                  })
-                );
+                  }
+                });
               })(),
 
               // Tracks empty state
@@ -43326,13 +43360,19 @@ useEffect(() => {
             ),
 
             // RIGHT COLUMN: Tracklist (scrolls independently)
-            React.createElement('div', { className: 'flex-1 min-w-0 pt-8 scrollable-content', style: { overflowY: 'auto' } },
+            React.createElement('div', {
+              ref: handlePlaylistTracksScrollRef,
+              className: 'flex-1 min-w-0 pt-8 scrollable-content',
+              style: { overflowY: 'auto' }
+            },
               // Use edited tracks when in edit mode, otherwise use playlistTracks
               (() => {
                 const displayTracks = playlistEditMode && editedPlaylistData ? editedPlaylistData.tracks : playlistTracks;
                 return displayTracks.length > 0 ?
-                React.createElement('div', { className: 'space-y-0' },
-                  displayTracks.map((track, index) => {
+                React.createElement(VirtualizedTrackList, {
+                  tracks: displayTracks,
+                  parentRef: playlistTracksScrollRef,
+                  renderRow: (track, index) => {
                     // Use track.id to look up resolved sources from trackSources state
                     const resolvedSources = trackSources[track.id] || track.sources || {};
                     const hasResolved = Object.keys(resolvedSources).length > 0;
@@ -43567,8 +43607,8 @@ useEffect(() => {
                           )
                       )
                     );
-                  })
-                )
+                  }
+                })
               :
                 // Skeleton loaders while tracks are loading
                 React.createElement('div', { className: 'space-y-0' },
@@ -46618,7 +46658,7 @@ useEffect(() => {
           // `contain: strict` is layout-/paint-isolation for the other three
           // tabs (artists/albums/friends) — small perf win for those routes.
           // The tracks tab uses `@tanstack/react-virtual` (see
-          // VirtualizedLibraryTracksList, parachord#783); `contain: size`
+          // VirtualizedTrackList, parachord#783); `contain: size`
           // interacts poorly with the virtualizer's measurement of
           // `getScrollElement().clientHeight` when the scroll container is
           // `flex-1`-sized inside a flex column. Two prior virtualization
@@ -46737,7 +46777,7 @@ useEffect(() => {
               // Windowed render (parachord#783). Below the virtualization
               // threshold (~100 tracks) the helper falls back to a plain
               // map, so small libraries see no change in DOM shape.
-              return React.createElement(VirtualizedLibraryTracksList, {
+              return React.createElement(VirtualizedTrackList, {
                 tracks: sorted,
                 parentRef: collectionScrollContainerRef,
                 renderRow: (track, index) => {
