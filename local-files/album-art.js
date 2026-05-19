@@ -18,27 +18,35 @@ class AlbumArtResolver {
     // 1. Check for cached embedded art
     if (track.has_embedded_art || track.hasEmbeddedArt) {
       const cached = await this.getOrExtractEmbeddedArt(track);
-      if (cached) return `file://${cached}`;
+      if (cached) return `local-art://${encodeURI(cached)}`;
     }
 
     // 2. Check folder art
     if (track.folder_art_path || track.folderArtPath) {
       const artPath = track.folder_art_path || track.folderArtPath;
       if (fs.existsSync(artPath)) {
-        return `file://${artPath}`;
+        return `local-art://${encodeURI(artPath)}`;
       }
     }
 
-    // 3. Check MusicBrainz cached art
+    // 3. Check MusicBrainz cached art. Existing DB rows still contain
+    // `file://`-prefixed values from before the scheme migration; rewrite
+    // them on-the-fly so the renderer (now `parachord://`-origin) can load
+    // them via the local-art:// handler. New writes use local-art:// directly
+    // (see fetchFromCoverArtArchive below).
     if (track.musicbrainz_art_url || track.musicbrainzArtUrl) {
-      return track.musicbrainz_art_url || track.musicbrainzArtUrl;
+      const stored = track.musicbrainz_art_url || track.musicbrainzArtUrl;
+      if (stored.startsWith('file://')) {
+        return `local-art://${encodeURI(stored.slice('file://'.length))}`;
+      }
+      return stored;
     }
 
     // 4. Try to fetch from Cover Art Archive if we have release ID
     if (track.musicbrainz_release_id || track.musicbrainzReleaseId) {
       const releaseId = track.musicbrainz_release_id || track.musicbrainzReleaseId;
       const caaArt = await this.fetchFromCoverArtArchive(track.id, releaseId);
-      if (caaArt) return `file://${caaArt}`;
+      if (caaArt) return `local-art://${encodeURI(caaArt)}`;
     }
 
     // 5. No art found - return null (UI will show placeholder)
@@ -90,9 +98,10 @@ class AlbumArtResolver {
         const buffer = Buffer.from(await response.arrayBuffer());
         fs.writeFileSync(cachePath, buffer);
 
-        // Update database with cached URL
+        // Update database with cached URL. Stored as `local-art://`; legacy
+        // `file://` rows are translated on read in resolveArt().
         if (trackId) {
-          this.db.updateTrackArt(trackId, { musicbrainzArtUrl: `file://${cachePath}` });
+          this.db.updateTrackArt(trackId, { musicbrainzArtUrl: `local-art://${encodeURI(cachePath)}` });
         }
 
         return cachePath;

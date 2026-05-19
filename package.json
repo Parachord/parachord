@@ -72,6 +72,12 @@
       "owner": "Parachord",
       "repo": "parachord"
     },
+    "protocols": [
+      {
+        "name": "Parachord",
+        "schemes": ["parachord"]
+      }
+    ],
     "files": [
       "**/*",
       "!.DS_Store",

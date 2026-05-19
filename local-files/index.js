@@ -201,14 +201,18 @@ class LocalFilesService {
     // renderer's lazy background extraction kicks in to warm the cache so
     // subsequent loads pick it up. See LocalFilesService.resolveArtForTrack
     // for the on-demand IPC entry point.
+    // Album-art URLs use the custom `local-art://` scheme because the renderer
+    // is `parachord://`-origin and `file://` images are cross-origin (blocked
+    // by webSecurity). The handler in main.js validates that the path is
+    // inside a watch folder or the album-art cache before serving.
     if (track.folder_art_path && fs.existsSync(track.folder_art_path)) {
-      formatted.albumArt = `file://${track.folder_art_path}`;
+      formatted.albumArt = `local-art://${encodeURI(track.folder_art_path)}`;
     } else if (track.has_embedded_art && this.albumArt) {
       const hash = crypto.createHash('md5').update(track.file_path).digest('hex');
       const jpg = path.join(this.albumArt.cacheDir, `embedded-${hash}.jpg`);
       const png = path.join(this.albumArt.cacheDir, `embedded-${hash}.png`);
-      if (fs.existsSync(jpg)) formatted.albumArt = `file://${jpg}`;
-      else if (fs.existsSync(png)) formatted.albumArt = `file://${png}`;
+      if (fs.existsSync(jpg)) formatted.albumArt = `local-art://${encodeURI(jpg)}`;
+      else if (fs.existsSync(png)) formatted.albumArt = `local-art://${encodeURI(png)}`;
     }
     return formatted;
   }

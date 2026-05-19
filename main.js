@@ -731,7 +731,13 @@ function createWindow() {
     show: false
   });
 
-  mainWindow.loadFile('index.html');
+  // Renderer loads via the custom `parachord://` scheme (registered as standard +
+  // secure + cors-enabled) rather than `file://`. This gives the app a stable,
+  // non-file origin — required for Apple Music user auth (the MusicKit JS popup
+  // postMessages the user token back to `window.opener` with a strict
+  // targetOrigin, which the browser drops when the parent origin is `file://`).
+  // See issue #834.
+  mainWindow.loadURL('parachord://app/index.html');
 
   let windowShown = false;
   const showWindow = () => {
@@ -780,7 +786,7 @@ function createWindow() {
       console.log('🔄 Auto-reloading after renderer crash...');
       setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.loadFile('index.html');
+          mainWindow.loadURL('parachord://app/index.html');
         }
       }, 1000);
     }
@@ -1505,6 +1511,18 @@ async function exchangeSoundCloudCodeForToken(code) {
 
 // Register custom protocol schemes
 // Must be called before app is ready
+// `parachord://` is BOTH the renderer's origin (parachord://app/index.html) and
+// the deep-link command scheme (parachord://play?artist=X). The protocol.handle
+// for it (registered after app-ready) serves files under the `app` host segment
+// and 404s everything else — deep-link command URLs from outside the app come
+// in via `open-url` (macOS) / `second-instance` argv (Win/Linux), not through
+// the renderer's protocol handler, so the 404 path never affects them. Flipping
+// off `file://` to a custom scheme is what makes Apple Music user auth work on
+// Linux + Windows (issue #834): MusicKit JS's popup posts the user token back
+// to `window.opener` with a strict targetOrigin, and `file://` is rejected
+// cross-window. `local-art://` exists because `parachord://`-origin pages can't
+// load `file://` images under the default webSecurity model — see local-files
+// for the emit sites.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'local-audio',
@@ -1516,11 +1534,21 @@ protocol.registerSchemesAsPrivileged([
     }
   },
   {
+    scheme: 'local-art',
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true
+    }
+  },
+  {
     scheme: 'parachord',
     privileges: {
       secure: true,
-      supportFetchAPI: false,
-      standard: true
+      supportFetchAPI: true,
+      standard: true,
+      corsEnabled: true
     }
   }
 ]);
@@ -1678,6 +1706,144 @@ app.whenReady().then(() => {
     } catch (error) {
       console.error('[LocalAudio] Error serving file:', error);
       return new Response('File not found', { status: 404 });
+    }
+  });
+
+  // Register protocol handler for app files (renderer origin = parachord://app).
+  // Serves files under __dirname for paths shaped `parachord://app/<relative>`.
+  // Anything else (e.g. `parachord://play` deep-link commands that arrive via
+  // OS-level open-url/second-instance) is 404'd here — those paths are handled
+  // by handleProtocolUrl, NOT by this in-process handler. They never reach
+  // protocol.handle because Electron dispatches them through app events before
+  // any navigation/fetch.
+  const APP_MIME_TYPES = {
+    '.html': 'text/html; charset=utf-8',
+    '.htm': 'text/html; charset=utf-8',
+    '.js': 'application/javascript; charset=utf-8',
+    '.mjs': 'application/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.map': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.webp': 'image/webp',
+    '.ico': 'image/x-icon',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf',
+    '.otf': 'font/otf',
+    '.wasm': 'application/wasm',
+    '.txt': 'text/plain; charset=utf-8',
+    '.xml': 'application/xml; charset=utf-8'
+  };
+  protocol.handle('parachord', async (request) => {
+    try {
+      const url = new URL(request.url);
+      // Only the `app` host serves files. `parachord://play`, etc. fall through
+      // to the deep-link path (handled by open-url / second-instance) and
+      // should never actually hit this handler from inside the renderer.
+      if (url.host !== 'app') {
+        console.warn('[Parachord] Unknown host, returning 404:', request.url);
+        return new Response('Not found', { status: 404 });
+      }
+      // Strip leading slash, decode, and reject any traversal.
+      const requestedPath = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+      if (!requestedPath || requestedPath.includes('..')) {
+        console.warn('[Parachord] Invalid path, returning 400:', requestedPath);
+        return new Response('Bad request', { status: 400 });
+      }
+      // Resolve inside __dirname and verify containment (defense-in-depth
+      // against traversal that survives the `..` check on weird encodings).
+      const filePath = path.resolve(__dirname, requestedPath);
+      if (!filePath.startsWith(__dirname + path.sep) && filePath !== __dirname) {
+        console.warn('[Parachord] Path escapes __dirname, returning 403:', filePath);
+        return new Response('Forbidden', { status: 403 });
+      }
+      const stats = await fs.promises.stat(filePath);
+      if (!stats.isFile()) {
+        return new Response('Not a file', { status: 404 });
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeType = APP_MIME_TYPES[ext] || 'application/octet-stream';
+      const buffer = await fs.promises.readFile(filePath);
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': stats.size.toString()
+        }
+      });
+    } catch (error) {
+      // ENOENT is normal for missing files; log others.
+      if (error.code !== 'ENOENT') {
+        console.error('[Parachord] Error serving file:', request.url, error);
+      }
+      return new Response('Not found', { status: 404 });
+    }
+  });
+
+  // Register protocol handler for local album-art files. Same security model
+  // as local-audio: only serve files inside a watched folder OR inside the
+  // album-art cache directory. Replaces the prior `file://` art URLs that
+  // were emitted by formatTrackForRenderer / AlbumArtResolver — the renderer
+  // is now `parachord://`-origin and `file://` images are cross-origin under
+  // default webSecurity.
+  const ART_MIME_TYPES = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+    '.svg': 'image/svg+xml'
+  };
+  protocol.handle('local-art', async (request) => {
+    try {
+      // URL form: local-art:///path/to/file.jpg — host empty, pathname is the path.
+      const url = new URL(request.url);
+      const requestedPath = decodeURIComponent(url.pathname);
+      const resolvedPath = path.resolve(requestedPath);
+
+      // Validate: must be inside a watched folder OR the album-art cache dir.
+      let allowed = false;
+      if (localFilesService?.initialized) {
+        const watchFolders = localFilesService.getWatchFolders();
+        allowed = watchFolders.some(folder =>
+          resolvedPath.startsWith(folder.path + path.sep) || resolvedPath === folder.path
+        );
+        if (!allowed && localFilesService.albumArt?.cacheDir) {
+          const cacheDir = path.resolve(localFilesService.albumArt.cacheDir);
+          allowed = resolvedPath.startsWith(cacheDir + path.sep);
+        }
+      }
+      if (!allowed) {
+        console.error('[LocalArt] Access denied — not in watch folder or art cache:', resolvedPath);
+        return new Response('Access denied', { status: 403 });
+      }
+
+      const stats = await fs.promises.stat(resolvedPath);
+      if (!stats.isFile()) {
+        return new Response('Not a file', { status: 404 });
+      }
+      const ext = path.extname(resolvedPath).toLowerCase();
+      const mimeType = ART_MIME_TYPES[ext] || 'application/octet-stream';
+      const buffer = await fs.promises.readFile(resolvedPath);
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': stats.size.toString(),
+          'Cache-Control': 'public, max-age=86400'
+        }
+      });
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.error('[LocalArt] Error serving file:', request.url, error);
+      }
+      return new Response('Not found', { status: 404 });
     }
   });
 
