@@ -201,9 +201,10 @@ The handlers use `window.electron.app.onBackground` / `onForeground` (preload br
 
 `staggerPlaylistsForCycle` (sync-engine/index.js) is the pure sort+slice helper. Sort order:
 
-1. `hasUpdates: true` first — user is waiting on a pending pull.
-2. `syncSources[providerId].syncedAt` ascending — oldest-stale next. Playlists with no local entry sort to top (first-time imports run on the first cycle after wizard selection).
-3. `lastModified` descending — breaks ties; recent local edits get sync priority over dormant playlists.
+1. `syncSources[providerId].syncedAt` ascending — oldest-stale first. Playlists with no local entry sort to top (first-time imports run on the first cycle after wizard selection).
+2. `lastModified` descending — breaks ties; recent local edits get sync priority over dormant playlists.
+
+**`hasUpdates: true` is NOT a sort priority** (parachord#835). Earlier the sort put hasUpdates-true playlists first on the reasoning that the user is "waiting on a pending pull" — but hasUpdates is a state flag, not an action signal. Once set, the banner is already visible in the UI and re-running sync on the playlist doesn't change anything (the inbound diff just re-confirms what we already know; `stillHasUpdates` keeps the local snapshotId pinned to the pre-detection value until the user actually pulls). When N playlists accumulate hasUpdates=true (easy with daily/weekly algorithmic playlists the user hasn't acted on), they monopolize every batch and the syncedAt-asc tail starves — discovery of NEW pending updates (e.g. Daily Brew rotating from yesterday's content to today's) never happens. Pure syncedAt-asc keeps discovery on its target ~2.5h-worst-case cadence regardless of how many hasUpdates banners are outstanding.
 
 **Full-sync bypass** via `options.fullSync = true` on the `sync:start` IPC. All renderer-side user-initiated sync paths pass it: wizard "Sync Now" (post-config + post-syncing-complete), Spotify/AM re-auth catch-up triggers. `runBackgroundSync` does NOT pass it — that's the cadenced path the stagger targets.
 

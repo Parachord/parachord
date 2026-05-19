@@ -43,11 +43,16 @@ describe('staggerPlaylistsForCycle (oldest-stale-first batching, see parachord#8
     expect(result).toHaveLength(15);
   });
 
-  test('hasUpdates playlists come first regardless of syncedAt', () => {
+  test('hasUpdates does NOT jump the queue (parachord#835 starvation fix)', () => {
+    // hasUpdates is a state flag (banner visible to user), not a sort
+    // priority. Re-running sync on a hasUpdates=true playlist confirms
+    // what we already know; meanwhile the syncedAt-asc tail starves and
+    // never discovers new updates. Pure syncedAt-asc ordering means the
+    // oldest-stale playlist wins regardless of hasUpdates state.
     const selected = [remote('a'), remote('b'), remote('c')];
     const locals = [
       local({ externalId: 'a', syncedAt: 1000 }),                       // fresh, no updates
-      local({ externalId: 'b', syncedAt: 500, hasUpdates: true }),      // older, but has updates
+      local({ externalId: 'b', syncedAt: 500, hasUpdates: true }),      // middle-aged, has updates
       local({ externalId: 'c', syncedAt: 100 }),                        // oldest, no updates
     ];
     const result = staggerPlaylistsForCycle({
@@ -56,8 +61,38 @@ describe('staggerPlaylistsForCycle (oldest-stale-first batching, see parachord#8
       providerId: 'spotify',
       batchSize: 2
     });
-    expect(result[0].externalId).toBe('b'); // hasUpdates wins
-    expect(result[1].externalId).toBe('c'); // then oldest syncedAt
+    expect(result[0].externalId).toBe('c'); // oldest syncedAt wins
+    expect(result[1].externalId).toBe('b'); // hasUpdates is irrelevant to position
+  });
+
+  test('many hasUpdates-true playlists do NOT monopolize the batch (parachord#835)', () => {
+    // Real-world repro: a user with 96 hasUpdates=true playlists
+    // (accumulated pending pulls they haven't acted on) and one
+    // stale-but-undetected-yet playlist (Daily Brew) at syncedAt=
+    // yesterday. With the old hasUpdates-first sort, Daily Brew sits at
+    // position 97 every cycle and never gets discovered. With the fix,
+    // the oldest-stale entry wins regardless of how many hasUpdates-true
+    // playlists exist.
+    const NOW = 1_000_000;
+    const stale = remote('stale');
+    const pending = Array.from({ length: 50 }, (_, i) => remote(`p${i}`));
+    const selected = [...pending, stale];
+    const locals = [
+      // 50 playlists with hasUpdates=true and FRESH syncedAt (today)
+      ...pending.map((r, i) =>
+        local({ externalId: r.externalId, syncedAt: NOW - i, hasUpdates: true })
+      ),
+      // The starvation victim: syncedAt is YESTERDAY, no hasUpdates yet
+      local({ externalId: 'stale', syncedAt: NOW - 24 * 60 * 60 * 1000 }),
+    ];
+    const result = staggerPlaylistsForCycle({
+      selectedRemote: selected,
+      localPlaylists: locals,
+      providerId: 'spotify',
+      batchSize: 15
+    });
+    expect(result[0].externalId).toBe('stale'); // wins by syncedAt-asc
+    expect(result.length).toBe(15);
   });
 
   test('among non-hasUpdates, oldest syncedAt comes first', () => {

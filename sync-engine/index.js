@@ -382,8 +382,8 @@ const DEFAULT_STAGGER_BATCH_SIZE = 15;
 /**
  * Stagger selected remote playlists across multiple sync cycles
  * (parachord#800, part of epic #803). Returns the top N playlists for
- * this cycle, sorted "oldest stale first" with hasUpdates jumping the
- * queue and lastModified breaking ties.
+ * this cycle, sorted "oldest stale first" with lastModified breaking
+ * ties.
  *
  * Why: today every sync cycle processes ALL selected remote playlists
  * for the provider. With 50+ playlists × 3 providers, that's 150+
@@ -395,13 +395,29 @@ const DEFAULT_STAGGER_BATCH_SIZE = 15;
  * whole selection is covered.
  *
  * Sort order:
- *   1. `hasUpdates: true` first — user is waiting on a pending pull.
- *   2. `syncSources[providerId].syncedAt` ascending — oldest-stale next.
+ *   1. `syncSources[providerId].syncedAt` ascending — oldest-stale first.
  *      Playlists with no local entry (never imported) treat as 0,
- *      which floats them to the top of this tier (so first-time
- *      imports happen on the first cycle after wizard selection).
- *   3. `lastModified` descending — breaks ties; recent local edits get
+ *      which floats them to the top (so first-time imports happen on
+ *      the first cycle after wizard selection).
+ *   2. `lastModified` descending — breaks ties; recent local edits get
  *      sync priority over dormant playlists.
+ *
+ * **`hasUpdates: true` is NOT a sort priority.** Earlier the sort
+ * put hasUpdates-true playlists first, on the reasoning that the user
+ * is "waiting on a pending pull." But hasUpdates is a state flag, not
+ * an action signal — once it's set, the banner is already visible in
+ * the UI and re-running sync on the playlist doesn't change anything
+ * (the inbound diff just re-confirms what we already know;
+ * `stillHasUpdates` keeps the local snapshotId pinned to the
+ * pre-detection value until the user actually pulls).
+ *
+ * The starvation pathology: when N playlists accumulate hasUpdates=true
+ * (because the user hasn't acted on them yet — easy with daily/weekly
+ * algorithmic playlists), they monopolize every staggered batch and
+ * the syncedAt-asc tail never makes progress. Discovery of NEW
+ * pending updates (Daily Brew flipping from "yesterday's content"
+ * to "today's content") never happens because Daily Brew sits at
+ * position N+1 forever. See parachord#835.
  *
  * Caller is expected to bypass staggering entirely for explicit
  * full-sync paths (wizard "Sync Now", cleanup-duplicates, etc.) by
@@ -415,8 +431,8 @@ const DEFAULT_STAGGER_BATCH_SIZE = 15;
  *   the user's selected set. Each entry has at minimum `externalId`.
  * @param {Array} args.localPlaylists - The full `local_playlists` array
  *   loaded from store at the top of `sync:start`. Used to look up
- *   `syncSources[providerId].syncedAt`, `hasUpdates`, `lastModified`
- *   for the staleness sort.
+ *   `syncSources[providerId].syncedAt` and `lastModified` for the
+ *   staleness sort.
  * @param {string} args.providerId - Provider running this sync iteration.
  *   Used both as the syncSources sub-key and for matching local
  *   playlists via `syncedFrom.externalId` / `syncedTo[providerId].externalId`.
@@ -453,15 +469,11 @@ const staggerPlaylistsForCycle = ({
   const sorted = [...selectedRemote].sort((a, b) => {
     const localA = localByExternalId.get(a.externalId);
     const localB = localByExternalId.get(b.externalId);
-    // 1. hasUpdates first
-    const updA = !!localA?.hasUpdates;
-    const updB = !!localB?.hasUpdates;
-    if (updA !== updB) return updA ? -1 : 1;
-    // 2. Oldest syncedAt next (missing → 0 → top)
+    // 1. Oldest syncedAt first (missing → 0 → absolute top)
     const tsA = localA?.syncSources?.[providerId]?.syncedAt || 0;
     const tsB = localB?.syncSources?.[providerId]?.syncedAt || 0;
     if (tsA !== tsB) return tsA - tsB;
-    // 3. lastModified desc breaks ties (recent local edits → priority)
+    // 2. lastModified desc breaks ties (recent local edits → priority)
     const lmA = localA?.lastModified || 0;
     const lmB = localB?.lastModified || 0;
     return lmB - lmA;
