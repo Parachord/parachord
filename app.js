@@ -35241,14 +35241,40 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const playlistTitle = metadataOverrides?.title || parsed.title;
       const playlistCreator = metadataOverrides?.creator ?? parsed.creator;
 
+      // Look up the on-disk record FIRST — disk is the source of truth for
+      // `syncedTo` / `syncedFrom` / `syncSources` even when React state is
+      // temporarily stale (e.g. background-sync reload race, or any other
+      // setPlaylists path that hasn't observed the latest hosted-import
+      // write yet). Without this, a hosted-XSPF re-import where the React
+      // state lookup misses falls into the "add new" branch below and
+      // produces a fresh record with NO sync state — next sync push loop
+      // then treats it as needing create-on-each-provider. main.js's
+      // three-layer dedup saves us from duplicate remote creation, but
+      // each cycle still pays the full clear-and-add cost (track-MBID
+      // resolution + delete + add for LB; same shape for other providers).
+      // Holding `playlistSyncInProgressRef` for the full marathon also
+      // starves other providers' playlist-diff phase (see Daily Brew not
+      // syncing during the LB hosted-mirror push window).
+      let existingOnDisk = null;
+      try {
+        const onDisk = await window.electron.playlists.load();
+        existingOnDisk = onDisk.find(p => p.sourceUrl === url || p.id === id);
+      } catch (e) {
+        console.warn('Failed to load on-disk playlists for hosted-import dedup:', e);
+      }
+
       // Check if playlist already exists (use updater form to avoid stale closure)
       let didUpdate = false;
       let updatedPlaylist = null;
       setPlaylists(prev => {
-        const existingIndex = prev.findIndex(p => p.sourceUrl === url);
-        if (existingIndex >= 0) {
+        const existingIndex = prev.findIndex(p => p.sourceUrl === url || p.id === id);
+        // React state takes precedence when present (it's the freshest write
+        // path); fall back to the on-disk record when React state is stale.
+        // The branch reached either way preserves `syncedTo` / `syncedFrom`
+        // / `syncSources` via the `...existing` spread.
+        const existing = existingIndex >= 0 ? prev[existingIndex] : existingOnDisk;
+        if (existing) {
           didUpdate = true;
-          const existing = prev[existingIndex];
           // Mark as locally modified only if the XSPF content actually changed —
           // so the sync loop pushes XSPF-driven updates to providers, but startup
           // reloads with unchanged content don't trigger spurious pushes.
@@ -35262,7 +35288,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             lastUpdated: Date.now(),
             ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
           };
-          return prev.map((p, i) => i === existingIndex ? updatedPlaylist : p);
+          if (existingIndex >= 0) {
+            return prev.map((p, i) => i === existingIndex ? updatedPlaylist : p);
+          }
+          // Existed on disk but not in React state — restore it. Without
+          // this, the "add new" branch below would create a duplicate
+          // playlist entry on next save, and the sync push loop would still
+          // see the fresh entry (no sync state) and re-push everything.
+          return [updatedPlaylist, ...prev];
         }
         return prev;
       });
