@@ -6342,10 +6342,21 @@ const Parachord = () => {
   const resolverSyncSettingsRef = useRef(resolverSyncSettings);
   useEffect(() => { resolverSyncSettingsRef.current = resolverSyncSettings; }, [resolverSyncSettings]);
 
-  // Mutex to prevent concurrent playlist creation across background and manual sync paths.
-  // Without this, both paths can load playlists simultaneously, both see a playlist
-  // without syncedTo[providerId], and both create it on the remote — producing duplicates.
-  const playlistSyncInProgressRef = useRef(false);
+  // Per-provider mutex to prevent concurrent playlist creation for the same
+  // (local, provider) pair across the background-sync push loop and the
+  // post-wizard IIFE push loop. Without this, both paths can load playlists
+  // simultaneously, both see a playlist without syncedTo[providerId], and
+  // both call sync.createPlaylist on the same provider — producing duplicates.
+  //
+  // Previously a single boolean ref — too coarse. When one provider's push
+  // loop held it (e.g. an LB hosted-mirror push marathon taking minutes due
+  // to per-track MBID resolution + clear-and-add), every other provider's
+  // playlist phase that fired during that window got skipped entirely.
+  // Spotify's Daily Brew snapshot-diff check was starved that way (see
+  // parachord#831). The race the mutex actually needs to prevent is
+  // per-(local, provider) concurrent create — different providers' push
+  // loops touching different remote spaces don't race with each other.
+  const playlistSyncInProgressRef = useRef(new Set());
 
   // Cancel-on-focus infrastructure (parachord#799).
   //
@@ -6445,11 +6456,13 @@ const Parachord = () => {
                   }
                 }
               // Auto-sync local playlists to this provider
-              // Guard with mutex to prevent concurrent creation across background + manual sync
-              if (playlistSyncInProgressRef.current) {
-                console.log(`[Sync] Playlist sync already in progress, skipping background playlist sync for ${providerId}`);
+              // Guard with per-provider mutex to prevent concurrent creation
+              // across background + manual sync paths for the same provider.
+              // A different provider's in-flight push doesn't gate this one.
+              if (playlistSyncInProgressRef.current.has(providerId)) {
+                console.log(`[Sync] Playlist sync already in progress for ${providerId}, skipping background playlist sync`);
               } else {
-              playlistSyncInProgressRef.current = true;
+              playlistSyncInProgressRef.current.add(providerId);
               try {
                 const allPlaylists = await window.electron.playlists.load();
                 let playlistsChanged = false;
@@ -6706,7 +6719,7 @@ const Parachord = () => {
               } catch (err) {
                 console.warn(`[Sync] Local playlist sync failed for ${providerId}:`, err.message);
               } finally {
-                playlistSyncInProgressRef.current = false;
+                playlistSyncInProgressRef.current.delete(providerId);
               }
               } // end mutex guard
 
@@ -10827,11 +10840,13 @@ const Parachord = () => {
       (async () => {
         console.log(`[Sync] Post-sync IIFE started for ${providerId}`);
 
-        // Guard with mutex to prevent concurrent creation across background + manual sync
-        if (playlistSyncInProgressRef.current) {
-          console.log(`[Sync] Playlist sync already in progress, skipping manual playlist creation for ${providerId}`);
+        // Guard with per-provider mutex (parachord#831). Concurrent push for
+        // the SAME (local, provider) pair from the background sync loop is
+        // the race; different providers don't race with each other.
+        if (playlistSyncInProgressRef.current.has(providerId)) {
+          console.log(`[Sync] Playlist sync already in progress for ${providerId}, skipping manual playlist creation`);
         } else {
-          playlistSyncInProgressRef.current = true;
+          playlistSyncInProgressRef.current.add(providerId);
           try {
             const allPlaylists = await window.electron.playlists.load();
             let playlistsChanged = false;
@@ -11021,7 +11036,7 @@ const Parachord = () => {
           } catch (err) {
             console.warn('[Sync] Local playlist auto-create failed after manual sync:', err.message);
           } finally {
-            playlistSyncInProgressRef.current = false;
+            playlistSyncInProgressRef.current.delete(providerId);
           }
         } // end mutex guard
 
@@ -35250,11 +35265,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // produces a fresh record with NO sync state — next sync push loop
       // then treats it as needing create-on-each-provider. main.js's
       // three-layer dedup saves us from duplicate remote creation, but
-      // each cycle still pays the full clear-and-add cost (track-MBID
-      // resolution + delete + add for LB; same shape for other providers).
-      // Holding `playlistSyncInProgressRef` for the full marathon also
-      // starves other providers' playlist-diff phase (see Daily Brew not
-      // syncing during the LB hosted-mirror push window).
+      // each cycle would still pay the full clear-and-add cost without
+      // the inline-content short-circuit (parachord#832) AND without
+      // this state-preservation fix routing through the correct push
+      // path. The per-provider mutex (parachord#831) is the last layer:
+      // even when one provider's push DOES have legitimate work, sibling
+      // providers' playlist-diff phases now proceed in parallel rather
+      // than getting starved.
       let existingOnDisk = null;
       try {
         const onDisk = await window.electron.playlists.load();
