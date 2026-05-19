@@ -456,6 +456,37 @@ const SpotifySyncProvider = {
       .filter(t => t.spotifyUri)
       .map(t => t.spotifyUri);
 
+    // Short-circuit when remote already matches the intended list
+    // (same URIs in the same order). Spotify's PUT replaces in-order, so
+    // any reorder still has to fall through to the full PUT — but a no-op
+    // push (common for steady-state hosted-XSPF mirrors where the upstream
+    // blob differs by whitespace but the track list is unchanged) becomes
+    // a single cheap GET. Mirror of the inbound short-circuit shipped in
+    // #796 (canShortCircuitPlaylistUpdate) for the opposite direction;
+    // sibling short-circuit lives in the LB and AM providers' update
+    // paths. See app.js's playlistSyncInProgressRef starvation concern
+    // (#831) — the less work this function does per playlist, the less
+    // the cross-provider mutex matters.
+    try {
+      const currentItems = await spotifyFetch(`/playlists/${playlistId}/tracks?limit=100&fields=items(track(uri)),next`, token, [], null, null);
+      const remoteUris = currentItems
+        .map(item => item?.track?.uri)
+        .filter(uri => typeof uri === 'string' && uri.length > 0);
+      const sameOrder =
+        remoteUris.length === uris.length
+        && remoteUris.every((u, i) => u === uris[i]);
+      if (sameOrder) {
+        const snap = await spotifyRequest(`/playlists/${playlistId}?fields=snapshot_id`, token);
+        console.log(`[Spotify] Skipping push for ${playlistId}: remote already matches (${uris.length} tracks)`);
+        return { success: true, snapshotId: snap.snapshot_id };
+      }
+    } catch (err) {
+      // If the precheck fails (rate limit, transient 5xx, etc.), fall through
+      // to the full PUT path — the existing retries on the write side handle
+      // those error modes. Don't let a precheck failure block the actual write.
+      console.warn(`[Spotify] Precheck for short-circuit failed for ${playlistId}; proceeding with full PUT: ${err.message}`);
+    }
+
     if (uris.length === 0) {
       // Clear the playlist if no valid tracks
       const result = await spotifyRequest(`/playlists/${playlistId}/tracks`, token, {
