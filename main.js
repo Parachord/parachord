@@ -5097,10 +5097,22 @@ async function fetchAppleMusicPublicPlaylistUrl(libraryId) {
   }
   const data = await res.json();
   const item = Array.isArray(data?.data) ? data.data[0] : null;
-  const globalId = item?.attributes?.playParams?.globalId;
-  const name = item?.attributes?.name;
-  if (!globalId || typeof globalId !== 'string' || !globalId.startsWith('pl.')) return null;
-  const slug = slugifyForAppleMusic(name);
+  const attrs = item?.attributes;
+  const globalId = attrs?.playParams?.globalId;
+  // For Parachord-created library playlists, Apple does NOT auto-generate a
+  // catalog reflection — `hasCatalog: false` and `playParams.globalId` is
+  // absent until the user manually taps "Share Playlist" in the Music app
+  // (which is what creates the `pl.u-XXXX` ID). Without that step there's
+  // no public URL to construct. See follow-up issue #826 for ideas on
+  // closing this gap (private share endpoint, manual entry, etc.).
+  if (!globalId || typeof globalId !== 'string' || !globalId.startsWith('pl.')) {
+    if (attrs && attrs.hasCatalog === false) {
+      // One-line breadcrumb for the common case so it's clear WHY we omit.
+      console.log(`[achordion] AM playlist ${libraryId} not yet published (hasCatalog=false) — omitting AM link`);
+    }
+    return null;
+  }
+  const slug = slugifyForAppleMusic(attrs?.name);
   return `https://music.apple.com/us/playlist/${slug}/${globalId}`;
 }
 
