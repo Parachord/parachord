@@ -470,6 +470,30 @@ const staggerPlaylistsForCycle = ({
   return sorted.slice(0, batchSize);
 };
 
+/**
+ * Compare two ordered lists of stable identifiers (e.g. LB recording MBIDs,
+ * Spotify URIs) for length+order+value equality. Returns false if either
+ * list has any null/empty entry — null IDs are ambiguous and must NOT be
+ * treated as matching even if they appear in the same slot of both lists
+ * (otherwise we'd skip a push for "two tracks that mapper couldn't resolve"
+ * which silently keeps the wrong content on the remote).
+ *
+ * Used by per-provider `updatePlaylistTracks` short-circuits to avoid the
+ * delete+add (or PUT-replace) round-trip when the intended push would be
+ * a no-op. Mirror of the inbound `canShortCircuitPlaylistUpdate` check
+ * shipped in parachord#796 for the opposite direction.
+ */
+const areOrderedIdListsEquivalent = (localIds, remoteIds) => {
+  if (!Array.isArray(localIds) || !Array.isArray(remoteIds)) return false;
+  if (localIds.length !== remoteIds.length) return false;
+  for (let i = 0; i < localIds.length; i++) {
+    const lid = localIds[i];
+    if (lid === null || lid === undefined || lid === '') return false;
+    if (lid !== remoteIds[i]) return false;
+  }
+  return true;
+};
+
 module.exports = {
   getProvider,
   getAllProviders,
@@ -479,5 +503,6 @@ module.exports = {
   calculatePlaylistDiff,
   canShortCircuitPlaylistUpdate,
   staggerPlaylistsForCycle,
+  areOrderedIdListsEquivalent,
   DEFAULT_STAGGER_BATCH_SIZE
 };

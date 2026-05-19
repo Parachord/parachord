@@ -350,6 +350,48 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
     }
   }
 
+  // ── Step 3.5: Short-circuit when remote already matches ────────────
+  //
+  // If the post-merge intended track list is identical (same recording
+  // MBIDs in the same order) to what's already on the remote, the
+  // delete + re-add pair would be a no-op that still costs ~one LB API
+  // call per playlist push cycle. Skip it. Order-aware comparison —
+  // LB respects playlist order, so a reorder still has to fall through
+  // to the clear-and-add. This mirrors the inbound short-circuit
+  // shipped in #796 (canShortCircuitPlaylistUpdate) for the opposite
+  // direction.
+  //
+  // The big real-world payoff is hosted-XSPF mirror pushes that fire
+  // every time the upstream XSPF blob differs by whitespace or
+  // ordering-quirk but the actual track list is unchanged. Today's
+  // session: 6 hosted-mirror pushes back-to-back held
+  // `playlistSyncInProgressRef` for ~6 minutes and starved Daily Brew's
+  // diff phase. With this short-circuit, when remote already matches
+  // the incoming list (the common case for steady-state mirrors), the
+  // expensive delete + batched-add disappears.
+  const extractRecordingMbid = (track) => {
+    const ids = Array.isArray(track?.identifier)
+      ? track.identifier
+      : (track?.identifier ? [track.identifier] : []);
+    for (const id of ids) {
+      const m = String(id || '').match(/recording\/([a-f0-9-]{36})/i);
+      if (m) return m[1].toLowerCase();
+    }
+    return null;
+  };
+  const localMbidsInOrder = resolvedTracks.map(extractRecordingMbid);
+  const remoteMbidsInOrder = remoteTracks.map(extractRecordingMbid);
+  const remoteAlreadyMatches =
+    localMbidsInOrder.length === remoteMbidsInOrder.length
+    && localMbidsInOrder.every((m, i) => m !== null && m === remoteMbidsInOrder[i]);
+  if (remoteAlreadyMatches) {
+    console.log(`[LB] Skipping push for ${playlistMbid}: remote already matches (${localMbidsInOrder.length} tracks)`);
+    return {
+      snapshotId: remoteSnapshotDate,
+      unresolvedTracks,
+    };
+  }
+
   // ── Step 4: Clear remote (same pattern as the rest of the file) ───
   if (currentLen > 0) {
     const delRes = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/item/delete`, {

@@ -5,7 +5,7 @@
  * Spotify library sync, pagination, diff calculation, rate limiting.
  */
 
-const { canShortCircuitPlaylistUpdate, staggerPlaylistsForCycle, syncDataType } = require('../../sync-engine');
+const { canShortCircuitPlaylistUpdate, staggerPlaylistsForCycle, syncDataType, areOrderedIdListsEquivalent } = require('../../sync-engine');
 
 describe('staggerPlaylistsForCycle (oldest-stale-first batching, see parachord#800)', () => {
   // Helper to build a remote-shape playlist (what fetchPlaylists returns).
@@ -1433,5 +1433,66 @@ describe('syncDataType isCancelled propagation (parachord#820)', () => {
 
     expect(result.stats.added).toBe(1);
     expect(result.data.length).toBe(2);
+  });
+});
+
+describe('areOrderedIdListsEquivalent (updatePlaylistTracks short-circuit helper)', () => {
+  test('returns true for identical ordered lists', () => {
+    expect(areOrderedIdListsEquivalent(['a', 'b', 'c'], ['a', 'b', 'c'])).toBe(true);
+  });
+
+  test('returns true for two empty lists', () => {
+    expect(areOrderedIdListsEquivalent([], [])).toBe(true);
+  });
+
+  test('returns false when lengths differ', () => {
+    expect(areOrderedIdListsEquivalent(['a', 'b'], ['a', 'b', 'c'])).toBe(false);
+    expect(areOrderedIdListsEquivalent(['a', 'b', 'c'], ['a', 'b'])).toBe(false);
+  });
+
+  test('returns false when order differs (same set, different sequence)', () => {
+    expect(areOrderedIdListsEquivalent(['a', 'b', 'c'], ['a', 'c', 'b'])).toBe(false);
+  });
+
+  test('returns false when any local id is null (ambiguous — never short-circuit)', () => {
+    // Critical: a null local ID means the mapper failed for that incoming
+    // track. Even if both lists happen to have null in the same slot, we
+    // can't claim "remote already matches" because we don't know what
+    // remote actually has at that position. Falling through to the full
+    // push is safer.
+    expect(areOrderedIdListsEquivalent(['a', null, 'c'], ['a', null, 'c'])).toBe(false);
+    expect(areOrderedIdListsEquivalent([null], [null])).toBe(false);
+  });
+
+  test('returns false when any local id is undefined or empty string', () => {
+    expect(areOrderedIdListsEquivalent(['a', undefined, 'c'], ['a', undefined, 'c'])).toBe(false);
+    expect(areOrderedIdListsEquivalent([''], [''])).toBe(false);
+  });
+
+  test('returns false for non-array inputs', () => {
+    expect(areOrderedIdListsEquivalent(null, ['a'])).toBe(false);
+    expect(areOrderedIdListsEquivalent(['a'], null)).toBe(false);
+    expect(areOrderedIdListsEquivalent(undefined, undefined)).toBe(false);
+    expect(areOrderedIdListsEquivalent('a', 'a')).toBe(false);
+  });
+
+  test('returns true for case-sensitive matches (MBIDs are normalised by caller, not here)', () => {
+    // Caller is responsible for normalising — we just do byte-equality.
+    expect(areOrderedIdListsEquivalent(['ABC', 'def'], ['ABC', 'def'])).toBe(true);
+    expect(areOrderedIdListsEquivalent(['ABC'], ['abc'])).toBe(false);
+  });
+
+  test('handles realistic LB MBID workload', () => {
+    const local = [
+      '550e8400-e29b-41d4-a716-446655440000',
+      '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+      '6ba7b811-9dad-11d1-80b4-00c04fd430c8',
+    ];
+    const remoteSame = [...local];
+    const remoteOneSwapped = [local[0], local[2], local[1]]; // 2 and 3 swapped
+    const remoteOneRemoved = local.slice(0, 2);
+    expect(areOrderedIdListsEquivalent(local, remoteSame)).toBe(true);
+    expect(areOrderedIdListsEquivalent(local, remoteOneSwapped)).toBe(false);
+    expect(areOrderedIdListsEquivalent(local, remoteOneRemoved)).toBe(false);
   });
 });
