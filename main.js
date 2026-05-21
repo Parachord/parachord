@@ -103,6 +103,18 @@ if (process.platform !== 'darwin') {
   }
 }
 
+// Disable Chromium's third-party storage partitioning so the cookies Apple's
+// MusicKit sign-in popup sets on `*.music.apple.com` remain visible to the
+// parent's MusicKit JS instance after the popup closes. Without this, Chromium
+// 115+ scopes cookies by top-level site (the popup's URL is one top-level
+// site; our `parachord://app` parent is another), and MusicKit JS can never
+// read the `media-user-token` cookie back to complete the handshake. The
+// origin fix in this PR is necessary but not sufficient on its own — Apple's
+// auth flow assumes a shared cookie jar between popup and parent. See
+// Chromium storage partitioning docs + the research synthesis on issue #834.
+// Must be set before app.whenReady().
+app.commandLine.appendSwitch('disable-features', 'ThirdPartyStoragePartitioning,PartitionedCookies');
+
 // electron-updater is optional - may not be available in development
 let autoUpdater = null;
 try {
