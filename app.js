@@ -31943,6 +31943,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       // Set up polling interval - faster when listen-along is active
       const pollInterval = listenAlongFriend ? 15 * 1000 : 2 * 60 * 1000; // 15 seconds vs 2 minutes
+      // NOT yield-wrapped intentionally — the 2-min cadence is already the
+      // user-visible freshness budget for `cachedRecentTrack`, and any
+      // yield-induced delay degrades the "click Listen Along → join the
+      // track my friend is actually playing right now" path. The poll is
+      // small enough (one HTTP/IPC call per pinned friend) that it doesn't
+      // compete with foreground work meaningfully even mid-busy-tick. See
+      // parachord#770 part 2 — hosted-XSPF poll is yielded; this one is not.
       friendPollIntervalRef.current = setInterval(() => {
         refreshPinnedFriends();
         // Periodic friend-graph sync gate
@@ -35485,11 +35492,20 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     };
 
-    // Poll every 5 minutes
-    hostedPlaylistPollInterval.current = setInterval(pollHostedPlaylists, 5 * 60 * 1000);
+    // Poll every 5 minutes. Wrap each tick in yieldToIdle so the work
+    // doesn't fight the main thread when other background jobs (sync,
+    // resolver enrichment, friend activity poll) happen to fire in the
+    // same window. The 10s timeout is generous — there's no urgency to
+    // a hosted-XSPF refresh, and the 5min cadence means a single delayed
+    // tick costs us nothing. parachord#770 part 2.
+    const idlePollHostedPlaylists = async () => {
+      await yieldToIdle(10000);
+      await pollHostedPlaylists();
+    };
+    hostedPlaylistPollInterval.current = setInterval(idlePollHostedPlaylists, 5 * 60 * 1000);
 
     // Also poll on mount (after a short delay to let playlists load)
-    const initialPoll = setTimeout(pollHostedPlaylists, 10000);
+    const initialPoll = setTimeout(idlePollHostedPlaylists, 10000);
 
     return () => {
       clearInterval(hostedPlaylistPollInterval.current);
