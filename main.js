@@ -5870,6 +5870,35 @@ ipcMain.handle('localFiles:saveId3Tags', async (event, filePath, tags) => {
   }
 });
 
+// Atomic collection.json writer (parachord#795). Plain writeFile to an
+// existing path will leave a truncated file if the process crashes / is
+// force-quit / runs out of disk mid-write, and JSON.parse fails on the
+// next launch with "Unterminated string in JSON at position N". The
+// load path silently falls back to an empty collection, which means
+// anything reading collection.json between corruption and the next
+// save sees empty data — track scrobbling, background resolution, etc.
+// all operate on the empty state until the next sync rewrites it.
+//
+// Standard tmp+rename pattern: write to a sibling `.tmp`, then rename
+// it over the canonical path. rename(2) is atomic on POSIX when source
+// and destination are on the same filesystem (always true here — both
+// live in userData/). On Windows, Node's fs.rename uses MoveFileEx with
+// MOVEFILE_REPLACE_EXISTING which provides equivalent "either old or
+// new, never partial" semantics for the visible file. A leftover `.tmp`
+// from a crashed mid-write is harmless — the next save overwrites it
+// before the rename, so partial `.tmp` files self-heal.
+//
+// All three collection.json writes in main.js route through here:
+//   - collection:save IPC handler (with .bak rotation upstream)
+//   - finalizeCancelled inside sync:start
+//   - the end-of-sync save inside sync:start
+async function writeCollectionAtomic(collectionPath, collection) {
+  const fsPromises = require('fs').promises;
+  const tmpPath = `${collectionPath}.tmp`;
+  await fsPromises.writeFile(tmpPath, JSON.stringify(collection), 'utf8');
+  await fsPromises.rename(tmpPath, collectionPath);
+}
+
 // Collection handlers - store in userData directory for persistence across app updates
 ipcMain.handle('collection:load', async () => {
   console.log('=== Load Collection ===');
@@ -5919,7 +5948,7 @@ ipcMain.handle('collection:save', async (event, collection) => {
       console.warn('  ⚠️ Backup rotation failed (non-fatal):', backupErr.message);
     }
 
-    await fsPromises.writeFile(collectionPath, JSON.stringify(collection), 'utf8');
+    await writeCollectionAtomic(collectionPath, collection);
     console.log(`✅ Saved collection: ${collection.tracks?.length || 0} tracks, ${collection.albums?.length || 0} albums, ${collection.artists?.length || 0} artists`);
     return { success: true };
   } catch (error) {
@@ -6149,7 +6178,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     const finalizeCancelled = async (collectionState, resultsState) => {
       try {
         sendProgress({ phase: 'cancelled', message: 'Sync cancelled' });
-        await fsPromises.writeFile(collectionPath, JSON.stringify(collectionState), 'utf8');
+        await writeCollectionAtomic(collectionPath, collectionState);
       } catch (err) {
         console.warn(`[Sync] Cancellation save failed for ${providerId}:`, err.message);
       }
@@ -6631,7 +6660,7 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     // Save collection
     sendProgress({ phase: 'saving', message: 'Saving collection...' });
     console.log(`[Sync] Saving collection: ${collection.tracks?.length || 0} tracks, ${collection.albums?.length || 0} albums, ${collection.artists?.length || 0} artists`);
-    await fsPromises.writeFile(collectionPath, JSON.stringify(collection), 'utf8');
+    await writeCollectionAtomic(collectionPath, collection);
 
     // Update sync settings with last sync time
     const syncSettings = store.get('resolver_sync_settings') || {};
