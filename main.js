@@ -6389,6 +6389,15 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                 remotePlaylist,
                 providerId
               })) {
+                // parachord#822: log the short-circuit so it's distinguishable
+                // from "playlist never reached" in [Sync] traces. The snapshot
+                // preview makes "snap matched, no work" auditable when a user
+                // reports "why didn't sync update X" — you can see both that
+                // the playlist was visited AND what snapshot was matched.
+                const localSnap = (currentPlaylists[idx].syncedFrom?.snapshotId || '').slice(0, 12);
+                const remoteSnap = (remotePlaylist.snapshotId || '').slice(0, 12);
+                const playlistName = remotePlaylist.name || currentPlaylists[idx].name || remotePlaylist.id;
+                console.log(`[Sync] ${providerId} "${playlistName}": short-circuit (snap matched, no work) local=${localSnap} remote=${remoteSnap}`);
                 const cur = currentPlaylists[idx];
                 currentPlaylists[idx] = {
                   ...cur,
