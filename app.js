@@ -6883,7 +6883,19 @@ const Parachord = () => {
     //     residual IPC activity for a few seconds — accept that vs the
     //     complexity of safe cancellation.
     let pendingBackgroundSync = null;
+    // parachord#821: gate cancel-on-focus on actual blur → focus transitions.
+    // Electron's `browser-window-focus` (the underlying signal behind
+    // onForeground) fires for many in-app interactions on macOS Chromium —
+    // clicking the sidebar, switching panels, opening DevTools, etc. Without
+    // this flag, every such interaction calls sync.cancel on the in-flight
+    // background sync, effectively starving sync for any user who actively
+    // uses the app while it runs (the reporter on #821 measured 5 focus
+    // events in 2 minutes of normal usage). We only want to fire the
+    // cancel-on-focus path when the user genuinely returned from elsewhere
+    // — i.e. a blur preceded the focus.
+    let parachordBlurred = false;
     const handleBackground = () => {
+      parachordBlurred = true;
       if (pendingBackgroundSync) clearTimeout(pendingBackgroundSync);
       pendingBackgroundSync = setTimeout(() => {
         pendingBackgroundSync = null;
@@ -6891,6 +6903,12 @@ const Parachord = () => {
       }, BACKGROUND_DELAY);
     };
     const handleForeground = () => {
+      // Ignore spurious focus events that don't follow a blur (#821). In the
+      // not-actually-blurred state there can't be a pending blur-triggered
+      // sync (it's set in handleBackground), and there's no "user just
+      // returned" semantics to honor on the cancel-in-flight path either.
+      if (!parachordBlurred) return;
+      parachordBlurred = false;
       // Cancel any pending blur-triggered sync that hasn't fired yet.
       if (pendingBackgroundSync) {
         clearTimeout(pendingBackgroundSync);
