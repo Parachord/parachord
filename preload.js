@@ -512,6 +512,22 @@ contextBridge.exposeInMainWorld('electron', {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('applemusic:reauth-required', handler);
       return () => ipcRenderer.removeListener('applemusic:reauth-required', handler);
+    },
+
+    // Cider-style auth flow (parachord#834). Opens a dedicated BrowserWindow
+    // pointing at beta.music.apple.com so the user signs in on Apple's real
+    // origin (where cookies set normally — Electron's default-session
+    // partitioning blocks the popup-from-custom-scheme path that MusicKit JS
+    // wants to use). The main process harvests `music.ampwebplay.*` cookies
+    // from the auth window's session on completion, then pushes them via
+    // `applemusic:recv-cookies` to the renderer's listener below. The
+    // renderer writes them to localStorage (where MusicKit JS reads them on
+    // init) and reloads so the next boot starts already-authorized.
+    openAuthWindow: () => ipcRenderer.invoke('applemusic:open-auth-window'),
+    onAuthCookies: (callback) => {
+      const handler = (event, cookies) => callback(cookies);
+      ipcRenderer.on('applemusic:recv-cookies', handler);
+      return () => ipcRenderer.removeListener('applemusic:recv-cookies', handler);
     }
   },
 

@@ -15636,6 +15636,46 @@ ${trackListXml}
     };
   }, []);
 
+  // Cider-style auth-window cookie handoff (parachord#834). When the user
+  // signs in through the dedicated auth BrowserWindow opened by main's
+  // `applemusic:open-auth-window` handler, main harvests the apple.com auth
+  // cookies and IPCs them here. We write each one to localStorage with the
+  // `music.ampwebplay.<name>` prefix MusicKit JS reads on init, then reload
+  // the window — on next boot MusicKit picks up the saved state and
+  // authorization flips true without any further intervention. The reload is
+  // load-bearing: MusicKit JS does NOT re-read these keys after init, only at
+  // construction time. Trying to skip the reload via in-place reconfigure
+  // breaks on the first cache-mediated auth check.
+  useEffect(() => {
+    const unsubscribe = window.electron?.musicKit?.onAuthCookies?.((cookies) => {
+      try {
+        console.log('🍎 [AppleMusic] Received auth cookies, writing localStorage and reloading');
+        Object.entries(cookies || {}).forEach(([key, value]) => {
+          try {
+            localStorage.setItem(key, value);
+          } catch (e) {
+            console.warn(`[AppleMusic] Failed to write ${key}:`, e.message);
+          }
+        });
+        // Mark as connected in store so the post-reload startup pre-check
+        // doesn't drop us back into the unauthenticated UI for a frame.
+        if (window.electron?.store) {
+          window.electron.store.set('applemusic_authorized', true).catch(() => {});
+        }
+        // Tiny delay so localStorage writes flush before reload tears down
+        // the renderer. ~50ms is enough on every platform we ship.
+        setTimeout(() => {
+          window.location.reload();
+        }, 50);
+      } catch (e) {
+        console.error('[AppleMusic] recv-cookies handler crashed:', e);
+      }
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
   // Persist hidden friend keys to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
     if (cacheLoaded && window.electron?.store) {
@@ -36038,93 +36078,57 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const hasNativeMusicKit = window.electron?.musicKit && await window.electron.musicKit.isAvailable().catch(() => false);
     const hasMusicKitWeb = !!(musicKitWeb && developerToken);
 
-    // On macOS, prefer native MusicKit auth — the MusicKit JS popup runs inside
-    // an Electron BrowserWindow that cannot surface macOS system sheets (Touch ID,
-    // passkeys), causing the auth flow to stall when the user picks passkey login.
-    // Native MusicKit delegates to the OS which handles all auth methods natively.
+    // On macOS, prefer native MusicKit auth — the OS handles Touch ID, passkeys,
+    // and all the system sheets natively. On other platforms (and as a fallback
+    // when the native helper is unavailable), use the Cider-style auth window
+    // (parachord#834): a dedicated BrowserWindow at beta.music.apple.com where
+    // the user signs in on Apple's real origin so cookies set normally; main
+    // harvests them and pushes to the renderer via the `recv-cookies` IPC
+    // listener registered above. MusicKit's own popup flow is intentionally
+    // NOT used here — Electron's third-party-cookie partitioning blocks the
+    // popup → parent handshake even with the storage-partitioning flag
+    // disabled, so MusicKit JS reports `isAuthorized: false` regardless.
     const tryNativeFirst = hasNativeMusicKit;
 
-    // MusicKit JS auth helper (used as primary on non-macOS, fallback on macOS)
-    const tryMusicKitJsAuth = async () => {
-      if (!hasMusicKitWeb) return false;
+    // Cider-style auth-window flow. The window opens, the user signs in, main
+    // harvests the apple.com auth cookies, the recv-cookies listener (in the
+    // useEffect above) writes them to localStorage and reloads. The post-
+    // reload startup pre-check picks up the now-authorized MusicKit JS state
+    // and finishes wiring connected=true, activeResolvers, etc. This function
+    // returns true to signal "auth flow kicked off, reload imminent" — there's
+    // no further work for the caller to do here.
+    const tryAuthWindowFlow = async () => {
+      if (!window.electron?.musicKit?.openAuthWindow) return false;
       try {
-        console.log('[AppleMusic] Trying MusicKit JS authorization...');
-        const status = musicKitWeb.getAuthStatus();
-        if (!status.configured) {
-          await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
+        console.log('[AppleMusic] Opening auth window (Cider-style flow)...');
+        const result = await window.electron.musicKit.openAuthWindow();
+        console.log('[AppleMusic] Auth window returned:', result);
+        if (result?.success) {
+          // recv-cookies listener handles localStorage + reload. Toast for
+          // the brief window between resolve-here and the reload tearing
+          // down the renderer.
+          showToast('Apple Music connected — finishing setup…', 'success');
+          return true;
         }
-        const authResult = await musicKitWeb.authorize();
-        console.log('[AppleMusic] MusicKit JS auth result:', authResult);
-        if (!authResult.authorized) return false;
-
-        console.log('🍎 MusicKit JS authorized successfully');
-        setAppleMusicConnected(true);
-
-        if (authResult.userToken) {
-          localStorage.setItem('musickit_user_token', authResult.userToken);
-          if (window.electron?.store) {
-            await window.electron.store.set('applemusic_user_token', authResult.userToken);
-          }
-          console.log('🍎 Music user token stored');
+        if (result?.cancelled) {
+          // User closed the auth window without completing sign-in. Silent.
+          return false;
         }
-
-        if (window.electron?.store) {
-          await window.electron.store.set('applemusic_authorized', true);
-        }
-
-        setActiveResolvers(prev => {
-          if (!prev.includes('applemusic')) {
-            return [...prev, 'applemusic'];
-          }
-          return prev;
-        });
-        setResolverOrder(prev => {
-          if (!prev.includes('applemusic')) {
-            return insertInCanonicalOrder(prev, 'applemusic');
-          }
-          return prev;
-        });
-
-        showToast('Apple Music connected successfully', 'success');
-
-        if (window.electron?.sync?.start) {
-          window.electron.syncSettings?.load().then(syncSettings => {
-            if (syncSettings?.applemusic?.enabled) {
-              console.log('[Sync] Apple Music re-authenticated with sync enabled, triggering immediate sync');
-              // Re-auth catch-up — user just reconnected, treat as full sync
-              // so they don't have to wait 4-5 background cycles (parachord#800).
-              window.electron.sync.start('applemusic', { settings: syncSettings.applemusic, fullSync: true }).then(result => {
-                if (result?.success && result.collection) {
-                  const incoming = {
-                    tracks: result.collection.tracks || [],
-                    albums: result.collection.albums || [],
-                    artists: result.collection.artists || []
-                  };
-                  setCollectionData(prev => {
-                    const netLoss = (prev.tracks?.length || 0) - incoming.tracks.length;
-                    const lossRatio = prev.tracks?.length > 0 ? netLoss / prev.tracks.length : 0;
-                    if (netLoss > 50 && lossRatio > 0.1) {
-                      console.warn(`[Sync] Skipping UI update after re-auth: likely incomplete API response`);
-                      return prev;
-                    }
-                    return incoming;
-                  });
-                }
-              }).catch(err => console.error('[Sync] Post-auth Apple Music sync failed:', err));
-            }
-          }).catch(() => {});
-        }
-
-        return true;
+        showToast(result?.error || 'Apple Music sign-in failed', 'error');
+        return false;
       } catch (error) {
-        console.log('[AppleMusic] MusicKit JS auth failed:', error.message);
+        console.log('[AppleMusic] Auth window flow failed:', error.message);
+        showToast(`Apple Music sign-in failed: ${error.message}`, 'error');
         return false;
       }
     };
 
     if (!tryNativeFirst) {
-      // Non-macOS: try MusicKit JS first, then show error if unavailable
-      if (await tryMusicKitJsAuth()) return;
+      // Non-macOS, or no native helper available. Use the auth-window flow.
+      if (await tryAuthWindowFlow()) return;
+      // Fell through — the user cancelled or there was an error; the helper
+      // already toasted. Don't error-dialog over that.
+      return;
     }
 
     // Native MusicKit path (macOS) — or fallback after MusicKit JS failure
