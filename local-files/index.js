@@ -201,6 +201,10 @@ class LocalFilesService {
     // renderer's lazy background extraction kicks in to warm the cache so
     // subsequent loads pick it up. See LocalFilesService.resolveArtForTrack
     // for the on-demand IPC entry point.
+    //
+    // Three tiers, matching the first three tiers of the async resolveArt()
+    // resolver in album-art.js. Tier 4 (Cover Art Archive fetch) is async
+    // and intentionally skipped — that happens during play-time resolve().
     if (track.folder_art_path && fs.existsSync(track.folder_art_path)) {
       formatted.albumArt = `file://${track.folder_art_path}`;
     } else if (track.has_embedded_art && this.albumArt) {
@@ -209,6 +213,24 @@ class LocalFilesService {
       const png = path.join(this.albumArt.cacheDir, `embedded-${hash}.png`);
       if (fs.existsSync(jpg)) formatted.albumArt = `file://${jpg}`;
       else if (fs.existsSync(png)) formatted.albumArt = `file://${png}`;
+    }
+    // Tier 3: MusicBrainz / Cover Art Archive art written to the DB by a
+    // prior play-time resolveArt() (fetchFromCoverArtArchive caches the
+    // image to disk and persists the `file://` URL in musicbrainz_art_url).
+    // Only used when tiers 1+2 didn't hit, since folder/embedded art is
+    // closer to the user's actual file. The existsSync guard handles the
+    // case where cleanCache() pruned the file but left the stale DB row.
+    if (!formatted.albumArt && track.musicbrainz_art_url) {
+      const stored = track.musicbrainz_art_url;
+      if (stored.startsWith('file://')) {
+        if (fs.existsSync(stored.slice('file://'.length))) {
+          formatted.albumArt = stored;
+        }
+      } else {
+        // Non-file URL (e.g. legacy direct CAA URL) — pass through; the
+        // renderer's <img> tag will request it directly.
+        formatted.albumArt = stored;
+      }
     }
     return formatted;
   }
