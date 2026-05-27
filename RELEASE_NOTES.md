@@ -56,15 +56,13 @@ The sync setup wizard now includes ListenBrainz alongside the other providers.
 
 After any sync write that creates or updates a ListenBrainz-anchored playlist, Parachord pushes the LB MBID and its mirror links (Spotify, Apple Music) to Achordion. The result: a public `https://achordion.xyz/playlist/<mbid>` URL where anyone can see all the streaming-service mirrors of a shared playlist in one place — handy for sharing a collaborative playlist across services when each collaborator uses a different one.
 
-Playlist share URLs in the app now point through Achordion for the same reason — richer metadata, single canonical link.
+Apple Music mirror links are now included for any iCloud-synced library playlist — earlier versions had to omit them because the library URL form (`/me/library/playlists/<p.X>`) only works for the owner. The fix builds the public-share form (`/playlist/<slug>/<pl.u-XXXX>`) using the playlist's catalog `playParams.globalId`, which any Apple Music user can open.
+
+Playlist share URLs in the app also now point through Achordion for the same reason — richer metadata, single canonical link.
 
 ## Hosted XSPF playlists no longer duplicate on sync
 
 If you imported the same hosted XSPF URL on both desktop and Android, sync used to create two remote copies. Fixed: `syncedTo` and `sourceUrl` are preserved across re-imports, so the second device recognizes the first device's already-synced mirror and reuses it instead of creating a duplicate.
-
-## Apple Music share URL fix
-
-Sharing an Apple Music track used to produce a URL other Apple Music users couldn't open (it was using your private library ID instead of the public catalog ID). The share URL is now built from the catalog `globalId` and works for everyone.
 
 ## Collection file is corruption-resistant
 
