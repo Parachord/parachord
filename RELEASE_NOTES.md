@@ -1,3 +1,85 @@
+# Parachord v0.9.3
+
+**Release date:** 2026-05-21
+
+> A performance release. The background sync subsystem that used to spike CPU to 120% and pinwheel the UI for tens of seconds is rebuilt around eight reinforcing fixes; the last few unscrolled track lists are now virtualized; Library art appears on first paint instead of after a warmup loop; and the collection file is now corruption-resistant. ListenBrainz playlist sync ships as a new feature too, with multi-platform collaboration as the marquee.
+
+---
+
+## Background sync stops fighting the rest of the app
+
+The biggest behavioral change in this release. Earlier versions could pin a CPU core for tens of seconds during background sync, lock the UI with a pinwheel, glitch playback timing, and — for users who interacted with the app while sync was running — kill the in-flight sync entirely. Rebuilt around eight reinforcing fixes:
+
+- **Skip unchanged playlists on inbound updates.** When local and remote snapshot IDs already match, sync just bumps the timestamp and moves on — no spread-rewrites for playlists that haven't drifted. New log line so you can tell "short-circuited, no work" apart from "never reached" when debugging.
+- **Concurrency cap on resolver searches.** Non-Apple/Spotify resolvers (Bandcamp, SoundCloud, YouTube, etc.) now share a global limiter — 4 concurrent, 100ms gap, exponential backoff on throttle. Stops the "374 local files all fire a Bandcamp search at once" pattern that pinned CPU on every library load.
+- **Push loop yields to idle.** The renderer-side per-playlist push loop wraps each iteration in `requestIdleCallback` so it only does work when the renderer is otherwise quiet. Sync no longer competes with scroll/animation/click handling for the main thread.
+- **Cancel-on-focus, correctly.** When you cmd-tab back from another app mid-sync, sync now aborts at the next safe yield point and writes the partial result instead of hanging the UI for tens of seconds. Importantly: cancellation only fires on actual blur → focus transitions now, not on every in-app interaction. Earlier versions were canceling sync on every sidebar click, panel switch, and DevTools focus event — effectively starving sync for any user who actively used the app.
+- **Cancel honored inside library fetches.** Spotify's paginated library fetch now checks the cancel signal at every page boundary. Cmd-tab-back no longer gets stuck waiting for the next 50-track API page to land.
+- **Per-provider playlist mutex.** Two code paths (background timer + post-wizard sync) used to race for the same playlist creation, occasionally creating duplicate remotes. They now coordinate via a per-provider mutex.
+- **Playlists are synced in staggered batches.** Instead of churning all selected playlists every 15 minutes, the inbound loop processes a small batch per cycle, oldest-stale first. A user with 50 playlists rolls through the whole set in ~2.5h worst-case rather than pinning a CPU core every quarter-hour. Manual "Sync Now" still does everything immediately.
+- **Hosted-XSPF poll yields to idle.** The 5-minute external playlist check now runs during a quiet renderer frame instead of fighting whatever else is on the main thread.
+
+Net effect: open the app, work, sync happens while you're away. No spinning fan when you walk back to your desk, no killed sync because you clicked the sidebar, no playback hitches mid-track.
+
+## Faster track lists, everywhere
+
+Virtualization now applies to the last few places that were still rendering every row:
+
+- **Library tracks list.** Previously sluggish on libraries of 10k+ tracks; smooth at any size now.
+- **Playlist tracks.** Long playlists no longer jank when you scroll.
+- **Search results.** Big result sets render incrementally.
+
+Combined with the row-memoization work from v0.9.2, scrolling and navigation on large libraries should feel substantially snappier.
+
+## Library album art appears on first paint
+
+Tracks loaded into the Library view now surface album art from three sources immediately instead of waiting for play-time resolution:
+
+- **Folder art** (`cover.jpg` / `folder.jpg` next to your audio files).
+- **Embedded art** baked into ID3 tags (when the cache file has been previously extracted).
+- **Cover Art Archive art** that was fetched and cached during a previous playback session.
+
+Previously only the play-time resolver path saw all three — bulk Library loads saw none of them, so well-tagged collections showed placeholders even though the art was on disk. Mature collections will notice the difference most.
+
+## ListenBrainz playlist sync (new)
+
+You can now connect ListenBrainz as a full playlist sync target alongside Spotify and Apple Music, with **cross-service collaboration** as the marquee.
+
+- **Push and pull playlists.** Local playlists mirror to LB; LB playlists pull into Parachord. JSPF format on the wire, recording MBID as the per-track identifier.
+- **Multi-platform collaboration.** A Spotify user and an Apple Music user can share an LB playlist where either's edits propagate to both streaming services via LB as the hub. Bob edits on Apple Music → LB picks it up → Alice's Parachord pulls and pushes to Spotify. A "SHARED" badge in the playlist UI shows which playlists you're collaborating on.
+- **Default private.** Playlists pushed to LB start private. Make them public on listenbrainz.org if you want others to see them.
+- **MBID-required tracks** are surfaced clearly. Tracks without a resolvable recording MBID are listed so you can see what didn't push.
+
+The sync setup wizard now includes ListenBrainz alongside the other providers.
+
+## Achordion playlist mirror links
+
+After any sync write that creates or updates a ListenBrainz-anchored playlist, Parachord pushes the LB MBID and its mirror links (Spotify, Apple Music) to Achordion. The result: a public `https://achordion.xyz/playlist/<mbid>` URL where anyone can see all the streaming-service mirrors of a shared playlist in one place — handy for sharing a collaborative playlist across services when each collaborator uses a different one.
+
+Playlist share URLs in the app now point through Achordion for the same reason — richer metadata, single canonical link.
+
+## Hosted XSPF playlists no longer duplicate on sync
+
+If you imported the same hosted XSPF URL on both desktop and Android, sync used to create two remote copies. Fixed: `syncedTo` and `sourceUrl` are preserved across re-imports, so the second device recognizes the first device's already-synced mirror and reuses it instead of creating a duplicate.
+
+## Apple Music share URL fix
+
+Sharing an Apple Music track used to produce a URL other Apple Music users couldn't open (it was using your private library ID instead of the public catalog ID). The share URL is now built from the catalog `globalId` and works for everyone.
+
+## Collection file is corruption-resistant
+
+`collection.json` is now written via an atomic-rename pattern (write to `.tmp`, then rename). If the app crashes or is force-quit mid-write, the canonical file is left in either the old or new state — never partially written. The "Unterminated string in JSON at position N" load failure that some users were hitting after force-quits is gone.
+
+## Smaller things
+
+- **Diagnostic logs around sync.** Local/remote track counts and snapshot previews are logged when a "has updates" diff fires, so it's easier to tell whether a flagged update is real or noise.
+- **ListenBrainz username caching** avoids redundant token-validate calls — two per sync cycle instead of two per friend.
+- **Heal pass for imported playlists with the wrong `syncedFrom` resolver** runs on every startup. Fixes a class of corruption that a now-removed code path used to introduce; cross-platform sync is more robust as a result.
+- **Auto-creating LB mirrors of local playlists is opt-in.** Previously this happened silently for some playlist shapes; now it requires an explicit toggle.
+- **Removed log spam** around Apple Music false-positive "has updates" detection.
+
+---
+
 # Parachord v0.9.2
 
 **Release date:** 2026-05-08
