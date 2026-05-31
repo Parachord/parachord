@@ -53,9 +53,29 @@ class MusicKitWeb {
   }
 
   /**
-   * Configure MusicKit with developer token
+   * Configure MusicKit with developer token.
+   *
+   * @param {string} developerToken — JWT MusicKit dev token
+   * @param {string} appName
+   * @param {string} appBuild
+   * @param {string=} userToken — Optional Music-User-Token. If provided, we
+   *   try to inject it post-configure to skip the popup-based authorize()
+   *   flow. This is the path used after our Cider-style auth window
+   *   completes (parachord#834): the cookies + user token were harvested
+   *   from a sign-in session on beta.music.apple.com, persisted to
+   *   localStorage + electron-store, and on subsequent boots we want
+   *   MusicKit to start already-authorized rather than pop a fresh
+   *   sign-in window.
+   *
+   *   Why this is needed: MusicKit JS v3 (CDN-loaded `musickit.js`) and
+   *   the internal `webPlayer.js` Apple loads on beta.music.apple.com are
+   *   DIFFERENT bundles. Cider's docs claim the CDN MusicKit reads
+   *   `music.ampwebplay.media-user-token` from localStorage on init —
+   *   moop250's evidence on Arch suggests this isn't reliably true (at
+   *   least not for our developer token / sourceType configuration). So
+   *   we inject the token explicitly as a fallback.
    */
-  async configure(developerToken, appName = 'Parachord', appBuild = '1.0.0') {
+  async configure(developerToken, appName = 'Parachord', appBuild = '1.0.0', userToken = null) {
     if (!developerToken) {
       throw new Error('Developer token is required');
     }
@@ -89,9 +109,45 @@ class MusicKitWeb {
       this.musicKit = await window.MusicKit.configure(musicKitConfig);
 
       this.isConfigured = true;
+      const initialAuth = this.musicKit.isAuthorized;
+      console.log(`[MusicKitWeb] Configured. isAuthorized at configure: ${initialAuth}`);
+
+      // Inject user token if provided (parachord#834). Attempts a few API
+      // shapes since MusicKit JS v3 doesn't have one canonical "set this"
+      // method documented publicly. Order them by safety: property
+      // assignment first (idempotent if the SDK uses a setter); then
+      // setMusicUserToken if present; then setUserToken (legacy v2 API
+      // some bundles still expose). All three are wrapped in try/catch —
+      // failing one shouldn't take down the others.
+      if (userToken && !initialAuth) {
+        console.log(`[MusicKitWeb] Attempting userToken injection (token length: ${userToken.length})`);
+        try {
+          this.musicKit.musicUserToken = userToken;
+          console.log(`[MusicKitWeb] After .musicUserToken = …, isAuthorized: ${this.musicKit.isAuthorized}`);
+        } catch (e) {
+          console.warn('[MusicKitWeb] .musicUserToken assignment threw:', e && e.message ? e.message : e);
+        }
+        try {
+          if (typeof this.musicKit.setMusicUserToken === 'function') {
+            this.musicKit.setMusicUserToken(userToken);
+            console.log(`[MusicKitWeb] After setMusicUserToken(), isAuthorized: ${this.musicKit.isAuthorized}`);
+          }
+        } catch (e) {
+          console.warn('[MusicKitWeb] setMusicUserToken() threw:', e && e.message ? e.message : e);
+        }
+        try {
+          if (typeof this.musicKit.setUserToken === 'function') {
+            this.musicKit.setUserToken(userToken);
+            console.log(`[MusicKitWeb] After setUserToken(), isAuthorized: ${this.musicKit.isAuthorized}`);
+          }
+        } catch (e) {
+          console.warn('[MusicKitWeb] setUserToken() threw:', e && e.message ? e.message : e);
+        }
+      }
+
       this.isAuthorized = this.musicKit.isAuthorized;
 
-      console.log('[MusicKitWeb] Configured successfully, authorized:', this.isAuthorized);
+      console.log(`[MusicKitWeb] Configured successfully, final isAuthorized: ${this.isAuthorized}`);
 
       // Set up event listeners
       this.setupEventListeners();

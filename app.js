@@ -15664,7 +15664,8 @@ ${trackListXml}
   useEffect(() => {
     const unsubscribe = window.electron?.musicKit?.onAuthCookies?.((cookies) => {
       try {
-        console.log('🍎 [AppleMusic] Received auth cookies, writing localStorage and reloading');
+        const keys = Object.keys(cookies || {});
+        console.log(`🍎 [AppleMusic] Received ${keys.length} auth cookies: ${keys.join(', ')}`);
         Object.entries(cookies || {}).forEach(([key, value]) => {
           try {
             localStorage.setItem(key, value);
@@ -15672,11 +15673,40 @@ ${trackListXml}
             console.warn(`[AppleMusic] Failed to write ${key}:`, e.message);
           }
         });
+
+        // parachord#834 — extract media-user-token and persist it in our
+        // app's standard slots too, so main-process sync code (which reads
+        // applemusic_user_token from electron-store) and the renderer-side
+        // MusicKit configure path (which reads musickit_user_token from
+        // localStorage) both see the token without depending on MusicKit
+        // JS's own state-restoration. moop250's evidence on Arch showed
+        // MusicKit JS v3 does NOT auto-detect auth from music.ampwebplay.*
+        // localStorage keys the way Cider's docs suggest — likely because
+        // the CDN-loaded musickit.js bundle differs from the internal
+        // webPlayer.js bundle on beta.music.apple.com.
+        const userToken = cookies && cookies['music.ampwebplay.media-user-token'];
+        if (userToken) {
+          try {
+            localStorage.setItem('musickit_user_token', userToken);
+            console.log('🍎 [AppleMusic] Wrote musickit_user_token to localStorage');
+          } catch (e) {
+            console.warn('[AppleMusic] Failed to write musickit_user_token:', e.message);
+          }
+          if (window.electron?.store) {
+            window.electron.store.set('applemusic_user_token', userToken)
+              .then(() => console.log('🍎 [AppleMusic] Wrote applemusic_user_token to electron-store'))
+              .catch((e) => console.warn('[AppleMusic] Failed to write applemusic_user_token to store:', e && e.message));
+          }
+        } else {
+          console.warn('[AppleMusic] media-user-token cookie missing from auth payload — sync will not work');
+        }
+
         // Mark as connected in store so the post-reload startup pre-check
         // doesn't drop us back into the unauthenticated UI for a frame.
         if (window.electron?.store) {
           window.electron.store.set('applemusic_authorized', true).catch(() => {});
         }
+        console.log('🍎 [AppleMusic] Reloading to re-initialize MusicKit JS with stored token');
         // Tiny delay so localStorage writes flush before reload tears down
         // the renderer. ~50ms is enough on every platform we ship.
         setTimeout(() => {
@@ -35973,11 +36003,17 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       if (musicKitWeb && developerToken) {
         try {
-          console.log('🍎 Initializing MusicKit JS...');
-          await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
+          console.log(`🍎 Initializing MusicKit JS (have stored userToken: ${!!userToken})`);
+          // parachord#834 — pass userToken so configure() can try to inject
+          // it post-MusicKit.configure(). This is the path the Cider-style
+          // auth window flow uses: cookies + token were harvested in the
+          // auth window, written to localStorage, app reloaded, and now we
+          // want MusicKit to start already-authorized rather than pop the
+          // (broken-on-Linux) sign-in window.
+          await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0', userToken);
 
           const status = musicKitWeb.getAuthStatus();
-          console.log('🍎 MusicKit JS status:', status);
+          console.log('🍎 MusicKit JS status post-configure:', status);
 
           // If MusicKit JS is already authorized (from previous session), mark as connected
           if (status.authorized) {
@@ -36002,9 +36038,40 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             // Re-enable if it was in the user's saved active resolvers (restores priority position)
             reEnableResolver('applemusic');
           } else if (userToken) {
-            // We have a stored user token but MusicKit JS isn't authorized
-            // The user token will be used automatically by MusicKit JS for API calls
-            console.log('🍎 Stored user token available, attempting session restore...');
+            // parachord#834 — MusicKit JS configure() didn't auto-authorize
+            // even though we passed a userToken. This is the path moop250
+            // hit on Arch: the CDN musickit.js bundle apparently doesn't
+            // accept the userToken injection paths we tried (musicUserToken
+            // property, setMusicUserToken, setUserToken). The token IS
+            // valid though — main-process sync code uses it directly via
+            // Music-User-Token header, and Apple recognizes it.
+            //
+            // Check the stored applemusic_authorized flag from the recv-
+            // cookies handler. If we had a successful auth window flow
+            // recently, trust the stored state and treat the user as
+            // connected for UI purposes. Sync + main-side playback paths
+            // will work because they use the token directly; only the
+            // MusicKit JS in-process playback would be affected, and even
+            // that may succeed since the cookies are in the shared session.
+            const storedAuthFlag = window.electron?.store
+              ? await window.electron.store.get('applemusic_authorized')
+              : false;
+            if (storedAuthFlag === true) {
+              console.log('🍎 MusicKit JS reports unauthorized but stored auth flag + userToken present → treating as connected (parachord#834)');
+              setAppleMusicConnected(true);
+              reEnableResolver('applemusic');
+              // Also persist the userToken to electron-store if not already
+              // there, so sync has it.
+              if (window.electron?.store) {
+                const existing = await window.electron.store.get('applemusic_user_token');
+                if (!existing) {
+                  await window.electron.store.set('applemusic_user_token', userToken);
+                  console.log('🍎 Backfilled applemusic_user_token in electron-store');
+                }
+              }
+            } else {
+              console.log('🍎 Stored user token available but no auth flag — skipping auto-connect');
+            }
           }
         } catch (error) {
           console.log('🍎 MusicKit JS init failed:', error.message);
