@@ -7020,6 +7020,15 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       // We fetch the remote playlist list at most once and reuse it for both
       // the ID-based link check and the name-based fallback check.
       let remotePlaylists = null;
+      // parachord#846: track whether the fetch actually succeeded. A throwing
+      // fetchPlaylists (transient 5xx / 429 / 401, malformed response,
+      // network glitch) is indistinguishable from "user genuinely has no
+      // playlists" if we just collapse both into an empty array — and the
+      // dedup logic below treats "missing from result" as "remote gone,"
+      // destroying the durable link AND falling through to create a
+      // duplicate. A transient blip would then turn into N permanent
+      // duplicates on the user's account. We need to differentiate.
+      let remotePlaylistsFetchError = null;
       const getRemotePlaylists = async () => {
         if (remotePlaylists !== null) return remotePlaylists;
         if (!provider.fetchPlaylists) return (remotePlaylists = []);
@@ -7029,6 +7038,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         } catch (err) {
           console.warn(`[Sync] Could not fetch remote playlists for dedup check on ${providerId}:`, err.message);
           remotePlaylists = [];
+          remotePlaylistsFetchError = err.message || 'unknown error';
         }
         return remotePlaylists;
       };
@@ -7046,12 +7056,30 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         const existingLink = getSyncLinks()[localPlaylistId]?.[providerId];
         if (existingLink?.externalId) {
           const remote = await getRemotePlaylists();
+          if (remotePlaylistsFetchError) {
+            // parachord#846: fetch failed. We CANNOT tell whether the linked
+            // remote is genuinely gone or whether we just couldn't reach
+            // the API right now. Treating "missing from empty result" as
+            // "remote deleted" would destroy a still-valid durable link
+            // AND fall through to creating a duplicate — that's the
+            // runaway-duplication failure mode that produced 6,397 fake
+            // playlists on the reporter's LB account. Preserve the link
+            // and bail with a retryable failure; the next sync cycle will
+            // try again.
+            console.warn(`[Sync] ${providerId} fetchPlaylists failed (${remotePlaylistsFetchError}); preserving link for local ${localPlaylistId} → ${existingLink.externalId} and skipping create. Will retry next cycle.`);
+            return {
+              success: false,
+              error: `Could not verify ${providerId} remote playlists: ${remotePlaylistsFetchError}. Link preserved; will retry next cycle.`,
+              retryable: true
+            };
+          }
           const match = remote.find(p => p.externalId === existingLink.externalId && p.isOwnedByUser);
           if (match) {
             return await linkToExisting(match, 'id-link');
           }
           // Link is stale (remote gone) — clear it so we don't keep trying
-          // to reuse a dead ID on future syncs.
+          // to reuse a dead ID on future syncs. Only reached on a
+          // SUCCESSFUL fetch that genuinely doesn't contain this ID.
           console.log(`[Sync] Stored link ${providerId}:${existingLink.externalId} for local ${localPlaylistId} no longer exists remotely; clearing and falling through to create`);
           removeSyncLink(localPlaylistId, providerId);
         }
@@ -7066,6 +7094,21 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       // user's owned playlists. If several match, the richest one wins.
       // -----------------------------------------------------------------
       const remote = await getRemotePlaylists();
+      if (remotePlaylistsFetchError) {
+        // parachord#846: same rationale as Step 0a — without a confirmed
+        // remote list we cannot decide between "no same-named remote
+        // exists" and "we couldn't reach the API." Creating blindly here
+        // is the OTHER half of the runaway-duplication failure mode
+        // (the half for playlists that don't yet have a sync_playlist_links
+        // entry — first-time syncs, post-wizard pushes, etc.). Bail rather
+        // than risk a duplicate.
+        console.warn(`[Sync] ${providerId} fetchPlaylists failed (${remotePlaylistsFetchError}); skipping name-match + create for "${name}". Will retry next cycle.`);
+        return {
+          success: false,
+          error: `Could not verify ${providerId} remote playlists: ${remotePlaylistsFetchError}. Skipped create; will retry next cycle.`,
+          retryable: true
+        };
+      }
       if (remote.length > 0) {
         const normalized = (name || '').trim().toLowerCase();
         const matches = remote.filter(p => p.isOwnedByUser && (p.name || '').trim().toLowerCase() === normalized);
