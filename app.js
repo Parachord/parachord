@@ -10570,8 +10570,15 @@ const Parachord = () => {
       let userToken = musicKitWeb?.getUserToken() || localStorage.getItem('musickit_user_token') || null;
 
       if (!userToken) {
-        // Try MusicKit JS authorization first
-        if (musicKitWeb) {
+        // Try MusicKit JS authorization — but ONLY on macOS where the popup
+        // failure has a working fallback (native MusicKit below). On non-
+        // macOS the MusicKit JS popup hits authorize.music.apple.com and
+        // shows "Problem Connecting" (Electron's third-party-cookie gate,
+        // parachord#834). Letting it fire on Linux/Windows surfaces a
+        // confusing error popup to users who didn't ask for it; they should
+        // connect explicitly via the Settings → Apple Music → Connect
+        // button instead, which routes through the auth-window flow.
+        if (musicKitWeb && window.electron?.platform === 'darwin') {
           try {
             const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
             const status = musicKitWeb.getAuthStatus();
@@ -10583,6 +10590,8 @@ const Parachord = () => {
           } catch (error) {
             console.log('[Sync] MusicKit JS auth failed, trying native MusicKit:', error.message);
           }
+        } else if (musicKitWeb) {
+          console.log('[Sync] Skipping MusicKit JS auto-popup on non-macOS (use Settings → Apple Music → Connect to sign in via the auth window)');
         }
 
         // Fallback: try native MusicKit on macOS to get a user token
@@ -10643,8 +10652,12 @@ const Parachord = () => {
         const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
         let freshToken = null;
 
-        // Try MusicKit JS re-authorization
-        if (musicKitWeb) {
+        // Try MusicKit JS re-authorization — macOS only for the same reason
+        // as the initial-auth path above: the popup is broken on non-macOS
+        // and there's no working fallback for the silent re-auth case.
+        // Non-macOS re-auth happens via the user clicking Connect in
+        // Settings (which routes through the auth-window flow).
+        if (musicKitWeb && window.electron?.platform === 'darwin') {
           try {
             const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
             const status = musicKitWeb.getAuthStatus();
@@ -10656,6 +10669,8 @@ const Parachord = () => {
           } catch (error) {
             console.log('[Sync] MusicKit JS re-auth failed:', error.message);
           }
+        } else if (musicKitWeb) {
+          console.log('[Sync] Skipping MusicKit JS re-auth popup on non-macOS (use Settings → Apple Music → Connect)');
         }
 
         // Fallback: try native MusicKit on macOS
@@ -57741,8 +57756,38 @@ useEffect(() => {
               borderTop: '1px solid var(--border-subtle)'
             }
           },
-            // Native MusicKit availability notice
-            !appleMusicNativeAvailable && React.createElement('div', {
+            // Apple Music auth-method notice. Three states:
+            //   1. Native MusicKit available (macOS with helper built) — green.
+            //   2. Auth-window flow available (any platform with the openAuthWindow
+            //      IPC bridge; parachord#834) — neutral info banner explaining
+            //      the browser-window sign-in flow.
+            //   3. Neither — red "macOS Only" banner with build instructions
+            //      (older builds without the auth-window plumbing).
+            appleMusicNativeAvailable && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#15803d'
+              }
+            },
+              '✓ Native MusicKit available for direct Apple Music playback'
+            ),
+            !appleMusicNativeAvailable && !!window.electron?.musicKit?.openAuthWindow && React.createElement('div', {
+              style: {
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#1e3a8a'
+              }
+            },
+              'Sign-in opens an Apple Music window for direct Apple ID authentication. Your subscription playback works the same as on macOS.'
+            ),
+            !appleMusicNativeAvailable && !window.electron?.musicKit?.openAuthWindow && React.createElement('div', {
               style: {
                 marginBottom: '12px',
                 padding: '10px 12px',
@@ -57757,18 +57802,6 @@ useEffect(() => {
               React.createElement('span', { style: { fontFamily: 'monospace', fontSize: '11px' } },
                 'cd native/musickit-helper && ./build.sh'
               )
-            ),
-            appleMusicNativeAvailable && React.createElement('div', {
-              style: {
-                marginBottom: '12px',
-                padding: '10px 12px',
-                backgroundColor: 'rgba(34, 197, 94, 0.08)',
-                borderRadius: '8px',
-                fontSize: '12px',
-                color: '#15803d'
-              }
-            },
-              '✓ Native MusicKit available for direct Apple Music playback'
             ),
             React.createElement('div', { className: 'flex items-center justify-between' },
               React.createElement('div', null,
@@ -57788,12 +57821,18 @@ useEffect(() => {
                 },
                   appleMusicConnected
                     ? 'Connected and ready for playback'
-                    : appleMusicNativeAvailable
+                    : (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow)
                       ? 'Sign in with your Apple ID to enable streaming'
                       : 'Search and URL lookup available (playback opens in browser)'
                 )
               ),
-              appleMusicNativeAvailable && (
+              // Show the Connect/Disconnect button when EITHER auth path is
+              // available: native MusicKit (macOS) OR the auth-window IPC
+              // (parachord#834). Without the second clause, Linux/Windows
+              // users had no UI entry point to the new auth flow even though
+              // the underlying IPC was wired up — see dyland84's report on
+              // issue #834.
+              (appleMusicNativeAvailable || !!window.electron?.musicKit?.openAuthWindow) && (
                 appleMusicConnected
                   ? React.createElement('button', {
                       onClick: disconnectAppleMusic,
