@@ -7964,11 +7964,20 @@ ipcMain.handle('applemusic:open-auth-window', async () => {
     // a second opener never races with a first.
     const windowState = { resolved: false, resolve };
 
+    // Declared upfront (rather than at the setInterval site below) so the
+    // cleanup helper can reference it without hitting a TDZ ReferenceError
+    // if cleanup somehow runs between IPC registration and the cookie-poll
+    // assignment. Practically unreachable today (the auth window's preload
+    // can't IPC before loadURL fires) but explicit beats clever.
+    let cookiePoll = null;
+
     // Cleanup helper: remove IPC listeners + close window. Called from
     // either auth-completed (success) OR window close (user cancel).
     const cleanup = () => {
+      if (cookiePoll) clearInterval(cookiePoll);
       ipcMain.removeListener('applemusic:auth-completed', handleAuthCompleted);
       ipcMain.removeListener('applemusic:auth-window-ready', handleAuthWindowReady);
+      ipcMain.removeListener('applemusic:auth-debug', handleAuthDebug);
       if (appleAuthWindow && !appleAuthWindow.isDestroyed()) {
         appleAuthWindow.close();
       }
@@ -7984,7 +7993,21 @@ ipcMain.handle('applemusic:open-auth-window', async () => {
       }
     };
 
+    // Diagnostic relay — preload-am-auth.js sends progress messages so we
+    // can debug detection failures on external testers' machines without
+    // requiring DevTools (parachord#834 — added after moop250's Arch Linux
+    // trace showed the preload was firing but no auth-completed IPC ever
+    // arrived). Logs to main's stdout so testers can capture with
+    // terminal-launched builds.
+    const handleAuthDebug = (event, msg) => {
+      if (!appleAuthWindow || event.sender !== appleAuthWindow.webContents) return;
+      console.log(`[AppleMusic Auth][preload] ${msg}`);
+    };
+
     const handleAuthCompleted = async (event) => {
+      // The cookie-polling fallback synthesizes a minimal event with
+      // `sender: appleAuthWindow.webContents` so this check still passes;
+      // see the polling block below.
       if (!appleAuthWindow || event.sender !== appleAuthWindow.webContents) return;
       if (windowState.resolved) return;
       windowState.resolved = true;
@@ -8035,13 +8058,55 @@ ipcMain.handle('applemusic:open-auth-window', async () => {
 
     ipcMain.on('applemusic:auth-window-ready', handleAuthWindowReady);
     ipcMain.on('applemusic:auth-completed', handleAuthCompleted);
+    ipcMain.on('applemusic:auth-debug', handleAuthDebug);
+
+    // Cookie-polling fallback (parachord#834).
+    //
+    // The preload-side detection depends on MusicKit JS being present on
+    // beta.music.apple.com, on the `MusicKit.Events.authorizationStatusDidChange`
+    // constant existing under the expected name, AND on `instance.isAuthorized`
+    // being readable in our preload's context. Any of those can fail
+    // silently — moop250's Arch Linux trace was the first hint, the
+    // post-auth navigation hypothesis was the second. Rather than rely on a
+    // single detection path, also poll the auth window's cookie jar every
+    // 2s. The moment `media-user-token` appears, treat as auth-completed
+    // regardless of whether the preload event fired. This is more robust
+    // than the MusicKit-JS event because the cookie IS the actual auth
+    // carrier — Apple sets it BECAUSE the handshake succeeded, so its
+    // presence is direct evidence.
+    //
+    // Cheap: one cookies.get() every 2s while the auth window is open.
+    // Self-terminates on resolve (cleanup() calls clearInterval) or on
+    // window close. Both handlers gate on `windowState.resolved` so the
+    // preload event and the poll racing each other can't double-fire.
+    cookiePoll = setInterval(async () => {
+      if (!appleAuthWindow || appleAuthWindow.isDestroyed() || windowState.resolved) {
+        clearInterval(cookiePoll);
+        return;
+      }
+      try {
+        const cookies = await appleAuthWindow.webContents.session.cookies.get({ name: 'media-user-token' });
+        if (cookies.length > 0) {
+          console.log('[AppleMusic Auth][poll] media-user-token cookie detected — treating as auth-completed');
+          clearInterval(cookiePoll);
+          // Synthesize a minimal event so handleAuthCompleted's sender
+          // check passes. We're calling it directly (in-process), not via
+          // IPC, so no listener-registration concerns.
+          handleAuthCompleted({ sender: appleAuthWindow.webContents });
+        }
+      } catch (_e) {
+        // Swallow — next tick will retry.
+      }
+    }, 2000);
 
     // User closed the window before completing auth — resolve as cancel.
     appleAuthWindow.on('closed', () => {
       if (!windowState.resolved) {
         windowState.resolved = true;
+        if (cookiePoll) clearInterval(cookiePoll);
         ipcMain.removeListener('applemusic:auth-completed', handleAuthCompleted);
         ipcMain.removeListener('applemusic:auth-window-ready', handleAuthWindowReady);
+        ipcMain.removeListener('applemusic:auth-debug', handleAuthDebug);
         appleAuthWindow = null;
         resolve({ success: false, cancelled: true });
       }
