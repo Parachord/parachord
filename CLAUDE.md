@@ -1212,3 +1212,11 @@ When tagging a new version, three places must agree on the version string. Missi
 3. `RELEASE_NOTES.md` — add a new entry at the top with `# Parachord vX.Y.Z` heading, release date, and grouped highlights. The in-app "What's New" modal renders this file (parsed via the bundled fallback or fetched from GitHub) so users see your bullet points on first launch after upgrade.
 
 Then commit (`X.Y.Z` is conventional for the commit subject), push, and `git tag vX.Y.Z` + `git push origin vX.Y.Z`. The CI build picks up from the tag.
+
+## Voice when responding to external contributors
+
+Parachord is a solo-maintainer project. When commenting on issues or PRs from external contributors (anyone other than @jherskowitz), don't use phrases that imply a team: "the maintainers," "we'd appreciate," "the team prefers." That framing reads as evasive once a contributor notices the project is essentially one person, and it understates the bus-factor reality.
+
+The honest framing is also more recruitment-effective. Use first-person singular and admit limits: "I'm the only maintainer right now and X isn't where my expertise is — would love your help." Solo-maintainer projects with self-aware leads attract better contributors than ones pretending to be teams.
+
+This applies to issue triage, PR review, RFC discussion, and any other contributor-facing communication. The single exception is when the comment is on behalf of a specific named co-author (Claude, an external contributor, etc.) — in which case attribute that person rather than using a plural.
