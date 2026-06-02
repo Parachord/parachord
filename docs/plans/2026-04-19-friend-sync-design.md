@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-19
 **Status:** Design validated, ready for implementation plan
-**Related:** parachord-android `FriendsRepository.kt`, `Friend.sq`
+**Related:** parachord-mobile `FriendsRepository.kt`, `Friend.sq`
 
 ## Problem
 

@@ -221,7 +221,7 @@ window.isPublicHttpUrl = (urlString) => {
 //
 // SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
 // with that file. Cross-platform invariant: must match
-// parachord-android/shared/.../resolver/ResolverModels.kt and
+// parachord-mobile/shared/.../resolver/ResolverModels.kt and
 // ResolverScoring.kt#MIN_CONFIDENCE_THRESHOLD so desktop and Android pick the
 // same source for the same track.
 //
@@ -26344,7 +26344,7 @@ ${trackListXml}
   //
   // SYNC: tests/helpers/confidence-scoring.js — keep byte-identical with the
   // body in that file. Cross-platform invariant: must match
-  // parachord-android/shared/.../resolver/ResolverModels.kt#scoreConfidence
+  // parachord-mobile/shared/.../resolver/ResolverModels.kt#scoreConfidence
   // so desktop and Android pick the same source for the same track.
   //
   // Both axes (title AND artist) must containment-match the target, else the
