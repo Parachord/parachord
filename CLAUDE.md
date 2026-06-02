@@ -927,9 +927,12 @@ Public banner notifications fetched from Achordion. Used to push messages (relea
   "cta": { "label": "string", "url": "https://..." },  // optional
   "minVersion": "0.9.2",              // optional inclusive lower bound
   "maxVersion": "1.0.0",              // optional inclusive upper bound
-  "expiresAt": "2026-06-01T00:00:00Z" // optional ISO-8601
+  "expiresAt": "2026-06-01T00:00:00Z", // optional ISO-8601
+  "surfaces": ["parachord"]           // optional; ('achordion' | 'parachord')[]
 }
 ```
+
+`surfaces` scopes an item to a subset of clients. Omitting it (or sending an empty array) shows the item on every surface — the pre-`surfaces` default, kept for backwards compatibility with entries authored before the field existed. The Achordion API (`app/api/announcements/route.ts`) explicitly delegates surface filtering to the client; Parachord's `activeAnnouncements` filter chain enforces it after the version-range check. If you add a new surface name (e.g. `ios`), both the Achordion zod schema in `lib/announcements.ts` and Parachord's filter need to know about it for the new client to receive items scoped to it.
 
 `iconUrl` takes precedence over `icon`; on image error the banner silently falls back to `icon` (or nothing). Multiple items: id-sort descending wins (date-prefixed ids = recency-sorted), banner shows one at a time, dismiss surfaces the next.
 

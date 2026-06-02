@@ -10377,6 +10377,19 @@ const Parachord = () => {
         if (a.maxVersion && compareSemver3(appVersion, a.maxVersion) > 0) return false;
         return true;
       })
+      // Surface filter: items can scope themselves to a subset of clients via
+      // the optional `surfaces` array (per achordion/lib/announcements.ts —
+      // 'achordion' | 'parachord'). Items omitting the field — or sending an
+      // empty array — show on every surface (the pre-`surfaces` default, so
+      // existing entries keep working). Items with an explicit list only show
+      // on clients whose surface name appears in it. The achordion API
+      // explicitly delegates this filter to the desktop client (see
+      // achordion/app/api/announcements/route.ts) — the route hands back the
+      // full validated list regardless of surface.
+      .filter(a => {
+        if (!Array.isArray(a.surfaces) || a.surfaces.length === 0) return true;
+        return a.surfaces.includes('parachord');
+      })
       .sort((a, b) => String(b.id).localeCompare(String(a.id)));
   }, [announcements, dismissedAnnouncementIds, appVersion]);
 
