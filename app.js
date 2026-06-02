@@ -346,21 +346,75 @@ const unsupportedAudioMessage = (ext) => {
 };
 
 // Resolve a track to a recording MBID for ListenBrainz love submission.
-// Tries (1) cached track.mbid, (2) the MBID Mapper. Returns the MBID
-// string or null. ~4ms typical via the mapper. See
+// Three tiers:
+//   1. Cached track.mbid (instant)
+//   2. MBID Mapper at mapper.listenbrainz.org (~4ms, broad coverage)
+//   3. Direct MusicBrainz recording search (~200-500ms, slower but works
+//      when the mapper is down OR hasn't yet indexed a newly-released
+//      recording — the "Starting Line – All Them Witches" case where
+//      the mapper was returning 502 AND the recording was only days old)
+// Returns the MBID string or null. See
 // docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md.
+//
+// Tier 3 only fires when tier 2 either errored (5xx, network) or returned
+// no high-confidence match — safety net for transient mapper outages and
+// freshly-released recordings the mapper hasn't ingested. pushLoveToScrobblers
+// queues retries when even tier 3 returns null, so love-pushes that fail
+// today eventually catch up when either the mapper comes back or MB
+// ingests the new recording.
 window.resolveMbidForLove = async (track) => {
   if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return track.mbid;
   if (!track?.artist || !track?.title) return null;
+
+  // Tier 2: MBID Mapper
   try {
     const url = `https://mapper.listenbrainz.org/mapping/lookup?artist_credit_name=${encodeURIComponent(track.artist)}&recording_name=${encodeURIComponent(track.title)}`;
     const resp = await fetch(url);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data?.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(data.recording_mbid || '')) {
+        return data.recording_mbid;
+      }
+      // Mapper succeeded but no high-confidence match — could be a new
+      // recording the mapper hasn't indexed yet. Fall through to tier 3.
+    }
+    // Mapper non-OK (502, 5xx, 429) — fall through to tier 3.
+  } catch (e) {
+    // Mapper network error — fall through to tier 3.
+  }
+
+  // Tier 3: Direct MusicBrainz recording search.
+  // MB's /ws/2/recording/?query=... returns recordings sorted by Lucene
+  // score (0-100). We require ≥ 90, roughly equivalent to the mapper's
+  // 0.7 confidence floor — "this is almost certainly the right recording."
+  // MB rate-limits to 1 req/sec/IP via User-Agent identification, so we
+  // send a real UA per their etiquette policy.
+  try {
+    // Quote-escape inside the Lucene query to avoid injection / broken
+    // syntax on titles or artists with double quotes.
+    const escapedArtist = String(track.artist).replace(/"/g, '\\"');
+    const escapedTitle = String(track.title).replace(/"/g, '\\"');
+    const query = `artist:"${escapedArtist}" AND recording:"${escapedTitle}"`;
+    const url = `https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=3`;
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': 'Parachord/0.9.3 (https://github.com/Parachord/parachord)',
+        'Accept': 'application/json',
+      },
+    });
     if (!resp.ok) return null;
     const data = await resp.json();
-    if (data?.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(data.recording_mbid || '')) {
-      return data.recording_mbid;
+    const recordings = Array.isArray(data?.recordings) ? data.recordings : [];
+    if (recordings.length === 0) return null;
+    const top = recordings[0];
+    if (typeof top.score === 'number' && top.score >= 90 && /^[a-f0-9-]{36}$/i.test(top.id || '')) {
+      console.log(`[resolveMbidForLove] MB fallback found MBID for "${track.artist} – ${track.title}" (score ${top.score})`);
+      return top.id;
     }
-  } catch (e) { /* mapper down or rate-limited; treat as unresolved */ }
+  } catch (e) {
+    // MB down or rate-limited — return null; caller's retry queue will try again.
+  }
+
   return null;
 };
 
@@ -6164,6 +6218,16 @@ const Parachord = () => {
   const [loveBackfillRunning, setLoveBackfillRunning] = useState({}); // { [service]: boolean }
   const loveBackfillRunningRef = useRef({});
   const [loveBackfillProgress, setLoveBackfillProgress] = useState({}); // { [service]: { done, total } }
+  // In-memory retry queue for love-pushes that failed transiently (mapper
+  // 5xx/502, LB API 5xx/429, network errors). Walked by a periodic runner
+  // that re-attempts pushLoveToScrobblers on each entry. Max 5 attempts,
+  // then drop with a warning log. Not persisted across restarts — that's
+  // a deliberate scope choice; the user can hit the backfill button to
+  // catch up after a long mapper outage. Entries are auto-removed when
+  // pushLoveToScrobblers succeeds for all enabled services on a given
+  // track. Map keyed by trackId so re-loving a track doesn't stack
+  // entries. parachord (Starting Line incident, 2026-06).
+  const loveRetryQueueRef = useRef(new Map()); // Map<trackId, { track, attempts }>
   const [scrobblingEnabled, setScrobblingEnabled] = useState(true);
 
   const [showUrlImportDialog, setShowUrlImportDialog] = useState(false);
@@ -14651,7 +14715,64 @@ ${trackListXml}
     }
 
     if (tasks.length > 0) await Promise.allSettled(tasks);
+
+    // After each push attempt, check whether the track is fully pushed for
+    // all enabled services. If anything is still pending (mapper down, LB
+    // 429, network error, no MBID match, etc.), queue for retry; the
+    // periodic retry runner below will re-attempt. If everything succeeded,
+    // remove from the queue so we don't pointlessly re-check.
+    // parachord (Starting Line incident, 2026-06).
+    const post = lovePushedKeysRef.current[track.id] || {};
+    const enabledNow = scrobblerLovePushEnabledRef.current || {};
+    const lfmPending = !!enabledNow.lastfm && !post.lastfm;
+    const lbPending = !!enabledNow.listenbrainz && !post.listenbrainz;
+    if (lfmPending || lbPending) {
+      const existing = loveRetryQueueRef.current.get(track.id);
+      const attempts = (existing?.attempts || 0) + 1;
+      const MAX_ATTEMPTS = 5;
+      if (attempts > MAX_ATTEMPTS) {
+        loveRetryQueueRef.current.delete(track.id);
+        const stillPending = [lfmPending && 'lastfm', lbPending && 'listenbrainz'].filter(Boolean).join(', ');
+        console.warn(`[love-push] giving up on "${track.artist} – ${track.title}" after ${MAX_ATTEMPTS} attempts (still pending: ${stillPending})`);
+      } else {
+        loveRetryQueueRef.current.set(track.id, { track, attempts });
+      }
+    } else if (loveRetryQueueRef.current.has(track.id)) {
+      // Fully pushed — drop from queue if it was there from a prior failure.
+      loveRetryQueueRef.current.delete(track.id);
+    }
   }, []);
+
+  // Periodic retry runner for the love-push queue. Walks any tracks that
+  // failed to push fully last time, re-attempts via pushLoveToScrobblers
+  // (which is idempotent — already-pushed services short-circuit at the
+  // top via the lovePushedKeysRef check). 5-minute cadence is generous
+  // enough that a transient mapper outage rarely costs more than 5-10
+  // minutes of perceived staleness; combined with MAX_ATTEMPTS=5 in
+  // pushLoveToScrobblers above, total retry window per love is up to 25
+  // minutes. After that, the user can hit the manual backfill button to
+  // mop up. parachord (Starting Line incident, 2026-06).
+  useEffect(() => {
+    const RETRY_INTERVAL_MS = 5 * 60 * 1000;
+    const interval = setInterval(async () => {
+      if (loveRetryQueueRef.current.size === 0) return;
+      const entries = Array.from(loveRetryQueueRef.current.values());
+      console.log(`[love-retry] checking ${entries.length} queued love(s)`);
+      for (const { track } of entries) {
+        try {
+          await pushLoveToScrobblers(track);
+        } catch (err) {
+          console.warn(`[love-retry] retry threw for "${track.artist} – ${track.title}":`, err?.message || err);
+        }
+        // Soft pacing — don't burst the LB/mapper/MB APIs if the queue is
+        // large. 500ms gap is small relative to a 5-minute cadence.
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }, RETRY_INTERVAL_MS);
+    return () => clearInterval(interval);
+    // pushLoveToScrobblers is stable (useCallback with empty deps), so
+    // this effect mounts once.
+  }, [pushLoveToScrobblers]);
 
   // Persist a single love-pushed checkpoint. Keeps the ref hot and
   // writes through to electron-store so a backfill mid-run survives
