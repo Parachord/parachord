@@ -148,7 +148,7 @@ This matters beyond playback: a wrong-artist result also pollutes `track.album` 
 - `calculateConfidence` — 0.95 for both-match, 0.50 for single-axis, preserves direct-ID 1.0, rejects wrong-artist match even when resolver claims 1.0 confidence
 - `MIN_CONFIDENCE_THRESHOLD = 0.6` and the regression — wrong-artist 0.50 drops, correct 0.95 passes
 
-Mirrors `parachord-android/app/src/test/.../ConfidenceScoringTest.kt`.
+Mirrors `parachord-mobile/app/src/test/.../ConfidenceScoringTest.kt`.
 
 ## Cross-Platform Invariant
 
@@ -158,7 +158,7 @@ The desktop and Android clients must select the same source for the same track. 
 |---|---|---|
 | Desktop (runtime) | `app.js` L149–166 + L24880 | `normalizeStr`, `validateResolvedTrack`, `MIN_CONFIDENCE_THRESHOLD`, `calculateConfidence` |
 | Desktop (test mirror) | `tests/helpers/confidence-scoring.js` | Same functions, byte-identical, `require`d by tests |
-| Android | `parachord-android/shared/src/commonMain/kotlin/com/parachord/shared/resolver/ResolverModels.kt` + `ResolverScoring.kt` | `scoreConfidence`, `validateResolvedTrack` equivalent, `MIN_CONFIDENCE_THRESHOLD` |
+| Android | `parachord-mobile/shared/src/commonMain/kotlin/com/parachord/shared/resolver/ResolverModels.kt` + `ResolverScoring.kt` | `scoreConfidence`, `validateResolvedTrack` equivalent, `MIN_CONFIDENCE_THRESHOLD` |
 
 Drift on any platform produces inconsistent selection. The SYNC comments in each file flag where the others live.
 

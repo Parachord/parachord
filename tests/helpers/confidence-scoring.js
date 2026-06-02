@@ -3,7 +3,7 @@
 // SYNC: app.js — keep `normalizeStr`, `validateResolvedTrack`,
 // `calculateConfidence`, and `MIN_CONFIDENCE_THRESHOLD` byte-identical with
 // the inline copies. Cross-platform invariant: must match
-// `parachord-android/shared/.../resolver/ResolverModels.kt#scoreConfidence`
+// `parachord-mobile/shared/.../resolver/ResolverModels.kt#scoreConfidence`
 // and `ResolverScoring.kt#MIN_CONFIDENCE_THRESHOLD` so the desktop and
 // Android pick the same source for the same track.
 //
@@ -15,7 +15,7 @@
 // outrank a correct local file. The fix collapses single-axis matches to
 // 0.50 and gates source selection on MIN_CONFIDENCE_THRESHOLD = 0.6.
 //
-// See parachord-android/shared/.../ResolverScoring.kt header for the full
+// See parachord-mobile/shared/.../ResolverScoring.kt header for the full
 // rationale.
 
 // Case-fold + strip non-alphanumeric. Unicode-aware: decomposes accented

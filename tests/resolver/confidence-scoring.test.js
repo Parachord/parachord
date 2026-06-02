@@ -1,7 +1,7 @@
 /**
  * Resolver Confidence Scoring Tests
  *
- * Mirrors parachord-android's ConfidenceScoringTest cases plus desktop-specific
+ * Mirrors parachord-mobile's ConfidenceScoringTest cases plus desktop-specific
  * regression coverage for the wrong-artist match bug.
  *
  * The bug: prior to this scoring, calculateConfidence ignored artist entirely.
