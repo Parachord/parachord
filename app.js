@@ -11745,31 +11745,36 @@ const Parachord = () => {
               return { success: false, supported: false, error: 'spotify seek not supported' };
             }
             const positionSec = Math.max(0, Number(offsetMs) / 1000);
-            let touched = false;
+            let confirmedMs = null;
             if (audioRef.current && (track?.sources?.localfiles || track?.sources?.soundcloud || track?.sources?.youtube || track?.sources?.bandcamp || activeResolver === 'soundcloud' || activeResolver === 'youtube' || activeResolver === 'bandcamp' || activeResolver === 'localfiles')) {
               audioRef.current.currentTime = positionSec;
-              touched = true;
+              confirmedMs = Math.round(audioRef.current.currentTime * 1000);
             }
             if (activeResolver === 'applemusic') {
               if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
                 window._appleMusicPreviewAudio.currentTime = positionSec;
-                touched = true;
+                confirmedMs = Math.round(window._appleMusicPreviewAudio.currentTime * 1000);
               }
-              try {
-                appleMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: true };
-              } catch {}
               if (window.electron?.musicKit?.seek) {
-                try { await window.electron.musicKit.seek(positionSec); touched = true; } catch {}
+                try {
+                  await window.electron.musicKit.seek(positionSec);
+                  confirmedMs = Math.round(positionSec * 1000);
+                  appleMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: true };
+                } catch {}
               }
               if (window.getMusicKitWeb) {
                 try {
                   const mk = window.getMusicKitWeb();
-                  if (mk?.seek) { await mk.seek(positionSec); touched = true; }
+                  if (mk?.seek) {
+                    await mk.seek(positionSec);
+                    confirmedMs = Math.round(positionSec * 1000);
+                    appleMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: true };
+                  }
                 } catch {}
               }
             }
-            if (!touched) return { success: false, supported: false, error: 'no seekable engine for active resolver' };
-            return { success: true, supported: true, position_ms: Math.round(positionSec * 1000) };
+            if (confirmedMs === null) return { success: false, supported: false, error: 'no seekable engine for active resolver' };
+            return { success: true, supported: true, position_ms: confirmedMs };
           },
           // Read current playback offset + duration in ms. Tries HTML5 audio
           // first; falls back to the Apple Music interpolated baseline; finally
