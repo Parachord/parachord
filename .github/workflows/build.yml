@@ -169,10 +169,32 @@ jobs:
           echo "=== End diagnostic ==="
 
       - name: Build for ${{ matrix.platform }}
-        run: npm run build:${{ matrix.platform }} -- --${{ matrix.arch }} --publish never
+        shell: bash
+        run: |
+          # Fork PRs run with secrets stripped (GitHub Actions security
+          # measure — prevents credential exfiltration by external
+          # contributors). When CSC_LINK is empty, electron-builder on
+          # Windows tries to resolve the empty value as a cert file path
+          # and bombs with "Env WIN_CSC_LINK is not correct, cannot
+          # resolve: D:\a\parachord\parachord not a file". macOS handles
+          # empty CSC_LINK gracefully via the "Import Code Signing
+          # Certificate" step's `env.CSC_LINK != ''` skip; Windows had no
+          # equivalent — so external-contributor PRs (e.g. gjtorikian's
+          # #857) would always fail Windows verification despite the code
+          # being fine. Explicitly unset the vars when empty so
+          # electron-builder uniformly skips signing across platforms.
+          # Internal-branch PRs and tag-pushed release builds still get
+          # the secrets normally.
+          if [ -z "${CSC_LINK:-}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            echo "[CI] CSC_LINK empty (likely a fork PR) — skipping code signing"
+          fi
+          npm run build:${{ matrix.platform }} -- --${{ matrix.arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS code signing
+          # macOS code signing (also read by electron-builder on Windows
+          # to detect "should I sign?" — see comment in run: above for
+          # the fork-PR handling).
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           # macOS notarization — only on tagged releases
