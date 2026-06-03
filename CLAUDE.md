@@ -1224,3 +1224,22 @@ Parachord is a solo-maintainer project. When commenting on issues or PRs from ex
 The honest framing is also more recruitment-effective. Use first-person singular and admit limits: "I'm the only maintainer right now and X isn't where my expertise is — would love your help." Solo-maintainer projects with self-aware leads attract better contributors than ones pretending to be teams.
 
 This applies to issue triage, PR review, RFC discussion, and any other contributor-facing communication. The single exception is when the comment is on behalf of a specific named co-author (Claude, an external contributor, etc.) — in which case attribute that person rather than using a plural.
+
+## Debugging CI failures — check PR provenance first
+
+When a CI step's outcome changes between PRs (success → fail, or success → skipped), the most boring explanation is usually right: the new PR is from a fork. **GitHub Actions deliberately strips repository secrets from workflows triggered by `pull_request` events from forks** as a credential-exfiltration prevention measure. Any step that depends on `secrets.X` will see `X` as empty string, not whatever the secret holds. Symptoms include:
+
+- macOS code-signing step transitions from `success` to `skipped` (the workflow guards it with `if: env.CSC_LINK != ''`)
+- Windows builds fail with `Env WIN_CSC_LINK is not correct, cannot resolve: ...` (electron-builder interpreting empty CSC_LINK as a malformed cert path — see [parachord#859](https://github.com/Parachord/parachord/pull/859))
+- Notarization, publishing, signed-artifact upload steps no-op or fail
+- Anything reading custom `secrets.*` for non-default-permission operations (the default `GITHUB_TOKEN` *does* still flow through fork PRs, but only with read permissions and only to the fork's branch — custom secrets named `GH_TOKEN` etc. don't)
+
+**Before diagnosing this as "secret was deleted" or "infrastructure regression":**
+
+```bash
+gh pr view <N> --repo Parachord/parachord --json headRepository,headRepositoryOwner --jq '.headRepositoryOwner.login + "/" + .headRepository.name'
+```
+
+If the result is `Parachord/parachord`, secrets flowed normally — diagnose elsewhere. If it's `<someone-else>/parachord`, it's a fork PR — the secrets were never there for this run; your secret is fine. Compare with a recent passing PR via the same command; if one's internal and one's a fork, the difference is provenance, not infrastructure.
+
+The fix shape for fork-PR-safe workflows is usually: guard each step that reads `secrets.X` with `if: env.X != ''`, OR (where the dependent tooling doesn't handle empty cleanly) explicitly `unset` the var in a `shell: bash` pre-command. parachord#859 is the canonical example for the Windows electron-builder case.
