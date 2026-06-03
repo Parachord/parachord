@@ -11751,6 +11751,16 @@ const Parachord = () => {
               confirmedMs = Math.round(audioRef.current.currentTime * 1000);
             }
             if (activeResolver === 'applemusic') {
+              // Three sequential `if`s (NOT an else-if chain) is deliberate:
+              // each engine's seek can silently fail (e.g. native bridge
+              // exists but isn't authorized for the current track) and the
+              // try/catch swallows the error. With independent `if`s, a later
+              // tier still gets a chance to seek the engine that's actually
+              // playing. In practice only one engine has the active source
+              // for any given track, so confirmedMs ends up reflecting that
+              // engine's read-back. parachord#858 (nit 2) noted the pattern
+              // looks brittle but the alternative (early else-if returns)
+              // regresses the silent-failure recovery path.
               if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
                 window._appleMusicPreviewAudio.currentTime = positionSec;
                 confirmedMs = Math.round(window._appleMusicPreviewAudio.currentTime * 1000);
@@ -11758,8 +11768,20 @@ const Parachord = () => {
               if (window.electron?.musicKit?.seek) {
                 try {
                   await window.electron.musicKit.seek(positionSec);
-                  confirmedMs = Math.round(positionSec * 1000);
-                  appleMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: true };
+                  // parachord#858 nit 1: query the engine for its actual
+                  // post-seek position rather than reporting the requested
+                  // offset. The seek may clamp at track end, DRM boundaries,
+                  // etc. Fall back to the requested value if the state query
+                  // fails so we still return SOMETHING reasonable.
+                  let actualSec = positionSec;
+                  try {
+                    const state = await window.electron.musicKit.getPlaybackState();
+                    if (state?.success && typeof state.position === 'number') {
+                      actualSec = state.position;
+                    }
+                  } catch {}
+                  confirmedMs = Math.round(actualSec * 1000);
+                  appleMusicProgressBaselineRef.current = { progress: actualSec, timestamp: Date.now(), isPlaying: true };
                 } catch {}
               }
               if (window.getMusicKitWeb) {
@@ -11767,8 +11789,18 @@ const Parachord = () => {
                   const mk = window.getMusicKitWeb();
                   if (mk?.seek) {
                     await mk.seek(positionSec);
-                    confirmedMs = Math.round(positionSec * 1000);
-                    appleMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: true };
+                    // Same rationale as native path above — query actual.
+                    // musickit-web's getPlaybackState() returns
+                    // { state, position, duration, ... } in seconds.
+                    let actualSec = positionSec;
+                    try {
+                      const state = mk.getPlaybackState?.();
+                      if (state && typeof state.position === 'number') {
+                        actualSec = state.position;
+                      }
+                    } catch {}
+                    confirmedMs = Math.round(actualSec * 1000);
+                    appleMusicProgressBaselineRef.current = { progress: actualSec, timestamp: Date.now(), isPlaying: true };
                   }
                 } catch {}
               }
