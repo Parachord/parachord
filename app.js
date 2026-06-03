@@ -11778,9 +11778,11 @@ const Parachord = () => {
           getCurrentPosition: () => {
             const track = currentTrackRef.current;
             const audio = audioRef.current;
+            const activeResolver = track?._activeResolver || (track ? determineResolverIdFromTrack(track) : null);
+            const audioOwnsPlayback = activeResolver && activeResolver !== 'applemusic' && activeResolver !== 'spotify';
             const audioPositionSec = audio?.currentTime;
             const audioDurationSec = audio?.duration;
-            if (typeof audioPositionSec === 'number' && audioPositionSec > 0) {
+            if (audioOwnsPlayback && typeof audioPositionSec === 'number' && audioPositionSec >= 0) {
               return {
                 position_ms: Math.round(audioPositionSec * 1000),
                 duration_ms: Math.round(((audioDurationSec || track?.duration || 0) * 1000)),

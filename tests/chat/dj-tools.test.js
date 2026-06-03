@@ -715,6 +715,15 @@ describe('get_position tool', () => {
     expect(result.position_ms).toBe(0);
     expect(result.duration_ms).toBe(0);
   });
+
+  test('position 0 is a valid supported position (track at start)', async () => {
+    const getCurrentPosition = jest.fn().mockReturnValue({ position_ms: 0, duration_ms: 240000, supported: true });
+    const tool = getTool('get_position');
+    const result = await tool.execute({}, { getCurrentPosition });
+    expect(result.position_ms).toBe(0);
+    expect(result.duration_ms).toBe(240000);
+    expect(result.supported).toBe(true);
+  });
 });
 
 describe('registry exposes the new tools', () => {
