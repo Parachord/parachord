@@ -11746,7 +11746,7 @@ const Parachord = () => {
             }
             const positionSec = Math.max(0, Number(offsetMs) / 1000);
             let confirmedMs = null;
-            if (audioRef.current && (track?.sources?.localfiles || track?.sources?.soundcloud || track?.sources?.youtube || track?.sources?.bandcamp || activeResolver === 'soundcloud' || activeResolver === 'youtube' || activeResolver === 'bandcamp' || activeResolver === 'localfiles')) {
+            if (audioRef.current && (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'youtube' || activeResolver === 'bandcamp')) {
               audioRef.current.currentTime = positionSec;
               confirmedMs = Math.round(audioRef.current.currentTime * 1000);
             }
