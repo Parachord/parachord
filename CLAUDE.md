@@ -1031,6 +1031,7 @@ The client checks `cachedVersion !== marketplaceVersion` (main.js L3674). If you
 - `AIChatService` (L4700s): Manages conversation, tool calls, and provider communication
 - Tool results must include `name` field (not just `tool_call_id`) — Gemini API requires `function_response.name`
 - `handleToolCalls` (L4779): Deduplicates multiple `queue_add` calls in same response (merges tracks into one call) — prevents models from adding N×requested tracks
+- `seek` / `get_position` tools (tools/dj-tools.js): MCP-exposed seek and position readback. Supported on HTML5 audio engines (localfiles, SoundCloud, YouTube, Bandcamp) and Apple Music (native MusicKit + MusicKit JS). Spotify returns `supported: false`. Position is confirmed via engine read-back, not assumed from the requested offset.
 - Share button on user messages copies `https://parachord.com/go?uri=parachord://chat?prompt=...` to clipboard
 - `parachord.com/go` is a static redirect page (GitHub Pages) that handles `parachord://` protocol links from contexts that strip custom schemes (e.g., GitHub Discussions)
 
