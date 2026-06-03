@@ -11731,7 +11731,86 @@ const Parachord = () => {
           getCurrentTrack: () => currentTrackRef.current,
           getQueue: () => currentQueueRef.current || [],
           getIsPlaying: () => isPlayingRef.current,
-          blockRecommendation: () => {}
+          blockRecommendation: () => {},
+          // Seek the active playback engine to a position (ms within the track).
+          // Mirrors the playbar slider's onChange — only the same engines that
+          // support seek there support it here. Spotify (Web SDK + Connect) is
+          // not currently seekable; returns {supported:false} to let callers
+          // (e.g. external sync clients) degrade gracefully.
+          handleSeek: async (offsetMs) => {
+            const track = currentTrackRef.current;
+            if (!track) return { success: false, supported: false, error: 'no track' };
+            const activeResolver = track._activeResolver || determineResolverIdFromTrack(track);
+            if (activeResolver === 'spotify') {
+              return { success: false, supported: false, error: 'spotify seek not supported' };
+            }
+            const positionSec = Math.max(0, Number(offsetMs) / 1000);
+            let confirmedMs = null;
+            if (audioRef.current && (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'youtube' || activeResolver === 'bandcamp')) {
+              audioRef.current.currentTime = positionSec;
+              confirmedMs = Math.round(audioRef.current.currentTime * 1000);
+            }
+            if (activeResolver === 'applemusic') {
+              if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+                window._appleMusicPreviewAudio.currentTime = positionSec;
+                confirmedMs = Math.round(window._appleMusicPreviewAudio.currentTime * 1000);
+              }
+              if (window.electron?.musicKit?.seek) {
+                try {
+                  await window.electron.musicKit.seek(positionSec);
+                  confirmedMs = Math.round(positionSec * 1000);
+                  appleMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: true };
+                } catch {}
+              }
+              if (window.getMusicKitWeb) {
+                try {
+                  const mk = window.getMusicKitWeb();
+                  if (mk?.seek) {
+                    await mk.seek(positionSec);
+                    confirmedMs = Math.round(positionSec * 1000);
+                    appleMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: true };
+                  }
+                } catch {}
+              }
+            }
+            if (confirmedMs === null) return { success: false, supported: false, error: 'no seekable engine for active resolver' };
+            return { success: true, supported: true, position_ms: confirmedMs };
+          },
+          // Read current playback offset + duration in ms. Tries HTML5 audio
+          // first; falls back to the Apple Music interpolated baseline; finally
+          // the track's reported duration. Returns supported:false for
+          // playback paths that don't expose a position (Spotify Connect).
+          getCurrentPosition: () => {
+            const track = currentTrackRef.current;
+            const audio = audioRef.current;
+            const activeResolver = track?._activeResolver || (track ? determineResolverIdFromTrack(track) : null);
+            const audioOwnsPlayback = activeResolver && activeResolver !== 'applemusic' && activeResolver !== 'spotify';
+            const audioPositionSec = audio?.currentTime;
+            const audioDurationSec = audio?.duration;
+            if (audioOwnsPlayback && typeof audioPositionSec === 'number' && audioPositionSec >= 0) {
+              return {
+                position_ms: Math.round(audioPositionSec * 1000),
+                duration_ms: Math.round(((audioDurationSec || track?.duration || 0) * 1000)),
+                supported: true
+              };
+            }
+            try {
+              const b = appleMusicProgressBaselineRef.current;
+              if (b && b.timestamp) {
+                const elapsedSec = b.isPlaying ? b.progress + (Date.now() - b.timestamp) / 1000 : b.progress;
+                return {
+                  position_ms: Math.round(Math.max(0, elapsedSec) * 1000),
+                  duration_ms: Math.round((track?.duration || 0) * 1000),
+                  supported: true
+                };
+              }
+            } catch {}
+            return {
+              position_ms: 0,
+              duration_ms: Math.round((track?.duration || 0) * 1000),
+              supported: false
+            };
+          }
         };
         const result = await executeDjTool(toolName, args, context);
         window.electron.mcp.respond(requestId, result);
