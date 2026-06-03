@@ -339,6 +339,96 @@ class ListenBrainzScrobbler extends BaseScrobbler {
     return !!(config.enabled && config.userToken);
   }
 
+  // Derive playback-source enrichment for ListenBrainz `additional_info`.
+  //
+  // Three groups of fields:
+  //
+  //  1. `origin_url` + `music_service` + `music_service_name` — reflect the
+  //     resolver that actually streamed (`track._activeResolver`). Lets
+  //     readers (Achordion's track-links cache, the LB UI's "listen with"
+  //     link, etc.) know the exact URL the user heard.
+  //
+  //  2. `spotify_id` and any future provider-specific ID slots LB adds —
+  //     populated from the highest-confidence source available on the
+  //     track regardless of which played. Even if we streamed via Apple
+  //     Music, having a verified Spotify track ID on hand gives the
+  //     read-side a known-correct cross-platform anchor.
+  //
+  //  3. `recording_mbid` / `release_mbid` / `artist_mbids` — when present
+  //     on the track (typically via the MBID Mapper enrichment). LB itself
+  //     accepts these and will skip its own mapping hop; Achordion uses
+  //     them to key the match-cache row by MBID instead of waiting for
+  //     LB's mapping to land.
+  //
+  // Designed to never throw — every field is independently optional. If
+  // we can't derive a value (no _activeResolver, source missing IDs,
+  // playback was localfiles, etc.) we just omit that key.
+  //
+  // This addresses the 46% Parachord-played-but-no-link gap reported in
+  // https://github.com/jherskowitz/achordion/issues/72 (lever 2).
+  _deriveSourceEnrichment(track) {
+    const out = {};
+    const sources = (track && track.sources) || {};
+    const isHttp = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
+    const isMbid = (m) => typeof m === 'string' && /^[a-f0-9-]{36}$/i.test(m);
+
+    // Group 1 + 2: scan high-confidence sources for provider IDs, then
+    // pick out the played source's URL/service identity.
+    for (const resolverId of Object.keys(sources)) {
+      const s = sources[resolverId];
+      if (!s || s.noMatch) continue;
+      const conf = typeof s.confidence === 'number' ? s.confidence : 0;
+      if (conf < 0.95) continue;
+      if (resolverId === 'spotify' && s.spotifyId && !out.spotify_id) {
+        out.spotify_id = 'https://open.spotify.com/track/' + s.spotifyId;
+      }
+    }
+
+    const playedId = track && track._activeResolver;
+    const played = playedId ? sources[playedId] : null;
+    if (played && !played.noMatch) {
+      let originUrl = null, host = null, label = null;
+      if (playedId === 'spotify' && played.spotifyId) {
+        originUrl = 'https://open.spotify.com/track/' + played.spotifyId;
+        host = 'spotify.com'; label = 'Spotify';
+      } else if (playedId === 'applemusic') {
+        originUrl = played.appleMusicUrl
+          || (played.appleMusicId ? 'https://music.apple.com/us/song/' + played.appleMusicId : null);
+        host = 'music.apple.com'; label = 'Apple Music';
+      } else if (playedId === 'bandcamp') {
+        originUrl = isHttp(played.bandcampUrl) ? played.bandcampUrl
+          : (isHttp(played.url) ? played.url : null);
+        host = 'bandcamp.com'; label = 'Bandcamp';
+      } else if (playedId === 'soundcloud') {
+        originUrl = isHttp(played.soundcloudUrl) ? played.soundcloudUrl
+          : (isHttp(played.permalink_url) ? played.permalink_url
+          : (isHttp(played.url) ? played.url : null));
+        host = 'soundcloud.com'; label = 'SoundCloud';
+      } else if (playedId === 'youtube' && played.youtubeId) {
+        originUrl = 'https://www.youtube.com/watch?v=' + played.youtubeId;
+        host = 'youtube.com'; label = 'YouTube';
+      }
+      // localfiles intentionally skipped — file:// is not shareable
+      if (originUrl) out.origin_url = originUrl;
+      if (host) out.music_service = host;
+      if (label) out.music_service_name = label;
+    }
+
+    // Group 3: MBID enrichment.
+    if (isMbid(track && track.mbid)) {
+      out.recording_mbid = track.mbid;
+    }
+    if (isMbid(track && track.releaseMbid)) {
+      out.release_mbid = track.releaseMbid;
+    }
+    if (Array.isArray(track && track.artistMbids)) {
+      const valid = track.artistMbids.filter(isMbid);
+      if (valid.length > 0) out.artist_mbids = valid;
+    }
+
+    return out;
+  }
+
   async updateNowPlaying(track) {
     const config = await this.getConfig();
     if (!config.userToken) {
@@ -356,7 +446,8 @@ class ListenBrainzScrobbler extends BaseScrobbler {
             media_player: 'Parachord',
             submission_client: 'Parachord',
             submission_client_version: '1.0.0',
-            duration_ms: track.duration ? track.duration * 1000 : undefined
+            duration_ms: track.duration ? track.duration * 1000 : undefined,
+            ...this._deriveSourceEnrichment(track)
           }
         }
       }]
@@ -396,7 +487,8 @@ class ListenBrainzScrobbler extends BaseScrobbler {
             media_player: 'Parachord',
             submission_client: 'Parachord',
             submission_client_version: '1.0.0',
-            duration_ms: track.duration ? track.duration * 1000 : undefined
+            duration_ms: track.duration ? track.duration * 1000 : undefined,
+            ...this._deriveSourceEnrichment(track)
           }
         }
       }]
