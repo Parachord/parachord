@@ -14734,6 +14734,34 @@ ${trackListXml}
   }, [activeView, flushPendingCollectionSources, flushPendingPlaylistSources]);
 
   // Add track to collection
+  // Derive (providerId, externalId) tuples for every provider that
+  // could have a track-link record for `track`. Used by both the add
+  // path (to clear tombstones — see parachord#864) and the remove path
+  // (to write tombstones). The same track may yield tuples for
+  // multiple providers when cross-resolver enrichment populated them.
+  const deriveTombstoneEntries = useCallback((track) => {
+    if (!track) return [];
+    const entries = [];
+    const seen = new Set();
+    const push = (providerId, externalId) => {
+      if (!providerId || !externalId || typeof externalId !== 'string') return;
+      const key = `${providerId}:${externalId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      entries.push({ providerId, externalId });
+    };
+    push('spotify', track.spotifyId);
+    push('spotify', track.sources?.spotify?.spotifyId);
+    push('applemusic', track.appleMusicId);
+    push('applemusic', track.sources?.applemusic?.appleMusicId);
+    // ListenBrainz uses recording MBID as the external identifier on
+    // its sync surface (loved-tracks sync — currently one-way push,
+    // no inbound; included for forward-compat if LB inbound lands).
+    push('listenbrainz', track.mbid);
+    push('listenbrainz', track.sources?.listenbrainz?.mbid);
+    return entries;
+  }, []);
+
   const addTrackToCollection = useCallback((track) => {
     const trackId = generateTrackId(track.artist, track.title, track.album);
 
@@ -14763,6 +14791,17 @@ ${trackListXml}
       return newData;
     });
 
+    // Clear any existing tombstones for this track on all providers
+    // (parachord#864) — user is re-adding intentionally, so future
+    // syncs should let the track through. Fire-and-forget; local add
+    // is authoritative regardless of tombstone-clear success.
+    const tombstoneEntries = deriveTombstoneEntries(track);
+    if (tombstoneEntries.length > 0 && window.electron?.tombstones) {
+      window.electron.tombstones.clearBatch(tombstoneEntries)
+        .then(r => r?.cleared > 0 && console.log(`[Tombstones] Cleared ${r.cleared} entries for re-added "${track.title}"`))
+        .catch(err => console.warn('[Tombstones] clearBatch failed:', err?.message || err));
+    }
+
     // Push to connected sync providers (fire-and-forget)
     const syncSettings = resolverSyncSettingsRef.current;
     if (syncSettings && window.electron?.sync) {
@@ -14787,7 +14826,7 @@ ${trackListXml}
     pushLoveToScrobblers({ ...track, id: trackId }).catch(err => {
       console.warn('[love-push] error:', err?.message || err);
     });
-  }, [saveCollection, showToast, showSidebarBadge]);
+  }, [saveCollection, showToast, showSidebarBadge, deriveTombstoneEntries]);
 
   // Push a track's love to any service whose toggle is on. Idempotent
   // via lovePushedKeysRef — if already pushed, skips silently. Persists
@@ -15005,6 +15044,21 @@ ${trackListXml}
 
       const existingTrack = prev.tracks[existingIndex];
 
+      // Write tombstones for every (providerId, externalId) we can
+      // derive from the removed track (parachord#864). This is the
+      // durable record of "user removed this on purpose" — even when
+      // remote-remove succeeds, even when it fails silently, even
+      // when no remove API exists (Apple Music). Without this, the
+      // next sync sees the track present on the remote, missing
+      // locally, and re-imports it. Fire-and-forget; local removal
+      // is authoritative regardless of tombstone-write outcome.
+      const tombstoneEntries = deriveTombstoneEntries(existingTrack);
+      if (tombstoneEntries.length > 0 && window.electron?.tombstones) {
+        window.electron.tombstones.addBatch(tombstoneEntries)
+          .then(r => r?.written > 0 && console.log(`[Tombstones] Wrote ${r.written} entries for removed "${track.title}"`))
+          .catch(err => console.warn('[Tombstones] addBatch failed:', err?.message || err));
+      }
+
       // Remove from connected sync providers
       const syncSettings = resolverSyncSettingsRef.current;
       if (window.electron?.sync) {
@@ -15016,7 +15070,10 @@ ${trackListXml}
             })
             .catch(err => console.warn('[Sync] Failed to remove track from Spotify:', err.message));
         }
-        // Apple Music: API doesn't support removal, but log for awareness
+        // Apple Music: API doesn't support removal. The tombstone
+        // written above is the only durable record — every sync will
+        // see the track still on AM remote, but the tombstone filter
+        // (parachord#864) blocks the re-import.
       }
 
       const newTracks = prev.tracks.filter(t => t.id !== matchId);
@@ -15026,7 +15083,7 @@ ${trackListXml}
       showToast(`Removed ${track.title} from Collection`);
       return newData;
     });
-  }, [saveCollection, showToast]);
+  }, [saveCollection, showToast, deriveTombstoneEntries]);
 
   // Add album to collection
   const addAlbumToCollection = useCallback((album) => {

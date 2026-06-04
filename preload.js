@@ -396,6 +396,16 @@ contextBridge.exposeInMainWorld('electron', {
     remove: (localPlaylistId, providerId) => ipcRenderer.invoke('sync-links:remove', localPlaylistId, providerId)
   },
 
+  // Track-level tombstones (parachord#864) — durable "user removed
+  // this on purpose" markers that prevent the next sync from re-adding
+  // a track whose remote-remove failed silently (or for AM, was never
+  // attempted). Keyed by (providerId, externalId).
+  tombstones: {
+    addBatch: (entries) => ipcRenderer.invoke('sync:tombstones:add-batch', entries),
+    clearBatch: (entries) => ipcRenderer.invoke('sync:tombstones:clear-batch', entries),
+    list: () => ipcRenderer.invoke('sync:tombstones:list')
+  },
+
   // Playback window operations (for Bandcamp, etc. with autoplay)
   playbackWindow: {
     open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),

@@ -166,7 +166,7 @@ const applyDiff = (collectionItems, diff) => {
  * `isCancelled()` check in `sync:start` then routes to `finalizeCancelled`
  * and the run exits without applying a partial diff. See parachord#820.
  */
-const syncDataType = async (provider, token, dataType, localData, onProgress, refreshToken, isCancelled) => {
+const syncDataType = async (provider, token, dataType, localData, onProgress, refreshToken, isCancelled, options = {}) => {
   // Count how many local items came from this provider (for incremental check)
   const syncedItems = localData.filter(item => item.syncSources?.[provider.id]);
   const localSyncedCount = syncedItems.length;
@@ -204,6 +204,16 @@ const syncDataType = async (provider, token, dataType, localData, onProgress, re
       data: localData,
       stats: { added: 0, removed: 0, updated: 0, unchanged: localSyncedCount }
     };
+  }
+
+  // Apply caller-supplied remote-side filter BEFORE diffing. The track
+  // tombstone path (parachord#864) uses this to drop items the user
+  // previously removed locally — without the filter, the diff would
+  // see them as `toAdd` and silently undo the user's removal. Generic
+  // hook so future filters (provider-specific blocklists, etc.) plug
+  // in here too.
+  if (typeof options.filterRemote === 'function') {
+    remoteData = options.filterRemote(remoteData);
   }
 
   // Calculate diff
