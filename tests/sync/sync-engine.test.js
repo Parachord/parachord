@@ -1471,6 +1471,98 @@ describe('syncDataType isCancelled propagation (parachord#820)', () => {
   });
 });
 
+describe('syncDataType remote filter callback (tombstones — parachord#864)', () => {
+  // Minimal provider stub that returns a fixed remote set.
+  const makeProvider = (trackData) => ({
+    id: 'spotify',
+    fetchTracks: jest.fn(async () => trackData)
+  });
+
+  const remote = (externalId, title) => ({
+    id: `track-${externalId}`,
+    externalId,
+    title: title || `t-${externalId}`,
+    artist: 'a',
+    album: 'A'
+  });
+
+  test('filterRemote callback is called with the raw remote list', async () => {
+    const provider = makeProvider([remote('1'), remote('2'), remote('3')]);
+    const filterRemote = jest.fn((items) => items);
+
+    await syncDataType(
+      provider, 'token', 'tracks', [], () => {}, null, null,
+      { filterRemote }
+    );
+
+    expect(filterRemote).toHaveBeenCalledWith(
+      [remote('1'), remote('2'), remote('3')]
+    );
+  });
+
+  test('items dropped by filterRemote do not enter toAdd', async () => {
+    const provider = makeProvider([remote('1'), remote('2'), remote('3')]);
+    // Filter drops externalId="2"
+    const filterRemote = (items) => items.filter(i => i.externalId !== '2');
+
+    const result = await syncDataType(
+      provider, 'token', 'tracks', [], () => {}, null, null,
+      { filterRemote }
+    );
+
+    expect(result.stats.added).toBe(2);
+    expect(result.data.map(t => t.externalId).sort()).toEqual(['1', '3']);
+  });
+
+  test('omitting filterRemote is backward-compatible', async () => {
+    const provider = makeProvider([remote('1'), remote('2')]);
+    const result = await syncDataType(
+      provider, 'token', 'tracks', [], () => {}, null, null
+    );
+    expect(result.stats.added).toBe(2);
+  });
+
+  test('filterRemote that drops everything yields empty add list', async () => {
+    const provider = makeProvider([remote('1'), remote('2')]);
+    const result = await syncDataType(
+      provider, 'token', 'tracks', [], () => {}, null, null,
+      { filterRemote: () => [] }
+    );
+    expect(result.stats.added).toBe(0);
+    expect(result.data).toEqual([]);
+  });
+
+  test('filterRemote runs before mass-removal safeguard and diff', async () => {
+    // 5 local items synced, remote returns only 2 (would trigger mass removal
+    // safeguard at 60% removal). After filter drops one of those 2, the
+    // mass-removal threshold logic still operates on the post-filter count.
+    const localSourced = (id) => ({
+      id, title: `t${id}`, artist: 'a', album: 'A',
+      syncSources: { spotify: { syncedAt: 100 } }
+    });
+    const local = [
+      localSourced('track-1'), localSourced('track-2'),
+      localSourced('track-3'), localSourced('track-4'),
+      localSourced('track-5')
+    ];
+    const provider = makeProvider([
+      { id: 'track-6', externalId: '6', title: 't6', artist: 'a', album: 'A' },
+      { id: 'track-7', externalId: '7', title: 't7', artist: 'a', album: 'A' }
+    ]);
+    // Filter drops 6 from being added
+    const filterRemote = (items) => items.filter(i => i.externalId !== '6');
+
+    const result = await syncDataType(
+      provider, 'token', 'tracks', local, () => {}, null, null,
+      { filterRemote }
+    );
+
+    // Only track-7 should have been added (track-6 was tombstoned by filter).
+    expect(result.data.find(t => t.id === 'track-7')).toBeDefined();
+    expect(result.data.find(t => t.id === 'track-6')).toBeUndefined();
+  });
+});
+
 describe('areOrderedIdListsEquivalent (updatePlaylistTracks short-circuit helper)', () => {
   test('returns true for identical ordered lists', () => {
     expect(areOrderedIdListsEquivalent(['a', 'b', 'c'], ['a', 'b', 'c'])).toBe(true);

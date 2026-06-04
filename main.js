@@ -5512,6 +5512,19 @@ function healImportedSyncedFromMismatch() {
 }
 healImportedSyncedFromMismatch();
 
+// Prune expired track tombstones at app start (parachord#864). One-shot
+// per launch; entries older than TOMBSTONE_TTL_MS (365 days) are
+// dropped. Tombstones get re-armed every time the sync filter sees the
+// remote still has the track, so this only catches "user removed,
+// never re-added, stopped syncing the provider OR remote also removed"
+// — i.e. genuinely stale state.
+try {
+  const pruned = Tombstones.pruneExpired(store);
+  if (pruned > 0) console.log(`[Tombstones] Pruned ${pruned} expired entries at startup`);
+} catch (err) {
+  console.warn('[Tombstones] Prune failed (non-fatal):', err.message);
+}
+
 ipcMain.handle('playlists-delete-from-source', async (event, providerId, externalId) => {
   console.log(`=== Delete Playlist from Source: ${providerId}/${externalId} ===`);
   try {
@@ -6004,6 +6017,7 @@ ipcMain.handle('sync-settings:set-provider', async (event, providerId, providerS
 // =============================================================================
 
 const SyncEngine = require('./sync-engine');
+const Tombstones = require('./sync-engine/tombstones');
 
 // Track active sync operations
 const activeSyncs = new Map();
@@ -6212,6 +6226,19 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       console.log('[Sync] No existing collection, starting fresh');
     }
 
+    // Tombstone filter (parachord#864) — drops remote tracks the user
+    // previously removed from Collection, so the diff doesn't see them
+    // as toAdd and silently undo the removal. Each filter hit also
+    // re-arms the tombstone's TTL inside the helper. Only wired for
+    // tracks today (album-level tombstones tracked separately).
+    const filterTrackTombstones = (remoteItems) => {
+      const { filtered, dropped } = Tombstones.filterRemoteByTombstones(store, remoteItems, providerId);
+      if (dropped > 0) {
+        console.log(`[Sync] Tombstone filter dropped ${dropped} re-import attempt(s) for ${providerId}`);
+      }
+      return filtered;
+    };
+
     // Sync tracks
     if (settings.syncTracks !== false && provider.capabilities.tracks) {
       sendProgress({ phase: 'fetching', type: 'tracks', message: 'Fetching liked songs...' });
@@ -6223,7 +6250,8 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         collection.tracks || [],
         (p) => sendProgress({ phase: 'fetching', type: 'tracks', ...p }),
         refreshToken,
-        isCancelled  // parachord#820: poll between paginated pages
+        isCancelled,  // parachord#820: poll between paginated pages
+        { filterRemote: filterTrackTombstones }  // parachord#864
       );
       console.log(`[Sync] Track sync complete. Output: ${trackResult.data.length} tracks. Stats:`, trackResult.stats);
       collection.tracks = trackResult.data;
@@ -7727,6 +7755,36 @@ ipcMain.handle('sync:save-albums', async (event, providerId, albumIds) => {
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+// ── Track tombstones (parachord#864) ─────────────────────────────
+//
+// Renderer-side `removeTrackFromCollection` writes tombstones for
+// every (providerId, externalId) on the removed track. Renderer-side
+// `addTrackToCollection` clears them when the user re-adds a track.
+// `sync:start` filters remote items against the tombstone list before
+// diffing. App start runs `pruneExpired` once.
+
+ipcMain.handle('sync:tombstones:add-batch', async (event, entries) => {
+  try {
+    const written = Tombstones.addTombstones(store, entries);
+    return { success: true, written };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('sync:tombstones:clear-batch', async (event, entries) => {
+  try {
+    const cleared = Tombstones.clearTombstones(store, entries);
+    return { success: true, cleared };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('sync:tombstones:list', async () => {
+  return store.get(Tombstones.TOMBSTONE_KEY) || {};
 });
 
 // Remove tracks from sync provider library
