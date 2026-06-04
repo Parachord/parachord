@@ -627,8 +627,16 @@ const SpotifySyncProvider = {
   },
 
   /**
-   * Remove tracks from user's Spotify library
-   * Uses the unified DELETE /me/library endpoint (Feb 2026 API update)
+   * Remove tracks from user's Spotify library (Liked Songs)
+   *
+   * DELETE /me/tracks with { ids } for Liked Songs. The previously-coded
+   * /me/library endpoint does not exist (same root cause that was fixed
+   * for saveTracks/saveAlbums; the remove* methods were missed in that
+   * pass). Symptom: local Collection removal succeeds, IPC fires, fetch
+   * 404s, fire-and-forget catch swallows the error, and the next sync
+   * re-imports the track because there's no tombstone. See bug report
+   * traced in achordion#72-adjacent investigation.
+   *
    * @param {string[]} trackIds - Array of Spotify track IDs (not URIs)
    * @param {string} token - Access token
    * @returns {Object} - { success: boolean }
@@ -638,20 +646,20 @@ const SpotifySyncProvider = {
       return { success: true, removed: 0 };
     }
 
-    // Convert IDs to Spotify URIs for the unified /me/library endpoint
-    const uris = trackIds.map(id => id.startsWith('spotify:') ? id : `spotify:track:${id}`);
+    // Strip URIs down to bare IDs if needed
+    const ids = trackIds.map(id => id.startsWith('spotify:track:') ? id.replace('spotify:track:', '') : id);
 
     // Spotify allows max 50 items per request
     const batches = [];
-    for (let i = 0; i < uris.length; i += 50) {
-      batches.push(uris.slice(i, i + 50));
+    for (let i = 0; i < ids.length; i += 50) {
+      batches.push(ids.slice(i, i + 50));
     }
 
     let totalRemoved = 0;
     for (const batch of batches) {
-      await spotifyRequest('/me/library', token, {
+      await spotifyRequest('/me/tracks', token, {
         method: 'DELETE',
-        body: { uris: batch }
+        body: { ids: batch }
       });
       totalRemoved += batch.length;
       await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
@@ -662,7 +670,10 @@ const SpotifySyncProvider = {
 
   /**
    * Remove albums from Spotify library
-   * Uses the unified DELETE /me/library endpoint (Feb 2026 API update)
+   *
+   * DELETE /me/albums with { ids }. Same broken-endpoint regression as
+   * removeTracks above — see that method's docblock for context.
+   *
    * @param {string[]} albumIds - Array of Spotify album IDs
    * @param {string} token - Access token
    * @returns {Object} - { success: boolean, removed: number }
@@ -672,20 +683,20 @@ const SpotifySyncProvider = {
       return { success: true, removed: 0 };
     }
 
-    // Convert IDs to Spotify URIs for the unified /me/library endpoint
-    const uris = albumIds.map(id => id.startsWith('spotify:') ? id : `spotify:album:${id}`);
+    // Strip URIs down to bare IDs if needed
+    const ids = albumIds.map(id => id.startsWith('spotify:album:') ? id.replace('spotify:album:', '') : id);
 
     // Spotify allows max 50 items per request
     const batches = [];
-    for (let i = 0; i < uris.length; i += 50) {
-      batches.push(uris.slice(i, i + 50));
+    for (let i = 0; i < ids.length; i += 50) {
+      batches.push(ids.slice(i, i + 50));
     }
 
     let totalRemoved = 0;
     for (const batch of batches) {
-      await spotifyRequest('/me/library', token, {
+      await spotifyRequest('/me/albums', token, {
         method: 'DELETE',
-        body: { uris: batch }
+        body: { ids: batch }
       });
       totalRemoved += batch.length;
       await new Promise(resolve => setTimeout(resolve, 100)); // Rate limit
