@@ -2474,7 +2474,12 @@ function buildAppleMusicRefreshCb(_initialToken, onTokenChanged) {
         return null;
       }
 
-      const result = await bridge.fetchUserToken(freshDevToken);
+      // ignoreCache: true (parachord#773) — this callback fires in response
+      // to an actual 401 from Apple, so we genuinely need to bust the local
+      // MusicKit token cache and pull a fresh one. Every other fetchUserToken
+      // call site (renderer-initiated startup / sync paths) intentionally uses
+      // the cached default to avoid spurious native sign-in dialogs.
+      const result = await bridge.fetchUserToken(freshDevToken, { ignoreCache: true });
       if (!result || !result.userToken) {
         emitReauthPromptOnce('bridge-returned-no-token');
         return null;
