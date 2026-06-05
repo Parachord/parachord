@@ -1573,6 +1573,35 @@ app.whenReady().then(() => {
   // Begin periodic in-app announcements fetch
   startAnnouncementsPolling();
 
+  // Extract mcp-stdio.js to a stable user-data path (parachord#866).
+  //
+  // AppImage mounts itself at /tmp/.mount_<RANDOMSUFFIX>/ via FUSE on
+  // every launch — the suffix is regenerated per run, so resolving the
+  // stdio bridge via __dirname produces a path that goes stale the
+  // next time Parachord restarts. The MCP client config the user
+  // copies from Settings then breaks on next launch.
+  //
+  // Fix: extract to app.getPath('userData')/mcp-stdio.js — XDG-conformant
+  // on Linux (~/.config/Parachord/mcp-stdio.js), stable per-user on
+  // every platform, independent of how Parachord was installed
+  // (AppImage / .deb / source / Mac / Windows). Cheap — the bridge is a
+  // few-KB Node script with no dependencies.
+  //
+  // Re-copies on every launch so the on-disk file always matches the
+  // bundled version (handles upgrades automatically without a version
+  // check).
+  try {
+    const sourceBase = app.isPackaged ? __dirname.replace('app.asar', 'app.asar.unpacked') : __dirname;
+    const stdioSource = path.join(sourceBase, 'mcp-stdio.js');
+    const stdioDest = path.join(app.getPath('userData'), 'mcp-stdio.js');
+    fs.copyFileSync(stdioSource, stdioDest);
+    console.log(`[MCP] Extracted stdio bridge to ${stdioDest}`);
+  } catch (err) {
+    // Non-fatal — Settings UI will fall back to __dirname-based path.
+    // Logged so we know when this path silently degrades.
+    console.warn('[MCP] Failed to extract stdio bridge to userData:', err.message);
+  }
+
   // Register as default handler for parachord:// protocol
   if (process.defaultApp) {
     if (process.argv.length >= 2) {
@@ -5793,12 +5822,27 @@ ipcMain.handle('mcp-response', (event, { requestId, data }) => {
   handleRendererResponse(requestId, data);
 });
 
-// MCP server info - expose path for Claude Desktop config UI
+// MCP server info — expose path for Claude Desktop config UI.
+//
+// Returns the user-data extracted copy (parachord#866). The asarUnpacked
+// path inside `__dirname` would also work on Mac/Windows, but it's
+// unstable on Linux AppImage (the /tmp/.mount_<RANDOM>/ FUSE mount
+// regenerates per launch). Uniform userData path across platforms keeps
+// the code simple and the on-disk location predictable for users.
+//
+// Falls back to the __dirname-derived path if the userData copy is
+// missing for any reason (extraction errored at startup) so the IPC
+// still returns something usable.
 ipcMain.handle('mcp-get-info', () => {
-  // In packaged builds, mcp-stdio.js is asarUnpacked so external processes can access it
-  const basePath = app.isPackaged ? __dirname.replace('app.asar', 'app.asar.unpacked') : __dirname;
+  const stableStdioPath = path.join(app.getPath('userData'), 'mcp-stdio.js');
+  let stdioPath = stableStdioPath;
+  if (!fs.existsSync(stableStdioPath)) {
+    const fallbackBase = app.isPackaged ? __dirname.replace('app.asar', 'app.asar.unpacked') : __dirname;
+    stdioPath = path.join(fallbackBase, 'mcp-stdio.js');
+    console.warn(`[MCP] Stable stdio path missing, falling back to ${stdioPath}`);
+  }
   return {
-    stdioPath: path.join(basePath, 'mcp-stdio.js'),
+    stdioPath,
     port: 9421
   };
 });
