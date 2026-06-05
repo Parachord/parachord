@@ -6608,12 +6608,13 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               //    they suspect drift.
               //
               //    **Scoped to AM only.** Spotify's snapshotId is rock-solid;
-              //    its algorithmic / 3rd-party-rotated playlists (Daily Brew
-              //    via SmartPlaylists, Discover Weekly, Release Radar) keep
-              //    a FIXED track count with rotating content — applying
-              //    count-match there would silently suppress legitimate
-              //    daily updates. LB's snapshot anchor
-              //    (extension.last_modified_at) is similarly reliable.
+              //    its algorithmic / 3rd-party-rotated playlists keep a FIXED
+              //    track count with rotating content — applying count-match
+              //    there would silently suppress legitimate daily updates.
+              //    Spotify-curated playlists get their own arm below
+              //    (`isSpotifyCuratedMatch`) via ownership signal instead.
+              //    LB's snapshot anchor (extension.last_modified_at) is
+              //    similarly reliable.
               //
               // 2. **Heal-induced null snapshot** (all providers). The
               //    startup heal `healImportedSyncedFromMismatch` (main.js,
@@ -6630,25 +6631,68 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               //    bounded, (b) the alternative is perpetual log spam and
               //    permanently-set hasUpdates flags on a fleet of playlists
               //    the user already isn't reviewing.
+              //
+              // 3. **Spotify-curated playlists** (`isSpotifyCuratedMatch`).
+              //    Playlists owned by Spotify itself (owner.id === 'spotify')
+              //    are algorithmic — Daily Brew, Discover Weekly, Release
+              //    Radar, Daily Mix N, Daylist, New Music Friday. They
+              //    update daily/weekly by design; the user isn't authoring
+              //    them and shouldn't see a "pull updates" banner every
+              //    morning for content rotation that's expected. Silent
+              //    adopt mirrors the AM count-churn suppression but via
+              //    a different signal (ownership instead of count).
+              //
+              //    **Edit-loss is empty.** Spotify's API rejects writes
+              //    to non-owned playlists at the auth layer, so any local
+              //    "edit" to Daily Brew couldn't have propagated anyway —
+              //    no conflict-resolution case to worry about.
+              //
+              //    **Cross-platform parity.** Android already auto-pulls
+              //    these (it has no banner mechanism at all — see
+              //    SyncEngine.kt:1209+, "auto-pull on any snapshot
+              //    differ"). Desktop's old behavior was the divergence;
+              //    this arm closes it for the user-visible case while
+              //    preserving the banner UX for user-created playlists
+              //    where local-edit conflicts are real.
               const localSnapPresent = !!localPlaylist.syncedFrom?.snapshotId;
               const isHealInducedNull = !localSnapPresent;
               const isAmCountChurnMatch =
                 providerId === 'applemusic'
                 && remotePlaylist.trackCount != null
                 && existingTracks.length === remotePlaylist.trackCount;
-              const silentlyAdopt = isHealInducedNull || isAmCountChurnMatch;
+              const isSpotifyCuratedMatch =
+                providerId === 'spotify'
+                && remotePlaylist.ownerId === 'spotify';
+              const silentlyAdopt = isHealInducedNull
+                || isAmCountChurnMatch
+                || isSpotifyCuratedMatch;
 
               if (preRefreshIsOwnPullSource && hasTrackUpdates && !silentlyAdopt) {
                 // Surface both counts so we can tell whether AM is reporting a
                 // changed count vs missing trackCount vs same-count-but-different-snapshot.
                 console.log(`[Sync] Playlist has updates: ${remotePlaylist.name} (local=${existingTracks.length}, remote=${remotePlaylist.trackCount ?? 'NULL'}, localSnap=${(localPlaylist.syncedFrom?.snapshotId || '').slice(0,12) || 'NULL'}, remoteSnap=${(remotePlaylist.snapshotId || '').slice(0,12) || 'NULL'})`);
               } else if (preRefreshIsOwnPullSource && hasTrackUpdates && silentlyAdopt) {
-                const reason = isHealInducedNull ? 'heal-induced null snapshot' : `track count matches: ${existingTracks.length}`;
+                const reason = isHealInducedNull
+                  ? 'heal-induced null snapshot'
+                  : (isSpotifyCuratedMatch
+                    ? 'Spotify-curated (owner.id=spotify)'
+                    : `track count matches: ${existingTracks.length}`);
                 console.log(`[Sync] Adopting remote snapshotId for "${remotePlaylist.name}" (${reason})`);
               }
+              // Refetch conditions:
+              //   - isEmpty: playlist has 0 tracks locally; need to backfill
+              //   - Spotify-curated + snapshot changed: Daily Brew etc. rotate
+              //     content daily; advancing the snapshotId without refetching
+              //     would silently suppress the banner AND leave yesterday's
+              //     tracks in place. Have to do both.
+              const shouldRefetchTracks =
+                preRefreshIsOwnPullSource
+                && (isEmpty || (isSpotifyCuratedMatch && hasTrackUpdates));
+
               let tracks = existingTracks;
-              if (isEmpty && preRefreshIsOwnPullSource) {
-                console.log(`[Sync] Playlist "${remotePlaylist.name}" has 0 tracks, refetching...`);
+              if (shouldRefetchTracks) {
+                const reason = isEmpty ? 'has 0 tracks' : 'Spotify-curated daily update';
+                console.log(`[Sync] Playlist "${remotePlaylist.name}" ${reason}, refetching...`);
                 tracks = await provider.fetchPlaylistTracks(remotePlaylist.externalId, token, null, refreshToken);
                 console.log(`[Sync] Fetched ${tracks.length} tracks for "${remotePlaylist.name}"`);
               }
@@ -6688,27 +6732,33 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // Only meaningful when we're the pull source; otherwise snapshotIds
               // come from different providers and aren't comparable.
               //
-              // Same two-arm suppression as the earlier log-firing decision
-              // (heal-induced null snapshot, AM track-count churn). Counting
-              // from current.tracks (not existingTracks) picks up the case
-              // where a previously-empty playlist just got refilled in the
-              // isEmpty branch above.
+              // Same three-arm suppression as the earlier log-firing decision
+              // (heal-induced null snapshot, AM track-count churn, Spotify-
+              // curated ownership). Counting from current.tracks (not
+              // existingTracks) picks up the case where a previously-empty
+              // playlist just got refilled in the isEmpty branch above.
               const freshIsHealInducedNull = !current.syncedFrom?.snapshotId;
               const freshIsAmCountChurnMatch =
                 providerId === 'applemusic'
                 && remotePlaylist.trackCount != null
                 && (current.tracks?.length || 0) === remotePlaylist.trackCount;
-              const freshSilentlyAdopt = freshIsHealInducedNull || freshIsAmCountChurnMatch;
+              const freshIsSpotifyCuratedMatch =
+                providerId === 'spotify'
+                && remotePlaylist.ownerId === 'spotify';
+              const freshSilentlyAdopt = freshIsHealInducedNull
+                || freshIsAmCountChurnMatch
+                || freshIsSpotifyCuratedMatch;
               const stillHasUpdates = isOwnPullSource
                 && current.syncedFrom?.snapshotId !== remotePlaylist.snapshotId
                 && !freshSilentlyAdopt;
 
-              // If we backfilled tracks for a previously-empty playlist AND
-              // the playlist is mirrored to providers other than this one, the
-              // mirrors now have stale (empty) content. Flag locallyModified so
-              // the next push loop propagates the fetched tracks outward. This
-              // is the main.js parallel of handlePull's hasOtherMirrors logic.
-              const filledFromEmpty = isEmpty && tracks.length > 0 && isOwnPullSource;
+              // If we refetched tracks (either backfilled an empty playlist
+              // OR pulled a Spotify-curated daily update) AND the playlist is
+              // mirrored to providers other than this one, the mirrors now
+              // have stale content. Flag locallyModified so the next push
+              // loop propagates the new tracks outward. This is the main.js
+              // parallel of handlePull's hasOtherMirrors logic.
+              const tracksRefetched = shouldRefetchTracks && tracks.length > 0 && isOwnPullSource;
               const hasOtherMirrors = !!(current.syncedTo && Object.keys(current.syncedTo).some(
                 pid => pid !== providerId && current.syncedTo[pid]?.externalId
               ));
@@ -6716,11 +6766,11 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
               // Always update/backfill metadata fields (creator, source, createdAt)
               currentPlaylists[idx] = {
                 ...current,
-                // Refill tracks if they were empty — but only if we're the pull
-                // source. Cross-provider push mirrors preserve their existing
-                // (empty or non-empty) tracks; the authoritative provider will
-                // fill them on its own sync.
-                tracks: (isEmpty && isOwnPullSource) ? tracks : current.tracks,
+                // Replace tracks if we refetched (empty backfill OR curated
+                // daily rotation) — but only if we're the pull source.
+                // Cross-provider push mirrors preserve their existing tracks;
+                // the authoritative provider will fill them on its own sync.
+                tracks: tracksRefetched ? tracks : current.tracks,
                 // Backfill creator if not set
                 creator: current.creator || remotePlaylist.ownerName || null,
                 // Backfill source if not set
@@ -6740,14 +6790,14 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
                     }
                   : current.syncedFrom,
                 hasUpdates: stillHasUpdates ? true : current.hasUpdates,
-                locallyModified: (filledFromEmpty && hasOtherMirrors) ? true : current.locallyModified,
+                locallyModified: (tracksRefetched && hasOtherMirrors) ? true : current.locallyModified,
                 syncSources: {
                   ...current.syncSources,
                   [providerId]: { ...current.syncSources?.[providerId], syncedAt: Date.now() }
                 }
               };
 
-              if (stillHasUpdates || (isEmpty && tracks.length > 0 && isOwnPullSource)) {
+              if (stillHasUpdates || tracksRefetched) {
                 playlistsUpdated++;
               }
             }
