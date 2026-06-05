@@ -168,14 +168,23 @@ class MusicKitBridge {
         ]
     }
 
-    // Fetch a Music User Token for REST API access
-    func fetchUserToken(developerToken: String) async -> [String: Any] {
+    // Fetch a Music User Token for REST API access.
+    //
+    // `ignoreCache` is opt-in (parachord#773). Default false uses MusicKit's
+    // local token cache and won't trigger a server round-trip — meaning no
+    // unexpected macOS native "Sign in to your Apple Account" dialog during
+    // routine startup / sync paths. Only callers that genuinely need to bust
+    // the cache (e.g. response to an actual 401 from Apple) should pass true.
+    // Forcing `.ignoreCache` unconditionally was the root cause of phantom
+    // re-auth dialogs reported in #773.
+    func fetchUserToken(developerToken: String, ignoreCache: Bool = false) async -> [String: Any] {
         guard isAuthorized else {
             return ["success": false, "error": "Not authorized"]
         }
         do {
             let tokenProvider = DefaultMusicTokenProvider()
-            let token = try await tokenProvider.userToken(for: developerToken, options: .ignoreCache)
+            let options: MusicTokenRequestOptions = ignoreCache ? .ignoreCache : []
+            let token = try await tokenProvider.userToken(for: developerToken, options: options)
             return ["success": true, "userToken": token]
         } catch {
             return ["success": false, "error": error.localizedDescription]
@@ -530,7 +539,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let developerToken = params["developerToken"] as? String else {
                     return Response(id: request.id, success: false, data: nil, error: "Missing developerToken parameter")
                 }
-                result = await bridge.fetchUserToken(developerToken: developerToken)
+                // ignoreCache opt-in (parachord#773) — defaults to false so the
+                // common case uses MusicKit's local token cache and avoids the
+                // spurious native sign-in dialog.
+                let ignoreCache = (params["ignoreCache"] as? Bool) ?? false
+                result = await bridge.fetchUserToken(developerToken: developerToken, ignoreCache: ignoreCache)
 
             case "search":
                 guard let query = params["query"] as? String else {

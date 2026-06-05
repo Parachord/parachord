@@ -467,9 +467,18 @@ class MusicKitBridge extends EventEmitter {
     }
   }
 
-  async fetchUserToken(developerToken) {
-    // User token fetch may require authorization, use longer timeout
-    return this.send('fetchUserToken', { developerToken }, 300000);
+  async fetchUserToken(developerToken, opts = {}) {
+    // User token fetch may require authorization, use longer timeout.
+    //
+    // opts.ignoreCache (default false) — pass true ONLY from the explicit
+    // recovery path (post-401 refresh in main.js's
+    // buildAppleMusicRefreshCb). Forcing cache-bust on every fetch was the
+    // root cause of phantom macOS native sign-in dialogs (parachord#773).
+    return this.send(
+      'fetchUserToken',
+      { developerToken, ignoreCache: !!opts.ignoreCache },
+      300000
+    );
   }
 
   async search(query, limit = 25) {
