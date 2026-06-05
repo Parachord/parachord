@@ -1224,3 +1224,41 @@ Parachord is a solo-maintainer project. When commenting on issues or PRs from ex
 The honest framing is also more recruitment-effective. Use first-person singular and admit limits: "I'm the only maintainer right now and X isn't where my expertise is — would love your help." Solo-maintainer projects with self-aware leads attract better contributors than ones pretending to be teams.
 
 This applies to issue triage, PR review, RFC discussion, and any other contributor-facing communication. The single exception is when the comment is on behalf of a specific named co-author (Claude, an external contributor, etc.) — in which case attribute that person rather than using a plural.
+
+## Mobile parity — proactively file the Android ticket
+
+When desktop ships a new feature or architectural change that the Android client at [Parachord/parachord-mobile](https://github.com/Parachord/parachord-mobile) needs for parity, **offer to file a mobile ticket as part of the same workflow**. Don't wait to be asked; surface the question proactively, then file once the user confirms (or just file it if they've already said "and write a mobile issue" / similar). The Android side has its own agent operating in a separate repo — the issue is the handoff.
+
+### When this applies
+
+Anything that creates a shared invariant or data shape that Android also has to honor, including:
+
+- Sync data-model changes (new playlist fields, new persistence keys, new IPC contracts that the Android-side equivalent has to mirror — see existing "Android Parity Requirements" subsections in this file)
+- Scrobble payload extensions (LB `additional_info` fields, Last.fm extras) — example: [parachord-mobile#170](https://github.com/Parachord/parachord-mobile/issues/170) mirroring the desktop's `origin_url` / `music_service` / MBID enrichment
+- Track / album / artist data-model invariants (new fields, removal tombstones, suppression maps) — example: [parachord-mobile#172](https://github.com/Parachord/parachord-mobile/issues/172) mirroring the track-tombstones architecture from parachord#864 / parachord#865
+- Resolver scoring / confidence model changes — `confidence-scoring.js` ↔ `ResolverScoring.kt` byte-equivalence is the strictest mirror requirement
+- Achordion-facing endpoints (writer endpoints that the desktop calls and Android should also call, or where Android's submit semantics need to match)
+- Protocol surface additions (`parachord://` deep links — see "Android Parity Requirements (protocol play handlers)")
+
+### When this does NOT apply
+
+Don't file mobile parity issues for:
+
+- **Desktop-only fixes** — Electron-specific code (AppImage MCP path #867, Linux/Mac/Windows package format quirks, `BrowserWindow` config, IPC surface refactors)
+- **Trivial bugs that don't touch shared semantics** — typo fixes, log-line additions, doc-only changes, single-file UI tweaks
+- **Anything Android already has** — check before filing; desktop sometimes catches up to Android (e.g. Android shipped correct Spotify DELETE endpoints before desktop #863 fixed the broken `/me/library` endpoint, so no mobile ticket was needed there)
+
+### Ticket shape
+
+Write the Android issue to be **self-sufficient** — the parachord-mobile agent doesn't have desktop's context, so the issue must carry it:
+
+- Reference the desktop PR / commit that shipped the change
+- Reproduce the schema decisions (TTL, key shape, persistence-store key names) verbatim, not just "match desktop"
+- Include the pure-JS reference module's API surface (function signatures, return shapes) so the Kotlin port has a target
+- Note the cross-platform invariant explicitly — what would break if mobile drifted (e.g. "a track tombstoned on desktop reappears via Android's sync re-import")
+- Sequence the work — wait for desktop merge before opening, OR open simultaneously with explicit "wait for parachord#XXX to merge first" note
+- Same voice as #voice — solo-maintainer first-person, honest about limits, don't imply a team
+
+### Anti-pattern: silent assumption that Android will catch up
+
+The mobile client has lagged behind desktop on multiple invariants in the past — `suppressSync` for playlists, the `syncedFrom` heal for imported playlists, the AM endpoint-degradation rules. Each gap manifested as cross-platform data drift (corruption propagating from buggy client → shared remote → healthy client). **Don't assume "someone will get to it" — file the issue or accept that drift is permanent.** The cost of writing a thorough Android-side ticket is far smaller than the cost of debugging cross-platform sync corruption six months later.
