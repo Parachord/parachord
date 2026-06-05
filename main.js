@@ -1700,6 +1700,62 @@ app.whenReady().then(() => {
   });
   session.defaultSession.setPermissionCheckHandler(() => true);
 
+  // Apple Music request-header rewrite (parachord#834). Apple's catalog +
+  // library APIs accept requests with `Origin: https://beta.music.apple.com`
+  // because that's the legitimate Apple Music web client. From a
+  // parachord://app origin (or anything else that isn't beta.music.apple.com)
+  // the requests fail with 403 even when authentication is otherwise fine,
+  // because Apple's edge gates on the Origin / Referer pair. Rewriting these
+  // headers — and the `:authority` pseudo-header that Electron's net stack
+  // derives from the URL host — makes us look like the real web client.
+  //
+  // Filter is `apple.com`-broad rather than narrow to a specific path, because
+  // the same gate trips on multiple sub-endpoints (catalog lookup, library
+  // operations, user-token validation, playback license). Cider's prior art
+  // shipping in production confirms this scope is correct. Headers below are
+  // a byte-identical mirror of their setup.
+  //
+  // The auth window also runs on defaultSession (no partition) but its
+  // requests are already FROM beta.music.apple.com — Origin would already be
+  // beta.music.apple.com, so the rewrite is idempotent on that traffic.
+  session.defaultSession.webRequest.onBeforeSendHeaders(async (details, callback) => {
+    if (details.url.includes('apple.com')) {
+      details.requestHeaders['Origin'] = 'https://beta.music.apple.com';
+      details.requestHeaders['Referer'] = 'https://beta.music.apple.com';
+      details.requestHeaders['DNT'] = '1';
+      // `authority` is the HTTP/2 :authority pseudo-header. Electron exposes
+      // it as a regular header here. Forcing it to amp-api.music.apple.com
+      // makes Apple's edge route the request like it came from the web app
+      // even when the URL host varies (e.g. api.music.apple.com).
+      details.requestHeaders['authority'] = 'amp-api.music.apple.com';
+      details.requestHeaders['sec-fetch-dest'] = 'empty';
+      details.requestHeaders['sec-fetch-mode'] = 'cors';
+      details.requestHeaders['sec-fetch-site'] = 'same-site';
+
+      // One endpoint needs explicit Cookie injection: the account-info
+      // probe at buy.itunes.apple.com/account/web/info. MusicKit JS reads
+      // most cookies from its own localStorage state and includes them in
+      // headers itself, but `itspod` for this endpoint specifically lives
+      // outside that flow. Pull it from the main window's localStorage if
+      // available (will be set after a successful auth-window cookie
+      // harvest).
+      if (details.url === 'https://buy.itunes.apple.com/account/web/info' && mainWindow && !mainWindow.isDestroyed()) {
+        try {
+          const itspod = await mainWindow.webContents.executeJavaScript(
+            "window.localStorage.getItem('music.ampwebplay.itspod')"
+          );
+          if (itspod) {
+            details.requestHeaders['Cookie'] = `itspod=${itspod}`;
+          }
+        } catch (e) {
+          // Renderer not ready yet, or storage access failed. Proceed without
+          // the cookie — the endpoint will 401 and the caller will handle it.
+        }
+      }
+    }
+    callback({ requestHeaders: details.requestHeaders });
+  });
+
   // Start background services — wrap each in try/catch so a single
   // failure doesn't prevent the menu from being set up or the window
   // from showing.
@@ -7886,6 +7942,284 @@ ipcMain.handle('sync:unfollow-artists', async (event, providerId, artistIds) => 
 // ==============================================
 // MusicKit (Apple Music) Native Bridge Handlers
 // ==============================================
+
+// Cookie-harvesting Apple Music auth window (parachord#834).
+//
+// Background: Apple's MusicKit JS uses a popup → parent handshake that depends
+// on cookies set on *.music.apple.com inside the popup remaining visible to
+// the parent window. Under Electron, those cookies are partitioned away from
+// any parent that isn't ALSO on a music.apple.com top-level — including our
+// `parachord://app` origin. The flag fix we shipped (storage partitioning
+// disabled) gets us part of the way; Electron's separate third-party-cookie
+// block, which has no public API, gates the rest. So MusicKit's own popup
+// flow doesn't reach a working auth state on Linux or Windows.
+//
+// Cider and Sidra both solve this by NOT using MusicKit's popup. Instead they
+// open a dedicated BrowserWindow at https://beta.music.apple.com/, let the
+// user sign in directly on Apple's real origin (where cookies set normally),
+// then harvest the auth cookies via Electron's main-process cookie API and
+// inject them into the main window as `music.ampwebplay.*` localStorage keys.
+// MusicKit JS reads those keys on init, so the next reload of the main window
+// starts up already-authorized. This handler is our mirror of that flow.
+//
+// Cookies harvested (Cider's list, byte-identical):
+//   itspod, pltvcid, pldfltcid, itua, media-user-token, acn1, dslang
+//
+// `media-user-token` is the actual carrier; the others are auth-supporting
+// (rotation, region, fraud-protection). Renderer-side: `recv-cookies` IPC
+// writes them all to localStorage with the `music.ampwebplay.<name>` prefix
+// MusicKit JS expects, then triggers a reload so MusicKit picks them up.
+//
+// All applemusic:* IPC handlers below this comment are part of this flow.
+
+// Safari user-agent — apple.com rejects Electron's default UA on sign-in,
+// flagging the request as an automated bot. Setting a real Safari UA on the
+// auth window's webContents makes the sign-in form actually render. We use a
+// recent Safari/Mac UA regardless of the host platform (the goal is to look
+// like a real browser to apple.com, not to match the host OS).
+const APPLE_AUTH_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15';
+
+// Cookie list to harvest, in the exact order Cider uses. The renderer-side
+// MusicKit JS gates on `music.ampwebplay.media-user-token`, but writing all
+// seven matches Cider's known-working configuration.
+const APPLE_AUTH_COOKIE_NAMES = [
+  'itspod', 'pltvcid', 'pldfltcid', 'itua', 'media-user-token', 'acn1', 'dslang'
+];
+
+let appleAuthWindow = null;
+
+ipcMain.handle('applemusic:open-auth-window', async () => {
+  // Coalesce repeat clicks while a window is already open.
+  if (appleAuthWindow && !appleAuthWindow.isDestroyed()) {
+    appleAuthWindow.focus();
+    return { success: true, alreadyOpen: true };
+  }
+
+  return new Promise((resolve) => {
+    appleAuthWindow = new BrowserWindow({
+      width: 500,
+      height: 700,
+      show: false,  // Gated on `applemusic:auth-window-ready` from the preload.
+      titleBarStyle: 'default',
+      resizable: false,
+      parent: mainWindow,
+      modal: false,
+      title: 'Sign in to Apple Music',
+      webPreferences: {
+        // Matches Cider — node + ipcRenderer access in the preload lets us
+        // poll MusicKit and IPC back without a contextBridge dance.
+        contextIsolation: false,
+        nodeIntegration: true,
+        sandbox: false,
+        webSecurity: true,
+        preload: path.join(__dirname, 'preload-am-auth.js')
+      }
+    });
+
+    // NOTE: We deliberately do NOT clearStorageData() on the auth window's
+    // session here. The auth window uses defaultSession (no partition), which
+    // is shared with the main window — clearing it would wipe Spotify
+    // cookies, other resolver state, etc. The trade-off is that a previously-
+    // signed-in user gets auto-completed by MusicKit's
+    // authorizationStatusDidChange listener firing immediately on the
+    // existing cookie state. Harmless: the harvest re-writes the same
+    // values to localStorage, the reload picks them up, end-state correct.
+    //
+    // If we ever need a true "fresh sign-in" flow (e.g. user-initiated
+    // sign-out), do a SCOPED cookie-clear targeting `.apple.com` /
+    // `.music.apple.com` rather than a blanket clearStorageData.
+
+    // Apple rejects Electron's default UA. Safari UA makes sign-in render.
+    appleAuthWindow.webContents.setUserAgent(APPLE_AUTH_USER_AGENT);
+
+    // Defense in depth: the auth window has nodeIntegration: true (required so
+    // the preload can poll window.MusicKit + ipcRenderer.send back to main).
+    // That means a page in this window has full Node access — fine for
+    // apple.com (trusted), but we should not allow navigation away from the
+    // Apple auth flow. Block any non-apple.com / non-icloud.com navigation,
+    // and deny window.open() entirely (popups to Apple's external help pages
+    // can open in the user's default browser via shell.openExternal).
+    appleAuthWindow.webContents.on('will-navigate', (event, url) => {
+      try {
+        const host = new URL(url).host.toLowerCase();
+        const allowed = host.endsWith('apple.com') || host.endsWith('icloud.com');
+        if (!allowed) {
+          console.warn('[AppleMusic Auth] Blocking navigation to non-Apple host:', host);
+          event.preventDefault();
+        }
+      } catch (_e) {
+        event.preventDefault();
+      }
+    });
+    appleAuthWindow.webContents.setWindowOpenHandler(({ url }) => {
+      try {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          shell.openExternal(url).catch(() => {});
+        }
+      } catch (_e) {}
+      return { action: 'deny' };
+    });
+
+    // Stash window-scoped state so the IPC handlers below can find their
+    // window. Cleared on close. Using a closure rather than module-scope so
+    // a second opener never races with a first.
+    const windowState = { resolved: false, resolve };
+
+    // Declared upfront (rather than at the setInterval site below) so the
+    // cleanup helper can reference it without hitting a TDZ ReferenceError
+    // if cleanup somehow runs between IPC registration and the cookie-poll
+    // assignment. Practically unreachable today (the auth window's preload
+    // can't IPC before loadURL fires) but explicit beats clever.
+    let cookiePoll = null;
+
+    // Cleanup helper: remove IPC listeners + close window. Called from
+    // either auth-completed (success) OR window close (user cancel).
+    const cleanup = () => {
+      if (cookiePoll) clearInterval(cookiePoll);
+      ipcMain.removeListener('applemusic:auth-completed', handleAuthCompleted);
+      ipcMain.removeListener('applemusic:auth-window-ready', handleAuthWindowReady);
+      ipcMain.removeListener('applemusic:auth-debug', handleAuthDebug);
+      if (appleAuthWindow && !appleAuthWindow.isDestroyed()) {
+        appleAuthWindow.close();
+      }
+      appleAuthWindow = null;
+    };
+
+    const handleAuthWindowReady = (event) => {
+      // Only honor the ready signal from OUR auth window (other renderers
+      // could in theory send the same IPC; gate on sender).
+      if (!appleAuthWindow || event.sender !== appleAuthWindow.webContents) return;
+      if (!appleAuthWindow.isVisible()) {
+        appleAuthWindow.show();
+      }
+    };
+
+    // Diagnostic relay — preload-am-auth.js sends progress messages so we
+    // can debug detection failures on external testers' machines without
+    // requiring DevTools (parachord#834 — added after moop250's Arch Linux
+    // trace showed the preload was firing but no auth-completed IPC ever
+    // arrived). Logs to main's stdout so testers can capture with
+    // terminal-launched builds.
+    const handleAuthDebug = (event, msg) => {
+      if (!appleAuthWindow || event.sender !== appleAuthWindow.webContents) return;
+      console.log(`[AppleMusic Auth][preload] ${msg}`);
+    };
+
+    const handleAuthCompleted = async (event) => {
+      // The cookie-polling fallback synthesizes a minimal event with
+      // `sender: appleAuthWindow.webContents` so this check still passes;
+      // see the polling block below.
+      if (!appleAuthWindow || event.sender !== appleAuthWindow.webContents) return;
+      if (windowState.resolved) return;
+      windowState.resolved = true;
+
+      try {
+        // Harvest cookies from the auth window's session. Cider does this
+        // with a bare `.get({})` and filters in JS; we filter by name in the
+        // query to skip the rest of the cookie jar (smaller payload).
+        const session = appleAuthWindow.webContents.session;
+        const harvested = {};
+        for (const name of APPLE_AUTH_COOKIE_NAMES) {
+          const cookies = await session.cookies.get({ name });
+          // Prefer the cookie set on the broadest apple.com domain — there
+          // can be multiple entries for the same name across subdomains.
+          if (cookies.length > 0) {
+            const cookie = cookies.find(c => c.domain === '.apple.com')
+              || cookies.find(c => c.domain === '.music.apple.com')
+              || cookies[0];
+            harvested[`music.ampwebplay.${name}`] = cookie.value;
+          }
+        }
+
+        // Sanity check: media-user-token is the actual carrier. Without it
+        // the auth handshake didn't really complete.
+        if (!harvested['music.ampwebplay.media-user-token']) {
+          console.warn('[AppleMusic Auth] auth-completed fired but media-user-token cookie missing');
+          cleanup();
+          resolve({ success: false, error: 'No user token cookie found after auth' });
+          return;
+        }
+
+        // Push the harvested cookies to the main window's renderer. The
+        // renderer writes them to localStorage and reloads — MusicKit JS
+        // reads `music.ampwebplay.*` on init, so the next boot starts
+        // already-authorized.
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('applemusic:recv-cookies', harvested);
+        }
+
+        cleanup();
+        resolve({ success: true });
+      } catch (error) {
+        console.error('[AppleMusic Auth] Harvest failed:', error);
+        cleanup();
+        resolve({ success: false, error: error.message });
+      }
+    };
+
+    ipcMain.on('applemusic:auth-window-ready', handleAuthWindowReady);
+    ipcMain.on('applemusic:auth-completed', handleAuthCompleted);
+    ipcMain.on('applemusic:auth-debug', handleAuthDebug);
+
+    // Cookie-polling fallback (parachord#834).
+    //
+    // The preload-side detection depends on MusicKit JS being present on
+    // beta.music.apple.com, on the `MusicKit.Events.authorizationStatusDidChange`
+    // constant existing under the expected name, AND on `instance.isAuthorized`
+    // being readable in our preload's context. Any of those can fail
+    // silently — moop250's Arch Linux trace was the first hint, the
+    // post-auth navigation hypothesis was the second. Rather than rely on a
+    // single detection path, also poll the auth window's cookie jar every
+    // 2s. The moment `media-user-token` appears, treat as auth-completed
+    // regardless of whether the preload event fired. This is more robust
+    // than the MusicKit-JS event because the cookie IS the actual auth
+    // carrier — Apple sets it BECAUSE the handshake succeeded, so its
+    // presence is direct evidence.
+    //
+    // Cheap: one cookies.get() every 2s while the auth window is open.
+    // Self-terminates on resolve (cleanup() calls clearInterval) or on
+    // window close. Both handlers gate on `windowState.resolved` so the
+    // preload event and the poll racing each other can't double-fire.
+    cookiePoll = setInterval(async () => {
+      if (!appleAuthWindow || appleAuthWindow.isDestroyed() || windowState.resolved) {
+        clearInterval(cookiePoll);
+        return;
+      }
+      try {
+        const cookies = await appleAuthWindow.webContents.session.cookies.get({ name: 'media-user-token' });
+        if (cookies.length > 0) {
+          console.log('[AppleMusic Auth][poll] media-user-token cookie detected — treating as auth-completed');
+          clearInterval(cookiePoll);
+          // Synthesize a minimal event so handleAuthCompleted's sender
+          // check passes. We're calling it directly (in-process), not via
+          // IPC, so no listener-registration concerns.
+          handleAuthCompleted({ sender: appleAuthWindow.webContents });
+        }
+      } catch (_e) {
+        // Swallow — next tick will retry.
+      }
+    }, 2000);
+
+    // User closed the window before completing auth — resolve as cancel.
+    appleAuthWindow.on('closed', () => {
+      if (!windowState.resolved) {
+        windowState.resolved = true;
+        if (cookiePoll) clearInterval(cookiePoll);
+        ipcMain.removeListener('applemusic:auth-completed', handleAuthCompleted);
+        ipcMain.removeListener('applemusic:auth-window-ready', handleAuthWindowReady);
+        ipcMain.removeListener('applemusic:auth-debug', handleAuthDebug);
+        appleAuthWindow = null;
+        resolve({ success: false, cancelled: true });
+      }
+    });
+
+    appleAuthWindow.loadURL('https://beta.music.apple.com/').catch((err) => {
+      console.error('[AppleMusic Auth] Failed to load beta.music.apple.com:', err);
+      cleanup();
+      resolve({ success: false, error: 'Failed to open Apple Music sign-in page' });
+    });
+  });
+});
 
 // Check if MusicKit helper is available (macOS only)
 ipcMain.handle('musickit:available', async () => {
