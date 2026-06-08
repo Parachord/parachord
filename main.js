@@ -2074,6 +2074,27 @@ app.whenReady().then(() => {
     mediaKeysRegistered = false;
   }
 
+  // MPRIS init (parachord#848) — Linux-only D-Bus integration so
+  // playerctl + DE media widgets (KDE Plasma, GNOME, etc.) see
+  // Parachord with full now-playing metadata and can route media keys
+  // through the standard MPRIS dispatch. Gated on the same setting as
+  // globalShortcut so opting out of media-key capture also silences
+  // MPRIS controls (user opts out for a reason — usually Spotify
+  // desktop's own MPRIS competing for the same dispatch).
+  if (process.platform === 'linux' && savedMediaKeySetting !== 'never') {
+    try {
+      const createMprisPlayer = require('./mpris-player');
+      mprisPlayer = createMprisPlayer({
+        onControl: (event) => {
+          // Forward DE control to renderer via the existing IPC channel
+          safeSendToRenderer('mpris-control', event);
+        },
+      });
+    } catch (err) {
+      console.warn('[MPRIS] init failed (non-fatal):', err.message);
+    }
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -2151,6 +2172,10 @@ app.on('window-all-closed', async () => {
 // Allows renderer to update media key capture settings dynamically
 let mediaKeysRegistered = true; // Track current state
 
+// MPRIS (Linux D-Bus media-key + DE widget integration, parachord#848).
+// Null on non-Linux or when init failed; methods are gated at call sites.
+let mprisPlayer = null;
+
 const registerMediaKeys = () => {
   if (mediaKeysRegistered) return;
   globalShortcut.register('MediaPlayPause', () => {
@@ -2201,6 +2226,32 @@ ipcMain.handle('media-keys-update-playback-source', (event, source) => {
     }
   }
   return { success: true };
+});
+
+// ── MPRIS state push (parachord#848) ─────────────────────────────
+//
+// Renderer fires these on track change, play/pause, seek, shuffle/loop
+// toggles. Main forwards to the MPRIS wrapper which talks to D-Bus.
+// All no-ops when mprisPlayer is null (non-Linux, init failed, or user
+// has media-key-handling set to 'never').
+ipcMain.handle('mpris:update-track', (event, track) => {
+  if (mprisPlayer) mprisPlayer.updateTrack(track);
+});
+
+ipcMain.handle('mpris:update-playback-state', (event, state) => {
+  if (mprisPlayer) mprisPlayer.updatePlaybackState(state);
+});
+
+ipcMain.handle('mpris:update-position', (event, positionSeconds) => {
+  if (mprisPlayer) mprisPlayer.updatePosition(positionSeconds);
+});
+
+ipcMain.handle('mpris:update-shuffle', (event, shuffle) => {
+  if (mprisPlayer) mprisPlayer.updateShuffle(shuffle);
+});
+
+ipcMain.handle('mpris:update-loop', (event, loop) => {
+  if (mprisPlayer) mprisPlayer.updateLoop(loop);
 });
 
 // Crypto utilities for scrobbling (Last.fm requires MD5 signatures)

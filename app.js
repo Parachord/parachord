@@ -11989,6 +11989,94 @@ const Parachord = () => {
     return cleanup;
   }, []);
 
+  // MPRIS Linux D-Bus integration (parachord#848) — registers control
+  // listener + pushes state updates so playerctl / KDE Plasma / GNOME
+  // see Parachord with full now-playing metadata and route media keys
+  // through MPRIS dispatch in addition to globalShortcut.
+  //
+  // All `window.electron.mpris.*` calls are no-ops on non-Linux (main
+  // gates on `mprisPlayer !== null`). Safe to fire unconditionally; the
+  // bridge handles the platform check.
+  useEffect(() => {
+    if (!window.electron?.mpris?.onControl) return;
+    const cleanup = window.electron.mpris.onControl((event) => {
+      if (!event) return;
+      switch (event.action) {
+        case 'play':
+        case 'pause':
+        case 'playpause':
+          if (handlePlayPauseRef.current) handlePlayPauseRef.current();
+          break;
+        case 'next':
+          if (handleNextRef.current) handleNextRef.current();
+          break;
+        case 'previous':
+          if (handlePreviousRef.current) handlePreviousRef.current();
+          break;
+        case 'stop':
+          if (handlePlayPauseRef.current && isPlayingRef.current) {
+            handlePlayPauseRef.current();
+          }
+          break;
+        case 'seek':
+        case 'seek-relative':
+          // Seek intentionally not wired for v1 — handleSeek lives
+          // inside the dj-tools context and isn't ref-exposed. MPRIS
+          // canSeek is set to false so DE widgets render a read-only
+          // progress bar instead of an interactive slider. Follow-up
+          // would wire a handleSeekRef like handlePlayPauseRef etc.
+          break;
+        case 'set-shuffle':
+          setShuffleMode(!!event.value);
+          break;
+        case 'set-loop':
+          // Parachord has no loop mode today; ignore
+          break;
+        default:
+          break;
+      }
+    });
+    return cleanup;
+  }, []);
+
+  // MPRIS: push track metadata on track change
+  useEffect(() => {
+    if (!window.electron?.mpris?.updateTrack) return;
+    if (!currentTrack) {
+      window.electron.mpris.updateTrack(null).catch(() => {});
+      return;
+    }
+    window.electron.mpris.updateTrack({
+      id: currentTrack.id,
+      title: currentTrack.title,
+      artist: currentTrack.artist,
+      album: currentTrack.album,
+      duration: currentTrack.duration,
+      // Album art passes through as-is — HTTPS URLs work everywhere;
+      // file:// URLs work for DEs that allow local file access;
+      // Electron custom-protocol URLs (local-audio://) won't render in
+      // external clients (acceptable v1 limitation, follow-up via #787).
+      albumArt: currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt
+        || currentTrack.sources?.applemusic?.albumArt || null,
+    }).catch(() => {});
+  }, [currentTrack]);
+
+  // MPRIS: push playback state on play/pause change
+  useEffect(() => {
+    if (!window.electron?.mpris?.updatePlaybackState) return;
+    if (!currentTrack) {
+      window.electron.mpris.updatePlaybackState('stopped').catch(() => {});
+      return;
+    }
+    window.electron.mpris.updatePlaybackState(isPlaying ? 'playing' : 'paused').catch(() => {});
+  }, [isPlaying, currentTrack]);
+
+  // MPRIS: push shuffle state on toggle
+  useEffect(() => {
+    if (!window.electron?.mpris?.updateShuffle) return;
+    window.electron.mpris.updateShuffle(shuffleMode).catch(() => {});
+  }, [shuffleMode]);
+
   // Protocol URL handler (parachord:// deep links)
   useEffect(() => {
     if (!window.electron?.onProtocolUrl) return;
