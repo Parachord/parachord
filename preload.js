@@ -147,6 +147,22 @@ contextBridge.exposeInMainWorld('electron', {
     updatePlaybackSource: (source) => ipcRenderer.invoke('media-keys-update-playback-source', source)
   },
 
+  // MPRIS Linux D-Bus integration (parachord#848). Renderer pushes
+  // state updates here; receives DE control events via onMprisControl.
+  // All no-ops on non-Linux platforms.
+  mpris: {
+    updateTrack: (track) => ipcRenderer.invoke('mpris:update-track', track),
+    updatePlaybackState: (state) => ipcRenderer.invoke('mpris:update-playback-state', state),
+    updatePosition: (positionSeconds) => ipcRenderer.invoke('mpris:update-position', positionSeconds),
+    updateShuffle: (shuffle) => ipcRenderer.invoke('mpris:update-shuffle', shuffle),
+    updateLoop: (loop) => ipcRenderer.invoke('mpris:update-loop', loop),
+    onControl: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('mpris-control', handler);
+      return () => ipcRenderer.removeListener('mpris-control', handler);
+    }
+  },
+
   // Menu action handlers
   onMenuAction: (callback) => {
     const handler = (event, action) => callback(action);
