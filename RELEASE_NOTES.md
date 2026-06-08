@@ -1,3 +1,68 @@
+# Parachord v0.9.4
+
+**Release date:** 2026-06-05
+
+> A Linux release. Three Linux blockers from the last few months land together — Apple Music sign-in finally works, `playerctl` and KDE/GNOME media widgets see Parachord with full now-playing metadata via MPRIS, and the AppImage MCP config path is now stable across restarts. Plus a batch of sync fixes that benefit every platform: tracks you remove from Collection actually stay removed, Daily Brew auto-updates instead of nagging you, and ListenBrainz scrobbles now carry source URLs + MBIDs so the rest of the LB ecosystem knows where you streamed from.
+
+---
+
+## Linux: Apple Music, media keys, and a stable MCP path
+
+Three independent issues that all blocked Linux users land in this release:
+
+- **Apple Music sign-in works on Linux and Windows.** The MusicKit JS auth popup never worked on these platforms because Electron's session-level "block third-party cookies" gate prevented the popup → parent handshake. Parachord now opens a dedicated browser window against `beta.music.apple.com` directly, harvests the auth cookies on success, and reinjects the user token into the main window's MusicKit JS instance. Library sync runs end-to-end. Verified across five test rounds with two Linux testers (Fedora + Arch). Thanks @dyland84 and @moop250.
+- **Linux media keys + DE widgets via MPRIS.** Parachord now registers on `org.mpris.MediaPlayer2.parachord`, so `playerctl`, KDE Plasma media widget, GNOME media widget, and any other MPRIS client sees now-playing track metadata (title, artist, album, art) and routes play / pause / skip / previous controls. The existing `globalShortcut` media-key path still works; MPRIS adds a second dispatch path that DEs typically prefer. (v1 limitation: the progress slider in DE widgets is read-only — interactive seeking via MPRIS is a follow-up.)
+- **AppImage MCP config path is now stable.** AppImage mounts itself at `/tmp/.mount_<RANDOM>/` on every launch, so the MCP `stdioPath` Parachord exposed via Settings was going stale on every restart. The bridge is now extracted to `~/.config/Parachord/mcp-stdio.js` once per launch — copy that path into your MCP client config once and it stays valid across restarts and upgrades. Thanks @theli-ua for the precise repro.
+
+## Removed tracks stay removed
+
+Tracks you delete from your Collection no longer silently reappear on the next sync. Two intersecting bugs caused this:
+
+- The Spotify `removeTracks` provider was hitting a non-existent `/me/library` endpoint instead of `/me/tracks` — a regression in an earlier "unified library API" attempt. Local removal succeeded but the remote DELETE silently failed, so the next sync re-imported the still-present track from Spotify.
+- Apple Music has no public-API removal endpoint at all (their library DELETE returns 401), so AM-sourced track removals were guaranteed to revert on the next sync no matter what we did.
+
+Fixed both. The Spotify endpoint now hits `DELETE /me/tracks` with the correct body. For Apple Music — and as defense-in-depth for any future Spotify failure — a new **track-level tombstone** mechanism persists every "user removed this on purpose" intent keyed by `(provider, externalId)`. The sync diff filters remote items against this list before adding, so user intent stays sovereign regardless of whether the remote-remove API works.
+
+Tombstones expire after 365 days of no sync confirming the remote still has the track, and clear automatically when you re-add the same track via the UI.
+
+## Daily Brew (and friends) update silently
+
+Spotify's algorithmic playlists — Daily Brew, Discover Weekly, Release Radar, Daily Mix N, Daylist, New Music Friday — used to flag the "pull updates" banner every morning when their content rotated. Pure UX nag for content you can't meaningfully reject or edit.
+
+Sync now detects Spotify-curated playlists (those owned by Spotify itself rather than your account) and silently auto-adopts their daily updates. No banner, content refetches in the background, tomorrow's Daily Brew shows up tomorrow. The banner still appears for your own playlists where local-edit conflicts are real and worth your confirmation.
+
+## Phantom macOS Apple Music re-auth dialog gone
+
+The native macOS "Sign in to your Apple Account" dialog used to pop up unexpectedly during routine sync runs, asking for re-authentication that wasn't actually needed. Root cause: the native MusicKit helper was passing `.ignoreCache` to every user-token fetch, forcing a server round-trip that Apple sometimes responded to with a sign-in prompt.
+
+Fixed: only the explicit recovery path (after Apple returns 401 on a real request) busts the cache. Routine fetches use MusicKit's local token cache and stay quiet.
+
+## ListenBrainz scrobbles carry source URLs and MBIDs
+
+Every Parachord-emitted ListenBrainz scrobble now includes:
+
+- `origin_url` — the URL of the source you actually streamed from
+- `music_service` and `music_service_name` — canonical hostname + label
+- `spotify_id` — when you have a verified Spotify source on the track
+- `recording_mbid`, `release_mbid`, and `artist_mbids` — when known
+
+Two benefits:
+
+1. **LB profile UX.** Scrobble rows can render "Listen on Spotify / Apple Music / etc." links from the source URL the user actually heard.
+2. **Achordion match cache.** The shared community track-links cache can key by MBID for any Parachord-played LB-scrobbled track, even when the achordion submit plugin's confidence gate excluded it.
+
+## MCP `seek` tells you where it actually went
+
+The MCP `seek` tool used to report the requested offset as `confirmedMs` even if the audio engine clamped to a different position (end-of-track, DRM boundaries, edge cases on some Apple Music tracks). The Apple Music paths now query the engine for the actual position after the seek and report that. Thanks @gjtorikian for the careful PR review that surfaced this.
+
+## Smaller things
+
+- **`canShortCircuitPlaylistUpdate` log line.** Short-circuited playlist updates are now distinguishable from "never reached" in sync traces — useful when debugging "why didn't sync update playlist X."
+- **Three-`if` Apple Music seek branch documented as intentional.** The seek path tries native → MusicKit JS → preview audio as independent branches (not else-if) so each branch can silently recover when a more-preferred engine is unreachable. Now there's a comment explaining why.
+- **Mobile-parity rule documented in CLAUDE.md.** The implicit pattern of filing parachord-mobile parity tickets alongside desktop changes is now a documented process rule. Catches cross-platform drift before it hits sync corruption.
+
+---
+
 # Parachord v0.9.3
 
 **Release date:** 2026-05-21
