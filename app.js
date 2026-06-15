@@ -20537,7 +20537,14 @@ ${trackListXml}
         { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },
         { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },
         { regex: /\*([^*]+)\*/g, type: 'italic' },
-        { regex: /`([^`]+)`/g, type: 'code' }
+        { regex: /`([^`]+)`/g, type: 'code' },
+        // Bare http(s):// URLs become clickable links (parachord#875). The
+        // non-greedy body + lookahead stops at the first sentence-final
+        // punctuation followed by whitespace/end, so "visit https://X.com."
+        // matches https://X.com without swallowing the period. When a URL
+        // is already wrapped in [text](url) markdown, the link pattern
+        // matches first and the overlap filter below drops this match.
+        { regex: /\bhttps?:\/\/\S+?(?=[.,;:!?)\]]*(?:\s|$))/g, type: 'bareurl' }
       ];
 
       // Simple approach: process patterns in order
@@ -20715,6 +20722,22 @@ ${trackListXml}
               },
               style: { color: isUserMessage ? '#c4b5fd' : 'var(--accent-soft)', textDecoration: 'underline', cursor: 'pointer' }
             }, linkText)
+          );
+        } else if (r.type === 'bareurl') {
+          // Bare http(s):// URL — render as clickable link via shell.openExternal.
+          // The regex's lookahead already excluded trailing sentence punctuation,
+          // so the matched URL is ready to use as-is.
+          const url = r.match[0];
+          result.push(
+            React.createElement('a', {
+              key,
+              href: url,
+              onClick: (e) => {
+                e.preventDefault();
+                window.electron?.shell?.openExternal(url);
+              },
+              style: { color: isUserMessage ? '#c4b5fd' : 'var(--accent-soft)', textDecoration: 'underline', cursor: 'pointer', wordBreak: 'break-all' }
+            }, url)
           );
         } else if (r.type === 'bold') {
           result.push(React.createElement('strong', { key }, r.match[1]));
@@ -56340,8 +56363,18 @@ useEffect(() => {
                           fontSize: '14px',
                           lineHeight: '1.5',
                           whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                          overflow: 'hidden'
+                          // overflowWrap: 'anywhere' forces breaks even mid-token
+                          // so long URLs (Google error messages, etc.) wrap
+                          // cleanly without horizontal clipping. The legacy
+                          // word-break: 'break-word' alias used to be here but
+                          // isn't reliably honored by all renderers (parachord#875).
+                          overflowWrap: 'anywhere',
+                          // Explicitly opt into text selection (parachord#875).
+                          // Default behavior is usually fine but selection in
+                          // Electron + overflow:hidden containers can be flaky;
+                          // setting it explicitly is defense-in-depth.
+                          userSelect: 'text',
+                          WebkitUserSelect: 'text'
                         }
                       }, renderChatContent(msg.content, msg.role === 'user'))
                     );
