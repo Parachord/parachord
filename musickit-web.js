@@ -12,6 +12,11 @@ class MusicKitWeb {
     this.isAuthorized = false;
     this.developerToken = null;
     this.loadPromise = null;
+    // Tracks the token value most recently used in a late re-injection
+    // attempt (see getAuthStatus). One attempt per distinct token keeps
+    // us from looping if the SDK truly won't honor injection, while
+    // still letting a fresh post-reauth token try once.
+    this._lastLateInjectionToken = null;
   }
 
   /**
@@ -256,6 +261,49 @@ class MusicKitWeb {
     // this.isAuthorized, which can become stale if the user's session expires
     // or authorization is revoked externally (e.g. via System Settings).
     if (this.musicKit) {
+      // Late re-injection (parachord#882). On Linux and Windows the
+      // CDN-loaded MusicKit JS v3 bundle frequently reports
+      // isAuthorized=false after configure even though the three injection
+      // paths (musicUserToken setter / setMusicUserToken / setUserToken)
+      // ran cleanly, leaving the .axe play path to fall through to the 30s
+      // preview. If we still have a stored user token from the auth-window
+      // cookie handoff, try the same three paths again right now — at
+      // play time (every play calls getAuthStatus first), the SDK's
+      // internal state is fully initialized in a way configure-time
+      // injection sometimes raced ahead of. Keyed on the token value so
+      // we retry once per distinct token (a fresh post-reauth token gets
+      // its own attempt) without looping when the SDK genuinely won't
+      // honor injection.
+      if (!this.musicKit.isAuthorized && typeof localStorage !== 'undefined') {
+        let storedToken = null;
+        try { storedToken = localStorage.getItem('musickit_user_token'); } catch (_e) { /* ignore */ }
+        if (storedToken && storedToken !== this._lastLateInjectionToken) {
+          this._lastLateInjectionToken = storedToken;
+          console.log('[MusicKitWeb] Late re-injection: SDK reports not authorized but stored token present');
+          try {
+            this.musicKit.musicUserToken = storedToken;
+            console.log(`[MusicKitWeb] After late .musicUserToken =, isAuthorized: ${this.musicKit.isAuthorized}`);
+          } catch (e) {
+            console.warn('[MusicKitWeb] Late .musicUserToken = threw:', e && e.message ? e.message : e);
+          }
+          try {
+            if (typeof this.musicKit.setMusicUserToken === 'function') {
+              this.musicKit.setMusicUserToken(storedToken);
+              console.log(`[MusicKitWeb] After late setMusicUserToken(), isAuthorized: ${this.musicKit.isAuthorized}`);
+            }
+          } catch (e) {
+            console.warn('[MusicKitWeb] Late setMusicUserToken() threw:', e && e.message ? e.message : e);
+          }
+          try {
+            if (typeof this.musicKit.setUserToken === 'function') {
+              this.musicKit.setUserToken(storedToken);
+              console.log(`[MusicKitWeb] After late setUserToken(), isAuthorized: ${this.musicKit.isAuthorized}`);
+            }
+          } catch (e) {
+            console.warn('[MusicKitWeb] Late setUserToken() threw:', e && e.message ? e.message : e);
+          }
+        }
+      }
       this.isAuthorized = this.musicKit.isAuthorized;
     }
     return {
