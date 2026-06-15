@@ -105,7 +105,14 @@ function createMprisPlayer({ onControl } = {}) {
 
   let player;
   try {
-    player = MprisPlayer({
+    // @jellybrick/mpris-service exports a Player class (not a factory).
+    // Forgetting `new` here used to throw `TypeError: Class constructor
+    // Player cannot be invoked without 'new'`, which the catch below
+    // silently swallowed — the service registered nothing on DBus and
+    // moop250's KDE Plasma widget was reading metadata from a different
+    // player entirely (e.g. Spotify desktop). Initial v0.9.4 ship had
+    // this bug; #848 follow-up.
+    player = new MprisPlayer({
       name: 'parachord',
       identity: 'Parachord',
       supportedUriSchemes: ['parachord', 'spotify', 'file', 'https'],
@@ -131,10 +138,24 @@ function createMprisPlayer({ onControl } = {}) {
   player.canGoPrevious = true;
   player.canControl = true;
 
+  // Initialize shuffle + loop properties explicitly so DE widgets see
+  // them as supported. The MPRIS spec has no canShuffle / canLoop
+  // capability flag, so widgets infer support from whether the
+  // properties have been written. Without these writes, KDE Plasma
+  // greys out the shuffle and repeat controls (parachord#848 follow-
+  // up). Parachord has no app-level loop mode today, so loopStatus
+  // stays 'None'; updateLoop() is a no-op until that ships.
+  player.shuffle = false;
+  player.loopStatus = 'None';
+
   // ── Inbound: forward DE control events to renderer ───────────────
   // Each event is forwarded as a structured object so the renderer-side
-  // switch can route by action name.
+  // switch can route by action name. Logs every received event for
+  // remote-debug-friendliness — Linux-only feature with limited local
+  // verification, so external testers' terminal output is the main
+  // diagnostic surface.
   const safeControl = (event) => {
+    console.log(`[MPRIS] received control: ${event?.action || JSON.stringify(event)}`);
     try { onControl(event); }
     catch (err) { console.warn('[MPRIS] onControl threw:', err.message); }
   };
