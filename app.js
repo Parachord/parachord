@@ -23073,20 +23073,33 @@ ${trackListXml}
         setFirstRunTutorial(prev => ({ ...prev, open: true }));
       }
 
-      // Load What's New dismissed version, current app version, and release highlights
+      // Load What's New dismissed version, current app version, and release
+      // highlights. The version + highlights fetches are fire-and-forget
+      // — they USED to be awaited inline here, which silently gated
+      // setCacheLoaded(true) on a GitHub network roundtrip with up to two
+      // 5-second timeouts. Users on slow / offline networks waited up to
+      // ~10s before the loader gave way (parachord#878 follow-up). The
+      // What's New modal isn't time-critical — it populates whenever the
+      // data arrives, which is usually before the user clicks to open it.
       if (dismissedVersion) {
         setWhatsNewDismissedVersion(dismissedVersion);
       }
       if (window.electron?.updater?.getVersion) {
-        const version = await window.electron.updater.getVersion();
-        setAppVersion(version);
-        console.log(`📦 App version: ${version}, What's New dismissed for: ${dismissedVersion || 'never'}`);
+        window.electron.updater.getVersion()
+          .then(version => {
+            setAppVersion(version);
+            console.log(`📦 App version: ${version}, What's New dismissed for: ${dismissedVersion || 'never'}`);
+          })
+          .catch(() => {});
       }
       if (window.electron?.releaseNotes?.get) {
-        const result = await window.electron.releaseNotes.get();
-        if (result.success && result.highlights.length > 0) {
-          setWhatsNewHighlights(result.highlights);
-        }
+        window.electron.releaseNotes.get()
+          .then(result => {
+            if (result?.success && result.highlights?.length > 0) {
+              setWhatsNewHighlights(result.highlights);
+            }
+          })
+          .catch(() => {});
       }
 
       // In-app announcements: hydrate cached banner items + dismissed-id list
@@ -23103,7 +23116,7 @@ ${trackListXml}
       // Mark cache as loaded — resolver auth checks may still be in-flight (non-blocking).
       // resolverSettingsLoaded is set by the auth check callback above (or immediately if no resolvers).
       setCacheLoaded(true);
-      console.log('📦 Cache loaded from persistent storage (resolver auth checks may still be completing)');
+      console.log(`📦 Cache loaded in ${Math.round(performance.now() - t0)}ms (resolver auth checks may still be completing)`);
     } catch (error) {
       console.error('Failed to load cache from store:', error);
       // Even on error, mark as loaded so app can function
