@@ -462,6 +462,13 @@
       background-color: #9ca3af;
     }
 
+    /* Splash wordmark text color is hardcoded to dark navy in markup so
+       the light-mode path needs no extra rule. The dark-mode override
+       switches it to white (parachord#878). */
+    .dark .loading-wordmark-text {
+      color: #f9fafb !important;
+    }
+
     .loading-wordmark {
       animation: loadingFadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
@@ -470,6 +477,8 @@
       display: block;
     }
 
+    /* Loading dots — retained as a fallback CSS class but not used by the
+       current splash markup. The wordmark itself carries the motion now. */
     .loading-dot {
       width: 6px;
       height: 6px;
@@ -480,6 +489,39 @@
     .loading-dot:nth-child(1) { animation: loadingDotPulse 1.4s ease-in-out infinite; }
     .loading-dot:nth-child(2) { animation: loadingDotPulse 1.4s ease-in-out 0.15s infinite; }
     .loading-dot:nth-child(3) { animation: loadingDotPulse 1.4s ease-in-out 0.3s infinite; }
+
+    /* Wordmark animation (parachord#878). Gentle breathing — slow opacity
+       + scale pulse on the whole wordmark, keeping the brand mark fully
+       visible (including the red play-triangle accent on the "d"). The
+       wordmark IS the loading indicator. Composed with the initial
+       fade-in-up entrance so the splash settles in then begins breathing.
+       Subtle by design: 0.7→1 opacity range and 1→1.018 scale, both
+       eased so the motion reads as "alive" not "distracting." */
+    @keyframes loadingWordmarkBreath {
+      0%, 100% {
+        opacity: 0.85;
+        transform: scale(1);
+      }
+      50% {
+        opacity: 1;
+        transform: scale(1.018);
+      }
+    }
+
+    .loading-wordmark-img {
+      height: 72px;
+      width: auto;
+      transform-origin: center;
+      animation: loadingFadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards,
+                 loadingWordmarkBreath 2.6s ease-in-out 0.7s infinite;
+    }
+
+    /* Theme-aware wordmark variant swap. Both images are pre-loaded so the
+       swap on .dark toggle is instant. ~75KB each, negligible at splash
+       time. */
+    .loading-wordmark-img-dark { display: none; }
+    .dark .loading-wordmark-img-light { display: none; }
+    .dark .loading-wordmark-img-dark { display: block; }
 
     /* Queue icon pulse animation */
     @keyframes queue-pulse {
@@ -952,7 +994,23 @@
   </style>
 </head>
 <body class="bg-gray-100 text-gray-900 no-select">
-  <div id="root"></div>
+  <div id="root">
+    <!--
+      Pre-mount splash (parachord#878). Paints during HTML parse + script
+      load + app.js parse/execute (the biggest chunk of cold-launch TTFP).
+      React.createRoot(root).render(...) replaces this entire subtree on
+      first render, so no cleanup code is needed — the React tree just
+      takes over once it mounts. CSS for .loading-screen / .loading-dot
+      / .loading-wordmark already lives in the <style> block above; this
+      is the markup that actually uses it.
+    -->
+    <div class="loading-screen" style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10000;">
+      <div class="loading-wordmark">
+        <img class="loading-wordmark-img loading-wordmark-img-light" src="assets/logo-wordmark.png" alt="Parachord" />
+        <img class="loading-wordmark-img loading-wordmark-img-dark" src="assets/icons/logo-wordmark-white.png" alt="Parachord" />
+      </div>
+    </div>
+  </div>
   
   <!-- React -->
   <script src="vendor/react.production.min.js"></script>

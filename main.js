@@ -721,6 +721,14 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       webviewTag: false,  // Disabled for security — use BrowserView or iframes instead
       backgroundThrottling: false,  // Prevent renderer throttle/suspension when backgrounded (music player needs this)
+      // V8 code cache (parachord#878). Persists compiled bytecode for the
+      // 3MB app.js between launches. First cold launch is unchanged (cache
+      // populates as a side effect); every subsequent launch skips the
+      // parse + compile phase entirely. Real-world saving: ~200-300ms of
+      // app.js parse/compile time on a 2020-era machine. Cache lives in
+      // ~/Library/Application Support/Parachord/Cache (or platform
+      // equivalent) and self-invalidates when app.js content changes.
+      v8CacheOptions: 'code',
       // Pass dev/prod signal to the sandboxed preload via process.argv.
       // The preload reads this to decide whether the renderer's console
       // wrapper forwards log/info to the real console (dev) or only to the
