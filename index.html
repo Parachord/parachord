@@ -538,6 +538,32 @@
     .loading-wordmark-svg .letter-8 { animation-delay: 0.63s; }
     .loading-wordmark-svg .letter-9 { animation-delay: 0.72s; }
 
+    /* Body-level splash overlay. Sits above the React tree (z-index 10000)
+       and is the only visual the user sees while HTML parses, scripts load,
+       app.js executes, React mounts, and the bulk cache IPC roundtrip
+       completes. Survives React mount because it lives outside #root —
+       earlier iteration put the splash inside #root, which meant
+       ReactDOM's first render replaced the splash markup with React's tree
+       and the user saw a brief re-cascade of the same wordmark in the
+       React-tree loader. Now React mounts under the overlay, so any DOM
+       work the React tree does (including its own loaders) is invisible
+       until the overlay fades. JS removes the element when cacheLoaded
+       flips and the home page has painted. */
+    #parachord-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      opacity: 1;
+      transition: opacity 350ms ease-out;
+    }
+    #parachord-splash.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+
     /* Queue icon pulse animation */
     @keyframes queue-pulse {
       0% { transform: scale(1); }
@@ -1009,17 +1035,18 @@
   </style>
 </head>
 <body class="bg-gray-100 text-gray-900 no-select">
-  <div id="root">
-    <!--
-      Pre-mount splash (parachord#878). Paints during HTML parse + script
-      load + app.js parse/execute (the biggest chunk of cold-launch TTFP).
-      React.createRoot(root).render(...) replaces this entire subtree on
-      first render, so no cleanup code is needed — the React tree just
-      takes over once it mounts. CSS for .loading-screen / .loading-dot
-      / .loading-wordmark already lives in the <style> block above; this
-      is the markup that actually uses it.
-    -->
-    <div class="loading-screen" style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10000;">
+  <!--
+    Pre-mount splash (parachord#878). Lives OUTSIDE #root as a body-level
+    overlay so React.createRoot(root).render(...) doesn't tear it down on
+    first render. Paints during HTML parse + script load + app.js
+    parse/execute (the biggest chunk of cold-launch TTFP), then keeps
+    covering the screen while React mounts and the bulk cache IPC
+    roundtrip resolves. The Parachord component fades it out and removes
+    it from the DOM once cacheLoaded flips AND the home page has painted
+    (rAF×2, see app.js). CSS for .loading-screen and the wordmark
+    selectors lives in the <style> block above.
+  -->
+  <div id="parachord-splash" class="loading-screen">
       <svg class="loading-wordmark-svg" viewBox="0 0 1046 273" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Parachord">
         <g class="letter letter-1">
           <path d="M115.5 102.5C139.725 102.5 160.5 123.346 160.5 150.5C160.5 177.654 139.725 198.5 115.5 198.5C91.2754 198.5 70.5 177.654 70.5 150.5C70.5 123.346 91.2754 102.5 115.5 102.5Z" stroke="currentColor" stroke-width="27"/>
@@ -1062,10 +1089,13 @@
           <rect x="1004.01" y="151.398" width="25" height="100.266" transform="rotate(-180 1004.01 151.398)" fill="currentColor"/>
           <path d="M1039.72 33.8887C1042.39 35.348 1042.43 39.1612 1039.8 40.6846L984.893 72.4893C982.313 73.9831 979.08 72.1478 979.039 69.167L978.192 6.85254C978.152 3.86673 981.345 1.94449 983.965 3.37793L1039.72 33.8887Z" fill="#E12949" stroke="white" stroke-width="0.2"/>
         </g>
-      </svg>
-    </div>
+    </svg>
   </div>
-  
+
+  <!-- React mount point. Splash overlay above (#parachord-splash) covers
+       any partial paint until the Parachord component removes it. -->
+  <div id="root"></div>
+
   <!-- React -->
   <script src="vendor/react.production.min.js"></script>
   <script src="vendor/react-dom.production.min.js"></script>
