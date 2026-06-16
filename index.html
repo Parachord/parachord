@@ -501,21 +501,27 @@
        (#1a1a1a in light, #f9fafb in dark) instead of two PNG variants.
        Crisper rendering than the previous PNG approach + saves ~150KB at
        splash time. */
+    /* Lock the wordmark to viewport center via fixed positioning +
+       translate. The earlier flex-centered version drifted ~20px
+       vertically at some point during the React mount window — likely
+       the splash's flex container (or its line-box around the inline
+       SVG) recomputed as some parent style changed under it. Taking
+       the SVG out of the flex flow entirely and anchoring it to the
+       viewport with position:fixed makes its location independent of
+       any parent layout work. translate(-50%, -50%) keeps it
+       horizontally + vertically centered regardless of SVG dimensions.
+       will-change promotes the element to its own compositor layer so
+       the transform can't be re-laid-out by main-thread work either. */
     .loading-wordmark-svg {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       height: 72px;
       width: auto;
       color: #1a1a1a;
-      /* `display: block` is load-bearing. SVG defaults to display: inline,
-         which means the element has a baseline + descender space below
-         it. While the splash is the only DOM in play (HTML parse phase),
-         the inline-SVG's effective position is determined by the body's
-         default line-height. When app.js mounts and Tailwind's reset
-         injects `line-height` on the document, the SVG's inline-box
-         vertical position recomputes by a few pixels — visible to the
-         user as "the wordmark shifted up" right before the splash fades.
-         display: block takes the SVG out of inline flow so its position
-         is identical before and after the reset arrives. */
       display: block;
+      will-change: opacity, transform;
     }
 
     .dark .loading-wordmark-svg {
@@ -560,12 +566,13 @@
     #parachord-splash {
       position: fixed;
       inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       z-index: 10000;
       opacity: 1;
       transition: opacity 500ms ease-out;
+      /* No flex centering — the SVG inside positions itself via
+         position:fixed + translate (see .loading-wordmark-svg).
+         #parachord-splash just provides the gradient background
+         (via .loading-screen class) and the fade-out container. */
     }
     #parachord-splash.fade-out {
       opacity: 0;
