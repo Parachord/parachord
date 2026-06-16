@@ -9468,34 +9468,56 @@ const Parachord = () => {
   const [cacheLoaded, setCacheLoaded] = useState(false); // Track when persistent cache is loaded
 
   // Fade out the body-level splash overlay (#parachord-splash, in
-  // index.html) once cacheLoaded flips. Earlier iteration used rAF×2
-  // (~32ms) to hold the fade until after the home-page React commit
-  // painted, but the home tree's initial commit + layout + paint takes
-  // closer to ~150-200ms — the splash was already half-faded by the
-  // time the cards/sidebar finished laying out, so the user saw the
-  // home page popping in mid-fade. Now: one rAF (yields to the
-  // browser so the React commit can flush + paint) then a 200ms
-  // setTimeout (covers the home page's first round of async data
-  // resolution). 500ms fade matches the longer transition in
-  // index.html's CSS; element is removed 550ms after fade starts.
+  // index.html) once (a) cacheLoaded flips AND (b) the document is
+  // actually visible. The visibility gate is load-bearing: main.js
+  // creates the BrowserWindow with `show: false` and only calls
+  // mainWindow.show() on the `ready-to-show` event, which fires after
+  // the renderer has loaded all scripts and React has mounted — by
+  // which point cacheLoaded has typically already flipped true. Fading
+  // purely on cacheLoaded would tear the splash down BEFORE the window
+  // ever appears to the user, who'd then see the home page snap in
+  // with no splash at all. Waiting for visibilitychange → 'visible'
+  // (Electron fires this when show() runs) holds the splash until
+  // the window has been presented; the 400ms post-visibility delay
+  // then gives the user a moment to actually see the wordmark before
+  // the 500ms opacity transition starts. Safety timeout fires the
+  // fade unconditionally after 3s in case visibilitychange never
+  // arrives (e.g., headless Electron in a future test harness).
   useEffect(() => {
     if (!cacheLoaded) return;
     const splash = typeof document !== 'undefined' && document.getElementById('parachord-splash');
     if (!splash) return;
     let fadeTimer = null;
     let removeTimer = null;
-    const rafId = requestAnimationFrame(() => {
+    let safetyTimer = null;
+    let visListener = null;
+    const startFade = () => {
+      if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
+      if (visListener) {
+        document.removeEventListener('visibilitychange', visListener);
+        visListener = null;
+      }
       fadeTimer = setTimeout(() => {
         splash.classList.add('fade-out');
         removeTimer = setTimeout(() => {
           if (splash.parentNode) splash.parentNode.removeChild(splash);
         }, 550);
-      }, 200);
-    });
+      }, 400);
+    };
+    if (document.visibilityState === 'visible') {
+      startFade();
+    } else {
+      visListener = () => {
+        if (document.visibilityState === 'visible') startFade();
+      };
+      document.addEventListener('visibilitychange', visListener);
+      safetyTimer = setTimeout(startFade, 3000);
+    }
     return () => {
-      cancelAnimationFrame(rafId);
       if (fadeTimer) clearTimeout(fadeTimer);
       if (removeTimer) clearTimeout(removeTimer);
+      if (safetyTimer) clearTimeout(safetyTimer);
+      if (visListener) document.removeEventListener('visibilitychange', visListener);
     };
   }, [cacheLoaded]);
 
