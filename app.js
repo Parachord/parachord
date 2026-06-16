@@ -9502,9 +9502,10 @@ const Parachord = () => {
         removeTimer = setTimeout(() => {
           if (splash.parentNode) splash.parentNode.removeChild(splash);
         }, 550);
-      }, 900);  // Long enough for the entrance cascade to complete
-                // (last letter ends at 0.56s + 0.32s ≈ 0.88s after
-                // visibilitychange) before we start fading.
+      }, 450);  // Post-visibility hold so the wordmark is on screen
+                // long enough to read as a splash (not a single-frame
+                // flash) before the fade starts. The CSS pulse is
+                // continuous, so there's no entrance to finish first.
     };
     if (document.visibilityState === 'visible') {
       startFade();
