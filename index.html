@@ -511,20 +511,44 @@
       color: #f9fafb;
     }
 
-    /* No entrance animation. The earlier per-letter pop-in cascade
-       (0–1.04s total) couldn't survive cold launch: vendor + app.js
-       parse blocks the main thread for ~1s, during which the CSS
-       animation engine advances on wall-clock time but the compositor
-       can't push frames. Letter-1 painted once before the block, then
-       letters 2–9 all snapped to their final state in the first paint
-       after the block — visible as "P, pause, everything-at-once."
-       Showing the wordmark fully revealed from T=0 is the only
-       reliable option until we eliminate the main-thread block
-       altogether. The body-level splash → app crossfade in app.js
-       (see useEffect on cacheLoaded) carries the motion now. */
+    @keyframes loadingLetterPopIn {
+      from { opacity: 0; transform: translateY(6px) scale(0.92); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Per-letter pop-in cascade, but JS-triggered (not via CSS
+       animation-delay). The earlier delay-driven version raced the
+       main thread during cold launch: vendor + app.js parse blocks
+       for ~1s, the CSS engine advances animations on wall-clock time,
+       so by the first post-block paint every letter past the first
+       had passed its (delay + duration) window and snapped straight
+       to the end state — visible as "P, pause, everything-at-once."
+       Fix: letters start visible by default so the splash always
+       renders content even if our trigger script never runs. When
+       the inline script just after the splash markup adds `.animate-
+       in` (on visibilitychange → 'visible', which fires when Electron
+       calls mainWindow.show() — by definition after ready-to-show,
+       so the main thread is no longer pegged), the animation engine
+       starts the cascade from that moment with `backwards` fill mode
+       holding letters at opacity:0 through their per-letter delay.
+       Cascade plays smoothly because the main thread is free. */
     .loading-wordmark-svg .letter {
       opacity: 1;
+      transform-box: fill-box;
+      transform-origin: center;
     }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter {
+      animation: loadingLetterPopIn 0.32s cubic-bezier(0.22, 1.2, 0.36, 1) backwards;
+    }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-1 { animation-delay: 0.00s; }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-2 { animation-delay: 0.07s; }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-3 { animation-delay: 0.14s; }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-4 { animation-delay: 0.21s; }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-5 { animation-delay: 0.28s; }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-6 { animation-delay: 0.35s; }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-7 { animation-delay: 0.42s; }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-8 { animation-delay: 0.49s; }
+    #parachord-splash.animate-in .loading-wordmark-svg .letter-9 { animation-delay: 0.56s; }
 
     /* Body-level splash overlay. Sits above the React tree (z-index 10000)
        and is the only visual the user sees while HTML parses, scripts load,
@@ -1079,6 +1103,45 @@
         </g>
     </svg>
   </div>
+
+  <!-- Kick the splash entrance cascade once the window is actually
+       visible. Electron creates the BrowserWindow with show: false and
+       only calls mainWindow.show() on ready-to-show — which fires after
+       all <script> tags have loaded, so by the time visibilitychange
+       flips to 'visible' the main thread is no longer pegged by parse.
+       Triggering the cascade then (vs at HTML parse via CSS animation-
+       delay) is what makes it actually animate smoothly. Letters
+       default to opacity:1 in CSS, so if visibilitychange never fires
+       (headless / future test harness) the wordmark is still visible —
+       just without entrance motion. Safety: 5s force-trigger so the
+       cascade never gets indefinitely stuck. -->
+  <script>
+    (function () {
+      var splash = document.getElementById('parachord-splash');
+      if (!splash) return;
+      var triggered = false;
+      var trigger = function () {
+        if (triggered) return;
+        triggered = true;
+        splash.classList.add('animate-in');
+      };
+      if (document.visibilityState === 'visible') {
+        // Already visible (reload, warm window). One rAF so the browser
+        // has a chance to do its initial paint of the default-state
+        // wordmark before we kick the animation — otherwise the
+        // backwards-fill-mode snap to opacity:0 can read as a flicker.
+        requestAnimationFrame(trigger);
+      } else {
+        document.addEventListener('visibilitychange', function onVis() {
+          if (document.visibilityState === 'visible') {
+            document.removeEventListener('visibilitychange', onVis);
+            trigger();
+          }
+        });
+        setTimeout(trigger, 5000);
+      }
+    })();
+  </script>
 
   <!-- React mount point. Splash overlay above (#parachord-splash) covers
        any partial paint until the Parachord component removes it. -->

@@ -9502,7 +9502,9 @@ const Parachord = () => {
         removeTimer = setTimeout(() => {
           if (splash.parentNode) splash.parentNode.removeChild(splash);
         }, 550);
-      }, 400);
+      }, 900);  // Long enough for the entrance cascade to complete
+                // (last letter ends at 0.56s + 0.32s ≈ 0.88s after
+                // visibilitychange) before we start fading.
     };
     if (document.visibilityState === 'visible') {
       startFade();
