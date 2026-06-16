@@ -345,23 +345,68 @@ const unsupportedAudioMessage = (ext) => {
   return `This ${e ? e.toUpperCase() : 'audio'} file uses an unsupported format. Try converting to MP3 or 16-bit FLAC.`;
 };
 
+// Exact ISRC → recording-MBID lookup via MusicBrainz core (/ws/2/isrc/{isrc}).
+// Mobile parity (parachord-mobile@51c6cc1, design doc
+// `docs/plans/2026-06-16-isrc-mbid-fallback.md` in that repo) — added after
+// `mapper.listenbrainz.org` returned 502 for 2+ days (2026-06-14/15) and
+// scrobble-time MBID enrichment stopped covering Achordion submits even
+// for trivially-mappable tracks like "Radiohead – Creep".
+//
+// MusicBrainz core is independent infrastructure from the LB mapper, so
+// /ws/2/isrc/ keeps returning 200s during a mapper outage. ISRC identifies
+// the SPECIFIC recording the user streamed — no fuzzy-match risk of
+// returning a live/remix variant the way a Lucene title+artist search can.
+// Returns the recording MBID or null. ISRC format per spec:
+// 2-letter country code + 3-char alphanumeric registrant + 7-digit numeric.
+//
+// Callers MUST NOT cache this result the same way they cache mapper hits:
+// /ws/2/isrc/ returns only the recording itself (no canonical artist/release
+// MBIDs, no canonical names), so a cached ISRC-only entry would block a
+// richer mapper entry once the mapper recovers (parachord#887).
+window.resolveMbidViaIsrc = async (isrc) => {
+  if (!isrc || typeof isrc !== 'string') return null;
+  const trimmed = isrc.trim().toUpperCase();
+  if (!/^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(trimmed)) return null;
+  try {
+    const url = `https://musicbrainz.org/ws/2/isrc/${encodeURIComponent(trimmed)}?fmt=json`;
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': 'Parachord/0.9.3 (https://github.com/Parachord/parachord)',
+        'Accept': 'application/json',
+      },
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const recordings = Array.isArray(data?.recordings) ? data.recordings : [];
+    if (recordings.length === 0) return null;
+    const id = recordings[0]?.id;
+    if (typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id)) return id;
+    return null;
+  } catch (e) {
+    return null;
+  }
+};
+
 // Resolve a track to a recording MBID for ListenBrainz love submission.
-// Three tiers:
+// Four tiers:
 //   1. Cached track.mbid (instant)
 //   2. MBID Mapper at mapper.listenbrainz.org (~4ms, broad coverage)
-//   3. Direct MusicBrainz recording search (~200-500ms, slower but works
+//   3. Exact ISRC → MBID via MusicBrainz core (parachord#887) — runs only
+//      when track.isrc is present. Exact-match guarantee (vs tier 4's
+//      fuzzy Lucene), and crucially keeps working when the mapper is down
+//      (independent infrastructure).
+//   4. Direct MusicBrainz recording search (~200-500ms, slower but works
 //      when the mapper is down OR hasn't yet indexed a newly-released
 //      recording — the "Starting Line – All Them Witches" case where
 //      the mapper was returning 502 AND the recording was only days old)
 // Returns the MBID string or null. See
 // docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md.
 //
-// Tier 3 only fires when tier 2 either errored (5xx, network) or returned
-// no high-confidence match — safety net for transient mapper outages and
-// freshly-released recordings the mapper hasn't ingested. pushLoveToScrobblers
-// queues retries when even tier 3 returns null, so love-pushes that fail
-// today eventually catch up when either the mapper comes back or MB
-// ingests the new recording.
+// Tier 4 only fires when tiers 2 and 3 both come up empty — safety net
+// for transient mapper outages and freshly-released recordings the mapper
+// hasn't ingested. pushLoveToScrobblers queues retries when even tier 4
+// returns null, so love-pushes that fail today eventually catch up when
+// the mapper comes back or MB ingests the new recording.
 window.resolveMbidForLove = async (track) => {
   if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return track.mbid;
   if (!track?.artist || !track?.title) return null;
@@ -383,7 +428,19 @@ window.resolveMbidForLove = async (track) => {
     // Mapper network error — fall through to tier 3.
   }
 
-  // Tier 3: Direct MusicBrainz recording search.
+  // Tier 3: Exact ISRC → MBID. Only fires when track.isrc is present
+  // (Spotify and Apple Music capture it at resolution time; SoundCloud /
+  // local files / iTunes no-auth search don't). Runs against MB core,
+  // which stays up when mapper.listenbrainz.org doesn't.
+  if (track.isrc) {
+    const isrcMbid = await window.resolveMbidViaIsrc(track.isrc);
+    if (isrcMbid) {
+      console.log(`[resolveMbidForLove] ISRC fallback resolved "${track.artist} – ${track.title}" via ${track.isrc}`);
+      return isrcMbid;
+    }
+  }
+
+  // Tier 4: Direct MusicBrainz recording search.
   // MB's /ws/2/recording/?query=... returns recordings sorted by Lucene
   // score (0-100). We require ≥ 90, roughly equivalent to the mapper's
   // 0.7 confidence floor — "this is almost certainly the right recording."
@@ -9621,6 +9678,23 @@ const Parachord = () => {
       track.mbid = result.recording_mbid;
       track.artistMbids = result.artist_credit_mbids;
       if (result.release_mbid) track.releaseMbid = result.release_mbid;
+      return;
+    }
+    // Mapper miss / outage. Try exact ISRC → MBID against MB core so
+    // streaming-link enrichment (Achordion submit on scrobble, love push)
+    // still gets a recording MBID when mapper.listenbrainz.org is 502 or
+    // hasn't indexed the recording yet. Parachord-mobile shipped the same
+    // fallback at @51c6cc1 (parachord#887). Deliberately NOT written to
+    // mbidMapperCache: the ISRC endpoint returns only recording_mbid (no
+    // artist/release MBIDs, no canonical names), so caching it would
+    // block a richer mapper entry once the mapper recovers. Track-level
+    // mutation alone is enough — `if (track.mbid) return` above short-
+    // circuits on the next call for the same track.
+    if (track.isrc && window.resolveMbidViaIsrc) {
+      const isrcMbid = await window.resolveMbidViaIsrc(track.isrc);
+      if (isrcMbid) {
+        track.mbid = isrcMbid;
+      }
     }
   };
 
