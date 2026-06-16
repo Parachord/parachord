@@ -505,6 +505,17 @@
       height: 72px;
       width: auto;
       color: #1a1a1a;
+      /* `display: block` is load-bearing. SVG defaults to display: inline,
+         which means the element has a baseline + descender space below
+         it. While the splash is the only DOM in play (HTML parse phase),
+         the inline-SVG's effective position is determined by the body's
+         default line-height. When app.js mounts and Tailwind's reset
+         injects `line-height` on the document, the SVG's inline-box
+         vertical position recomputes by a few pixels — visible to the
+         user as "the wordmark shifted up" right before the splash fades.
+         display: block takes the SVG out of inline flow so its position
+         is identical before and after the reset arrives. */
+      display: block;
     }
 
     .dark .loading-wordmark-svg {
@@ -559,6 +570,15 @@
     #parachord-splash.fade-out {
       opacity: 0;
       pointer-events: none;
+    }
+    /* Freeze the pulse the moment the fade starts. Without this, the
+       wordmark's opacity keeps animating between 0.55 and 1 underneath
+       the splash overlay's 1→0 fade, multiplying into an uneven exit
+       curve that can read as "the wordmark dimmed early then snapped
+       back" depending on which pulse frame the fade caught. */
+    #parachord-splash.fade-out .loading-wordmark-svg {
+      animation: none;
+      opacity: 1;
     }
 
     /* Queue icon pulse animation */
