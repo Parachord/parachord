@@ -42,6 +42,19 @@ class MetadataReader {
       year: metadata.common.year || null,
       genre: metadata.common.genre?.[0] || null,
       duration,
+      // music-metadata returns ISRC as common.isrc (array of strings — a
+      // recording can technically have multiple registered ISRCs; the first
+      // is the canonical one used everywhere downstream). Normalize to
+      // upper-case once at capture so the renderer-side helpers don't have
+      // to. Validates the canonical format so a malformed tag doesn't
+      // poison the source record (resolveMbidViaIsrc would just no-op on a
+      // bad value anyway, but explicit-skip is clearer).
+      isrc: (() => {
+        const raw = metadata.common.isrc?.[0];
+        if (typeof raw !== 'string' || !raw) return null;
+        const norm = raw.trim().toUpperCase();
+        return /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(norm) ? norm : null;
+      })(),
 
       // Format info
       format: path.extname(filePath).slice(1).toLowerCase(),

@@ -190,7 +190,8 @@ class LocalFilesService {
           filePath: track.file_path,
           fileUrl: `file://${track.file_path}`,
           confidence: track.confidence || 1.0,
-          duration: track.duration
+          duration: track.duration,
+          isrc: track.isrc || null
         }
       }
     };

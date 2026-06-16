@@ -38,6 +38,7 @@ class LocalFilesDatabase {
         year INTEGER,
         genre TEXT,
         duration REAL,
+        isrc TEXT,
 
         format TEXT,
         bitrate INTEGER,
@@ -72,6 +73,15 @@ class LocalFilesDatabase {
       CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_normalized);
       CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path);
     `);
+
+    // Idempotent migration for existing DBs created before the `isrc`
+    // column existed. CREATE TABLE IF NOT EXISTS above is a no-op for
+    // them, so the column has to be added explicitly. PRAGMA check
+    // keeps this safe to run on every startup.
+    const columns = this.db.prepare("PRAGMA table_info(tracks)").all();
+    if (!columns.some(c => c.name === 'isrc')) {
+      this.db.exec("ALTER TABLE tracks ADD COLUMN isrc TEXT");
+    }
   }
 
   normalize(str) {
@@ -124,7 +134,7 @@ class LocalFilesDatabase {
       INSERT OR REPLACE INTO tracks (
         file_path, file_hash, modified_at,
         title, artist, album, album_artist,
-        track_number, disc_number, year, genre, duration,
+        track_number, disc_number, year, genre, duration, isrc,
         format, bitrate, sample_rate,
         has_embedded_art, folder_art_path,
         indexed_at,
@@ -132,7 +142,7 @@ class LocalFilesDatabase {
       ) VALUES (
         ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?,
         ?,
@@ -142,7 +152,7 @@ class LocalFilesDatabase {
     return stmt.run(
       track.filePath, track.fileHash, track.modifiedAt,
       track.title, track.artist, track.album, track.albumArtist,
-      track.trackNumber, track.discNumber, track.year, track.genre, track.duration,
+      track.trackNumber, track.discNumber, track.year, track.genre, track.duration, track.isrc || null,
       track.format, track.bitrate, track.sampleRate,
       track.hasEmbeddedArt ? 1 : 0, track.folderArtPath,
       Date.now(),
