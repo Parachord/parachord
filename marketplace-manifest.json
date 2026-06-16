@@ -490,7 +490,7 @@
       "id": "achordion",
       "name": "Achordion",
       "type": "meta-service",
-      "version": "1.0.7",
+      "version": "1.0.9",
       "author": "Parachord Team",
       "description": "Speed up resolver matches across the community. After a verified playback, sends the recording's MusicBrainz ID and streaming-service URLs to Achordion's match cache so other Parachord users can skip the search step. No personal data is sent.",
       "icon": "📡",
