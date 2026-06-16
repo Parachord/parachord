@@ -387,6 +387,42 @@ window.resolveMbidViaIsrc = async (isrc) => {
   }
 };
 
+// Pick an ISRC from a track. ISRC is per-recording, not per-service, so
+// any valid match anywhere on the track object is authoritative.
+//
+// Checks top-level `track.isrc` first (where the native MusicKit AM path
+// and the iTunes-Search-fallback put it), then walks each
+// `track.sources[*].isrc` (where Spotify writes it after parachord#893,
+// and where Apple Music's source record carries it because the resolver
+// result is spread into the source). Validates the canonical ISRC format
+// (2-letter country + 3-char alphanumeric registrant + 7 digits) and
+// normalizes (trim + uppercase) before returning.
+//
+// Returns null when no source carries a usable one. Skips sources with
+// `noMatch` set — those are dropped resolutions, not real source links.
+//
+// Mirrors the achordion.axe `resolveIsrc` helper (parachord#892) — same
+// rules so the two stay byte-equivalent across desktop's two ISRC sites.
+window.pickTrackIsrc = function(track) {
+  if (!track) return null;
+  const isValidIsrc = (s) => typeof s === 'string' && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(s);
+  if (typeof track.isrc === 'string' && track.isrc) {
+    const norm = track.isrc.trim().toUpperCase();
+    if (isValidIsrc(norm)) return norm;
+  }
+  if (track.sources) {
+    for (const id of Object.keys(track.sources)) {
+      const s = track.sources[id];
+      if (!s || s.noMatch) continue;
+      if (typeof s.isrc === 'string' && s.isrc) {
+        const norm = s.isrc.trim().toUpperCase();
+        if (isValidIsrc(norm)) return norm;
+      }
+    }
+  }
+  return null;
+};
+
 // Resolve a track to a recording MBID for ListenBrainz love submission.
 // Four tiers:
 //   1. Cached track.mbid (instant)
@@ -428,14 +464,19 @@ window.resolveMbidForLove = async (track) => {
     // Mapper network error — fall through to tier 3.
   }
 
-  // Tier 3: Exact ISRC → MBID. Only fires when track.isrc is present
-  // (Spotify and Apple Music capture it at resolution time; SoundCloud /
-  // local files / iTunes no-auth search don't). Runs against MB core,
-  // which stays up when mapper.listenbrainz.org doesn't.
-  if (track.isrc) {
-    const isrcMbid = await window.resolveMbidViaIsrc(track.isrc);
+  // Tier 3: Exact ISRC → MBID. Fires whenever ISRC is present anywhere
+  // on the track — top-level `track.isrc` OR on any `track.sources[*]`.
+  // The latter case matters: Spotify (after parachord#893) writes ISRC
+  // onto its source record, never to top-level, so a pure-`track.isrc`
+  // check would miss Spotify-resolved tracks. SoundCloud / local files /
+  // iTunes no-auth search still don't expose ISRC and are filtered out
+  // naturally. Runs against MB core, which stays up when the LB mapper
+  // doesn't.
+  const isrc = window.pickTrackIsrc(track);
+  if (isrc) {
+    const isrcMbid = await window.resolveMbidViaIsrc(isrc);
     if (isrcMbid) {
-      console.log(`[resolveMbidForLove] ISRC fallback resolved "${track.artist} – ${track.title}" via ${track.isrc}`);
+      console.log(`[resolveMbidForLove] ISRC fallback resolved "${track.artist} – ${track.title}" via ${isrc}`);
       return isrcMbid;
     }
   }
@@ -9687,8 +9728,9 @@ const Parachord = () => {
     // block a richer mapper entry once the mapper recovers. Track-level
     // mutation alone is enough — `if (track.mbid) return` above short-
     // circuits on the next call for the same track.
-    if (track.isrc && window.resolveMbidViaIsrc) {
-      const isrcMbid = await window.resolveMbidViaIsrc(track.isrc);
+    const isrc = window.pickTrackIsrc ? window.pickTrackIsrc(track) : (track.isrc || null);
+    if (isrc && window.resolveMbidViaIsrc) {
+      const isrcMbid = await window.resolveMbidViaIsrc(isrc);
       if (isrcMbid) {
         track.mbid = isrcMbid;
       }
