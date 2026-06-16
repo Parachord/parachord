@@ -9468,31 +9468,33 @@ const Parachord = () => {
   const [cacheLoaded, setCacheLoaded] = useState(false); // Track when persistent cache is loaded
 
   // Fade out the body-level splash overlay (#parachord-splash, in
-  // index.html) once cacheLoaded flips. Two requestAnimationFrame ticks
-  // hold the fade until after the home-page React commit has painted,
-  // otherwise the splash would fade over an unpainted/half-painted home
-  // page — visually choppier than the cold "splash → app" cut it
-  // replaces. Removes the element from the DOM after the 350ms CSS
-  // transition completes so it doesn't continue capturing any (already
-  // disabled via pointer-events: none) hit-testing or paint cycles.
+  // index.html) once cacheLoaded flips. Earlier iteration used rAF×2
+  // (~32ms) to hold the fade until after the home-page React commit
+  // painted, but the home tree's initial commit + layout + paint takes
+  // closer to ~150-200ms — the splash was already half-faded by the
+  // time the cards/sidebar finished laying out, so the user saw the
+  // home page popping in mid-fade. Now: one rAF (yields to the
+  // browser so the React commit can flush + paint) then a 200ms
+  // setTimeout (covers the home page's first round of async data
+  // resolution). 500ms fade matches the longer transition in
+  // index.html's CSS; element is removed 550ms after fade starts.
   useEffect(() => {
     if (!cacheLoaded) return;
     const splash = typeof document !== 'undefined' && document.getElementById('parachord-splash');
     if (!splash) return;
+    let fadeTimer = null;
     let removeTimer = null;
-    const raf1 = requestAnimationFrame(() => {
-      const raf2Id = requestAnimationFrame(() => {
+    const rafId = requestAnimationFrame(() => {
+      fadeTimer = setTimeout(() => {
         splash.classList.add('fade-out');
         removeTimer = setTimeout(() => {
           if (splash.parentNode) splash.parentNode.removeChild(splash);
-        }, 400);
-      });
-      // Stash the inner rAF id so cleanup can cancel it too.
-      splash._raf2 = raf2Id;
+        }, 550);
+      }, 200);
     });
     return () => {
-      cancelAnimationFrame(raf1);
-      if (splash._raf2) cancelAnimationFrame(splash._raf2);
+      cancelAnimationFrame(rafId);
+      if (fadeTimer) clearTimeout(fadeTimer);
       if (removeTimer) clearTimeout(removeTimer);
     };
   }, [cacheLoaded]);

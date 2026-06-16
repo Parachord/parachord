@@ -501,11 +501,6 @@
        (#1a1a1a in light, #f9fafb in dark) instead of two PNG variants.
        Crisper rendering than the previous PNG approach + saves ~150KB at
        splash time. */
-    @keyframes loadingLetterPopIn {
-      from { opacity: 0; transform: translateY(6px) scale(0.92); }
-      to   { opacity: 1; transform: translateY(0) scale(1); }
-    }
-
     .loading-wordmark-svg {
       height: 72px;
       width: auto;
@@ -516,27 +511,20 @@
       color: #f9fafb;
     }
 
-    /* Letter-by-letter reveal only. The original splash had a continuous
-       shimmer cascade with a brand-red drop-shadow glow, designed for the
-       multi-second load window before cacheLoaded flipped (#879, #883).
-       Cache load now finishes in well under a second on warm starts, so
-       the shimmer either flashed once awkwardly or never played at all —
-       removed it in favor of the cleaner pop-in cascade. */
+    /* No entrance animation. The earlier per-letter pop-in cascade
+       (0–1.04s total) couldn't survive cold launch: vendor + app.js
+       parse blocks the main thread for ~1s, during which the CSS
+       animation engine advances on wall-clock time but the compositor
+       can't push frames. Letter-1 painted once before the block, then
+       letters 2–9 all snapped to their final state in the first paint
+       after the block — visible as "P, pause, everything-at-once."
+       Showing the wordmark fully revealed from T=0 is the only
+       reliable option until we eliminate the main-thread block
+       altogether. The body-level splash → app crossfade in app.js
+       (see useEffect on cacheLoaded) carries the motion now. */
     .loading-wordmark-svg .letter {
-      opacity: 0;
-      transform-box: fill-box;
-      transform-origin: center;
-      animation: loadingLetterPopIn 0.32s cubic-bezier(0.22, 1.2, 0.36, 1) forwards;
+      opacity: 1;
     }
-    .loading-wordmark-svg .letter-1 { animation-delay: 0.00s; }
-    .loading-wordmark-svg .letter-2 { animation-delay: 0.09s; }
-    .loading-wordmark-svg .letter-3 { animation-delay: 0.18s; }
-    .loading-wordmark-svg .letter-4 { animation-delay: 0.27s; }
-    .loading-wordmark-svg .letter-5 { animation-delay: 0.36s; }
-    .loading-wordmark-svg .letter-6 { animation-delay: 0.45s; }
-    .loading-wordmark-svg .letter-7 { animation-delay: 0.54s; }
-    .loading-wordmark-svg .letter-8 { animation-delay: 0.63s; }
-    .loading-wordmark-svg .letter-9 { animation-delay: 0.72s; }
 
     /* Body-level splash overlay. Sits above the React tree (z-index 10000)
        and is the only visual the user sees while HTML parses, scripts load,
@@ -557,7 +545,7 @@
       justify-content: center;
       z-index: 10000;
       opacity: 1;
-      transition: opacity 350ms ease-out;
+      transition: opacity 500ms ease-out;
     }
     #parachord-splash.fade-out {
       opacity: 0;
