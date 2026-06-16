@@ -426,6 +426,18 @@ class ListenBrainzScrobbler extends BaseScrobbler {
       if (valid.length > 0) out.artist_mbids = valid;
     }
 
+    // Group 4: ISRC. Recognized `additional_info` field on LB — server
+    // preserves and surfaces it on the listen. Once the listen carries
+    // the ISRC, Achordion's reader matches the play to the exact
+    // recording directly, no fuzzy artist/title hop. Resolution reuses
+    // window.pickTrackIsrc (parachord#894) — top-level then sources walk,
+    // canonical regex + uppercase normalization — so byte-equivalent to
+    // what the achordion track-links submit (parachord#892) sends.
+    if (typeof window !== 'undefined' && typeof window.pickTrackIsrc === 'function') {
+      const isrc = window.pickTrackIsrc(track);
+      if (isrc) out.isrc = isrc;
+    }
+
     return out;
   }
 
@@ -445,7 +457,7 @@ class ListenBrainzScrobbler extends BaseScrobbler {
           additional_info: {
             media_player: 'Parachord',
             submission_client: 'Parachord',
-            submission_client_version: '1.0.0',
+            submission_client_version: '1.1.0',
             duration_ms: track.duration ? track.duration * 1000 : undefined,
             ...this._deriveSourceEnrichment(track)
           }
@@ -486,7 +498,7 @@ class ListenBrainzScrobbler extends BaseScrobbler {
           additional_info: {
             media_player: 'Parachord',
             submission_client: 'Parachord',
-            submission_client_version: '1.0.0',
+            submission_client_version: '1.1.0',
             duration_ms: track.duration ? track.duration * 1000 : undefined,
             ...this._deriveSourceEnrichment(track)
           }
