@@ -506,64 +506,37 @@
       to   { opacity: 1; transform: translateY(0) scale(1); }
     }
 
-    /* Shimmer cascade — each letter pops up and lights up with a brand-red
-       glow as the wave passes through. Per-letter animation-delays (below)
-       stagger the pops left-to-right, so the visual effect is a wave of
-       energy travelling across the wordmark every cycle. Triggered AFTER
-       the letter reveal: pop-in (0–1.0s) → settle (~0.6s) → continuous
-       shimmer. Asymmetric timing (peak at 35%, fully settled by 70%)
-       gives a quick rise + softer landing per letter. */
-    @keyframes loadingLetterShimmer {
-      0%, 100% {
-        transform: translateY(0) scale(1);
-        filter: drop-shadow(0 0 0 rgba(225, 41, 73, 0));
-      }
-      35% {
-        transform: translateY(-6px) scale(1.12);
-        filter: drop-shadow(0 0 14px rgba(225, 41, 73, 0.7));
-      }
-      70% {
-        transform: translateY(0) scale(1);
-        filter: drop-shadow(0 0 0 rgba(225, 41, 73, 0));
-      }
-    }
-
     .loading-wordmark-svg {
       height: 72px;
       width: auto;
       color: #1a1a1a;
-      /* Allow letter transforms (lift + scale) and drop-shadow glow to
-         render outside the viewBox. Without this, the play-triangle
-         accent on the "d" gets clipped at the top edge when letter-9
-         lifts during the shimmer cascade, and the feather descender on
-         the "p" clips at the bottom (parachord#878). */
-      overflow: visible;
     }
 
     .dark .loading-wordmark-svg {
       color: #f9fafb;
     }
 
+    /* Letter-by-letter reveal only. The original splash had a continuous
+       shimmer cascade with a brand-red drop-shadow glow, designed for the
+       multi-second load window before cacheLoaded flipped (#879, #883).
+       Cache load now finishes in well under a second on warm starts, so
+       the shimmer either flashed once awkwardly or never played at all —
+       removed it in favor of the cleaner pop-in cascade. */
     .loading-wordmark-svg .letter {
       opacity: 0;
       transform-box: fill-box;
       transform-origin: center;
-      animation:
-        loadingLetterPopIn 0.32s cubic-bezier(0.22, 1.2, 0.36, 1) forwards,
-        loadingLetterShimmer 2.6s ease-in-out infinite;
+      animation: loadingLetterPopIn 0.32s cubic-bezier(0.22, 1.2, 0.36, 1) forwards;
     }
-    /* Two delays per letter: (1) pop-in entrance — 90ms cascade right;
-       (2) shimmer kickoff — starts ~0.7s after the reveal completes
-       (which is at 1.04s = 0.72 + 0.32), then cascades again. */
-    .loading-wordmark-svg .letter-1 { animation-delay: 0.00s, 1.7s; }
-    .loading-wordmark-svg .letter-2 { animation-delay: 0.09s, 1.8s; }
-    .loading-wordmark-svg .letter-3 { animation-delay: 0.18s, 1.9s; }
-    .loading-wordmark-svg .letter-4 { animation-delay: 0.27s, 2.0s; }
-    .loading-wordmark-svg .letter-5 { animation-delay: 0.36s, 2.1s; }
-    .loading-wordmark-svg .letter-6 { animation-delay: 0.45s, 2.2s; }
-    .loading-wordmark-svg .letter-7 { animation-delay: 0.54s, 2.3s; }
-    .loading-wordmark-svg .letter-8 { animation-delay: 0.63s, 2.4s; }
-    .loading-wordmark-svg .letter-9 { animation-delay: 0.72s, 2.5s; }
+    .loading-wordmark-svg .letter-1 { animation-delay: 0.00s; }
+    .loading-wordmark-svg .letter-2 { animation-delay: 0.09s; }
+    .loading-wordmark-svg .letter-3 { animation-delay: 0.18s; }
+    .loading-wordmark-svg .letter-4 { animation-delay: 0.27s; }
+    .loading-wordmark-svg .letter-5 { animation-delay: 0.36s; }
+    .loading-wordmark-svg .letter-6 { animation-delay: 0.45s; }
+    .loading-wordmark-svg .letter-7 { animation-delay: 0.54s; }
+    .loading-wordmark-svg .letter-8 { animation-delay: 0.63s; }
+    .loading-wordmark-svg .letter-9 { animation-delay: 0.72s; }
 
     /* Queue icon pulse animation */
     @keyframes queue-pulse {
