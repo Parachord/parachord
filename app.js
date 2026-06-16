@@ -22569,9 +22569,16 @@ ${trackListXml}
 
       // Load new releases cache and show instantly on Home
       if (newReleasesData && newReleasesData.releases && newReleasesData.timestamp != null) {
-        // Filter out broadcasts that may have been cached before the filter was added
+        // Filter out broadcasts that may have been cached before the filter was
+        // added, and drop releases dated more than 2 weeks out — pre-existing
+        // caches written before the +14d upper bound (fetchReleasesForArtists)
+        // may carry months-out announcements that the user doesn't want to see.
+        const upperFuture = new Date();
+        upperFuture.setDate(upperFuture.getDate() + 14);
+        const upperCutoffDate = upperFuture.toISOString().split('T')[0];
         const filteredReleases = newReleasesData.releases.filter(r =>
           r.releaseType !== 'broadcast' && !(r.secondaryTypes || []).includes('broadcast')
+          && (!r.date || r.date <= upperCutoffDate)
         );
         const now = Date.now();
         if (now - newReleasesData.timestamp < CACHE_TTL.newReleases) {
@@ -29121,6 +29128,16 @@ ${tracks}
     let artistsProcessed = 0;
     const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' };
 
+    // Upper bound: drop release-groups dated more than 2 weeks out. MB
+    // ingests pre-announcement release-groups months ahead (album reveals,
+    // pre-orders) — without this cap, Fresh Drops became a "future
+    // announcement feed" that pushed actually-fresh releases off the top.
+    // 2 weeks is enough to surface upcoming drops the user might want to
+    // pre-save without including reveals for things 6 months out.
+    const upperFuture = new Date();
+    upperFuture.setDate(upperFuture.getDate() + 14);
+    const upperCutoffDate = upperFuture.toISOString().split('T')[0];
+
     // Fetch with a timeout to prevent a single hanging request from stalling the loop
     const fetchWithTimeout = (url, options, timeoutMs = 10000) => {
       const controller = new AbortController();
@@ -29196,7 +29213,7 @@ ${tracks}
 
           releaseGroups.forEach(rg => {
             const releaseDate = rg['first-release-date'] || '';
-            if (releaseDate && releaseDate >= cutoffDate) {
+            if (releaseDate && releaseDate >= cutoffDate && releaseDate <= upperCutoffDate) {
               const primaryType = (rg['primary-type'] || '').toLowerCase();
               const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
 
