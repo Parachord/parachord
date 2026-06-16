@@ -14,6 +14,14 @@ Main component: `const Parachord = () => { ... }` (L4951), rendered via `ReactDO
 - Each track has a `sources` object keyed by resolver ID — playback picks the highest-priority available source above the confidence floor
 - Resolvers loaded into `loadedResolversRef` (L7756) with `.play()`, `.search()`, `.capabilities`
 
+### Resolver Result Shape
+
+Resolver `.search()` and `.resolve()` results spread into `track.sources[resolverId]` via `{ ...result, confidence }`. The shape is conventional rather than typed — fields a resolver populates show up as `track.sources[id].<field>`. The required fields are obvious from the resolver implementations: `id`, `title`, `artist`, `album`, `duration`. The interesting set is the **optional cross-cutting metadata** that downstream consumers walk for, regardless of which resolver populated it:
+
+- **`isrc?: string`** — recording ISRC, normalized to upper-case + trimmed, format `[A-Z]{2}[A-Z0-9]{3}\d{7}`. Capture from every API response that exposes it; leave undefined for the rest. Currently populated by: Spotify (`external_ids.isrc` on `/v1/search`, `/v1/tracks/{id}`, `/v1/playlists/{id}/tracks` — parachord#893), Apple Music native MusicKit (`song.isrc`), local files (ID3 TSRC / Vorbis ISRC / MP4 atom via music-metadata's `common.isrc` — parachord#895). Bandcamp / SoundCloud / YouTube / iTunes Search API don't expose ISRC; leave undefined. **Downstream consumers** walk `track.sources[*].isrc` (with top-level `track.isrc` as fallback) via `window.pickTrackIsrc(track)` — currently used by the ISRC→MBID fallback in `resolveMbidForLove` tier 3 + `enrichTrackWithMbid` (parachord#888 + #894) and the achordion submit ISRC-only fallback (parachord#892). New consumers should reuse `pickTrackIsrc` rather than reading `track.isrc` directly so a Spotify-resolved track with no top-level ISRC still works.
+
+The principle generalizes: any cross-cutting metadata (ISRC today; potentially BPM, key, release year, etc. later) belongs on the source record so downstream consumers can walk sources and pick from any resolver that captured it. Resolver-specific identifiers (`spotifyId`, `appleMusicId`, `bandcampUrl`) stay on the source record for the resolver that owns them.
+
 ### Match Confidence + Selection Floor
 
 Source selection is a **two-stage gate**: validate, then sort. Without the floor, a higher-priority resolver's wrong-artist match silently outranks a correct lower-priority result, because confidence is otherwise only a within-priority tiebreaker.
