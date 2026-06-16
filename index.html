@@ -501,21 +501,34 @@
        (#1a1a1a in light, #f9fafb in dark) instead of two PNG variants.
        Crisper rendering than the previous PNG approach + saves ~150KB at
        splash time. */
+    /* Pin the wordmark to viewport center via fixed positioning +
+       translate. Earlier attempts using flex centering inside the
+       splash overlay (#898) didn't kill a ~20px vertical jump the user
+       still sees right before fade — 20px is too large for a font-
+       baseline computation, so the root cause must be flex-container
+       or parent-layout recompute somewhere in the React-mount window
+       (Tailwind's preflight reset arriving, the body's line-height
+       changing, etc), not a text-baseline shift.
+
+       Cutting the dependency entirely: the SVG positions itself
+       independently of the splash container's layout. position:fixed
+       + transform: translate(-50%, -50%) anchors it to the viewport
+       directly. The splash container (#parachord-splash) no longer
+       flex-centers anything — it just hosts the gradient background
+       and the fade-out opacity transition. will-change promotes the
+       SVG to its own compositor layer so the transform can't be
+       invalidated by main-thread layout work either. The position
+       computation now depends on viewport dimensions alone. */
     .loading-wordmark-svg {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       height: 72px;
       width: auto;
       color: #1a1a1a;
-      /* `display: block` is load-bearing. SVG defaults to display: inline,
-         which means the element has a baseline + descender space below
-         it. While the splash is the only DOM in play (HTML parse phase),
-         the inline-SVG's effective position is determined by the body's
-         default line-height. When app.js mounts and Tailwind's reset
-         injects `line-height` on the document, the SVG's inline-box
-         vertical position recomputes by a few pixels — visible to the
-         user as "the wordmark shifted up" right before the splash fades.
-         display: block takes the SVG out of inline flow so its position
-         is identical before and after the reset arrives. */
       display: block;
+      will-change: opacity, transform;
     }
 
     .dark .loading-wordmark-svg {
@@ -560,12 +573,14 @@
     #parachord-splash {
       position: fixed;
       inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       z-index: 10000;
       opacity: 1;
       transition: opacity 500ms ease-out;
+      /* No flex centering — the SVG positions itself via position:fixed
+         + transform (see .loading-wordmark-svg). #parachord-splash just
+         provides the gradient background (via .loading-screen class)
+         and the fade-out opacity transition. Removing flex eliminates
+         the recompute path that was causing the 20px jump. */
     }
     #parachord-splash.fade-out {
       opacity: 0;
