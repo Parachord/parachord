@@ -699,13 +699,62 @@ async function waitForLocalFilesService() {
   });
 }
 
+// Read the persisted window bounds (parachord#878 splash-jump fix).
+//
+// Why this exists: the window used to be created at a hardcoded 1400x900
+// and shown. On macOS the OS then restored the window to its actual
+// last-session size *after* show() — so the splash painted at 1400x900,
+// the window resized to the real size a beat later, and the
+// viewport-centered splash wordmark visibly "jumped" as the viewport
+// dimensions changed under it. (No CSS centering trick can fix that —
+// center genuinely moves when the viewport resizes.) Persisting the
+// bounds ourselves and applying them in the constructor means the window
+// is BORN at its final size, there's no post-show resize, and the splash
+// is stable from the first painted frame.
+//
+// Returns { width, height, x?, y? } or null. x/y are only included when
+// the saved position still lands on a currently-connected display
+// (guards against a window opening off-screen after a monitor is
+// unplugged). Size is clamped to the min dimensions.
+function getSavedWindowBounds() {
+  try {
+    const saved = store.get('window_bounds');
+    if (!saved || typeof saved.width !== 'number' || typeof saved.height !== 'number') return null;
+    const width = Math.max(1000, Math.round(saved.width));
+    const height = Math.max(600, Math.round(saved.height));
+    if (typeof saved.x === 'number' && typeof saved.y === 'number') {
+      const { screen } = require('electron');
+      const onScreen = screen.getAllDisplays().some(d => {
+        const wa = d.workArea;
+        // The saved rect must overlap this display's work area to count
+        // as visible (a partial overlap is fine — the user can drag it
+        // back; fully off-screen is the failure we're guarding against).
+        return saved.x < wa.x + wa.width &&
+               saved.x + width > wa.x &&
+               saved.y < wa.y + wa.height &&
+               saved.y + height > wa.y;
+      });
+      if (onScreen) return { x: Math.round(saved.x), y: Math.round(saved.y), width, height };
+      return { width, height }; // off-screen position → keep size, let it center
+    }
+    return { width, height };
+  } catch (e) {
+    return null;
+  }
+}
+
 function createWindow() {
   console.log('Creating main window...');
   console.log('Preload path:', path.join(__dirname, 'preload.js'));
-  
+
+  const savedBounds = getSavedWindowBounds();
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: savedBounds?.width || 1400,
+    height: savedBounds?.height || 900,
+    ...(savedBounds && typeof savedBounds.x === 'number'
+      ? { x: savedBounds.x, y: savedBounds.y }
+      : {}),
     minWidth: 1000,
     minHeight: 600,
     // Hidden title bar on macOS only — macOS menus live in the system menu bar,
@@ -831,6 +880,33 @@ function createWindow() {
     const { shell } = require('electron');
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Persist window bounds so the next launch is BORN at this size — no
+  // post-show resize, no splash-wordmark jump (parachord#878). Only save
+  // "normal" bounds: when maximized / fullscreen / minimized, getBounds()
+  // returns the special-state rect, so we skip and keep the last normal
+  // size to restore to. Debounced because resize/move fire continuously
+  // during a drag.
+  let boundsSaveTimer = null;
+  const persistWindowBounds = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized() || mainWindow.isMaximized() || mainWindow.isFullScreen()) return;
+    try {
+      store.set('window_bounds', mainWindow.getBounds());
+    } catch (e) {
+      console.warn('Failed to persist window bounds:', e && e.message);
+    }
+  };
+  const scheduleBoundsSave = () => {
+    if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
+    boundsSaveTimer = setTimeout(persistWindowBounds, 400);
+  };
+  mainWindow.on('resize', scheduleBoundsSave);
+  mainWindow.on('move', scheduleBoundsSave);
+  mainWindow.on('close', () => {
+    if (boundsSaveTimer) { clearTimeout(boundsSaveTimer); boundsSaveTimer = null; }
+    persistWindowBounds();
   });
 
   mainWindow.on('closed', () => {
