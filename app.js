@@ -9507,6 +9507,14 @@ const Parachord = () => {
   // Cache for album art URLs (releaseId -> { url, timestamp })
   const albumArtCache = useRef({});
   const [cacheLoaded, setCacheLoaded] = useState(false); // Track when persistent cache is loaded
+  // Flips true after the body-level #parachord-splash overlay is fully
+  // removed from the DOM. Gates the home view's hero wordmark img — see
+  // the home hero render block for why: without this, the wordmark
+  // visibly "jumps" from the splash's viewport-center position up to
+  // the hero's centered-inside-280px-header position right as the splash
+  // fades, because both wordmarks are momentarily visible at different Y
+  // coordinates and the eye tracks between them.
+  const [splashRemoved, setSplashRemoved] = useState(false);
 
   // Fade out the body-level splash overlay (#parachord-splash, in
   // index.html) once (a) cacheLoaded flips AND (b) the document is
@@ -9542,6 +9550,7 @@ const Parachord = () => {
         splash.classList.add('fade-out');
         removeTimer = setTimeout(() => {
           if (splash.parentNode) splash.parentNode.removeChild(splash);
+          setSplashRemoved(true);
         }, 550);
       }, 450);  // Post-visibility hold so the wordmark is on screen
                 // long enough to read as a splash (not a single-frame
@@ -45202,12 +45211,26 @@ useEffect(() => {
             !homeHeaderCollapsed && React.createElement('div', {
               className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10'
             },
-              // Parachord wordmark centered above title
+              // Parachord wordmark centered above title.
+              // opacity is gated on splashRemoved to avoid a perceived
+              // "wordmark jump" right when the splash fades: the splash
+              // SVG sits at viewport center, but this img sits at the
+              // hero's centered-inside-280px-header position (much
+              // higher), so both being visible during the fade reads
+              // as the wordmark jumping up. Holding this at opacity 0
+              // until the splash overlay is fully gone — then fading
+              // in over 350ms — gives the eye a single visual event
+              // instead of a track-between-two.
               React.createElement('img', {
                 src: 'assets/icons/logo-wordmark-white.png',
                 alt: 'Parachord',
                 className: 'mb-4',
-                style: { height: '38px', width: 'auto' }
+                style: {
+                  height: '38px',
+                  width: 'auto',
+                  opacity: splashRemoved ? 1 : 0,
+                  transition: 'opacity 350ms ease-out'
+                }
               }),
               // Title (matching other page headers)
               React.createElement('h1', {
@@ -45238,11 +45261,18 @@ useEffect(() => {
                 },
                 onContextMenu: copyParachordLink
               }, 'HOME'),
-              // Parachord wordmark on the right
+              // Parachord wordmark on the right. Same splashRemoved
+              // gate as the expanded-header variant — see the longer
+              // comment up there for why.
               React.createElement('img', {
                 src: 'assets/icons/logo-wordmark-white.png',
                 alt: 'Parachord',
-                style: { height: '26px', width: 'auto' }
+                style: {
+                  height: '26px',
+                  width: 'auto',
+                  opacity: splashRemoved ? 1 : 0,
+                  transition: 'opacity 350ms ease-out'
+                }
               })
             )
           ),
