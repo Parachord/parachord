@@ -501,30 +501,36 @@
        (#1a1a1a in light, #f9fafb in dark) instead of two PNG variants.
        Crisper rendering than the previous PNG approach + saves ~150KB at
        splash time. */
-    /* Pin the wordmark to viewport center via fixed positioning +
-       translate. Earlier attempts using flex centering inside the
-       splash overlay (#898) didn't kill a ~20px vertical jump the user
-       still sees right before fade — 20px is too large for a font-
-       baseline computation, so the root cause must be flex-container
-       or parent-layout recompute somewhere in the React-mount window
-       (Tailwind's preflight reset arriving, the body's line-height
-       changing, etc), not a text-baseline shift.
+    /* Position + size the splash wordmark to overlay the home view's
+       hero PNG wordmark EXACTLY. When the splash fades, the home view
+       underneath has its own <img> wordmark at the hero's flex-centered
+       position; before this change the splash SVG sat at viewport
+       center and the PNG sat ~200px higher inside the 280px hero, so
+       the eye saw both at different positions during the fade and
+       read it as the wordmark "jumping up". Matching coordinates +
+       size means the dark splash SVG dissolves into the white PNG at
+       identical pixel positions — visually a single wordmark whose
+       color crossfades during the splash dismissal.
 
-       Cutting the dependency entirely: the SVG positions itself
-       independently of the splash container's layout. position:fixed
-       + transform: translate(-50%, -50%) anchors it to the viewport
-       directly. The splash container (#parachord-splash) no longer
-       flex-centers anything — it just hosts the gradient background
-       and the fade-out opacity transition. will-change promotes the
-       SVG to its own compositor layer so the transform can't be
-       invalidated by main-thread layout work either. The position
-       computation now depends on viewport dimensions alone. */
+       Coordinates:
+         - left: calc(50vw + 128px). Sidebar is w-64 (256px) on the
+           left; content area is the rest. Content-area horizontal
+           center = 256 + (100vw - 256) / 2 = 128 + 50vw.
+         - top: ~87px. Home hero header is 280px tall (expanded — cold
+           launch's default state, not persisted). Inside is a flex
+           column centering {wordmark, mb-4 (16px), HOME h1 (~48px
+           text-5xl line-box), mt-6 (24px), subtitle p (~18px)} =
+           ~144px stack. Stack starts at (280-144)/2 = 68px from
+           hero top, wordmark top at 68px, wordmark center at
+           68 + 19 = 87px.
+         - height: 38px. Matches the PNG <img height='38px'>.
+       Translate(-50%, -50%) keeps top/left meaning "wordmark center". */
     .loading-wordmark-svg {
       position: fixed;
-      top: 50%;
-      left: 50%;
+      top: 87px;
+      left: calc(50vw + 128px);
       transform: translate(-50%, -50%);
-      height: 72px;
+      height: 38px;
       width: auto;
       color: #1a1a1a;
       display: block;
