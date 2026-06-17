@@ -45198,22 +45198,16 @@ useEffect(() => {
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'40\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'25\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'10\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3C/g%3E%3C/svg%3E")'
               }
             }),
-            // EXPANDED STATE
+            // EXPANDED STATE — title + subtitle only. The Parachord
+            // wordmark img used to render above the title here but was
+            // removed: it sat at a different Y position than the splash
+            // SVG and the user saw a "wordmark jump" as the splash
+            // faded into it. Keeping the home hero without a second
+            // wordmark lets the splash stay viewport-centered and just
+            // fade away cleanly with no competing element.
             !homeHeaderCollapsed && React.createElement('div', {
               className: 'absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10'
             },
-              // Parachord wordmark centered above title. The splash
-              // overlay's SVG wordmark is positioned + sized to overlay
-              // this img exactly (see #parachord-splash CSS in
-              // index.html), so when the splash fades the dark splash
-              // SVG dissolves into this white PNG at the identical
-              // viewport coordinates — no perceived jump.
-              React.createElement('img', {
-                src: 'assets/icons/logo-wordmark-white.png',
-                alt: 'Parachord',
-                className: 'mb-4',
-                style: { height: '38px', width: 'auto' }
-              }),
               // Title (matching other page headers)
               React.createElement('h1', {
                 className: 'text-5xl font-light text-white',
@@ -45230,9 +45224,10 @@ useEffect(() => {
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.3)' }
               }, `${collectionData.albums.length} albums · ${collectionData.artists.length} artists · ${playlists.length} playlists`)
             ),
-            // COLLAPSED STATE
+            // COLLAPSED STATE — title only (right-side wordmark img
+            // removed for consistency with the expanded variant).
             homeHeaderCollapsed && React.createElement('div', {
-              className: 'absolute inset-0 flex items-center justify-between px-6 z-10'
+              className: 'absolute inset-0 flex items-center px-6 z-10'
             },
               React.createElement('h1', {
                 className: 'text-2xl font-light text-white',
@@ -45242,18 +45237,7 @@ useEffect(() => {
                   textTransform: 'uppercase'
                 },
                 onContextMenu: copyParachordLink
-              }, 'HOME'),
-              // Parachord wordmark on the right (collapsed-header
-              // variant — cold launch always lands on the expanded
-              // variant, so this one isn't position-matched to the
-              // splash SVG; it only matters once the user has
-              // collapsed the header by scrolling, well after splash
-              // dismissal).
-              React.createElement('img', {
-                src: 'assets/icons/logo-wordmark-white.png',
-                alt: 'Parachord',
-                style: { height: '26px', width: 'auto' }
-              })
+              }, 'HOME')
             )
           ),
 
