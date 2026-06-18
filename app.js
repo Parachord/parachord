@@ -53505,10 +53505,42 @@ useEffect(() => {
                 )
               ),
 
-              // Loading state
+              // Loading state — skeleton grid that mirrors the ResolverCard
+              // layout (120×120 rounded-16 card + name bar below) in the same
+              // grid columns, so the page doesn't reflow when real cards land.
+              // Uses the shared shimmer-light + animate-shimmer classes with a
+              // staggered delay (matches the search-page skeletons).
               marketplaceLoading && React.createElement('div', {
-                className: 'text-center py-12 text-gray-500'
-              }, 'Loading plug-ins...'),
+                className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6'
+              },
+                ...Array(10).fill(null).map((_, i) =>
+                  React.createElement('div', {
+                    key: `plugin-skeleton-${i}`,
+                    className: 'flex flex-col items-center'
+                  },
+                    React.createElement('div', {
+                      className: 'shimmer-light animate-shimmer',
+                      style: {
+                        width: '120px',
+                        height: '120px',
+                        borderRadius: '16px',
+                        backgroundSize: '200% 100%',
+                        animationDelay: `${i * 80}ms`
+                      }
+                    }),
+                    React.createElement('div', {
+                      className: 'shimmer-light animate-shimmer rounded',
+                      style: {
+                        width: '64px',
+                        height: '13px',
+                        marginTop: '10px',
+                        backgroundSize: '200% 100%',
+                        animationDelay: `${i * 80 + 50}ms`
+                      }
+                    })
+                  )
+                )
+              ),
 
               // Content Resolvers Section
               !marketplaceLoading && React.createElement('div', { style: { marginBottom: '40px' } },
