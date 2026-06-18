@@ -2567,28 +2567,39 @@ function classifySpotifyRefresh(status, body) {
   return 'transient';
 }
 
-/**
- * Ensure we have a valid (non-expired) Spotify access token.
- * Refreshes automatically if the stored token is expired.
- * Returns the valid access token string, or null if unavailable.
- */
-async function ensureValidSpotifyToken(force = false) {
-  const token = store.get('spotify_token');
-  const expiry = store.get('spotify_token_expiry');
-  const refreshToken = store.get('spotify_refresh_token');
+// Single-flight Spotify token refresh (parachord stampede guard).
+//
+// `ensureValidSpotifyToken` is called from ~14 sites in main (sync track/
+// album/artist/playlist passes, playback, library fetch — several run
+// concurrently) and the `spotify-check-token` IPC is called from several
+// renderer spots. Without coordination, an expired token makes every one
+// of those callers fire its OWN `POST /api/token` at the same instant —
+// a burst of identical refreshes against Spotify's token endpoint. Rapid
+// app relaunches stack these bursts with no client-side throttle (the
+// Spotify resolver is intentionally exempt from the global limiter).
+//
+// This collapses all concurrent refreshes — across BOTH main callers and
+// the renderer IPC — into exactly one in-flight POST; everyone awaits the
+// same promise. It also fixes a latent correctness bug: with Spotify's
+// refresh-token rotation, two racing refreshes would each POST a token
+// the other just rotated away, which can invalidate the whole grant.
+//
+// Resolves to one of:
+//   { ok: true, token, expiresAt }
+//   { ok: false, terminal: true }   // invalid_grant — tokens cleared + reauth emitted
+//   { ok: false, terminal: false }  // transient / no-creds — stored token left intact
+let spotifyRefreshInFlight = null;
 
-  // Token is still valid — return it (unless force-refresh requested)
-  if (!force && token && expiry && Date.now() < expiry) {
-    return token;
-  }
-
-  // Token expired or missing — try to refresh
-  if (refreshToken) {
+function refreshSpotifyTokenOnce() {
+  if (spotifyRefreshInFlight) return spotifyRefreshInFlight;
+  spotifyRefreshInFlight = (async () => {
+    const refreshToken = store.get('spotify_refresh_token');
+    if (!refreshToken) return { ok: false, terminal: false };
     const { clientId } = getSpotifyCredentials();
-    if (!clientId) return null;
+    if (!clientId) return { ok: false, terminal: false };
 
     try {
-      console.log('🔄 [Sync] Refreshing expired Spotify token...');
+      console.log('🔄 [Spotify] Refreshing access token (single-flight)...');
       const response = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -2604,44 +2615,58 @@ async function ensureValidSpotifyToken(force = false) {
       const verdict = classifySpotifyRefresh(response.status, data);
 
       if (verdict === 'terminal') {
-        // Refresh token is dead (expired/revoked). Discard it — do NOT
-        // retry — and prompt the user to sign in again.
-        console.error('❌ [Sync] Spotify refresh token invalid (invalid_grant) — discarding and prompting re-auth');
+        console.error('❌ [Spotify] Refresh token invalid (invalid_grant) — discarding and prompting re-auth');
         clearSpotifyTokens();
         emitSpotifyReauthRequired('invalid_grant');
-        return null;
+        return { ok: false, terminal: true };
       }
       if (verdict === 'transient' || !data || !data.access_token) {
-        // Server blip / rate-limit / network — keep the stored token,
-        // fail this attempt, retry on the next call.
-        console.error('❌ [Sync] Token refresh failed (transient):', response.status);
-        return null;
+        console.error('❌ [Spotify] Token refresh failed (transient):', response.status);
+        return { ok: false, terminal: false };
       }
 
       const newExpiry = Date.now() + ((data.expires_in || 3600) * 1000);
-
       store.set('spotify_token', data.access_token);
       store.set('spotify_token_expiry', newExpiry);
       if (data.refresh_token) {
         store.set('spotify_refresh_token', data.refresh_token);
       }
-
-      // Preserve scopes from refresh response so the sync scope check
-      // stays accurate after token refreshes.
       if (data.scope) {
         store.set('spotify_token_scopes', data.scope);
       }
-
-      console.log('✅ [Sync] Token refreshed, expires:', new Date(newExpiry).toISOString());
-      return data.access_token;
+      console.log('✅ [Spotify] Token refreshed, expires:', new Date(newExpiry).toISOString());
+      return { ok: true, token: data.access_token, expiresAt: newExpiry };
     } catch (error) {
-      // Network error reaching Spotify — transient, keep the token.
-      console.error('❌ [Sync] Token refresh error (transient):', error.message);
-      return null;
+      console.error('❌ [Spotify] Token refresh error (transient):', error && error.message);
+      return { ok: false, terminal: false };
     }
-  }
+  })();
 
-  return token || null;
+  // Clear the in-flight latch once settled so the NEXT genuine expiry can
+  // refresh again. Concurrent callers that arrived during the window all
+  // share the promise above; only callers after it settles start fresh.
+  spotifyRefreshInFlight.finally(() => { spotifyRefreshInFlight = null; });
+  return spotifyRefreshInFlight;
+}
+
+/**
+ * Ensure we have a valid (non-expired) Spotify access token.
+ * Refreshes automatically (single-flight) if the stored token is expired.
+ * Returns the valid access token string, or null if unavailable.
+ */
+async function ensureValidSpotifyToken(force = false) {
+  const token = store.get('spotify_token');
+  const expiry = store.get('spotify_token_expiry');
+  const refreshToken = store.get('spotify_refresh_token');
+
+  // Token is still valid — return it (unless force-refresh requested)
+  if (!force && token && expiry && Date.now() < expiry) {
+    return token;
+  }
+  if (!refreshToken) return token || null;
+
+  const result = await refreshSpotifyTokenOnce();
+  return result.ok ? result.token : null;
 }
 
 // Build an Apple Music token refresh callback suitable for passing to a
@@ -3243,89 +3268,32 @@ ipcMain.handle('spotify-check-token', async (event, { force = false } = {}) => {
   const expiry = store.get('spotify_token_expiry');
   const refreshToken = store.get('spotify_refresh_token');
 
-  console.log('Token exists:', !!token);
-  console.log('Expiry:', expiry);
-  console.log('Refresh token exists:', !!refreshToken);
-  console.log('Current time:', Date.now());
-  console.log('Is expired:', expiry && Date.now() >= expiry);
-
   // If token is valid and not a forced refresh, return it
   if (!force && token && expiry && Date.now() < expiry) {
     console.log('✓ Returning valid token');
     return { token, expiresAt: expiry };
   }
 
-  // Get credentials with fallback chain: user-stored > env > bundled
-  const { clientId, source } = getSpotifyCredentials();
-
-  // If token is expired but we have a refresh token, try to refresh
-  if (refreshToken) {
-    console.log('🔄 Token expired, attempting automatic refresh using', source, 'credentials...');
-
-    try {
-      const response = await fetch('https://accounts.spotify.com/api/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken,
-          client_id: clientId
-        })
-      });
-
-      let data = null;
-      try { data = await response.json(); } catch (_e) { /* non-JSON error body */ }
-      const verdict = classifySpotifyRefresh(response.status, data);
-
-      if (verdict === 'terminal') {
-        // Refresh token expired/revoked (invalid_grant). Per Spotify's
-        // June 2026 policy: discard the token, do NOT retry, prompt the
-        // user to re-authorize. Return a structured signal so the
-        // renderer can distinguish "you must sign in again" from a
-        // transient failure (where it keeps the stale token).
-        console.error('❌ Spotify refresh token invalid (invalid_grant) — discarding and prompting re-auth');
-        clearSpotifyTokens();
-        emitSpotifyReauthRequired('invalid_grant');
-        return { reauthRequired: true };
-      }
-      if (verdict === 'transient' || !data || !data.access_token) {
-        console.error('❌ Token refresh failed (transient):', response.status, response.statusText);
-        throw new Error(`Token refresh failed: ${response.status}`);
-      }
-
-      console.log('✅ Token refreshed successfully');
-
-      // Calculate expiry time (tokens typically last 1 hour)
-      const expiresIn = data.expires_in || 3600; // Default to 1 hour
-      const newExpiry = Date.now() + (expiresIn * 1000);
-
-      // Save new token
-      store.set('spotify_token', data.access_token);
-      store.set('spotify_token_expiry', newExpiry);
-
-      // Update refresh token if a new one was provided
-      if (data.refresh_token) {
-        store.set('spotify_refresh_token', data.refresh_token);
-      }
-
-      // Preserve scopes from refresh response so the sync scope check
-      // stays accurate after token refreshes.
-      if (data.scope) {
-        store.set('spotify_token_scopes', data.scope);
-      }
-
-      console.log('New token expiry:', new Date(newExpiry).toISOString());
-
-      return { token: data.access_token, expiresAt: newExpiry };
-    } catch (error) {
-      console.error('Failed to refresh token (transient):', error);
-      // Fall through to return null — token left intact for retry.
-    }
+  if (!refreshToken) {
+    console.log('✗ No refresh token available');
+    return null;
   }
 
-  console.log('✗ No valid token found and refresh failed or not available');
+  // Funnel through the single-flight refresher so concurrent callers
+  // (this IPC fired from several renderer spots + the ~14 main-side
+  // ensureValidSpotifyToken callers) share ONE POST instead of each
+  // hammering Spotify's token endpoint. See refreshSpotifyTokenOnce.
+  const result = await refreshSpotifyTokenOnce();
+  if (result.ok) {
+    return { token: result.token, expiresAt: result.expiresAt };
+  }
+  if (result.terminal) {
+    // invalid_grant — tokens already cleared + reauth broadcast emitted.
+    // Signal the renderer so it can distinguish "sign in again" from a
+    // transient failure (where it keeps using the stale token).
+    return { reauthRequired: true };
+  }
+  console.log('✗ Token refresh failed (transient) — leaving stored token intact');
   return null;
 });
 
