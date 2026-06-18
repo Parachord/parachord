@@ -16220,6 +16220,38 @@ ${trackListXml}
     };
   }, []);
 
+  // Listen for Spotify reauth-required signals from the main process.
+  //
+  // Fired when a token refresh returns invalid_grant — i.e. the refresh
+  // token expired or was revoked. As of Spotify's June 2026 policy,
+  // refresh tokens expire after six months (effective 2026-07-20), so
+  // this will start happening to long-running installs. Main has already
+  // discarded the stored token by the time this fires; the renderer just
+  // needs to reflect the disconnected state and let the user re-auth.
+  //
+  // Toast (not a modal like Apple Music) because the Spotify fix is a
+  // single click — there's no system-level revoke dance; the OAuth
+  // sign-in flow re-issues a fresh token directly.
+  useEffect(() => {
+    const unsubscribe = window.electron?.spotify?.onReauthRequired?.((data) => {
+      console.warn('[Spotify] Reauth required:', data);
+      // Reflect the actually-disconnected state (main already cleared the
+      // stored token). Without this the UI still shows "Connected" and the
+      // Connect button no-ops because it thinks we're authed.
+      setSpotifyToken(null);
+      setSpotifyConnected(false);
+      showToast(
+        'Spotify session expired — sign in again to keep streaming',
+        'warning',
+        { label: 'Reconnect', onClick: () => connectSpotify() },
+        { duration: 12000 }
+      );
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
   // Cider-style auth-window cookie handoff (parachord#834). When the user
   // signs in through the dedicated auth BrowserWindow opened by main's
   // `applemusic:open-auth-window` handler, main harvests the apple.com auth

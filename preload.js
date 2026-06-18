@@ -62,6 +62,17 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('spotify-auth-error', handler);
     },
 
+    // Listen for "your Spotify session expired, sign in again" — emitted
+    // by main when a token refresh returns invalid_grant (Spotify's
+    // 6-month refresh-token expiry, effective 2026-07-20). The stored
+    // token has already been discarded main-side; the renderer should
+    // flip to disconnected and prompt re-auth.
+    onReauthRequired: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('spotify:reauth-required', handler);
+      return () => ipcRenderer.removeListener('spotify:reauth-required', handler);
+    },
+
     // Main process polling controls (background-safe)
     polling: {
       start: (params) => ipcRenderer.invoke('spotify-polling-start', params),
