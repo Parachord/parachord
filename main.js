@@ -5318,6 +5318,78 @@ ipcMain.handle('sync-links:remove', async (event, localPlaylistId, providerId) =
   return { success: true };
 });
 
+// ── N-way state model (Phase 1, parachord#911) ──────────────────────
+//
+// `sync_playlist_state` is an independent, main-write-only electron-store
+// map — same durability pattern as `sync_playlist_links` (renderer playlist
+// saves can't clobber it). It holds the per-playlist 3-way-merge baseline +
+// per-(playlist, provider) sync record, ALONGSIDE the existing canonical-
+// source fields (which stay). NOTHING reads or writes this yet: Phase 2
+// (bootstrap migration) populates it, Phase 3 (shadow mode) reads it, Phase
+// 4 enables propagation. Adding the schema + accessors now, behavior-neutral.
+//
+// Shape:
+//   { [localPlaylistId]: {
+//       baseline: string[],            // ordered canonical keys (merge ancestor)
+//       baselineSyncedAt: number,
+//       providers: {
+//         [providerId]: { changeToken: string|null, editedAt: number, lastSyncedAt: number }
+//       }
+//   } }
+//
+// Derivations for what goes IN here live in the pure module
+// sync-engine/playlist-sync-state.js (buildBaseline / deriveChangeToken /
+// deriveEditedAt) — kept separate + unit-tested.
+function getSyncStates() {
+  return store.get('sync_playlist_state') || {};
+}
+
+function getPlaylistSyncState(localPlaylistId) {
+  if (!localPlaylistId) return null;
+  return getSyncStates()[localPlaylistId] || null;
+}
+
+function setPlaylistBaseline(localPlaylistId, baseline, baselineSyncedAt) {
+  if (!localPlaylistId || !Array.isArray(baseline)) return;
+  const states = getSyncStates();
+  const entry = states[localPlaylistId] || { baseline: [], baselineSyncedAt: 0, providers: {} };
+  entry.baseline = baseline.slice();
+  entry.baselineSyncedAt = typeof baselineSyncedAt === 'number' ? baselineSyncedAt : Date.now();
+  if (!entry.providers) entry.providers = {};
+  states[localPlaylistId] = entry;
+  store.set('sync_playlist_state', states);
+}
+
+function setProviderSyncState(localPlaylistId, providerId, { changeToken, editedAt, lastSyncedAt } = {}) {
+  if (!localPlaylistId || !providerId) return;
+  const states = getSyncStates();
+  const entry = states[localPlaylistId] || { baseline: [], baselineSyncedAt: 0, providers: {} };
+  if (!entry.providers) entry.providers = {};
+  const prev = entry.providers[providerId] || {};
+  entry.providers[providerId] = {
+    changeToken: changeToken !== undefined ? (changeToken || null) : (prev.changeToken || null),
+    editedAt: typeof editedAt === 'number' ? editedAt : (prev.editedAt || 0),
+    lastSyncedAt: typeof lastSyncedAt === 'number' ? lastSyncedAt : (prev.lastSyncedAt || Date.now()),
+  };
+  states[localPlaylistId] = entry;
+  store.set('sync_playlist_state', states);
+}
+
+function removePlaylistSyncState(localPlaylistId, providerId) {
+  if (!localPlaylistId) return;
+  const states = getSyncStates();
+  if (!states[localPlaylistId]) return;
+  if (providerId) {
+    if (states[localPlaylistId].providers) delete states[localPlaylistId].providers[providerId];
+  } else {
+    delete states[localPlaylistId];
+  }
+  store.set('sync_playlist_state', states);
+}
+
+ipcMain.handle('sync-state:get-all', async () => getSyncStates());
+ipcMain.handle('sync-state:get', async (event, localPlaylistId) => getPlaylistSyncState(localPlaylistId));
+
 // ---------------------------------------------------------------------------
 // Achordion playlist-links submission (LB-anchored mirror map)
 // ---------------------------------------------------------------------------

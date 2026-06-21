@@ -19,7 +19,7 @@ const {
   mergePlaylist,
   canonicalTrackKey,
   exceedsMassChangeThreshold,
-} = require('../helpers/playlist-merge');
+} = require('../../sync-engine/playlist-merge');
 
 const CANONICAL = JSON.parse(
   fs.readFileSync(
