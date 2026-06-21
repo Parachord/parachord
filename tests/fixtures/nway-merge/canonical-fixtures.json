@@ -1,0 +1,102 @@
+{
+  "_about": "Canonical cross-engine vectors for the N-way playlist 3-way merge. BOTH the Kotlin (mobile, shared/.../sync/PlaylistMerge.kt) and the JS (desktop, app.js) merge implementations MUST produce `expected` for each case, exactly. This file is the contract that keeps the two engines from drifting and fighting over the same remote playlists. Mobile's PlaylistMergeTest is a 1:1 transcription of these cases; desktop transcribes the same cases into its JS test.",
+  "_semantics": {
+    "presence": "union-adds: a key in ANY changed copy but not in the baseline is added. union-removes: a baseline key missing from ANY changed copy is removed. present = (baseline - removed) ∪ added. DELETE ALWAYS WINS — a baseline key dropped by any copy is gone even if a newer copy still has it (a copy still holding the key is un-propagated baseline, NOT a re-add). `added` and `removed` are disjoint by construction (added keys are non-baseline; removed keys are baseline), so there is no same-key add-vs-delete race to tiebreak.",
+    "timestamps": "editedAt affects ORDER ONLY, never presence.",
+    "order": "Walk the most-recently-edited changed copy's tracks first, then the baseline, then each other changed copy in input order; keep only present keys; dedupe (first occurrence wins). A copy whose tracks == baseline contributes no delta and is ignored.",
+    "key_derivation": "Canonical track key precedence: validateIsrc(isrc) -> 'isrc-<UPPERCASED, regex ^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$>'; else recordingMbid -> 'mbid-<trim+lowercase>'; else 'norm-<artist trim+lowercase>|<title trim+lowercase>'. The norm fallback is lower+trim ONLY — NOT the strip-non-alphanumeric normalize used in confidence scoring."
+  },
+  "cases": [
+    {
+      "name": "no_changed_copies_equal_returns_baseline",
+      "baseline": ["a", "b", "c"],
+      "copies": [{ "id": "spotify", "tracks": ["a", "b", "c"], "editedAt": 5 }],
+      "expected": ["a", "b", "c"]
+    },
+    {
+      "name": "no_copies_returns_baseline",
+      "baseline": ["a", "b", "c"],
+      "copies": [],
+      "expected": ["a", "b", "c"]
+    },
+    {
+      "name": "single_add_appends",
+      "baseline": ["a", "b"],
+      "copies": [{ "id": "spotify", "tracks": ["a", "b", "x"], "editedAt": 1 }],
+      "expected": ["a", "b", "x"]
+    },
+    {
+      "name": "single_remove_drops",
+      "baseline": ["a", "b", "c"],
+      "copies": [{ "id": "spotify", "tracks": ["a", "c"], "editedAt": 1 }],
+      "expected": ["a", "c"]
+    },
+    {
+      "name": "concurrent_adds_different_copies_both_survive",
+      "baseline": ["a", "b"],
+      "copies": [
+        { "id": "spotify", "tracks": ["a", "b", "x"], "editedAt": 1 },
+        { "id": "applemusic", "tracks": ["a", "b", "y"], "editedAt": 2 }
+      ],
+      "expected": ["a", "b", "y", "x"]
+    },
+    {
+      "name": "concurrent_add_and_remove_different_keys_both_apply",
+      "baseline": ["a", "b"],
+      "copies": [
+        { "id": "spotify", "tracks": ["a", "b", "x"], "editedAt": 1 },
+        { "id": "applemusic", "tracks": ["b"], "editedAt": 2 }
+      ],
+      "expected": ["b", "x"]
+    },
+    {
+      "name": "delete_wins_even_if_newer_copy_still_has_key",
+      "_note": "THE divergence case. Older copy deleted x; newer copy still has x (un-propagated baseline, not a re-add). x is DROPPED. editedAt does not resurrect a deleted key.",
+      "baseline": ["x", "z"],
+      "copies": [
+        { "id": "spotify", "tracks": ["z"], "editedAt": 5 },
+        { "id": "applemusic", "tracks": ["x", "z", "y"], "editedAt": 9 }
+      ],
+      "expected": ["z", "y"]
+    },
+    {
+      "name": "reorder_follows_the_edited_copy",
+      "baseline": ["a", "b", "c"],
+      "copies": [{ "id": "spotify", "tracks": ["c", "a", "b"], "editedAt": 1 }],
+      "expected": ["c", "a", "b"]
+    },
+    {
+      "name": "order_follows_most_recently_edited_copy",
+      "baseline": ["a", "b", "c"],
+      "copies": [
+        { "id": "spotify", "tracks": ["b", "a", "c"], "editedAt": 1 },
+        { "id": "applemusic", "tracks": ["c", "b", "a"], "editedAt": 9 }
+      ],
+      "expected": ["c", "b", "a"]
+    },
+    {
+      "name": "empty_baseline_first_merge_unions_adds",
+      "baseline": [],
+      "copies": [
+        { "id": "spotify", "tracks": ["a", "b"], "editedAt": 1 },
+        { "id": "listenbrainz", "tracks": ["b", "c"], "editedAt": 2 }
+      ],
+      "expected": ["b", "c", "a"]
+    },
+    {
+      "name": "duplicate_key_across_copies_appears_once",
+      "baseline": ["a"],
+      "copies": [
+        { "id": "spotify", "tracks": ["a", "x"], "editedAt": 1 },
+        { "id": "applemusic", "tracks": ["a", "x"], "editedAt": 2 }
+      ],
+      "expected": ["a", "x"]
+    },
+    {
+      "name": "remove_all_yields_empty",
+      "baseline": ["a", "b"],
+      "copies": [{ "id": "spotify", "tracks": [], "editedAt": 1 }],
+      "expected": []
+    }
+  ]
+}
