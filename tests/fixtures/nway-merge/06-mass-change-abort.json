@@ -1,0 +1,10 @@
+{
+  "name": "mass-change-abort",
+  "description": "A provider hiccup returns an empty tracklist; the merge would drop everything, so abort.",
+  "baseline": ["A", "B", "C", "D", "E"],
+  "copies": [
+    { "id": "spotify", "editedAt": 2000, "keys": [] },
+    { "id": "applemusic", "editedAt": 1000, "keys": ["A", "B", "C", "D", "E"] }
+  ],
+  "expected": { "aborted": true, "reason": "mass-change" }
+}

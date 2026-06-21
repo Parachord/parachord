@@ -1,0 +1,10 @@
+{
+  "name": "union-adds-both-survive",
+  "description": "Concurrent adds on two services both survive (union of adds).",
+  "baseline": ["A", "B"],
+  "copies": [
+    { "id": "spotify", "editedAt": 1000, "keys": ["A", "B", "C"] },
+    { "id": "applemusic", "editedAt": 1001, "keys": ["A", "B", "D"] }
+  ],
+  "expected": { "aborted": false, "merged": ["A", "B", "D", "C"] }
+}

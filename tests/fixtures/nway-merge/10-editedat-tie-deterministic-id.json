@@ -1,0 +1,10 @@
+{
+  "name": "editedat-tie-deterministic-id",
+  "description": "Equal editedAt — winner + scan order break the tie by id ascending (applemusic < spotify).",
+  "baseline": ["A"],
+  "copies": [
+    { "id": "spotify", "editedAt": 1000, "keys": ["A", "S"] },
+    { "id": "applemusic", "editedAt": 1000, "keys": ["A", "M"] }
+  ],
+  "expected": { "aborted": false, "merged": ["A", "M", "S"] }
+}

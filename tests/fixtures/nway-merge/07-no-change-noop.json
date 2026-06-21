@@ -1,0 +1,10 @@
+{
+  "name": "no-change-noop",
+  "description": "Every copy equals baseline — merged equals baseline, nothing dropped.",
+  "baseline": ["A", "B"],
+  "copies": [
+    { "id": "spotify", "editedAt": 1000, "keys": ["A", "B"] },
+    { "id": "applemusic", "editedAt": 1000, "keys": ["A", "B"] }
+  ],
+  "expected": { "aborted": false, "merged": ["A", "B"] }
+}
