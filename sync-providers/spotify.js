@@ -532,6 +532,40 @@ const SpotifySyncProvider = {
     return { success: true, snapshotId };
   },
 
+  // ── N-way incremental write primitives (parachord#911) ────────────
+  // Spotify is `trackRemoveMode: 'ByNativeId'` — surgical add/remove by URI,
+  // NOT the destructive PUT-replace that updatePlaylistTracks uses. Dormant
+  // until the N-way reconcile driver calls them (real writes gated OFF).
+
+  // The native id Spotify add/remove operate on, off a track object.
+  nativeIdOf(track) {
+    if (!track) return null;
+    if (track.spotifyUri) return track.spotifyUri;
+    if (track.spotifyId) return `spotify:track:${track.spotifyId}`;
+    return null;
+  },
+
+  /**
+   * Remove specific tracks from a playlist by their Spotify URI.
+   * DELETE /v1/playlists/{id}/tracks  body { tracks: [{ uri }] }; batched 100;
+   * returns the new snapshot_id (the echo-suppression anchor).
+   * @returns {Promise<{success:boolean, snapshotId:string|undefined}>}
+   */
+  async removePlaylistTracksByNativeId(playlistId, externalTrackIds, token) {
+    const uris = (externalTrackIds || []).filter(Boolean);
+    let snapshotId;
+    for (let i = 0; i < uris.length; i += 100) {
+      const batch = uris.slice(i, i + 100);
+      if (i > 0) await new Promise((r) => setTimeout(r, 100)); // rate-limit between batches
+      const result = await spotifyRequest(`/playlists/${playlistId}/tracks`, token, {
+        method: 'DELETE',
+        body: { tracks: batch.map((uri) => ({ uri })) },
+      });
+      snapshotId = result.snapshot_id;
+    }
+    return { success: true, snapshotId };
+  },
+
   /**
    * Update playlist metadata (name, description)
    * @param {string} playlistId - Spotify playlist ID
