@@ -200,7 +200,19 @@ const AppleMusicSyncProvider = {
     albums: true,
     artists: false,
     playlists: true,
-    playlistFolders: false
+    playlistFolders: false,
+    // N-way materialize dispatch (parachord#911). The HONEST WORST CASE:
+    // Apple Music's public API rejects PUT/PATCH/DELETE on library playlist
+    // resources (documented policy — Apple Developer Forum 107807), so there
+    // is NO track-removal path: removals are surfaced to the user, never
+    // forced. PUT degrades to POST-append (`amPutUnsupportedRef`), PATCH
+    // (rename) is a silent no-op (`amPatchUnsupportedRef`), playlist DELETE
+    // is unsupported. Declared statically; the runtime kill-switches stay as
+    // defensive downgrade if Apple's behavior shifts mid-session.
+    trackRemoveMode: 'Unsupported',
+    canReorder: false,
+    supportsPlaylistDelete: false,
+    supportsPlaylistRename: false
   },
 
   /**

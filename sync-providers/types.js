@@ -1,10 +1,35 @@
 /**
+ * How a provider supports REMOVING a track from a playlist — the dispatch key
+ * for N-way incremental materialization (parachord#911). The engine asks the
+ * provider "can you remove a track, and how" and NEVER branches on provider id,
+ * so a new service (Tidal/Qobuz/…) is a future adapter, not an engine edit.
+ *
+ *   'ByNativeId'   — remove specific tracks by their native id/URI (Spotify
+ *                    DELETE /playlists/{id}/tracks by URI).
+ *   'ByPosition'   — remove by index (ListenBrainz delete-by-position; its
+ *                    clear-then-add update maps to positional removal).
+ *   'Unsupported'  — no track-removal API at all (Apple Music public library
+ *                    playlists). Materialize is add-only; removals are surfaced
+ *                    to the user, never forced, never abort the push.
+ *   'ReplaceOnly'  — only a full wipe + re-add exists; a partial replace is
+ *                    destructive, so replace-all is gated on full add-coverage,
+ *                    else it degrades to add-only. (Reserved; no provider uses
+ *                    it today.)
+ *
+ * @typedef {'ByNativeId'|'ByPosition'|'Unsupported'|'ReplaceOnly'} TrackRemoveMode
+ */
+
+/**
  * @typedef {Object} SyncProviderCapabilities
  * @property {boolean} tracks - Can sync liked/saved songs
  * @property {boolean} albums - Can sync saved albums
  * @property {boolean} artists - Can sync followed artists
  * @property {boolean} playlists - Can sync user playlists
  * @property {boolean} playlistFolders - Supports hierarchical playlist organization
+ * @property {TrackRemoveMode} trackRemoveMode - How playlist track removal works (N-way materialize dispatch)
+ * @property {boolean} canReorder - Whether playlist track order can be set on the remote
+ * @property {boolean} supportsPlaylistDelete - Whether a whole playlist can be deleted via the API
+ * @property {boolean} supportsPlaylistRename - Whether a playlist's name/description can be edited via the API
  */
 
 /**

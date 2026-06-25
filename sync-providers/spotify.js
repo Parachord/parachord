@@ -266,7 +266,14 @@ const SpotifySyncProvider = {
     albums: true,
     artists: true,
     playlists: true,
-    playlistFolders: true
+    playlistFolders: true,
+    // N-way materialize dispatch (parachord#911). Spotify has a full
+    // track-level API: DELETE /playlists/{id}/tracks by URI, PUT for order,
+    // and playlist delete (unfollow) + rename.
+    trackRemoveMode: 'ByNativeId',
+    canReorder: true,
+    supportsPlaylistDelete: true,
+    supportsPlaylistRename: true
   },
 
   /**

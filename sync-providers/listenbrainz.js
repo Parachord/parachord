@@ -18,6 +18,16 @@ const capabilities = {
   tracks: false,
   albums: false,
   artists: false,
+  // Was missing the playlistFolders key the other providers declare; LB has
+  // no folder concept.
+  playlistFolders: false,
+  // N-way materialize dispatch (parachord#911). LB's playlist update is
+  // clear-then-add (no full-replace PUT), which maps to positional removal.
+  // Playlist delete + rename (title/description) are supported.
+  trackRemoveMode: 'ByPosition',
+  canReorder: false,
+  supportsPlaylistDelete: true,
+  supportsPlaylistRename: true,
 };
 
 function authHeaders(token) {
