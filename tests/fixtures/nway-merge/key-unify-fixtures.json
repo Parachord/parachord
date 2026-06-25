@@ -1,0 +1,71 @@
+{
+  "_about": "Canonical cross-engine vectors for N-way cross-copy KEY UNIFICATION (Phase 4 prerequisite). Runs BEFORE the merge: it rewrites each copy's tracklist to canonical representative keys so the same song matches across services, THEN docs/nway-playlist-merge-fixtures.json's merge runs on the representatives. BOTH the Kotlin (mobile, shared/.../sync/NwayKeyUnify.kt) and JS (desktop) implementations MUST produce `expected` for each case. Mobile's NwayKeyUnifyTest is a 1:1 transcription.",
+  "_semantics": {
+    "input": "`lists` = baseline + each copy, in order. Each track is {isrc?, mbid?, norm}: isrc validated+UPPERCASED (^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$) or null; mbid trim+lowercase or null; norm = '<artist>|<title>' lower+trim, always present.",
+    "match": "Two tracks are the SAME if they share ANY tier value (isrc OR mbid OR norm), transitively (union-find). norm bridges an un-enriched track to its mbid twin AND bridges two different recording-MBIDs of the same song.",
+    "representative": "Per equivalence class, the strongest tier present — 'isrc-<v>' else 'mbid-<v>' else 'norm-<v>' — using the LEXICOGRAPHICALLY-SMALLEST value within that tier. Deterministic regardless of input order. A singleton class yields exactly the single canonical key.",
+    "residual": "Two genuinely different recordings sharing an identical norm unify via norm (accepted, rare). Guarding the norm bridge on disagreeing ISRCs is a tracked refinement.",
+    "output": "Each input list rewritten to its representative keys, order + length preserved (a within-list norm collision collapses to the same repr; the downstream merge dedups)."
+  },
+  "cases": [
+    {
+      "name": "singleton_yields_canonical_key",
+      "lists": [[{ "mbid": "x", "norm": "a|t" }, { "norm": "b|t" }]],
+      "expected": [["mbid-x", "norm-b|t"]]
+    },
+    {
+      "name": "norm_bridges_unenriched_to_mbid_twin",
+      "lists": [
+        [{ "mbid": "x", "norm": "radiohead|creep" }],
+        [{ "norm": "radiohead|creep" }]
+      ],
+      "expected": [["mbid-x"], ["mbid-x"]]
+    },
+    {
+      "name": "norm_bridges_recording_mbid_variance",
+      "lists": [
+        [{ "mbid": "rec-a", "norm": "song|x" }],
+        [{ "mbid": "rec-b", "norm": "song|x" }]
+      ],
+      "expected": [["mbid-rec-a"], ["mbid-rec-a"]]
+    },
+    {
+      "name": "isrc_is_strongest_representative",
+      "lists": [
+        [{ "isrc": "USRC17607839", "mbid": "m1", "norm": "n|n" }],
+        [{ "mbid": "m2", "norm": "n|n" }]
+      ],
+      "expected": [["isrc-USRC17607839"], ["isrc-USRC17607839"]]
+    },
+    {
+      "name": "isrc_match_unifies_even_when_norm_differs",
+      "lists": [
+        [{ "isrc": "GBAYE0601477", "norm": "radiohead|creep" }],
+        [{ "isrc": "GBAYE0601477", "norm": "radiohead|creep - remaster" }]
+      ],
+      "expected": [["isrc-GBAYE0601477"], ["isrc-GBAYE0601477"]]
+    },
+    {
+      "name": "isrc_bridges_when_mbid_and_norm_both_differ",
+      "_note": "Reconciliation-redesign incident case: same recording across services with a DIFFERENT recording-MBID AND a drifted normalized title (remaster suffix). Neither mbid nor norm matches; only the ISRC bridges them. Without the persisted isrc tier these were union-removed → data loss.",
+      "lists": [
+        [{ "isrc": "USABC1234567", "mbid": "rec-a", "norm": "the cranberries|zombie" }],
+        [{ "isrc": "USABC1234567", "mbid": "rec-b", "norm": "the cranberries|zombie - 2025 remastered" }]
+      ],
+      "expected": [["isrc-USABC1234567"], ["isrc-USABC1234567"]]
+    },
+    {
+      "name": "distinct_tracks_stay_distinct",
+      "lists": [
+        [{ "mbid": "x", "norm": "artist|one" }],
+        [{ "mbid": "y", "norm": "artist|two" }]
+      ],
+      "expected": [["mbid-x"], ["mbid-y"]]
+    },
+    {
+      "name": "order_independent_determinism",
+      "lists": [[{ "mbid": "b", "norm": "s|x" }, { "mbid": "a", "norm": "s|x" }]],
+      "expected": [["mbid-a", "mbid-a"]]
+    }
+  ]
+}
