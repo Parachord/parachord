@@ -1,5 +1,20 @@
 # N-way merge — shared cross-engine test vectors
 
+Two vendored fixture files, both **verbatim** from parachord-mobile (the
+source of truth). Run against BOTH the desktop JS engine and the mobile Kotlin
+engine; identical fixtures passing on both is the parity contract.
+
+| File | Source (parachord-mobile) | Engine |
+|---|---|---|
+| `canonical-fixtures.json` | `docs/nway-playlist-merge-fixtures.json` (`ff03511`) | the pure 3-way merge (`sync-engine/playlist-merge.js`) |
+| `key-unify-fixtures.json` | `docs/nway-key-unify-fixtures.json` (branch `nway-phase2-migration`) | the cross-copy key-unification pre-pass (`sync-engine/playlist-key-unify.js`) |
+
+Pipeline on both engines: `unifyTrackKeys(baseline + copies)` rewrites each
+copy's tracklist to representative keys, then the unchanged `mergePlaylist`
+runs on the representatives.
+
+---
+
 `canonical-fixtures.json` is **vendored verbatim** from the source-of-truth in
 parachord-mobile: `docs/nway-playlist-merge-fixtures.json` (commit `ff03511`).
 

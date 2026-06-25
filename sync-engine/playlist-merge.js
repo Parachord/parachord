@@ -58,9 +58,32 @@ function normField(value) {
   return (typeof value === 'string' ? value : '').trim().toLowerCase();
 }
 
+// Strip a trailing remaster annotation from a LOWERCASED title so the same
+// recording unifies across services when its title drifts (the ListenBrainz
+// axis: LB returns no per-track ISRC, so only `norm` can bridge there). This
+// is a CROSS-ENGINE identity rule — the Kotlin norm derivation applies the
+// identical regex (parachord#911, 2026-06-23 update). Conservative: strips
+// "- [YYYY] Remaster(ed) [YYYY]" / "(Remaster(ed) [YYYY])" forms only; it
+// deliberately does NOT touch Live / Acoustic / Single / Radio / "(feat …)"
+// — those are genuinely different recordings.
+function stripRemasterSuffix(lowerTitle) {
+  return lowerTitle.replace(
+    /\s*[-(]\s*(\d{4}\s+)?remaster(ed)?(\s+\d{4})?\s*\)?\s*$/,
+    ''
+  );
+}
+
+// Derive the `norm` identity tier: `<artist>|<title>`, each lower+trim, with
+// the remaster suffix stripped from the title. Shared by canonicalTrackKey
+// (singleton) and the unify pre-pass's trackTiers (cross-copy matching).
+function deriveNorm(artist, title) {
+  return `${normField(artist)}|${stripRemasterSuffix(normField(title))}`;
+}
+
 /**
  * Canonical track key. Precedence: valid ISRC -> `isrc-<UPPER>`; else
- * recording MBID -> `mbid-<lower>`; else `norm-<artist|title>` (lower+trim).
+ * recording MBID -> `mbid-<lower>`; else `norm-<artist|title>` (lower+trim,
+ * remaster-stripped title).
  * @param {{isrc?:string, recordingMbid?:string, mbid?:string, artist?:string, title?:string}} track
  * @returns {string}
  */
@@ -70,7 +93,7 @@ function canonicalTrackKey(track) {
   if (isrc) return `isrc-${isrc}`;
   const mbid = validMbid(track.recordingMbid) || validMbid(track.mbid);
   if (mbid) return `mbid-${mbid}`;
-  return `norm-${normField(track.artist)}|${normField(track.title)}`;
+  return `norm-${deriveNorm(track.artist, track.title)}`;
 }
 
 function arraysEqual(a, b) {
@@ -181,4 +204,6 @@ module.exports = {
   validIsrc,
   validMbid,
   normField,
+  stripRemasterSuffix,
+  deriveNorm,
 };
