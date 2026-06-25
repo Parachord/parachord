@@ -5868,6 +5868,39 @@ function healImportedSyncedFromMismatch() {
 }
 healImportedSyncedFromMismatch();
 
+// Bootstrap the N-way sync state (Phase 2, parachord#911). One-time, idempotent,
+// no network: seed `sync_playlist_state` from existing local_playlists so the
+// N-way engine has a baseline + per-provider record to work from once it's
+// wired (shadow mode first). Skips playlists that already have an entry (so a
+// re-run never clobbers state a future reconcile cycle advanced) and playlists
+// with no sync intent. Behavior-neutral — nothing READS this map for
+// reconciliation yet. The pure per-playlist builder is unit-tested in
+// sync-engine/playlist-sync-state.js; this is the thin iterate-and-persist glue.
+function bootstrapNwayPlaylistState() {
+  try {
+    const { bootstrapPlaylistState } = require('./sync-engine/playlist-sync-state');
+    const playlists = store.get('local_playlists');
+    if (!Array.isArray(playlists) || playlists.length === 0) return;
+    const states = getSyncStates();
+    const now = Date.now();
+    let seeded = 0;
+    for (const pl of playlists) {
+      if (!pl || !pl.id || states[pl.id]) continue; // idempotent: skip existing
+      const entry = bootstrapPlaylistState(pl, now);
+      if (!entry) continue; // no sync intent
+      states[pl.id] = entry;
+      seeded++;
+    }
+    if (seeded > 0) {
+      store.set('sync_playlist_state', states); // single write
+      console.log(`[NwayState] Bootstrap-seeded baseline + provider state for ${seeded} playlist(s)`);
+    }
+  } catch (err) {
+    console.warn('[NwayState] Bootstrap failed (non-fatal):', err && err.message);
+  }
+}
+bootstrapNwayPlaylistState();
+
 // Prune expired track tombstones at app start (parachord#864). One-shot
 // per launch; entries older than TOMBSTONE_TTL_MS (365 days) are
 // dropped. Tombstones get re-armed every time the sync filter sees the
