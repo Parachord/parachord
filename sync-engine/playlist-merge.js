@@ -38,7 +38,6 @@
 //            tracks == baseline contributes no delta and is ignored.
 
 const ISRC_RE = /^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$/;
-const MBID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 function validIsrc(value) {
   if (typeof value !== 'string') return null;
@@ -46,10 +45,18 @@ function validIsrc(value) {
   return ISRC_RE.test(norm) ? norm : null;
 }
 
+// Normalize a recording MBID to its tier value. Per the cross-engine
+// key-derivation contract (the merge/key-unify fixtures' `_semantics`), the
+// MBID tier is `trim + lowercase`, NON-EMPTY — and is NOT regex-validated
+// (only ISRC is). A 36-char UUID regex here was over-strict and DIVERGED from
+// the Kotlin engine (which accepts any non-blank recordingMbid), so a track
+// whose mbid field carried a non-UUID id keyed differently across the two
+// engines. Real recording MBIDs are UUIDs, so this only changes behavior for
+// non-standard ids — but matching the contract byte-for-byte is the point.
 function validMbid(value) {
   if (typeof value !== 'string') return null;
   const norm = value.trim().toLowerCase();
-  return MBID_RE.test(norm) ? norm : null;
+  return norm.length > 0 ? norm : null;
 }
 
 // Fallback-key normalization: lower + trim ONLY (NOT the strip-non-
