@@ -10,6 +10,8 @@
 
 const {
   buildBaseline,
+  buildBaselineTiers,
+  isLegacyStringBaseline,
   toEpochMs,
   deriveChangeToken,
   deriveEditedAt,
@@ -42,6 +44,45 @@ describe('buildBaseline', () => {
   test('empty / non-array degrades to []', () => {
     expect(buildBaseline([])).toEqual([]);
     expect(buildBaseline(null)).toEqual([]);
+  });
+});
+
+describe('buildBaselineTiers — persisted ancestor (full tiers, 1:1, no dedup)', () => {
+  test('maps each track to its {isrc,mbid,norm} tiers', () => {
+    expect(
+      buildBaselineTiers([
+        { isrc: 'GBAYE0601498', artist: 'A', title: 'T' },
+        { recordingMbid: 'b2181aae-5cba-496c-bb0c-b4cc0109ebf8', artist: 'B', title: 'U' },
+        { artist: 'Radiohead', title: 'Creep' },
+      ])
+    ).toEqual([
+      { isrc: 'GBAYE0601498', mbid: null, norm: 'a|t' },
+      { isrc: null, mbid: 'b2181aae-5cba-496c-bb0c-b4cc0109ebf8', norm: 'b|u' },
+      { isrc: null, mbid: null, norm: 'radiohead|creep' },
+    ]);
+  });
+
+  test('does NOT dedupe — kept 1:1 with the tracklist (length honest)', () => {
+    const tiers = buildBaselineTiers([{ isrc: 'GBAYE0601498' }, { isrc: 'gbaye0601498' }]);
+    expect(tiers.length).toBe(2); // same recording, two entries — NOT collapsed
+    expect(tiers[0]).toEqual(tiers[1]);
+  });
+
+  test('empty / non-array degrades to []', () => {
+    expect(buildBaselineTiers([])).toEqual([]);
+    expect(buildBaselineTiers(null)).toEqual([]);
+  });
+});
+
+describe('isLegacyStringBaseline — migration shape detector', () => {
+  test('true only for a NON-EMPTY string[] (the legacy shape)', () => {
+    expect(isLegacyStringBaseline(['isrc-X', 'norm-a|b'])).toBe(true);
+  });
+  test('false for tier records, empty, and non-arrays', () => {
+    expect(isLegacyStringBaseline([{ isrc: null, mbid: null, norm: 'a|b' }])).toBe(false);
+    expect(isLegacyStringBaseline([])).toBe(false); // empty treated as current
+    expect(isLegacyStringBaseline(undefined)).toBe(false);
+    expect(isLegacyStringBaseline(null)).toBe(false);
   });
 });
 
@@ -137,14 +178,17 @@ describe('bootstrapPlaylistState — Phase 2 one-time migration (pure)', () => {
     expect(bootstrapPlaylistState(null, NOW)).toBeNull();
   });
 
-  test('seeds baseline (canonical keys) for a synced playlist', () => {
+  test('seeds baseline as 1:1 tier records for a synced playlist', () => {
     const pl = {
       id: 'spotify-abc',
       tracks: [{ isrc: 'GBAYE0601498' }, { artist: 'Radiohead', title: 'Creep' }],
       syncedFrom: { resolver: 'spotify', externalId: 'abc', snapshotId: 'snap1' },
     };
     const s = bootstrapPlaylistState(pl, NOW);
-    expect(s.baseline).toEqual(['isrc-GBAYE0601498', 'norm-radiohead|creep']);
+    expect(s.baseline).toEqual([
+      { isrc: 'GBAYE0601498', mbid: null, norm: '|' },
+      { isrc: null, mbid: null, norm: 'radiohead|creep' },
+    ]);
     expect(s.baselineSyncedAt).toBe(NOW);
   });
 

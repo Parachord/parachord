@@ -16,15 +16,52 @@
 // the merge has a cross-engine parity contract.
 
 const { canonicalTrackKey } = require('./playlist-merge');
+const { trackTiers } = require('./playlist-key-unify');
 
 // ─────────────────────────────────────────────────────────────────────
 // Baseline
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Build a baseline (the 3-way merge ancestor) from a tracklist: the ordered
- * list of canonical keys, deduped first-occurrence (so it's directly
- * comparable to a merge result, which is also deduped).
+ * Build the PERSISTED baseline (the 3-way merge ancestor) from a tracklist:
+ * the ordered list of identity tier records `{isrc, mbid, norm}`, 1:1 with the
+ * tracklist (NOT deduped). Design decision #4 (parachord#911): the ancestor
+ * must keep its full tiers so the Layer-A reconcile can re-unify it against
+ * the current copies — a collapsed single key (e.g. `'mbid-x'`) has thrown
+ * away its sibling isrc/norm tiers and can't re-participate in union-find, so a
+ * drifted copy carrying the same song under a different tier would spuriously
+ * read as add+remove. Kept 1:1 (no dedup) to match mobile's
+ * `nwayBaselineTrackKeys` and keep the `trackCount`-based change-detection
+ * compare honest. The desktop tracklist array order IS the position order.
+ *
+ * The COLLAPSED merge-ancestor keys (deduped string[]) are derived on demand
+ * at reconcile time via `unifyTrackKeys`, not stored — see `buildBaseline`,
+ * which remains for that comparison shape.
+ * @param {Array<object>} tracks
+ * @returns {Array<{isrc:string|null, mbid:string|null, norm:string}>}
+ */
+function buildBaselineTiers(tracks) {
+  return (Array.isArray(tracks) ? tracks : []).map(trackTiers);
+}
+
+/**
+ * True when a stored baseline is the LEGACY collapsed-string shape (`string[]`)
+ * rather than the current tier-record shape (`[{isrc,mbid,norm}]`). Used by the
+ * startup migration to upgrade old entries. An empty baseline is treated as
+ * already-current (re-deriving an empty is a no-op, and a tracked playlist
+ * always has a non-empty baseline).
+ * @param {*} baseline
+ * @returns {boolean}
+ */
+function isLegacyStringBaseline(baseline) {
+  return Array.isArray(baseline) && baseline.length > 0 && typeof baseline[0] === 'string';
+}
+
+/**
+ * Build the COLLAPSED merge-ancestor keys (the 3-way merge `baseline` param):
+ * the ordered list of canonical keys, deduped first-occurrence (so it's
+ * directly comparable to a merge result, which is also deduped). No longer the
+ * persisted shape (that's `buildBaselineTiers`); derived on demand.
  * @param {Array<object>} tracks
  * @returns {string[]}
  */
@@ -164,12 +201,12 @@ function makePlaylistSyncState({ baseline = [], baselineSyncedAt = 0, providers 
  * Returns null when the playlist has NO sync intent (no syncedFrom, no
  * syncedTo) — a local-only playlist is not an N-way participant.
  *
- * NOTE (design open question #4, parachord#911): `baseline` stores the
- * COLLAPSED canonical key per track (string[]), matching the Phase-1 schema.
- * If cross-copy re-unification later needs the full {isrc,mbid,norm} tiers of
- * the ancestor, this becomes an additive schema change + re-migration. Safe
- * to defer: the map is main-write-only, nothing reads it for reconciliation
- * yet, and the baseline is re-derivable from local_playlists at any time.
+ * Design decision #4 (parachord#911) is RESOLVED here: `baseline` stores the
+ * full `{isrc,mbid,norm}` tier records (`buildBaselineTiers`), 1:1 with the
+ * tracklist — so the Layer-A reconcile can re-unify the ancestor against the
+ * current copies. (Earlier Phase-1/Phase-2 entries that stored the collapsed
+ * string[] are upgraded by the startup migration in main.js, which re-derives
+ * tiers losslessly from local_playlists.)
  *
  * @param {object} playlist - a local_playlists entry
  * @param {number} now - epoch ms (caller-supplied for determinism)
@@ -182,7 +219,7 @@ function bootstrapPlaylistState(playlist, now) {
   if (!hasSyncIntent) return null;
 
   const ts = typeof now === 'number' ? now : 0;
-  const baseline = buildBaseline(playlist.tracks || []);
+  const baseline = buildBaselineTiers(playlist.tracks || []);
   const providers = {};
 
   const sf = playlist.syncedFrom;
@@ -210,6 +247,8 @@ function bootstrapPlaylistState(playlist, now) {
 
 module.exports = {
   buildBaseline,
+  buildBaselineTiers,
+  isLegacyStringBaseline,
   toEpochMs,
   deriveChangeToken,
   deriveEditedAt,
