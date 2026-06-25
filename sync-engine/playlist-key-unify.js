@@ -44,6 +44,20 @@ const { validIsrc, validMbid, deriveNorm } = require('./playlist-merge');
 //   preserved (a within-list collision repeats the same repr; the merge
 //   dedups downstream).
 //
+// TODO(parachord#911): the norm-bridge guard from
+//   docs/plans/2026-06-21-nway-key-consistency-design.md is NOT implemented
+//   here — norm unifies even across tracks carrying DIFFERENT confident
+//   ISRCs/MBIDs (the doc's rule: "norm may bridge only when the stronger ids
+//   are absent or already agree; never override a confident isrc/mbid
+//   disagreement"). Two genuinely different recordings sharing `artist|title`
+//   but with different confident ISRCs would wrongly merge. ACCEPTED RISK for
+//   now: this matches the current cross-engine fixture contract (the 8
+//   key-unify fixtures don't pin the guard, so Kotlin has no guard either —
+//   we stay in byte-parity) AND N-way real-writes are OFF, so a false-merge
+//   cannot reach a remote. The guard + its fixtures must be added to BOTH
+//   engines together before real-writes are armed. (The blank-norm collapse,
+//   `norm='|'` from blank artist+title, is the same accepted residual.)
+//
 // @param {Array<Array<{isrc?:string|null, mbid?:string|null, norm:string}>>} lists
 // @returns {string[][]}
 function unifyTrackKeys(lists) {
