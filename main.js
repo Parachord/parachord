@@ -5868,32 +5868,49 @@ function healImportedSyncedFromMismatch() {
 }
 healImportedSyncedFromMismatch();
 
-// Bootstrap the N-way sync state (Phase 2, parachord#911). One-time, idempotent,
-// no network: seed `sync_playlist_state` from existing local_playlists so the
-// N-way engine has a baseline + per-provider record to work from once it's
-// wired (shadow mode first). Skips playlists that already have an entry (so a
-// re-run never clobbers state a future reconcile cycle advanced) and playlists
-// with no sync intent. Behavior-neutral — nothing READS this map for
-// reconciliation yet. The pure per-playlist builder is unit-tested in
-// sync-engine/playlist-sync-state.js; this is the thin iterate-and-persist glue.
+// Bootstrap + upgrade the N-way sync state (Phase 2, parachord#911). One pass,
+// idempotent, no network. Two jobs, both seeded from existing local_playlists:
+//   1. SEED — a sync-intent playlist with no state entry gets a fresh
+//      baseline (tier records) + per-provider record.
+//   2. UPGRADE — an entry whose `baseline` is the LEGACY collapsed-string
+//      shape (from the first Phase-2 ship) is re-derived to `{isrc,mbid,norm}`
+//      tier records, losslessly, from the live tracklist (NOT by exploding the
+//      collapsed strings — a collapsed key has lost its sibling tiers). This
+//      resolves design #4: the Layer-A reconcile needs the ancestor's full
+//      tiers to re-unify it. Providers/baselineSyncedAt are preserved on
+//      upgrade.
+// Skips no-sync-intent playlists and already-tier-shaped entries, so a re-run
+// is a no-op. Behavior-neutral — nothing READS this map for reconciliation
+// yet. The pure builders are unit-tested in sync-engine/playlist-sync-state.js;
+// this is the thin iterate-and-persist glue.
 function bootstrapNwayPlaylistState() {
   try {
-    const { bootstrapPlaylistState } = require('./sync-engine/playlist-sync-state');
+    const { bootstrapPlaylistState, buildBaselineTiers, isLegacyStringBaseline } =
+      require('./sync-engine/playlist-sync-state');
     const playlists = store.get('local_playlists');
     if (!Array.isArray(playlists) || playlists.length === 0) return;
     const states = getSyncStates();
     const now = Date.now();
     let seeded = 0;
+    let upgraded = 0;
     for (const pl of playlists) {
-      if (!pl || !pl.id || states[pl.id]) continue; // idempotent: skip existing
-      const entry = bootstrapPlaylistState(pl, now);
-      if (!entry) continue; // no sync intent
-      states[pl.id] = entry;
-      seeded++;
+      if (!pl || !pl.id) continue;
+      const existing = states[pl.id];
+      if (!existing) {
+        const entry = bootstrapPlaylistState(pl, now);
+        if (!entry) continue; // no sync intent
+        states[pl.id] = entry;
+        seeded++;
+      } else if (isLegacyStringBaseline(existing.baseline)) {
+        // Re-derive tiers from source tracks; keep providers + baselineSyncedAt.
+        existing.baseline = buildBaselineTiers(pl.tracks || []);
+        upgraded++;
+      }
+      // else: already tier-shaped (or empty) — idempotent skip.
     }
-    if (seeded > 0) {
+    if (seeded > 0 || upgraded > 0) {
       store.set('sync_playlist_state', states); // single write
-      console.log(`[NwayState] Bootstrap-seeded baseline + provider state for ${seeded} playlist(s)`);
+      console.log(`[NwayState] Bootstrap seeded ${seeded}, upgraded ${upgraded} playlist baseline(s) to tier records`);
     }
   } catch (err) {
     console.warn('[NwayState] Bootstrap failed (non-fatal):', err && err.message);
