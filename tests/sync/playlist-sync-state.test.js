@@ -15,6 +15,7 @@ const {
   deriveEditedAt,
   makeProviderSyncState,
   makePlaylistSyncState,
+  bootstrapPlaylistState,
 } = require('../../sync-engine/playlist-sync-state');
 
 describe('buildBaseline', () => {
@@ -124,5 +125,68 @@ describe('record factories', () => {
     expect(s.baseline).not.toBe(base); // copied, not aliased
     expect(s.baselineSyncedAt).toBe(1);
     expect(s.providers).toEqual({ spotify: {} });
+  });
+});
+
+describe('bootstrapPlaylistState — Phase 2 one-time migration (pure)', () => {
+  const NOW = 1_700_000_000_000;
+
+  test('returns null for a local-only playlist (no sync intent)', () => {
+    expect(bootstrapPlaylistState({ id: 'p1', tracks: [{ isrc: 'GBAYE0601498' }] }, NOW)).toBeNull();
+    expect(bootstrapPlaylistState({ id: 'p1', syncedTo: {} }, NOW)).toBeNull();
+    expect(bootstrapPlaylistState(null, NOW)).toBeNull();
+  });
+
+  test('seeds baseline (canonical keys) for a synced playlist', () => {
+    const pl = {
+      id: 'spotify-abc',
+      tracks: [{ isrc: 'GBAYE0601498' }, { artist: 'Radiohead', title: 'Creep' }],
+      syncedFrom: { resolver: 'spotify', externalId: 'abc', snapshotId: 'snap1' },
+    };
+    const s = bootstrapPlaylistState(pl, NOW);
+    expect(s.baseline).toEqual(['isrc-GBAYE0601498', 'norm-radiohead|creep']);
+    expect(s.baselineSyncedAt).toBe(NOW);
+  });
+
+  test('creates a provider record for syncedFrom carrying its snapshot token', () => {
+    const s = bootstrapPlaylistState(
+      { id: 'spotify-abc', tracks: [], syncedFrom: { resolver: 'spotify', externalId: 'abc', snapshotId: 'snap1' } },
+      NOW
+    );
+    expect(s.providers.spotify).toEqual({ changeToken: 'snap1', editedAt: 0, lastSyncedAt: NOW });
+  });
+
+  test('creates a provider record per syncedTo mirror with externalId', () => {
+    const s = bootstrapPlaylistState(
+      {
+        id: 'p1',
+        tracks: [],
+        syncedTo: {
+          applemusic: { externalId: 'am1', snapshotId: 'amSnap', syncedAt: 123 },
+          listenbrainz: { externalId: 'lb1' },
+          spotify: {}, // no externalId -> skipped
+        },
+      },
+      NOW
+    );
+    expect(s.providers.applemusic).toEqual({ changeToken: 'amSnap', editedAt: 0, lastSyncedAt: 123 });
+    expect(s.providers.listenbrainz).toEqual({ changeToken: null, editedAt: 0, lastSyncedAt: NOW });
+    expect(s.providers.spotify).toBeUndefined();
+  });
+
+  test('a round-trip mirror (syncedFrom AND syncedTo same provider) keeps the source token', () => {
+    const s = bootstrapPlaylistState(
+      {
+        id: 'spotify-abc',
+        tracks: [],
+        syncedFrom: { resolver: 'spotify', externalId: 'abc', snapshotId: 'fromSnap' },
+        syncedTo: { spotify: { externalId: 'abc', snapshotId: 'toSnap', syncedAt: 99 }, applemusic: { externalId: 'am1' } },
+      },
+      NOW
+    );
+    // syncedFrom token preserved over the syncedTo token for the source provider.
+    expect(s.providers.spotify.changeToken).toBe('fromSnap');
+    expect(s.providers.spotify.lastSyncedAt).toBe(99); // syncedAt still adopted
+    expect(s.providers.applemusic.changeToken).toBeNull();
   });
 });

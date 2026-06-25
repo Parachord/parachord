@@ -144,6 +144,70 @@ function makePlaylistSyncState({ baseline = [], baselineSyncedAt = 0, providers 
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Bootstrap (Phase 2 — one-time migration)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the initial N-way sync state for ONE local playlist, seeded from its
+ * current (canonical-source-era) shape. Pure + deterministic given `now`.
+ *
+ * The local tracklist is the trustworthy ancestor today (it's the canonical
+ * source), so the baseline = buildBaseline(tracks). One `providers` record is
+ * created per linked mirror — the `syncedFrom` source plus every `syncedTo`
+ * target that has an externalId — carrying that provider's existing change
+ * token (snapshotId) so the first reconcile cycle can detect later edits.
+ *
+ * `editedAt` seeds to 0 (we have no real per-provider edit time at bootstrap;
+ * it only affects merge ORDER and is captured for real on the first push).
+ *
+ * Returns null when the playlist has NO sync intent (no syncedFrom, no
+ * syncedTo) — a local-only playlist is not an N-way participant.
+ *
+ * NOTE (design open question #4, parachord#911): `baseline` stores the
+ * COLLAPSED canonical key per track (string[]), matching the Phase-1 schema.
+ * If cross-copy re-unification later needs the full {isrc,mbid,norm} tiers of
+ * the ancestor, this becomes an additive schema change + re-migration. Safe
+ * to defer: the map is main-write-only, nothing reads it for reconciliation
+ * yet, and the baseline is re-derivable from local_playlists at any time.
+ *
+ * @param {object} playlist - a local_playlists entry
+ * @param {number} now - epoch ms (caller-supplied for determinism)
+ * @returns {object|null} a makePlaylistSyncState shape, or null
+ */
+function bootstrapPlaylistState(playlist, now) {
+  if (!playlist || typeof playlist !== 'object') return null;
+  const syncedTo = playlist.syncedTo && typeof playlist.syncedTo === 'object' ? playlist.syncedTo : {};
+  const hasSyncIntent = !!(playlist.syncedFrom || Object.keys(syncedTo).length);
+  if (!hasSyncIntent) return null;
+
+  const ts = typeof now === 'number' ? now : 0;
+  const baseline = buildBaseline(playlist.tracks || []);
+  const providers = {};
+
+  const sf = playlist.syncedFrom;
+  if (sf && sf.resolver) {
+    providers[sf.resolver] = makeProviderSyncState({
+      changeToken: sf.snapshotId || null,
+      editedAt: 0,
+      lastSyncedAt: ts,
+    });
+  }
+  for (const pid of Object.keys(syncedTo)) {
+    const st = syncedTo[pid];
+    if (!st || !st.externalId) continue;
+    const prev = providers[pid] || {};
+    providers[pid] = makeProviderSyncState({
+      // Preserve the syncedFrom token if this provider is also the source.
+      changeToken: prev.changeToken || st.snapshotId || null,
+      editedAt: 0,
+      lastSyncedAt: st.syncedAt || ts,
+    });
+  }
+
+  return makePlaylistSyncState({ baseline, baselineSyncedAt: ts, providers });
+}
+
 module.exports = {
   buildBaseline,
   toEpochMs,
@@ -151,4 +215,5 @@ module.exports = {
   deriveEditedAt,
   makeProviderSyncState,
   makePlaylistSyncState,
+  bootstrapPlaylistState,
 };
