@@ -479,6 +479,61 @@ async function deletePlaylist(playlistMbid, token) {
   return { success: true };
 }
 
+// ── N-way incremental write primitives (parachord#911) ──────────────
+// ListenBrainz is `trackRemoveMode: 'ByPosition'` — its JSPF playlist API has
+// no delete-by-id; only delete-by-index. Dormant until the N-way reconcile
+// driver calls these (real writes gated OFF).
+
+// The native id LB resolution operates on — the bare recording MBID,
+// trim+lowercased (matches the engine's mbid tier; null when absent).
+function nativeIdOf(track) {
+  const raw = (track && (track.recordingMbid || track.mbid)) || '';
+  const norm = String(raw).trim().toLowerCase();
+  return norm.length > 0 ? norm : null;
+}
+
+/**
+ * Remove specific tracks from a playlist by their 0-based positions.
+ * POST /1/playlist/<mbid>/item/delete { index, count: 1 } per position,
+ * issued DESCENDING so an earlier delete never shifts the index of a position
+ * still to be removed. Returns the refreshed JSPF last_modified anchor.
+ * @param {string} playlistMbid
+ * @param {number[]} positions
+ * @param {string} token
+ * @returns {Promise<{snapshotId:string|null}>}
+ */
+async function removePlaylistTracksByPosition(playlistMbid, positions, token) {
+  const sorted = (Array.isArray(positions) ? positions : [])
+    .filter((p) => Number.isInteger(p) && p >= 0)
+    .sort((a, b) => b - a); // descending — delete from the back forward
+  for (const index of sorted) {
+    const res = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/item/delete`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ index, count: 1 }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`LB delete-by-position returned ${res.status}: ${text.slice(0, 200)}`);
+    }
+  }
+  // Re-fetch the fresh snapshot anchor (same pattern as updatePlaylistTracks).
+  let snapshotId = null;
+  try {
+    const cur = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
+      headers: authHeaders(token),
+    });
+    if (cur.ok) {
+      const data = await cur.json();
+      snapshotId =
+        data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
+        || data?.playlist?.date
+        || null;
+    }
+  } catch {}
+  return { snapshotId };
+}
+
 // Cheap remote auth check — hits /1/validate-token. Mirrors the
 // `checkAuth(token) -> boolean` contract spotify.js and applemusic.js export
 // so `provider.checkAuth(token)` in main.js's `sync:check-auth` handler
@@ -509,4 +564,6 @@ module.exports = {
   updatePlaylistTracks,
   updatePlaylistDetails,
   deletePlaylist,
+  nativeIdOf,
+  removePlaylistTracksByPosition,
 };

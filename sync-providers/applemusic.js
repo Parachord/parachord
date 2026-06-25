@@ -399,6 +399,17 @@ const AppleMusicSyncProvider = {
    *     dance for an auth that was never broken. We now go straight to
    *     the `endpoint-unsupported` return on 401/403/405.
    */
+  // ── N-way incremental write primitives (parachord#911) ────────────
+  // Apple Music is `trackRemoveMode: 'Unsupported'` — the public library API
+  // has no track-removal path, so the executor never asks AM to remove. It
+  // still exposes nativeIdOf for parity (used by the source-authority gate +
+  // the ReplaceOnly coverage check on other providers' shapes). The remove
+  // primitives intentionally do NOT exist here; the throwing default applies.
+  nativeIdOf(track) {
+    if (!track) return null;
+    return track.appleMusicId || track.appleMusicCatalogId || null;
+  },
+
   async deletePlaylist(playlistId, token, _refreshTokenCb) {
     const { developerToken, userToken } = JSON.parse(token);
     const resp = await fetch(
