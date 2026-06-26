@@ -11122,14 +11122,27 @@ const Parachord = () => {
 
   // Start sync from modal
   const startSync = async () => {
-    const { providerId, settings, selectedPlaylists } = syncSetupModal;
+    const { providerId, settings, selectedPlaylists, playlists } = syncSetupModal;
 
-    // Save settings first
+    // Save settings first. setProvider also UN-suppresses every re-selected
+    // playlist (so re-ticking undoes a prior exclusion).
     await window.electron.syncSettings.setProvider(providerId, {
       enabled: true,
       ...settings,
       selectedPlaylistIds: selectedPlaylists
     });
+
+    // ListenBrainz imports ALL by default (#911), so the wizard's selection is an
+    // EXCLUDE list: any fetched LB playlist the user UN-ticked is suppressed (the
+    // import filter skips suppressed). Ticked ones were un-suppressed above.
+    if (providerId === 'listenbrainz' && settings.syncPlaylists && Array.isArray(playlists)) {
+      const checked = new Set(selectedPlaylists || []);
+      for (const p of playlists) {
+        if (p && p.externalId && !checked.has(p.externalId)) {
+          try { await window.electron.playlists.suppressSync('listenbrainz', p.externalId); } catch {}
+        }
+      }
+    }
 
     // Also update the React-state mirror of these settings. Without this, the
     // background-sync push loop (which reads from `resolverSyncSettingsRef.current`)
@@ -63428,10 +63441,24 @@ useEffect(() => {
                   setSyncSetupModal(prev => ({ ...prev, step: 'playlists', error: null }));
                   const result = await window.electron.sync.fetchPlaylists(syncSetupModal.providerId);
                   if (result.success) {
+                    // ListenBrainz imports ALL playlists by default (#911), so
+                    // pre-check every fetched playlist EXCEPT already-suppressed
+                    // ones — unticking is what EXCLUDES (suppresses) a playlist,
+                    // ticking re-includes it. Spotify/AM keep their seeded
+                    // (relationship-based) selection.
+                    let lbPreselect = null;
+                    if (syncSetupModal.providerId === 'listenbrainz') {
+                      const suppMap = await window.electron.store.get('suppressed_sync_playlists').catch(() => null);
+                      const supp = (suppMap && suppMap.listenbrainz) || [];
+                      lbPreselect = (result.playlists || [])
+                        .map(p => p.externalId)
+                        .filter(id => !supp.includes(id));
+                    }
                     setSyncSetupModal(prev => ({
                       ...prev,
                       playlists: result.playlists,
-                      folders: result.folders
+                      folders: result.folders,
+                      ...(lbPreselect ? { selectedPlaylists: lbPreselect } : {})
                     }));
                   } else {
                     // Handle failed playlist fetch - show error and go back to options
