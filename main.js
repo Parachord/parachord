@@ -7149,19 +7149,31 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     if (isCancelled()) return await finalizeCancelled(collection, results);
 
     // Sync playlists
-    if (settings.syncPlaylists && settings.selectedPlaylistIds?.length > 0 && provider.capabilities.playlists) {
+    // ListenBrainz imports ALL of the user's remote playlists by default (mobile
+    // parity — an empty pull-allowlist means "import all"; see
+    // SyncEngine.kt getPullPlaylists). So a playlist created on another device
+    // (e.g. Android) auto-appears here. Spotify/Apple Music keep the opt-IN model
+    // (only playlists in selectedPlaylistIds). Suppression + an explicit channel
+    // override still exclude individual playlists on every provider.
+    const importAll = providerId === 'listenbrainz';
+    if (settings.syncPlaylists && (importAll || settings.selectedPlaylistIds?.length > 0) && provider.capabilities.playlists) {
       // Load current playlists
       const currentPlaylists = store.get('local_playlists') || [];
 
       // Fetch playlist metadata to check for updates
-      sendProgress({ phase: 'playlists', current: 0, total: settings.selectedPlaylistIds.length, providerId });
+      sendProgress({ phase: 'playlists', current: 0, total: settings.selectedPlaylistIds?.length || 0, providerId });
       const { playlists: remotePlaylists } = await provider.fetchPlaylists(token, null, refreshToken);
       const suppressedPlaylists = store.get('suppressed_sync_playlists') || {};
       const suppressedForProvider = suppressedPlaylists[providerId] || [];
-      const allSelectedRemote = remotePlaylists.filter(p =>
-        settings.selectedPlaylistIds.includes(p.externalId) &&
-        !suppressedForProvider.includes(p.externalId)
-      );
+      const allSelectedRemote = remotePlaylists.filter(p => {
+        if (suppressedForProvider.includes(p.externalId)) return false; // user removed it
+        if (importAll) {
+          // Import-all (LB): include unless an explicit channel override drops it.
+          const override = getChannelOverride(`${providerId}-${p.externalId}`);
+          return !(Array.isArray(override) && !override.includes(providerId));
+        }
+        return (settings.selectedPlaylistIds || []).includes(p.externalId);
+      });
 
       // Stagger across cycles (parachord#800). Background sync processes
       // the top N oldest-stale-first per cycle; over 4-5 cycles the whole
