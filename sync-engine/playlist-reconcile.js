@@ -73,12 +73,30 @@ function distinct(arr) {
  * fixture. Flagged to the human; tracked for a coordinated change before
  * `nway_propagate` is ever armed. Surfaced by the PR-4a adversarial review.
  */
+// Number of CONSECUTIVE complete-fetch omissions before a materialized track's
+// absence escalates from "transient" to "real deletion".
+const MISSING_STREAK_THRESHOLD = 2;
+
 function isProviderPendingForKey(cache, providerId, reprKey, keyToTrack) {
   const track = keyToTrack[reprKey];
   if (!track) return true; // defensive: protect
   const cacheKey = canonicalTrackKey(track);
   const entry = cache.select(cacheKey, providerId);
-  return !entry || !entry.resolvedId;
+  if (!entry || !entry.resolvedId) return true; // never materialized → pending
+  // Materialized: still PENDING (protected) until it has been omitted from the
+  // provider's complete fetch for MISSING_STREAK_THRESHOLD consecutive cycles.
+  return (entry.missingStreak || 0) < MISSING_STREAK_THRESHOLD;
+}
+
+// True when a materialized track's absence has cleared the missingStreak gate
+// (>= threshold consecutive complete-fetch omissions) — i.e. its absence is now
+// genuine deletion evidence. Used by the authoritative-source path.
+function streakEscalated(cache, providerId, reprKey, keyToTrack) {
+  const track = keyToTrack[reprKey];
+  if (!track) return false; // can't key it → don't escalate (protect)
+  const entry = cache.select(canonicalTrackKey(track), providerId);
+  if (!entry || !entry.resolvedId) return false; // never materialized → not a deletion
+  return (entry.missingStreak || 0) >= MISSING_STREAK_THRESHOLD;
 }
 
 /**
@@ -235,27 +253,9 @@ async function reconcilePlaylist(ctx) {
       c.id !== 'local' && c.id === sourcePrefix ? playlist.writable !== false : true;
   }
 
-  // A4 — pull-source authority. A deletion made by the AUTHORITATIVE source is
-  // FINAL (not protected by augmentation). The source is authoritative only if
-  // it CAN delete (trackRemoveMode !== 'Unsupported'); an add-only source
-  // (Apple Music) can never prove a deletion, so it grants no drop-authority.
-  let authoritativeCopyId = null;
-  if (pullSource && pullSource.providerId) {
-    const sourceProvider = providerById[pullSource.providerId];
-    const canDelete = sourceProvider && sourceProvider.capabilities
-      && sourceProvider.capabilities.trackRemoveMode !== 'Unsupported';
-    authoritativeCopyId = canDelete ? pullSource.providerId : null;
-  } else if (playlist.sourceUrl) {
-    authoritativeCopyId = 'local'; // hosted XSPF — local mirror IS the source
-  }
-  const authoritativeCopy = copies.find((c) => c.id === authoritativeCopyId && c.changed);
-  const authoritativeDropped = new Set();
-  if (authoritativeCopy) {
-    const present = new Set(authoritativeCopy.keys);
-    for (const k of baselineRepr) if (!present.has(k)) authoritativeDropped.add(k);
-  }
-
   // A5 — key→track (LOCAL first so richer local metadata wins) + key→isrc.
+  // Moved ahead of A4 because both the authority gate and the streak update
+  // need the concrete track to derive its cache key.
   const keyToTrack = {};
   const keyToIsrc = {};
   for (let i = 0; i < copies.length; i++) {
@@ -271,19 +271,84 @@ async function reconcilePlaylist(ctx) {
     }
   }
 
-  // A6 — pending-aware augmentation. For each CHANGED, non-authoritative,
-  // non-local mirror copy: a baseline key it lacks is re-added to its merge
-  // keys IFF the source didn't drop it AND the cache says it's pending for this
-  // provider — so the merge never reads an un-materialized add as a deletion.
+  // A5.5 — PRESENCE TRACKING for the missingStreak gate. Every CHANGED (=>
+  // COMPLETE, post partial-fetch floor) provider copy is fresh evidence of
+  // what that provider currently holds: reset the streak for each baseline key
+  // it shows, increment it for each baseline key it omits. Only complete
+  // fetches vote, so a truncated/unchanged copy never moves a streak. This is
+  // the persisted memory that lets a SINGLE transient complete-fetch omission
+  // stay protected (a region-filtered/silently-short-but-count-matching fetch),
+  // while a genuine deletion — omitted for >= 2 consecutive cycles — still
+  // escalates. (parachord#911 shared-root fix; mobile mirrors the same rule.)
+  // Gated off in shadow: streak escalation is a REAL-propagation mechanism, and
+  // shadow must stay side-effect-free. While dryRun, streaks never advance, so
+  // a materialized track transiently absent is always protected (safe).
+  if (!dryRun) {
+    for (const copy of copies) {
+      if (copy.id === 'local' || !copy.changed) continue;
+      const present = new Set(copy.keys);
+      for (const k of baselineRepr) {
+        const track = keyToTrack[k];
+        if (!track) continue;
+        const cacheKey = canonicalTrackKey(track);
+        if (present.has(k)) cache.recordSeen(cacheKey, copy.id, now);
+        else cache.recordMissing(cacheKey, copy.id);
+      }
+    }
+  }
+
+  // A4 — pull-source authority. A deletion made by the AUTHORITATIVE source is
+  // FINAL (not protected by augmentation). The source is authoritative only if
+  // it CAN delete (trackRemoveMode !== 'Unsupported'); an add-only source
+  // (Apple Music) can never prove a deletion, so it grants no drop-authority.
+  // Even the authoritative source's absence must clear the missingStreak gate:
+  // a single transient complete-fetch omission is NOT a deletion (it would
+  // resurrect for one cycle, then drop — the no-false-drop-safe direction).
+  let authoritativeCopyId = null;
+  if (pullSource && pullSource.providerId) {
+    const sourceProvider = providerById[pullSource.providerId];
+    const canDelete = sourceProvider && sourceProvider.capabilities
+      && sourceProvider.capabilities.trackRemoveMode !== 'Unsupported';
+    authoritativeCopyId = canDelete ? pullSource.providerId : null;
+  } else if (playlist.sourceUrl) {
+    authoritativeCopyId = 'local'; // hosted XSPF — local mirror IS the source
+  }
+  const authoritativeCopy = copies.find((c) => c.id === authoritativeCopyId && c.changed);
+  const authoritativeDropped = new Set();
+  if (authoritativeCopy) {
+    const present = new Set(authoritativeCopy.keys);
+    for (const k of baselineRepr) {
+      if (present.has(k)) continue;
+      // 'local' source (hosted XSPF) is in-process, never a truncated fetch —
+      // its absence is immediately authoritative. A provider source must clear
+      // the missingStreak gate first.
+      if (authoritativeCopyId === 'local' || streakEscalated(cache, authoritativeCopyId, k, keyToTrack)) {
+        authoritativeDropped.add(k);
+      }
+    }
+  }
+
+  // A6 — pending-aware augmentation. A CHANGED copy that LACKS a baseline key
+  // gets that key re-added to its merge keys (so the merge doesn't read its
+  // absence as a deletion) unless the absence is GENUINE deletion evidence:
+  //   - AUTHORITATIVE source copy: re-add every lacked key EXCEPT those whose
+  //     absence has streak-escalated (authoritativeDropped) — so a single
+  //     transient complete-fetch omission of the source doesn't drop the track,
+  //     but a sustained one (>= 2 cycles) finally does.
+  //   - other mirror copies: re-add a lacked key only if the source didn't drop
+  //     it AND it's pending for this provider (never-materialized, OR
+  //     materialized but not yet missing for >= 2 consecutive complete fetches).
   const augmentedCopies = copies.map((copy) => {
-    if (copy.id === 'local' || copy.id === authoritativeCopyId || !copy.changed) return copy;
+    if (copy.id === 'local' || !copy.changed) return copy;
     const present = new Set(copy.keys);
     const lacked = baselineRepr.filter((k) => !present.has(k));
     if (lacked.length === 0) return copy;
-    const pendingLacked = lacked.filter(
-      (k) => !authoritativeDropped.has(k) && isProviderPendingForKey(cache, copy.id, k, keyToTrack)
-    );
-    return pendingLacked.length ? { ...copy, keys: copy.keys.concat(pendingLacked) } : copy;
+    const toReadd = copy.id === authoritativeCopyId
+      ? lacked.filter((k) => !authoritativeDropped.has(k))
+      : lacked.filter(
+        (k) => !authoritativeDropped.has(k) && isProviderPendingForKey(cache, copy.id, k, keyToTrack)
+      );
+    return toReadd.length ? { ...copy, keys: copy.keys.concat(toReadd) } : copy;
   });
 
   // A7 — merge + total-wipe guard.

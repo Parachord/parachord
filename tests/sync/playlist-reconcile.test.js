@@ -430,6 +430,45 @@ describe('reconcile — adversarial-review regressions (PB-1, PB-2)', () => {
   });
 });
 
+describe('reconcile — missingStreak gate (shared-root fix)', () => {
+  test('read-only authoritative source: single transient omission protected, sustained one propagates', async () => {
+    const h = new Harness('spotify-pl');
+    h.playlist.writable = false; // read-only imported source
+    h.pullSource = { providerId: 'spotify', externalId: 'ext-spotify' };
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'), 'ext-spotify');
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    h.warmCache('spotify', 'm2'); // m2 was materialized on the source
+
+    // CYCLE 1 — the source's complete fetch transiently omits m2 (streak 1).
+    h.drift(sp, [mk('m0'), mk('m1')]);
+    await h.cycle();
+    expect(lb.remote.length).toBe(3); // m2 NOT dropped — single omission is transient
+    expect(lb.removeByPositionCalls).toEqual([]);
+    expect(h.state.baseline.tracks.length).toBe(3);
+
+    // CYCLE 2 — the source still omits m2 (streak 2 → escalates → real delete).
+    await h.cycle();
+    expect(mbidsOf(lb.remote)).toEqual(new Set(['m0', 'm1'])); // delete propagated
+    expect(lb.removeByPositionCalls.length).toBe(1);
+    expect(h.state.baseline.tracks.length).toBe(2);
+  });
+
+  test('cache recordSeen resets the streak; recordMissing increments it', () => {
+    const c = createHydrationCache();
+    c.upsert('mbid-x', 'spotify', 'nid:x', 100, 1);
+    expect(c.select('mbid-x', 'spotify').missingStreak).toBe(0);
+    c.recordMissing('mbid-x', 'spotify');
+    c.recordMissing('mbid-x', 'spotify');
+    expect(c.select('mbid-x', 'spotify').missingStreak).toBe(2);
+    c.recordSeen('mbid-x', 'spotify', 200);
+    expect(c.select('mbid-x', 'spotify').missingStreak).toBe(0);
+    // No-op on a never-materialized key (protected by resolvedId===null anyway).
+    c.recordMissing('mbid-ghost', 'spotify');
+    expect(c.select('mbid-ghost', 'spotify')).toBeNull();
+  });
+});
+
 describe('reconcile — shadow (dryRun) mode', () => {
   test('computes the would-push plan without any write or baseline advance', async () => {
     const h = new Harness();
