@@ -5407,6 +5407,43 @@ ipcMain.handle('sync-state:get', async (event, localPlaylistId) => getPlaylistSy
 function isNwayShadowEnabled() { return store.get('nway_shadow_enabled') === true; }
 function isNwayPropagateEnabled() { return store.get('nway_propagate') === true; }
 
+// Per-playlist MIRROR-ONLY flag (parachord#911 / parachord-mobile#277). When
+// set, the playlist is reconciled as a ONE-WAY mirror FROM its source: the
+// source is single-authority and its rotate-out drops IMMEDIATELY (no
+// missingStreak gate), exactly like a followed playlist — for OWNED-but-dynamic
+// playlists the source-writability split alone can't catch (e.g. a
+// SmarterPlaylists-managed Daily Brew the provider reports as user-owned).
+// Stored in its OWN electron-store map (parallel to sync_playlist_links /
+// sync_playlist_state), NOT on the playlist row — a pull refreshes the playlist
+// (and its owned/followed signal) and must NEVER clobber the user's intent.
+function getMirrorOnlyMap() { return store.get('sync_playlist_mirror_only') || {}; }
+function getPlaylistMirrorOnly(localPlaylistId) {
+  return getMirrorOnlyMap()[localPlaylistId] === true;
+}
+function setPlaylistMirrorOnly(localPlaylistId, value) {
+  if (!localPlaylistId) return;
+  const map = getMirrorOnlyMap();
+  if (value) map[localPlaylistId] = true;
+  else delete map[localPlaylistId];
+  store.set('sync_playlist_mirror_only', map);
+}
+ipcMain.handle('nway:get-mirror-only', async (event, localPlaylistId) => getPlaylistMirrorOnly(localPlaylistId));
+ipcMain.handle('nway:set-mirror-only', async (event, localPlaylistId, value) => {
+  setPlaylistMirrorOnly(localPlaylistId, value === true);
+  return { success: true, mirrorOnly: getPlaylistMirrorOnly(localPlaylistId) };
+});
+
+// Desktop's owned-vs-followed (writable) signal for a playlist's pull source —
+// the equivalent of mobile's `playlist.writable` (#269). Followed/read-only
+// imports stamp `source: <provider>-import`; owned imports + user-created
+// playlists are writable. (The import path at sync:start sets this from
+// remotePlaylist.isOwnedByUser.)
+function isPlaylistWritable(playlist) {
+  const src = playlist && playlist.source;
+  if (typeof src === 'string' && src.endsWith('-import')) return false;
+  return true;
+}
+
 async function getNwayProviderToken(providerId) {
   if (providerId === 'spotify') return await ensureValidSpotifyToken();
   if (providerId === 'applemusic') {
@@ -5445,8 +5482,16 @@ async function runNwayShadowReconcile() {
   const now = Date.now();
   const states = getSyncStates();
   const playlists = store.get('local_playlists') || [];
+  // CLEAN store of rows — the effects read+persist these, so they must NOT carry
+  // the derived `writable` (it's a per-cycle computed signal, never a row field).
   const playlistById = new Map(playlists.map((p) => [p.id, p]));
   const mirrorsOf = (localId) => nwayMirrorsOf(playlistById.get(localId));
+  // The reconcile reads `playlist.writable` (owned vs followed → immediate
+  // authority); attach it ONLY to the per-cycle copy handed to the engine.
+  const reconcileGetPlaylist = (localId) => {
+    const p = playlistById.get(localId);
+    return p ? { ...p, writable: isPlaylistWritable(p) } : null;
+  };
 
   // Which providers are referenced by any tracked playlist's mirrors?
   const neededProviders = new Set();
@@ -5507,7 +5552,7 @@ async function runNwayShadowReconcile() {
 
   const out = await runNwayReconcileCycle({
     states: runnableStates,
-    getPlaylist: storeAbstraction.getPlaylist,
+    getPlaylist: reconcileGetPlaylist, // carries the derived `writable`
     getMirrors: mirrorsOf,
     boundProviders,
     remoteLists,
@@ -5517,6 +5562,7 @@ async function runNwayShadowReconcile() {
         ? { providerId: pl.syncedFrom.resolver, externalId: pl.syncedFrom.externalId }
         : null;
     },
+    getMirrorOnly: (localId) => getPlaylistMirrorOnly(localId),
     cache,
     effects: makeStoreEffects(storeAbstraction),
     now,

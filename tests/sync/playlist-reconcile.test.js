@@ -127,6 +127,7 @@ class Harness {
     this.pullSource = null;
     this.removedLinks = [];
     this.playlist = { tracks: [], locallyModified: false, lastModified: 0, writable: true };
+    this.mirrorOnly = false;
     this.state = { baseline: { localPlaylistId: localId, tracks: [], baselineSyncedAt: this.time }, providers: {} };
   }
   add(provider, externalId) {
@@ -184,6 +185,7 @@ class Harness {
       remoteLists: this._remoteLists(),
       storedTokens: this.state.providers,
       pullSource: this.pullSource,
+      mirrorOnly: this.mirrorOnly,
       coordinator: createHydrationCoordinator({ cache: this.cache, clock: () => this.time }),
       cache: this.cache,
       now: this.time,
@@ -430,28 +432,58 @@ describe('reconcile — adversarial-review regressions (PB-1, PB-2)', () => {
   });
 });
 
-describe('reconcile — missingStreak gate (shared-root fix)', () => {
-  test('read-only authoritative source: single transient omission protected, sustained one propagates', async () => {
-    const h = new Harness('spotify-pl');
-    h.playlist.writable = false; // read-only imported source
+describe('reconcile — source-authority split (missingStreak gate scoped to OWNED sources)', () => {
+  // Set up a source-mirrored playlist: Spotify is the pull source, LB the mirror.
+  function setupSourceMirror(localId, { writable }) {
+    const h = new Harness(localId);
+    h.playlist.writable = writable;
     h.pullSource = { providerId: 'spotify', externalId: 'ext-spotify' };
     const sp = h.add(new FakeProvider('spotify', 'ByNativeId'), 'ext-spotify');
     const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
     h.seed([mk('m0'), mk('m1'), mk('m2')]);
-    h.warmCache('spotify', 'm2'); // m2 was materialized on the source
+    return { h, sp, lb };
+  }
 
-    // CYCLE 1 — the source's complete fetch transiently omits m2 (streak 1).
-    h.drift(sp, [mk('m0'), mk('m1')]);
+  test('V8 — followed (read-only) source rotate-out drops IMMEDIATELY (one-way mirror, no gate)', async () => {
+    const { h, sp, lb } = setupSourceMirror('spotify-pl', { writable: false });
+    // NO warmCache: the immediate-authority path bypasses the hydration cache.
+    h.drift(sp, [mk('m0'), mk('m1')]); // ONE complete fetch rotates m2 out
     await h.cycle();
-    expect(lb.remote.length).toBe(3); // m2 NOT dropped — single omission is transient
-    expect(lb.removeByPositionCalls).toEqual([]);
-    expect(h.state.baseline.tracks.length).toBe(3);
-
-    // CYCLE 2 — the source still omits m2 (streak 2 → escalates → real delete).
-    await h.cycle();
-    expect(mbidsOf(lb.remote)).toEqual(new Set(['m0', 'm1'])); // delete propagated
+    expect(mbidsOf(lb.remote)).toEqual(new Set(['m0', 'm1'])); // dropped in ONE cycle
     expect(lb.removeByPositionCalls.length).toBe(1);
     expect(h.state.baseline.tracks.length).toBe(2);
+    expect(mbidsOf(h.playlist.tracks)).toEqual(new Set(['m0', 'm1']));
+  });
+
+  test('V8b — a TRUNCATED followed-source fetch does NOT drop (partial-fetch floor before immediate authority)', async () => {
+    const { h, sp, lb } = setupSourceMirror('spotify-pl', { writable: false });
+    h.drift(sp, [mk('m0'), mk('m1')]); // remote DECLARES 2 (changed vs baseline 3)…
+    sp.truncateFetchTo = 1; // …but the FETCH returns only 1 (truncated)
+    await h.cycle();
+    expect(mbidsOf(h.playlist.tracks)).toEqual(new Set(['m0', 'm1', 'm2'])); // all 3 retained
+    expect(h.state.baseline.tracks.length).toBe(3);
+    expect(lb.remote.length).toBe(3);
+    expect(lb.removeByPositionCalls).toEqual([]);
+  });
+
+  test('owned source single transient omission is gate-protected (not dropped)', async () => {
+    const { h } = setupSourceMirror('spotify-pl', { writable: true }); // OWNED source
+    h.warmCache('spotify', 'm2'); // materialized → the gate consults its streak
+    h.drift(h.provider('spotify'), [mk('m0'), mk('m1')]); // ONE omission
+    await h.cycle();
+    expect(mbidsOf(h.playlist.tracks)).toEqual(new Set(['m0', 'm1', 'm2'])); // PROTECTED — m2 retained
+    expect(h.state.baseline.tracks.length).toBe(3);
+    expect(h.cache.select('mbid-m2', 'spotify').missingStreak).toBe(1); // stepped, not yet escalated
+  });
+
+  test('V9 — mirrorOnly flag forces an immediate one-way drop on an OWNED source despite streak 0', async () => {
+    const { h, lb } = setupSourceMirror('spotify-pl', { writable: true }); // OWNED…
+    h.mirrorOnly = true; // …but user-flagged one-way
+    h.drift(h.provider('spotify'), [mk('m0'), mk('m1')]);
+    await h.cycle();
+    expect(mbidsOf(lb.remote)).toEqual(new Set(['m0', 'm1'])); // drops in ONE cycle, no gate
+    expect(h.state.baseline.tracks.length).toBe(2);
+    expect(mbidsOf(h.playlist.tracks)).toEqual(new Set(['m0', 'm1']));
   });
 
   test('cache recordSeen resets the streak; recordMissing increments it', () => {

@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('electron', {
   // triggers one reconcile cycle for validation (shadow = compute + log only).
   nway: {
     shadowRun: () => ipcRenderer.invoke('nway:shadow-run'),
+    getMirrorOnly: (localPlaylistId) => ipcRenderer.invoke('nway:get-mirror-only', localPlaylistId),
+    setMirrorOnly: (localPlaylistId, value) => ipcRenderer.invoke('nway:set-mirror-only', localPlaylistId, value),
   },
 
   // Spotify operations
