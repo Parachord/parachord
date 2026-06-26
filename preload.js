@@ -407,6 +407,9 @@ contextBridge.exposeInMainWorld('electron', {
     fetchPlaylistTracks: (providerId, playlistExternalId) => ipcRenderer.invoke('sync:fetch-playlist-tracks', providerId, playlistExternalId),
     pushPlaylist: (providerId, playlistExternalId, tracks, metadata) => ipcRenderer.invoke('sync:push-playlist', providerId, playlistExternalId, tracks, metadata),
     createPlaylist: (providerId, name, description, tracks, localPlaylistId = null) => ipcRenderer.invoke('sync:create-playlist', providerId, name, description, tracks, localPlaylistId),
+    // Per-playlist Sync channel toggle (parachord#911). enabled=false + { deleteRemote }
+    // optionally deletes the remote, then detaches the local mirror.
+    setChannel: (localPlaylistId, providerId, enabled, opts = {}) => ipcRenderer.invoke('sync:set-channel', localPlaylistId, providerId, enabled, opts),
     resolveTracks: (providerId, tracks) => ipcRenderer.invoke('sync:resolve-tracks', providerId, tracks),
     cleanupDuplicatePlaylists: (providerId) => ipcRenderer.invoke('sync:cleanup-duplicate-playlists', providerId),
     relinkOrphanedPlaylists: (providerId) => ipcRenderer.invoke('sync:relink-orphaned-playlists', providerId),

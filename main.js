@@ -4630,26 +4630,53 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
   if (data.type === 'playlist' && data.playlistId) {
     const pl = (store.get('local_playlists') || []).find(p => p.id === data.playlistId);
 
-    // Mirror-only (one-way) sync setting (parachord#911 / parachord-mobile#277).
-    // Only for sync-participating playlists. A FOLLOWED ('-import' source) or
-    // hosted-XSPF playlist is INHERENTLY one-way (its source is the single
-    // authority) → shown checked + DISABLED (locked). An OWNED playlist is
-    // user-settable — covers owned-but-dynamic playlists a 3rd-party app
-    // (e.g. SmarterPlaylists) rebuilds through the user's OAuth, which the
-    // provider reports as user-owned.
-    if (pl && (pl.syncedFrom || pl.syncedTo || pl.sourceUrl) && !pl.localOnly) {
+    // "Sync ▸" submenu (parachord#911, parity with mobile's PlaylistSyncChannels
+    // sheet) — manually choose WHERE this playlist syncs, plus the one-way
+    // "Mirror only" toggle. One channel toggle per available provider; toggling
+    // writes the per-playlist channel override (authoritative). "Mirror only"
+    // sits at the bottom, locked-on for followed/hosted (inherently one-way).
+    if (pl && !pl.localOnly) {
+      const channels = getPlaylistSyncChannelsForMenu(pl).filter(c => c.available);
       const isHostedXspf = !!pl.sourceUrl;
       const isFollowed = typeof pl.source === 'string' && pl.source.endsWith('-import');
-      const forced = isFollowed || isHostedXspf;
-      const effective = forced || getPlaylistMirrorOnly(data.playlistId);
-      menuItems.push({ type: 'separator' });
-      menuItems.push({
-        label: forced
+      const mirrorForced = isFollowed || isHostedXspf;
+      const mirrorEffective = mirrorForced || getPlaylistMirrorOnly(data.playlistId);
+
+      const submenu = channels.map(ch => {
+        // Source-only channels (the playlist's pull source) are shown checked
+        // but LOCKED — detaching a pull source is a "Delete playlist" concern,
+        // not a channel toggle. Push targets are togglable when connected.
+        const togglable = ch.connected && ch.pushTarget;
+        const label = ch.isSource && !ch.pushTarget
+          ? `${ch.displayName} (source)`
+          : (ch.connected ? ch.displayName : `${ch.displayName} (connect in Settings)`);
+        return {
+          label,
+          type: 'checkbox',
+          checked: ch.enabled,
+          enabled: togglable,
+          click: togglable ? () => {
+            safeSendToRenderer('track-context-menu-action', {
+              action: 'sync-channel-toggle',
+              playlistId: data.playlistId,
+              name: data.name,
+              providerId: ch.providerId,
+              providerLabel: ch.displayName,
+              enabling: !ch.enabled,
+              currentlyMirrored: !!(pl.syncedTo && pl.syncedTo[ch.providerId] && pl.syncedTo[ch.providerId].externalId)
+            });
+          } : undefined
+        };
+      });
+
+      submenu.push({ type: 'separator' });
+      submenu.push({
+        label: mirrorForced
           ? (isHostedXspf ? 'Mirror only (one-way · hosted)' : 'Mirror only (one-way · followed)')
           : 'Mirror only (one-way)',
         type: 'checkbox',
-        checked: effective,
-        enabled: !forced, // locked on for followed/hosted — inherently one-way
+        checked: mirrorEffective,
+        enabled: !mirrorForced, // locked on for followed/hosted — inherently one-way
         click: () => {
           const next = !getPlaylistMirrorOnly(data.playlistId);
           setPlaylistMirrorOnly(data.playlistId, next);
@@ -4661,34 +4688,10 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
           });
         }
       });
-    }
 
-    // LB RE-EXPORT opt-in (parachord#911 / parachord-mobile ec526bb). A
-    // `listenbrainz-*` playlist (created/edited on ListenBrainz via Achordion)
-    // can be mirrored to Spotify / Apple Music — but ONLY by explicit opt-in
-    // here; it never auto-mirrors, so a pulled LB library can't flood streaming.
-    // Each toggle writes the sync_playlist_reexport map the push loops read.
-    if (pl && !pl.localOnly && data.playlistId.startsWith('listenbrainz-')) {
-      const optedIn = getPlaylistReexport(data.playlistId);
-      menuItems.push({ type: 'separator' });
-      for (const [pid, label] of [['spotify', 'Spotify'], ['applemusic', 'Apple Music']]) {
-        menuItems.push({
-          label: `Mirror to ${label}`,
-          type: 'checkbox',
-          checked: optedIn.includes(pid),
-          click: () => {
-            const next = !getPlaylistReexport(data.playlistId).includes(pid);
-            setPlaylistReexport(data.playlistId, pid, next);
-            safeSendToRenderer('track-context-menu-action', {
-              action: 'reexport-changed',
-              playlistId: data.playlistId,
-              name: data.name,
-              providerId: pid,
-              providerLabel: label,
-              enabled: next
-            });
-          }
-        });
+      if (submenu.length > 1) { // at least one channel + the mirror-only row
+        menuItems.push({ type: 'separator' });
+        menuItems.push({ label: 'Sync', submenu });
       }
     }
 
@@ -5302,6 +5305,16 @@ ipcMain.handle('playlists-delete', async (event, playlistId) => {
     }
 
     store.set('local_playlists', filteredPlaylists);
+
+    // Drop the playlist's per-playlist sync prefs so they don't leak (parachord#911).
+    for (const key of ['sync_playlist_channels', 'sync_playlist_mirror_only']) {
+      const map = store.get(key);
+      if (map && typeof map === 'object' && playlistId in map) {
+        delete map[playlistId];
+        store.set(key, map);
+      }
+    }
+
     console.log('  ✅ Deleted playlist');
     return { success: true };
   } catch (error) {
@@ -5454,35 +5467,129 @@ function removePlaylistSyncState(localPlaylistId, providerId) {
 ipcMain.handle('sync-state:get-all', async () => getSyncStates());
 ipcMain.handle('sync-state:get', async (event, localPlaylistId) => getPlaylistSyncState(localPlaylistId));
 
-// Per-playlist LB RE-EXPORT opt-in (parachord#911, parity with mobile ec526bb).
-// `sync_playlist_reexport = { [localPlaylistId]: ['spotify','applemusic'] }` —
-// the streaming providers a `listenbrainz-*` playlist has been EXPLICITLY opted
-// into for re-export. Its own electron-store map (pull-safe; not a playlist row
-// field). Read by the renderer push loops' opt-in gate; written from the
-// playlist's Sync context menu. Absent/empty → never auto-mirrors (the flood
-// guard); only the providers in the list are pushed.
-// The pure opt-in predicate (parity anchor) — shared by the renderer push-loop
-// gates (inlined there) and the main-process side-doors (relinkOrphansFor + the
-// create gateway) so the flood guard is byte-consistent everywhere.
-const { isReexportOptInRequired } = require('./sync-engine/playlist-push-candidate');
+// Per-playlist Sync CHANNEL override (parachord#911, parity with mobile
+// PlaylistSyncChannelManager). `sync_playlist_channels = { [localId]:
+// ['spotify','applemusic','listenbrainz'] }` — when present it is AUTHORITATIVE:
+// the playlist syncs ONLY to the listed providers (the user picked them in the
+// Sync menu). Absent → no override → default auto-sync (with the listenbrainz-*
+// re-export opt-in still gating streaming). Its own pull-safe electron-store map
+// (not a playlist row field). The pure gate + channel-state predicates live in
+// sync-engine/playlist-push-candidate.js so the renderer push loops (inlined)
+// and the main-process side-doors (relinkOrphansFor + the create gateway) stay
+// byte-consistent.
+const {
+  channelGateBlocksCreate,
+  channelOverrideExcludes,
+  computeSyncChannels,
+} = require('./sync-engine/playlist-push-candidate');
 
-function getReexportMap() {
-  const m = store.get('sync_playlist_reexport');
+const SYNC_PROVIDER_DISPLAY = { spotify: 'Spotify', applemusic: 'Apple Music', listenbrainz: 'ListenBrainz' };
+
+function getChannelMap() {
+  const m = store.get('sync_playlist_channels');
   return m && typeof m === 'object' ? m : {};
 }
-function getPlaylistReexport(localPlaylistId) {
-  const v = getReexportMap()[localPlaylistId];
-  return Array.isArray(v) ? v : [];
+function getChannelOverride(localPlaylistId) {
+  const v = getChannelMap()[localPlaylistId];
+  return Array.isArray(v) ? v : null; // null = no override (default behavior)
 }
-function setPlaylistReexport(localPlaylistId, providerId, enabled) {
-  if (!localPlaylistId || !providerId) return;
-  const map = getReexportMap();
-  const set = new Set(Array.isArray(map[localPlaylistId]) ? map[localPlaylistId] : []);
+function setChannelOverride(localPlaylistId, providers) {
+  if (!localPlaylistId) return;
+  const map = getChannelMap();
+  map[localPlaylistId] = Array.isArray(providers) ? [...new Set(providers)] : [];
+  store.set('sync_playlist_channels', map);
+}
+
+// Providers the user has configured for sync (for the Sync menu connected/dim).
+function getEnabledSyncProviders() {
+  const s = store.get('resolver_sync_settings') || {};
+  return Object.keys(s).filter(pid => s[pid] && s[pid].enabled !== false);
+}
+
+// The providers a playlist currently syncs with (its source + its push mirrors).
+function getCurrentMirrorProviders(playlist) {
+  if (!playlist) return [];
+  const out = new Set();
+  if (playlist.syncedFrom && playlist.syncedFrom.resolver) out.add(playlist.syncedFrom.resolver);
+  if (playlist.syncedTo) {
+    for (const pid of Object.keys(playlist.syncedTo)) {
+      if (playlist.syncedTo[pid] && playlist.syncedTo[pid].externalId) out.add(pid);
+    }
+  }
+  return [...out];
+}
+
+// Channel states (+ display names) for a playlist's Sync submenu.
+function getPlaylistSyncChannelsForMenu(playlist) {
+  return computeSyncChannels(playlist, {
+    enabledProviders: getEnabledSyncProviders(),
+    override: getChannelOverride(playlist.id),
+    currentMirrors: getCurrentMirrorProviders(playlist),
+  }).map(c => ({ ...c, displayName: SYNC_PROVIDER_DISPLAY[c.providerId] || c.providerId }));
+}
+
+// Detach a playlist from one provider's mirror: drop the durable link, the
+// per-provider sync state, and the playlist's `syncedTo[provider]` so the
+// edit-push branch stops pushing to it. Keeps the remote (caller deletes it
+// separately if the user chose to).
+function detachPlaylistMirror(localPlaylistId, providerId) {
+  removeSyncLink(localPlaylistId, providerId);
+  removePlaylistSyncState(localPlaylistId, providerId);
+  const playlists = store.get('local_playlists') || [];
+  const idx = playlists.findIndex(p => p.id === localPlaylistId);
+  if (idx >= 0 && playlists[idx].syncedTo && playlists[idx].syncedTo[providerId]) {
+    const syncedTo = { ...playlists[idx].syncedTo };
+    delete syncedTo[providerId];
+    playlists[idx] = { ...playlists[idx], syncedTo };
+    store.set('local_playlists', playlists);
+  }
+}
+
+// Best-effort remote delete for the "delete from this service too" choice.
+// Returns { deleted } or { deleted:false, reason } where reason 'unsupported'
+// means the user must remove it manually (Apple Music library playlists).
+async function deleteRemotePlaylistBestEffort(providerId, externalId) {
+  try {
+    const provider = SyncEngine.getProvider(providerId);
+    if (!provider || !provider.deletePlaylist) return { deleted: false, reason: 'unsupported' };
+    const token = await getNwayProviderToken(providerId);
+    if (!token) return { deleted: false, reason: 'no-token' };
+    const refreshCb = providerId === 'spotify'
+      ? (async () => { try { return await ensureValidSpotifyToken(true); } catch { return null; } })
+      : null;
+    const result = await provider.deletePlaylist(externalId, token, refreshCb);
+    if (result && result.success === false) {
+      return { deleted: false, reason: result.reason === 'endpoint-unsupported' ? 'unsupported' : (result.reason || 'failed') };
+    }
+    return { deleted: true };
+  } catch (e) {
+    return { deleted: false, reason: (e && e.message) || 'failed' };
+  }
+}
+
+// Toggle one Sync channel for a playlist (parity with mobile setChannel /
+// disableChannel). Enabling materializes the override from the current mirrors +
+// adds the provider (the next sync creates/links the mirror). Disabling removes
+// it from the override, optionally deletes the remote, and detaches locally.
+ipcMain.handle('sync:set-channel', async (event, localPlaylistId, providerId, enabled, opts = {}) => {
+  const playlists = store.get('local_playlists') || [];
+  const playlist = playlists.find(p => p.id === localPlaylistId);
+  if (!playlist) return { success: false, error: 'Playlist not found' };
+  const base = getChannelOverride(localPlaylistId) || getCurrentMirrorProviders(playlist);
+  const set = new Set(base);
   if (enabled) set.add(providerId); else set.delete(providerId);
-  if (set.size) map[localPlaylistId] = [...set];
-  else delete map[localPlaylistId];
-  store.set('sync_playlist_reexport', map);
-}
+  setChannelOverride(localPlaylistId, [...set]);
+
+  let remoteDelete = null;
+  if (!enabled) {
+    const externalId = playlist.syncedTo && playlist.syncedTo[providerId] && playlist.syncedTo[providerId].externalId;
+    if (opts.deleteRemote && externalId) {
+      remoteDelete = await deleteRemotePlaylistBestEffort(providerId, externalId);
+    }
+    detachPlaylistMirror(localPlaylistId, providerId);
+  }
+  return { success: true, override: getChannelOverride(localPlaylistId), remoteDelete };
+});
 
 // ── N-way reconcile driver wiring (parachord#911, Step 2 / PR-4b) ──────
 // DORMANT by default. The pure reconcile engine (sync-engine/playlist-
@@ -5936,15 +6043,14 @@ function relinkOrphansFor(providerId, ownedRemote) {
     !p.localOnly &&
     !isLinked(p) &&
     (p.tracks?.length || 0) > 0 &&
-    // LB RE-EXPORT flood guard (parachord#911) — a side-door twin of the push
-    // loops' create-branch gate. relinkOrphansFor name-matches an orphan to an
-    // owned remote and writes syncedTo + locallyModified, which then re-exports
-    // via the (un-gated) `locallyModified` push branch. So a `listenbrainz-*`
-    // playlist the user has NOT opted into this streaming provider must NOT be a
-    // relink candidate — otherwise a same-named owned Spotify/AM playlist would
-    // auto-link + flood the user's pulled LB library. Uses the SAME predicate +
-    // map as the push-loop gate, so opted-in LB playlists still relink.
-    !(isReexportOptInRequired(p, providerId) && !getPlaylistReexport(p.id).includes(providerId))
+    // CHANNEL gate (parachord#911) — a side-door twin of the push loops'
+    // create-branch gate. relinkOrphansFor name-matches an orphan to an owned
+    // remote and writes syncedTo + locallyModified, which then syncs via the
+    // (un-gated) `locallyModified` push branch. So a playlist whose channel
+    // override excludes this provider — or an un-opted-in `listenbrainz-*`
+    // playlist — must NOT be a relink candidate, else a same-named owned remote
+    // would auto-link against the user's intent (and flood a pulled LB library).
+    !channelGateBlocksCreate(p, providerId, getChannelOverride(p.id))
   );
 
   const orphansByName = new Map();
@@ -7605,6 +7711,23 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     return { success: false, error: 'Provider does not support playlists' };
   }
 
+  // CHANNEL gate (defense-in-depth, parachord#911). The renderer EDIT push branch
+  // already gates, but this is the actual write path — reverse-look-up the local
+  // playlist via the durable link map and refuse to push to a provider the user
+  // EXCLUDED from this playlist's channel override. So no caller (or a stale push
+  // cycle racing a just-landed disable) can write to an excluded mirror.
+  try {
+    const links = getSyncLinks();
+    const lpId = Object.keys(links).find(id => links[id] && links[id][providerId] && links[id][providerId].externalId === playlistExternalId);
+    if (lpId && channelOverrideExcludes(getChannelOverride(lpId), providerId)) {
+      console.warn(`[Sync] Blocked push to ${providerId} for "${(metadata && metadata.name) || lpId}" — provider excluded from the playlist's sync channels`);
+      return { success: false, error: 'channel-excluded' };
+    }
+  } catch (e) {
+    // Never let the guard's own failure block a legitimate push.
+    console.warn('[Sync] channel-gate lookup failed (non-fatal):', e && e.message);
+  }
+
   if (!provider.updatePlaylistTracks) {
     return { success: false, error: 'Provider does not support pushing playlist changes' };
   }
@@ -7728,20 +7851,15 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       return { success: false, error: 'Provider does not support creating playlists' };
     }
 
-    // LB RE-EXPORT flood guard (defense-in-depth, parachord#911). This gateway
-    // is the single create/link chokepoint; the renderer push loops already gate
-    // before calling it, but enforcing the opt-in HERE too means no future
-    // caller (or side-door) can re-export a `listenbrainz-*` playlist to a
-    // streaming service without the user explicitly opting it in
-    // (sync_playlist_reexport). Safe: the loops only reach this for opted-in LB
-    // or non-LB playlists, so it never false-blocks a legitimate create.
-    if (
-      localPlaylistId
-      && isReexportOptInRequired({ id: localPlaylistId }, providerId)
-      && !getPlaylistReexport(localPlaylistId).includes(providerId)
-    ) {
-      console.warn(`[Sync] Blocked un-opted ListenBrainz re-export of "${name}" to ${providerId}`);
-      return { success: false, error: 'reexport-not-opted-in' };
+    // CHANNEL gate (defense-in-depth, parachord#911). This gateway is the single
+    // create/link chokepoint; the renderer push loops already gate before calling
+    // it, but enforcing the channel override / LB opt-in HERE too means no future
+    // caller (or side-door) can create a mirror the user didn't choose. Safe: the
+    // loops only reach this for channel-allowed playlists, so it never
+    // false-blocks a legitimate create.
+    if (localPlaylistId && channelGateBlocksCreate({ id: localPlaylistId }, providerId, getChannelOverride(localPlaylistId))) {
+      console.warn(`[Sync] Blocked create of "${name}" on ${providerId} — not in the playlist's sync channels`);
+      return { success: false, error: 'channel-not-selected' };
     }
 
     let token;

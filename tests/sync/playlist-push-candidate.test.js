@@ -8,9 +8,13 @@
 
 const {
   REEXPORT_PROVIDERS,
+  SYNC_CHANNEL_PROVIDERS,
   isPlaylistPushCandidate,
   autoMirrorsByDefault,
   isReexportOptInRequired,
+  computeSyncChannels,
+  channelGateBlocksCreate,
+  channelOverrideExcludes,
 } = require('../../sync-engine/playlist-push-candidate');
 
 const pl = (id, extra = {}) => ({ id, ...extra });
@@ -120,5 +124,92 @@ describe('opt-in gate decision (what the push loop computes)', () => {
 
   test('relink/gateway side-door: a non-LB orphan relinks freely (e.g. local- name-match)', () => {
     expect(gatedSkip(pl('local-1'), 'spotify', [])).toBe(false);
+  });
+});
+
+describe('channelGateBlocksCreate — the unified channel/opt-in gate', () => {
+  test('an OVERRIDE is authoritative — block any provider not in it', () => {
+    expect(channelGateBlocksCreate(pl('local-1'), 'applemusic', ['spotify'])).toBe(true); // AM not chosen
+    expect(channelGateBlocksCreate(pl('local-1'), 'spotify', ['spotify'])).toBe(false); // chosen
+    expect(channelGateBlocksCreate(pl('listenbrainz-1'), 'spotify', ['spotify'])).toBe(false); // LB opted in via override
+    expect(channelGateBlocksCreate(pl('listenbrainz-1'), 'applemusic', ['spotify'])).toBe(true); // LB not chosen for AM
+  });
+
+  test('an EMPTY override blocks all providers (the user turned everything off)', () => {
+    expect(channelGateBlocksCreate(pl('local-1'), 'spotify', [])).toBe(true);
+    expect(channelGateBlocksCreate(pl('local-1'), 'applemusic', [])).toBe(true);
+  });
+
+  test('NO override → default: non-LB auto-mirrors, listenbrainz-* is opt-in-gated for streaming', () => {
+    expect(channelGateBlocksCreate(pl('local-1'), 'spotify', null)).toBe(false);
+    expect(channelGateBlocksCreate(pl('local-1'), 'spotify', undefined)).toBe(false);
+    expect(channelGateBlocksCreate(pl('listenbrainz-1'), 'spotify', null)).toBe(true); // no flood
+    expect(channelGateBlocksCreate(pl('listenbrainz-1'), 'listenbrainz', null)).toBe(false); // own provider
+  });
+});
+
+describe('channelOverrideExcludes — the EDIT/update push gate (closes the disable race)', () => {
+  test('blocks ONLY when an override explicitly excludes the provider', () => {
+    expect(channelOverrideExcludes(['spotify'], 'applemusic')).toBe(true); // AM excluded → stop editing it
+    expect(channelOverrideExcludes(['spotify'], 'spotify')).toBe(false); // still chosen
+    expect(channelOverrideExcludes([], 'spotify')).toBe(true); // turned everything off
+  });
+
+  test('an already-linked mirror with NO override keeps syncing edits (unlike the create gate)', () => {
+    // Critical contract: a previously-opted-in LB→Spotify mirror with no override
+    // must KEEP getting edits — the create gate would block it (opt-in), the edit
+    // gate must not.
+    expect(channelOverrideExcludes(null, 'spotify')).toBe(false);
+    expect(channelOverrideExcludes(undefined, 'spotify')).toBe(false);
+    expect(channelGateBlocksCreate(pl('listenbrainz-1'), 'spotify', null)).toBe(true); // create: blocked
+    expect(channelOverrideExcludes(null, 'spotify')).toBe(false); // edit: allowed
+  });
+});
+
+describe('computeSyncChannels — the Sync menu channel states', () => {
+  const enabled = ['spotify', 'applemusic', 'listenbrainz'];
+
+  test('reports connected / available / enabled per provider (override authoritative)', () => {
+    const channels = computeSyncChannels(pl('listenbrainz-1'), {
+      enabledProviders: enabled,
+      override: ['spotify'], // user chose Spotify only
+      currentMirrors: ['listenbrainz'],
+    });
+    const byId = Object.fromEntries(channels.map((c) => [c.providerId, c]));
+    expect(byId.spotify).toMatchObject({ connected: true, enabled: true, available: true });
+    expect(byId.applemusic).toMatchObject({ connected: true, enabled: false, available: true });
+    expect(byId.listenbrainz).toMatchObject({ connected: true, enabled: false, available: true }); // source, available
+    expect(channels.map((c) => c.providerId)).toEqual(SYNC_CHANNEL_PROVIDERS);
+  });
+
+  test('with NO override, enabled reflects the current mirrors', () => {
+    const channels = computeSyncChannels(pl('spotify-AAA'), {
+      enabledProviders: ['spotify', 'applemusic'],
+      override: null,
+      currentMirrors: ['spotify', 'applemusic'],
+    });
+    const byId = Object.fromEntries(channels.map((c) => [c.providerId, c]));
+    expect(byId.spotify.enabled).toBe(true);
+    expect(byId.applemusic.enabled).toBe(true);
+    expect(byId.listenbrainz).toMatchObject({ connected: false, enabled: false, available: true }); // spotify-* → LB eligible
+  });
+
+  test('available=false for a provider this playlist cannot push to (e.g. applemusic-* → spotify)', () => {
+    const channels = computeSyncChannels(pl('applemusic-p.A'), { enabledProviders: enabled });
+    const byId = Object.fromEntries(channels.map((c) => [c.providerId, c]));
+    expect(byId.spotify.available).toBe(false);
+    expect(byId.applemusic.available).toBe(true); // is the source
+    expect(byId.listenbrainz.available).toBe(true);
+  });
+
+  test('the SOURCE channel is shown but is NOT a push target (locked in the menu)', () => {
+    // listenbrainz-* → LB is the source: available (shown) but not a push target.
+    const lb = computeSyncChannels(pl('listenbrainz-1'), { enabledProviders: enabled })
+      .find((c) => c.providerId === 'listenbrainz');
+    expect(lb).toMatchObject({ available: true, isSource: true, pushTarget: false });
+    // …while its streaming channels ARE push targets.
+    const sp = computeSyncChannels(pl('listenbrainz-1'), { enabledProviders: enabled })
+      .find((c) => c.providerId === 'spotify');
+    expect(sp).toMatchObject({ available: true, isSource: false, pushTarget: true });
   });
 });

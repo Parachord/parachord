@@ -6636,7 +6636,7 @@ const Parachord = () => {
                 // Per-playlist LB re-export opt-in map { localId: ['spotify','applemusic'] }.
                 // A `listenbrainz-*` playlist re-exports to streaming ONLY when the
                 // user opted it into that provider — see the gate in the create branch.
-                const reexportOptIn = await window.electron.store.get('sync_playlist_reexport') || {};
+                const channelOverrides = await window.electron.store.get('sync_playlist_channels') || {};
                 let playlistsChanged = false;
                 // Track which specific playlists mutated so we save only those
                 // at the end. Saving all 142 sequentially used to pinwheel the
@@ -6723,24 +6723,26 @@ const Parachord = () => {
                   const syncInfo = playlist.syncedTo?.[providerId];
 
                   if (!syncInfo) {
-                    // LB RE-EXPORT opt-in (parachord#911, parity with mobile
-                    // ec526bb). SYNC: sync-engine/playlist-push-candidate.js
-                    // isReexportOptInRequired. A `listenbrainz-*` playlist
-                    // (created/edited on ListenBrainz via Achordion) is ELIGIBLE
-                    // to re-export to Spotify / Apple Music, but NEVER auto-mirrors
-                    // — without this gate, enabling Spotify/AM sync would push the
-                    // user's ENTIRE pulled LB library at once (the duplicate-flood
-                    // class). It mirrors only when the user explicitly opted this
-                    // playlist into this provider (the sync_playlist_reexport map,
-                    // set from the playlist's Sync context menu). Already-linked
-                    // playlists (syncedTo[provider]) are NOT gated — they push
-                    // updates via the `else if (locallyModified)` branch.
-                    if (
-                      playlist.id?.startsWith('listenbrainz-')
-                      && (providerId === 'spotify' || providerId === 'applemusic')
-                      && !(reexportOptIn[playlist.id] || []).includes(providerId)
-                    ) {
-                      continue;
+                    // CHANNEL gate (parachord#911). SYNC:
+                    // sync-engine/playlist-push-candidate.js channelGateBlocksCreate.
+                    // A per-playlist channel override is AUTHORITATIVE — sync only
+                    // to the providers the user chose in the Sync menu. With NO
+                    // override, only a `listenbrainz-*` playlist is gated from
+                    // auto-mirroring to streaming (the no-flood opt-in: enabling
+                    // Spotify/AM sync must not push the user's entire pulled LB
+                    // library). Already-linked playlists (syncedTo[provider]) are
+                    // NOT gated here — they push updates via the `else if
+                    // (locallyModified)` branch.
+                    {
+                      const chOverride = channelOverrides[playlist.id];
+                      if (Array.isArray(chOverride)) {
+                        if (!chOverride.includes(providerId)) continue;
+                      } else if (
+                        playlist.id?.startsWith('listenbrainz-')
+                        && (providerId === 'spotify' || providerId === 'applemusic')
+                      ) {
+                        continue;
+                      }
                     }
                     // LB-specific opt-in. Without this gate, enabling LB sync
                     // would auto-create one LB playlist per non-localOnly local
@@ -6786,6 +6788,17 @@ const Parachord = () => {
                     }
                     await breathe();
                   } else if (playlist.locallyModified) {
+                    // CHANNEL gate for the EDIT branch (parachord#911). SYNC:
+                    // sync-engine/playlist-push-candidate.js channelOverrideExcludes.
+                    // An already-linked mirror must STOP receiving edits the moment
+                    // the user excludes its provider from the override — even if a
+                    // detach hasn't landed yet (this cycle snapshotted allPlaylists
+                    // before the user disabled the channel). The override is the
+                    // source of truth; without it, existing mirrors keep syncing.
+                    {
+                      const chOverride = channelOverrides[playlist.id];
+                      if (Array.isArray(chOverride) && !chOverride.includes(providerId)) continue;
+                    }
                     // Playlist exists remotely and has local changes — push updates
                     console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
                     try {
@@ -8078,6 +8091,9 @@ const Parachord = () => {
 
   // Synced playlist delete dialog state
   const [syncDeleteDialog, setSyncDeleteDialog] = useState({ show: false, playlist: null });
+  // "Stop syncing to <service>?" prompt when a user disables a live Sync channel
+  // (parachord#911). { show, playlistId, playlistName, providerId, providerLabel }
+  const [syncChannelDisableDialog, setSyncChannelDisableDialog] = useState({ show: false });
 
   const handleDeleteSyncedPlaylist = async (action) => {
     const playlist = syncDeleteDialog.playlist;
@@ -11163,7 +11179,7 @@ const Parachord = () => {
             const allPlaylists = await window.electron.playlists.load();
             // LB re-export opt-in map — see the gate in the create branch below
             // (in lockstep with the background-sync push loop).
-            const reexportOptIn = await window.electron.store.get('sync_playlist_reexport') || {};
+            const channelOverrides = await window.electron.store.get('sync_playlist_channels') || {};
             let playlistsChanged = false;
             // Track which playlists actually mutated so the save loop only
             // writes those — saving all 142 unconditionally caused the app
@@ -11213,18 +11229,26 @@ const Parachord = () => {
               const syncInfo = playlist.syncedTo?.[providerId];
 
               if (!syncInfo) {
-                // LB RE-EXPORT opt-in (parachord#911) — in lockstep with the
+                // CHANNEL gate (parachord#911) — in lockstep with the
                 // background-sync push loop's identical gate. SYNC:
-                // sync-engine/playlist-push-candidate.js isReexportOptInRequired.
-                // A `listenbrainz-*` playlist re-exports to Spotify/AM ONLY when
-                // the user opted it into that provider; never auto-mirror (would
-                // flood the pulled LB library). Already-linked playlists push
-                // updates via the `else if (locallyModified)` branch.
-                if (
-                  playlist.id?.startsWith('listenbrainz-')
-                  && (providerId === 'spotify' || providerId === 'applemusic')
-                  && !(reexportOptIn[playlist.id] || []).includes(providerId)
-                ) {
+                // sync-engine/playlist-push-candidate.js channelGateBlocksCreate.
+                // A per-playlist channel override is authoritative; with none, a
+                // `listenbrainz-*` playlist is gated from auto-mirroring to
+                // streaming. Already-linked playlists push updates via the
+                // `else if (locallyModified)` branch.
+                let channelBlocked = false;
+                {
+                  const chOverride = channelOverrides[playlist.id];
+                  if (Array.isArray(chOverride)) {
+                    channelBlocked = !chOverride.includes(providerId);
+                  } else if (
+                    playlist.id?.startsWith('listenbrainz-')
+                    && (providerId === 'spotify' || providerId === 'applemusic')
+                  ) {
+                    channelBlocked = true;
+                  }
+                }
+                if (channelBlocked) {
                   continue;
                 }
                 // LB-specific opt-in. Mirrors the background-sync push loop's
@@ -11266,6 +11290,13 @@ const Parachord = () => {
                 }
                 await breathe();
               } else if (playlist.locallyModified) {
+                // CHANNEL gate for the EDIT branch (parachord#911) — lockstep with
+                // the background-sync loop. An already-linked mirror stops getting
+                // edits the moment the user's override excludes its provider.
+                {
+                  const chOverride = channelOverrides[playlist.id];
+                  if (Array.isArray(chOverride) && !chOverride.includes(providerId)) continue;
+                }
                 // Playlist exists remotely and has local changes — push updates
                 console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
                 try {
@@ -15751,14 +15782,35 @@ ${trackListXml}
           // The native playlist context menu toggled the mirror-only (one-way)
           // sync setting (persisted main-side in sync_playlist_mirror_only).
           showToast(data.mirrorOnly ? 'Playlist set to mirror only (one-way)' : 'Playlist mirror-only disabled');
-        } else if (data.action === 'reexport-changed' && data.playlistId) {
-          // The native playlist context menu toggled a ListenBrainz re-export
-          // opt-in (persisted main-side in sync_playlist_reexport). The next
-          // background sync creates/removes the mirror accordingly.
+        } else if (data.action === 'sync-channel-toggle' && data.playlistId) {
+          // The "Sync ▸" submenu toggled where this playlist syncs (parachord#911).
           const label = data.providerLabel || data.providerId;
-          showToast(data.enabled
-            ? `Will mirror this playlist to ${label} on next sync`
-            : `Stopped mirroring this playlist to ${label}`);
+          if (data.enabling) {
+            // Enable: write the channel override; the next sync creates the
+            // mirror. Nothing on the playlist object changes yet, so no reload.
+            await window.electron.sync.setChannel(data.playlistId, data.providerId, true);
+            showToast(`Will sync this playlist to ${label} on next sync`);
+          } else if (data.currentlyMirrored) {
+            // Disabling a LIVE mirror → ask whether to also delete the remote.
+            setSyncChannelDisableDialog({
+              show: true,
+              playlistId: data.playlistId,
+              playlistName: data.name,
+              providerId: data.providerId,
+              providerLabel: label,
+            });
+          } else {
+            // Disabling a channel with no remote yet → just drop it. Reload in
+            // case a mirror landed since the menu opened (detach mutates the row
+            // main-side; reloading prevents a stale renderer save resurrecting it).
+            await window.electron.sync.setChannel(data.playlistId, data.providerId, false);
+            try {
+              const fresh = await window.electron.playlists.load();
+              setPlaylists(fresh);
+              if (selectedPlaylist?.id === data.playlistId) { const u = fresh.find(p => p.id === data.playlistId); if (u) setSelectedPlaylist(u); }
+            } catch {}
+            showToast(`Stopped syncing this playlist to ${label}`);
+          }
         } else if (data.action === 'remove-from-playlist' && data.playlistId !== undefined) {
           // Remove track from playlist
           const trackIndex = data.trackIndex;
@@ -62808,6 +62860,72 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Cancel')
+        )
+      )
+    ),
+
+    // Sync Channel Disable Dialog — "stop syncing to <service>?" with the
+    // optional "delete from that service too" choice (parachord#911).
+    syncChannelDisableDialog.show && React.createElement('div', {
+      className: 'fixed inset-0 flex items-center justify-center z-[60]',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
+      onClick: () => setSyncChannelDisableDialog({ show: false })
+    },
+      React.createElement('div', {
+        style: {
+          backgroundColor: 'var(--card-bg)', borderRadius: '16px',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.15), 0 12px 48px rgba(0,0,0,0.1)',
+          maxWidth: '400px', width: '100%', margin: '0 16px', overflow: 'hidden'
+        },
+        onClick: (e) => e.stopPropagation()
+      },
+        React.createElement('div', { className: 'flex flex-col items-center text-center', style: { padding: '32px 24px 20px' } },
+          React.createElement('h3', {
+            style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
+          }, `Stop syncing to ${syncChannelDisableDialog.providerLabel}?`),
+          React.createElement('p', {
+            style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }
+          }, `Keep "${syncChannelDisableDialog.playlistName}" on ${syncChannelDisableDialog.providerLabel} and just stop syncing it, or delete it from ${syncChannelDisableDialog.providerLabel} too?`)
+        ),
+        React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
+          (() => {
+            const applyDisable = async (deleteRemote) => {
+              const d = syncChannelDisableDialog;
+              setSyncChannelDisableDialog({ show: false });
+              let res = null;
+              try { res = await window.electron.sync.setChannel(d.playlistId, d.providerId, false, { deleteRemote }); } catch {}
+              try {
+                const fresh = await window.electron.playlists.load();
+                setPlaylists(fresh);
+                if (selectedPlaylist?.id === d.playlistId) { const u = fresh.find(p => p.id === d.playlistId); if (u) setSelectedPlaylist(u); }
+              } catch {}
+              const rd = res && res.remoteDelete;
+              if (deleteRemote && rd && rd.deleted === false && rd.reason === 'unsupported') {
+                showToast(`Stopped syncing — remove it from ${d.providerLabel} manually (the app can't delete library playlists there).`, 'info');
+              } else if (deleteRemote && rd && rd.deleted) {
+                showToast(`Stopped syncing and deleted from ${d.providerLabel}`);
+              } else {
+                showToast(`Stopped syncing this playlist to ${d.providerLabel}`);
+              }
+            };
+            return React.createElement(React.Fragment, null,
+              React.createElement('button', {
+                onClick: () => applyDisable(false),
+                className: 'w-full transition-colors',
+                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: '#7c3aed', border: 'none', borderRadius: '10px', cursor: 'pointer' }
+              }, 'Stop Syncing'),
+              React.createElement('button', {
+                onClick: () => applyDisable(true),
+                className: 'w-full transition-colors',
+                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: '#dc2626', border: 'none', borderRadius: '10px', cursor: 'pointer' }
+              }, `Delete from ${syncChannelDisableDialog.providerLabel} too`),
+              React.createElement('button', {
+                onClick: () => setSyncChannelDisableDialog({ show: false }),
+                className: 'w-full transition-colors',
+                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: '1px solid #e5e7eb', borderRadius: '10px', cursor: 'pointer' }
+              }, 'Cancel')
+            );
+          })()
         )
       )
     ),

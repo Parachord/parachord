@@ -15,6 +15,9 @@
 // Streaming providers a ListenBrainz playlist can RE-EXPORT to — opt-in only.
 const REEXPORT_PROVIDERS = ['spotify', 'applemusic'];
 
+// The providers offered as Sync CHANNELS in the per-playlist Sync menu.
+const SYNC_CHANNEL_PROVIDERS = ['spotify', 'applemusic', 'listenbrainz'];
+
 function playlistId(playlist) {
   return playlist && typeof playlist.id === 'string' ? playlist.id : '';
 }
@@ -80,9 +83,79 @@ function isReexportOptInRequired(playlist, providerId) {
   return !autoMirrorsByDefault(playlist) && REEXPORT_PROVIDERS.includes(providerId);
 }
 
+/**
+ * The per-playlist Sync menu's "where does this sync" decision (parity with
+ * mobile's PlaylistSyncChannelManager.getChannels). For each sync-channel
+ * provider, report whether the service is `connected` (set up in Settings),
+ * whether this playlist is currently `enabled` (syncing) to it, and whether it's
+ * an `available` target at all. `effective` = the channel override when the user
+ * has set one (authoritative), else the playlist's current mirrors.
+ * @param {{id?:string, sourceUrl?:string, spotifyId?:string, sources?:object}} playlist
+ * @param {{enabledProviders?:string[], override?:string[]|null, currentMirrors?:string[]}} ctx
+ * @returns {Array<{providerId:string, connected:boolean, enabled:boolean, available:boolean}>}
+ */
+function computeSyncChannels(playlist, { enabledProviders = [], override = null, currentMirrors = [] } = {}) {
+  const effective = Array.isArray(override) ? override : (Array.isArray(currentMirrors) ? currentMirrors : []);
+  const id = playlistId(playlist);
+  return SYNC_CHANNEL_PROVIDERS.map((pid) => {
+    const pushTarget = isPlaylistPushCandidate(playlist, pid);
+    const isSource = id.startsWith(`${pid}-`); // imported FROM this provider
+    return {
+      providerId: pid,
+      connected: enabledProviders.includes(pid),
+      enabled: effective.includes(pid),
+      // `available` = show the row at all. `pushTarget` = a togglable PUSH
+      // destination; a source-only channel is shown (checked) but locked, since
+      // detaching a pull source fights the imported-playlist `syncedFrom` heal.
+      available: pushTarget || isSource,
+      pushTarget,
+      isSource,
+    };
+  });
+}
+
+/**
+ * Whether the auto-push loops must NOT create a mirror of `playlist` on
+ * `providerId` this cycle — the unified channel gate (parity with mobile's
+ * `if (override != null) providerId in override else autoMirrorsByDefault && …`):
+ *   - a per-playlist channel OVERRIDE is AUTHORITATIVE: block any provider not
+ *     in it (the user manually chose where this playlist syncs);
+ *   - with NO override, fall to the default — only a listenbrainz-* playlist
+ *     targeting a streaming provider is blocked (the no-auto-flood opt-in).
+ * Already-linked mirrors are gated by the caller (this is the CREATE gate only).
+ * @param {{id?:string}} playlist
+ * @param {string} providerId
+ * @param {string[]|null|undefined} channelOverride - the playlist's override, or null/undefined for none
+ * @returns {boolean}
+ */
+function channelGateBlocksCreate(playlist, providerId, channelOverride) {
+  if (Array.isArray(channelOverride)) return !channelOverride.includes(providerId);
+  return isReexportOptInRequired(playlist, providerId);
+}
+
+/**
+ * Whether a channel OVERRIDE, if present, EXCLUDES a provider — the gate for the
+ * EDIT/update push branch (and sync:push-playlist). Distinct from the CREATE
+ * gate: an ALREADY-LINKED mirror keeps receiving edits unless the user has set
+ * an override that explicitly drops its provider (so a previously-opted-in
+ * listenbrainz-* → Spotify mirror with NO override keeps syncing). This closes
+ * the cross-snapshot race where a push cycle's stale snapshot still holds
+ * syncedTo[X] after the user just disabled X (detach hadn't landed yet).
+ * @param {string[]|null|undefined} channelOverride
+ * @param {string} providerId
+ * @returns {boolean}
+ */
+function channelOverrideExcludes(channelOverride, providerId) {
+  return Array.isArray(channelOverride) && !channelOverride.includes(providerId);
+}
+
 module.exports = {
   REEXPORT_PROVIDERS,
+  SYNC_CHANNEL_PROVIDERS,
   isPlaylistPushCandidate,
   autoMirrorsByDefault,
   isReexportOptInRequired,
+  computeSyncChannels,
+  channelGateBlocksCreate,
+  channelOverrideExcludes,
 };
