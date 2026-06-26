@@ -5306,8 +5306,10 @@ ipcMain.handle('playlists-delete', async (event, playlistId) => {
 
     store.set('local_playlists', filteredPlaylists);
 
-    // Drop the playlist's per-playlist sync prefs so they don't leak (parachord#911).
-    for (const key of ['sync_playlist_channels', 'sync_playlist_mirror_only']) {
+    // Drop the playlist's per-playlist sync prefs + durable links/state so they
+    // don't leak — and so re-adding a hosted XSPF (id = hosted-<hash(url)>, which
+    // is re-derivable) doesn't reuse a stale link (parachord#911).
+    for (const key of ['sync_playlist_channels', 'sync_playlist_mirror_only', 'sync_playlist_links', 'sync_playlist_state']) {
       const map = store.get(key);
       if (map && typeof map === 'object' && playlistId in map) {
         delete map[playlistId];

@@ -8095,50 +8095,84 @@ const Parachord = () => {
   // (parachord#911). { show, playlistId, playlistName, providerId, providerLabel }
   const [syncChannelDisableDialog, setSyncChannelDisableDialog] = useState({ show: false });
 
+  // The remote services a playlist mirrors to/from (source + push mirrors) that
+  // could be cleaned up on delete. Returns [{ providerId, externalId, role }].
+  const getPlaylistMirrorTargets = (playlist) => {
+    if (!playlist) return [];
+    const out = [];
+    if (playlist.syncedFrom?.resolver && playlist.syncedFrom?.externalId) {
+      out.push({ providerId: playlist.syncedFrom.resolver, externalId: playlist.syncedFrom.externalId, role: 'source' });
+    }
+    for (const [pid, info] of Object.entries(playlist.syncedTo || {})) {
+      if (info?.externalId) out.push({ providerId: pid, externalId: info.externalId, role: 'mirror' });
+    }
+    return out;
+  };
+
+  const PROVIDER_LABEL = { spotify: 'Spotify', applemusic: 'Apple Music', listenbrainz: 'ListenBrainz' };
+
+  // Remove a playlist from ALL local persistence. A hosted XSPF lives in BOTH
+  // the hosted_playlists URL list AND local_playlists (handleImportPlaylistFromUrl
+  // persists it there so sync can pick it up) — removing only one lets the
+  // load+merge re-import it (the "instant recreation" bug). Also drops the
+  // per-playlist sync prefs + state.
+  const deletePlaylistLocally = async (playlist) => {
+    if (!playlist?.id) return;
+    if (playlist.sourceUrl) {
+      try {
+        const hosted = await window.electron?.store?.get('hosted_playlists') || [];
+        const filtered = hosted.filter(hp => hp.id !== playlist.id && hp.url !== playlist.sourceUrl);
+        await window.electron?.store?.set('hosted_playlists', filtered);
+      } catch (e) { console.warn('hosted_playlists cleanup failed:', e); }
+    }
+    try { await window.electron.playlists.delete(playlist.id); } catch (e) { console.warn('local_playlists delete failed:', e); }
+    setPlaylists(prev => prev.filter(p => p.id !== playlist.id));
+    delete playlistCoverCache.current[playlist.id];
+    setAllPlaylistCovers(prev => { const u = { ...prev }; delete u[playlist.id]; return u; });
+  };
+
   const handleDeleteSyncedPlaylist = async (action) => {
     const playlist = syncDeleteDialog.playlist;
     if (!playlist) return;
     setSyncDeleteDialog({ show: false, playlist: null });
 
-    const providerId = playlist.syncedFrom?.resolver;
-    const externalId = playlist.syncedFrom?.externalId;
+    if (action !== 'stop-syncing' && action !== 'delete-from-source') return;
 
-    if (action === 'stop-syncing' || action === 'delete-from-source') {
-      // Suppress future syncs
-      if (providerId && externalId) {
-        await window.electron.playlists.suppressSync(providerId, externalId);
-      }
+    const targets = getPlaylistMirrorTargets(playlist);
 
-      // Delete from source service if requested
-      if (action === 'delete-from-source' && providerId && externalId) {
-        const result = await window.electron.playlists.deleteFromSource(providerId, externalId);
-        if (!result.success) {
-          showConfirmDialog({
-            type: 'error',
-            title: 'Could not delete from source',
-            message: result.error
-          });
+    // Suppress future re-sync of the source so it doesn't reimport.
+    if (playlist.syncedFrom?.resolver && playlist.syncedFrom?.externalId) {
+      await window.electron.playlists.suppressSync(playlist.syncedFrom.resolver, playlist.syncedFrom.externalId);
+    }
+
+    // Delete from every mirror/source if requested (best-effort; surface the
+    // Apple-Music-can't-delete case so the user removes it manually).
+    if (action === 'delete-from-source') {
+      const manual = [];
+      for (const t of targets) {
+        try {
+          const result = await window.electron.playlists.deleteFromSource(t.providerId, t.externalId);
+          if (result && result.success === false) {
+            manual.push(PROVIDER_LABEL[t.providerId] || t.providerId);
+          }
+        } catch (e) {
+          manual.push(PROVIDER_LABEL[t.providerId] || t.providerId);
         }
       }
-
-      // Delete locally
-      await window.electron.playlists.delete(playlist.id);
-      setPlaylists(prev => prev.filter(p => p.id !== playlist.id));
-      delete playlistCoverCache.current[playlist.id];
-      setAllPlaylistCovers(prev => {
-        const newCovers = { ...prev };
-        delete newCovers[playlist.id];
-        return newCovers;
-      });
-
-      // Exit edit mode and navigate back
-      setPlaylistEditMode(false);
-      setEditedPlaylistData(null);
-      setSelectedPlaylist(null);
-      setPlaylistTracks([]);
-      setPlaylistCoverArt([]);
-      navigateTo('playlists');
+      if (manual.length) {
+        showToast(`Deleted locally — remove it manually from ${[...new Set(manual)].join(', ')} (the app can't delete library playlists there).`, 'info');
+      }
     }
+
+    await deletePlaylistLocally(playlist);
+
+    // Exit edit mode and navigate back
+    setPlaylistEditMode(false);
+    setEditedPlaylistData(null);
+    setSelectedPlaylist(null);
+    setPlaylistTracks([]);
+    setPlaylistCoverArt([]);
+    navigateTo('playlists');
   };
 
   const [refreshingPlaylist, setRefreshingPlaylist] = useState(null); // Track which playlist is refreshing
@@ -15854,46 +15888,20 @@ ${trackListXml}
             }));
           }
         } else if (data.action === 'delete-playlist' && data.playlistId) {
-          // Check if this is a synced playlist
+          // If the playlist mirrors to/from any remote (a synced playlist OR a
+          // hosted XSPF mirrored to Spotify/AM), ask whether to delete from those
+          // services too. Otherwise just confirm + delete locally.
           const playlistToDelete = playlists.find(p => p.id === data.playlistId);
-          if (playlistToDelete?.syncedFrom) {
+          const hasMirrors = getPlaylistMirrorTargets(playlistToDelete).length > 0;
+          if (hasMirrors) {
             setSyncDeleteDialog({ show: true, playlist: playlistToDelete });
           } else {
             const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
             if (confirmed) {
-              const isHosted = data.playlistId.startsWith('hosted-');
-              let deleteSuccess = false;
-
-              if (isHosted) {
-                // Hosted playlists are stored in hosted_playlists URL list, not local_playlists
-                try {
-                  const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
-                  const filtered = hostedPlaylists.filter(hp => hp.id !== data.playlistId);
-                  await window.electron?.store?.set('hosted_playlists', filtered);
-                  // Also clean up any metadata overrides
-                  console.log(`🗑️ Deleted hosted playlist: ${data.name}`);
-                  deleteSuccess = true;
-                } catch (error) {
-                  console.error('Failed to delete hosted playlist:', error);
-                  alert(`Failed to delete playlist: ${error.message}`);
-                }
-              } else {
-                const result = await window.electron.playlists.delete(data.playlistId);
-                deleteSuccess = result.success;
-                if (!result.success) {
-                  alert(`Failed to delete playlist: ${result.error}`);
-                }
-              }
-
-              if (deleteSuccess) {
-                setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
-                delete playlistCoverCache.current[data.playlistId];
-                setAllPlaylistCovers(prev => {
-                  const updated = { ...prev };
-                  delete updated[data.playlistId];
-                  return updated;
-                });
-              }
+              // deletePlaylistLocally removes from BOTH hosted_playlists AND
+              // local_playlists, so a hosted XSPF can't be re-imported by the
+              // load+merge (the recreation bug).
+              await deletePlaylistLocally(playlistToDelete || { id: data.playlistId });
             }
           }
         } else if (data.action === 'edit-id3-tags' && data.track) {
@@ -62811,7 +62819,11 @@ useEffect(() => {
           }, `Delete "${syncDeleteDialog.playlist?.title}"?`),
           React.createElement('p', {
             style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }
-          }, `This playlist is synced from ${syncDeleteDialog.playlist?.syncedFrom?.resolver === 'spotify' ? 'Spotify' : 'Apple Music'}. What would you like to do?`)
+          }, (() => {
+            const svcs = [...new Set(getPlaylistMirrorTargets(syncDeleteDialog.playlist).map(t => PROVIDER_LABEL[t.providerId] || t.providerId))];
+            const list = svcs.length ? svcs.join(', ') : 'a sync service';
+            return `This playlist is synced with ${list}. What would you like to do?`;
+          })())
         ),
         // Actions
         React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
@@ -62844,7 +62856,10 @@ useEffect(() => {
               borderRadius: '10px',
               cursor: 'pointer'
             }
-          }, `Delete from ${syncDeleteDialog.playlist?.syncedFrom?.resolver === 'spotify' ? 'Spotify' : 'Apple Music'} too`),
+          }, (() => {
+            const svcs = [...new Set(getPlaylistMirrorTargets(syncDeleteDialog.playlist).map(t => PROVIDER_LABEL[t.providerId] || t.providerId))];
+            return `Delete from ${svcs.length ? svcs.join(', ') : 'the service'} too`;
+          })()),
           // Cancel
           React.createElement('button', {
             onClick: () => setSyncDeleteDialog({ show: false, playlist: null }),
