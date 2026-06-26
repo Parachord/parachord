@@ -6826,6 +6826,27 @@ ipcMain.handle('sync-settings:set-provider', async (event, providerId, providerS
     const settings = store.get('resolver_sync_settings') || {};
     settings[providerId] = providerSettings;
     store.set('resolver_sync_settings', settings);
+
+    // Re-SELECTING a playlist in the sync wizard is an unambiguous "sync this
+    // again" — so clear it from the suppression list (which the import filter
+    // also checks). Without this there is NO UI path to undo a suppression: a
+    // playlist deleted with "Stop syncing" stays hidden forever even after the
+    // user re-ticks it. (parachord#911 — surfaced by "deleted LB playlist won't
+    // come back".)
+    const selectedIds = Array.isArray(providerSettings && providerSettings.selectedPlaylistIds)
+      ? providerSettings.selectedPlaylistIds
+      : null;
+    if (selectedIds && selectedIds.length) {
+      const suppressed = store.get('suppressed_sync_playlists') || {};
+      const list = Array.isArray(suppressed[providerId]) ? suppressed[providerId] : [];
+      const selectedSet = new Set(selectedIds);
+      const pruned = list.filter(id => !selectedSet.has(id));
+      if (pruned.length !== list.length) {
+        suppressed[providerId] = pruned;
+        store.set('suppressed_sync_playlists', suppressed);
+        console.log(`[Sync] Un-suppressed ${list.length - pruned.length} re-selected ${providerId} playlist(s)`);
+      }
+    }
     return { success: true };
   } catch (error) {
     console.error('  ❌ Set provider sync settings failed:', error.message);
