@@ -4626,8 +4626,42 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
-  // Add delete option for playlists
+  // Add sync + delete options for playlists
   if (data.type === 'playlist' && data.playlistId) {
+    // Mirror-only (one-way) sync setting (parachord#911 / parachord-mobile#277).
+    // Only for sync-participating playlists. A FOLLOWED ('-import' source) or
+    // hosted-XSPF playlist is INHERENTLY one-way (its source is the single
+    // authority) → shown checked + DISABLED (locked). An OWNED playlist is
+    // user-settable — covers owned-but-dynamic playlists a 3rd-party app
+    // (e.g. SmarterPlaylists) rebuilds through the user's OAuth, which the
+    // provider reports as user-owned.
+    const pl = (store.get('local_playlists') || []).find(p => p.id === data.playlistId);
+    if (pl && (pl.syncedFrom || pl.syncedTo || pl.sourceUrl) && !pl.localOnly) {
+      const isHostedXspf = !!pl.sourceUrl;
+      const isFollowed = typeof pl.source === 'string' && pl.source.endsWith('-import');
+      const forced = isFollowed || isHostedXspf;
+      const effective = forced || getPlaylistMirrorOnly(data.playlistId);
+      menuItems.push({ type: 'separator' });
+      menuItems.push({
+        label: forced
+          ? (isHostedXspf ? 'Mirror only (one-way · hosted)' : 'Mirror only (one-way · followed)')
+          : 'Mirror only (one-way)',
+        type: 'checkbox',
+        checked: effective,
+        enabled: !forced, // locked on for followed/hosted — inherently one-way
+        click: () => {
+          const next = !getPlaylistMirrorOnly(data.playlistId);
+          setPlaylistMirrorOnly(data.playlistId, next);
+          safeSendToRenderer('track-context-menu-action', {
+            action: 'mirror-only-changed',
+            playlistId: data.playlistId,
+            name: data.name,
+            mirrorOnly: next
+          });
+        }
+      });
+    }
+
     menuItems.push({ type: 'separator' });
     menuItems.push({
       label: 'Delete Playlist',
@@ -5427,11 +5461,6 @@ function setPlaylistMirrorOnly(localPlaylistId, value) {
   else delete map[localPlaylistId];
   store.set('sync_playlist_mirror_only', map);
 }
-ipcMain.handle('nway:get-mirror-only', async (event, localPlaylistId) => getPlaylistMirrorOnly(localPlaylistId));
-ipcMain.handle('nway:set-mirror-only', async (event, localPlaylistId, value) => {
-  setPlaylistMirrorOnly(localPlaylistId, value === true);
-  return { success: true, mirrorOnly: getPlaylistMirrorOnly(localPlaylistId) };
-});
 
 // Desktop's owned-vs-followed (writable) signal for a playlist's pull source —
 // the equivalent of mobile's `playlist.writable` (#269). Followed/read-only

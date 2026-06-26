@@ -6107,20 +6107,6 @@ const Parachord = () => {
   const [playlistDropTarget, setPlaylistDropTarget] = useState(null); // Index where track will be dropped
   const [playlistEditMode, setPlaylistEditMode] = useState(false); // Edit mode for playlist detail view
   const [editedPlaylistData, setEditedPlaylistData] = useState(null); // Buffered changes: { title, creator, tracks }
-  // Per-playlist "mirror only (one-way)" user flag (parachord#911). Persisted in
-  // electron-store (sync_playlist_mirror_only_<id>), NOT on the playlist row, so
-  // a pull can't clobber it. Loaded for the open playlist; forced ON+locked for
-  // followed/hosted playlists (inherently one-way). See window.electron.nway.
-  const [playlistMirrorOnly, setPlaylistMirrorOnly] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    const id = selectedPlaylist?.id;
-    if (!id || !window.electron?.nway?.getMirrorOnly) { setPlaylistMirrorOnly(false); return; }
-    window.electron.nway.getMirrorOnly(id)
-      .then(v => { if (!cancelled) setPlaylistMirrorOnly(v === true); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [selectedPlaylist?.id]);
   const [shareDropdownOpen, setShareDropdownOpen] = useState(false); // Share dropdown on album/playlist detail pages
   const [parachordLinkMenu, setParachordLinkMenu] = useState(null); // { x, y, link } — right-click "Copy link" menu
   useEffect(() => {
@@ -15721,6 +15707,10 @@ ${trackListXml}
             sourceType: data.sourceType || 'track'
           });
           setSelectedPlaylistsForAdd([]); // Reset selection
+        } else if (data.action === 'mirror-only-changed' && data.playlistId) {
+          // The native playlist context menu toggled the mirror-only (one-way)
+          // sync setting (persisted main-side in sync_playlist_mirror_only).
+          showToast(data.mirrorOnly ? 'Playlist set to mirror only (one-way)' : 'Playlist mirror-only disabled');
         } else if (data.action === 'remove-from-playlist' && data.playlistId !== undefined) {
           // Remove track from playlist
           const trackIndex = data.trackIndex;
@@ -44019,42 +44009,6 @@ useEffect(() => {
                     }
                   }, selectedPlaylist.localOnly ? 'Local only' : 'Syncing')
                 ),
-                // Mirror-only (one-way) chip (parachord#911). Rendered for ANY
-                // sync-participating playlist — followed (its `source` ends
-                // '-import'), owned-pushed (syncedTo), or hosted-XSPF (sourceUrl).
-                // A followed or hosted playlist is INHERENTLY one-way (its source
-                // is the single authority) → shown ON + LOCKED. An owned playlist
-                // is user-settable (covers owned-but-dynamic Daily Brews a 3rd-
-                // party app writes through the user's OAuth, which the provider
-                // reports as user-owned). Mirrors main.js's writability signal.
-                (() => {
-                  const hasSyncRel = !!(selectedPlaylist.syncedFrom || selectedPlaylist.syncedTo || selectedPlaylist.sourceUrl);
-                  if (!hasSyncRel || selectedPlaylist.localOnly) return null;
-                  const isHostedXspf = !!selectedPlaylist.sourceUrl;
-                  const isFollowed = typeof selectedPlaylist.source === 'string' && selectedPlaylist.source.endsWith('-import');
-                  const forced = isFollowed || isHostedXspf;
-                  const effective = forced || playlistMirrorOnly;
-                  return React.createElement('div', { className: 'flex items-center gap-2 mt-1' },
-                    React.createElement('button', {
-                      className: `text-xs px-2 py-0.5 rounded-full transition-colors ${
-                        effective ? 'bg-gray-200 text-gray-600' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                      } ${forced ? 'opacity-60 cursor-default' : ''}`,
-                      disabled: forced,
-                      title: forced
-                        ? 'Followed and hosted playlists are inherently one-way — their source is the single authority.'
-                        : 'Mirror only: reconcile as a one-way mirror from the source (rotate-outs drop immediately). Use for owned-but-dynamic playlists (e.g. a SmarterPlaylists Daily Brew).',
-                      onClick: forced ? undefined : async () => {
-                        const next = !playlistMirrorOnly;
-                        setPlaylistMirrorOnly(next);
-                        try { await window.electron.nway.setMirrorOnly(selectedPlaylist.id, next); } catch {}
-                        showToast(next ? 'Playlist set to mirror only (one-way)' : 'Playlist mirror-only disabled');
-                      }
-                    }, effective ? 'Mirror only' : 'Two-way'),
-                    forced && React.createElement('span', {
-                      className: 'text-xs', style: { color: 'var(--text-tertiary)' }
-                    }, isHostedXspf ? 'Hosted — one-way' : 'Followed — one-way')
-                  );
-                })(),
                 // Edit mode: Title input
                 playlistEditMode && editedPlaylistData && React.createElement('input', {
                   type: 'text',
