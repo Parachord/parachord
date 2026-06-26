@@ -44017,18 +44017,25 @@ useEffect(() => {
                       await window.electron.playlists.save(updatedPlaylist);
                       showToast(updatedPlaylist.localOnly ? 'Playlist set to local only' : 'Playlist will sync to services');
                     }
-                  }, selectedPlaylist.localOnly ? 'Local only' : 'Syncing'),
-                  // Mirror-only (one-way) toggle (parachord#911). A followed
-                  // (source ends '-import') or hosted-XSPF playlist is INHERENTLY
-                  // one-way → forced ON + locked. An owned playlist is
-                  // user-settable (covers owned-but-dynamic Daily Brews a 3rd-party
-                  // app writes through the user's OAuth).
-                  !selectedPlaylist.localOnly && (() => {
-                    const isHostedXspf = !!selectedPlaylist.sourceUrl;
-                    const isFollowed = typeof selectedPlaylist.source === 'string' && selectedPlaylist.source.endsWith('-import');
-                    const forced = isFollowed || isHostedXspf;
-                    const effective = forced || playlistMirrorOnly;
-                    return React.createElement('button', {
+                  }, selectedPlaylist.localOnly ? 'Local only' : 'Syncing')
+                ),
+                // Mirror-only (one-way) chip (parachord#911). Rendered for ANY
+                // sync-participating playlist — followed (its `source` ends
+                // '-import'), owned-pushed (syncedTo), or hosted-XSPF (sourceUrl).
+                // A followed or hosted playlist is INHERENTLY one-way (its source
+                // is the single authority) → shown ON + LOCKED. An owned playlist
+                // is user-settable (covers owned-but-dynamic Daily Brews a 3rd-
+                // party app writes through the user's OAuth, which the provider
+                // reports as user-owned). Mirrors main.js's writability signal.
+                (() => {
+                  const hasSyncRel = !!(selectedPlaylist.syncedFrom || selectedPlaylist.syncedTo || selectedPlaylist.sourceUrl);
+                  if (!hasSyncRel || selectedPlaylist.localOnly) return null;
+                  const isHostedXspf = !!selectedPlaylist.sourceUrl;
+                  const isFollowed = typeof selectedPlaylist.source === 'string' && selectedPlaylist.source.endsWith('-import');
+                  const forced = isFollowed || isHostedXspf;
+                  const effective = forced || playlistMirrorOnly;
+                  return React.createElement('div', { className: 'flex items-center gap-2 mt-1' },
+                    React.createElement('button', {
                       className: `text-xs px-2 py-0.5 rounded-full transition-colors ${
                         effective ? 'bg-gray-200 text-gray-600' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
                       } ${forced ? 'opacity-60 cursor-default' : ''}`,
@@ -44042,9 +44049,12 @@ useEffect(() => {
                         try { await window.electron.nway.setMirrorOnly(selectedPlaylist.id, next); } catch {}
                         showToast(next ? 'Playlist set to mirror only (one-way)' : 'Playlist mirror-only disabled');
                       }
-                    }, effective ? 'Mirror only' : 'Two-way');
-                  })()
-                ),
+                    }, effective ? 'Mirror only' : 'Two-way'),
+                    forced && React.createElement('span', {
+                      className: 'text-xs', style: { color: 'var(--text-tertiary)' }
+                    }, isHostedXspf ? 'Hosted — one-way' : 'Followed — one-way')
+                  );
+                })(),
                 // Edit mode: Title input
                 playlistEditMode && editedPlaylistData && React.createElement('input', {
                   type: 'text',
