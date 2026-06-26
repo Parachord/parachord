@@ -4626,8 +4626,40 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     });
   }
 
-  // Add delete option for playlists
+  // Add sync + delete options for playlists
   if (data.type === 'playlist' && data.playlistId) {
+    // LB RE-EXPORT opt-in (parachord#911 / parachord-mobile ec526bb). A
+    // `listenbrainz-*` playlist (created/edited on ListenBrainz via Achordion)
+    // can be mirrored to Spotify / Apple Music — but ONLY by explicit opt-in
+    // here; it never auto-mirrors, so a pulled LB library can't flood streaming.
+    // Each toggle writes the sync_playlist_reexport map the push loops read.
+    if (data.playlistId.startsWith('listenbrainz-')) {
+      const pl = (store.get('local_playlists') || []).find(p => p.id === data.playlistId);
+      if (pl && !pl.localOnly) {
+        const optedIn = getPlaylistReexport(data.playlistId);
+        menuItems.push({ type: 'separator' });
+        for (const [pid, label] of [['spotify', 'Spotify'], ['applemusic', 'Apple Music']]) {
+          menuItems.push({
+            label: `Mirror to ${label}`,
+            type: 'checkbox',
+            checked: optedIn.includes(pid),
+            click: () => {
+              const next = !getPlaylistReexport(data.playlistId).includes(pid);
+              setPlaylistReexport(data.playlistId, pid, next);
+              safeSendToRenderer('track-context-menu-action', {
+                action: 'reexport-changed',
+                playlistId: data.playlistId,
+                name: data.name,
+                providerId: pid,
+                providerLabel: label,
+                enabled: next
+              });
+            }
+          });
+        }
+      }
+    }
+
     menuItems.push({ type: 'separator' });
     menuItems.push({
       label: 'Delete Playlist',
@@ -5390,6 +5422,36 @@ function removePlaylistSyncState(localPlaylistId, providerId) {
 ipcMain.handle('sync-state:get-all', async () => getSyncStates());
 ipcMain.handle('sync-state:get', async (event, localPlaylistId) => getPlaylistSyncState(localPlaylistId));
 
+// Per-playlist LB RE-EXPORT opt-in (parachord#911, parity with mobile ec526bb).
+// `sync_playlist_reexport = { [localPlaylistId]: ['spotify','applemusic'] }` —
+// the streaming providers a `listenbrainz-*` playlist has been EXPLICITLY opted
+// into for re-export. Its own electron-store map (pull-safe; not a playlist row
+// field). Read by the renderer push loops' opt-in gate; written from the
+// playlist's Sync context menu. Absent/empty → never auto-mirrors (the flood
+// guard); only the providers in the list are pushed.
+// The pure opt-in predicate (parity anchor) — shared by the renderer push-loop
+// gates (inlined there) and the main-process side-doors (relinkOrphansFor + the
+// create gateway) so the flood guard is byte-consistent everywhere.
+const { isReexportOptInRequired } = require('./sync-engine/playlist-push-candidate');
+
+function getReexportMap() {
+  const m = store.get('sync_playlist_reexport');
+  return m && typeof m === 'object' ? m : {};
+}
+function getPlaylistReexport(localPlaylistId) {
+  const v = getReexportMap()[localPlaylistId];
+  return Array.isArray(v) ? v : [];
+}
+function setPlaylistReexport(localPlaylistId, providerId, enabled) {
+  if (!localPlaylistId || !providerId) return;
+  const map = getReexportMap();
+  const set = new Set(Array.isArray(map[localPlaylistId]) ? map[localPlaylistId] : []);
+  if (enabled) set.add(providerId); else set.delete(providerId);
+  if (set.size) map[localPlaylistId] = [...set];
+  else delete map[localPlaylistId];
+  store.set('sync_playlist_reexport', map);
+}
+
 // ── N-way reconcile driver wiring (parachord#911, Step 2 / PR-4b) ──────
 // DORMANT by default. The pure reconcile engine (sync-engine/playlist-
 // reconcile.js, unit-tested by the no-false-drop harness) is run here over the
@@ -5800,7 +5862,16 @@ function relinkOrphansFor(providerId, ownedRemote) {
   const orphans = localPlaylists.filter(p =>
     !p.localOnly &&
     !isLinked(p) &&
-    (p.tracks?.length || 0) > 0
+    (p.tracks?.length || 0) > 0 &&
+    // LB RE-EXPORT flood guard (parachord#911) — a side-door twin of the push
+    // loops' create-branch gate. relinkOrphansFor name-matches an orphan to an
+    // owned remote and writes syncedTo + locallyModified, which then re-exports
+    // via the (un-gated) `locallyModified` push branch. So a `listenbrainz-*`
+    // playlist the user has NOT opted into this streaming provider must NOT be a
+    // relink candidate — otherwise a same-named owned Spotify/AM playlist would
+    // auto-link + flood the user's pulled LB library. Uses the SAME predicate +
+    // map as the push-loop gate, so opted-in LB playlists still relink.
+    !(isReexportOptInRequired(p, providerId) && !getPlaylistReexport(p.id).includes(providerId))
   );
 
   const orphansByName = new Map();
@@ -7582,6 +7653,22 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
 
     if (!provider.createPlaylist) {
       return { success: false, error: 'Provider does not support creating playlists' };
+    }
+
+    // LB RE-EXPORT flood guard (defense-in-depth, parachord#911). This gateway
+    // is the single create/link chokepoint; the renderer push loops already gate
+    // before calling it, but enforcing the opt-in HERE too means no future
+    // caller (or side-door) can re-export a `listenbrainz-*` playlist to a
+    // streaming service without the user explicitly opting it in
+    // (sync_playlist_reexport). Safe: the loops only reach this for opted-in LB
+    // or non-LB playlists, so it never false-blocks a legitimate create.
+    if (
+      localPlaylistId
+      && isReexportOptInRequired({ id: localPlaylistId }, providerId)
+      && !getPlaylistReexport(localPlaylistId).includes(providerId)
+    ) {
+      console.warn(`[Sync] Blocked un-opted ListenBrainz re-export of "${name}" to ${providerId}`);
+      return { success: false, error: 'reexport-not-opted-in' };
     }
 
     let token;

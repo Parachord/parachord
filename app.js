@@ -6633,6 +6633,10 @@ const Parachord = () => {
               playlistSyncInProgressRef.current.add(providerId);
               try {
                 const allPlaylists = await window.electron.playlists.load();
+                // Per-playlist LB re-export opt-in map { localId: ['spotify','applemusic'] }.
+                // A `listenbrainz-*` playlist re-exports to streaming ONLY when the
+                // user opted it into that provider — see the gate in the create branch.
+                const reexportOptIn = await window.electron.store.get('sync_playlist_reexport') || {};
                 let playlistsChanged = false;
                 // Track which specific playlists mutated so we save only those
                 // at the end. Saving all 142 sequentially used to pinwheel the
@@ -6719,6 +6723,25 @@ const Parachord = () => {
                   const syncInfo = playlist.syncedTo?.[providerId];
 
                   if (!syncInfo) {
+                    // LB RE-EXPORT opt-in (parachord#911, parity with mobile
+                    // ec526bb). SYNC: sync-engine/playlist-push-candidate.js
+                    // isReexportOptInRequired. A `listenbrainz-*` playlist
+                    // (created/edited on ListenBrainz via Achordion) is ELIGIBLE
+                    // to re-export to Spotify / Apple Music, but NEVER auto-mirrors
+                    // — without this gate, enabling Spotify/AM sync would push the
+                    // user's ENTIRE pulled LB library at once (the duplicate-flood
+                    // class). It mirrors only when the user explicitly opted this
+                    // playlist into this provider (the sync_playlist_reexport map,
+                    // set from the playlist's Sync context menu). Already-linked
+                    // playlists (syncedTo[provider]) are NOT gated — they push
+                    // updates via the `else if (locallyModified)` branch.
+                    if (
+                      playlist.id?.startsWith('listenbrainz-')
+                      && (providerId === 'spotify' || providerId === 'applemusic')
+                      && !(reexportOptIn[playlist.id] || []).includes(providerId)
+                    ) {
+                      continue;
+                    }
                     // LB-specific opt-in. Without this gate, enabling LB sync
                     // would auto-create one LB playlist per non-localOnly local
                     // playlist on first run — potentially 100+ private LB
@@ -11138,6 +11161,9 @@ const Parachord = () => {
           playlistSyncInProgressRef.current.add(providerId);
           try {
             const allPlaylists = await window.electron.playlists.load();
+            // LB re-export opt-in map — see the gate in the create branch below
+            // (in lockstep with the background-sync push loop).
+            const reexportOptIn = await window.electron.store.get('sync_playlist_reexport') || {};
             let playlistsChanged = false;
             // Track which playlists actually mutated so the save loop only
             // writes those — saving all 142 unconditionally caused the app
@@ -11187,6 +11213,20 @@ const Parachord = () => {
               const syncInfo = playlist.syncedTo?.[providerId];
 
               if (!syncInfo) {
+                // LB RE-EXPORT opt-in (parachord#911) — in lockstep with the
+                // background-sync push loop's identical gate. SYNC:
+                // sync-engine/playlist-push-candidate.js isReexportOptInRequired.
+                // A `listenbrainz-*` playlist re-exports to Spotify/AM ONLY when
+                // the user opted it into that provider; never auto-mirror (would
+                // flood the pulled LB library). Already-linked playlists push
+                // updates via the `else if (locallyModified)` branch.
+                if (
+                  playlist.id?.startsWith('listenbrainz-')
+                  && (providerId === 'spotify' || providerId === 'applemusic')
+                  && !(reexportOptIn[playlist.id] || []).includes(providerId)
+                ) {
+                  continue;
+                }
                 // LB-specific opt-in. Mirrors the background-sync push loop's
                 // gate (see comment at L~6357) — must stay in lockstep with it
                 // per CLAUDE.md ("Push-loop syncedFrom guard must be
@@ -15707,6 +15747,14 @@ ${trackListXml}
             sourceType: data.sourceType || 'track'
           });
           setSelectedPlaylistsForAdd([]); // Reset selection
+        } else if (data.action === 'reexport-changed' && data.playlistId) {
+          // The native playlist context menu toggled a ListenBrainz re-export
+          // opt-in (persisted main-side in sync_playlist_reexport). The next
+          // background sync creates/removes the mirror accordingly.
+          const label = data.providerLabel || data.providerId;
+          showToast(data.enabled
+            ? `Will mirror this playlist to ${label} on next sync`
+            : `Stopped mirroring this playlist to ${label}`);
         } else if (data.action === 'remove-from-playlist' && data.playlistId !== undefined) {
           // Remove track from playlist
           const trackIndex = data.trackIndex;
