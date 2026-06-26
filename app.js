@@ -15891,7 +15891,12 @@ ${trackListXml}
           // If the playlist mirrors to/from any remote (a synced playlist OR a
           // hosted XSPF mirrored to Spotify/AM), ask whether to delete from those
           // services too. Otherwise just confirm + delete locally.
-          const playlistToDelete = playlists.find(p => p.id === data.playlistId);
+          // NOTE: read the playlist via playlistsRef (NOT the `playlists` closure
+          // var) — this listener's useEffect deps don't include `playlists`, so
+          // the closure is STALE: a stale-undefined lookup is exactly why the
+          // mirror prompt never showed and the hosted-store cleanup was skipped
+          // (deletePlaylistLocally with no sourceUrl → hosted XSPF re-imported).
+          const playlistToDelete = (playlistsRef.current || []).find(p => p.id === data.playlistId);
           const hasMirrors = getPlaylistMirrorTargets(playlistToDelete).length > 0;
           if (hasMirrors) {
             setSyncDeleteDialog({ show: true, playlist: playlistToDelete });
@@ -20332,23 +20337,16 @@ ${trackListXml}
         }
       },
       deletePlaylist: async (playlistId) => {
-        const result = await window.electron.playlists.delete(playlistId);
-        if (result.success) {
-          setPlaylists(prev => prev.filter(p => p.id !== playlistId));
-          delete playlistCoverCache.current[playlistId];
-          setAllPlaylistCovers(prev => {
-            const updated = { ...prev };
-            delete updated[playlistId];
-            return updated;
-          });
-          // Navigate away if viewing this playlist
-          if (selectedPlaylistRef.current?.id === playlistId) {
-            setSelectedPlaylist(null);
-            setPlaylistTracks([]);
-            navigateTo('playlists');
-          }
+        // Use the shared helper so a hosted XSPF is removed from BOTH stores
+        // (else the load+merge re-imports it).
+        const target = (playlistsRef.current || []).find(p => p.id === playlistId) || { id: playlistId };
+        await deletePlaylistLocally(target);
+        if (selectedPlaylistRef.current?.id === playlistId) {
+          setSelectedPlaylist(null);
+          setPlaylistTracks([]);
+          navigateTo('playlists');
         }
-        return result;
+        return { success: true };
       }
     };
 
@@ -43536,9 +43534,9 @@ useEffect(() => {
                   React.createElement('button', {
                     className: 'text-xs px-3 py-1.5 rounded-md bg-red-100 text-red-700 hover:bg-red-200 transition-colors',
                     onClick: async () => {
-                      // Delete locally too
-                      await window.electron.playlists.delete(playlist.id);
-                      setPlaylists(prev => prev.filter(p => p.id !== playlist.id));
+                      // Delete locally too (remote already gone) — via the helper
+                      // so a hosted XSPF is cleared from BOTH stores.
+                      await deletePlaylistLocally(playlist);
                       setSelectedPlaylist(null);
                     }
                   }, 'Delete locally too'),
@@ -44140,21 +44138,17 @@ useEffect(() => {
                 }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`),
                 // Delete Playlist button (only in edit mode)
                 playlistEditMode && React.createElement('button', {
-                  onClick: () => {
-                    if (selectedPlaylist.syncedFrom) {
-                      // Synced playlist: show options dialog
+                  onClick: async () => {
+                    // Ask about mirrors when the playlist syncs to/from ANY remote
+                    // (source OR push targets, incl. a hosted XSPF mirrored to
+                    // Spotify/AM) — not just syncedFrom. Otherwise confirm + delete
+                    // locally via the helper that clears BOTH hosted_playlists AND
+                    // local_playlists so it can't be re-imported.
+                    if (getPlaylistMirrorTargets(selectedPlaylist).length > 0) {
                       setSyncDeleteDialog({ show: true, playlist: selectedPlaylist });
                     } else {
-                      // Local playlist: simple confirm
                       if (window.confirm(`Are you sure you want to delete "${selectedPlaylist.title}"? This cannot be undone.`)) {
-                        window.electron.playlists.delete(selectedPlaylist.id);
-                        setPlaylists(prev => prev.filter(p => p.id !== selectedPlaylist.id));
-                        delete playlistCoverCache.current[selectedPlaylist.id];
-                        setAllPlaylistCovers(prev => {
-                          const newCovers = { ...prev };
-                          delete newCovers[selectedPlaylist.id];
-                          return newCovers;
-                        });
+                        await deletePlaylistLocally(selectedPlaylist);
                         setPlaylistEditMode(false);
                         setEditedPlaylistData(null);
                         setSelectedPlaylist(null);
