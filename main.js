@@ -5390,6 +5390,154 @@ function removePlaylistSyncState(localPlaylistId, providerId) {
 ipcMain.handle('sync-state:get-all', async () => getSyncStates());
 ipcMain.handle('sync-state:get', async (event, localPlaylistId) => getPlaylistSyncState(localPlaylistId));
 
+// ── N-way reconcile driver wiring (parachord#911, Step 2 / PR-4b) ──────
+// DORMANT by default. The pure reconcile engine (sync-engine/playlist-
+// reconcile.js, unit-tested by the no-false-drop harness) is run here over the
+// real store + providers. Two flags gate it, BOTH default OFF:
+//   nway_shadow_enabled — run the engine at all (compute plan + structured log)
+//   nway_propagate      — perform REAL writes (dryRun = !nway_propagate)
+// So: shadow OFF → nothing runs. shadow ON, propagate OFF → compute + log, ZERO
+// writes (the Step-2 milestone — verified side-effect-free: the core stops
+// before A13/A14/A15, so only fetchPlaylistTracks is called and no effect
+// fires). shadow ON, propagate ON → real N-way materialize (NOT armed until the
+// no-false-drop harness is validated on a real library + the mobile parity
+// (parachord-mobile#277) lands). There is intentionally NO auto-hook into the
+// hot sync path yet — this runs only when explicitly invoked via the
+// `nway:shadow-run` IPC, so it can never perturb a normal sync.
+function isNwayShadowEnabled() { return store.get('nway_shadow_enabled') === true; }
+function isNwayPropagateEnabled() { return store.get('nway_propagate') === true; }
+
+async function getNwayProviderToken(providerId) {
+  if (providerId === 'spotify') return await ensureValidSpotifyToken();
+  if (providerId === 'applemusic') {
+    if (!generatedMusicKitToken) { try { await musicKitTokenReady; } catch {} }
+    const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
+    const userToken = store.get('applemusic_user_token');
+    return developerToken && userToken ? JSON.stringify({ developerToken, userToken }) : null;
+  }
+  if (providerId === 'listenbrainz') {
+    const cfg = store.get('scrobbler-config-listenbrainz') || {};
+    return cfg.userToken || null;
+  }
+  return null;
+}
+
+// Derive a playlist's remote mirrors { providerId -> externalId } from its
+// syncedFrom (pull source) + syncedTo (push mirrors).
+function nwayMirrorsOf(playlist) {
+  const m = {};
+  if (playlist && playlist.syncedFrom && playlist.syncedFrom.resolver && playlist.syncedFrom.externalId) {
+    m[playlist.syncedFrom.resolver] = playlist.syncedFrom.externalId;
+  }
+  if (playlist && playlist.syncedTo) {
+    for (const [pid, st] of Object.entries(playlist.syncedTo)) {
+      if (st && st.externalId) m[pid] = st.externalId;
+    }
+  }
+  return m;
+}
+
+async function runNwayShadowReconcile() {
+  if (!isNwayShadowEnabled()) return { skipped: 'shadow-disabled' };
+  const { bindProviderToken, makeStoreEffects, runNwayReconcileCycle, createHydrationCache } =
+    require('./sync-engine/nway-reconcile-driver');
+  const dryRun = !isNwayPropagateEnabled();
+  const now = Date.now();
+  const states = getSyncStates();
+  const playlists = store.get('local_playlists') || [];
+  const playlistById = new Map(playlists.map((p) => [p.id, p]));
+  const mirrorsOf = (localId) => nwayMirrorsOf(playlistById.get(localId));
+
+  // Which providers are referenced by any tracked playlist's mirrors?
+  const neededProviders = new Set();
+  for (const localId of Object.keys(states)) {
+    for (const pid of Object.keys(mirrorsOf(localId))) neededProviders.add(pid);
+  }
+
+  // Acquire tokens, bind providers, fetch authoritative remote playlist
+  // metadata (snapshotId + trackCount — the partial-fetch floor's count source).
+  const boundProviders = {};
+  const remoteLists = {};
+  for (const pid of neededProviders) {
+    const provider = SyncEngine.getProvider(pid);
+    if (!provider) continue;
+    let token = null;
+    try { token = await getNwayProviderToken(pid); } catch { token = null; }
+    if (!token) { console.warn(`[nway-shadow] no token for ${pid}; skipping its mirrors`); continue; }
+    boundProviders[pid] = bindProviderToken(provider, token);
+    try {
+      const res = await provider.fetchPlaylists(token);
+      const map = {};
+      for (const rp of (res && res.playlists) || []) {
+        if (rp.externalId) {
+          map[rp.externalId] = {
+            snapshotId: rp.snapshotId != null ? rp.snapshotId : null,
+            trackCount: typeof rp.trackCount === 'number' ? rp.trackCount : null,
+          };
+        }
+      }
+      remoteLists[pid] = map;
+    } catch (e) {
+      console.warn(`[nway-shadow] fetchPlaylists failed for ${pid}: ${e && e.message}`);
+      remoteLists[pid] = {};
+    }
+  }
+
+  // Only run playlists at least one of whose mirrors we could bind (have a token).
+  const runnableStates = {};
+  for (const localId of Object.keys(states)) {
+    if (!playlistById.has(localId)) continue;
+    if (Object.keys(mirrorsOf(localId)).some((pid) => boundProviders[pid])) runnableStates[localId] = states[localId];
+  }
+
+  // Store abstraction for the effects (these fire only when !dryRun).
+  const storeAbstraction = {
+    getPlaylist: (id) => playlistById.get(id) || null,
+    savePlaylist: (p) => {
+      playlistById.set(p.id, p);
+      const arr = store.get('local_playlists') || [];
+      const idx = arr.findIndex((x) => x.id === p.id);
+      if (idx >= 0) { arr[idx] = p; store.set('local_playlists', arr); }
+    },
+    getState: (id) => getSyncStates()[id] || null,
+    saveState: (id, s) => { const all = getSyncStates(); all[id] = s; store.set('sync_playlist_state', all); },
+    removeSyncLink: (id, pid) => { removeSyncLink(id, pid); removePlaylistSyncState(id, pid); },
+  };
+  const cache = createHydrationCache(store.get('nway_hydration_cache') || undefined);
+
+  const out = await runNwayReconcileCycle({
+    states: runnableStates,
+    getPlaylist: storeAbstraction.getPlaylist,
+    getMirrors: mirrorsOf,
+    boundProviders,
+    remoteLists,
+    getPullSource: (localId) => {
+      const pl = playlistById.get(localId);
+      return pl && pl.syncedFrom && pl.syncedFrom.resolver && pl.syncedFrom.externalId
+        ? { providerId: pl.syncedFrom.resolver, externalId: pl.syncedFrom.externalId }
+        : null;
+    },
+    cache,
+    effects: makeStoreEffects(storeAbstraction),
+    now,
+    dryRun,
+    log: console,
+  });
+
+  // Persist the negative cache only after a real (non-dry) cycle — shadow
+  // doesn't mutate it (A5.5 + the coordinator are gated off in dryRun).
+  if (!dryRun) {
+    try { store.set('nway_hydration_cache', Object.fromEntries(cache.entries())); } catch {}
+  }
+  console.log(`[nway-shadow] cycle done (dryRun=${dryRun}): ${out.results.length} planned across ${out.cycles}, ${out.errors.length} error(s)`);
+  return { dryRun, ...out };
+}
+
+ipcMain.handle('nway:shadow-run', async () => {
+  try { return await runNwayShadowReconcile(); }
+  catch (e) { return { error: e && e.message }; }
+});
+
 // ---------------------------------------------------------------------------
 // Achordion playlist-links submission (LB-anchored mirror map)
 // ---------------------------------------------------------------------------
