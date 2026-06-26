@@ -38,6 +38,13 @@ contextBridge.exposeInMainWorld('electron', {
     clear: () => ipcRenderer.invoke('store-clear'),
   },
 
+  // N-way reconcile (parachord#911) — dormant; gated by the nway_shadow_enabled
+  // / nway_propagate store flags (both default OFF). shadowRun() manually
+  // triggers one reconcile cycle for validation (shadow = compute + log only).
+  nway: {
+    shadowRun: () => ipcRenderer.invoke('nway:shadow-run'),
+  },
+
   // Spotify operations
   spotify: {
     authenticate: () => ipcRenderer.invoke('spotify-auth'),
