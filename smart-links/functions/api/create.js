@@ -51,6 +51,11 @@ export async function onRequestPost({ request, env, waitUntil }) {
       albumArt: data.albumArt || null,
       type,
       urls: data.urls || null,
+      // The wrapped `parachord://` action this link was created from, when the
+      // share sends it (mobile #138). /api/lookup returns it so the app can
+      // dispatch a PRECISE in-app action instead of falling back to the web
+      // page. Forward-compatible: null until the mobile share starts sending it.
+      deeplink: data.deeplink || null,
       createdAt: Date.now()
     };
 
