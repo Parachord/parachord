@@ -410,6 +410,16 @@ class ResolverLoader {
       if (segments.length >= 2) return 'track';
       if (segments.length === 1) return 'artist';
     }
+    // Plex (app.plex.tv share links). Album and track links share the same
+    // /library/metadata/<key> shape and can't be told apart from the URL, so
+    // only playlists are classified here; everything else falls through to the
+    // single-track lookup path.
+    if (url.includes('plex.tv')) {
+      if (url.includes('/playlists/') || url.includes('%2Fplaylists%2F') || url.includes('/playlist?')) {
+        return 'playlist';
+      }
+      return 'track';
+    }
     return 'unknown';
   }
 }
