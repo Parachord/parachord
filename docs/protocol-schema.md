@@ -26,6 +26,20 @@ The HTTP endpoint is recommended for:
 - Raycast/Alfred extensions
 - Any programmatic access
 
+### 3. Universal / App Links (Shareable HTTPS)
+
+Every `parachord://<verb>` URL has an equivalent `https://parachord.com/<verb>` form — byte-identical path and query. This is the shareable form (works in emails, SMS, Slack, social posts where custom schemes get stripped):
+
+```
+parachord://play/playlist?url=https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F<id>
+↔
+https://parachord.com/play/playlist?url=https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F<id>
+```
+
+Tapped on mobile (iOS Universal Links / Android App Links) or macOS (Associated Domains) with the app installed: the OS routes directly to Parachord with the URL above. Without the app installed: parachord.com renders a landing page with a "Get Parachord" CTA and an auto-trigger script that attempts the `parachord://` bounce.
+
+The website worker that serves these landing pages and the `.well-known/assetlinks.json` + `.well-known/apple-app-site-association` files: [parachord-website](https://github.com/Parachord/parachord-website). URL conventions are documented in [its CLAUDE.md](https://github.com/Parachord/parachord-website/blob/main/CLAUDE.md).
+
 ## Quick Reference
 
 | Category | Example URL |
@@ -209,13 +223,13 @@ parachord://play/album?mbid=b1392450-e666-3926-a536-22c65f834433
 Play a list of tracks. Same input shapes as `play/album` but without the album-only identifiers (`mbid`, `spotify`, `applemusic`).
 
 ```
-parachord://play/playlist?url={xspf_or_json_url}
+parachord://play/playlist?url={xspf_or_json_url_or_provider_playlist_page}
 parachord://play/playlist?tracks={base64_json}&title={display_name}
 ```
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `url` | Either `url` or `tracks` | URL to a hosted XSPF or JSPF/JSON tracklist |
+| `url` | Either `url` or `tracks` | URL to a hosted tracklist document (XSPF / JSPF / JSON), **or** a provider playlist page (see "Provider URL sniffing" below) |
 | `tracks` | " | Base64-encoded JSON array (max 100KB encoded, 500 tracks) |
 | `title` | No | Display name for the playlist context |
 | `creator` | No | Attribution shown in the playback context |
@@ -223,10 +237,32 @@ parachord://play/playlist?tracks={base64_json}&title={display_name}
 
 > Use `parachord://import` instead if you want the playlist saved to the user's library. `play/playlist` only plays — nothing persists.
 
-**Example:**
+#### Provider URL sniffing
+
+`play/playlist?url=` accepts both **hosted tracklist documents** (XSPF / JSPF / JSON — the original shape) and **provider playlist page URLs**. The host is sniffed and routed accordingly. **Sniffing is gated to `play/playlist` only** — `play/album?url=` and `play/radio?url=` stay tracklist-document-only by design.
+
+| URL host | Resolved via |
+|---|---|
+| `open.spotify.com/playlist/<id>` | Spotify playlist import |
+| `music.apple.com/<region>/playlist/<slug>/<id>` | Apple Music playlist import |
+| `soundcloud.com/<user>/sets/<slug>` | SoundCloud playlist import |
+| `on.soundcloud.com/<short-id>` | Short-link — app follows the 302 to `soundcloud.com/<user>/sets/...` itself, then re-validates the final host before importing. The website does NOT pre-resolve the short link. |
+| `achordion.xyz/playlist/<mbid>` | Fetched from `https://achordion.xyz/api/playlist/<mbid>/xspf` (public, returns XSPF) — the page itself is bot-challenged by Vercel; only the `/api/` route is reachable from the app's IP. |
+| anything else | Falls back to the original behavior: fetch the URL and parse as XSPF / JSPF / JSON tracklist. |
+
+A pure host classifier helper lives in [`tests/helpers/playlist-url-classify.js`](../tests/helpers/playlist-url-classify.js) with tests in [`tests/protocol/playlist-url-classify.test.js`](../tests/protocol/playlist-url-classify.test.js).
+
+**Examples:**
 ```
 parachord://play/playlist?url=https%3A%2F%2Fexample.com%2Fmix.xspf
+parachord://play/playlist?url=https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F37i9dQZF1DXcBWIGoYBM5M
+parachord://play/playlist?url=https%3A%2F%2Fmusic.apple.com%2Fus%2Fplaylist%2Ftodays-hits%2Fpl.f4d106fed2bd41149aaacabb233eb5eb
+parachord://play/playlist?url=https%3A%2F%2Fsoundcloud.com%2Fjherskowitz%2Fsets%2Ffrozen-in-time-2026
+parachord://play/playlist?url=https%3A%2F%2Fon.soundcloud.com%2FDrk2sCLhCHVNugYtAP
+parachord://play/playlist?url=https%3A%2F%2Fachordion.xyz%2Fplaylist%2Fc2accebd-ccd1-42c6-8ce7-ec0e8cf6cd13
 ```
+
+The HTTPS share form of any of these (e.g. `https://parachord.com/play/playlist?url=https%3A%2F%2Fopen.spotify.com%2F...`) is byte-identical and works in any context that strips custom schemes — see [Universal / App Links](#3-universal--app-links-shareable-https) above.
 
 ### Play Radio
 

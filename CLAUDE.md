@@ -1051,7 +1051,7 @@ Custom-scheme deep links handled at app.js's protocol switch (search `switch (co
 |---|---|---|
 | `parachord://play` | `artist` + `title` | None |
 | `parachord://play/album` | `mbid` / `spotify` / `applemusic` / `url` / `tracks` / `artist`+`title` | None |
-| `parachord://play/playlist` | `url` / `tracks` (optional `title`, `creator`, `shuffle`) | None |
+| `parachord://play/playlist` | `url` (hosted XSPF/JSPF/JSON tracklist **or** provider playlist page — see below) / `tracks` (optional `title`, `creator`, `shuffle`) | None |
 | `parachord://play/radio` | `url` (also reused as refill) / `tracks`+`refill` / `artist`[+`title`] | None |
 | `parachord://listen-along` | `service`=`listenbrainz`\|`lastfm`, `user`=`<username>` | None |
 | `parachord://import` | `url` / `tracks` | Required (writes to library) |
@@ -1059,6 +1059,10 @@ Custom-scheme deep links handled at app.js's protocol switch (search `switch (co
 | `parachord://control/<action>`, `queue/<action>`, `shuffle/<state>`, `volume/<level>`, etc. | varies | None |
 
 **Shared input resolution** (`resolveProtocolPlayInput`, ~L10495): all `play-*` commands feed through one helper that turns `mbid`/provider IDs/url/tracks/artist+title into a normalized `{ displayName, tracks: [{artist, title, album?, mbid?, isrc?}], albumArt? }`. Priority: mbid → spotify → applemusic → url → tracks → artist+title. `opts.allowMbid` / `allowProviderId` / `allowArtistTitleAlbum` gate per-command (album-only shapes silently fall through for non-album commands).
+
+**`play/playlist?url=` provider sniffing** (`classifyPlaylistUrl` in `tests/helpers/playlist-url-classify.js`, tests at `tests/protocol/playlist-url-classify.test.js`): host-sniffs `open.spotify.com` / `music.apple.com` / `soundcloud.com` / `on.soundcloud.com` (short link — main-process `HEAD` follows the 302, re-validates final host) / `achordion.xyz/playlist/<mbid>` (fetched from `https://achordion.xyz/api/playlist/<mbid>/xspf`; the page itself is Vercel bot-challenged). Anything else falls through to the existing hosted-tracklist parse. **Sniffing is gated to `play/playlist` only** — `play/album?url=` and `play/radio?url=` stay tracklist-document-only. Public doc: [`docs/protocol-schema.md` § Play Playlist § Provider URL sniffing](docs/protocol-schema.md). Landed in PR #932 for parachord#930; the website worker's matching path-form bounce in [parachord-website#102](https://github.com/Parachord/parachord-website/pull/102).
+
+**Universal / App Links (HTTPS share form).** Every `parachord://<verb>` URL has a byte-identical `https://parachord.com/<verb>` form. The website worker reconstructs `parachord://` from incoming HTTPS by stripping the host and prefixing the scheme — same path, same query. **The deep link must be the canonical path form** (`parachord://play/playlist?url=...`, not `parachord://play?type=playlist&url=...`); the desktop and mobile parsers read the play sub-action from the path segment, not from `?type=`. The web worker formerly leaked the `?type=` form during internal normalization and silently broke every HTTPS bounce — see [parachord-website#102](https://github.com/Parachord/parachord-website/pull/102) for the inverse-normalization fix. Defense-in-depth: this client also accepts the play sub-action via `segments[0] || params.type` to remain robust against any future re-normalization. URL conventions reference: [parachord-website/CLAUDE.md](https://github.com/Parachord/parachord-website/blob/main/CLAUDE.md).
 
 **Tracklist parser** (`window.parseProtocolTracklist`, ~L33048; SYNCed with `tests/helpers/tracklist-parser.js`): auto-detects XSPF (XML, DOMParser) / JSPF / generic JSON tracklist. JSPF identifier strings are MBID-validated (`/^[a-f0-9-]{36}$/i`). Inline tracks capped at 500; bodies capped at 100KB.
 
