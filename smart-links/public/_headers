@@ -1,5 +1,0 @@
-# Apple App Site Association — the file has no extension, so Cloudflare Pages
-# serves it as application/octet-stream by default. iOS requires JSON (and a
-# 200, HTTPS, no redirect), so force the Content-Type here.
-/.well-known/apple-app-site-association
-  Content-Type: application/json
