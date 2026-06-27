@@ -217,6 +217,37 @@ window.isPublicHttpUrl = (urlString) => {
   return true;
 };
 
+// Classify a parachord://play/playlist?url=<url> target so the protocol handler
+// knows how to turn it into tracks (parachord#930). Provider playlist *pages*
+// (Spotify / Apple Music / SoundCloud) are NOT tracklist documents — they have
+// to go through the resolver lookupPlaylist path — and two hosts need a special
+// pre-step. Pure: no I/O, no resolver dependency (the orchestrator does the
+// fetching/sniffing). Returns one of:
+//   { kind: 'achordion', xspfUrl }  — achordion.xyz/playlist/<mbid> → its public XSPF API
+//   { kind: 'soundcloud-short' }    — on.soundcloud.com/<id> → needs a redirect-follow first
+//   { kind: 'standard' }            — everything else: try resolver lookupPlaylist, else parse as a tracklist document
+//
+// SYNC: tests/helpers/playlist-url-classify.js — keep byte-identical with the body below.
+window.classifyPlaylistUrl = (urlString) => {
+  let u;
+  try { u = new URL(urlString); } catch { return { kind: 'standard' }; }
+  const host = u.hostname.toLowerCase();
+
+  // Achordion playlist page → its public, un-challenged XSPF endpoint. The MBID
+  // in /playlist/<mbid> is the ListenBrainz playlist id Achordion mirrors.
+  if (host === 'achordion.xyz' || host === 'www.achordion.xyz') {
+    const m = u.pathname.match(/^\/playlist\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i);
+    if (m) return { kind: 'achordion', xspfUrl: `https://achordion.xyz/api/playlist/${m[1].toLowerCase()}/xspf` };
+    return { kind: 'standard' };
+  }
+
+  // SoundCloud short link → 302s to the canonical /sets/ URL. getUrlType()
+  // can't classify it (no /sets/ segment), so it must be resolved first.
+  if (host === 'on.soundcloud.com') return { kind: 'soundcloud-short' };
+
+  return { kind: 'standard' };
+};
+
 // Resolver match validation + minimum confidence threshold.
 //
 // SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
@@ -12260,6 +12291,91 @@ const Parachord = () => {
   useEffect(() => {
     if (!window.electron?.onProtocolUrl) return;
 
+    // Turn a provider playlist *page* URL (Spotify / Apple Music / SoundCloud /
+    // Achordion) into a normalized { displayName, tracks, albumArt? }, mirroring
+    // the mobile DeepLinkHandler contract for parachord://play/playlist?url=
+    // <provider-url> (parachord#930). These URLs are web pages, not tracklist
+    // documents, so feeding them to parseProtocolTracklist finds zero tracks —
+    // they must go through the resolver lookupPlaylist path (the same one
+    // handleImportPlaylistFromUrl uses). Returns null when the URL isn't a
+    // recognized provider playlist page, so the caller falls back to parsing it
+    // as a hosted tracklist document (XSPF/JSPF/JSON).
+    const resolveProviderPlaylistUrl = async (rawUrl) => {
+      const classified = window.classifyPlaylistUrl(rawUrl);
+
+      // Achordion → its public XSPF endpoint, then the standard tracklist parser.
+      if (classified.kind === 'achordion') {
+        const resp = await fetch(classified.xspfUrl, {
+          redirect: 'error',
+          headers: buildProtocolFetchHeaders(classified.xspfUrl),
+        });
+        if (!resp.ok) throw new Error(`Achordion playlist fetch failed: ${resp.status}`);
+        const body = await resp.text();
+        if (body.length > 100 * 1024) throw new Error('Playlist response too large (max 100KB)');
+        return window.parseProtocolTracklist(body, resp.headers.get('content-type') || 'application/xspf+xml');
+      }
+
+      // SoundCloud short link → resolve the redirect to the canonical /sets/ URL
+      // via the main process (a renderer fetch to SoundCloud is CORS-blocked),
+      // then sniff the resolver below. Re-run the SSRF guard on the resolved URL
+      // (proxy-fetch doesn't re-validate each redirect hop) and require it to
+      // land back on SoundCloud.
+      let url = rawUrl;
+      if (classified.kind === 'soundcloud-short') {
+        let canonical = null;
+        try {
+          const res = await window.electron.proxyFetch(rawUrl, { method: 'HEAD' });
+          canonical = res && res.finalUrl;
+        } catch { /* leave canonical null → throw below */ }
+        let canonHost = '';
+        try { canonHost = new URL(canonical).hostname.toLowerCase(); } catch { canonHost = ''; }
+        if (!canonical || !window.isPublicHttpUrl(canonical) ||
+            !(canonHost === 'soundcloud.com' || canonHost.endsWith('.soundcloud.com'))) {
+          throw new Error('Could not resolve SoundCloud link');
+        }
+        url = canonical;
+      }
+
+      // Resolver-sniffable provider playlist (Spotify / Apple Music / SoundCloud
+      // canonical). Same lookupPlaylist path handleImportPlaylistFromUrl uses.
+      const loader = resolverLoaderRef.current;
+      const resolverId = loader && loader.findResolverForUrl(url);
+      if (resolverId && loader.getUrlType(url) === 'playlist') {
+        const config = await getResolverConfig(resolverId);
+        const result = await loader.lookupPlaylist(url, config);
+        const playlist = result && result.playlist;
+        const tracks = ((playlist && playlist.tracks) || [])
+          .map(t => {
+            const out = { artist: t.artist, title: t.title };
+            if (t.album) out.album = t.album;
+            if (t.spotifyId) out.spotifyId = t.spotifyId;
+            if (t.appleMusicId) out.appleMusicId = t.appleMusicId;
+            if (t.isrc) out.isrc = t.isrc;
+            return out;
+          })
+          .filter(t => t.artist && t.title);
+        if (tracks.length === 0) {
+          throw new Error(`Could not load playlist from ${resolverId}. Make sure ${resolverId} is connected and the playlist is accessible.`);
+        }
+        const name = playlist.name || playlist.title || 'Playlist';
+        const owner = playlist.owner || playlist.creator || playlist.artist;
+        const albumArt = playlist.albumArt || playlist.image || playlist.artwork;
+        return {
+          displayName: owner ? `${name} — ${owner}` : name,
+          tracks,
+          ...(albumArt ? { albumArt } : {}),
+        };
+      }
+
+      // Short link resolved but the canonical URL isn't a recognized playlist
+      // page — surface it rather than letting the caller HTML-parse the page.
+      if (classified.kind === 'soundcloud-short') {
+        throw new Error('SoundCloud link is not a playlist');
+      }
+
+      return null; // not a provider playlist page → caller parses as a tracklist document
+    };
+
     // Resolve any of the protocol play-input shapes into a normalized tracklist.
     // Used by parachord://play-album, play-playlist, play-radio.
     //
@@ -12276,6 +12392,7 @@ const Parachord = () => {
         allowMbid = false,
         allowProviderId = false,
         allowArtistTitleAlbum = false,
+        allowProviderPlaylist = false,
       } = opts;
 
       // 1. MBID — MusicBrainz release-group lookup (album only).
@@ -12343,10 +12460,19 @@ const Parachord = () => {
         };
       }
 
-      // 3. URL (XSPF or JSON).
+      // 3. URL — provider playlist page, or a hosted tracklist document.
       if (params.url) {
         if (!window.isPublicHttpUrl(params.url)) {
           throw new Error('Invalid URL: must be public http/https');
+        }
+        // play/playlist: a provider playlist *page* (Spotify/Apple Music/
+        // SoundCloud/Achordion) resolves via the provider import path
+        // (parachord#930). Returns null for non-provider URLs, which then fall
+        // through to the tracklist-document parse below. Gated to playlist only
+        // so album/radio keep their existing XSPF/JSON-document behavior.
+        if (allowProviderPlaylist) {
+          const fromProvider = await resolveProviderPlaylistUrl(params.url);
+          if (fromProvider) return fromProvider;
         }
         const resp = await fetch(params.url, {
           redirect: 'error',
@@ -12497,6 +12623,7 @@ const Parachord = () => {
                   allowMbid: playKind === 'album',
                   allowProviderId: playKind === 'album',
                   allowArtistTitleAlbum: playKind === 'album',
+                  allowProviderPlaylist: playKind === 'playlist',
                 });
                 if (!tracks || tracks.length === 0) {
                   showToast(`Nothing to play: ${displayName || 'Untitled'}`);
