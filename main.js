@@ -4124,7 +4124,7 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
       console.log('Proxy fetch failed with status:', response.status);
       const errorText = await response.text();
       console.log('Error response body:', errorText.substring(0, 500));
-      return { success: false, status: response.status, error: `HTTP ${response.status}`, text: errorText };
+      return { success: false, status: response.status, error: `HTTP ${response.status}`, text: errorText, finalUrl: response.url };
     }
 
     // Handle arraybuffer response type (for audio/binary data)
@@ -4133,7 +4133,7 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
       console.log('Proxy fetch got arraybuffer, size:', arrayBuffer.byteLength);
       // Convert ArrayBuffer to base64 for IPC transfer
       const base64 = Buffer.from(arrayBuffer).toString('base64');
-      return { success: true, status: response.status, data: base64 };
+      return { success: true, status: response.status, data: base64, finalUrl: response.url };
     }
 
     const text = await response.text();
@@ -4147,7 +4147,10 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
       console.log('No track_id found in response');
     }
 
-    return { success: true, status: response.status, text };
+    // finalUrl exposes the post-redirect URL (Node fetch follows redirects by
+    // default) so callers can resolve short links — e.g. on.soundcloud.com →
+    // canonical soundcloud.com/.../sets/... for parachord://play/playlist (#930).
+    return { success: true, status: response.status, text, finalUrl: response.url };
   } catch (error) {
     console.error('Proxy fetch error:', error);
     return { success: false, error: error.message };
