@@ -5,9 +5,42 @@ import { enrichLinkData } from '../lib/enrich.js';
 // Static file extensions to pass through to assets
 const STATIC_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.css', '.js', '.woff', '.woff2'];
 
+// iOS Universal Links manifest for go.parachord.com — claims all paths (/*) so
+// every short link opens in the app (Parachord/parachord#927). Team ID
+// YR3XETE537 matches iosApp's Parachord.xcodeproj DEVELOPMENT_TEAM; bundle id
+// com.parachord.ios. Served from this Function rather than as a static file
+// because (a) this catch-all shadows any path Pages didn't register as a static
+// asset, and (b) Cloudflare Pages does not reliably upload dot-directories
+// (`.well-known/`) — so a file in public/.well-known/ falls through to the 404
+// below. Returning it here is deterministic. This is the single source of truth;
+// update the Team ID / bundle id here if they ever change.
+const APPLE_APP_SITE_ASSOCIATION = {
+  applinks: {
+    details: [
+      {
+        appIDs: ['YR3XETE537.com.parachord.ios'],
+        components: [
+          { '/': '/*', comment: 'All go.parachord.com short links open in app' }
+        ]
+      }
+    ]
+  }
+};
+
 export async function onRequestGet({ params, request, env, waitUntil }) {
   const pathParts = params.path || [];
   const fullPath = '/' + pathParts.join('/');
+
+  // iOS Universal Links: serve the AASA before any other routing (see the
+  // APPLE_APP_SITE_ASSOCIATION comment above for why it lives in the Function).
+  if (fullPath === '/.well-known/apple-app-site-association') {
+    return new Response(JSON.stringify(APPLE_APP_SITE_ASSOCIATION), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=3600'
+      }
+    });
+  }
 
   // Check if this is a static file request - pass through to assets
   if (STATIC_EXTENSIONS.some(ext => fullPath.toLowerCase().endsWith(ext))) {
