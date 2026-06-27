@@ -12562,7 +12562,7 @@ const Parachord = () => {
         // they complete instantly and a toast would just be noise.
         const slowCommands = new Set(['play', 'import', 'chat', 'listen-along']);
         if (slowCommands.has(command)) {
-          const playKind = command === 'play' ? segments[0] : null;
+          const playKind = command === 'play' ? (segments[0] || params.type) : null;
           let ackMessage;
           if (command === 'play' && playKind === 'album') ackMessage = 'Loading album…';
           else if (command === 'play' && playKind === 'playlist') ackMessage = 'Loading playlist…';
@@ -12615,7 +12615,13 @@ const Parachord = () => {
           case 'play': {
             // Sub-action routes: parachord://play/album, play/playlist, play/radio.
             // No sub-action: parachord://play?artist=X&title=Y (single-track play).
-            const playKind = segments[0];
+            // The sub-action is normally the path segment, but also accept a
+            // ?type= query param as a fallback so the query form
+            // (parachord://play?type=playlist&url=…) routes the same as the path
+            // form. The website's HTTPS bounce can emit either shape depending
+            // on deploy timing (parachord#930); a non-matching type just falls
+            // through to the single-track path, unchanged.
+            const playKind = segments[0] || params.type;
 
             if (playKind === 'album' || playKind === 'playlist') {
               try {
