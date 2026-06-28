@@ -63112,7 +63112,15 @@ useEffect(() => {
       },
         React.createElement('div', { style: { padding: '22px 24px 12px', flexShrink: 0 } },
           React.createElement('h3', { style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' } }, 'Switch to new sync on this device?'),
-          React.createElement('p', { style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' } }, "We ran the new sync against your library without writing anything. Here's exactly what it would change.")
+          React.createElement('p', { style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' } },
+            'We ran the ',
+            React.createElement('a', {
+              href: '#',
+              onClick: (e) => { e.preventDefault(); if (window.electron?.shell?.openExternal) window.electron.shell.openExternal('https://parachord.com/blog/2026/06/25/keeping-playlists-in-sync/'); },
+              style: { color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: '500' }
+            }, 'new sync'),
+            " against your library without writing anything. Here's exactly what it would change."
+          )
         ),
         React.createElement('div', { style: { overflowY: 'auto', padding: '0 24px', flex: '1 1 auto' } },
           (() => {
