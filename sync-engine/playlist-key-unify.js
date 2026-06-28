@@ -33,8 +33,21 @@ const { validIsrc, validMbid, deriveNorm } = require('./playlist-merge');
 //   always present). Use `trackTiers()` below to derive this shape from a
 //   raw track object.
 //
-// Match: two tracks are the SAME if they share ANY tier value (isrc OR mbid
-//   OR norm), transitively (union-find).
+// Match (two-phase norm-bridge guard, parachord#911 P3 —
+//   docs/plans/2026-06-28-nway-norm-bridge-guard.md, mobile#289):
+//   1. STRONG phase (unconditional): union by equal ISRC, then equal MBID.
+//      A shared MBID may legitimately span two DIFFERENT ISRCs (same recording,
+//      reissue/market re-registration) → they become ONE component.
+//   2. NORM phase (guarded), per norm group, counting the COMPONENTS that carry
+//      an ISRC after the strong phase (NOT distinct ISRC values):
+//        - cIsrc ≤ 1 → stronger ISRC identity is absent or agrees → union the
+//          whole group (keeps norm↔isrc / norm↔mbid cross-service dedup).
+//        - cIsrc ≥ 2 → ≥2 disagreeing ISRC identities → NEVER collapse via norm;
+//          union only the ISRC-free (mbid-only + pure-norm) nodes among
+//          themselves (leaves each strong component intact; transitivity-safe).
+//   MBID DISAGREEMENT NEVER BLOCKS the norm bridge — recording-MBID varies for
+//   the same song across services/enrichment; blocking it re-introduces the
+//   2026-06-22 false-REMOVE data-loss class. Only ISRC is a hard discriminator.
 // Representative: per equivalence class, the strongest tier PRESENT in the
 //   class — `isrc-<v>` else `mbid-<v>` else `norm-<v>` — using the
 //   lexicographically-smallest value within that tier (deterministic
@@ -44,19 +57,15 @@ const { validIsrc, validMbid, deriveNorm } = require('./playlist-merge');
 //   preserved (a within-list collision repeats the same repr; the merge
 //   dedups downstream).
 //
-// TODO(parachord#911): the norm-bridge guard from
-//   docs/plans/2026-06-21-nway-key-consistency-design.md is NOT implemented
-//   here — norm unifies even across tracks carrying DIFFERENT confident
-//   ISRCs/MBIDs (the doc's rule: "norm may bridge only when the stronger ids
-//   are absent or already agree; never override a confident isrc/mbid
-//   disagreement"). Two genuinely different recordings sharing `artist|title`
-//   but with different confident ISRCs would wrongly merge. ACCEPTED RISK for
-//   now: this matches the current cross-engine fixture contract (the 8
-//   key-unify fixtures don't pin the guard, so Kotlin has no guard either —
-//   we stay in byte-parity) AND N-way real-writes are OFF, so a false-merge
-//   cannot reach a remote. The guard + its fixtures must be added to BOTH
-//   engines together before real-writes are armed. (The blank-norm collapse,
-//   `norm='|'` from blank artist+title, is the same accepted residual.)
+// CROSS-ENGINE CONTRACT: tests/fixtures/nway-merge/key-unify-fixtures.json (16
+//   cases, vendored verbatim from parachord-mobile docs/nway-key-unify-
+//   fixtures.json) is the source of truth; Kotlin NwayKeyUnify.unifyTrackKeys
+//   must produce identical output on every case. Two behaviors are explicit in
+//   the fixture _semantics but NOT yet fixture-pinned — both implemented here
+//   per the text: (a) "component carries an ISRC" is GLOBAL (an ISRC-bearing
+//   member outside the evaluated norm group still counts, via the post-strong
+//   snapshot below); (b) the weak set is ISRC-FREE (mbid-only nodes join it),
+//   not pure-norm-only.
 //
 // @param {Array<Array<{isrc?:string|null, mbid?:string|null, norm:string}>>} lists
 // @returns {string[][]}
@@ -92,17 +101,57 @@ function unifyTrackKeys(lists) {
     if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
   };
 
-  // Union any two tracks sharing a tier value (isrc / mbid / norm).
-  const firstByTier = new Map(); // `${tier}:${value}` -> first track index
+  // ── Phase 1: STRONG (unconditional) — union equal ISRC, then equal MBID.
+  const byIsrc = new Map();
   tracks.forEach((t, i) => {
-    const pairs = [['isrc', t.isrc], ['mbid', t.mbid], ['norm', t.norm]];
-    for (const [tier, val] of pairs) {
-      if (val == null || val === '') continue;
-      const key = `${tier}:${val}`;
-      if (firstByTier.has(key)) union(i, firstByTier.get(key));
-      else firstByTier.set(key, i);
-    }
+    if (!t.isrc) return;
+    if (byIsrc.has(t.isrc)) union(i, byIsrc.get(t.isrc));
+    else byIsrc.set(t.isrc, i);
   });
+  const byMbid = new Map();
+  tracks.forEach((t, i) => {
+    if (!t.mbid) return;
+    if (byMbid.has(t.mbid)) union(i, byMbid.get(t.mbid));
+    else byMbid.set(t.mbid, i);
+  });
+
+  // Snapshot the post-strong-phase component of each track, and whether that
+  // component carries an ISRC ANYWHERE (global — an ISRC-bearing member in a
+  // different norm group still makes the component an ISRC identity). The guard
+  // decisions below read this snapshot, never live find(), so a norm-phase union
+  // in one group can't shift another group's component count (order-independent,
+  // matching the _semantics "components that exist after the strong phase").
+  const strongRoot = tracks.map((_, i) => find(i));
+  const compHasIsrc = new Set();
+  tracks.forEach((t, i) => { if (t.isrc) compHasIsrc.add(strongRoot[i]); });
+
+  // ── Phase 2: NORM (guarded), per norm group.
+  const groups = new Map(); // norm -> [trackIdx]
+  tracks.forEach((t, i) => {
+    if (!t.norm) return;
+    if (!groups.has(t.norm)) groups.set(t.norm, []);
+    groups.get(t.norm).push(i);
+  });
+  for (const members of groups.values()) {
+    // cIsrc = distinct post-strong components in this group that carry an ISRC.
+    const isrcRoots = new Set();
+    for (const i of members) {
+      if (compHasIsrc.has(strongRoot[i])) isrcRoots.add(strongRoot[i]);
+    }
+    if (isrcRoots.size <= 1) {
+      // Stronger identity absent or agrees → union the whole group.
+      for (let k = 1; k < members.length; k++) union(members[0], members[k]);
+    } else {
+      // ≥2 disagreeing ISRC identities → bridge only the ISRC-free nodes among
+      // themselves; leave each strong component intact. "ISRC-free" is a
+      // COMPONENT property, not the node's own field: an mbid-only node whose
+      // component carries an ISRC (bridged via MBID in the strong phase) already
+      // belongs to a strong identity, so it must NOT act as a norm bridge —
+      // including it would drag a pure-norm node into that conflicting ISRC.
+      const weak = members.filter((i) => !compHasIsrc.has(strongRoot[i]));
+      for (let k = 1; k < weak.length; k++) union(weak[0], weak[k]);
+    }
+  }
 
   // Representative per class.
   const reprByRoot = new Map();

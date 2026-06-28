@@ -1,0 +1,76 @@
+{
+  "_about": "No-false-drop / no-dup-add harness — the LAST identity gate before arming N-way real writes (parachord#911 P3, mobile#289 audit action #5). Each materialize scenario feeds the identity-collision shapes from the audit's D-pairs through computeMaterializeDiff (unify-together diff); each propagation scenario feeds computeNwayPropagationPlan (merge + total-wipe guard). BOTH engines (desktop playlist-materialize.js/playlist-reconcile.js + Kotlin equivalents) MUST produce `expect` for every case AND satisfy the two invariants the runner asserts independently: (1) NO-FALSE-DROP — no removeKey is the unified key of a canonical track; (2) NO-DUP-ADD — no addKey is already a unified key on the remote. The D-pairs are constructed so a NAIVE provider-id diff (or an un-guarded unify) would violate one of these; the unify-based diff does not.",
+  "_semantics": {
+    "track": "{title, artist, isrc?, mbid?} — fed through trackTiers (isrc validated+UPPER, mbid trim+lower from recordingMbid||mbid, norm = '<artist>|<title>' lower+trim+remaster-stripped).",
+    "materialize_expect": "computeMaterializeDiff(canonical, remote) → {addKeys, removeKeys, reorderNeeded}. addKeys = canonical keys absent from remote; removeKeys = remote keys absent from canonical; both deduped, computed on the JOINT unification so a same-song-across-services pair shares one key.",
+    "propagation_expect": "computeNwayPropagationPlan(baselineRepr, copies) → {merged, massChangeAbort} | null. massChangeAbort = merged-empty while baseline non-empty (total-wipe guard); a non-empty large drop is a legitimate edit and is NOT aborted.",
+    "invariants": "Runner-enforced on every materialize scenario regardless of expect: removeKeys ∩ canonicalKeys = ∅ (no-false-drop); addKeys ∩ remoteKeys = ∅ (no-dup-add)."
+  },
+  "materialize": [
+    {
+      "name": "relink_isrc_bridges_norm_drift",
+      "_note": "D-Nway-7: a relinked track keeps its ISRC but drifts its title (remaster suffix) and would carry a new provider URI. A naive URI/norm diff churns (remove old + add new); the ISRC bridge makes it a no-op.",
+      "canonical": [{ "title": "Dreams - 2018 Remaster", "artist": "Fleetwood Mac", "isrc": "USEE10001234" }],
+      "remote": [{ "title": "Dreams", "artist": "Fleetwood Mac", "isrc": "USEE10001234" }],
+      "expect": { "addKeys": [], "removeKeys": [], "reorderNeeded": false }
+    },
+    {
+      "name": "cross_service_same_isrc_no_dup_add",
+      "_note": "D-Nway-3: same recording present on two services (different recording-MBID, same ISRC). A naive per-provider diff adds the 'missing' service copy → a duplicate. The ISRC bridge makes it a no-op.",
+      "canonical": [{ "title": "Bad Guy", "artist": "Billie Eilish", "isrc": "USUM71900764", "mbid": "rec-spotify" }],
+      "remote": [{ "title": "Bad Guy", "artist": "Billie Eilish", "isrc": "USUM71900764", "mbid": "rec-am" }],
+      "expect": { "addKeys": [], "removeKeys": [], "reorderNeeded": false }
+    },
+    {
+      "name": "distinct_isrc_same_norm_no_false_drop",
+      "_note": "D-Nway-4/5: two genuinely distinct recordings (album cut / single edit) sharing a normalized title but with different ISRCs. The norm-bridge guard keeps them separate, so neither is dropped. An un-guarded unify collapses them → the merge believes there's one track → materialize false-removes the other.",
+      "canonical": [{ "title": "Intro", "artist": "The xx", "isrc": "GBBKS0700116" }, { "title": "Intro", "artist": "The xx", "isrc": "GBBKS1300999" }],
+      "remote": [{ "title": "Intro", "artist": "The xx", "isrc": "GBBKS0700116" }, { "title": "Intro", "artist": "The xx", "isrc": "GBBKS1300999" }],
+      "expect": { "addKeys": [], "removeKeys": [], "reorderNeeded": false }
+    },
+    {
+      "name": "mbid_variance_same_norm_no_false_drop",
+      "_note": "2026-06-22 false-remove class: the same song with a different recording-MBID across services (no ISRC). The norm tier bridges them (MBID disagreement never blocks) → no-op. Blocking on MBID would false-remove one.",
+      "canonical": [{ "title": "Creep", "artist": "Radiohead", "mbid": "rec-a" }],
+      "remote": [{ "title": "Creep", "artist": "Radiohead", "mbid": "rec-b" }],
+      "expect": { "addKeys": [], "removeKeys": [], "reorderNeeded": false }
+    },
+    {
+      "name": "genuine_add_is_an_add",
+      "_note": "Control: a track truly absent from the remote is added (the gate must not over-suppress real adds).",
+      "canonical": [{ "title": "A", "artist": "x", "isrc": "USAAA0000001" }, { "title": "B", "artist": "y", "isrc": "USBBB0000002" }],
+      "remote": [{ "title": "A", "artist": "x", "isrc": "USAAA0000001" }],
+      "expect": { "addKeys": ["isrc-USBBB0000002"], "removeKeys": [], "reorderNeeded": false }
+    },
+    {
+      "name": "genuine_remove_with_evidence_is_a_remove",
+      "_note": "Control: a remote track truly absent from canonical (no identity match) is a legitimate evidence-based remove, NOT a false-drop.",
+      "canonical": [{ "title": "A", "artist": "x", "isrc": "USAAA0000001" }],
+      "remote": [{ "title": "A", "artist": "x", "isrc": "USAAA0000001" }, { "title": "B", "artist": "y", "isrc": "USBBB0000002" }],
+      "expect": { "addKeys": [], "removeKeys": ["isrc-USBBB0000002"], "reorderNeeded": false }
+    }
+  ],
+  "propagation": [
+    {
+      "name": "total_wipe_aborts",
+      "_note": "An empty fetch (throttled/partial) for a changed copy must NOT wipe the playlist — merged-empty-while-baseline-nonempty trips massChangeAbort.",
+      "baselineRepr": ["isrc-USAAA0000001", "isrc-USBBB0000002"],
+      "copies": [{ "id": "sp", "keys": [], "changed": true, "editedAt": 5 }],
+      "expect": { "merged": [], "massChangeAbort": true }
+    },
+    {
+      "name": "legit_large_drop_allowed",
+      "_note": "A non-empty large drop (4→1) is a legitimate user edit, NOT aborted.",
+      "baselineRepr": ["isrc-USAAA0000001", "isrc-USBBB0000002", "mbid-c", "mbid-d"],
+      "copies": [{ "id": "sp", "keys": ["isrc-USAAA0000001"], "changed": true, "editedAt": 5 }],
+      "expect": { "merged": ["isrc-USAAA0000001"], "massChangeAbort": false }
+    },
+    {
+      "name": "unchanged_copy_is_noop",
+      "_note": "No changed copy → null (nothing to propagate).",
+      "baselineRepr": ["isrc-USAAA0000001"],
+      "copies": [{ "id": "sp", "keys": ["isrc-USAAA0000001"], "changed": false, "editedAt": 5 }],
+      "expect": null
+    }
+  ]
+}

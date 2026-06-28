@@ -32,7 +32,7 @@ const UNIFY = JSON.parse(
 describe('unifyTrackKeys — canonical cross-engine fixtures', () => {
   test('fixture file carries the expected case count', () => {
     expect(Array.isArray(UNIFY.cases)).toBe(true);
-    expect(UNIFY.cases.length).toBe(8);
+    expect(UNIFY.cases.length).toBe(18);
   });
 
   for (const c of UNIFY.cases) {
@@ -54,6 +54,9 @@ describe('unifyTrackKeys — additional properties', () => {
     // All three unify; strongest tier is isrc -> the single isrc value.
     expect(out).toEqual(['isrc-USABC1234567', 'isrc-USABC1234567', 'isrc-USABC1234567']);
   });
+  // (The global-component-ISRC + component-ISRC-free-weak-set behaviors are now
+  // pinned by the shared fixtures guard_v12/guard_v13 above — see the fixture
+  // loop; the throwaway desktop-local duplicates were removed once they landed.)
 
   test('singleton representative == canonicalTrackKey', () => {
     const track = { mbid: 'b2181aae-5cba-496c-bb0c-b4cc0109ebf8', artist: 'Radiohead', title: 'Creep' };
