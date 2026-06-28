@@ -8343,6 +8343,36 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         console.log(`[Sync Cleanup] Flagged ${repairedCount} locally-tracked playlist(s) as modified (linked to empty remote — will populate on next sync)`);
       }
 
+      // ----------------------------------------------------------------
+      // Step 1c: Remove THIS provider's mirrors of read-only FOLLOWERS
+      // (parachord#937). A followed playlist should never have an owned remote
+      // on another service; the pre-guard sync created them and they
+      // round-tripped into Spotify duplicates. The owned-vs-owned dedup below
+      // CANNOT see these — there's no second owned copy to group against — so
+      // handle them here. Detach + delete (best-effort); explicit channel-
+      // override opt-ins are excluded by findFollowerSyncCleanup.
+      // ----------------------------------------------------------------
+      let followerMirrorsRemoved = 0;
+      const followerMirrorsManualRemoval = [];
+      try {
+        const { findFollowerSyncCleanup } = require('./sync-engine/follower-cleanup');
+        const { tier1 } = findFollowerSyncCleanup(store.get('local_playlists') || [], store.get('sync_playlist_channels') || {});
+        for (const t of tier1) {
+          for (const m of t.mirrors) {
+            if (m.providerId !== providerId) continue; // this cleanup is per-provider
+            const res = await deleteRemotePlaylistBestEffort(providerId, m.externalId);
+            if (res.deleted) { detachPlaylistMirror(t.localId, providerId); followerMirrorsRemoved++; }
+            else if (res.reason === 'unsupported') { detachPlaylistMirror(t.localId, providerId); followerMirrorsManualRemoval.push(t.displayName); }
+            // transient failure (no token / network): leave attached, retry next run
+          }
+        }
+        if (followerMirrorsRemoved > 0 || followerMirrorsManualRemoval.length) {
+          console.log(`[Sync Cleanup] #937: removed ${followerMirrorsRemoved} follower mirror(s) on ${providerId}; ${followerMirrorsManualRemoval.length} need manual removal`);
+        }
+      } catch (e) {
+        console.warn('[Sync Cleanup] follower-mirror phase failed (non-fatal):', e && e.message);
+      }
+
       // Group by normalized name
       const groups = {};
       for (const playlist of ownedPlaylists) {
@@ -8365,7 +8395,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
           relinkAmbiguous: relinkResult.ambiguous,
           orphanCount: relinkResult.orphanCount,
           repairedEmptyLinks: repairedCount,
-          relinkedFromShell: 0
+          relinkedFromShell: 0,
+          followerMirrorsRemoved,
+          followerMirrorsManualRemoval
         };
       }
 
@@ -8626,7 +8658,9 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         relinkAmbiguous: relinkResult.ambiguous,
         orphanCount: relinkResult.orphanCount,
         repairedEmptyLinks: repairedCount,
-        relinkedFromShell: relinkedFromOverride
+        relinkedFromShell: relinkedFromOverride,
+        followerMirrorsRemoved,
+        followerMirrorsManualRemoval
       };
     } catch (error) {
       console.error(`[Sync Cleanup] Error: ${error.message}`);

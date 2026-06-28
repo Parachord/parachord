@@ -6495,6 +6495,16 @@ const Parachord = () => {
           const ambNames = result.ambiguous.map(a => `"${a.name}"`).join(', ');
           parts.push(`skipped ${ambiguousCount} ambiguous group${ambiguousCount > 1 ? 's' : ''} (${ambNames}) — multiple local playlists linked to different copies`);
         }
+        // #937: stray mirrors of FOLLOWED playlists — owned remotes the owned-vs-
+        // owned dedup above can't see (no second owned copy to group against).
+        const followerMirrorsRemoved = result.followerMirrorsRemoved || 0;
+        const followerManual = result.followerMirrorsManualRemoval || [];
+        if (followerMirrorsRemoved > 0) {
+          parts.push(`removed ${followerMirrorsRemoved} stray ${providerName} mirror${followerMirrorsRemoved > 1 ? 's' : ''} of followed playlists`);
+        }
+        if (followerManual.length > 0) {
+          parts.push(`${followerManual.length} followed-playlist mirror${followerManual.length > 1 ? 's' : ''} (${followerManual.map(n => `"${n}"`).join(', ')}) must be removed manually in the ${providerName} app`);
+        }
 
         if (parts.length === 0) {
           showToast('No orphaned or duplicate playlists found', 'info');
@@ -6504,7 +6514,7 @@ const Parachord = () => {
         }
 
         // Reload playlists so UI reflects newly-populated syncedTo / locallyModified flags
-        if (relinkedCount > 0 || repairedEmpty > 0) {
+        if (relinkedCount > 0 || repairedEmpty > 0 || followerMirrorsRemoved > 0) {
           try {
             const loaded = await window.electron.playlists.load();
             setPlaylists(prev => {
