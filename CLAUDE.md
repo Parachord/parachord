@@ -993,6 +993,40 @@ All three POST to `https://achordion.xyz/api/announcements/event` with `{ id, ev
 
 ## Plugin (`.axe`) Marketplace System
 
+### Extensibility principle — abstract over the plugin registry, don't hardwire services
+
+Any feature shaped like "given a provider URL or entity, do X" MUST route through the resolver-loader capability surface, never a hardcoded service switch. The surface (`resolver-loader.js`):
+
+- `findResolverForUrl(url)` → which resolver owns this URL (matches each `.axe`'s `urlPatterns`)
+- `getUrlType(url)` → `'track' | 'album' | 'playlist' | 'artist' | 'unknown'`
+- `lookupUrl(url)` / `lookupAlbum(url)` / `lookupPlaylist(url)` → entity → tracks, dispatched to the owning resolver's capability
+- `resolve` / `search` on `loadedResolversRef` for playback + search
+- `listModels(config)` for AI `dynamic-select` plugins
+
+The payoff: whichever `.axe` declares matching `urlPatterns` + the capability handles it, so **adding a new streaming service is a plugin drop-in with zero feature code.** The anti-pattern is hardcoding the dispatch:
+
+```js
+// WRONG — every new service needs a feature-code edit, and the .axe registry is bypassed:
+switch (host) { case 'open.spotify.com': return spotifyImport(url); case 'music.apple.com': ... }
+
+// RIGHT — the registry decides; a new service is just another .axe with urlPatterns + lookupPlaylist:
+const id = resolverLoaderRef.current.findResolverForUrl(url);
+if (id && resolverLoaderRef.current.getUrlType(url) === 'playlist') {
+  const { playlist } = await resolverLoaderRef.current.lookupPlaylist(url, await getResolverConfig(id));
+}
+```
+
+**Worked example — `resolveProviderPlaylistUrl` for `parachord://play/playlist?url=` (parachord#930/#932).** The provider-page branch routes entirely through `findResolverForUrl` + `getUrlType` + `lookupPlaylist`, so Spotify / Apple Music / SoundCloud / any future resolver are handled without naming them. The two `host ===` checks in the pure helper `classifyPlaylistUrl` (app.js ~L219) are **justified pre-processing, not service hardwiring** — keep them, don't "fix" them into the switch anti-pattern:
+
+- **`achordion.xyz`** isn't a streaming resolver; it's a first-party playlist *host* whose `/api/playlist/<mbid>/xspf` returns a tracklist *document*. It feeds the generic `parseProtocolTracklist` path (the document fallback), not a resolver. No `.axe` owns it by design.
+- **`on.soundcloud.com`** is a short link the capability surface *can't* classify (no `/sets/` segment for `getUrlType`). It's a redirect-resolve step that produces a canonical `soundcloud.com/.../sets/...` URL which is then handed back to `findResolverForUrl` — it feeds the surface, it doesn't replace it.
+
+**Reusable mechanics when extending this:**
+
+- **Native fast-paths are an optimization, not the gate.** `resolveProtocolPlayInput` has direct `spotify.lookupAlbum` / `window.appleMusicLookupAlbum` arms for cached IDs, but the general path still goes through the loader. Don't let a fast-path become the only path.
+- **Audit the capability before assuming it exists.** `lookupPlaylist` is not universal — `resolver-loader.js` returns `null` (and logs "does not support playlist lookup") for resolvers that don't implement it, and some `.axe` lacked it until added (SoundCloud needed `lookupPlaylist` + OAuth before it could resolve a set). A new consumer must handle the `null`, not assume tracks.
+- **Cross-platform parity.** This mirrors the mobile principle (`ProviderPlaylistResolver`, the two `lookupPlaylist` polls, `parachord-plugins/<service>.axe`). The mobile note also documents a JS-bridge quirk (a bare async IIFE reaching an `.axe` serializes to `[object Promise]` on iOS / `{}` on Android, so reaching the plugin needs the unique-key poll on both runtimes) — that's a mobile-runtime concern; desktop calls the loader methods directly in-process and isn't affected, but the *registry-abstraction* contract is identical on both sides.
+
 ### Architecture
 - Plugins are `.axe` files (JSON) in `plugins/` directory, each with a `manifest` (id, version, etc.) and `implementation`
 - **Marketplace source**: Raw GitHub files from `Parachord/parachord-plugins` repo
