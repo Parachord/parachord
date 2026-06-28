@@ -55158,7 +55158,7 @@ useEffect(() => {
                   ),
                   // Show Tutorial Now button
                   React.createElement('div', {
-                    className: 'flex items-center justify-between py-3'
+                    className: 'flex items-center justify-between py-3 border-b border-gray-100'
                   },
                     React.createElement('div', null,
                       React.createElement('div', {
@@ -55174,6 +55174,23 @@ useEffect(() => {
                       },
                       className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
                     }, 'Show')
+                  ),
+                  // Use new sync — N-way migration preview (parachord#911)
+                  React.createElement('div', {
+                    className: 'flex items-center justify-between py-3'
+                  },
+                    React.createElement('div', null,
+                      React.createElement('div', {
+                        className: 'text-sm font-medium text-gray-900'
+                      }, 'Use new sync'),
+                      React.createElement('div', {
+                        className: 'text-xs text-gray-500 mt-0.5'
+                      }, 'Preview the new sync engine and switch this device over')
+                    ),
+                    React.createElement('button', {
+                      onClick: () => startNwayMigration(),
+                      className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
+                    }, 'Preview')
                   )
                 ),
 
@@ -55412,21 +55429,6 @@ useEffect(() => {
                       cursor: 'pointer'
                     }
                   }, 'Copy Diagnostic Log')
-                ),
-
-                // Developer — N-way sync migration (parachord#911). Opens the
-                // preview: dry-run reconcile, see the exact diff, then switch.
-                React.createElement('div', { style: { marginBottom: '24px' } },
-                  React.createElement('p', {
-                    style: { fontSize: '11px', fontWeight: '600', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }
-                  }, 'Developer'),
-                  React.createElement('p', {
-                    style: { fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }
-                  }, 'Preview the new sync engine and switch this device over. You see exactly what would change before anything is written.'),
-                  React.createElement('button', {
-                    onClick: () => startNwayMigration(),
-                    style: { fontSize: '12px', color: 'var(--accent-primary)', fontWeight: '500', textDecoration: 'none', background: 'transparent', border: '1px solid var(--accent-primary)', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer' }
-                  }, 'Use new sync…')
                 ),
 
                 // Copyright
