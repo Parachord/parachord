@@ -7224,6 +7224,20 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
       let playlistsUpdated = 0;
       let playlistsFailed = 0;
 
+      // Durable link map (sync_playlist_links), loaded once for the import match
+      // below. A local playlist that mirrors OUT to this provider (e.g. a followed
+      // Spotify playlist auto-mirrored to its owned LB copy, parachord#937) has its
+      // link recorded HERE by the create gateway immediately — before the renderer
+      // persists syncedTo onto the row. Without consulting it, a same-cycle import
+      // of that mirror finds no syncedTo match and creates a SEPARATE owned playlist
+      // that then re-exports into a duplicate. Reverse-index: provider externalId → localId.
+      const importLinkByExternalId = new Map();
+      const allSyncLinks = getSyncLinks();
+      for (const [localId, byProvider] of Object.entries(allSyncLinks || {})) {
+        const ext = byProvider && byProvider[providerId] && byProvider[providerId].externalId;
+        if (ext) importLinkByExternalId.set(ext, localId);
+      }
+
       for (let i = 0; i < selectedRemote.length; i++) {
         // Per-iteration cancellation check (parachord#799). Save partial
         // progress before bailing — currentPlaylists already holds the
@@ -7245,11 +7259,15 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
           // Check for existing playlist by syncedFrom.externalId, syncedTo externalId, or matching ID pattern
           // This handles: playlists imported FROM this provider, playlists pushed TO this provider,
           // and older playlists that may have been synced before the syncedFrom/syncedTo structure
+          const linkedLocalId = importLinkByExternalId.get(remotePlaylist.externalId);
           const localPlaylist = currentPlaylists.find(p =>
             p.syncedFrom?.externalId === remotePlaylist.externalId ||
             p.syncedTo?.[providerId]?.externalId === remotePlaylist.externalId ||
             p.id === remotePlaylist.id ||
-            p.id === `${providerId}-${remotePlaylist.externalId}`
+            p.id === `${providerId}-${remotePlaylist.externalId}` ||
+            // Durable link map — this remote is already a mirror of an existing
+            // local playlist; match it instead of creating a separate one (#937).
+            (linkedLocalId && p.id === linkedLocalId)
           );
 
           if (!localPlaylist) {
