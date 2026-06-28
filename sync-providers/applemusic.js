@@ -8,6 +8,72 @@
 
 const APPLE_MUSIC_API_BASE = 'https://api.music.apple.com/v1';
 
+const { pickConfidentMatch } = require('./confidence-scoring');
+
+// ISRC of a track, normalized to Apple's expected upper-case form, or null.
+// Walks top-level `track.isrc` first, then every `track.sources[*].isrc`
+// (mirrors the renderer's window.pickTrackIsrc), so a Spotify- or
+// localfiles-resolved track with no top-level ISRC still yields one. Validates
+// the canonical ISRC shape [A-Z]{2}[A-Z0-9]{3}\d{7} so a malformed value never
+// becomes a catalog filter.
+const ISRC_RE = /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/;
+function pickIsrc(track) {
+  const norm = (v) => {
+    if (!v) return null;
+    const s = String(v).toUpperCase().trim();
+    return ISRC_RE.test(s) ? s : null;
+  };
+  const top = norm(track && track.isrc);
+  if (top) return top;
+  const sources = track && track.sources;
+  if (sources && typeof sources === 'object') {
+    for (const key of Object.keys(sources)) {
+      const v = norm(sources[key] && sources[key].isrc);
+      if (v) return v;
+    }
+  }
+  return null;
+}
+
+// The user's Apple Music storefront (e.g. 'gb', 'jp'), so catalog lookups hit
+// the same storefront mobile uses — hardcoding 'us' made desktop + mobile mint
+// DIFFERENT catalog IDs for the same recording (parachord#911 D-Legacy-2),
+// producing a permanent AM duplicate (append-only PUT can't remove the other
+// id). Falls back to 'us' if the lookup fails.
+async function getUserStorefront(developerToken, userToken) {
+  try {
+    const resp = await fetch(`${APPLE_MUSIC_API_BASE}/me/storefront`, {
+      headers: { 'Authorization': `Bearer ${developerToken}`, 'Music-User-Token': userToken },
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const id = data && data.data && data.data[0] && data.data[0].id;
+      if (id) return id;
+    }
+  } catch { /* fall through to default */ }
+  return 'us';
+}
+
+// ISRC-exact catalog lookup against the user's storefront. Returns the catalog
+// song id or null. This is the authoritative first tier (an ISRC match is a
+// recording identity, not a fuzzy text guess) — mobile's
+// AppleMusicSyncProvider.getCatalogSongIdByIsrc, so both clients mint the SAME
+// catalog id for a given (ISRC, storefront).
+async function getCatalogSongIdByIsrc(storefront, isrc, developerToken, userToken) {
+  try {
+    const resp = await fetch(
+      `${APPLE_MUSIC_API_BASE}/catalog/${encodeURIComponent(storefront)}/songs?filter[isrc]=${encodeURIComponent(isrc)}`,
+      { headers: { 'Authorization': `Bearer ${developerToken}`, 'Music-User-Token': userToken } }
+    );
+    if (resp.ok) {
+      const data = await resp.json();
+      const song = data && data.data && data.data[0];
+      if (song && song.id) return song.id;
+    }
+  } catch { /* fall through to text search */ }
+  return null;
+}
+
 // Session-scoped kill-switch for PUT /tracks (full-replace). Apple's public
 // Library Playlists API documents only POST (append). Third-party clients
 // (Cider, etc.) use PUT /tracks with the full desired tracklist to achieve
@@ -535,6 +601,11 @@ const AppleMusicSyncProvider = {
     const resolved = [];
     const unresolved = [];
 
+    // Storefront-aware (parachord#911 D-Legacy-2): all catalog lookups below
+    // hit the user's storefront, not a hardcoded 'us', so desktop + mobile
+    // mint the same catalog id for the same recording.
+    const storefront = await getUserStorefront(developerToken, userToken);
+
     for (const track of tracks) {
       // Skip tracks that already have an Apple Music catalog ID
       const existingId = track.appleMusicCatalogId || track.appleMusicId || track.sources?.applemusic?.appleMusicId;
@@ -544,9 +615,23 @@ const AppleMusicSyncProvider = {
       }
 
       try {
+        // ── Tier 1: ISRC-exact catalog lookup (authoritative) ──────────
+        // An ISRC match is recording identity, not a fuzzy guess. Tried
+        // before text search so desktop + mobile converge on one catalog id.
+        const isrc = pickIsrc(track);
+        if (isrc) {
+          const byIsrc = await getCatalogSongIdByIsrc(storefront, isrc, developerToken, userToken);
+          if (byIsrc) {
+            resolved.push({ ...track, appleMusicId: byIsrc, appleMusicCatalogId: byIsrc });
+            await new Promise(resolve => setTimeout(resolve, 150));
+            continue;
+          }
+        }
+
+        // ── Tier 2: confidence-gated text search ───────────────────────
         const query = `${track.title} ${track.artist}`;
         const resp = await fetch(
-          `${APPLE_MUSIC_API_BASE}/catalog/us/search?term=${encodeURIComponent(query)}&types=songs&limit=5`,
+          `${APPLE_MUSIC_API_BASE}/catalog/${encodeURIComponent(storefront)}/search?term=${encodeURIComponent(query)}&types=songs&limit=5`,
           {
             headers: {
               'Authorization': `Bearer ${developerToken}`,
@@ -564,13 +649,17 @@ const AppleMusicSyncProvider = {
         const data = await resp.json();
         const items = data.results?.songs?.data || [];
 
-        // Find best match — exact title + artist match (case-insensitive)
-        const match = items.find(item =>
-          item.attributes.name.toLowerCase() === track.title.toLowerCase() &&
-          item.attributes.artistName.toLowerCase() === track.artist.toLowerCase()
-        ) || items[0];
+        // Confidence-gated match (parachord#911 D-Legacy-1) — replaces the
+        // legacy `... || items[0]` that minted the top hit's id with no floor
+        // (e.g. "Intro" by The xx → "Intro" by Alt-J). Drop on sub-floor.
+        const candidates = items.map(item => ({
+          title: item.attributes?.name,
+          artist: item.attributes?.artistName,
+        }));
+        const picked = pickConfidentMatch(track, candidates);
 
-        if (match) {
+        if (picked) {
+          const match = items[picked.index];
           resolved.push({
             ...track,
             appleMusicId: match.id,
