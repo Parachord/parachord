@@ -32,7 +32,7 @@ const UNIFY = JSON.parse(
 describe('unifyTrackKeys — canonical cross-engine fixtures', () => {
   test('fixture file carries the expected case count', () => {
     expect(Array.isArray(UNIFY.cases)).toBe(true);
-    expect(UNIFY.cases.length).toBe(8);
+    expect(UNIFY.cases.length).toBe(16);
   });
 
   for (const c of UNIFY.cases) {
@@ -53,6 +53,54 @@ describe('unifyTrackKeys — additional properties', () => {
     ]);
     // All three unify; strongest tier is isrc -> the single isrc value.
     expect(out).toEqual(['isrc-USABC1234567', 'isrc-USABC1234567', 'isrc-USABC1234567']);
+  });
+
+  // ── Norm-bridge-guard behaviors explicit in the fixture _semantics but not
+  // yet pinned by a shared fixture (proposed to mobile as guard_v12/v13). Lock
+  // the correct reading desktop-side so a refactor can't silently drift.
+
+  test('guard: "component carries ISRC" is GLOBAL across norm groups (not group-local)', () => {
+    // #0 isrc A + mbid M (norm "a|one");  #1 mbid M (norm "a|two") — strong phase
+    // unions #0,#1 via M into one component that carries ISRC A *in group a|one*.
+    // #2 isrc B (norm "a|two");  #3 norm-only (norm "a|two").
+    // Group "a|two" = {#1,#2,#3}. #1 is ISRC-free locally, but its COMPONENT
+    // carries A → cIsrc=2 (compA via #1, compB via #2) → must NOT bridge across.
+    // A group-local reading would see cIsrc=1 and false-merge A and B.
+    const [out] = unifyTrackKeys([
+      [
+        { isrc: 'XXAAA0000001', mbid: 'm-shared', norm: 'a|one' },
+        { mbid: 'm-shared', norm: 'a|two' },
+        { isrc: 'XXBBB0000002', norm: 'a|two' },
+        { norm: 'a|two' },
+      ],
+    ]);
+    expect(out).toEqual([
+      'isrc-XXAAA0000001', // #0
+      'isrc-XXAAA0000001', // #1 — stays with #0's component (A), NOT merged into B
+      'isrc-XXBBB0000002', // #2 — distinct ISRC, kept separate
+      'norm-a|two',        // #3 — weak, alone
+    ]);
+  });
+
+  test('guard: under ISRC conflict the weak set is ISRC-FREE (an mbid-only node joins it)', () => {
+    // Two disagreeing ISRCs (A,B) + an mbid-only node + a pure-norm node, all
+    // same norm. cIsrc=2 → weak = {mbid-only, pure-norm} union together →
+    // mbid repr (strongest in the weak class). A "pure-norm-only" weak reading
+    // would wrongly leave the mbid-only node a singleton.
+    const [out] = unifyTrackKeys([
+      [
+        { isrc: 'XXAAA0000001', norm: 'a|b' },
+        { isrc: 'XXBBB0000002', norm: 'a|b' },
+        { mbid: 'm-weak', norm: 'a|b' },
+        { norm: 'a|b' },
+      ],
+    ]);
+    expect(out).toEqual([
+      'isrc-XXAAA0000001',
+      'isrc-XXBBB0000002',
+      'mbid-m-weak', // mbid-only node + pure-norm node unite → mbid repr
+      'mbid-m-weak',
+    ]);
   });
 
   test('singleton representative == canonicalTrackKey', () => {

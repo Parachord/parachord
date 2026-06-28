@@ -1,11 +1,13 @@
 {
-  "_about": "Canonical cross-engine vectors for N-way cross-copy KEY UNIFICATION (Phase 4 prerequisite). Runs BEFORE the merge: it rewrites each copy's tracklist to canonical representative keys so the same song matches across services, THEN docs/nway-playlist-merge-fixtures.json's merge runs on the representatives. BOTH the Kotlin (mobile, shared/.../sync/NwayKeyUnify.kt) and JS (desktop) implementations MUST produce `expected` for each case. Mobile's NwayKeyUnifyTest is a 1:1 transcription.",
+  "_about": "Canonical cross-engine vectors for N-way cross-copy KEY UNIFICATION (Phase 4 prerequisite). Runs BEFORE the merge: it rewrites each copy's tracklist to canonical representative keys so the same song matches across services, THEN docs/nway-playlist-merge-fixtures.json's merge runs on the representatives. BOTH the Kotlin (mobile, shared/.../sync/NwayKeyUnify.kt) and JS (desktop, playlist-key-unify.js) implementations MUST produce `expected` for each case. Mobile's NwayKeyUnifyTest is a 1:1 transcription. Design: docs/plans/2026-06-28-nway-norm-bridge-guard.md (parachord#911 P3).",
   "_semantics": {
-    "input": "`lists` = baseline + each copy, in order. Each track is {isrc?, mbid?, norm}: isrc validated+UPPERCASED (^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$) or null; mbid trim+lowercase or null; norm = '<artist>|<title>' lower+trim, always present.",
-    "match": "Two tracks are the SAME if they share ANY tier value (isrc OR mbid OR norm), transitively (union-find). norm bridges an un-enriched track to its mbid twin AND bridges two different recording-MBIDs of the same song.",
+    "input": "`lists` = baseline + each copy, in order. Each track is {isrc?, mbid?, norm}: isrc validated+UPPERCASED (^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$) or null; mbid trim+lowercase or null; norm = '<artist>|<title>' lower+trim, remaster-suffix stripped, always present.",
+    "match_strong": "STRONG PHASE (unconditional): union by equal ISRC, then equal MBID. A shared MBID may legitimately span two different ISRCs (same recording, reissue/market re-registration) — they become ONE component.",
+    "match_norm_guard": "NORM PHASE per norm-group, counting COMPONENTS that carry an ISRC after the strong phase (NOT distinct ISRC VALUES): if <=1 ISRC-bearing component, the norm tier unions the whole group (closes norm<->mbid / norm<->isrc cross-service dedup); if >=2 disagreeing ISRC identities, NEVER collapse them via norm — union only the ISRC-free (mbid-only + pure-norm) nodes among themselves.",
+    "match_mbid_rule": "MBID DISAGREEMENT NEVER BLOCKS the norm bridge. Recording-MBID varies for the same song across services/enrichment; blocking it would re-introduce the 2026-06-22 false-REMOVE data-loss class (see norm_bridges_recording_mbid_variance). Only ISRC is a hard discriminator.",
     "representative": "Per equivalence class, the strongest tier present — 'isrc-<v>' else 'mbid-<v>' else 'norm-<v>' — using the LEXICOGRAPHICALLY-SMALLEST value within that tier. Deterministic regardless of input order. A singleton class yields exactly the single canonical key.",
-    "residual": "Two genuinely different recordings sharing an identical norm unify via norm (accepted, rare). Guarding the norm bridge on disagreeing ISRCs is a tracked refinement.",
-    "output": "Each input list rewritten to its representative keys, order + length preserved (a within-list norm collision collapses to the same repr; the downstream merge dedups)."
+    "residual": "ISRC-only is INTENTIONAL — do NOT tighten it back to a symmetric guard by adding a cMbid conflict clause. Accepted tradeoff: two GENUINELY-DISTINCT recordings with different MBIDs, the same norm, and NO ISRC on either will union (false-merge one away). This is accepted because same-song-with-different-recording-MBID is the COMMON case (LB mapper vs MB search vs per-service enrichment) and blocking it on MBID is the strictly worse, false-REMOVE failure (2026-06-22 data-loss incident — see norm_bridges_recording_mbid_variance / guard_v2 / V12); a genuinely-distinct recording almost always carries an ISRC anyway, so this corner is rare. ISRC is a deliberate distinct-recording assignment; recording-MBID is too granular to signal 'distinct track' for playlist identity.",
+    "output": "Each input list rewritten to its representative keys, order + length preserved."
   },
   "cases": [
     {
@@ -23,6 +25,7 @@
     },
     {
       "name": "norm_bridges_recording_mbid_variance",
+      "_note": "MBID-variance bridge (2026-06-22 false-remove fix): two DIFFERENT recording-MBIDs of the same song, no ISRC, same norm → UNION. The norm guard must NOT separate these (that is the data-loss class). Pins match_mbid_rule.",
       "lists": [
         [{ "mbid": "rec-a", "norm": "song|x" }],
         [{ "mbid": "rec-b", "norm": "song|x" }]
@@ -47,7 +50,7 @@
     },
     {
       "name": "isrc_bridges_when_mbid_and_norm_both_differ",
-      "_note": "Reconciliation-redesign incident case: same recording across services with a DIFFERENT recording-MBID AND a drifted normalized title (remaster suffix). Neither mbid nor norm matches; only the ISRC bridges them. Without the persisted isrc tier these were union-removed → data loss.",
+      "_note": "Reconciliation-redesign incident case: same recording across services with a DIFFERENT recording-MBID AND a drifted normalized title (remaster suffix). Same ISRC → strong phase unions them.",
       "lists": [
         [{ "isrc": "USABC1234567", "mbid": "rec-a", "norm": "the cranberries|zombie" }],
         [{ "isrc": "USABC1234567", "mbid": "rec-b", "norm": "the cranberries|zombie - 2025 remastered" }]
@@ -66,6 +69,51 @@
       "name": "order_independent_determinism",
       "lists": [[{ "mbid": "b", "norm": "s|x" }, { "mbid": "a", "norm": "s|x" }]],
       "expected": [["mbid-a", "mbid-a"]]
+    },
+    {
+      "name": "guard_v1_disagreeing_isrc_same_norm_separate",
+      "_note": "Audit D-Nway-4: two 'Intro' by The xx (album cut / single edit), different ISRCs, same norm. Today's un-guarded engine collapses these to one repr; the guard keeps them separate.",
+      "lists": [[{ "isrc": "GBBKS0700116", "norm": "the xx|intro" }, { "isrc": "GBBKS1300999", "norm": "the xx|intro" }]],
+      "expected": [["isrc-GBBKS0700116", "isrc-GBBKS1300999"]]
+    },
+    {
+      "name": "guard_v3_original_vs_remaster_disagreeing_isrc_separate",
+      "_note": "Audit D-Nway-5: original + 2011 remaster collapse to the same norm after the remaster strip, but carry different ISRCs → distinct recordings, kept separate.",
+      "lists": [[{ "isrc": "GBN9Y1100123", "norm": "pink floyd|wish you were here" }, { "isrc": "GBN9Y1100777", "norm": "pink floyd|wish you were here" }]],
+      "expected": [["isrc-GBN9Y1100123", "isrc-GBN9Y1100777"]]
+    },
+    {
+      "name": "guard_v4_norm_only_bridges_to_isrc_twin",
+      "lists": [[{ "isrc": "USUM71900764", "norm": "billie eilish|bad guy" }], [{ "norm": "billie eilish|bad guy" }]],
+      "expected": [["isrc-USUM71900764"], ["isrc-USUM71900764"]]
+    },
+    {
+      "name": "guard_v7_two_isrcs_plus_weak_weak_stays_separate",
+      "_note": "Transitivity: the norm-only node must NOT bridge the two conflicting ISRC components through itself.",
+      "lists": [[{ "isrc": "XXAAA0000001", "norm": "a|b" }, { "isrc": "XXBBB0000002", "norm": "a|b" }, { "norm": "a|b" }]],
+      "expected": [["isrc-XXAAA0000001", "isrc-XXBBB0000002", "norm-a|b"]]
+    },
+    {
+      "name": "guard_v8_pure_weak_group_unions",
+      "lists": [[{ "norm": "a|b" }, { "norm": "a|b" }]],
+      "expected": [["norm-a|b", "norm-a|b"]]
+    },
+    {
+      "name": "guard_v9_two_isrcs_plus_two_weak_weak_unite_isrcs_separate",
+      "lists": [[{ "isrc": "XXAAA0000001", "norm": "a|b" }, { "isrc": "XXBBB0000002", "norm": "a|b" }, { "norm": "a|b" }, { "norm": "a|b" }]],
+      "expected": [["isrc-XXAAA0000001", "isrc-XXBBB0000002", "norm-a|b", "norm-a|b"]]
+    },
+    {
+      "name": "guard_v10_mbid_bridged_two_isrcs_one_component_unions_group",
+      "_note": "THE count-COMPONENTS-not-VALUES discriminator (maintainer-flagged): a shared MBID merges two ISRCs into ONE component → cIsrc=1 → the whole group unions, norm-only node included. A naive distinct-ISRC-value count would get 2 and wrongly separate.",
+      "lists": [[{ "isrc": "XXAAA0000001", "mbid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "norm": "a|b" }, { "isrc": "XXBBB0000002", "mbid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "norm": "a|b" }, { "norm": "a|b" }]],
+      "expected": [["isrc-XXAAA0000001", "isrc-XXAAA0000001", "isrc-XXAAA0000001"]]
+    },
+    {
+      "name": "guard_v11_mbid_bridged_pair_plus_unrelated_isrc_separate",
+      "_note": "The MBID-merged multi-ISRC component is ONE; an unrelated third ISRC is a second → cIsrc=2 → don't bridge across.",
+      "lists": [[{ "isrc": "XXAAA0000001", "mbid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "norm": "a|b" }, { "isrc": "XXBBB0000002", "mbid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "norm": "a|b" }, { "isrc": "XXCCC0000003", "norm": "a|b" }]],
+      "expected": [["isrc-XXAAA0000001", "isrc-XXAAA0000001", "isrc-XXCCC0000003"]]
     }
   ]
 }
