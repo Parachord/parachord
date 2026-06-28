@@ -8148,6 +8148,16 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
         console.log(`[Sync] Resolved ${resolved.length}/${tracks.length} tracks for ${providerId} (${unresolved.length} unresolved)`);
       }
 
+      // No-empty-create guard: if the playlist HAS tracks but NONE resolved for
+      // this provider, don't create an empty remote (the LB-with-no-MBIDs case
+      // that left 0-track playlists behind). Only fires when the provider does
+      // real resolution (resolveTracks); LB now does. A genuinely empty local
+      // playlist (tracks.length === 0) is not blocked.
+      if (provider.resolveTracks && Array.isArray(tracks) && tracks.length > 0 && resolved.length === 0) {
+        console.warn(`[Sync] Not creating "${name}" on ${providerId}: 0 of ${tracks.length} tracks resolved — would be an empty remote`);
+        return { success: false, error: 'no-resolvable-tracks', unresolvedTracks: unresolved };
+      }
+
       // -----------------------------------------------------------------
       // Step 2: Create the playlist
       // -----------------------------------------------------------------

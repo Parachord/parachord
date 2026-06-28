@@ -146,6 +146,19 @@ describe('channelGateBlocksCreate — the unified channel/opt-in gate', () => {
     expect(channelGateBlocksCreate(pl('listenbrainz-1'), 'spotify', null)).toBe(true); // no flood
     expect(channelGateBlocksCreate(pl('listenbrainz-1'), 'listenbrainz', null)).toBe(false); // own provider
   });
+
+  test('a hosted-XSPF mirror is opt-in for ListenBrainz (no empty-playlist auto-create)', () => {
+    // The bug: a read-only hosted XSPF whose tracks have no MBIDs was auto-creating
+    // an EMPTY LB playlist (which then synced to mobile). LB is opt-in for it now.
+    expect(channelGateBlocksCreate(pl('hosted-abc'), 'listenbrainz', null)).toBe(true);
+    expect(channelGateBlocksCreate(pl('hosted-abc'), 'listenbrainz', undefined)).toBe(true);
+    // Streaming mirrors still auto-mirror (the documented hosted-XSPF → Spotify path).
+    expect(channelGateBlocksCreate(pl('hosted-abc'), 'spotify', null)).toBe(false);
+    expect(channelGateBlocksCreate(pl('hosted-abc'), 'applemusic', null)).toBe(false);
+    // But an explicit override that includes LB still opts in.
+    expect(channelGateBlocksCreate(pl('hosted-abc'), 'listenbrainz', ['listenbrainz'])).toBe(false);
+    expect(channelGateBlocksCreate(pl('hosted-abc'), 'listenbrainz', ['spotify'])).toBe(true);
+  });
 });
 
 describe('channelOverrideExcludes — the EDIT/update push gate (closes the disable race)', () => {
