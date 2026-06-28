@@ -147,6 +147,22 @@ describe('channelGateBlocksCreate — the unified channel/opt-in gate', () => {
     expect(channelGateBlocksCreate(pl('listenbrainz-1'), 'listenbrainz', null)).toBe(false); // own provider
   });
 
+  test('a FOLLOWED (read-only) playlist is mirror-only — blocked on EVERY provider (#937)', () => {
+    // followed Spotify import: source spotify-import, owned by someone else.
+    const followed = pl('spotify-37i9', { source: 'spotify-import' });
+    expect(channelGateBlocksCreate(followed, 'spotify', null)).toBe(true);
+    expect(channelGateBlocksCreate(followed, 'applemusic', null)).toBe(true); // the round-trip leak
+    expect(channelGateBlocksCreate(followed, 'listenbrainz', null)).toBe(true); // the round-trip leak
+    // An owned import (-sync) still auto-mirrors.
+    expect(channelGateBlocksCreate(pl('spotify-x', { source: 'spotify-sync' }), 'applemusic', null)).toBe(false);
+    // A COLLABORATOR can write back — not read-only, still auto-mirrors. (Use a
+    // non-LB source so the separate listenbrainz-* streaming opt-in doesn't gate it.)
+    const collab = pl('spotify-collab', { source: 'spotify-import', syncedFrom: { isCollaborator: true } });
+    expect(channelGateBlocksCreate(collab, 'applemusic', null)).toBe(false);
+    // An explicit override still opts a followed playlist into a chosen provider.
+    expect(channelGateBlocksCreate(followed, 'applemusic', ['applemusic'])).toBe(false);
+  });
+
   test('a hosted-XSPF mirror is opt-in for ListenBrainz (no empty-playlist auto-create)', () => {
     // The bug: a read-only hosted XSPF whose tracks have no MBIDs was auto-creating
     // an EMPTY LB playlist (which then synced to mobile). LB is opt-in for it now.

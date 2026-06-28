@@ -128,8 +128,26 @@ function computeSyncChannels(playlist, { enabledProviders = [], override = null,
  * @param {string[]|null|undefined} channelOverride - the playlist's override, or null/undefined for none
  * @returns {boolean}
  */
+// Whether `playlist` is a FOLLOWED, read-only import — owned by someone else on
+// its source service (stamped `source: <provider>-import` at import; owned
+// imports get `-sync`). Collaborators CAN write back (LB shared playlists), so
+// they are NOT read-only. Such playlists are mirror-only: never auto-created on
+// any provider, because the user doesn't own the content and a round-trip
+// (follow → mirror to LB → re-export to Spotify as owned) manufactures
+// duplicates (parachord#937).
+function isReadOnlyFollower(playlist) {
+  if (!playlist) return false;
+  const src = typeof playlist.source === 'string' ? playlist.source : '';
+  if (!src.endsWith('-import')) return false;
+  return !(playlist.syncedFrom && playlist.syncedFrom.isCollaborator === true);
+}
+
 function channelGateBlocksCreate(playlist, providerId, channelOverride) {
   if (Array.isArray(channelOverride)) return !channelOverride.includes(providerId);
+  // Followed (non-owned, non-collaborator) playlists are read-only — never
+  // auto-create them on ANY provider (parachord#937). An explicit channel
+  // override still opts in (handled by the array branch above).
+  if (isReadOnlyFollower(playlist)) return true;
   // A hosted-XSPF playlist is read-only external content mirrored from a URL. It
   // auto-mirrors to streaming, but NOT to ListenBrainz by default: LB needs a
   // recording MBID per track, which hosted-XSPF tracks rarely carry, so the
@@ -161,6 +179,7 @@ module.exports = {
   isPlaylistPushCandidate,
   autoMirrorsByDefault,
   isReexportOptInRequired,
+  isReadOnlyFollower,
   computeSyncChannels,
   channelGateBlocksCreate,
   channelOverrideExcludes,
