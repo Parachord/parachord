@@ -116,6 +116,7 @@ function makeStoreEffects(store) {
  * @param {Object<string,object>} args.boundProviders - per-provider token-bound adapter (bindProviderToken output)
  * @param {object}   args.remoteLists   - { providerId -> { externalId -> { snapshotId?, trackCount? } } }
  * @param {(localId:string)=>object|null} [args.getPullSource]
+ * @param {(localId:string)=>boolean} [args.getMirrorOnly] - user mirror-only flag per playlist
  * @param {object}   args.cache         - hydration cache (createHydrationCache)
  * @param {object}   args.effects       - makeStoreEffects output
  * @param {number}   args.now           - epoch ms
@@ -126,7 +127,7 @@ function makeStoreEffects(store) {
 async function runNwayReconcileCycle(args) {
   const {
     states, getPlaylist, getMirrors, boundProviders, remoteLists,
-    getPullSource, cache, effects, now, dryRun, log = console,
+    getPullSource, getMirrorOnly, cache, effects, now, dryRun, log = console,
   } = args;
 
   const providersList = Object.values(boundProviders || {});
@@ -147,6 +148,7 @@ async function runNwayReconcileCycle(args) {
         remoteLists,
         storedTokens: state.providers || {},
         pullSource: getPullSource ? getPullSource(localId) : null,
+        mirrorOnly: getMirrorOnly ? getMirrorOnly(localId) : false,
         coordinator,
         cache,
         now,

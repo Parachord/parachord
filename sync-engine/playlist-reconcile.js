@@ -141,7 +141,7 @@ function computeNwayPropagationPlan(baselineRepr, augmentedCopies) {
 async function reconcilePlaylist(ctx) {
   const {
     baseline, playlist, mirrors, providers, remoteLists, storedTokens,
-    pullSource, coordinator, cache, now, dryRun, effects,
+    pullSource, coordinator, cache, now, dryRun, effects, mirrorOnly,
   } = ctx;
   const log = ctx.log || console;
 
@@ -301,9 +301,6 @@ async function reconcilePlaylist(ctx) {
   // FINAL (not protected by augmentation). The source is authoritative only if
   // it CAN delete (trackRemoveMode !== 'Unsupported'); an add-only source
   // (Apple Music) can never prove a deletion, so it grants no drop-authority.
-  // Even the authoritative source's absence must clear the missingStreak gate:
-  // a single transient complete-fetch omission is NOT a deletion (it would
-  // resurrect for one cycle, then drop — the no-false-drop-safe direction).
   let authoritativeCopyId = null;
   if (pullSource && pullSource.providerId) {
     const sourceProvider = providerById[pullSource.providerId];
@@ -313,16 +310,34 @@ async function reconcilePlaylist(ctx) {
   } else if (playlist.sourceUrl) {
     authoritativeCopyId = 'local'; // hosted XSPF — local mirror IS the source
   }
+
+  // immediateAuthority — the source is SINGLE-AUTHORITY (a one-way mirror), so
+  // its rotate-out drops IMMEDIATELY, with NO missingStreak gate:
+  //   • 'local'    — a hosted-XSPF source (in-process, never a truncated fetch);
+  //   • !writable  — a FOLLOWED (read-only) provider source. A wrong drop
+  //                  SELF-HEALS next cycle (the source re-asserts the track), so
+  //                  the gate buys nothing but would lag/break a daily-rotating
+  //                  algorithmic playlist — a followed Daily Brew (~40 tracks/day)
+  //                  would accumulate WITHOUT BOUND under the gate (the exact
+  //                  bloat the pull-source-authority fix closed);
+  //   • mirrorOnly — the user flagged an OWNED-but-dynamic playlist (e.g. a
+  //                  SmarterPlaylists-managed Daily Brew the provider reports as
+  //                  user-owned) as one-way; the writability split alone can't
+  //                  catch it.
+  // ONLY an OWNED, non-mirror provider source keeps the gate — there a transient
+  // complete-fetch omission could lose a real user edit, so a single omission
+  // stays protected until sustained >= MISSING_STREAK_THRESHOLD cycles. The
+  // partial-fetch floor (A1) runs BEFORE this, so a truncated followed-source
+  // fetch is already degraded to changed:false and can't mass-drop here.
+  // (parachord#911 — byte-aligned with mobile 9780432 / parachord-mobile#277.)
+  const immediateAuthority = authoritativeCopyId === 'local' || !!mirrorOnly || !playlist.writable;
   const authoritativeCopy = copies.find((c) => c.id === authoritativeCopyId && c.changed);
   const authoritativeDropped = new Set();
   if (authoritativeCopy) {
     const present = new Set(authoritativeCopy.keys);
     for (const k of baselineRepr) {
       if (present.has(k)) continue;
-      // 'local' source (hosted XSPF) is in-process, never a truncated fetch —
-      // its absence is immediately authoritative. A provider source must clear
-      // the missingStreak gate first.
-      if (authoritativeCopyId === 'local' || streakEscalated(cache, authoritativeCopyId, k, keyToTrack)) {
+      if (immediateAuthority || streakEscalated(cache, authoritativeCopyId, k, keyToTrack)) {
         authoritativeDropped.add(k);
       }
     }
@@ -331,10 +346,11 @@ async function reconcilePlaylist(ctx) {
   // A6 — pending-aware augmentation. A CHANGED copy that LACKS a baseline key
   // gets that key re-added to its merge keys (so the merge doesn't read its
   // absence as a deletion) unless the absence is GENUINE deletion evidence:
-  //   - AUTHORITATIVE source copy: re-add every lacked key EXCEPT those whose
-  //     absence has streak-escalated (authoritativeDropped) — so a single
-  //     transient complete-fetch omission of the source doesn't drop the track,
-  //     but a sustained one (>= 2 cycles) finally does.
+  //   - AUTHORITATIVE source copy: re-add every lacked key EXCEPT those in
+  //     authoritativeDropped. For an OWNED source that means only streak-
+  //     escalated keys drop (a single transient omission is protected); for an
+  //     immediate-authority source (followed / hosted / mirrorOnly) ALL lacked
+  //     keys are in authoritativeDropped, so its rotate-out drops at once.
   //   - other mirror copies: re-add a lacked key only if the source didn't drop
   //     it AND it's pending for this provider (never-materialized, OR
   //     materialized but not yet missing for >= 2 consecutive complete fetches).

@@ -6664,6 +6664,10 @@ const Parachord = () => {
               playlistSyncInProgressRef.current.add(providerId);
               try {
                 const allPlaylists = await window.electron.playlists.load();
+                // Per-playlist LB re-export opt-in map { localId: ['spotify','applemusic'] }.
+                // A `listenbrainz-*` playlist re-exports to streaming ONLY when the
+                // user opted it into that provider — see the gate in the create branch.
+                const channelOverrides = await window.electron.store.get('sync_playlist_channels') || {};
                 let playlistsChanged = false;
                 // Track which specific playlists mutated so we save only those
                 // at the end. Saving all 142 sequentially used to pinwheel the
@@ -6750,6 +6754,27 @@ const Parachord = () => {
                   const syncInfo = playlist.syncedTo?.[providerId];
 
                   if (!syncInfo) {
+                    // CHANNEL gate (parachord#911). SYNC:
+                    // sync-engine/playlist-push-candidate.js channelGateBlocksCreate.
+                    // A per-playlist channel override is AUTHORITATIVE — sync only
+                    // to the providers the user chose in the Sync menu. With NO
+                    // override, only a `listenbrainz-*` playlist is gated from
+                    // auto-mirroring to streaming (the no-flood opt-in: enabling
+                    // Spotify/AM sync must not push the user's entire pulled LB
+                    // library). Already-linked playlists (syncedTo[provider]) are
+                    // NOT gated here — they push updates via the `else if
+                    // (locallyModified)` branch.
+                    {
+                      const chOverride = channelOverrides[playlist.id];
+                      if (Array.isArray(chOverride)) {
+                        if (!chOverride.includes(providerId)) continue;
+                      } else if (
+                        playlist.id?.startsWith('listenbrainz-')
+                        && (providerId === 'spotify' || providerId === 'applemusic')
+                      ) {
+                        continue;
+                      }
+                    }
                     // LB-specific opt-in. Without this gate, enabling LB sync
                     // would auto-create one LB playlist per non-localOnly local
                     // playlist on first run — potentially 100+ private LB
@@ -6794,6 +6819,17 @@ const Parachord = () => {
                     }
                     await breathe();
                   } else if (playlist.locallyModified) {
+                    // CHANNEL gate for the EDIT branch (parachord#911). SYNC:
+                    // sync-engine/playlist-push-candidate.js channelOverrideExcludes.
+                    // An already-linked mirror must STOP receiving edits the moment
+                    // the user excludes its provider from the override — even if a
+                    // detach hasn't landed yet (this cycle snapshotted allPlaylists
+                    // before the user disabled the channel). The override is the
+                    // source of truth; without it, existing mirrors keep syncing.
+                    {
+                      const chOverride = channelOverrides[playlist.id];
+                      if (Array.isArray(chOverride) && !chOverride.includes(providerId)) continue;
+                    }
                     // Playlist exists remotely and has local changes — push updates
                     console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
                     try {
@@ -8086,51 +8122,88 @@ const Parachord = () => {
 
   // Synced playlist delete dialog state
   const [syncDeleteDialog, setSyncDeleteDialog] = useState({ show: false, playlist: null });
+  // "Stop syncing to <service>?" prompt when a user disables a live Sync channel
+  // (parachord#911). { show, playlistId, playlistName, providerId, providerLabel }
+  const [syncChannelDisableDialog, setSyncChannelDisableDialog] = useState({ show: false });
+
+  // The remote services a playlist mirrors to/from (source + push mirrors) that
+  // could be cleaned up on delete. Returns [{ providerId, externalId, role }].
+  const getPlaylistMirrorTargets = (playlist) => {
+    if (!playlist) return [];
+    const out = [];
+    if (playlist.syncedFrom?.resolver && playlist.syncedFrom?.externalId) {
+      out.push({ providerId: playlist.syncedFrom.resolver, externalId: playlist.syncedFrom.externalId, role: 'source' });
+    }
+    for (const [pid, info] of Object.entries(playlist.syncedTo || {})) {
+      if (info?.externalId) out.push({ providerId: pid, externalId: info.externalId, role: 'mirror' });
+    }
+    return out;
+  };
+
+  const PROVIDER_LABEL = { spotify: 'Spotify', applemusic: 'Apple Music', listenbrainz: 'ListenBrainz' };
+
+  // Remove a playlist from ALL local persistence. A hosted XSPF lives in BOTH
+  // the hosted_playlists URL list AND local_playlists (handleImportPlaylistFromUrl
+  // persists it there so sync can pick it up) — removing only one lets the
+  // load+merge re-import it (the "instant recreation" bug). Also drops the
+  // per-playlist sync prefs + state.
+  const deletePlaylistLocally = async (playlist) => {
+    if (!playlist?.id) return;
+    if (playlist.sourceUrl) {
+      try {
+        const hosted = await window.electron?.store?.get('hosted_playlists') || [];
+        const filtered = hosted.filter(hp => hp.id !== playlist.id && hp.url !== playlist.sourceUrl);
+        await window.electron?.store?.set('hosted_playlists', filtered);
+      } catch (e) { console.warn('hosted_playlists cleanup failed:', e); }
+    }
+    try { await window.electron.playlists.delete(playlist.id); } catch (e) { console.warn('local_playlists delete failed:', e); }
+    setPlaylists(prev => prev.filter(p => p.id !== playlist.id));
+    delete playlistCoverCache.current[playlist.id];
+    setAllPlaylistCovers(prev => { const u = { ...prev }; delete u[playlist.id]; return u; });
+  };
 
   const handleDeleteSyncedPlaylist = async (action) => {
     const playlist = syncDeleteDialog.playlist;
     if (!playlist) return;
     setSyncDeleteDialog({ show: false, playlist: null });
 
-    const providerId = playlist.syncedFrom?.resolver;
-    const externalId = playlist.syncedFrom?.externalId;
+    if (action !== 'stop-syncing' && action !== 'delete-from-source') return;
 
-    if (action === 'stop-syncing' || action === 'delete-from-source') {
-      // Suppress future syncs
-      if (providerId && externalId) {
-        await window.electron.playlists.suppressSync(providerId, externalId);
-      }
+    const targets = getPlaylistMirrorTargets(playlist);
 
-      // Delete from source service if requested
-      if (action === 'delete-from-source' && providerId && externalId) {
-        const result = await window.electron.playlists.deleteFromSource(providerId, externalId);
-        if (!result.success) {
-          showConfirmDialog({
-            type: 'error',
-            title: 'Could not delete from source',
-            message: result.error
-          });
+    // Suppress future re-sync of the source so it doesn't reimport.
+    if (playlist.syncedFrom?.resolver && playlist.syncedFrom?.externalId) {
+      await window.electron.playlists.suppressSync(playlist.syncedFrom.resolver, playlist.syncedFrom.externalId);
+    }
+
+    // Delete from every mirror/source if requested (best-effort; surface the
+    // Apple-Music-can't-delete case so the user removes it manually).
+    if (action === 'delete-from-source') {
+      const manual = [];
+      for (const t of targets) {
+        try {
+          const result = await window.electron.playlists.deleteFromSource(t.providerId, t.externalId);
+          if (result && result.success === false) {
+            manual.push(PROVIDER_LABEL[t.providerId] || t.providerId);
+          }
+        } catch (e) {
+          manual.push(PROVIDER_LABEL[t.providerId] || t.providerId);
         }
       }
-
-      // Delete locally
-      await window.electron.playlists.delete(playlist.id);
-      setPlaylists(prev => prev.filter(p => p.id !== playlist.id));
-      delete playlistCoverCache.current[playlist.id];
-      setAllPlaylistCovers(prev => {
-        const newCovers = { ...prev };
-        delete newCovers[playlist.id];
-        return newCovers;
-      });
-
-      // Exit edit mode and navigate back
-      setPlaylistEditMode(false);
-      setEditedPlaylistData(null);
-      setSelectedPlaylist(null);
-      setPlaylistTracks([]);
-      setPlaylistCoverArt([]);
-      navigateTo('playlists');
+      if (manual.length) {
+        showToast(`Deleted locally — remove it manually from ${[...new Set(manual)].join(', ')} (the app can't delete library playlists there).`, 'info');
+      }
     }
+
+    await deletePlaylistLocally(playlist);
+
+    // Exit edit mode and navigate back
+    setPlaylistEditMode(false);
+    setEditedPlaylistData(null);
+    setSelectedPlaylist(null);
+    setPlaylistTracks([]);
+    setPlaylistCoverArt([]);
+    navigateTo('playlists');
   };
 
   const [refreshingPlaylist, setRefreshingPlaylist] = useState(null); // Track which playlist is refreshing
@@ -11080,14 +11153,27 @@ const Parachord = () => {
 
   // Start sync from modal
   const startSync = async () => {
-    const { providerId, settings, selectedPlaylists } = syncSetupModal;
+    const { providerId, settings, selectedPlaylists, playlists } = syncSetupModal;
 
-    // Save settings first
+    // Save settings first. setProvider also UN-suppresses every re-selected
+    // playlist (so re-ticking undoes a prior exclusion).
     await window.electron.syncSettings.setProvider(providerId, {
       enabled: true,
       ...settings,
       selectedPlaylistIds: selectedPlaylists
     });
+
+    // ListenBrainz imports ALL by default (#911), so the wizard's selection is an
+    // EXCLUDE list: any fetched LB playlist the user UN-ticked is suppressed (the
+    // import filter skips suppressed). Ticked ones were un-suppressed above.
+    if (providerId === 'listenbrainz' && settings.syncPlaylists && Array.isArray(playlists)) {
+      const checked = new Set(selectedPlaylists || []);
+      for (const p of playlists) {
+        if (p && p.externalId && !checked.has(p.externalId)) {
+          try { await window.electron.playlists.suppressSync('listenbrainz', p.externalId); } catch {}
+        }
+      }
+    }
 
     // Also update the React-state mirror of these settings. Without this, the
     // background-sync push loop (which reads from `resolverSyncSettingsRef.current`)
@@ -11169,6 +11255,9 @@ const Parachord = () => {
           playlistSyncInProgressRef.current.add(providerId);
           try {
             const allPlaylists = await window.electron.playlists.load();
+            // LB re-export opt-in map — see the gate in the create branch below
+            // (in lockstep with the background-sync push loop).
+            const channelOverrides = await window.electron.store.get('sync_playlist_channels') || {};
             let playlistsChanged = false;
             // Track which playlists actually mutated so the save loop only
             // writes those — saving all 142 unconditionally caused the app
@@ -11218,6 +11307,28 @@ const Parachord = () => {
               const syncInfo = playlist.syncedTo?.[providerId];
 
               if (!syncInfo) {
+                // CHANNEL gate (parachord#911) — in lockstep with the
+                // background-sync push loop's identical gate. SYNC:
+                // sync-engine/playlist-push-candidate.js channelGateBlocksCreate.
+                // A per-playlist channel override is authoritative; with none, a
+                // `listenbrainz-*` playlist is gated from auto-mirroring to
+                // streaming. Already-linked playlists push updates via the
+                // `else if (locallyModified)` branch.
+                let channelBlocked = false;
+                {
+                  const chOverride = channelOverrides[playlist.id];
+                  if (Array.isArray(chOverride)) {
+                    channelBlocked = !chOverride.includes(providerId);
+                  } else if (
+                    playlist.id?.startsWith('listenbrainz-')
+                    && (providerId === 'spotify' || providerId === 'applemusic')
+                  ) {
+                    channelBlocked = true;
+                  }
+                }
+                if (channelBlocked) {
+                  continue;
+                }
                 // LB-specific opt-in. Mirrors the background-sync push loop's
                 // gate (see comment at L~6357) — must stay in lockstep with it
                 // per CLAUDE.md ("Push-loop syncedFrom guard must be
@@ -11257,6 +11368,13 @@ const Parachord = () => {
                 }
                 await breathe();
               } else if (playlist.locallyModified) {
+                // CHANNEL gate for the EDIT branch (parachord#911) — lockstep with
+                // the background-sync loop. An already-linked mirror stops getting
+                // edits the moment the user's override excludes its provider.
+                {
+                  const chOverride = channelOverrides[playlist.id];
+                  if (Array.isArray(chOverride) && !chOverride.includes(providerId)) continue;
+                }
                 // Playlist exists remotely and has local changes — push updates
                 console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
                 try {
@@ -15840,6 +15958,39 @@ ${trackListXml}
             sourceType: data.sourceType || 'track'
           });
           setSelectedPlaylistsForAdd([]); // Reset selection
+        } else if (data.action === 'mirror-only-changed' && data.playlistId) {
+          // The native playlist context menu toggled the mirror-only (one-way)
+          // sync setting (persisted main-side in sync_playlist_mirror_only).
+          showToast(data.mirrorOnly ? 'Playlist set to mirror only (one-way)' : 'Playlist mirror-only disabled');
+        } else if (data.action === 'sync-channel-toggle' && data.playlistId) {
+          // The "Sync ▸" submenu toggled where this playlist syncs (parachord#911).
+          const label = data.providerLabel || data.providerId;
+          if (data.enabling) {
+            // Enable: write the channel override; the next sync creates the
+            // mirror. Nothing on the playlist object changes yet, so no reload.
+            await window.electron.sync.setChannel(data.playlistId, data.providerId, true);
+            showToast(`Will sync this playlist to ${label} on next sync`);
+          } else if (data.currentlyMirrored) {
+            // Disabling a LIVE mirror → ask whether to also delete the remote.
+            setSyncChannelDisableDialog({
+              show: true,
+              playlistId: data.playlistId,
+              playlistName: data.name,
+              providerId: data.providerId,
+              providerLabel: label,
+            });
+          } else {
+            // Disabling a channel with no remote yet → just drop it. Reload in
+            // case a mirror landed since the menu opened (detach mutates the row
+            // main-side; reloading prevents a stale renderer save resurrecting it).
+            await window.electron.sync.setChannel(data.playlistId, data.providerId, false);
+            try {
+              const fresh = await window.electron.playlists.load();
+              setPlaylists(fresh);
+              if (selectedPlaylist?.id === data.playlistId) { const u = fresh.find(p => p.id === data.playlistId); if (u) setSelectedPlaylist(u); }
+            } catch {}
+            showToast(`Stopped syncing this playlist to ${label}`);
+          }
         } else if (data.action === 'remove-from-playlist' && data.playlistId !== undefined) {
           // Remove track from playlist
           const trackIndex = data.trackIndex;
@@ -15883,46 +16034,25 @@ ${trackListXml}
             }));
           }
         } else if (data.action === 'delete-playlist' && data.playlistId) {
-          // Check if this is a synced playlist
-          const playlistToDelete = playlists.find(p => p.id === data.playlistId);
-          if (playlistToDelete?.syncedFrom) {
+          // If the playlist mirrors to/from any remote (a synced playlist OR a
+          // hosted XSPF mirrored to Spotify/AM), ask whether to delete from those
+          // services too. Otherwise just confirm + delete locally.
+          // NOTE: read the playlist via playlistsRef (NOT the `playlists` closure
+          // var) — this listener's useEffect deps don't include `playlists`, so
+          // the closure is STALE: a stale-undefined lookup is exactly why the
+          // mirror prompt never showed and the hosted-store cleanup was skipped
+          // (deletePlaylistLocally with no sourceUrl → hosted XSPF re-imported).
+          const playlistToDelete = (playlistsRef.current || []).find(p => p.id === data.playlistId);
+          const hasMirrors = getPlaylistMirrorTargets(playlistToDelete).length > 0;
+          if (hasMirrors) {
             setSyncDeleteDialog({ show: true, playlist: playlistToDelete });
           } else {
             const confirmed = window.confirm(`Are you sure you want to delete "${data.name}"?`);
             if (confirmed) {
-              const isHosted = data.playlistId.startsWith('hosted-');
-              let deleteSuccess = false;
-
-              if (isHosted) {
-                // Hosted playlists are stored in hosted_playlists URL list, not local_playlists
-                try {
-                  const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
-                  const filtered = hostedPlaylists.filter(hp => hp.id !== data.playlistId);
-                  await window.electron?.store?.set('hosted_playlists', filtered);
-                  // Also clean up any metadata overrides
-                  console.log(`🗑️ Deleted hosted playlist: ${data.name}`);
-                  deleteSuccess = true;
-                } catch (error) {
-                  console.error('Failed to delete hosted playlist:', error);
-                  alert(`Failed to delete playlist: ${error.message}`);
-                }
-              } else {
-                const result = await window.electron.playlists.delete(data.playlistId);
-                deleteSuccess = result.success;
-                if (!result.success) {
-                  alert(`Failed to delete playlist: ${result.error}`);
-                }
-              }
-
-              if (deleteSuccess) {
-                setPlaylists(prev => prev.filter(p => p.id !== data.playlistId));
-                delete playlistCoverCache.current[data.playlistId];
-                setAllPlaylistCovers(prev => {
-                  const updated = { ...prev };
-                  delete updated[data.playlistId];
-                  return updated;
-                });
-              }
+              // deletePlaylistLocally removes from BOTH hosted_playlists AND
+              // local_playlists, so a hosted XSPF can't be re-imported by the
+              // load+merge (the recreation bug).
+              await deletePlaylistLocally(playlistToDelete || { id: data.playlistId });
             }
           }
         } else if (data.action === 'edit-id3-tags' && data.track) {
@@ -20353,23 +20483,16 @@ ${trackListXml}
         }
       },
       deletePlaylist: async (playlistId) => {
-        const result = await window.electron.playlists.delete(playlistId);
-        if (result.success) {
-          setPlaylists(prev => prev.filter(p => p.id !== playlistId));
-          delete playlistCoverCache.current[playlistId];
-          setAllPlaylistCovers(prev => {
-            const updated = { ...prev };
-            delete updated[playlistId];
-            return updated;
-          });
-          // Navigate away if viewing this playlist
-          if (selectedPlaylistRef.current?.id === playlistId) {
-            setSelectedPlaylist(null);
-            setPlaylistTracks([]);
-            navigateTo('playlists');
-          }
+        // Use the shared helper so a hosted XSPF is removed from BOTH stores
+        // (else the load+merge re-imports it).
+        const target = (playlistsRef.current || []).find(p => p.id === playlistId) || { id: playlistId };
+        await deletePlaylistLocally(target);
+        if (selectedPlaylistRef.current?.id === playlistId) {
+          setSelectedPlaylist(null);
+          setPlaylistTracks([]);
+          navigateTo('playlists');
         }
-        return result;
+        return { success: true };
       }
     };
 
@@ -43557,9 +43680,9 @@ useEffect(() => {
                   React.createElement('button', {
                     className: 'text-xs px-3 py-1.5 rounded-md bg-red-100 text-red-700 hover:bg-red-200 transition-colors',
                     onClick: async () => {
-                      // Delete locally too
-                      await window.electron.playlists.delete(playlist.id);
-                      setPlaylists(prev => prev.filter(p => p.id !== playlist.id));
+                      // Delete locally too (remote already gone) — via the helper
+                      // so a hosted XSPF is cleared from BOTH stores.
+                      await deletePlaylistLocally(playlist);
                       setSelectedPlaylist(null);
                     }
                   }, 'Delete locally too'),
@@ -44161,21 +44284,17 @@ useEffect(() => {
                 }, `Modified: ${new Date(selectedPlaylist.lastModified).toLocaleDateString()}`),
                 // Delete Playlist button (only in edit mode)
                 playlistEditMode && React.createElement('button', {
-                  onClick: () => {
-                    if (selectedPlaylist.syncedFrom) {
-                      // Synced playlist: show options dialog
+                  onClick: async () => {
+                    // Ask about mirrors when the playlist syncs to/from ANY remote
+                    // (source OR push targets, incl. a hosted XSPF mirrored to
+                    // Spotify/AM) — not just syncedFrom. Otherwise confirm + delete
+                    // locally via the helper that clears BOTH hosted_playlists AND
+                    // local_playlists so it can't be re-imported.
+                    if (getPlaylistMirrorTargets(selectedPlaylist).length > 0) {
                       setSyncDeleteDialog({ show: true, playlist: selectedPlaylist });
                     } else {
-                      // Local playlist: simple confirm
                       if (window.confirm(`Are you sure you want to delete "${selectedPlaylist.title}"? This cannot be undone.`)) {
-                        window.electron.playlists.delete(selectedPlaylist.id);
-                        setPlaylists(prev => prev.filter(p => p.id !== selectedPlaylist.id));
-                        delete playlistCoverCache.current[selectedPlaylist.id];
-                        setAllPlaylistCovers(prev => {
-                          const newCovers = { ...prev };
-                          delete newCovers[selectedPlaylist.id];
-                          return newCovers;
-                        });
+                        await deletePlaylistLocally(selectedPlaylist);
                         setPlaylistEditMode(false);
                         setEditedPlaylistData(null);
                         setSelectedPlaylist(null);
@@ -62840,7 +62959,11 @@ useEffect(() => {
           }, `Delete "${syncDeleteDialog.playlist?.title}"?`),
           React.createElement('p', {
             style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }
-          }, `This playlist is synced from ${syncDeleteDialog.playlist?.syncedFrom?.resolver === 'spotify' ? 'Spotify' : 'Apple Music'}. What would you like to do?`)
+          }, (() => {
+            const svcs = [...new Set(getPlaylistMirrorTargets(syncDeleteDialog.playlist).map(t => PROVIDER_LABEL[t.providerId] || t.providerId))];
+            const list = svcs.length ? svcs.join(', ') : 'a sync service';
+            return `This playlist is synced with ${list}. What would you like to do?`;
+          })())
         ),
         // Actions
         React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
@@ -62873,7 +62996,10 @@ useEffect(() => {
               borderRadius: '10px',
               cursor: 'pointer'
             }
-          }, `Delete from ${syncDeleteDialog.playlist?.syncedFrom?.resolver === 'spotify' ? 'Spotify' : 'Apple Music'} too`),
+          }, (() => {
+            const svcs = [...new Set(getPlaylistMirrorTargets(syncDeleteDialog.playlist).map(t => PROVIDER_LABEL[t.providerId] || t.providerId))];
+            return `Delete from ${svcs.length ? svcs.join(', ') : 'the service'} too`;
+          })()),
           // Cancel
           React.createElement('button', {
             onClick: () => setSyncDeleteDialog({ show: false, playlist: null }),
@@ -62889,6 +63015,72 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Cancel')
+        )
+      )
+    ),
+
+    // Sync Channel Disable Dialog — "stop syncing to <service>?" with the
+    // optional "delete from that service too" choice (parachord#911).
+    syncChannelDisableDialog.show && React.createElement('div', {
+      className: 'fixed inset-0 flex items-center justify-center z-[60]',
+      style: { backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(4px)' },
+      onClick: () => setSyncChannelDisableDialog({ show: false })
+    },
+      React.createElement('div', {
+        style: {
+          backgroundColor: 'var(--card-bg)', borderRadius: '16px',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.15), 0 12px 48px rgba(0,0,0,0.1)',
+          maxWidth: '400px', width: '100%', margin: '0 16px', overflow: 'hidden'
+        },
+        onClick: (e) => e.stopPropagation()
+      },
+        React.createElement('div', { className: 'flex flex-col items-center text-center', style: { padding: '32px 24px 20px' } },
+          React.createElement('h3', {
+            style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
+          }, `Stop syncing to ${syncChannelDisableDialog.providerLabel}?`),
+          React.createElement('p', {
+            style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }
+          }, `Keep "${syncChannelDisableDialog.playlistName}" on ${syncChannelDisableDialog.providerLabel} and just stop syncing it, or delete it from ${syncChannelDisableDialog.providerLabel} too?`)
+        ),
+        React.createElement('div', { style: { padding: '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '8px' } },
+          (() => {
+            const applyDisable = async (deleteRemote) => {
+              const d = syncChannelDisableDialog;
+              setSyncChannelDisableDialog({ show: false });
+              let res = null;
+              try { res = await window.electron.sync.setChannel(d.playlistId, d.providerId, false, { deleteRemote }); } catch {}
+              try {
+                const fresh = await window.electron.playlists.load();
+                setPlaylists(fresh);
+                if (selectedPlaylist?.id === d.playlistId) { const u = fresh.find(p => p.id === d.playlistId); if (u) setSelectedPlaylist(u); }
+              } catch {}
+              const rd = res && res.remoteDelete;
+              if (deleteRemote && rd && rd.deleted === false && rd.reason === 'unsupported') {
+                showToast(`Stopped syncing — remove it from ${d.providerLabel} manually (the app can't delete library playlists there).`, 'info');
+              } else if (deleteRemote && rd && rd.deleted) {
+                showToast(`Stopped syncing and deleted from ${d.providerLabel}`);
+              } else {
+                showToast(`Stopped syncing this playlist to ${d.providerLabel}`);
+              }
+            };
+            return React.createElement(React.Fragment, null,
+              React.createElement('button', {
+                onClick: () => applyDisable(false),
+                className: 'w-full transition-colors',
+                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: '#7c3aed', border: 'none', borderRadius: '10px', cursor: 'pointer' }
+              }, 'Stop Syncing'),
+              React.createElement('button', {
+                onClick: () => applyDisable(true),
+                className: 'w-full transition-colors',
+                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: '#dc2626', border: 'none', borderRadius: '10px', cursor: 'pointer' }
+              }, `Delete from ${syncChannelDisableDialog.providerLabel} too`),
+              React.createElement('button', {
+                onClick: () => setSyncChannelDisableDialog({ show: false }),
+                className: 'w-full transition-colors',
+                style: { padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: '1px solid #e5e7eb', borderRadius: '10px', cursor: 'pointer' }
+              }, 'Cancel')
+            );
+          })()
         )
       )
     ),
@@ -63382,10 +63574,24 @@ useEffect(() => {
                   setSyncSetupModal(prev => ({ ...prev, step: 'playlists', error: null }));
                   const result = await window.electron.sync.fetchPlaylists(syncSetupModal.providerId);
                   if (result.success) {
+                    // ListenBrainz imports ALL playlists by default (#911), so
+                    // pre-check every fetched playlist EXCEPT already-suppressed
+                    // ones — unticking is what EXCLUDES (suppresses) a playlist,
+                    // ticking re-includes it. Spotify/AM keep their seeded
+                    // (relationship-based) selection.
+                    let lbPreselect = null;
+                    if (syncSetupModal.providerId === 'listenbrainz') {
+                      const suppMap = await window.electron.store.get('suppressed_sync_playlists').catch(() => null);
+                      const supp = (suppMap && suppMap.listenbrainz) || [];
+                      lbPreselect = (result.playlists || [])
+                        .map(p => p.externalId)
+                        .filter(id => !supp.includes(id));
+                    }
                     setSyncSetupModal(prev => ({
                       ...prev,
                       playlists: result.playlists,
-                      folders: result.folders
+                      folders: result.folders,
+                      ...(lbPreselect ? { selectedPlaylists: lbPreselect } : {})
                     }));
                   } else {
                     // Handle failed playlist fetch - show error and go back to options
