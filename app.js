@@ -6495,6 +6495,17 @@ const Parachord = () => {
           const ambNames = result.ambiguous.map(a => `"${a.name}"`).join(', ');
           parts.push(`skipped ${ambiguousCount} ambiguous group${ambiguousCount > 1 ? 's' : ''} (${ambNames}) — multiple local playlists linked to different copies`);
         }
+        // #937: redundant LB re-imports of followed playlists + the owned
+        // Spotify/Apple Music copies they spawned (the followed playlist's real
+        // LB mirror is kept). Only the ListenBrainz cleanup runs this phase.
+        const reimportDupes = result.reimportDupesRemoved || 0;
+        const reimportManual = result.reimportDupesManual || [];
+        if (reimportDupes > 0) {
+          parts.push(`removed ${reimportDupes} re-import duplicate${reimportDupes > 1 ? 's' : ''} of followed playlists and their owned streaming copies`);
+        }
+        if (reimportManual.length > 0) {
+          parts.push(`${reimportManual.length} re-export copy${reimportManual.length > 1 ? 'ies' : ''} (${reimportManual.join(', ')}) must be removed manually in the provider's app`);
+        }
 
         if (parts.length === 0) {
           showToast('No orphaned or duplicate playlists found', 'info');
@@ -6504,7 +6515,7 @@ const Parachord = () => {
         }
 
         // Reload playlists so UI reflects newly-populated syncedTo / locallyModified flags
-        if (relinkedCount > 0 || repairedEmpty > 0) {
+        if (relinkedCount > 0 || repairedEmpty > 0 || reimportDupes > 0) {
           try {
             const loaded = await window.electron.playlists.load();
             setPlaylists(prev => {
