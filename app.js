@@ -6797,8 +6797,18 @@ const Parachord = () => {
                     // Already-linked playlists (those with syncedTo[lb]) are
                     // NOT gated here — they still get update pushes via the
                     // `else if (playlist.locallyModified)` branch below.
-                    if (providerId === 'listenbrainz' && currentSettings[providerId]?.pushLocalPlaylists !== true) {
-                      continue;
+                    // An explicit per-playlist channel override that INCLUDES
+                    // listenbrainz is an intentional opt-in (e.g. the user toggled
+                    // LB on for a hosted XSPF in the Sync menu) and bypasses the
+                    // global pushLocalPlaylists flood-guard.
+                    {
+                      const lbOptedInByOverride = Array.isArray(channelOverrides[playlist.id])
+                        && channelOverrides[playlist.id].includes('listenbrainz');
+                      if (providerId === 'listenbrainz'
+                        && currentSettings[providerId]?.pushLocalPlaylists !== true
+                        && !lbOptedInByOverride) {
+                        continue;
+                      }
                     }
                     // Playlist not yet created on this provider — create it
                     console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
@@ -11356,8 +11366,17 @@ const Parachord = () => {
                 // The wizard's pushLocalPlaylists checkbox writes through to
                 // syncSetupModal.settings, which is the `settings` destructured
                 // at L~10465 — that's what we read here.
-                if (providerId === 'listenbrainz' && settings?.pushLocalPlaylists !== true) {
-                  continue;
+                // An explicit channel override including LB is an intentional
+                // opt-in and bypasses the global pushLocalPlaylists flood-guard
+                // (lockstep with the background loop above).
+                {
+                  const lbOptedInByOverride = Array.isArray(channelOverrides[playlist.id])
+                    && channelOverrides[playlist.id].includes('listenbrainz');
+                  if (providerId === 'listenbrainz'
+                    && settings?.pushLocalPlaylists !== true
+                    && !lbOptedInByOverride) {
+                    continue;
+                  }
                 }
                 // Playlist not yet created on this provider — create it
                 console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
