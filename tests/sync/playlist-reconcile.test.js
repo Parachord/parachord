@@ -513,9 +513,29 @@ describe('reconcile — shadow (dryRun) mode', () => {
     expect(r.mergedSize).toBe(3);
     expect(r.pushTargets).toEqual(['spotify']);
     expect(r.perTarget[0]).toMatchObject({ providerId: 'spotify', addKeys: 1, removeKeys: 0 });
+    // The migration preview (#911) needs track NAMES, not just counts.
+    expect(r.perTarget[0].addTracks).toEqual([{ artist: 'artist-added', title: 'title-added' }]);
+    expect(r.perTarget[0].removeTracks).toEqual([]);
     // No side effects: remote, local, baseline all untouched.
     expect(sp.remote.length).toBe(2);
     expect(sp.addCalls).toEqual([]);
     expect(h.state.baseline.tracks.length).toBe(baselineBefore);
+  });
+
+  test('would-push names REMOVED tracks even from an unchanged mirror (the preview\'s danger signal)', async () => {
+    const h = new Harness();
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    h.seed([mk('m0'), mk('m1')]);
+    // Local removes m1; spotify's snapshot is UNCHANGED, so its A1 copy is built
+    // tracks:[] — the name must come from the preview's fresh fetch.
+    h.editLocal([mk('m0')]);
+    const r = await h.cycle({ dryRun: true });
+    expect(r.status).toBe('would-push');
+    expect(r.perTarget[0]).toMatchObject({ providerId: 'spotify', addKeys: 0, removeKeys: 1 });
+    expect(r.perTarget[0].removeTracks).toEqual([{ artist: 'artist-m1', title: 'title-m1' }]);
+    expect(r.perTarget[0].addTracks).toEqual([]);
+    // Still a dry run: nothing written to the remote.
+    expect(sp.removeByNativeIdCalls).toEqual([]);
+    expect(sp.remote.length).toBe(2);
   });
 });

@@ -8133,6 +8133,57 @@ const Parachord = () => {
   // (parachord#911). { show, playlistId, playlistName, providerId, providerLabel }
   const [syncChannelDisableDialog, setSyncChannelDisableDialog] = useState({ show: false });
 
+  // N-way migration preview (parachord#911). The "Use new sync" dev toggle opens
+  // this: run a compute-only reconcile, render the named diff, and only on Accept
+  // flip sync_engine_mode to 'new'. { show, loading, summary, error, recomputed }.
+  const [nwayMigrationDialog, setNwayMigrationDialog] = useState({ show: false });
+
+  // Open the preview: forced dry-run reconcile → render model.
+  const startNwayMigration = async () => {
+    setNwayMigrationDialog({ show: true, loading: true });
+    try {
+      const out = await window.electron.nway.preview();
+      if (!out || out.error) {
+        setNwayMigrationDialog({ show: true, loading: false, error: (out && out.error) || 'Preview failed' });
+        return;
+      }
+      if (out.skipped) {
+        setNwayMigrationDialog({ show: true, loading: false, error: `Preview unavailable (${out.skipped})` });
+        return;
+      }
+      setNwayMigrationDialog({ show: true, loading: false, summary: window.summarizeMigrationPlan(out) });
+    } catch (e) {
+      setNwayMigrationDialog({ show: true, loading: false, error: (e && e.message) || 'Preview failed' });
+    }
+  };
+
+  // Accept: recompute first (the remote may have drifted since preview). If the
+  // removal count changed, re-show the fresh diff instead of committing blind.
+  const acceptNwayMigration = async () => {
+    setNwayMigrationDialog((d) => ({ ...d, loading: true }));
+    let fresh = null;
+    try { const out = await window.electron.nway.preview(); if (out && !out.error && !out.skipped) fresh = window.summarizeMigrationPlan(out); } catch {}
+    const shown = nwayMigrationDialog.summary;
+    if (fresh && shown && fresh.totalRemoves !== shown.totalRemoves) {
+      setNwayMigrationDialog({ show: true, loading: false, summary: fresh, recomputed: true });
+      showToast('The remote changed — review the updated diff before switching', 'info');
+      return;
+    }
+    try { await window.electron.store.set('sync_engine_mode', 'new'); } catch {}
+    setNwayMigrationDialog({ show: false });
+    showToast('Switched to new sync on this device');
+  };
+
+  // Report: copy the full diff (GitHub truncates long prefilled bodies) and open a
+  // prefilled issue. Does not switch.
+  const reportNwayMigration = async () => {
+    const report = window.buildMigrationReport(nwayMigrationDialog.summary, { appVersion });
+    try { await navigator.clipboard.writeText(report.body); } catch {}
+    if (window.electron?.shell?.openExternal) window.electron.shell.openExternal(report.githubUrl);
+    setNwayMigrationDialog({ show: false });
+    showToast('Diff copied to clipboard — opening a GitHub issue');
+  };
+
   // The remote services a playlist mirrors to/from (source + push mirrors) that
   // could be cleaned up on delete. Returns [{ providerId, externalId, role }].
   const getPlaylistMirrorTargets = (playlist) => {
@@ -55107,7 +55158,7 @@ useEffect(() => {
                   ),
                   // Show Tutorial Now button
                   React.createElement('div', {
-                    className: 'flex items-center justify-between py-3'
+                    className: 'flex items-center justify-between py-3 border-b border-gray-100'
                   },
                     React.createElement('div', null,
                       React.createElement('div', {
@@ -55123,6 +55174,23 @@ useEffect(() => {
                       },
                       className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
                     }, 'Show')
+                  ),
+                  // Use new sync — N-way migration preview (parachord#911)
+                  React.createElement('div', {
+                    className: 'flex items-center justify-between py-3'
+                  },
+                    React.createElement('div', null,
+                      React.createElement('div', {
+                        className: 'text-sm font-medium text-gray-900'
+                      }, 'Use new sync'),
+                      React.createElement('div', {
+                        className: 'text-xs text-gray-500 mt-0.5'
+                      }, 'Preview the new sync engine and switch this device over')
+                    ),
+                    React.createElement('button', {
+                      onClick: () => startNwayMigration(),
+                      className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
+                    }, 'Preview')
                   )
                 ),
 
@@ -63027,6 +63095,79 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'Cancel')
+        )
+      )
+    ),
+
+    // N-way migration preview (parachord#911): "switch to new sync?" with the
+    // exact dry-run diff and Accept / Report / Cancel.
+    nwayMigrationDialog.show && React.createElement('div', {
+      className: 'fixed inset-0 flex items-center justify-center z-[60]',
+      style: { backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' },
+      onClick: () => { if (!nwayMigrationDialog.loading) setNwayMigrationDialog({ show: false }); }
+    },
+      React.createElement('div', {
+        style: { backgroundColor: 'var(--card-bg)', borderRadius: '16px', boxShadow: '0 4px 24px rgba(0,0,0,0.15), 0 12px 48px rgba(0,0,0,0.1)', maxWidth: '560px', width: '100%', margin: '0 16px', maxHeight: '82vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+        onClick: (e) => e.stopPropagation()
+      },
+        React.createElement('div', { style: { padding: '22px 24px 12px', flexShrink: 0 } },
+          React.createElement('h3', { style: { fontSize: '17px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' } }, 'Switch to new sync on this device?'),
+          React.createElement('p', { style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' } },
+            'We ran the ',
+            React.createElement('a', {
+              href: '#',
+              onClick: (e) => { e.preventDefault(); if (window.electron?.shell?.openExternal) window.electron.shell.openExternal('https://parachord.com/blog/2026/06/25/keeping-playlists-in-sync/'); },
+              style: { color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: '500' }
+            }, 'new sync'),
+            " against your library without writing anything. Here's exactly what it would change."
+          )
+        ),
+        React.createElement('div', { style: { overflowY: 'auto', padding: '0 24px', flex: '1 1 auto' } },
+          (() => {
+            const d = nwayMigrationDialog;
+            if (d.loading) return React.createElement('p', { style: { padding: '16px 0', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center' } }, 'Checking your playlists…');
+            if (d.error) return React.createElement('p', { style: { padding: '8px 0 16px', fontSize: '13px', color: '#dc2626' } }, `Couldn't run the preview: ${d.error}`);
+            const s = d.summary;
+            if (!s) return null;
+            const banner = (bg, border, color, text) => React.createElement('div', { style: { backgroundColor: bg, border: `1px solid ${border}`, borderRadius: '8px', padding: '9px 11px', marginBottom: '12px' } }, React.createElement('span', { style: { fontSize: '12px', color, lineHeight: '1.45' } }, text));
+            const rows = [];
+            if (d.recomputed) rows.push(banner('rgba(245,158,11,0.12)', 'rgba(245,158,11,0.4)', '#b45309', 'The remote changed since you opened this. This is the updated diff.'));
+            if (s.hasRemoves) rows.push(banner('rgba(220,38,38,0.10)', 'rgba(220,38,38,0.35)', '#b91c1c', `${s.totalRemoves} track${s.totalRemoves === 1 ? '' : 's'} would be removed. Review the removals before you accept.`));
+            if (!s.hasChanges && !s.protected.length) {
+              rows.push(React.createElement('p', { key: 'noop', style: { fontSize: '13px', color: 'var(--text-secondary)', padding: '4px 0 14px' } }, 'No changes needed — your playlists are already in sync. Safe to switch.'));
+            } else if (s.hasChanges) {
+              rows.push(React.createElement('p', { key: 'sum', style: { fontSize: '12px', color: 'var(--text-tertiary)', padding: '2px 0 8px' } }, `${s.noopCount} playlist${s.noopCount === 1 ? '' : 's'} already match. ${s.changed.length} need${s.changed.length === 1 ? 's' : ''} changes:`));
+            }
+            s.changed.forEach((pl, pi) => {
+              const hasRem = pl.providers.some((p) => p.removes.length);
+              const provNodes = [];
+              pl.providers.forEach((p, ppi) => {
+                provNodes.push(React.createElement('div', { key: `h${ppi}`, style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: ppi ? '8px' : '6px' } },
+                  React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' } }, p.providerId),
+                  React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)' } }, `${p.adds.length ? '+' + p.adds.length : ''}${p.adds.length && p.removes.length ? ' · ' : ''}${p.removes.length ? '−' + p.removes.length : ''}`)
+                ));
+                p.removes.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `r${ppi}-${ti}`, style: { fontSize: '13px', color: '#dc2626', padding: '2px 0' } }, `−  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
+                p.adds.forEach((t, ti) => provNodes.push(React.createElement('div', { key: `a${ppi}-${ti}`, style: { fontSize: '13px', color: '#16a34a', padding: '2px 0' } }, `+  ${t.artist}${t.artist && t.title ? ' — ' : ''}${t.title}`)));
+              });
+              rows.push(React.createElement('div', { key: `pl${pi}`, style: { padding: '10px 12px', marginBottom: '8px', borderRadius: '10px', backgroundColor: hasRem ? 'rgba(220,38,38,0.06)' : 'rgba(127,127,127,0.06)', borderLeft: hasRem ? '3px solid #dc2626' : '3px solid transparent' } },
+                React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, pl.displayName),
+                ...provNodes
+              ));
+            });
+            s.protected.forEach((pp, pi) => {
+              rows.push(React.createElement('div', { key: `prot${pi}`, style: { padding: '8px 12px', marginBottom: '8px' } },
+                React.createElement('div', { style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' } }, `${pp.displayName} — protected`),
+                React.createElement('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.45' } }, pp.reason === 'total-wipe' ? "New sync declined a full-replace it couldn't verify, and left it untouched. Your tracks are safe." : 'New sync skipped an unverifiable change and left it untouched.')
+              ));
+            });
+            return React.createElement('div', { style: { paddingBottom: '8px' } }, ...rows);
+          })()
+        ),
+        React.createElement('div', { style: { padding: '14px 24px 18px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 } },
+          React.createElement('span', { style: { fontSize: '11px', color: 'var(--text-tertiary)', marginRight: 'auto' } }, 'Disables the old sync here. Reversible anytime.'),
+          React.createElement('button', { onClick: () => setNwayMigrationDialog({ show: false }), style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer' } }, 'Cancel'),
+          (nwayMigrationDialog.summary && (nwayMigrationDialog.summary.hasChanges || nwayMigrationDialog.summary.protected.length)) && React.createElement('button', { onClick: () => reportNwayMigration(), style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', borderRadius: '8px', cursor: 'pointer' } }, 'Report a problem'),
+          React.createElement('button', { onClick: () => acceptNwayMigration(), disabled: nwayMigrationDialog.loading || !nwayMigrationDialog.summary, style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? '#9ca3af' : '#7c3aed', border: 'none', borderRadius: '8px', cursor: (nwayMigrationDialog.loading || !nwayMigrationDialog.summary) ? 'default' : 'pointer' } }, (nwayMigrationDialog.summary && !nwayMigrationDialog.summary.hasChanges) ? 'Switch' : 'Accept changes and switch')
         )
       )
     ),

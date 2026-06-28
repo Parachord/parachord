@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('electron', {
   // triggers one reconcile cycle for validation (shadow = compute + log only).
   nway: {
     shadowRun: () => ipcRenderer.invoke('nway:shadow-run'),
+    // Migration preview (#911): forced compute-only reconcile → named diff.
+    preview: () => ipcRenderer.invoke('nway:preview'),
   },
 
   // Spotify operations
