@@ -7930,12 +7930,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     // caller (or side-door) can create a mirror the user didn't choose. Safe: the
     // loops only reach this for channel-allowed playlists, so it never
     // false-blocks a legitimate create.
-    // Load the full local row so the gate can see source/syncedFrom (the
-    // read-only-follower mirror-only rule, parachord#937) — not just the id.
-    const gatePlaylist = localPlaylistId
-      ? ((store.get('local_playlists') || []).find((p) => p && p.id === localPlaylistId) || { id: localPlaylistId })
-      : null;
-    if (localPlaylistId && channelGateBlocksCreate(gatePlaylist, providerId, getChannelOverride(localPlaylistId))) {
+    if (localPlaylistId && channelGateBlocksCreate({ id: localPlaylistId }, providerId, getChannelOverride(localPlaylistId))) {
       console.warn(`[Sync] Blocked create of "${name}" on ${providerId} — not in the playlist's sync channels`);
       return { success: false, error: 'channel-not-selected' };
     }

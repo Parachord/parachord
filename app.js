@@ -6786,19 +6786,6 @@ const Parachord = () => {
                         continue;
                       }
                     }
-                    // Followed (read-only) playlists are mirror-only — never
-                    // auto-create on any provider (parachord#937; the round-trip
-                    // follow→LB→re-export manufactures owned dupes). Collaborators
-                    // and explicit channel-override opt-ins are exempt. SYNC:
-                    // playlist-push-candidate.js isReadOnlyFollower.
-                    {
-                      const isReadOnlyFollower = typeof playlist.source === 'string'
-                        && playlist.source.endsWith('-import')
-                        && playlist.syncedFrom?.isCollaborator !== true;
-                      const optedIn = Array.isArray(channelOverrides[playlist.id])
-                        && channelOverrides[playlist.id].includes(providerId);
-                      if (isReadOnlyFollower && !optedIn) continue;
-                    }
                     // LB-specific opt-in. Without this gate, enabling LB sync
                     // would auto-create one LB playlist per non-localOnly local
                     // playlist on first run — potentially 100+ private LB
@@ -11371,17 +11358,6 @@ const Parachord = () => {
                 }
                 if (channelBlocked) {
                   continue;
-                }
-                // Followed (read-only) playlists are mirror-only — never auto-
-                // create on any provider (parachord#937). Lockstep with the
-                // background loop. SYNC: playlist-push-candidate.js isReadOnlyFollower.
-                {
-                  const isReadOnlyFollower = typeof playlist.source === 'string'
-                    && playlist.source.endsWith('-import')
-                    && playlist.syncedFrom?.isCollaborator !== true;
-                  const optedIn = Array.isArray(channelOverrides[playlist.id])
-                    && channelOverrides[playlist.id].includes(providerId);
-                  if (isReadOnlyFollower && !optedIn) continue;
                 }
                 // LB-specific opt-in. Mirrors the background-sync push loop's
                 // gate (see comment at L~6357) — must stay in lockstep with it
