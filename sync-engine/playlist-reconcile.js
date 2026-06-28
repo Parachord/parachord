@@ -402,19 +402,53 @@ async function reconcilePlaylist(ctx) {
 
   const providerTargets = pushTargets.filter((t) => t !== 'local');
 
-  // A12 — SHADOW stop. Compute the per-target would-be diff from known keys
-  // (no extra fetch) and report; no writes, no baseline advance.
+  // A12 — SHADOW stop. Compute the per-target would-be diff EXACTLY the way the
+  // real push (A13) would, so the migration preview (#911) shows precisely what
+  // the executor would write — including track NAMES. materializeToProvider
+  // diffs `computeMaterializeDiff(canonical, remote)` and maps the diff's own
+  // keyspace back to tracks; we mirror that here, but stop at the diff (no write,
+  // no baseline advance). A target's `remote` is its A1-fetched copy.tracks when
+  // present (a changed mirror), otherwise a fresh fetch — which is what makes an
+  // UNCHANGED-mirror removal nameable (its tracks aren't in the A1 copy). Shadow
+  // is interactive, so the extra fetch for unchanged targets is acceptable.
+  const previewName = (t) => {
+    if (!t) return { artist: '', title: '' };
+    const artist = t.artist || t.artistName
+      || (Array.isArray(t.artists) ? t.artists.map((a) => (a && a.name) || a).filter(Boolean).join(', ') : '')
+      || '';
+    return { artist, title: t.title || t.name || t.trackTitle || '' };
+  };
   if (dryRun) {
-    const perTarget = providerTargets.map((id) => {
+    const perTarget = [];
+    for (const id of providerTargets) {
       const copy = copies.find((c) => c.id === id);
-      const have = new Set(copy ? copy.keys : []);
-      const addKeys = mergedRepr.filter((k) => !have.has(k)).length;
-      const removeKeys = (copy ? copy.keys : []).filter((k) => !mergedSet.has(k)).length;
-      return { providerId: id, addKeys, removeKeys };
-    });
+      let remote = copy && Array.isArray(copy.tracks) && copy.tracks.length ? copy.tracks : [];
+      if (!remote.length && providerById[id] && mirrorMap[id]) {
+        try {
+          const f = await providerById[id].fetchPlaylistTracks(mirrorMap[id]);
+          remote = Array.isArray(f) ? f : [];
+        } catch (e) {
+          log.warn('[nway-shadow] preview name-fetch failed', { localId, id, error: e && e.message });
+        }
+      }
+      const diff = computeMaterializeDiff(mergedTracks, remote);
+      const keyToCanonical = {};
+      diff.canonicalKeys.forEach((k, i) => { if (!(k in keyToCanonical)) keyToCanonical[k] = mergedTracks[i]; });
+      const keyToRemote = {};
+      diff.remoteKeys.forEach((k, i) => { if (!(k in keyToRemote)) keyToRemote[k] = remote[i]; });
+      perTarget.push({
+        providerId: id,
+        addKeys: diff.addKeys.length,
+        removeKeys: diff.removeKeys.length,
+        addTracks: diff.addKeys.map((k) => previewName(keyToCanonical[k])),
+        removeTracks: diff.removeKeys.map((k) => previewName(keyToRemote[k])),
+      });
+    }
     log.info('[nway-shadow]', {
       localId, status: 'would-push', mergedSize: mergedTracks.length,
-      pushTargets: providerTargets, perTarget, baselineWouldAdvanceTo: mergedTracks.length,
+      pushTargets: providerTargets,
+      perTarget: perTarget.map((p) => ({ providerId: p.providerId, addKeys: p.addKeys, removeKeys: p.removeKeys })),
+      baselineWouldAdvanceTo: mergedTracks.length,
     });
     return { status: 'would-push', localId, mergedSize: mergedTracks.length, pushTargets: providerTargets, perTarget };
   }
