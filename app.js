@@ -6699,6 +6699,25 @@ const Parachord = () => {
                 const SYNC_IPC_DELAY_MS = 250;
                 const breathe = () => new Promise(r => setTimeout(r, SYNC_IPC_DELAY_MS));
 
+                // LB circuit breaker (parachord#868). After 3 consecutive
+                // ListenBrainz write failures in this push-loop run, stop — the
+                // LB API is rate-limited or unreachable (each call already
+                // retried with backoff via lbRequest), so grinding through the
+                // rest only wastes calls. Resume next cycle. Counts LB only;
+                // resets on any LB success; other providers are unaffected.
+                let lbConsecutiveFailures = 0;
+                const noteLbOutcome = (ok) => {
+                  if (providerId !== 'listenbrainz') return false;
+                  if (ok) { lbConsecutiveFailures = 0; return false; }
+                  lbConsecutiveFailures += 1;
+                  if (lbConsecutiveFailures >= 3) {
+                    console.warn('[Sync] LB circuit breaker tripped (3 consecutive failures) — deferring to next cycle');
+                    showToast('ListenBrainz rate-limited or unreachable; will resume next sync cycle', 'warning');
+                    return true;
+                  }
+                  return false;
+                };
+
                 for (const playlist of allPlaylists) {
                   // Cancel-on-focus: drop out mid-push if the user returned
                   // (parachord#799). Anything already pushed stays; the
@@ -6823,6 +6842,7 @@ const Parachord = () => {
                     }
                     // Playlist not yet created on this provider — create it
                     console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
+                    let createOk = false;
                     try {
                       const result = await window.electron.sync.createPlaylist(
                         providerId,
@@ -6844,11 +6864,13 @@ const Parachord = () => {
                         };
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
+                        createOk = true;
                         console.log(`[Sync] Created playlist "${playlist.title}" on ${providerId}: ${result.externalId}`);
                       }
                     } catch (err) {
                       console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
                     }
+                    if (noteLbOutcome(createOk)) break;
                     await breathe();
                   } else if (playlist.locallyModified) {
                     // CHANNEL gate for the EDIT branch (parachord#911). SYNC:
@@ -6864,6 +6886,7 @@ const Parachord = () => {
                     }
                     // Playlist exists remotely and has local changes — push updates
                     console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
+                    let pushOk = false;
                     try {
                       // Resolve tracks to provider-specific URIs before pushing
                       let tracksForPush = playlist.tracks || [];
@@ -6891,11 +6914,13 @@ const Parachord = () => {
                         };
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
+                        pushOk = true;
                       } else if (pushResult?.error === 'PLAYLIST_NOT_FOUND' || pushResult?.error?.includes('404')) {
                         // Remote playlist was deleted
                         playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
+                        pushOk = true; // definitive outcome, not a rate-limit failure
                         console.warn(`[Sync] Remote playlist "${playlist.title}" was deleted on ${providerId}`);
                       }
                     } catch (err) {
@@ -6903,9 +6928,11 @@ const Parachord = () => {
                         playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
                         playlistsChanged = true;
                         modifiedPlaylistIds.add(playlist.id);
+                        pushOk = true; // remote gone — definitive, not a rate-limit failure
                       }
                       console.warn(`[Sync] Failed to push playlist "${playlist.title}" to ${providerId}:`, err.message);
                     }
+                    if (noteLbOutcome(pushOk)) break;
                     await breathe();
                   }
                 }
@@ -11355,6 +11382,26 @@ const Parachord = () => {
             const SYNC_IPC_DELAY_MS = 250;
             const breathe = () => new Promise(r => setTimeout(r, SYNC_IPC_DELAY_MS));
 
+            // LB circuit breaker (parachord#868) — lockstep with the
+            // background-sync push loop. After 3 consecutive ListenBrainz write
+            // failures this run, stop (LB rate-limited/unreachable; each call
+            // already retried with backoff). Resume next cycle. The wizard's
+            // manual sync is more user-visible, so this is the loop that most
+            // benefits from not silently grinding through failing creates while
+            // the wizard reports "complete."
+            let lbConsecutiveFailures = 0;
+            const noteLbOutcome = (ok) => {
+              if (providerId !== 'listenbrainz') return false;
+              if (ok) { lbConsecutiveFailures = 0; return false; }
+              lbConsecutiveFailures += 1;
+              if (lbConsecutiveFailures >= 3) {
+                console.warn('[Sync] LB circuit breaker tripped (3 consecutive failures) — deferring to next cycle');
+                showToast('ListenBrainz rate-limited or unreachable; will resume next sync cycle', 'warning');
+                return true;
+              }
+              return false;
+            };
+
             for (const playlist of allPlaylists) {
               // Yield to the renderer's idle scheduler before each iteration
               // so user interactions get responsive frames mid-sync. See
@@ -11442,6 +11489,7 @@ const Parachord = () => {
                 }
                 // Playlist not yet created on this provider — create it
                 console.log(`[Sync] Creating playlist "${playlist.title}" on ${providerId}`);
+                let createOk = false;
                 try {
                   const createResult = await window.electron.sync.createPlaylist(
                     providerId,
@@ -11463,10 +11511,12 @@ const Parachord = () => {
                     };
                     playlistsChanged = true;
                     modifiedPlaylistIds.add(playlist.id);
+                    createOk = true;
                   }
                 } catch (err) {
                   console.warn(`[Sync] Failed to create playlist "${playlist.title}" on ${providerId}:`, err.message);
                 }
+                if (noteLbOutcome(createOk)) break;
                 await breathe();
               } else if (playlist.locallyModified) {
                 // CHANNEL gate for the EDIT branch (parachord#911) — lockstep with
@@ -11478,6 +11528,7 @@ const Parachord = () => {
                 }
                 // Playlist exists remotely and has local changes — push updates
                 console.log(`[Sync] Pushing updates for "${playlist.title}" to ${providerId}`);
+                let pushOk = false;
                 try {
                   // Resolve tracks to provider-specific URIs before pushing
                   let tracksForPush = playlist.tracks || [];
@@ -11505,10 +11556,12 @@ const Parachord = () => {
                     };
                     playlistsChanged = true;
                     modifiedPlaylistIds.add(playlist.id);
+                    pushOk = true;
                   } else if (pushResult?.error === 'PLAYLIST_NOT_FOUND' || pushResult?.error?.includes('404')) {
                     playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
                     playlistsChanged = true;
                     modifiedPlaylistIds.add(playlist.id);
+                    pushOk = true; // definitive outcome, not a rate-limit failure
                     console.warn(`[Sync] Remote playlist "${playlist.title}" was deleted on ${providerId}`);
                   }
                 } catch (err) {
@@ -11516,9 +11569,11 @@ const Parachord = () => {
                     playlist.syncedTo[providerId].pendingAction = 'remote-deleted';
                     playlistsChanged = true;
                     modifiedPlaylistIds.add(playlist.id);
+                    pushOk = true; // remote gone — definitive, not a rate-limit failure
                   }
                   console.warn(`[Sync] Failed to push playlist "${playlist.title}" to ${providerId}:`, err.message);
                 }
+                if (noteLbOutcome(pushOk)) break;
                 await breathe();
               }
             }

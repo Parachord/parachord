@@ -37,6 +37,42 @@ function authHeaders(token) {
   };
 }
 
+const LB_MAX_RETRIES = 3;
+const lbSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Authenticated LB API request with retry-with-backoff (parachord#868). Mirrors
+// spotify.js's spotifyRequest: a 429 honors `Retry-After`; 502/503/504 and
+// network errors use exponential backoff `min(1000·2^n, 30000)`; max
+// LB_MAX_RETRIES. Returns the final Response so callers keep their own non-OK
+// handling (e.g. the 404 → remoteDeleted check in updatePlaylistTracks) — retries
+// only absorb transient blips on a single batch, never mask a real 4xx.
+async function lbRequest(endpoint, token, options = {}, _retry = 0) {
+  const url = endpoint.startsWith('http') ? endpoint : `${LB_BASE}${endpoint}`;
+  const { method = 'GET', body } = options;
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: authHeaders(token),
+      body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
+    });
+  } catch (err) {
+    if (_retry >= LB_MAX_RETRIES) throw err;
+    await lbSleep(Math.min(1000 * 2 ** _retry, 30000));
+    return lbRequest(endpoint, token, options, _retry + 1);
+  }
+  if (res.status === 429 && _retry < LB_MAX_RETRIES) {
+    const ra = parseInt(res.headers.get('Retry-After') || '5', 10);
+    await lbSleep((Number.isFinite(ra) ? ra : 5) * 1000);
+    return lbRequest(endpoint, token, options, _retry + 1);
+  }
+  if ([502, 503, 504].includes(res.status) && _retry < LB_MAX_RETRIES) {
+    await lbSleep(Math.min(1000 * 2 ** _retry, 30000));
+    return lbRequest(endpoint, token, options, _retry + 1);
+  }
+  return res;
+}
+
 // Per-token cache of the LB username so a single sync run (which makes N
 // playlist-create + N playlist-update calls) doesn't fire 2N /1/validate-token
 // GETs in quick succession. Without this cache, syncing 142 playlists meant
@@ -56,7 +92,7 @@ async function getUserName(token) {
   const tokenPreview = token ? `${String(token).slice(0, 8)}...(len=${String(token).length})` : 'NULL/EMPTY';
   let res;
   try {
-    res = await fetch(`${LB_BASE}/1/validate-token`, { headers: authHeaders(token) });
+    res = await lbRequest('/1/validate-token', token);
   } catch (err) {
     console.warn(`[LB] validate-token fetch threw for token ${tokenPreview}:`, err && err.message ? err.message : err);
     throw err;
@@ -194,9 +230,7 @@ async function fetchPlaylists(token, _onProgress, _refreshToken) {
   return { playlists };
 }
 async function fetchPlaylistTracks(playlistMbid, token, _onProgress, _refreshToken) {
-  const res = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
-    headers: authHeaders(token),
-  });
+  const res = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}`, token);
   if (!res.ok) throw new Error(`LB fetchPlaylistTracks returned ${res.status}`);
   const data = await res.json();
   const tracks = Array.isArray(data?.playlist?.track) ? data.playlist.track : [];
@@ -246,11 +280,7 @@ async function createPlaylist(name, description, token) {
       track: [],
     },
   };
-  const res = await fetch(`${LB_BASE}/1/playlist/create`, {
-    method: 'POST',
-    headers: authHeaders(token),
-    body: JSON.stringify(body),
-  });
+  const res = await lbRequest('/1/playlist/create', token, { method: 'POST', body });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`LB createPlaylist returned ${res.status}: ${text.slice(0, 200)}`);
@@ -294,9 +324,7 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
   let remoteSnapshotDate = null;
   let remoteTracks = [];
   let currentLen = 0;
-  const cur = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
-    headers: authHeaders(token),
-  });
+  const cur = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}`, token);
   if (cur.status === 404) {
     return { snapshotId: null, unresolvedTracks, remoteDeleted: true };
   }
@@ -404,10 +432,9 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
 
   // ── Step 4: Clear remote (same pattern as the rest of the file) ───
   if (currentLen > 0) {
-    const delRes = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/item/delete`, {
+    const delRes = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}/item/delete`, token, {
       method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({ index: 0, count: currentLen }),
+      body: { index: 0, count: currentLen },
     });
     if (!delRes.ok) {
       const text = await delRes.text().catch(() => '');
@@ -419,10 +446,9 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
   const BATCH = 100;
   for (let i = 0; i < resolvedTracks.length; i += BATCH) {
     const batch = resolvedTracks.slice(i, i + BATCH);
-    const addRes = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/item/add`, {
+    const addRes = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}/item/add`, token, {
       method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({ playlist: { track: batch } }),
+      body: { playlist: { track: batch } },
     });
     if (!addRes.ok) {
       const text = await addRes.text().catch(() => '');
@@ -433,9 +459,7 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
   // ── Step 6: Re-fetch fresh snapshot anchor ─────────────────────────
   let newSnapshotId = null;
   try {
-    const cur = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
-      headers: authHeaders(token),
-    });
+    const cur = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}`, token);
     if (cur.ok) {
       const data = await cur.json();
       newSnapshotId = data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.last_modified_at
@@ -453,11 +477,7 @@ async function updatePlaylistDetails(playlistMbid, details, token) {
       annotation: details?.description ?? '',
     },
   };
-  const res = await fetch(`${LB_BASE}/1/playlist/edit/${encodeURIComponent(playlistMbid)}`, {
-    method: 'POST',
-    headers: authHeaders(token),
-    body: JSON.stringify(body),
-  });
+  const res = await lbRequest(`/1/playlist/edit/${encodeURIComponent(playlistMbid)}`, token, { method: 'POST', body });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     // Don't throw — see CLAUDE.md "Apple Music fallback behavior" rationale.
@@ -469,10 +489,7 @@ async function updatePlaylistDetails(playlistMbid, details, token) {
   return { success: true };
 }
 async function deletePlaylist(playlistMbid, token) {
-  const res = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/delete`, {
-    method: 'POST',
-    headers: authHeaders(token),
-  });
+  const res = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}/delete`, token, { method: 'POST' });
   if (!res.ok) {
     return { success: false, reason: `status-${res.status}` };
   }
@@ -507,10 +524,9 @@ async function removePlaylistTracksByPosition(playlistMbid, positions, token) {
     .filter((p) => Number.isInteger(p) && p >= 0)
     .sort((a, b) => b - a); // descending — delete from the back forward
   for (const index of sorted) {
-    const res = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}/item/delete`, {
+    const res = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}/item/delete`, token, {
       method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({ index, count: 1 }),
+      body: { index, count: 1 },
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -520,9 +536,7 @@ async function removePlaylistTracksByPosition(playlistMbid, positions, token) {
   // Re-fetch the fresh snapshot anchor (same pattern as updatePlaylistTracks).
   let snapshotId = null;
   try {
-    const cur = await fetch(`${LB_BASE}/1/playlist/${encodeURIComponent(playlistMbid)}`, {
-      headers: authHeaders(token),
-    });
+    const cur = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}`, token);
     if (cur.ok) {
       const data = await cur.json();
       snapshotId =
@@ -541,7 +555,7 @@ async function removePlaylistTracksByPosition(playlistMbid, positions, token) {
 async function checkAuth(token) {
   if (!token) return false;
   try {
-    const res = await fetch(`${LB_BASE}/1/validate-token`, { headers: authHeaders(token) });
+    const res = await lbRequest('/1/validate-token', token);
     if (!res.ok) return false;
     const data = await res.json();
     return !!data?.valid;
@@ -569,6 +583,7 @@ async function resolveTracks(tracks, token) {
 
 module.exports = {
   resolveTracks,
+  lbRequest, // exported for retry-behavior tests (parachord#868)
   id: 'listenbrainz',
   // Sibling providers (spotify.js, applemusic.js) export `displayName`, and
   // main.js's sync-provider listing reads `p.displayName` (main.js:5756).
