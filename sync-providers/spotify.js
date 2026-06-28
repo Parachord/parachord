@@ -5,6 +5,8 @@
 
 const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
 
+const { pickConfidentMatch } = require('./confidence-scoring');
+
 /**
  * Normalize a string for ID generation (lowercase, remove special chars)
  */
@@ -838,16 +840,22 @@ const SpotifySyncProvider = {
         );
 
         const items = result.tracks?.items || [];
-        // Find best match — exact title + artist match (case-insensitive)
-        const match = items.find(item =>
-          item.name.toLowerCase() === track.title.toLowerCase() &&
-          item.artists.some(a => a.name.toLowerCase() === track.artist.toLowerCase())
-        ) || items[0]; // Fall back to top result
+        // Confidence-gated match (parachord#911 D-Legacy-1). The legacy
+        // `... || items[0]` minted the top search hit's URI with no floor when
+        // no exact match existed — writing a wrong-song URI (e.g. "Intro" by
+        // The xx → "Intro" by Alt-J) that then stuck fleet-wide via provider-ID
+        // equality. Route every candidate through the same scoreConfidence gate
+        // mobile uses (≥ MIN_CONFIDENCE_THRESHOLD); drop on sub-floor.
+        const candidates = items.map(item => ({
+          title: item.name,
+          artist: (item.artists || []).map(a => a.name).join(', '),
+        }));
+        const picked = pickConfidentMatch(track, candidates);
 
-        if (match) {
+        if (picked) {
           resolved.push({
             ...track,
-            spotifyUri: match.uri
+            spotifyUri: items[picked.index].uri
           });
         } else {
           unresolved.push({ artist: track.artist, title: track.title });
