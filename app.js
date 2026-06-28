@@ -6780,6 +6780,10 @@ const Parachord = () => {
                         && (providerId === 'spotify' || providerId === 'applemusic')
                       ) {
                         continue;
+                      } else if (playlist.id?.startsWith('hosted-') && providerId === 'listenbrainz') {
+                        // Hosted XSPF → LB is opt-in (read-only mirror, no MBIDs →
+                        // empty create). SYNC: playlist-push-candidate.js channelGateBlocksCreate.
+                        continue;
                       }
                     }
                     // LB-specific opt-in. Without this gate, enabling LB sync
@@ -11335,6 +11339,10 @@ const Parachord = () => {
                     playlist.id?.startsWith('listenbrainz-')
                     && (providerId === 'spotify' || providerId === 'applemusic')
                   ) {
+                    channelBlocked = true;
+                  } else if (playlist.id?.startsWith('hosted-') && providerId === 'listenbrainz') {
+                    // Hosted XSPF → LB is opt-in (read-only mirror, no MBIDs →
+                    // empty create). SYNC: playlist-push-candidate.js channelGateBlocksCreate.
                     channelBlocked = true;
                   }
                 }

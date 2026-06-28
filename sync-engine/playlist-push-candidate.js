@@ -130,6 +130,12 @@ function computeSyncChannels(playlist, { enabledProviders = [], override = null,
  */
 function channelGateBlocksCreate(playlist, providerId, channelOverride) {
   if (Array.isArray(channelOverride)) return !channelOverride.includes(providerId);
+  // A hosted-XSPF playlist is read-only external content mirrored from a URL. It
+  // auto-mirrors to streaming, but NOT to ListenBrainz by default: LB needs a
+  // recording MBID per track, which hosted-XSPF tracks rarely carry, so the
+  // create lands EMPTY — and the user never asked for it (parachord#937 sibling).
+  // Require explicit opt-in (a channel override that includes listenbrainz).
+  if (playlistId(playlist).startsWith('hosted-') && providerId === 'listenbrainz') return true;
   return isReexportOptInRequired(playlist, providerId);
 }
 

@@ -550,7 +550,25 @@ async function checkAuth(token) {
   }
 }
 
+// Pre-resolve tracks to recording MBIDs so the create gateway can refuse to
+// create an EMPTY remote when nothing resolves (a hosted XSPF whose tracks lack
+// MBIDs would otherwise leave a 0-track LB playlist behind). Mirrors the
+// `{ resolved, unresolved }` contract spotify/applemusic expose. The resolved
+// tracks carry their `mbid`, so updatePlaylistTracks's own resolveTrackMbid
+// returns it immediately (no second mapper round-trip).
+async function resolveTracks(tracks, token) {
+  const resolved = [];
+  const unresolved = [];
+  for (const t of tracks || []) {
+    const mbid = await resolveTrackMbid(t);
+    if (mbid) resolved.push({ ...t, mbid });
+    else unresolved.push({ artist: t.artist, title: t.title, album: t.album });
+  }
+  return { resolved, unresolved };
+}
+
 module.exports = {
+  resolveTracks,
   id: 'listenbrainz',
   // Sibling providers (spotify.js, applemusic.js) export `displayName`, and
   // main.js's sync-provider listing reads `p.displayName` (main.js:5756).
