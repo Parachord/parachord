@@ -5688,11 +5688,15 @@ function nwayMirrorsOf(playlist) {
   return m;
 }
 
-async function runNwayShadowReconcile() {
-  if (!isNwayShadowEnabled()) return { skipped: 'shadow-disabled' };
+async function runNwayShadowReconcile(options = {}) {
+  // `force` bypasses the nway_shadow_enabled dev gate (the migration preview runs
+  // a reconcile on demand without requiring the dev flag); `forceDryRun` pins it
+  // to compute-only regardless of nway_propagate (the preview NEVER writes).
+  const { force = false, forceDryRun = false } = options;
+  if (!force && !isNwayShadowEnabled()) return { skipped: 'shadow-disabled' };
   const { bindProviderToken, makeStoreEffects, runNwayReconcileCycle, createHydrationCache } =
     require('./sync-engine/nway-reconcile-driver');
-  const dryRun = !isNwayPropagateEnabled();
+  const dryRun = forceDryRun ? true : !isNwayPropagateEnabled();
   const now = Date.now();
   const states = getSyncStates();
   const playlists = store.get('local_playlists') || [];
@@ -5790,11 +5794,27 @@ async function runNwayShadowReconcile() {
     try { store.set('nway_hydration_cache', Object.fromEntries(cache.entries())); } catch {}
   }
   console.log(`[nway-shadow] cycle done (dryRun=${dryRun}): ${out.results.length} planned across ${out.cycles}, ${out.errors.length} error(s)`);
-  return { dryRun, ...out };
+  // Enrich each result with the playlist's display name so the migration preview
+  // (#911) can render a human diff without a second lookup. The reconcile core is
+  // store-agnostic and only knows localId; the name lives on the playlist object.
+  const results = (out.results || []).map((r) => {
+    const pl = r && r.localId ? playlistById.get(r.localId) : null;
+    return { ...r, displayName: (pl && (pl.title || pl.name)) || (r && r.localId) || 'Playlist' };
+  });
+  return { dryRun, ...out, results };
 }
 
 ipcMain.handle('nway:shadow-run', async () => {
   try { return await runNwayShadowReconcile(); }
+  catch (e) { return { error: e && e.message }; }
+});
+
+// Migration preview (#911): a forced, compute-only reconcile that returns the
+// named per-target diff regardless of the dev flags. Never writes. The "Use new
+// sync" toggle calls this, renders the diff, and only on Accept flips
+// sync_engine_mode to 'new'.
+ipcMain.handle('nway:preview', async () => {
+  try { return await runNwayShadowReconcile({ force: true, forceDryRun: true }); }
   catch (e) { return { error: e && e.message }; }
 });
 
