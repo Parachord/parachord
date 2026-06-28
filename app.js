@@ -6658,7 +6658,14 @@ const Parachord = () => {
               // Guard with per-provider mutex to prevent concurrent creation
               // across background + manual sync paths for the same provider.
               // A different provider's in-flight push doesn't gate this one.
-              if (playlistSyncInProgressRef.current.has(providerId)) {
+              // N-way mutual exclusion (parachord#911): in 'new' mode N-way owns
+              // playlist sync, so the legacy push loop stands down. main.js's
+              // create/push IPC handlers also gate this as the authoritative
+              // chokepoint; skipping here avoids the wasted resolution work.
+              const engineMode = await window.electron.store.get('sync_engine_mode');
+              if (engineMode === 'new') {
+                console.log(`[Sync] sync_engine_mode=new — N-way owns playlists; skipping legacy playlist push for ${providerId}`);
+              } else if (playlistSyncInProgressRef.current.has(providerId)) {
                 console.log(`[Sync] Playlist sync already in progress for ${providerId}, skipping background playlist sync`);
               } else {
               playlistSyncInProgressRef.current.add(providerId);
@@ -11249,7 +11256,12 @@ const Parachord = () => {
         // Guard with per-provider mutex (parachord#831). Concurrent push for
         // the SAME (local, provider) pair from the background sync loop is
         // the race; different providers don't race with each other.
-        if (playlistSyncInProgressRef.current.has(providerId)) {
+        // N-way mutual exclusion (parachord#911): stand down the legacy
+        // post-wizard create loop in 'new' mode (see the background loop above).
+        const engineMode = await window.electron.store.get('sync_engine_mode');
+        if (engineMode === 'new') {
+          console.log(`[Sync] sync_engine_mode=new — N-way owns playlists; skipping legacy playlist create for ${providerId}`);
+        } else if (playlistSyncInProgressRef.current.has(providerId)) {
           console.log(`[Sync] Playlist sync already in progress for ${providerId}, skipping manual playlist creation`);
         } else {
           playlistSyncInProgressRef.current.add(providerId);

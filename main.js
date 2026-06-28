@@ -5613,6 +5613,19 @@ ipcMain.handle('sync:set-channel', async (event, localPlaylistId, providerId, en
 function isNwayShadowEnabled() { return store.get('nway_shadow_enabled') === true; }
 function isNwayPropagateEnabled() { return store.get('nway_propagate') === true; }
 
+// Per-client sync-engine mode (parachord#911 migration). `legacyPlaylistSyncEnabled`
+// is false ONLY in 'new' mode, where N-way owns playlist sync and the legacy
+// playlist push/create/import paths must stand down. Library/collection sync is
+// never gated here. require() is cached, so the lazy require is cheap.
+function getSyncEngineMode() {
+  const { normalizeEngineMode } = require('./sync-engine/sync-engine-mode');
+  return normalizeEngineMode(store.get('sync_engine_mode'));
+}
+function legacyPlaylistSyncEnabled() {
+  const { legacyPlaylistSyncEnabled: fn } = require('./sync-engine/sync-engine-mode');
+  return fn(store.get('sync_engine_mode'));
+}
+
 // Per-playlist MIRROR-ONLY flag (parachord#911 / parachord-mobile#277). When
 // set, the playlist is reconciled as a ONE-WAY mirror FROM its source: the
 // source is single-authority and its rotate-out drops IMMEDIATELY (no
@@ -7158,8 +7171,16 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
     // (e.g. Android) auto-appears here. Spotify/Apple Music keep the opt-IN model
     // (only playlists in selectedPlaylistIds). Suppression + an explicit channel
     // override still exclude individual playlists on every provider.
+    // N-way mutual exclusion (parachord#911): in 'new' mode the N-way reconcile
+    // owns inbound playlist import (via its pull-source path), so the legacy
+    // inbound playlist phase stands down. Library sync (tracks/albums/artists)
+    // above is unaffected — N-way is playlist-only.
+    const legacyPlaylists = legacyPlaylistSyncEnabled();
+    if (!legacyPlaylists) {
+      console.log('[Sync] sync_engine_mode=new — N-way owns playlists; skipping legacy inbound playlist sync');
+    }
     const importAll = providerId === 'listenbrainz';
-    if (settings.syncPlaylists && (importAll || settings.selectedPlaylistIds?.length > 0) && provider.capabilities.playlists) {
+    if (legacyPlaylists && settings.syncPlaylists && (importAll || settings.selectedPlaylistIds?.length > 0) && provider.capabilities.playlists) {
       // Load current playlists
       const currentPlaylists = store.get('local_playlists') || [];
 
@@ -7744,6 +7765,14 @@ ipcMain.handle('sync:fetch-playlist-tracks', async (event, providerId, playlistE
 
 // Push local playlist changes to the sync provider
 ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalId, tracks, metadata) => {
+  // N-way mutual exclusion (parachord#911). In 'new' mode the N-way reconcile
+  // owns all remote playlist writes; the legacy push path must not also write,
+  // or the two engines fight over the shared remote. This is the authoritative
+  // chokepoint (every legacy remote playlist write flows through here) — the
+  // renderer push loops also skip earlier, but this catches any other caller.
+  if (!legacyPlaylistSyncEnabled()) {
+    return { success: true, skipped: 'nway-active' };
+  }
   const provider = SyncEngine.getProvider(providerId);
   if (!provider || !provider.capabilities.playlists) {
     return { success: false, error: 'Provider does not support playlists' };
@@ -7880,6 +7909,12 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
 
   // Create a new playlist on a remote service from a local playlist
   ipcMain.handle('sync:create-playlist', async (event, providerId, name, description, tracks, localPlaylistId = null) => {
+    // N-way mutual exclusion (parachord#911). In 'new' mode N-way owns remote
+    // playlist creation; the legacy create gateway stands down so the two
+    // engines don't both create remotes for the same local playlist.
+    if (!legacyPlaylistSyncEnabled()) {
+      return { success: true, skipped: 'nway-active' };
+    }
     const provider = SyncEngine.getProvider(providerId);
     if (!provider || !provider.capabilities.playlists) {
       return { success: false, error: 'Provider does not support playlists' };
