@@ -114,6 +114,18 @@
       "_note": "The MBID-merged multi-ISRC component is ONE; an unrelated third ISRC is a second → cIsrc=2 → don't bridge across.",
       "lists": [[{ "isrc": "XXAAA0000001", "mbid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "norm": "a|b" }, { "isrc": "XXBBB0000002", "mbid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "norm": "a|b" }, { "isrc": "XXCCC0000003", "norm": "a|b" }]],
       "expected": [["isrc-XXAAA0000001", "isrc-XXAAA0000001", "isrc-XXCCC0000003"]]
+    },
+    {
+      "name": "guard_v12_mbid_bridged_node_is_not_a_weak_norm_bridge",
+      "_note": "Pins reading (C): the weak set + the ISRC-component count are COMPONENT-level and GLOBAL. #1 is mbid-only (node-ISRC-free) but its component carries ISRC AAA via the shared MBID (from #0 in a DIFFERENT norm group 'a|one'), so #1 must NOT bridge the pure-norm #3 into a conflicting ISRC. Reading (B) gives #3 -> isrc-AAA (wrong); (C) keeps #3 norm-only. cIsrc=2 in group 'a|two' (compAAA via #1, compBBB via #2).",
+      "lists": [[{ "isrc": "XXAAA0000001", "mbid": "m-shared", "norm": "a|one" }, { "mbid": "m-shared", "norm": "a|two" }, { "isrc": "XXBBB0000002", "norm": "a|two" }, { "norm": "a|two" }]],
+      "expected": [["isrc-XXAAA0000001", "isrc-XXAAA0000001", "isrc-XXBBB0000002", "norm-a|two"]]
+    },
+    {
+      "name": "guard_v13_mbid_only_node_joins_weak_set_under_conflict",
+      "_note": "Rules out reading (A): an mbid-only node NOT bridged to any ISRC is still weak and unions with the pure-norm node (repr = its mbid). (A) would leave it a mbid- singleton.",
+      "lists": [[{ "isrc": "XXAAA0000001", "norm": "a|b" }, { "isrc": "XXBBB0000002", "norm": "a|b" }, { "mbid": "m-weak", "norm": "a|b" }, { "norm": "a|b" }]],
+      "expected": [["isrc-XXAAA0000001", "isrc-XXBBB0000002", "mbid-m-weak", "mbid-m-weak"]]
     }
   ]
 }
