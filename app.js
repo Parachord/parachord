@@ -63253,6 +63253,15 @@ useEffect(() => {
                 React.createElement('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.45' } }, pp.reason === 'total-wipe' ? "New sync declined a full-replace it couldn't verify, and left it untouched. Your tracks are safe." : 'New sync skipped an unverifiable change and left it untouched.')
               ));
             });
+            // Cross-device nudge (parachord#946, parity with mobile). `sync_engine_mode`
+            // is per-client with no account-level coordinator, so flipping one device
+            // but not the others leaves the user in mixed mode on shared remotes until
+            // all match. Shown in every summary case (changes, no-changes, protected),
+            // before Accept.
+            rows.push(React.createElement('div', { key: 'xdevice', style: { marginTop: '8px', padding: '9px 11px', borderRadius: '8px', backgroundColor: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.25)' } },
+              React.createElement('span', { style: { fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.45' } },
+                'Using Parachord on another device (mobile, etc.)? Switch it to new sync too — running the old and new engines on the same playlists can churn them until all your devices match.')
+            ));
             return React.createElement('div', { style: { paddingBottom: '8px' } }, ...rows);
           })()
         ),
