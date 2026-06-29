@@ -19,6 +19,20 @@ function isReadOnlyFollower(pl) {
   return !(pl.syncedFrom && pl.syncedFrom.isCollaborator === true);
 }
 
+// A NON-OWNED import: any imported playlist whose owner ≠ the current user —
+// followed (read-only) OR collaborative. `source` ends `-import` exactly when
+// the remote's `isOwnedByUser === false` (main.js sets `${provider}-sync` for
+// owned, `${provider}-import` otherwise). Used for re-import-DUPLICATE detection
+// (parachord#950): a SEPARATE re-import of a *collaborative* playlist's mirror is
+// just as much a dupe as one of a followed playlist's — both produce an owned
+// streaming copy that shadows someone else's original. (isReadOnlyFollower stays
+// for cases that genuinely must exclude collaborators.)
+function isNonOwnedImport(pl) {
+  if (!pl) return false;
+  const src = typeof pl.source === 'string' ? pl.source : '';
+  return src.endsWith('-import');
+}
+
 // The ListenBrainz external id a local row represents, if it's LB-origin.
 function lbExternalIdOf(pl) {
   if (pl && pl.syncedFrom && pl.syncedFrom.resolver === 'listenbrainz' && pl.syncedFrom.externalId) {
@@ -33,10 +47,13 @@ function lbExternalIdOf(pl) {
 function findReimportDuplicates(localPlaylists) {
   const playlists = Array.isArray(localPlaylists) ? localPlaylists : [];
 
-  // E -> followerLocalId, from each read-only follower's LB mirror link.
+  // E -> ownerLocalId, from each NON-OWNED import's LB mirror link — followed
+  // AND collaborative (parachord#950: a separate re-import of a collaborative
+  // playlist's mirror is equally a dupe; the legacy read-only-only scan let the
+  // collaborative owned-copy dupes through).
   const followerLbMirror = new Map();
   for (const pl of playlists) {
-    if (!isReadOnlyFollower(pl)) continue;
+    if (!isNonOwnedImport(pl)) continue;
     const e = pl.syncedTo && pl.syncedTo.listenbrainz && pl.syncedTo.listenbrainz.externalId;
     if (e) followerLbMirror.set(e, pl.id);
   }
@@ -70,4 +87,4 @@ function findReimportDuplicates(localPlaylists) {
   return { dupes, reexportCount: dupes.reduce((n, d) => n + d.reexports.length, 0) };
 }
 
-module.exports = { isReadOnlyFollower, lbExternalIdOf, findReimportDuplicates };
+module.exports = { isReadOnlyFollower, isNonOwnedImport, lbExternalIdOf, findReimportDuplicates };

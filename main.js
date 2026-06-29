@@ -5486,6 +5486,7 @@ const {
   channelGateBlocksCreate,
   channelOverrideExcludes,
   computeSyncChannels,
+  findNonOwnedSourceConflict,
 } = require('./sync-engine/playlist-push-candidate');
 
 const SYNC_PROVIDER_DISPLAY = { spotify: 'Spotify', applemusic: 'Apple Music', listenbrainz: 'ListenBrainz' };
@@ -8152,6 +8153,24 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
           matches.sort((a, b) => (b.trackCount || 0) - (a.trackCount || 0));
           return await linkToExisting(matches[0], matches.length > 1 ? `name-match (${matches.length} candidates)` : 'name-match');
         }
+      }
+
+      // -----------------------------------------------------------------
+      // Step 0c: Non-owned source guard (parachord#950).
+      //
+      // Never create an OWNED copy of a playlist the user doesn't own. A
+      // provider-imported MIRROR row re-exporting to a provider where a
+      // FOLLOWED / COLLABORATIVE playlist (isOwnedByUser === false) of the same
+      // name already lives is re-exporting someone else's playlist — the owned
+      // duplicate the user keeps deleting, which reappears because the non-owned
+      // original is permanent (so this also stops the re-creation, no tombstone
+      // needed). Only reached on NO owned name-match above, so a playlist the
+      // user owns is still reused.
+      // -----------------------------------------------------------------
+      const nonOwnedConflict = findNonOwnedSourceConflict(localPlaylistId, name, remote);
+      if (nonOwnedConflict) {
+        console.warn(`[Sync] Not creating "${name}" on ${providerId}: a followed/collaborative playlist of that name already exists (owner ${nonOwnedConflict.ownerId || nonOwnedConflict.ownerName || '?'}) — won't re-export someone else's playlist as an owned copy (parachord#950)`);
+        return { success: false, error: 'non-owned-source', skipped: 'non-owned-source' };
       }
 
       // -----------------------------------------------------------------

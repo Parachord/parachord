@@ -4,7 +4,7 @@
  * mirror itself. The destructive apply lives in main.js.
  */
 
-const { findReimportDuplicates, isReadOnlyFollower } = require('../../sync-engine/follower-cleanup');
+const { findReimportDuplicates, isReadOnlyFollower, isNonOwnedImport } = require('../../sync-engine/follower-cleanup');
 
 // A followed Spotify playlist that legitimately mirrors out to LB copy E.
 const follower = (lbExt) => ({
@@ -58,21 +58,30 @@ describe('findReimportDuplicates', () => {
     expect(r.dupes[0].reexports).toEqual([]);
   });
 
-  test('a collaborator follower is not a read-only follower → its mirror is not a basis for dupes', () => {
+  test('a COLLABORATIVE playlist re-import IS a dupe too (parachord#950 — collaborators were wrongly let through)', () => {
     const collab = {
       id: 'spotify-c', title: 'Shared', source: 'spotify-import',
       syncedFrom: { resolver: 'spotify', externalId: 'c', isCollaborator: true },
       syncedTo: { listenbrainz: { externalId: 'E' } },
     };
-    const r = findReimportDuplicates([collab, reimport('E', { spotify: { externalId: 'x' } })]);
-    expect(r.dupes).toHaveLength(0);
+    const r = findReimportDuplicates([collab, reimport('E', { spotify: { externalId: 'sp-dup' } })]);
+    expect(r.dupes).toHaveLength(1);
+    expect(r.dupes[0].localId).toBe('listenbrainz-E');
+    expect(r.dupes[0].followerId).toBe('spotify-c');
+    expect(r.dupes[0].reexports).toEqual([{ providerId: 'spotify', externalId: 'sp-dup' }]);
   });
 
-  test('isReadOnlyFollower basics', () => {
+  test('isReadOnlyFollower / isNonOwnedImport basics', () => {
+    // isReadOnlyFollower keeps its narrow meaning (excludes collaborators)…
     expect(isReadOnlyFollower({ source: 'spotify-import' })).toBe(true);
     expect(isReadOnlyFollower({ source: 'spotify-sync' })).toBe(false);
     expect(isReadOnlyFollower({ source: 'listenbrainz-import', syncedFrom: { isCollaborator: true } })).toBe(false);
     expect(isReadOnlyFollower(null)).toBe(false);
+    // …isNonOwnedImport is the broader gate the dupe scan uses (followed OR collaborative).
+    expect(isNonOwnedImport({ source: 'spotify-import' })).toBe(true);
+    expect(isNonOwnedImport({ source: 'spotify-import', syncedFrom: { isCollaborator: true } })).toBe(true);
+    expect(isNonOwnedImport({ source: 'spotify-sync' })).toBe(false);
+    expect(isNonOwnedImport(null)).toBe(false);
   });
 
   test('empty / malformed input is safe', () => {
