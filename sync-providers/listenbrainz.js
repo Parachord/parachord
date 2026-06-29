@@ -112,29 +112,41 @@ async function getUserName(token) {
 }
 
 // Resolve a single track to a recording MBID. Tries (1) track.mbid, (2)
-// MBID Mapper. Returns the MBID or null. The mapper is fast (~4ms) and
-// the result is opportunistically cached by callers via the existing
-// `cache_mbid_mapper` electron-store key — but here in main-process
-// sync-provider code we just hit the mapper directly each time. The
-// renderer-side enrichment loop populates the cache for the next pass.
-async function resolveTrackMbid(track) {
+// MBID Mapper. Returns the MBID or null.
+//
+// `hydration` (optional, parachord#953) is the flood guard built by main.js:
+// `{ resolve(track) → { skip, mbid }, record(track, mbid) }`. It short-circuits
+// the live mapper call when the track is already resolved/cooled-down in the
+// persistent negative cache OR the per-cycle budget is spent, and records each
+// live attempt so an un-findable track isn't re-queried every sync. Absent (no
+// arg) → direct lookup every time (legacy behavior, e.g. ad-hoc callers).
+async function resolveTrackMbid(track, hydration) {
   if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return track.mbid;
   if (!track?.artist || !track?.title) return null;
+  if (hydration) {
+    const decision = hydration.resolve(track);
+    // skip = use the cached id (resolved) or give up this cycle (cooldown / over
+    // budget); a fresh / cooldown-expired track returns skip:false to look up live.
+    if (decision && decision.skip) return decision.mbid || null;
+  }
+  let resolved = null;
   try {
     const url = new URL('https://mapper.listenbrainz.org/mapping/lookup');
     url.searchParams.set('artist_credit_name', track.artist);
     url.searchParams.set('recording_name', track.title);
     if (track.album) url.searchParams.set('release_name', track.album);
     const res = await fetch(url.toString());
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data?.recording_mbid && typeof data.confidence === 'number' && data.confidence >= 0.7) {
-      return data.recording_mbid;
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.recording_mbid && typeof data.confidence === 'number' && data.confidence >= 0.7) {
+        resolved = data.recording_mbid;
+      }
     }
-    return null;
   } catch {
-    return null;
+    resolved = null;
   }
+  if (hydration) hydration.record(track, resolved);
+  return resolved;
 }
 
 // ── Stubs for now; filled in by Tasks 7–11 ──
@@ -297,10 +309,13 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
   const { knownSnapshotId, mergeWithRemote = false } = opts;
 
   // ── Step 1: Resolve all incoming tracks to MBIDs ───────────────────
+  // opts.hydration (parachord#953) bounds the per-cycle mapper lookups + skips
+  // cooled-down misses; absent → resolve every track live (legacy behavior).
+  const hydration = opts && opts.hydration;
   const resolvedTracks = [];
   const unresolvedTracks = [];
   for (const t of tracks || []) {
-    const mbid = await resolveTrackMbid(t);
+    const mbid = await resolveTrackMbid(t, hydration);
     if (mbid) {
       resolvedTracks.push({
         identifier: [`https://musicbrainz.org/recording/${mbid}`],
@@ -311,6 +326,7 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
       unresolvedTracks.push({ artist: t.artist, title: t.title, album: t.album });
     }
   }
+  if (hydration && hydration.flush) hydration.flush();
 
   // ── Step 2: Fetch current remote (for both clear count AND merge) ──
   //
@@ -570,14 +586,16 @@ async function checkAuth(token) {
 // `{ resolved, unresolved }` contract spotify/applemusic expose. The resolved
 // tracks carry their `mbid`, so updatePlaylistTracks's own resolveTrackMbid
 // returns it immediately (no second mapper round-trip).
-async function resolveTracks(tracks, token) {
+async function resolveTracks(tracks, token, opts = {}) {
+  const hydration = opts && opts.hydration;
   const resolved = [];
   const unresolved = [];
   for (const t of tracks || []) {
-    const mbid = await resolveTrackMbid(t);
+    const mbid = await resolveTrackMbid(t, hydration);
     if (mbid) resolved.push({ ...t, mbid });
     else unresolved.push({ artist: t.artist, title: t.title, album: t.album });
   }
+  if (hydration && hydration.flush) hydration.flush();
   return { resolved, unresolved };
 }
 
