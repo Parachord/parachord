@@ -155,6 +155,44 @@ function channelOverrideExcludes(channelOverride, providerId) {
   return Array.isArray(channelOverride) && !channelOverride.includes(providerId);
 }
 
+/**
+ * parachord#950 — the create gateway must NEVER create an OWNED copy of a
+ * playlist the user doesn't own. A provider-imported MIRROR row
+ * (`spotify-`/`applemusic-`/`listenbrainz-<id>`) re-exporting to a provider
+ * where a FOLLOWED or COLLABORATIVE playlist (`isOwnedByUser === false`, i.e.
+ * owner ≠ current user) of the same name already lives is re-exporting someone
+ * else's playlist as an owned copy — the duplicate the user keeps deleting,
+ * which reappears because the non-owned original is permanent.
+ *
+ * Returns the conflicting non-owned remote (so the caller can log its owner)
+ * when the create should be SKIPPED, else null. Only fires when:
+ *   - the local row is a provider-imported mirror (NOT a user-origin
+ *     `local-`/`playlist-`/`hosted-`/`ai-chat-` row — those are the user's own
+ *     content and may legitimately share a name with a followed playlist), AND
+ *   - a non-owned same-name remote exists. (The caller runs its OWNED name-match
+ *     first and links to an owned same-name remote before reaching this, so a
+ *     playlist the user genuinely owns is reused, not skipped.)
+ * Used at the `sync:create-playlist` chokepoint (defense-in-depth with the #941
+ * import-match + #937 cleanup).
+ *
+ * @param {string|null|undefined} localPlaylistId
+ * @param {string} name
+ * @param {Array<{name?:string, isOwnedByUser?:boolean, ownerId?:string, ownerName?:string, externalId?:string}>} remotePlaylists
+ * @returns {object|null}
+ */
+function findNonOwnedSourceConflict(localPlaylistId, name, remotePlaylists) {
+  const id = typeof localPlaylistId === 'string' ? localPlaylistId : '';
+  if (!/^(spotify|applemusic|listenbrainz)-/.test(id)) return null;
+  const normalized = (name || '').trim().toLowerCase();
+  if (!normalized) return null;
+  const remotes = Array.isArray(remotePlaylists) ? remotePlaylists : [];
+  return (
+    remotes.find(
+      (p) => p && p.isOwnedByUser === false && (p.name || '').trim().toLowerCase() === normalized
+    ) || null
+  );
+}
+
 module.exports = {
   REEXPORT_PROVIDERS,
   SYNC_CHANNEL_PROVIDERS,
@@ -164,4 +202,5 @@ module.exports = {
   computeSyncChannels,
   channelGateBlocksCreate,
   channelOverrideExcludes,
+  findNonOwnedSourceConflict,
 };
