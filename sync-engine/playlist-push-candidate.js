@@ -193,6 +193,35 @@ function findNonOwnedSourceConflict(localPlaylistId, name, remotePlaylists) {
   );
 }
 
+/**
+ * Per-copy writability for the N-way reconcile (parachord#911 per-copy-writable
+ * contract). The reconcile gates the imported SOURCE copy on `playlist.writable`
+ * (A3) and only writable copies become push targets (A9), so this decides whether
+ * edits ROUND-TRIP back to the source playlist or the source is mirror-only.
+ *
+ * Rules:
+ *   - OWNED playlist (`source` not `-import`) → writable.
+ *   - COLLABORATIVE import (`-import` AND `syncedFrom.isCollaborator === true`) →
+ *     writable: a collaborator can write back to the original (e.g. edits to a
+ *     playlist owned by someone else who made you a collaborator round-trip to
+ *     THEIR playlist, not a new owned copy).
+ *   - FOLLOWED import (`-import`, not a collaborator) → NOT writable: read-only /
+ *     mirror-only; its state reads into the merge but is never pushed back.
+ *
+ * The legacy `-import → false` rule wrongly classified collaborators as read-only,
+ * so collaborative edits never round-tripped (they fell to the create path and
+ * made an owned duplicate — parachord#950 — instead of updating the original).
+ * @param {{source?:string, syncedFrom?:{isCollaborator?:boolean}}} playlist
+ * @returns {boolean}
+ */
+function isPlaylistWritable(playlist) {
+  const src = playlist && playlist.source;
+  if (typeof src === 'string' && src.endsWith('-import')) {
+    return !!(playlist && playlist.syncedFrom && playlist.syncedFrom.isCollaborator === true);
+  }
+  return true;
+}
+
 module.exports = {
   REEXPORT_PROVIDERS,
   SYNC_CHANNEL_PROVIDERS,
@@ -203,4 +232,5 @@ module.exports = {
   channelGateBlocksCreate,
   channelOverrideExcludes,
   findNonOwnedSourceConflict,
+  isPlaylistWritable,
 };
