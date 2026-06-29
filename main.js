@@ -5490,6 +5490,48 @@ const {
   isPlaylistWritable,
 } = require('./sync-engine/playlist-push-candidate');
 
+// parachord#953 — LB MBID-hydration flood guard. Singleton per process: a
+// persistent negative cache (electron-store `lb_mbid_hydration_cache`) + a
+// per-cycle live-lookup budget that refills after an idle gap. Passed as
+// `{ hydration }` into the LB provider's resolveTracks/updatePlaylistTracks so an
+// un-findable track (mapper down → null) isn't re-queried every sync cycle.
+const { hydrationKey, shouldLookup, recordAttempt, createBudget } = require('./sync-engine/lb-hydration');
+let _lbHydrationCtx = null;
+function getLbHydration() {
+  if (_lbHydrationCtx) return _lbHydrationCtx;
+  const cache = new Map(Object.entries(store.get('lb_mbid_hydration_cache') || {}));
+  const budget = createBudget();
+  let dirty = false;
+  _lbHydrationCtx = {
+    resolve(track) {
+      const key = hydrationKey(track);
+      if (!key) return { skip: false };
+      const entry = cache.get(key);
+      if (entry && entry.mbid) return { skip: true, mbid: entry.mbid }; // resolved — reuse
+      if (!shouldLookup(entry, Date.now())) return { skip: true, mbid: null }; // miss in cooldown
+      if (!budget.tryConsume(Date.now())) return { skip: true, mbid: null }; // budget spent this cycle
+      return { skip: false }; // fresh / cooldown-expired → look up live
+    },
+    record(track, mbid) {
+      const key = hydrationKey(track);
+      if (!key) return;
+      cache.set(key, recordAttempt(cache.get(key), mbid, Date.now()));
+      dirty = true;
+    },
+    flush() {
+      if (!dirty) return;
+      try { store.set('lb_mbid_hydration_cache', Object.fromEntries(cache)); } catch {}
+      dirty = false;
+    },
+  };
+  return _lbHydrationCtx;
+}
+// The opts arg to pass into a provider's resolveTracks/updatePlaylistTracks —
+// the LB hydration guard for ListenBrainz, undefined (no-op) for other providers.
+function lbHydrationOpts(providerId) {
+  return providerId === 'listenbrainz' ? { hydration: getLbHydration() } : undefined;
+}
+
 const SYNC_PROVIDER_DISPLAY = { spotify: 'Spotify', applemusic: 'Apple Music', listenbrainz: 'ListenBrainz' };
 
 function getChannelMap() {
@@ -7906,7 +7948,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     }
 
     // Push track changes
-    const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token);
+    const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token, lbHydrationOpts(providerId));
 
     // Fire-and-forget: if this push touched an LB-anchored playlist (either
     // we just pushed to LB, OR the local has an LB mirror via sync_playlist_links),
@@ -8009,14 +8051,14 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       let resolved = tracks;
       let unresolved = [];
       if (provider.resolveTracks) {
-        const resolveResult = await provider.resolveTracks(tracks, token);
+        const resolveResult = await provider.resolveTracks(tracks, token, lbHydrationOpts(providerId));
         resolved = resolveResult.resolved;
         unresolved = resolveResult.unresolved;
       }
       let snapshotId = existing.snapshotId;
       if (resolved.length > 0 && provider.updatePlaylistTracks) {
         try {
-          const updateResult = await provider.updatePlaylistTracks(existing.externalId, resolved, token);
+          const updateResult = await provider.updatePlaylistTracks(existing.externalId, resolved, token, lbHydrationOpts(providerId));
           snapshotId = updateResult.snapshotId || snapshotId;
         } catch (trackError) {
           console.warn(`[Sync] Linked "${name}" to existing ${providerId} playlist but failed to push tracks: ${trackError.message}`);
@@ -8180,7 +8222,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       let resolved = tracks;
       let unresolved = [];
       if (provider.resolveTracks) {
-        const resolveResult = await provider.resolveTracks(tracks, token);
+        const resolveResult = await provider.resolveTracks(tracks, token, lbHydrationOpts(providerId));
         resolved = resolveResult.resolved;
         unresolved = resolveResult.unresolved;
         console.log(`[Sync] Resolved ${resolved.length}/${tracks.length} tracks for ${providerId} (${unresolved.length} unresolved)`);
@@ -8217,7 +8259,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       let finalSnapshotId = snapshotId;
       if (resolved.length > 0 && provider.updatePlaylistTracks) {
         try {
-          const updateResult = await provider.updatePlaylistTracks(externalId, resolved, token);
+          const updateResult = await provider.updatePlaylistTracks(externalId, resolved, token, lbHydrationOpts(providerId));
           finalSnapshotId = updateResult.snapshotId || snapshotId;
         } catch (trackError) {
           console.warn(`[Sync] Playlist "${name}" created on ${providerId} but failed to add tracks: ${trackError.message}`);
@@ -8283,7 +8325,7 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     }
 
     try {
-      const result = await provider.resolveTracks(tracks, token);
+      const result = await provider.resolveTracks(tracks, token, lbHydrationOpts(providerId));
       return { success: true, resolved: result.resolved, unresolved: result.unresolved };
     } catch (error) {
       return { success: false, error: error.message };
