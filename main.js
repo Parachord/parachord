@@ -5487,6 +5487,7 @@ const {
   channelOverrideExcludes,
   computeSyncChannels,
   findNonOwnedSourceConflict,
+  isPlaylistWritable,
 } = require('./sync-engine/playlist-push-candidate');
 
 const SYNC_PROVIDER_DISPLAY = { spotify: 'Spotify', applemusic: 'Apple Music', listenbrainz: 'ListenBrainz' };
@@ -5653,11 +5654,11 @@ function setPlaylistMirrorOnly(localPlaylistId, value) {
 // imports stamp `source: <provider>-import`; owned imports + user-created
 // playlists are writable. (The import path at sync:start sets this from
 // remotePlaylist.isOwnedByUser.)
-function isPlaylistWritable(playlist) {
-  const src = playlist && playlist.source;
-  if (typeof src === 'string' && src.endsWith('-import')) return false;
-  return true;
-}
+// isPlaylistWritable lives in sync-engine/playlist-push-candidate.js (parity
+// anchor + unit-tested); imported in the require block above. Per-copy
+// writability gates the N-way reconcile's source-copy push target (A3/A9):
+// owned + COLLABORATOR → writable (collaborative edits round-trip to the
+// original); followed (non-collaborator) → mirror-only.
 
 async function getNwayProviderToken(providerId) {
   if (providerId === 'spotify') return await ensureValidSpotifyToken();
