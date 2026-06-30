@@ -1,3 +1,58 @@
+# Parachord v0.9.5
+
+**Release date:** 2026-06-30
+
+> The headline: an all-new **opt-in sync engine** that finally makes playlists *multi-master* — edit on any service (or a shared playlist someone else owns) and your change rounds-trips everywhere, instead of one service always winning. It ships behind a preview-and-accept flow, so you see exactly what it would change before anything is written, and you can switch back anytime. Plus a deep batch of sync fixes that help **everyone** whether you opt in or not: playlists you follow no longer get duplicated as your own, Apple Music stops creating duplicate entries, track matching is more accurate, and ListenBrainz sync stops hammering MusicBrainz when it's slow. New animated startup, faster launch, and graceful handling of Spotify's new 6-month session expiry round it out.
+
+---
+
+## New: try the new sync engine (opt-in)
+
+Classic sync treats one service as the source of truth — edits elsewhere get overwritten. The **new sync engine** treats every copy of a playlist as equal: an edit on Spotify, Apple Music, ListenBrainz, *or* a collaborative playlist owned by someone else all merge together and propagate to your other services.
+
+It's opt-in and cautious by design:
+
+- **Settings → General → "Use new sync" → Preview.** Parachord runs the new engine against your library **without writing anything** and shows you the exact diff — every track it would add or remove, per service.
+- **Nothing changes until you click Accept.** If the preview looks wrong, there's a "Report a problem" button instead.
+- **Reversible anytime** with "Switch back to classic."
+- **Per device.** Each device opts in separately — if you use Parachord in more than one place, switch them all so they stay in lockstep (the preview reminds you).
+
+Highlights it unlocks: **collaborative playlists round-trip** (your edits to a playlist someone shared with you push back to the original), and **playlists you only follow stay mirror-only** (read in, never re-created as your own).
+
+## Sync got more accurate and more reliable — for everyone
+
+These land regardless of whether you opt into the new engine:
+
+- **No more duplicate copies of playlists you follow or collaborate on.** Following a Spotify playlist (or collaborating on one someone else owns) could spawn a second copy *authored by you* that reappeared even after you deleted it. That's fixed at the source, and existing duplicates can be cleaned up from the sync settings.
+- **More accurate track matching.** Sync no longer guesses a wrong-song match when it can't find an exact one (e.g. resolving "Intro" by The xx to a different artist's "Intro"). Apple Music now matches by ISRC in *your* storefront, so you stop getting duplicate Apple Music entries for the same recording.
+- **ListenBrainz sync is far gentler on MusicBrainz.** When the LB mapper is slow or down, sync now paces its lookups and remembers misses (instead of re-querying every un-findable track every cycle), and retries transient failures with backoff. ListenBrainz playlist pushes no longer give up on a single hiccup.
+- **Spotify rate-limit backoff.** If Spotify hard-limits requests, Parachord now stays backed off instead of re-hammering and prolonging the limit.
+
+## Better track matching across the app, via ISRC
+
+Parachord now captures the **ISRC** (the standard recording identifier) from Spotify, your local files (ID3/Vorbis/MP4 tags), and Apple Music, and uses it everywhere it matters — loving a track, scrobbling, and sharing all resolve to the *right* recording more often. Notably, this keeps loves and scrobbles resolving even when the MusicBrainz mapper is having an outage.
+
+## Spotify session expiry, handled cleanly
+
+Spotify is introducing a **6-month limit on sign-ins** (effective 2026-07-20). When your session expires, Parachord now cleanly detects it, clears the dead session, and prompts you to reconnect — instead of silently failing to sync. Redundant token refreshes are also collapsed so a burst of activity doesn't stampede Spotify's auth.
+
+## New startup experience + faster launch
+
+- A new **animated wordmark splash** on launch, with a smooth hand-off into the app.
+- **Faster cold start** — the app no longer waits on a release-notes fetch before becoming interactive, and uses a startup code cache.
+- **The window no longer jumps** on open — its size and position are remembered between launches.
+
+## Smaller fixes
+
+- **AI Chat:** links in messages are now clickable, and you can select and copy message text.
+- **Fresh Drops** no longer lists release-groups more than two weeks out, so "new releases" actually means new.
+- **Share links** open the right thing: a Spotify / Apple Music / SoundCloud playlist URL now plays directly, and the new smart-link redirector works on iOS.
+- **Plugins** screen shows a loading skeleton instead of a "Loading…" line.
+- **Gemini** API-key errors now explain what to enable and link straight to the key-creation page.
+- **Linux:** media-key / now-playing (MPRIS) initialization fixed. **Apple Music** re-injects your user token correctly when checking auth status.
+
+---
+
 # Parachord v0.9.4
 
 **Release date:** 2026-06-05
