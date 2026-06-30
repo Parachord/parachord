@@ -33,9 +33,29 @@ function nwayWritesEnabled(modeOrRaw) {
   return normalizeEngineMode(modeOrRaw) === 'new';
 }
 
+// Should the N-way reconcile RUN this invocation at all? (parachord#911 arming.)
+//   - `force`      — the dev shadow-run / migration preview run on demand.
+//   - `shadowFlag` — the `nway_shadow_enabled` dev flag.
+//   - 'new' mode   — the user opted in via the preview/accept flow, so N-way
+//                    DRIVES playlist sync on the regular cadence.
+function nwayShouldRun(modeOrRaw, { force = false, shadowFlag = false } = {}) {
+  return !!force || !!shadowFlag || normalizeEngineMode(modeOrRaw) === 'new';
+}
+
+// Should this run perform REAL writes, or compute-only (dry-run)?
+//   - `forceDryRun`  — the migration preview: NEVER writes, whatever the mode.
+//   - 'new' mode     — armed: real writes (the user accepted the diff).
+//   - `propagateFlag`— the `nway_propagate` dev flag (pre-arming dev testing).
+function nwayDryRun(modeOrRaw, { forceDryRun = false, propagateFlag = false } = {}) {
+  if (forceDryRun) return true;
+  return !(normalizeEngineMode(modeOrRaw) === 'new' || !!propagateFlag);
+}
+
 module.exports = {
   SYNC_ENGINE_MODES,
   normalizeEngineMode,
   legacyPlaylistSyncEnabled,
   nwayWritesEnabled,
+  nwayShouldRun,
+  nwayDryRun,
 };

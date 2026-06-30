@@ -45,6 +45,9 @@ contextBridge.exposeInMainWorld('electron', {
     shadowRun: () => ipcRenderer.invoke('nway:shadow-run'),
     // Migration preview (#911): forced compute-only reconcile → named diff.
     preview: () => ipcRenderer.invoke('nway:preview'),
+    // Armed drive (#911): run an N-way reconcile cycle now — REAL writes when the
+    // client is in 'new' mode, no-op otherwise. Fired right after Accept.
+    run: () => ipcRenderer.invoke('nway:run'),
   },
 
   // Spotify operations

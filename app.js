@@ -8189,6 +8189,14 @@ const Parachord = () => {
   // this: run a compute-only reconcile, render the named diff, and only on Accept
   // flip sync_engine_mode to 'new'. { show, loading, summary, error, recomputed }.
   const [nwayMigrationDialog, setNwayMigrationDialog] = useState({ show: false });
+  // Current per-client sync engine ('legacy' | 'shadow' | 'new'), for the
+  // Settings row (offer Preview when not on new, Switch-back when on new).
+  const [nwayEngineMode, setNwayEngineMode] = useState('legacy');
+  useEffect(() => {
+    (async () => {
+      try { const m = await window.electron.store.get('sync_engine_mode'); if (m) setNwayEngineMode(m); } catch {}
+    })();
+  }, []);
 
   // Open the preview: forced dry-run reconcile → render model.
   const startNwayMigration = async () => {
@@ -8222,8 +8230,21 @@ const Parachord = () => {
       return;
     }
     try { await window.electron.store.set('sync_engine_mode', 'new'); } catch {}
+    setNwayEngineMode('new');
     setNwayMigrationDialog({ show: false });
     showToast('Switched to new sync on this device');
+    // Kick an immediate armed reconcile (REAL writes) so the switch takes effect
+    // now instead of waiting for the next cadence tick.
+    try { window.electron.nway.run().catch(() => {}); } catch {}
+  };
+
+  // Revert to legacy (parachord#911). 'new' mode stands legacy down, so without
+  // this a user who switched would have no way back. Flips the mode and resumes
+  // legacy sync on the next cycle.
+  const revertNwayMigration = async () => {
+    try { await window.electron.store.set('sync_engine_mode', 'legacy'); } catch {}
+    setNwayEngineMode('legacy');
+    showToast('Switched back to the classic sync engine');
   };
 
   // Report: copy the full diff (GitHub truncates long prefilled bodies) and open a
@@ -55268,22 +55289,29 @@ useEffect(() => {
                       className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
                     }, 'Show')
                   ),
-                  // Use new sync — N-way migration preview (parachord#911)
+                  // Use new sync — N-way migration preview / armed state (parachord#911)
                   React.createElement('div', {
                     className: 'flex items-center justify-between py-3'
                   },
                     React.createElement('div', null,
                       React.createElement('div', {
                         className: 'text-sm font-medium text-gray-900'
-                      }, 'Use new sync'),
+                      }, nwayEngineMode === 'new' ? 'New sync is on' : 'Use new sync'),
                       React.createElement('div', {
                         className: 'text-xs text-gray-500 mt-0.5'
-                      }, 'Preview the new sync engine and switch this device over')
+                      }, nwayEngineMode === 'new'
+                        ? 'This device is on the new sync engine. You can switch back anytime.'
+                        : 'Preview the new sync engine and switch this device over')
                     ),
-                    React.createElement('button', {
-                      onClick: () => startNwayMigration(),
-                      className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
-                    }, 'Preview')
+                    nwayEngineMode === 'new'
+                      ? React.createElement('button', {
+                          onClick: () => revertNwayMigration(),
+                          className: 'px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors'
+                        }, 'Switch back to classic')
+                      : React.createElement('button', {
+                          onClick: () => startNwayMigration(),
+                          className: 'px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors'
+                        }, 'Preview')
                   )
                 ),
 
