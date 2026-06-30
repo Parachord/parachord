@@ -1657,6 +1657,18 @@ app.whenReady().then(() => {
   // Begin periodic in-app announcements fetch
   startAnnouncementsPolling();
 
+  // Persist the Spotify abuse-mode circuit breaker across restarts (parachord#956
+  // §2b) so a banned client_id isn't re-hammered after a relaunch.
+  try {
+    const spProvider = require('./sync-providers/spotify');
+    if (spProvider && typeof spProvider._setBreakerStore === 'function') {
+      spProvider._setBreakerStore({
+        load: () => store.get('spotify_breaker_state'),
+        save: (s) => store.set('spotify_breaker_state', s),
+      });
+    }
+  } catch (e) { console.warn('[spotify-breaker] persistence wiring failed:', e && e.message); }
+
   // Extract mcp-stdio.js to a stable user-data path (parachord#866).
   //
   // AppImage mounts itself at /tmp/.mount_<RANDOMSUFFIX>/ via FUSE on
