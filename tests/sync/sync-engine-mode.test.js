@@ -9,6 +9,8 @@ const {
   normalizeEngineMode,
   legacyPlaylistSyncEnabled,
   nwayWritesEnabled,
+  nwayShouldRun,
+  nwayDryRun,
 } = require('../../sync-engine/sync-engine-mode');
 
 describe('sync-engine-mode', () => {
@@ -51,5 +53,45 @@ describe('sync-engine-mode', () => {
     for (const m of [...SYNC_ENGINE_MODES, undefined, 'garbage']) {
       expect(legacyPlaylistSyncEnabled(m) && nwayWritesEnabled(m)).toBe(false);
     }
+  });
+
+  describe('nwayShouldRun — arming + dev gates', () => {
+    test('armed (new) runs on the cadence with no flags', () => {
+      expect(nwayShouldRun('new')).toBe(true);
+    });
+    test('legacy/shadow do NOT run without force or the shadow flag', () => {
+      expect(nwayShouldRun('legacy')).toBe(false);
+      expect(nwayShouldRun('shadow')).toBe(false);
+    });
+    test('force (preview/dev) runs in any mode', () => {
+      expect(nwayShouldRun('legacy', { force: true })).toBe(true);
+    });
+    test('the shadow dev-flag runs it', () => {
+      expect(nwayShouldRun('shadow', { shadowFlag: true })).toBe(true);
+    });
+  });
+
+  describe('nwayDryRun — real writes only when armed (or the dev propagate flag)', () => {
+    test('new → REAL writes', () => expect(nwayDryRun('new')).toBe(false));
+    test('legacy/shadow → dry-run', () => {
+      expect(nwayDryRun('legacy')).toBe(true);
+      expect(nwayDryRun('shadow')).toBe(true);
+    });
+    test('forceDryRun (the preview) NEVER writes, even when armed', () => {
+      expect(nwayDryRun('new', { forceDryRun: true })).toBe(true);
+    });
+    test('the propagate dev-flag enables writes pre-arming', () => {
+      expect(nwayDryRun('shadow', { propagateFlag: true })).toBe(false);
+    });
+  });
+
+  test('invariant: a non-new client never does real N-way writes on the cadence', () => {
+    // On the regular cadence (no force/flags), only an armed client writes.
+    for (const m of ['legacy', 'shadow', undefined, 'garbage']) {
+      const wouldRun = nwayShouldRun(m);
+      const wouldWrite = wouldRun && !nwayDryRun(m);
+      expect(wouldWrite).toBe(false);
+    }
+    expect(nwayShouldRun('new') && !nwayDryRun('new')).toBe(true);
   });
 });

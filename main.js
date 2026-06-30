@@ -5749,10 +5749,18 @@ async function runNwayShadowReconcile(options = {}) {
   // a reconcile on demand without requiring the dev flag); `forceDryRun` pins it
   // to compute-only regardless of nway_propagate (the preview NEVER writes).
   const { force = false, forceDryRun = false } = options;
-  if (!force && !isNwayShadowEnabled()) return { skipped: 'shadow-disabled' };
+  const { nwayShouldRun, nwayDryRun } = require('./sync-engine/sync-engine-mode');
+  const engineMode = getSyncEngineMode();
+  // Run when forced (dev/preview), the shadow dev-flag is on, OR the user armed
+  // 'new' mode via the preview/accept flow (parachord#911 — N-way then DRIVES).
+  if (!nwayShouldRun(engineMode, { force, shadowFlag: isNwayShadowEnabled() })) {
+    return { skipped: 'shadow-disabled' };
+  }
   const { bindProviderToken, makeStoreEffects, runNwayReconcileCycle, createHydrationCache } =
     require('./sync-engine/nway-reconcile-driver');
-  const dryRun = forceDryRun ? true : !isNwayPropagateEnabled();
+  // REAL writes only when armed ('new' mode) or the dev propagate flag; the
+  // migration preview (forceDryRun) NEVER writes.
+  const dryRun = nwayDryRun(engineMode, { forceDryRun, propagateFlag: isNwayPropagateEnabled() });
   const now = Date.now();
   const states = getSyncStates();
   const playlists = store.get('local_playlists') || [];
@@ -5873,6 +5881,35 @@ ipcMain.handle('nway:preview', async () => {
   try { return await runNwayShadowReconcile({ force: true, forceDryRun: true }); }
   catch (e) { return { error: e && e.message }; }
 });
+
+// ARMED DRIVE (parachord#911). When the user has opted into 'new' mode, N-way is
+// the playlist authority and must run on the regular cadence with REAL writes
+// (legacy playlist sync has stood down). runNwayShadowReconcile resolves
+// dryRun=false for 'new' mode itself; this just triggers it. The renderer calls
+// `nway:run` immediately after Accept (so the switch takes effect at once) and
+// the timer below keeps it cadenced. No-op in legacy/shadow (the reconcile
+// returns `skipped` unless armed/forced). A simple in-flight guard prevents
+// overlapping cycles.
+let _nwayDriveInFlight = false;
+async function runNwayArmedDrive(reason) {
+  if (getSyncEngineMode() !== 'new') return { skipped: 'not-armed' };
+  if (_nwayDriveInFlight) return { skipped: 'in-flight' };
+  _nwayDriveInFlight = true;
+  try {
+    console.log(`[nway] armed drive cycle (${reason})`);
+    return await runNwayShadowReconcile();
+  } catch (e) {
+    console.warn('[nway] armed drive cycle failed:', e && e.message);
+    return { error: e && e.message };
+  } finally {
+    _nwayDriveInFlight = false;
+  }
+}
+ipcMain.handle('nway:run', async () => runNwayArmedDrive('renderer-trigger'));
+// Cadence: every 15 min (matches the legacy background-sync floor), plus a
+// delayed initial run so a client that launches already-armed starts syncing.
+setInterval(() => { runNwayArmedDrive('timer'); }, 15 * 60 * 1000);
+setTimeout(() => { runNwayArmedDrive('startup'); }, 90 * 1000);
 
 // ---------------------------------------------------------------------------
 // Achordion playlist-links submission (LB-anchored mirror map)
