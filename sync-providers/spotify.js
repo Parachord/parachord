@@ -7,6 +7,28 @@ const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
 
 const { pickConfidentMatch } = require('./confidence-scoring');
 
+// Abuse-mode circuit breaker (parachord#956 audit §2b). Carries rate-limit state
+// across calls so a banned client_id isn't re-hammered every cycle. main.js wires
+// persistence via _setBreakerStore (load on startup, save on every transition);
+// absent → in-memory only (still stops in-session re-hammering).
+const { createSpotifyBreaker } = require('../sync-engine/spotify-breaker');
+const _spotifyBreaker = createSpotifyBreaker();
+let _spotifyBreakerSave = null;
+function _setBreakerStore(io) {
+  if (io && typeof io.load === 'function') { try { _spotifyBreaker.restore(io.load()); } catch {} }
+  _spotifyBreakerSave = (io && typeof io.save === 'function') ? io.save : null;
+}
+function _persistBreaker() { if (_spotifyBreakerSave) { try { _spotifyBreakerSave(_spotifyBreaker.snapshot()); } catch {} } }
+// Throw if the breaker is open (skip the API call to avoid prolonging the ban).
+function _breakerGuard() {
+  const now = Date.now();
+  if (_spotifyBreaker.isOpen(now)) {
+    throw new Error(`Spotify rate-limit cooldown active (${Math.ceil(_spotifyBreaker.msRemaining(now) / 60000)} min left); skipping to avoid prolonging the ban`);
+  }
+}
+function _breakerTrip() { _spotifyBreaker.trip(Date.now()); _persistBreaker(); }
+function _breakerSuccess() { if (_spotifyBreaker.recordSuccess()) _persistBreaker(); }
+
 /**
  * Normalize a string for ID generation (lowercase, remove special chars)
  */
@@ -27,6 +49,7 @@ const generateTrackId = (artist, title, album) => {
 const MAX_RETRIES = 5;
 
 const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) => {
+  if (_retryCount === 0) _breakerGuard(); // §2b: fail-fast while the abuse cooldown is open
   const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
   const { method = 'GET', body, refreshToken } = options;
 
@@ -42,6 +65,7 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
   if (!response.ok) {
     if (response.status === 429) {
       if (_retryCount >= MAX_RETRIES) {
+        _breakerTrip(); // §2b: open the escalating cooldown — stop re-hammering next cycle
         throw new Error('Spotify API rate limit exceeded after maximum retries');
       }
       const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
@@ -74,6 +98,7 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
     throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
   }
 
+  _breakerSuccess(); // §2b: a good response closes the cooldown + resets escalation
   // Some endpoints return 201 with snapshot_id, others return empty
   const text = await response.text();
   return text ? JSON.parse(text) : { success: true };
@@ -92,6 +117,7 @@ const spotifyRequest = async (endpoint, token, options = {}, _retryCount = 0) =>
  */
 const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshToken, _retryCount = 0, isCancelled = null) => {
   if (isCancelled?.()) return null;
+  if (_retryCount === 0 && allItems.length === 0) _breakerGuard(); // §2b: fail-fast at the start of a fetch while the cooldown is open
   const url = endpoint.startsWith('http') ? endpoint : `${SPOTIFY_API_BASE}${endpoint}`;
 
   // Validate pagination URLs stay on the expected host
@@ -112,6 +138,7 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
   if (!response.ok) {
     if (response.status === 429) {
       if (_retryCount >= MAX_RETRIES) {
+        _breakerTrip(); // §2b: open the escalating cooldown
         throw new Error('Spotify API rate limit exceeded after maximum retries');
       }
       // Rate limited - get retry-after header
@@ -145,6 +172,7 @@ const spotifyFetch = async (endpoint, token, allItems = [], onProgress, refreshT
     throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
   }
 
+  _breakerSuccess(); // §2b: good response closes the cooldown
   const data = await response.json();
   const items = data.items || [];
   const combined = [...allItems, ...items];
@@ -892,5 +920,9 @@ const SpotifySyncProvider = {
     };
   }
 };
+
+// Persistence wiring for the §2b abuse-mode breaker (main.js calls this once at
+// startup with electron-store-backed load/save).
+SpotifySyncProvider._setBreakerStore = _setBreakerStore;
 
 module.exports = SpotifySyncProvider;

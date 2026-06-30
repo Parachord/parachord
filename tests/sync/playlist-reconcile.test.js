@@ -538,4 +538,46 @@ describe('reconcile — shadow (dryRun) mode', () => {
     expect(sp.removeByNativeIdCalls).toEqual([]);
     expect(sp.remote.length).toBe(2);
   });
+
+  // V6 (Refinement A, parachord#956 audit §2a) — a non-removal-capable PULL
+  // SOURCE (Apple Music) can never prove a deletion. Even after a materialized
+  // track is OMITTED from AM's complete fetch for >= the missingStreak threshold,
+  // its absence must NOT propagate a real delete to the writable mirrors — the
+  // AM source copy is augment-all. Pre-fix this dropped the track fleet-wide.
+  test('V6 AM-add-only-source-declined-augment-all — AM source omission never deletes a mirror track', async () => {
+    const h = new Harness('applemusic-pl');
+    const am = h.add(new FakeProvider('applemusic', 'Unsupported'));
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.pullSource = { providerId: 'applemusic', externalId: am._ext };
+    h.seed([mk('m1'), mk('m2'), mk('m3')]);
+    h.warmCache('applemusic', 'm2'); // m2 materialized on AM (resolvedId set → streak gate would fire)
+
+    // Two consecutive COMPLETE AM fetches that OMIT m2 (rotate-out / AM fetch
+    // flakiness). Each bumps missingStreak; at 2 the streak gate would normally
+    // stop protecting it.
+    h.drift(am, [mk('m1'), mk('m3')]);
+    await h.cycle(); // cycle 1 → missingStreak('applemusic', m2) = 1
+    h.drift(am, [mk('m1'), mk('m3')]);
+    await h.cycle(); // cycle 2 → missingStreak = 2 (pre-fix: m2 dropped fleet-wide here)
+
+    expect(lb.removeByPositionCalls).toEqual([]);     // NO delete propagated to the writable mirror
+    expect(mbidsOf(lb.remote).has('m2')).toBe(true);  // m2 survives on LB
+    expect(h.state.baseline.tracks.length).toBe(3);   // baseline did NOT shrink (residue kept)
+  });
+
+  // Counter-case: a REMOVAL-CAPABLE source (Spotify, followed → immediate
+  // authority) DOES propagate its drop — confirms augment-all is scoped to
+  // non-removal-capable sources, not all pull sources.
+  test('V6b removal-capable source still deletes (augment-all is non-removal-capable-only)', async () => {
+    const h = new Harness('spotify-pl');
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.pullSource = { providerId: 'spotify', externalId: sp._ext };
+    h.playlist.writable = false; // a followed source is immediate-authority (rotate-out drops at once)
+    h.seed([mk('m1'), mk('m2'), mk('m3')]);
+    h.drift(sp, [mk('m1'), mk('m3')]); // Spotify (the source) genuinely drops m2
+    await h.cycle();
+    expect(lb.removeByPositionCalls.length).toBe(1);  // a real source delete DOES propagate
+    expect(mbidsOf(lb.remote).has('m2')).toBe(false);
+  });
 });

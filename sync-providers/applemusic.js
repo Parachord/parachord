@@ -476,6 +476,17 @@ const AppleMusicSyncProvider = {
     return track.appleMusicId || track.appleMusicCatalogId || null;
   },
 
+  // N-way ADD primitive (parachord#956 §2c). AM has no removal API (Unsupported),
+  // but it CAN append via POST — without this, the executor's Unsupported-branch
+  // appendAdds hit the throwing default (incremental-primitives.js) and armed AM
+  // mirrors silently never received any additions. token is the JSON
+  // { developerToken, userToken } the N-way driver binds onto the call.
+  async addPlaylistTracks(externalId, catalogIds, token) {
+    if (!Array.isArray(catalogIds) || catalogIds.length === 0) return 0;
+    const { developerToken, userToken } = JSON.parse(token);
+    return this._postTracksToPlaylist(externalId, catalogIds, developerToken, userToken);
+  },
+
   async deletePlaylist(playlistId, token, _refreshTokenCb) {
     const { developerToken, userToken } = JSON.parse(token);
     const resp = await fetch(

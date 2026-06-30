@@ -302,11 +302,20 @@ async function reconcilePlaylist(ctx) {
   // it CAN delete (trackRemoveMode !== 'Unsupported'); an add-only source
   // (Apple Music) can never prove a deletion, so it grants no drop-authority.
   let authoritativeCopyId = null;
+  // Refinement A (parachord#911 / parachord#956 audit §2a): a non-removal-capable
+  // PULL SOURCE (Apple Music — trackRemoveMode 'Unsupported') can NEVER prove a
+  // deletion. Its source copy is AUGMENT-ALL in A6 — every lacked baseline key is
+  // re-added, bypassing the missingStreak gate — so a transient/partial AM fetch
+  // can't read as a deletion and propagate a real removal to the writable mirrors.
+  // Without this, an AM-sourced track AM omits from a complete fetch for >= 2
+  // cycles falls through the streak gate and DELETE-WINS drops it fleet-wide.
+  let addOnlyPullSourceId = null;
   if (pullSource && pullSource.providerId) {
     const sourceProvider = providerById[pullSource.providerId];
     const canDelete = sourceProvider && sourceProvider.capabilities
       && sourceProvider.capabilities.trackRemoveMode !== 'Unsupported';
-    authoritativeCopyId = canDelete ? pullSource.providerId : null;
+    if (canDelete) authoritativeCopyId = pullSource.providerId;
+    else addOnlyPullSourceId = pullSource.providerId; // non-removal-capable → augment-all
   } else if (playlist.sourceUrl) {
     authoritativeCopyId = 'local'; // hosted XSPF — local mirror IS the source
   }
@@ -361,9 +370,13 @@ async function reconcilePlaylist(ctx) {
     if (lacked.length === 0) return copy;
     const toReadd = copy.id === authoritativeCopyId
       ? lacked.filter((k) => !authoritativeDropped.has(k))
-      : lacked.filter(
-        (k) => !authoritativeDropped.has(k) && isProviderPendingForKey(cache, copy.id, k, keyToTrack)
-      );
+      : copy.id === addOnlyPullSourceId
+        // Refinement A — a non-removal-capable PULL SOURCE (AM) is AUGMENT-ALL:
+        // re-add EVERY lacked key, no streak gate. Its absence is never a delete.
+        ? lacked
+        : lacked.filter(
+          (k) => !authoritativeDropped.has(k) && isProviderPendingForKey(cache, copy.id, k, keyToTrack)
+        );
     return toReadd.length ? { ...copy, keys: copy.keys.concat(toReadd) } : copy;
   });
 
