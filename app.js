@@ -2067,6 +2067,7 @@ const SERVICE_LOGO_PATHS = {
   qobuz: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-7c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5z',
   youtube: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
   localfiles: 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10h-4v-4H8l4-4 4 4h-2v4z',
+  plex: 'M11.643 0H4.68l7.679 12L4.68 24h6.963l7.678-12z',
   applemusic: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z',
   soundcloud: 'M1.175 12.225c-.051 0-.094.046-.101.1l-.233 2.154.233 2.105c.007.058.05.098.101.098.05 0 .09-.04.099-.098l.255-2.105-.27-2.154c-.009-.06-.052-.1-.084-.1zm-.899.828c-.06 0-.091.037-.104.094L0 14.479l.165 1.308c.014.057.045.094.09.094.049 0 .084-.037.09-.094l.195-1.308-.196-1.332c-.006-.057-.04-.094-.068-.094zm1.83-1.229c-.06 0-.12.037-.12.1l-.21 2.563.225 2.458c0 .06.045.1.105.1.074 0 .12-.04.12-.1l.24-2.458-.24-2.563c0-.06-.03-.1-.12-.1zm.945-.089c-.075 0-.135.045-.15.105l-.18 2.647.18 2.456c.015.06.075.105.15.105.075 0 .135-.045.15-.105l.21-2.456-.21-2.647c-.015-.06-.075-.105-.15-.105zm1.065.285c-.09 0-.15.045-.165.105l-.15 2.382.15 2.423c.015.075.075.12.165.12.09 0 .15-.045.165-.12l.18-2.423-.195-2.382c-.015-.06-.06-.105-.15-.105zm1.08-1.5c-.09 0-.18.06-.18.135l-.15 3.762.15 2.4c0 .09.09.149.18.149.09 0 .165-.06.18-.135l.165-2.414-.165-3.762c-.015-.09-.09-.135-.18-.135zm1.05-.706c-.105 0-.195.075-.195.165l-.12 4.333.12 2.37c0 .09.09.165.195.165.09 0 .18-.075.195-.165l.135-2.37-.135-4.333c-.015-.09-.09-.165-.195-.165zm1.14-.255c-.105 0-.21.075-.21.165l-.105 4.59.105 2.34c.015.09.105.165.21.165.105 0 .195-.075.21-.165l.12-2.355-.12-4.575c0-.09-.09-.165-.21-.165zm1.11-.165c-.12 0-.225.09-.225.18l-.09 4.74.09 2.31c.015.105.105.18.225.18.12 0 .21-.075.225-.18l.105-2.31-.105-4.74c-.015-.09-.105-.18-.225-.18zm1.17-.225c-.135 0-.24.09-.24.195l-.075 4.785.075 2.28c0 .12.105.21.24.21.12 0 .225-.09.24-.21l.09-2.28-.09-4.785c-.015-.105-.12-.195-.24-.195zm1.2.045c-.135 0-.255.105-.255.21l-.06 4.545.06 2.25c.015.12.12.21.255.21.15 0 .255-.09.27-.21l.075-2.25-.075-4.545c-.015-.105-.12-.21-.27-.21zm1.2.375c-.15 0-.27.105-.285.225l-.045 4.17.045 2.22c.015.12.135.225.285.225.135 0 .27-.105.27-.225l.06-2.22-.06-4.17c0-.12-.12-.225-.27-.225zm3.98-1.62c-.36 0-.705.06-1.035.18-.21-2.37-2.19-4.215-4.59-4.215-.615 0-1.2.135-1.725.36-.195.09-.255.18-.255.36v8.94c0 .18.15.345.33.36h7.275c1.665 0 3.015-1.35 3.015-3.015 0-1.665-1.35-3.015-3.015-3.015v.045z',
   wikipedia: 'M12.09 13.119c-.936 1.932-2.217 4.548-2.853 5.728-.616 1.074-1.127.931-1.532.029-1.406-3.321-4.293-9.144-5.651-12.409-.251-.601-.441-.987-.619-1.139-.181-.15-.554-.24-1.122-.271C.103 5.033 0 4.982 0 4.898v-.455l.052-.045c.924-.005 5.401 0 5.401 0l.051.045v.434c0 .119-.075.176-.225.176l-.564.031c-.485.029-.727.164-.727.436 0 .135.053.33.166.601 1.082 2.646 4.818 10.521 4.818 10.521l2.681-5.476-2.607-5.24c-.237-.477-.42-.752-.545-.825-.126-.073-.437-.123-.934-.147l-.356-.022c-.152 0-.228-.053-.228-.166v-.457c0-.119.085-.17.253-.15l4.834.045.042.045v.447c0 .119-.07.176-.212.176l-.453.022c-.454.022-.681.155-.681.4 0 .106.043.274.133.502l2.008 4.097 1.905-3.971c.09-.183.137-.38.137-.597 0-.243-.233-.383-.7-.424l-.453-.022c-.152 0-.228-.058-.228-.176v-.457c0-.085.058-.134.176-.15l4.063-.045.042.045v.457c0 .106-.07.164-.212.164l-.534.031c-.391.022-.681.142-.863.36-.182.218-.404.573-.668 1.068l-2.388 4.786 2.715 5.455s3.767-7.894 4.916-10.442c.15-.326.223-.586.223-.78 0-.263-.233-.405-.7-.427l-.534-.022c-.152 0-.228-.058-.228-.176v-.457c0-.085.058-.129.176-.129h4.863l.033.045v.457c0 .106-.07.164-.212.164-.609.014-1.055.089-1.34.22-.285.133-.542.398-.767.792-.346.6-4.608 9.075-5.906 11.667-.377.755-.882.939-1.268.047-.54-1.254-2.7-5.471-2.7-5.471l-2.625 5.42c-.27.549-.748.704-1.14.013-.54-1.125-2.841-5.773-2.841-5.773z',
@@ -2122,6 +2123,9 @@ const SERVICE_LOGOS = {
   ),
   localfiles: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10h-4v-4H8l4-4 4 4h-2v4z' })
+  ),
+  plex: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
+    React.createElement('path', { d: 'M11.643 0H4.68l7.679 12L4.68 24h6.963l7.678-12z' })
   ),
   musicbrainz: React.createElement('svg', { viewBox: '0 0 24 24', className: 'w-16 h-16', fill: 'white' },
     React.createElement('path', { d: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z' })
@@ -6342,6 +6346,16 @@ const Parachord = () => {
   const [listenbrainzTokenInput, setListenbrainzTokenInput] = useState(''); // User token input
   const [listenbrainzConnecting, setListenbrainzConnecting] = useState(false); // Loading state during connection
 
+  // Plex state
+  const [plexConnecting, setPlexConnecting] = useState(false); // PIN sign-in in progress
+  const [plexStatus, setPlexStatus] = useState(''); // Human-readable progress during connect
+  const [plexAccount, setPlexAccount] = useState(null); // { authToken, clientId, username }
+  const [plexDiscovering, setPlexDiscovering] = useState(false); // Loading libraries from servers
+  const [plexServers, setPlexServers] = useState([]); // [{ serverId, serverName, libraries: [{key,title}], ... }]
+  const [plexSelectedLibs, setPlexSelectedLibs] = useState(() => new Set()); // Set of "serverId:key"
+  const [plexError, setPlexError] = useState(null);
+  const [plexIndexStatus, setPlexIndexStatus] = useState([]); // Per-library background scan progress
+
   // Scrobbler settings state
   const [scrobblersInitialized, setScrobblersInitialized] = useState(false);
   const [scrobblerConfigs, setScrobblerConfigs] = useState({});
@@ -9668,6 +9682,7 @@ const Parachord = () => {
     if ((track.youtubeUrl || track.youtubeId) && active.includes('youtube')) return 'youtube';
     if (track.qobuzId && active.includes('qobuz')) return 'qobuz';
     if ((track.filePath || track.fileUrl) && active.includes('localfiles')) return 'localfiles';
+    if ((track.plexPartKey || track.plexRatingKey || track.plexServerId) && active.includes('plex')) return 'plex';
 
     // Last resort: return any resolver from sources (even if disabled) for display purposes
     if (track.sources && typeof track.sources === 'object') {
@@ -9679,6 +9694,7 @@ const Parachord = () => {
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
     if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
     if (track.filePath || track.fileUrl || track.sources?.localfiles) return 'localfiles';
+    if (track.plexPartKey || track.plexRatingKey || track.sources?.plex) return 'plex';
 
     return null;
   };
@@ -10343,6 +10359,16 @@ const Parachord = () => {
         setLoadedResolvers(resolvers);
         resolverLoaderRef.current = resolverLoader.current;
         console.log(`✅ Loaded ${resolvers.length} resolver plugins:`, resolvers.map(r => r.name).join(', '));
+
+        // Warm the Plex pick-by-id index in the background at launch so bulk
+        // resolution is fast before Settings is ever opened (content resolvers'
+        // init() isn't called at startup). Idempotent — skips ready libraries.
+        try {
+          const plexCfg = savedMetaConfigs?.plex;
+          if (plexCfg?.libraries?.length) {
+            resolverLoader.current.getResolver('plex')?.buildIndex?.(plexCfg);
+          }
+        } catch (e) { /* best-effort */ }
 
         // Load meta services in parallel (URL lookup, AI generate, chat are independent)
         await Promise.all([
@@ -12266,7 +12292,7 @@ const Parachord = () => {
             }
             const positionSec = Math.max(0, Number(offsetMs) / 1000);
             let confirmedMs = null;
-            if (audioRef.current && (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'youtube' || activeResolver === 'bandcamp')) {
+            if (audioRef.current && (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'youtube' || activeResolver === 'bandcamp' || activeResolver === 'plex')) {
               audioRef.current.currentTime = positionSec;
               confirmedMs = Math.round(audioRef.current.currentTime * 1000);
             }
@@ -14179,6 +14205,12 @@ ${trackListXml}
       };
     }
 
+    // Plex stores its account token + selected libraries in meta_service_configs.
+    // Use the ref so search/play always see the latest saved selection.
+    if (resolverId === 'plex') {
+      return metaServiceConfigsRef.current?.plex || metaServiceConfigs.plex || {};
+    }
+
     const configs = {
       qobuz: { appId: '285473059', volume: volume / 100 },
       bandcamp: {}
@@ -14392,10 +14424,11 @@ ${trackListXml}
     const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic';
     const isLocalFile = activeResolver === 'localfiles';
     const isSoundCloud = activeResolver === 'soundcloud';
+    const isPlex = activeResolver === 'plex';
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isPlex && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -17224,17 +17257,29 @@ ${trackListXml}
         };
 
         // Helper to find best matching result from search results
-        const findBestMatch = (results, targetArtist, targetTitle) => {
+        const findBestMatch = (results, targetArtist, targetTitle, targetMbid, targetIsrc) => {
           if (!results || results.length === 0) return null;
+          // Tier 1: exact MusicBrainz recording MBID — a definitive identity match
+          // that's immune to artist/title formatting differences.
+          if (targetMbid) {
+            const m = results.find(r => (r.mbid || r.recordingMbid) && (r.mbid === targetMbid || r.recordingMbid === targetMbid));
+            if (m) return m;
+          }
+          // Tier 2: exact ISRC — also a definitive recording-identity match.
+          if (targetIsrc) {
+            const ti = String(targetIsrc).toUpperCase();
+            const m = results.find(r => r.isrc && String(r.isrc).toUpperCase() === ti);
+            if (m) return m;
+          }
           const normTargetArtist = normalizeStr(targetArtist);
           const normTargetTitle = normalizeStr(targetTitle);
-          // First pass: look for exact match (normalized)
+          // Tier 3: exact normalized name (artist + title)
           for (const r of results) {
             if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
               return r;
             }
           }
-          // Second pass: look for contains match
+          // Tier 4: cleaned / contains name match
           for (const r of results) {
             if (validateResolvedTrack(r, targetArtist, targetTitle)) {
               return r;
@@ -17263,7 +17308,7 @@ ${trackListXml}
               const query = `${trackOrSource.artist} ${trackOrSource.title}`;
               const results = await resolver.search(query, config);
               if (results && results.length > 0) {
-                bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title);
+                bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title, trackOrSource.mbid || trackOrSource.recordingMbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                 if (!bestMatch) {
                   console.warn(`  ⚠️ ${resolver.id} returned ${results.length} results but none matched "${trackOrSource.title}" by "${trackOrSource.artist}"`);
                 }
@@ -17350,7 +17395,7 @@ ${trackListXml}
                   const query = `${canonicalArtist} ${canonicalTitle}`;
                   const results = await resolver.search(query, config);
                   if (results && results.length > 0) {
-                    bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle);
+                    bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle, mbidResult.recording_mbid || trackOrSource.mbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                   }
                 } else if (resolver.resolve) {
                   const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config);
@@ -17498,6 +17543,7 @@ ${trackListXml}
       else if (trackOrSource.qobuzId) resolverId = 'qobuz';
       else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
+      else if (trackOrSource.plexPartKey || trackOrSource.plexServerId || trackOrSource.plexRatingKey) resolverId = 'plex';
       // Fallback: use the 'source' property if set (added by search tagging)
       else if (trackOrSource.source && typeof trackOrSource.source === 'string') {
         resolverId = trackOrSource.source;
@@ -17521,9 +17567,11 @@ ${trackListXml}
     // YouTube embedding is blocked in Electron, use resolver's play method instead
     // (which opens in external browser)
 
-    // Handle local file playback directly with HTML5 Audio
-    if (resolverId === 'localfiles') {
-      console.log('🎵 Playing local file:', sourceToPlay.filePath || sourceToPlay.fileUrl);
+    // Handle local file and Plex playback directly with HTML5 Audio. Both
+    // stream into the shared <audio> element; only the source URL differs
+    // (local-audio:// for files, a direct HTTP(S) stream URL for Plex).
+    if (resolverId === 'localfiles' || resolverId === 'plex') {
+      console.log('🎵 Playing via HTML5 audio:', resolverId, sourceToPlay.title || sourceToPlay.filePath || sourceToPlay.fileUrl);
       console.log('🎵 Source details:', JSON.stringify(sourceToPlay, null, 2));
 
       // Stop Spotify polling when switching to local file playback
@@ -17599,7 +17647,7 @@ ${trackListXml}
           }
         });
         audioRef.current.addEventListener('ended', () => {
-          console.log('🎵 Local file playback ended');
+          console.log('🎵 HTML5 audio playback ended');
           handleNextRef.current?.();
         });
         audioRef.current.addEventListener('error', (e) => {
@@ -17611,20 +17659,30 @@ ${trackListXml}
             return;
           }
 
-          // Provide helpful error message based on error code
-          let errorMessage = 'Could not play this file. It may have been moved or deleted.';
+          // Provide a helpful error message based on error code. Plex streams from
+          // a network server, so its messaging is server-centric, not file-centric.
+          const track = localFilePlaybackTrackRef.current;
+          const isPlexTrack = !!(track?.plexPartKey || track?.plexServerId || track?.sources?.plex);
+          let errorMessage = isPlexTrack
+            ? 'Could not play this track from your Plex server.'
+            : 'Could not play this file. It may have been moved or deleted.';
           if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-            const track = localFilePlaybackTrackRef.current;
-            const filePath = track?.filePath || track?.sources?.localfiles?.filePath || '';
-            const ext = filePath.split('.').pop()?.toLowerCase();
-            errorMessage = unsupportedAudioMessage(ext);
+            if (isPlexTrack) {
+              errorMessage = 'Your Plex server returned a stream Parachord could not play.';
+            } else {
+              const filePath = track?.filePath || track?.sources?.localfiles?.filePath || '';
+              const ext = filePath.split('.').pop()?.toLowerCase();
+              errorMessage = unsupportedAudioMessage(ext);
+            }
           } else if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
-            errorMessage = 'Network error while loading the file. The file may have been moved or deleted.';
+            errorMessage = isPlexTrack
+              ? 'Lost connection to your Plex server while streaming. Make sure it is online and reachable.'
+              : 'Network error while loading the file. The file may have been moved or deleted.';
           } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
             errorMessage = 'Error decoding the audio file. The file may be corrupted or use an unsupported format.';
           }
 
-          if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`)) return;
+          if (autoSkipIfAdvancing(`${isPlexTrack ? 'plex' : 'local file'} playback: ${errorMessage}`)) return;
           showConfirmDialog({
             type: 'error',
             title: 'Playback Error',
@@ -17637,16 +17695,36 @@ ${trackListXml}
       localFilePlaybackTrackRef.current = trackOrSource;
       localFileFallbackInProgressRef.current = false;
 
-      // Use custom local-audio:// protocol for secure local file playback
+      // Resolve the source URL. Plex asks its resolver for a reachable stream
+      // URL (per-server token + connection probe); local files use the custom
+      // local-audio:// protocol for secure file access.
+      let audioUrl;
+      if (resolverId === 'plex') {
+        const plexConfig = await getResolverConfig('plex');
+        const plexPlay = await resolver.play(sourceToPlay, plexConfig);
+        if (!plexPlay || !plexPlay.url) {
+          console.error('❌ Plex: could not resolve a stream URL (server unreachable?)');
+          if (autoSkipIfAdvancing('Plex stream unavailable')) return;
+          setTrackLoading(false);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Playback Error',
+            message: 'Could not reach your Plex server to stream this track. Make sure the server is online and reachable.'
+          });
+          return;
+        }
+        audioUrl = plexPlay.url;
+      } else {
       const filePath = sourceToPlay.filePath || sourceToPlay.fileUrl?.replace('file://', '');
-      const audioUrl = `local-audio://${filePath}`;
+        audioUrl = `local-audio://${filePath}`;
+      }
       console.log('🎵 Audio URL:', audioUrl);
       audioRef.current.src = audioUrl;
-      // Apply normalized volume for local files (respect mute state)
+      // Apply normalized volume (respect mute state)
       const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
-      const effectiveVolume = getEffectiveVolume(volumeToApply, 'localfiles', sourceToPlay.id || trackOrSource.id);
+      const effectiveVolume = getEffectiveVolume(volumeToApply, resolverId, sourceToPlay.id || trackOrSource.id);
       audioRef.current.volume = effectiveVolume / 100;
-      console.log(`🔊 Applied volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets.localfiles || 0}dB)${isMutedRef.current ? ' [MUTED]' : ''}`);
+      console.log(`🔊 Applied volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}% (offset: ${resolverVolumeOffsets[resolverId] || 0}dB)${isMutedRef.current ? ' [MUTED]' : ''}`);
 
       // Explicitly load to trigger metadata events
       audioRef.current.load();
@@ -17681,7 +17759,7 @@ ${trackListXml}
         // Clear explicit start flag since we're playing a new track
         trackNeedsExplicitStart.current = false;
 
-        console.log('✅ Local file playing');
+        console.log(resolverId === 'plex' ? '✅ Plex track playing' : '✅ Local file playing');
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
@@ -17728,20 +17806,20 @@ ${trackListXml}
           })();
         }
       } catch (error) {
-        console.error('❌ Local file playback failed:', error);
+        console.error(`❌ ${resolverId === 'plex' ? 'Plex' : 'Local file'} playback failed:`, error);
 
         // Try fallback to next available source if we have the original track with sources
         if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
-          const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== 'localfiles' && !trackOrSource.sources[id]?.noMatch);
+          const otherSources = Object.keys(trackOrSource.sources).filter(id => id !== resolverId && !trackOrSource.sources[id]?.noMatch);
           if (otherSources.length > 0) {
             console.log('🔄 Falling back to next available source...');
             // Set flag to prevent error event listener from showing duplicate dialog
             localFileFallbackInProgressRef.current = true;
-            // Create a modified track without localfiles source to trigger fallback
+            // Create a modified track without the failed source to trigger fallback
             const fallbackTrack = {
               ...trackOrSource,
               sources: Object.fromEntries(
-                Object.entries(trackOrSource.sources).filter(([id]) => id !== 'localfiles')
+                Object.entries(trackOrSource.sources).filter(([id]) => id !== resolverId)
               )
             };
             handlePlay(fallbackTrack);
@@ -17753,14 +17831,16 @@ ${trackListXml}
         setTrackLoading(false); // Clear loading state on error
 
         // Provide helpful error message based on error type
-        let errorMessage = 'Could not play this file: ' + error.message;
-        if (error.name === 'NotSupportedError' || error.message?.includes('no supported source')) {
+        let errorMessage = resolverId === 'plex'
+          ? 'Could not play this track from your Plex server: ' + error.message
+          : 'Could not play this file: ' + error.message;
+        if (resolverId !== 'plex' && (error.name === 'NotSupportedError' || error.message?.includes('no supported source'))) {
           const filePath = sourceToPlay.filePath || sourceToPlay.fileUrl || '';
           const ext = filePath.split('.').pop()?.toLowerCase();
           errorMessage = unsupportedAudioMessage(ext);
         }
 
-        if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`)) return;
+        if (autoSkipIfAdvancing(`${resolverId === 'plex' ? 'plex' : 'local file'} playback: ${errorMessage}`)) return;
         showConfirmDialog({
           type: 'error',
           title: 'Playback Error',
@@ -18970,7 +19050,7 @@ ${trackListXml}
     // A track may have sources.soundcloud from resolution but be playing via Apple Music.
     // Previously this checked sources.localfiles/soundcloud which caused it to hijack
     // pause for Apple Music tracks when audioRef.current lingered from a prior play.
-    if (audioRef.current && (currentTrack?._activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud')) {
+    if (audioRef.current && (currentTrack?._activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud' || currentTrack?._activeResolver === 'plex')) {
       if (isPlaying) {
         audioRef.current.pause();
         setIsPlaying(false);
@@ -27515,6 +27595,20 @@ ${trackListXml}
   // be allowed to outrank correct matches from lower-priority resolvers.
   const calculateConfidence = (originalTrack, foundTrack) => {
     if (!foundTrack) return 0.5;
+    // Definitive ID match: same ISRC or MusicBrainz recording MBID means the same
+    // recording regardless of how artist/title strings are formatted across
+    // services. Benefits any resolver that surfaces these (Spotify/Apple Music
+    // ISRC, Plex MBID/ISRC). Only ever upgrades — falls through to name
+    // validation when no ID is available on either side.
+    const targetIsrc = (typeof window !== 'undefined' && window.pickTrackIsrc) ? window.pickTrackIsrc(originalTrack) : (originalTrack && originalTrack.isrc);
+    if (targetIsrc && foundTrack.isrc && String(targetIsrc).toUpperCase() === String(foundTrack.isrc).toUpperCase()) {
+      return 1.0;
+    }
+    const targetMbid = originalTrack && (originalTrack.mbid || originalTrack.recordingMbid);
+    const foundMbid = foundTrack.mbid || foundTrack.recordingMbid;
+    if (targetMbid && foundMbid && targetMbid === foundMbid) {
+      return 1.0;
+    }
     const targetArtist = originalTrack?.artist || '';
     const targetTitle = originalTrack?.title || '';
     if (!validateResolvedTrack(foundTrack, targetArtist, targetTitle)) {
@@ -37571,6 +37665,164 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
+  // Plex helpers — sign in via PIN OAuth, discover music libraries across all
+  // of the account's servers, and persist the user's selection. All Plex logic
+  // lives in the plex.axe resolver; these just drive it and store the result.
+  const plexLibId = (serverId, key) => serverId + ':' + key;
+
+  const loadPlexLibraries = async (account) => {
+    const resolver = resolverLoaderRef.current?.getResolver('plex');
+    if (!resolver || !resolver.discoverLibraries) return;
+    setPlexDiscovering(true);
+    setPlexError(null);
+    try {
+      const disc = await resolver.discoverLibraries(account);
+      if (disc?.error) setPlexError(disc.error);
+      const servers = disc?.servers || [];
+      setPlexServers(servers);
+      const saved = (metaServiceConfigs.plex?.libraries || []).map(l => plexLibId(l.serverId, l.key));
+      const next = saved.length
+        ? new Set(saved)
+        : new Set(servers.flatMap(s => s.libraries.map(l => plexLibId(s.serverId, l.key))));
+      setPlexSelectedLibs(next);
+      // Auto-save the initial selection (e.g. all libraries on a fresh connect)
+      // so it persists without a Save button. No-op when it already matches.
+      const savedKey = saved.slice().sort().join('|');
+      const nextKey = Array.from(next).sort().join('|');
+      if (savedKey !== nextKey) {
+        await persistPlexSelection(next, account, servers);
+      }
+    } catch (e) {
+      setPlexError(e.message);
+    } finally {
+      setPlexDiscovering(false);
+    }
+  };
+
+  const connectPlex = async () => {
+    const resolver = resolverLoaderRef.current?.getResolver('plex');
+    if (!resolver || !resolver.connect) {
+      showConfirmDialog({ type: 'error', title: 'Plex Unavailable', message: 'The Plex resolver is not loaded.' });
+      return;
+    }
+    setPlexError(null);
+    setPlexConnecting(true);
+    setPlexStatus('Opening Plex sign-in in your browser…');
+    try {
+      const existing = metaServiceConfigs.plex || {};
+      const res = await resolver.connect({ clientId: existing.clientId });
+      if (!res || !res.success) {
+        setPlexError(res?.error || 'Plex sign-in failed.');
+        setPlexConnecting(false);
+        setPlexStatus('');
+        return;
+      }
+      const account = { authToken: res.authToken, clientId: res.clientId, username: res.username };
+      setPlexAccount(account);
+      // Persist the token immediately so a closed window doesn't lose the sign-in.
+      await saveMetaServiceConfig('plex', { ...existing, ...account, libraries: existing.libraries || [] });
+      delete resolverConfigCache.current['plex'];
+      setPlexStatus('Finding your servers and music libraries…');
+      await loadPlexLibraries(account);
+    } catch (e) {
+      setPlexError(e.message);
+    } finally {
+      setPlexConnecting(false);
+      setPlexStatus('');
+    }
+  };
+
+  const togglePlexLibrary = (serverId, key) => {
+    const id = plexLibId(serverId, key);
+    const next = new Set(plexSelectedLibs);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setPlexSelectedLibs(next);
+    persistPlexSelection(next); // auto-save on every change
+  };
+
+  // Persist the current library selection (auto-save — no Save button). Pass
+  // `serversArg` on first load since setPlexServers hasn't flushed to closure yet.
+  const persistPlexSelection = async (selectedSet, account, serversArg) => {
+    const acct = account || plexAccount || metaServiceConfigs.plex || {};
+    const servers = serversArg || plexServers;
+    const libraries = [];
+    for (const s of servers) {
+      for (const lib of s.libraries) {
+        if (selectedSet.has(plexLibId(s.serverId, lib.key))) {
+          libraries.push({
+            serverId: s.serverId,
+            serverName: s.serverName,
+            accessToken: s.accessToken,
+            connections: s.connections,
+            key: lib.key,
+            title: lib.title
+          });
+        }
+      }
+    }
+    const config = {
+      authToken: acct.authToken,
+      clientId: acct.clientId,
+      username: acct.username,
+      libraries
+    };
+    await saveMetaServiceConfig('plex', config);
+    delete resolverConfigCache.current['plex'];
+    // Refresh the background pick-by-id index for the new selection (idempotent).
+    try { resolverLoaderRef.current?.getResolver('plex')?.buildIndex?.(config); } catch (e) { /* best-effort */ }
+    if (libraries.length > 0 && !activeResolvers.includes('plex')) {
+      toggleResolver('plex');
+    }
+  };
+
+  const disconnectPlex = async () => {
+    await clearMetaServiceConfig('plex');
+    delete resolverConfigCache.current['plex'];
+    setPlexAccount(null);
+    setPlexServers([]);
+    setPlexSelectedLibs(new Set());
+    setPlexError(null);
+    setPlexIndexStatus([]);
+    if (activeResolvers.includes('plex')) {
+      removeResolverSources('plex');
+      setActiveResolvers(prev => prev.filter(id => id !== 'plex'));
+      setResolverOrder(prev => prev.filter(id => id !== 'plex'));
+    }
+  };
+
+  // Auto-load libraries the moment the Plex panel opens while signed in — no
+  // "click to load" step; the panel shows a spinner via plexDiscovering.
+  useEffect(() => {
+    if (selectedResolver?.id !== 'plex') return;
+    const cfg = metaServiceConfigs.plex;
+    if (cfg && cfg.authToken && plexServers.length === 0 && !plexDiscovering) {
+      const account = plexAccount || { authToken: cfg.authToken, clientId: cfg.clientId, username: cfg.username };
+      if (!plexAccount) setPlexAccount(account);
+      loadPlexLibraries(account);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedResolver?.id]);
+
+  // Poll the background index build for progress while the Plex panel is open.
+  // The build itself lives on `window` in the resolver, so it keeps running
+  // after this effect (and the panel) is gone.
+  useEffect(() => {
+    if (selectedResolver?.id !== 'plex') return;
+    const resolver = resolverLoaderRef.current?.getResolver('plex');
+    if (!resolver || !resolver.indexStatus) return;
+    const cfg = metaServiceConfigs.plex;
+    if (!cfg || !cfg.libraries || !cfg.libraries.length) { setPlexIndexStatus([]); return; }
+    // Ensure the index is building/built for the current selection (idempotent —
+    // ready libraries are skipped). Without this, a library that was never
+    // indexed this session would sit at "Queued" forever.
+    try { resolver.buildIndex?.(cfg); } catch (e) { /* best-effort */ }
+    const tick = () => { try { setPlexIndexStatus(resolver.indexStatus(cfg) || []); } catch (e) { /* ignore */ } };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedResolver?.id, metaServiceConfigs.plex]);
+
   // Fetch models dynamically for plugins with dynamic-select model setting
   const fetchDynamicModels = async (resolver, config) => {
     const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
@@ -38316,9 +38568,9 @@ const getCurrentPlaybackState = async () => {
 useEffect(() => {
   if (!spotifyToken || !isPlaying) return;
 
-  // Don't poll if playing via HTML5 Audio (local files or SoundCloud)
+    // Don't poll if playing via HTML5 Audio (local files, SoundCloud, or Plex)
   const activeResolver = currentTrack?._activeResolver;
-  if (activeResolver === 'localfiles' || activeResolver === 'soundcloud') {
+    if (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'plex') {
     return;
   }
 
@@ -56355,8 +56607,8 @@ useEffect(() => {
                     // Block external progress updates while user is interacting with the slider
                     seekingRef.current = true;
                     setProgress(newPosition);
-                    // Handle seeking for local files and SoundCloud (both use HTML5 Audio)
-                    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
+                    // Handle seeking for local files, SoundCloud, and Plex (all use HTML5 Audio)
+                    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud' || activeResolver === 'plex') && audioRef.current) {
                       audioRef.current.currentTime = newPosition;
                     }
                     // Handle seeking for Apple Music (native MusicKit, MusicKit JS, or preview audio)
@@ -56453,7 +56705,7 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || currentResolverId === 'plex' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -56468,7 +56720,7 @@ useEffect(() => {
                 const restoredVolume = preMuteVolumeRef.current || 30;
                 setIsMuted(false);
                 setVolume(restoredVolume);
-                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
+                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'plex') && audioRef.current) {
                   applyLocalFileVolume(restoredVolume, currentTrackRef.current?.id, activeResolverId);
                 }
                 if (activeResolverId === 'spotify') {
@@ -56482,7 +56734,7 @@ useEffect(() => {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
                 setIsMuted(true);
-                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
+                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'plex') && audioRef.current) {
                   audioRef.current.volume = 0;
                 }
                 if (activeResolverId === 'spotify') {
@@ -56560,7 +56812,7 @@ useEffect(() => {
                     // Re-determine resolver from current track ref to avoid stale closure
                     const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
                     // Local files and SoundCloud: apply normalized volume immediately
-                    if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud') && audioRef.current) {
+                    if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'plex') && audioRef.current) {
                       applyLocalFileVolume(newVolume, currentTrackRef.current?.id, activeResolverId);
                     }
                     // Spotify: debounced API call to prevent rate limiting
@@ -58143,6 +58395,122 @@ useEffect(() => {
               })
             )
           ),
+
+          // Plex: sign in via PIN OAuth, then choose which music libraries
+          // (across every server on the account) to include in search/playback.
+          selectedResolver.id === 'plex' && (() => {
+            const savedCfg = metaServiceConfigs.plex || {};
+            const account = plexAccount || (savedCfg.authToken
+              ? { authToken: savedCfg.authToken, clientId: savedCfg.clientId, username: savedCfg.username }
+              : null);
+            const connected = !!(account && account.authToken);
+            const selectedCount = plexSelectedLibs.size;
+            return React.createElement('div', {
+              style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' }
+            },
+              React.createElement('div', { className: 'flex items-center justify-between' },
+                React.createElement('div', null,
+                  React.createElement('span', {
+                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Plex Account'),
+                  React.createElement('p', {
+                    style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }
+                  }, connected
+                    ? ('Signed in' + (account.username ? ' as ' + account.username : ''))
+                    : 'Sign in to stream from your Plex servers')
+                ),
+                connected
+                  ? React.createElement('button', {
+                    onClick: disconnectPlex,
+                    className: 'transition-colors',
+                    style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.08)', border: 'none', borderRadius: '8px', cursor: 'pointer' }
+                  }, 'Disconnect')
+                  : React.createElement('button', {
+                    onClick: connectPlex,
+                    disabled: plexConnecting,
+                    className: 'transition-colors',
+                    style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: plexConnecting ? '#9ca3af' : '#E5A00D', border: 'none', borderRadius: '8px', cursor: plexConnecting ? 'default' : 'pointer' }
+                  }, plexConnecting ? 'Signing in…' : 'Sign in with Plex')
+              ),
+              plexConnecting && plexStatus && React.createElement('p', {
+                style: { marginTop: '10px', fontSize: '12px', color: 'var(--text-secondary)' }
+              }, plexStatus),
+              plexError && React.createElement('p', {
+                style: { marginTop: '10px', fontSize: '12px', color: '#dc2626' }
+              }, plexError),
+              connected && React.createElement('div', { style: { marginTop: '16px' } },
+                React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '8px' } },
+                  React.createElement('span', {
+                    style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Music libraries'),
+                  React.createElement('button', {
+                    onClick: () => loadPlexLibraries(account),
+                    disabled: plexDiscovering,
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: plexDiscovering ? 'default' : 'pointer', textDecoration: 'underline' }
+                  }, 'Refresh')
+                ),
+                plexDiscovering && plexServers.length === 0 && React.createElement('div', {
+                  className: 'flex items-center gap-2',
+                  style: { fontSize: '12px', color: 'var(--text-secondary)' }
+                },
+                  React.createElement('div', { className: 'animate-spin', style: { width: '12px', height: '12px', border: '2px solid var(--border-subtle)', borderTopColor: '#E5A00D', borderRadius: '50%', flexShrink: 0 } }),
+                  React.createElement('span', null, 'Loading your libraries…')
+                ),
+                !plexDiscovering && plexServers.length === 0 && React.createElement('p', {
+                  style: { fontSize: '12px', color: 'var(--text-secondary)' }
+                }, 'No music libraries found on your servers.'),
+                plexServers.map(server => React.createElement('div', { key: server.serverId, style: { marginBottom: '12px' } },
+                  React.createElement('div', {
+                    style: { fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '4px' }
+                  }, server.serverName + (server.owned ? '' : ' (shared)')),
+                  server.libraries.length === 0
+                    ? React.createElement('div', {
+                      style: { fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic', paddingLeft: '4px' }
+                    }, 'No music libraries (or server unreachable)')
+                    : server.libraries.map(lib => React.createElement('label', {
+                      key: lib.key,
+                      className: 'flex items-center gap-2',
+                      style: { fontSize: '12px', color: 'var(--text-primary)', padding: '4px 0', cursor: 'pointer' }
+                    },
+                      React.createElement('input', {
+                        type: 'checkbox',
+                        checked: plexSelectedLibs.has(plexLibId(server.serverId, lib.key)),
+                        onChange: () => togglePlexLibrary(server.serverId, lib.key)
+                      }),
+                      React.createElement('span', null, lib.title)
+                    ))
+                )),
+                // Background pick-by-id index progress (continues even if this panel closes)
+                plexIndexStatus.length > 0 && React.createElement('div', {
+                  style: { marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' }
+                },
+                  React.createElement('span', {
+                    style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Search index'),
+                  React.createElement('p', {
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', marginBottom: '8px', lineHeight: '1.4' }
+                  }, 'Your libraries are scanned once, for quick matching.'),
+                  plexIndexStatus.map((s, i) => {
+                    const pct = s.total > 0 ? Math.min(100, Math.round((s.scanned / s.total) * 100)) : (s.status === 'ready' ? 100 : 0);
+                    const label = s.status === 'ready' ? ('Indexed ' + (s.scanned || 0).toLocaleString() + ' tracks')
+                      : s.status === 'error' ? ('Failed: ' + (s.error || 'error'))
+                        : s.status === 'building' ? ('Scanning… ' + (s.scanned || 0).toLocaleString() + (s.total ? ' / ' + s.total.toLocaleString() : ''))
+                          : 'Queued…';
+                    return React.createElement('div', { key: (s.serverName || '') + ':' + (s.libraryTitle || '') + ':' + i, style: { marginBottom: '8px' } },
+                      React.createElement('div', { className: 'flex items-center justify-between', style: { fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' } },
+                        React.createElement('span', null, (s.libraryTitle || 'Library') + (s.serverName ? ' · ' + s.serverName : '')),
+                        React.createElement('span', null, s.status === 'ready' ? '✓' : (pct + '%'))
+                      ),
+                      React.createElement('div', { style: { height: '5px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '3px', overflow: 'hidden' } },
+                        React.createElement('div', { style: { height: '100%', width: pct + '%', backgroundColor: s.status === 'error' ? '#dc2626' : '#E5A00D', transition: 'width 0.3s' } })
+                      ),
+                      React.createElement('div', { style: { fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' } }, label)
+                    );
+                  })
+                )
+              )
+            );
+          })(),
 
           // Authentication section (for services that require it)
           selectedResolver.id === 'spotify' && React.createElement('div', {

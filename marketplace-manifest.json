@@ -29,6 +29,32 @@
       ]
     },
     {
+      "id": "plex",
+      "name": "Plex",
+      "version": "0.1.0",
+      "author": "Parachord Team",
+      "description": "Search and stream music from your Plex Media Servers. Sign in with your Plex account, then pick which music libraries to include.",
+      "icon": "▶",
+      "color": "#E5A00D",
+      "homepage": "https://plex.tv",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": true,
+        "browse": false,
+        "urlLookup": true
+      },
+      "requiresAuth": true,
+      "builtin": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/plex.axe",
+      "category": "streaming",
+      "tags": [
+        "streaming",
+        "self-hosted",
+        "local"
+      ]
+    },
+    {
       "id": "bandcamp",
       "name": "Bandcamp",
       "version": "1.0.0",

@@ -4169,6 +4169,62 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
   }
 });
 
+// Plex-scoped HTTP. Unlike proxy-fetch, this deliberately allows private/LAN
+// addresses and *.plex.direct hosts (which resolve to private IPs) and tolerates
+// self-signed / cert-mismatched TLS, because the user has explicitly authorised
+// these servers by signing in to Plex. Returns { ok, status, text }.
+ipcMain.handle('plex-fetch', async (event, url, options = {}) => {
+  let urlObj;
+  try {
+    urlObj = new URL(url);
+    if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+      return { ok: false, status: 0, error: 'Only HTTP and HTTPS URLs are allowed' };
+    }
+  } catch (e) {
+    return { ok: false, status: 0, error: `Invalid URL: ${e.message}` };
+  }
+
+  const transport = urlObj.protocol === 'https:' ? require('https') : require('http');
+  const reqOptions = {
+    method: options.method || 'GET',
+    headers: options.headers || {},
+    rejectUnauthorized: false
+  };
+
+  // Lenient response cap. Plex's largest legitimate response (a full-library
+  // track listing, paged at 1000) is well under this; anything larger is a
+  // misbehaving/compromised server, so abort before it can OOM the main process.
+  const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    const done = (result) => { if (!settled) { settled = true; resolve(result); } };
+    const req = transport.request(url, reqOptions, (res) => {
+      let data = '';
+      let received = 0;
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        received += Buffer.byteLength(chunk);
+        if (received > MAX_RESPONSE_BYTES) {
+          req.destroy();
+          done({ ok: false, status: 0, error: 'Response exceeded 10MB limit' });
+          return;
+        }
+        data += chunk;
+      });
+      res.on('end', () => done({
+        ok: res.statusCode >= 200 && res.statusCode < 300,
+        status: res.statusCode,
+        text: data
+      }));
+    });
+    req.on('error', (err) => done({ ok: false, status: 0, error: err.message }));
+    req.setTimeout(options.timeoutMs || 8000, () => { req.destroy(); done({ ok: false, status: 0, error: 'Request timed out' }); });
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+});
+
 // Plugin marketplace configuration
 const PLUGIN_MARKETPLACE_URL = 'https://raw.githubusercontent.com/Parachord/parachord-plugins/main';
 const PLUGIN_MANIFEST_URL = `${PLUGIN_MARKETPLACE_URL}/manifest.json`;
