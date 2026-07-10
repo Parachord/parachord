@@ -28765,10 +28765,6 @@ ${tracks}
         const descriptionRaw = item.querySelector('description')?.textContent || '';
         const pubDate = item.querySelector('pubDate')?.textContent || '';
 
-        // Extract Spotify URL from description before stripping HTML
-        const spotifyMatch = descriptionRaw.match(/href="(https:\/\/open\.spotify\.com\/album\/[^"]+)"/);
-        const spotifyUrl = spotifyMatch ? spotifyMatch[1] : null;
-
         // Strip HTML tags and fully decode HTML entities (the RSS CDATA content may
         // contain double-encoded entities like &amp;amp; so we decode in a loop until stable)
         let description = descriptionRaw;
@@ -28778,7 +28774,9 @@ ${tracks}
           const descDoc = new DOMParser().parseFromString(description, 'text/html');
           description = (descDoc.body.textContent || '').trim();
         } while (description !== prev);
-        // Remove plain text Spotify URLs that might remain after HTML stripping
+        // Scrub any Spotify album URL out of the synopsis — the Achordion feed
+        // (parachord#962) appends a bare URL to the blurb, and we deliberately do
+        // NOT surface a Spotify link in Critical Darlings, so it must not render.
         description = description.replace(/https:\/\/open\.spotify\.com\/album\/\S+/g, '').trim();
 
         // Parse "Album by Artist" format
@@ -28803,7 +28801,6 @@ ${tracks}
             title: album,
             link: link,
             description: description,
-            spotifyUrl: spotifyUrl,
             pubDate: pubDate ? new Date(pubDate) : null,
             albumArt: undefined // undefined = loading, null = no art found, string = art URL
           });
@@ -28929,7 +28926,13 @@ ${tracks}
     console.log('📰 Loading Critic\'s Picks...');
 
     try {
-      const response = await fetch('https://www.rssground.com/p/uncoveries');
+      // Achordion is the source of truth for Critical Darlings (parachord#962).
+      // Byte-compatible with the prior feed's item shape, so parseCriticsPicksRSS
+      // is unchanged. Public/no-auth; items carry no cover URLs — cover art is
+      // resolved below via MusicBrainz + Cover Art Archive as before.
+      const response = await fetch('https://achordion.xyz/api/critical-darlings/feed.xml', {
+        headers: { 'User-Agent': 'Parachord/0.9.5 (Critical Darlings; +https://github.com/Parachord/parachord)' }
+      });
       if (!response.ok) {
         throw new Error(`Failed to fetch RSS: ${response.status}`);
       }
