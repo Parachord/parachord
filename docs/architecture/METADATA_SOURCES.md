@@ -12,7 +12,7 @@ This document describes all external data sources used by Parachord for fetching
 | **Album Art** | Cover Art Archive | Embedded metadata | Folder art | - |
 | **Charts (Albums)** | Apple Music RSS | - | - | - |
 | **Charts (Songs)** | Apple Music RSS | Last.fm | - | - |
-| **Critics Picks** | Achordion RSS (Critical Darlings) | - | - | - |
+| **Critics Picks** | Achordion RSS (Critical Darlings) | RSSground (transitional) | - | - |
 | **Recommendations** | Last.fm | ListenBrainz | - | - |
 | **Scrobbling** | Last.fm | ListenBrainz | Libre.fm | - |
 | **Library Sync** | Spotify | - | - | - |
@@ -129,6 +129,7 @@ Displayed on the "Critical Darlings" page.
 | Source | Method | Notes |
 |--------|--------|-------|
 | Achordion RSS | `achordion.xyz/api/critical-darlings/feed.xml` | Aggregated critic-acclaimed albums (public, no auth) |
+| RSSground (transitional) | `rssground.com/p/uncoveries` | Legacy feed, client-side union top-up during the Achordion store's ramp-up; self-deactivates and is removed once the store is populated (achordion#83) |
 
 **Code Location:** `app.js` → `loadCriticsPicks()` (~line 28923)
 

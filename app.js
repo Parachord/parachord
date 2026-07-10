@@ -28947,9 +28947,32 @@ ${tracks}
     try { window.electron?.store?.set?.('cache_critics_picks', criticsPicksCache.current); } catch (e) { /* best-effort */ }
   };
 
-  // Case-insensitive "title|artist" identity for a pick — the union dedup key.
-  // Must match parachord-mobile's key so both clients merge identically.
+  // Case-insensitive "title|artist" identity for a pick — the union dedup key
+  // (equivalent to Achordion's "Album by Artist" title dedup). Must match
+  // parachord-mobile's key so both clients merge identically.
   const criticsPickKey = (a) => `${(a.title || '').toLowerCase()}|${(a.artist || '').toLowerCase()}`;
+
+  // TRANSITIONAL ramp-up top-up (parachord#962 / achordion#83). The Achordion
+  // feed is first-party/store-only and thin while its store backfills, and
+  // Achordion deliberately does NOT merge the historical RSSground backlog
+  // server-side (that union is page-only on their side, to keep the feed clean).
+  // So during the cutover window we top the section up from the legacy RSSground
+  // feed CLIENT-SIDE, deduped by title|artist. This self-deactivates once the
+  // Achordion feed alone reaches TARGET (or the local cache already fills the
+  // gap). REMOVE this helper + its call site once the Achordion store is
+  // reliably populated and RSSground is retired.
+  const fetchLegacyCriticsPicks = async () => {
+    try {
+      const res = await fetch('https://www.rssground.com/p/uncoveries', {
+        headers: { 'User-Agent': 'Parachord/0.9.5 (Critical Darlings; +https://github.com/Parachord/parachord)' }
+      });
+      if (!res.ok) return [];
+      return parseCriticsPicksRSS(await res.text());
+    } catch (e) {
+      console.warn('Legacy Critical Darlings top-up fetch failed:', e?.message || e);
+      return [];
+    }
+  };
 
   // Load Critic's Picks from RSS feed
   const loadCriticsPicks = async (forceRefresh = false) => {
@@ -28992,10 +29015,26 @@ ${tracks}
         const prev = cacheByKey.get(criticsPickKey(a));
         return (prev && prev.albumArt && a.albumArt === undefined) ? { ...a, albumArt: prev.albumArt } : a;
       });
-      const freshKeys = new Set(freshWithArt.map(criticsPickKey));
-      const cachedOnly = cachedAlbums.filter(a => !freshKeys.has(criticsPickKey(a)));
-      const fillCount = Math.max(0, TARGET_ALBUM_COUNT - freshWithArt.length);
-      const merged = freshWithArt.concat(cachedOnly.slice(0, fillCount));
+      // Fill up to TARGET from (1) the local cache, then (2) the transitional
+      // RSSground top-up if still short (dedup by title|artist). The RSSground
+      // fetch only fires while short, so it self-deactivates once the Achordion
+      // feed alone — or the accumulated cache — reaches TARGET.
+      const seen = new Set(freshWithArt.map(criticsPickKey));
+      const fill = [];
+      const addFill = (arr) => {
+        for (const a of (arr || [])) {
+          if (freshWithArt.length + fill.length >= TARGET_ALBUM_COUNT) return;
+          const k = criticsPickKey(a);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          fill.push(a);
+        }
+      };
+      addFill(cachedAlbums);
+      if (freshWithArt.length + fill.length < TARGET_ALBUM_COUNT) {
+        addFill(await fetchLegacyCriticsPicks());
+      }
+      const merged = freshWithArt.concat(fill);
 
       setCriticsPicks(merged);
       setCriticsPicksLoaded(true);
@@ -29013,13 +29052,20 @@ ${tracks}
 
     } catch (error) {
       console.error('Failed to load Critic\'s Picks:', error);
-      // Empty-guard: on a network failure, keep showing cached picks rather than
-      // surfacing an error over good data. Only error when the cache is empty too.
-      const cachedAlbums = criticsPicksCache.current.albums || [];
-      if (cachedAlbums.length > 0) {
-        setCriticsPicks(cachedAlbums);
+      // Empty-guard + transitional fallback: prefer cached picks; if the cache is
+      // empty (e.g. first run with the Achordion feed unreachable), fall back to
+      // the legacy RSSground feed during the cutover window. Only surface an error
+      // when both are empty.
+      let fallback = criticsPicksCache.current.albums || [];
+      if (fallback.length === 0) {
+        fallback = await fetchLegacyCriticsPicks();
+      }
+      if (fallback.length > 0) {
+        const capped = fallback.slice(0, 25); // TARGET_ALBUM_COUNT
+        setCriticsPicks(capped);
         setCriticsPicksLoaded(true);
-        console.log(`📰 Feed fetch failed — showing ${cachedAlbums.length} cached critics picks`);
+        persistCriticsPicksCache(capped);
+        console.log(`📰 Achordion feed failed — showing ${capped.length} picks from cache/legacy`);
       } else {
         setCriticsPicksError('Failed to load Critic\'s Picks. Please try again.');
       }
