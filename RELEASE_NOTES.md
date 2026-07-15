@@ -1,3 +1,21 @@
+# Parachord v0.9.6
+
+**Release date:** 2026-07-15
+
+> Two focused improvements. Playback is now **lighter on your machine** — Parachord no longer redraws its whole interface on every progress-bar tick, so long listening sessions use less CPU and battery. And **Critical Darlings** moves to a new, more reliable data source as its old feed is retired — with no interruption to the list you see.
+
+---
+
+## Smoother playback
+
+While a track plays, the progress bar updates several times a second. Parachord used to re-render its **entire** interface on every one of those ticks — a constant, invisible tax on CPU and battery. Now only the progress bar updates on a tick, so playback feels lighter and your fans stay quieter during long sessions. Nothing about how playback looks or works changes — it's purely more efficient under the hood.
+
+## Critical Darlings: new source
+
+The Critical Darlings page previously pulled from a third-party feed (RSSground) that's being retired. It now sources from **Achordion**, Parachord's companion discovery service. The switch is seamless: while Achordion's catalog fills in, the page stays full by blending in recent picks, and it converges to the new feed automatically as it grows. No action needed on your end.
+
+---
+
 # Parachord v0.9.5
 
 **Release date:** 2026-06-30
