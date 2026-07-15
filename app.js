@@ -6245,6 +6245,11 @@ const Parachord = () => {
   const [criticsPicksLoaded, setCriticsPicksLoaded] = useState(false);
   const [criticsPicksError, setCriticsPicksError] = useState(null);
   const [criticsPicksLastFetched, setCriticsPicksLastFetched] = useState(null);
+  // Persisted union-with-cache base for Critical Darlings (parachord#962). The
+  // Achordion feed backfills over time and each fetch REPLACES the list, so this
+  // retains recent picks to top the section up to TARGET during ramp-up. Shape:
+  // { albums: [...], timestamp }. Restored at bulk-load, rewritten after each fetch.
+  const criticsPicksCache = useRef({ albums: [], timestamp: 0 });
 
   // Charts state
   const [charts, setCharts] = useState([]);
@@ -22970,6 +22975,7 @@ ${trackListXml}
       const criticalKeys = [
         'last_active_view',
         'cache_ai_suggestions',
+        'cache_critics_picks',
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'meta_service_configs',
         'applemusic_developer_token', 'friends', 'pinnedFriendIds',
@@ -23196,6 +23202,24 @@ ${trackListXml}
       }); // end scheduleIdle for big-cache hydration
 
       // AI suggestions and view restoration (already loaded in batch)
+      // Restore Critical Darlings from cache (parachord#962) BEFORE cacheLoaded
+      // flips, so the union base is seeded and the section paints instantly before
+      // the staleness-gated feed fetch runs. Persisted art comes along, so no
+      // dependency on the (deferred) big album-art cache here. lastFetched is set
+      // to the cached timestamp so the 4h staleness gate still triggers a refresh.
+      const criticsPicksData = d['cache_critics_picks'];
+      if (criticsPicksData && Array.isArray(criticsPicksData.albums) && criticsPicksData.albums.length > 0) {
+        const hydrated = criticsPicksData.albums.map(a => ({
+          ...a,
+          pubDate: a.pubDate ? new Date(a.pubDate) : null
+        }));
+        criticsPicksCache.current = { albums: hydrated, timestamp: criticsPicksData.timestamp || 0 };
+        setCriticsPicks(hydrated);
+        setCriticsPicksLoaded(true);
+        setCriticsPicksLastFetched(criticsPicksData.timestamp || 0);
+        console.log(`📦 Loaded ${hydrated.length} critics picks from cache`);
+      }
+
       const aiSuggestionsData = d['cache_ai_suggestions'];
       const savedLastView = d['last_active_view'];
 
@@ -28822,10 +28846,6 @@ ${tracks}
         const descriptionRaw = item.querySelector('description')?.textContent || '';
         const pubDate = item.querySelector('pubDate')?.textContent || '';
 
-        // Extract Spotify URL from description before stripping HTML
-        const spotifyMatch = descriptionRaw.match(/href="(https:\/\/open\.spotify\.com\/album\/[^"]+)"/);
-        const spotifyUrl = spotifyMatch ? spotifyMatch[1] : null;
-
         // Strip HTML tags and fully decode HTML entities (the RSS CDATA content may
         // contain double-encoded entities like &amp;amp; so we decode in a loop until stable)
         let description = descriptionRaw;
@@ -28835,7 +28855,9 @@ ${tracks}
           const descDoc = new DOMParser().parseFromString(description, 'text/html');
           description = (descDoc.body.textContent || '').trim();
         } while (description !== prev);
-        // Remove plain text Spotify URLs that might remain after HTML stripping
+        // Scrub any Spotify album URL out of the synopsis — the Achordion feed
+        // (parachord#962) appends a bare URL to the blurb, and we deliberately do
+        // NOT surface a Spotify link in Critical Darlings, so it must not render.
         description = description.replace(/https:\/\/open\.spotify\.com\/album\/\S+/g, '').trim();
 
         // Parse "Album by Artist" format
@@ -28860,7 +28882,6 @@ ${tracks}
             title: album,
             link: link,
             description: description,
-            spotifyUrl: spotifyUrl,
             pubDate: pubDate ? new Date(pubDate) : null,
             albumArt: undefined // undefined = loading, null = no art found, string = art URL
           });
@@ -28976,6 +28997,40 @@ ${tracks}
     }
   };
 
+  // Persist the Critical Darlings union base (parachord#962) — ref + disk cache,
+  // so the section survives restart and seeds the next fetch's union.
+  const persistCriticsPicksCache = (albums) => {
+    criticsPicksCache.current = { albums, timestamp: Date.now() };
+    try { window.electron?.store?.set?.('cache_critics_picks', criticsPicksCache.current); } catch (e) { /* best-effort */ }
+  };
+
+  // Case-insensitive "title|artist" identity for a pick — the union dedup key
+  // (equivalent to Achordion's "Album by Artist" title dedup). Must match
+  // parachord-mobile's key so both clients merge identically.
+  const criticsPickKey = (a) => `${(a.title || '').toLowerCase()}|${(a.artist || '').toLowerCase()}`;
+
+  // TRANSITIONAL ramp-up top-up (parachord#962 / achordion#83). The Achordion
+  // feed is first-party/store-only and thin while its store backfills, and
+  // Achordion deliberately does NOT merge the historical RSSground backlog
+  // server-side (that union is page-only on their side, to keep the feed clean).
+  // So during the cutover window we top the section up from the legacy RSSground
+  // feed CLIENT-SIDE, deduped by title|artist. This self-deactivates once the
+  // Achordion feed alone reaches TARGET (or the local cache already fills the
+  // gap). REMOVE this helper + its call site once the Achordion store is
+  // reliably populated and RSSground is retired.
+  const fetchLegacyCriticsPicks = async () => {
+    try {
+      const res = await fetch('https://www.rssground.com/p/uncoveries', {
+        headers: { 'User-Agent': 'Parachord/0.9.5 (Critical Darlings; +https://github.com/Parachord/parachord)' }
+      });
+      if (!res.ok) return [];
+      return parseCriticsPicksRSS(await res.text());
+    } catch (e) {
+      console.warn('Legacy Critical Darlings top-up fetch failed:', e?.message || e);
+      return [];
+    }
+  };
+
   // Load Critic's Picks from RSS feed
   const loadCriticsPicks = async (forceRefresh = false) => {
     if (criticsPicksLoading) return;
@@ -28986,31 +29041,91 @@ ${tracks}
     console.log('📰 Loading Critic\'s Picks...');
 
     try {
-      const response = await fetch('https://www.rssground.com/p/uncoveries');
+      // Achordion is the source of truth for Critical Darlings (parachord#962).
+      // Byte-compatible with the prior feed's item shape, so parseCriticsPicksRSS
+      // is unchanged. Public/no-auth; items carry no cover URLs — cover art is
+      // resolved below via MusicBrainz + Cover Art Archive as before.
+      const response = await fetch('https://achordion.xyz/api/critical-darlings/feed.xml', {
+        headers: { 'User-Agent': 'Parachord/0.9.5 (Critical Darlings; +https://github.com/Parachord/parachord)' }
+      });
       if (!response.ok) {
         throw new Error(`Failed to fetch RSS: ${response.status}`);
       }
 
       const rssText = await response.text();
-      const albums = parseCriticsPicksRSS(rssText);
+      const freshAlbums = parseCriticsPicksRSS(rssText);
 
-      console.log(`📰 Parsed ${albums.length} albums from Critic's Picks`);
+      console.log(`📰 Parsed ${freshAlbums.length} albums from Critic's Picks`);
 
-      // Set albums immediately (without album art)
-      setCriticsPicks(albums);
+      // Union-with-cache fallback (parachord#962, mirrors parachord-mobile #346).
+      // The Achordion feed backfills over time and each fetch REPLACES the list,
+      // so right after cutover it may return only a couple of picks. Keep EVERY
+      // fresh pick, then top up to TARGET_ALBUM_COUNT with recent cached picks not
+      // already present (dedup by case-insensitive title|artist). Never truncates
+      // the fresh feed, so it converges to feed-only once the feed has >= TARGET.
+      const TARGET_ALBUM_COUNT = 25; // must match parachord-mobile
+      const cachedAlbums = criticsPicksCache.current.albums || [];
+      const cacheByKey = new Map(cachedAlbums.map(a => [criticsPickKey(a), a]));
+      // Carry already-resolved album art over to fresh picks that were cached,
+      // so a re-appearing pick doesn't flash a shimmer while art re-resolves.
+      const freshWithArt = freshAlbums.map(a => {
+        const prev = cacheByKey.get(criticsPickKey(a));
+        return (prev && prev.albumArt && a.albumArt === undefined) ? { ...a, albumArt: prev.albumArt } : a;
+      });
+      // Fill up to TARGET from (1) the local cache, then (2) the transitional
+      // RSSground top-up if still short (dedup by title|artist). The RSSground
+      // fetch only fires while short, so it self-deactivates once the Achordion
+      // feed alone — or the accumulated cache — reaches TARGET.
+      const seen = new Set(freshWithArt.map(criticsPickKey));
+      const fill = [];
+      const addFill = (arr) => {
+        for (const a of (arr || [])) {
+          if (freshWithArt.length + fill.length >= TARGET_ALBUM_COUNT) return;
+          const k = criticsPickKey(a);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          fill.push(a);
+        }
+      };
+      addFill(cachedAlbums);
+      if (freshWithArt.length + fill.length < TARGET_ALBUM_COUNT) {
+        addFill(await fetchLegacyCriticsPicks());
+      }
+      const merged = freshWithArt.concat(fill);
+
+      setCriticsPicks(merged);
       setCriticsPicksLoaded(true);
       setCriticsPicksLastFetched(Date.now());
+      persistCriticsPicksCache(merged);
 
-      // Check for new content (unread badge)
-      const hash = generateDiscoveryHash(albums);
+      // Unread badge tracks the FRESH feed only — a cached-only fill (or it
+      // shrinking as the feed grows) must not re-flag the section as new.
+      const hash = generateDiscoveryHash(freshWithArt);
       checkDiscoveryUnread('criticsPicks', hash);
 
-      // Fetch album art in background
-      fetchCriticsPicksAlbumArt(albums);
+      // Resolve art for the full merged list (cached-only entries re-resolve
+      // instantly from albumArtCache) and re-persist with art when done.
+      fetchCriticsPicksAlbumArt(merged);
 
     } catch (error) {
       console.error('Failed to load Critic\'s Picks:', error);
-      setCriticsPicksError('Failed to load Critic\'s Picks. Please try again.');
+      // Empty-guard + transitional fallback: prefer cached picks; if the cache is
+      // empty (e.g. first run with the Achordion feed unreachable), fall back to
+      // the legacy RSSground feed during the cutover window. Only surface an error
+      // when both are empty.
+      let fallback = criticsPicksCache.current.albums || [];
+      if (fallback.length === 0) {
+        fallback = await fetchLegacyCriticsPicks();
+      }
+      if (fallback.length > 0) {
+        const capped = fallback.slice(0, 25); // TARGET_ALBUM_COUNT
+        setCriticsPicks(capped);
+        setCriticsPicksLoaded(true);
+        persistCriticsPicksCache(capped);
+        console.log(`📰 Achordion feed failed — showing ${capped.length} picks from cache/legacy`);
+      } else {
+        setCriticsPicksError('Failed to load Critic\'s Picks. Please try again.');
+      }
     } finally {
       setCriticsPicksLoading(false);
     }
@@ -33852,6 +33967,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 200));
     }
+
+    // Re-persist the picks now that art is resolved, so the cache (and thus the
+    // instant restore + union base) carries cover URLs across restarts. Reads the
+    // latest state via the updater and returns it unchanged (parachord#962).
+    setCriticsPicks(prev => {
+      persistCriticsPicksCache(prev);
+      return prev;
+    });
   };
 
   // Navigate to a Critic's Picks album release page
