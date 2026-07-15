@@ -3805,6 +3805,47 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
   );
 };
 
+// PlaybackProgress — the playbar's elapsed-time / seek-slider / duration section,
+// isolated as a memoized leaf so playback progress ticks re-render ONLY this
+// small component instead of the whole Parachord tree (parachord#768). It owns a
+// local `value` state seeded from `initialProgress` and updated by subscribing to
+// the progress emitter via `subscribe`. Everything else (track/resolver/seek
+// state) is static-per-track and arrives via props, so it changes at most on
+// track/playback-method change — never on a tick.
+const PlaybackProgress = React.memo(function PlaybackProgress({
+  subscribe, initialProgress, hasTrack, browserPlaybackActive,
+  duration, seekDisabled, seekTooltip, onSeek, formatTime
+}) {
+  const [value, setValue] = React.useState(initialProgress || 0);
+  React.useEffect(() => subscribe(setValue), [subscribe]);
+
+  const shown = hasTrack && !browserPlaybackActive ? value : 0;
+  const slider = React.createElement('input', {
+    type: 'range',
+    min: '0',
+    max: duration || 100,
+    value: shown,
+    disabled: seekDisabled,
+    onChange: (e) => onSeek(Number(e.target.value)),
+    className: `progress-slider w-full h-1 rounded-full ${seekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`
+  });
+  return React.createElement('div', { className: 'flex items-center gap-2 min-w-[200px]' },
+    React.createElement('span', {
+      className: 'text-xs text-gray-400 tabular-nums',
+      style: { width: '36px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', lineHeight: '1' }
+    }, hasTrack && !browserPlaybackActive ? formatTime(shown) : '0:00'),
+    React.createElement('div', { className: 'flex-1 w-24 flex items-center' },
+      seekTooltip
+        ? React.createElement(Tooltip, { content: seekTooltip, position: 'top', variant: 'dark' }, slider)
+        : slider
+    ),
+    React.createElement('span', {
+      className: 'text-xs text-gray-400 tabular-nums',
+      style: { width: '36px', textAlign: 'left', fontVariantNumeric: 'tabular-nums', lineHeight: '1' }
+    }, hasTrack ? formatTime(duration) : '0:00')
+  );
+});
+
 // FriendMiniPlaybar component - shows friend's current track with album art lookup
 const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
   // States: undefined (fetching), null (no art found), string (URL)
@@ -6013,7 +6054,23 @@ const Parachord = () => {
   const [playbarSourceDropdownOpen, setPlaybarSourceDropdownOpen] = useState(false); // Source selector dropdown
   // Track if currentTrack was restored from saved queue and needs explicit playback start
   const trackNeedsExplicitStart = useRef(false);
-  const [progress, setProgress] = useState(0);
+  // Playback progress is a HIGH-FREQUENCY value (updated every 100–250ms during
+  // playback). Keeping it in top-level useState re-rendered the entire Parachord
+  // tree on every tick (parachord#768). Instead it lives in a ref + a subscriber
+  // set: `setProgress` writes the ref and notifies subscribers WITHOUT a top-level
+  // re-render, and the <PlaybackProgress> leaf subscribes and re-renders only
+  // itself. The name `setProgress` is preserved so all ~14 call sites are unchanged.
+  const progressRef = useRef(0);
+  const progressSubsRef = useRef(new Set());
+  const subscribeProgress = useCallback((fn) => {
+    progressSubsRef.current.add(fn);
+    return () => progressSubsRef.current.delete(fn);
+  }, []);
+  const setProgress = useCallback((v) => {
+    const val = typeof v === 'function' ? v(progressRef.current) : v;
+    progressRef.current = val;
+    progressSubsRef.current.forEach(fn => fn(val));
+  }, []);
   const seekingRef = useRef(false); // True while user is dragging the progress slider
   const seekTimeoutRef = useRef(null); // Debounce timeout for clearing seeking state
   const [volume, setVolume] = useState(30);
@@ -38340,6 +38397,38 @@ useEffect(() => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
+  // Seek handler for the playbar slider — extracted from the inline onChange so the
+  // <PlaybackProgress> leaf stays self-contained (parachord#768). Same logic/order
+  // as before: suppress external updates via seekingRef, seek per active engine,
+  // re-allow updates 1s after the last drag movement.
+  const handleSeek = useCallback(async (newPosition) => {
+    if (browserPlaybackActive || !currentTrack) return;
+    const activeResolver = currentTrack?._activeResolver || determineResolverIdFromTrack(currentTrack);
+    if (activeResolver === 'spotify') return; // seeking not supported for Spotify
+    seekingRef.current = true;
+    setProgress(newPosition);
+    // Local files + SoundCloud use HTML5 Audio
+    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
+      audioRef.current.currentTime = newPosition;
+    }
+    // Apple Music (native MusicKit, MusicKit JS, or preview audio)
+    if (activeResolver === 'applemusic') {
+      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
+        window._appleMusicPreviewAudio.currentTime = newPosition;
+      }
+      // Reset interpolation baseline so the bar holds the dragged position until the next poll
+      appleMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
+      if (window.electron?.musicKit?.seek) {
+        try { await window.electron.musicKit.seek(newPosition); } catch (err) { console.warn('[Seek] Native MusicKit seek failed:', err); }
+      }
+      if (window.getMusicKitWeb) {
+        try { const musicKitWeb = window.getMusicKitWeb(); if (musicKitWeb?.seek) { await musicKitWeb.seek(newPosition); } } catch (err) { /* not the active method */ }
+      }
+    }
+    if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
+    seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
+  }, [currentTrack, browserPlaybackActive]);
+
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return '';
     const now = Date.now();
@@ -56323,92 +56412,29 @@ useEffect(() => {
               )
             );
           })(),
-          // Progress section
-          React.createElement('div', { className: 'flex items-center gap-2 min-w-[200px]' },
-            React.createElement('span', {
-              className: 'text-xs text-gray-400 tabular-nums',
-              style: { width: '36px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', lineHeight: '1' }
-            },
-              currentTrack && !browserPlaybackActive ? formatTime(progress) : '0:00'
-            ),
-            React.createElement('div', { className: 'flex-1 w-24 flex items-center' },
-              (() => {
-                // Check active resolver to determine seek support
-                const activeResolver = currentTrack?._activeResolver || determineResolverIdFromTrack(currentTrack);
-                const isSpotifyActive = activeResolver === 'spotify';
-                const isAppleMusicActive = activeResolver === 'applemusic';
-                const isSeekDisabled = !currentTrack || browserPlaybackActive || isSpotifyActive;
-
-                const seekTooltip = isSeekDisabled
-                  ? (isSpotifyActive ? 'Seeking not available for Spotify tracks' : undefined)
-                  : undefined;
-
-                const slider = React.createElement('input', {
-                  type: 'range',
-                  min: '0',
-                  max: currentTrack?.duration || 100,
-                  value: currentTrack && !browserPlaybackActive ? progress : 0,
-                  disabled: isSeekDisabled,
-                  onChange: async (e) => {
-                    if (browserPlaybackActive || !currentTrack || isSpotifyActive) return;
-                    const newPosition = Number(e.target.value);
-                    // Block external progress updates while user is interacting with the slider
-                    seekingRef.current = true;
-                    setProgress(newPosition);
-                    // Handle seeking for local files and SoundCloud (both use HTML5 Audio)
-                    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
-                      audioRef.current.currentTime = newPosition;
-                    }
-                    // Handle seeking for Apple Music (native MusicKit, MusicKit JS, or preview audio)
-                    if (isAppleMusicActive) {
-                      // Seek on preview audio if it's the active playback method
-                      if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
-                        window._appleMusicPreviewAudio.currentTime = newPosition;
-                      }
-                      // Reset interpolation baseline to new position regardless of seek result,
-                      // so the progress bar stays at the dragged position until the next poll
-                      appleMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
-                      // Seek via native MusicKit (macOS)
-                      if (window.electron?.musicKit?.seek) {
-                        try {
-                          await window.electron.musicKit.seek(newPosition);
-                        } catch (e) {
-                          console.warn('[Seek] Native MusicKit seek failed:', e);
-                        }
-                      }
-                      // Seek via MusicKit JS web (cross-platform)
-                      if (window.getMusicKitWeb) {
-                        try {
-                          const musicKitWeb = window.getMusicKitWeb();
-                          if (musicKitWeb?.seek) {
-                            await musicKitWeb.seek(newPosition);
-                          }
-                        } catch (e) {
-                          // Ignore - may not be the active playback method
-                        }
-                      }
-                    }
-                    // Allow external progress updates after user stops interacting.
-                    // Each change resets the timer, so seeking stays suppressed during a drag
-                    // and for 1 second after the last movement (gives the seek time to propagate).
-                    if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
-                    seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
-                  },
-                  className: `progress-slider w-full h-1 rounded-full ${isSeekDisabled ? 'bg-gray-600 opacity-50' : 'bg-gray-600'}`
-                });
-
-                return seekTooltip
-                  ? React.createElement(Tooltip, { content: seekTooltip, position: 'top', variant: 'dark' }, slider)
-                  : slider;
-              })()
-            ),
-            React.createElement('span', {
-              className: 'text-xs text-gray-400 tabular-nums',
-              style: { width: '36px', textAlign: 'left', fontVariantNumeric: 'tabular-nums', lineHeight: '1' }
-            },
-              currentTrack ? formatTime(currentTrack.duration) : '0:00'
-            )
-          ),
+          // Progress section — isolated leaf so playback progress ticks re-render
+          // only <PlaybackProgress>, not the whole Parachord tree (parachord#768).
+          // The resolver-derived props below change at most on track/playback-method
+          // change, never on a tick.
+          (() => {
+            const activeResolver = currentTrack?._activeResolver || determineResolverIdFromTrack(currentTrack);
+            const isSpotifyActive = activeResolver === 'spotify';
+            const isSeekDisabled = !currentTrack || browserPlaybackActive || isSpotifyActive;
+            const seekTooltip = isSeekDisabled
+              ? (isSpotifyActive ? 'Seeking not available for Spotify tracks' : undefined)
+              : undefined;
+            return React.createElement(PlaybackProgress, {
+              subscribe: subscribeProgress,
+              initialProgress: progressRef.current,
+              hasTrack: !!currentTrack,
+              browserPlaybackActive,
+              duration: currentTrack?.duration,
+              seekDisabled: isSeekDisabled,
+              seekTooltip,
+              onSeek: handleSeek,
+              formatTime
+            });
+          })(),
           // Shuffle button (disabled in spinoff/listen-along modes)
           (() => {
             const shuffleDisabled = spinoffMode || listenAlongFriend;
