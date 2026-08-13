@@ -1,0 +1,58 @@
+name: Chrome OAuth Keep-Alive
+
+# Google deletes OAuth clients that go unused for 6 months (it warns at ~5). The
+# Chrome Web Store publish client (CHROME_CLIENT_ID / _SECRET / _REFRESH_TOKEN,
+# used by .github/workflows/publish-extensions.yml) only gets exercised when we
+# actually ship an extension update — so during quiet stretches it drifts toward
+# deletion. This job exchanges the refresh token for an access token on a
+# schedule, which marks the client "active" and resets Google's inactivity clock,
+# WITHOUT uploading or publishing anything. It never prints the returned token.
+#
+# Run on demand from the Actions tab (or `gh workflow run chrome-oauth-keepalive.yml`).
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 UTC on the 1st of every month — comfortably inside Google's window.
+    - cron: '0 9 1 * *'
+
+permissions: {}
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh Chrome Web Store OAuth token
+        env:
+          CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CLIENT_ID}" ] || [ -z "${CLIENT_SECRET}" ] || [ -z "${REFRESH_TOKEN}" ]; then
+            echo "::error::One or more CHROME_* secrets are unset in this repo."
+            exit 1
+          fi
+
+          # A single refresh_token -> access_token exchange is what Google counts
+          # as "use". The response body contains the access token, so it is written
+          # to a file and NEVER echoed; only the (non-sensitive) status and
+          # expires_in / error fields are logged.
+          http_code=$(curl -sS -o resp.json -w '%{http_code}' \
+            https://oauth2.googleapis.com/token \
+            -d grant_type=refresh_token \
+            -d client_id="${CLIENT_ID}" \
+            -d client_secret="${CLIENT_SECRET}" \
+            -d refresh_token="${REFRESH_TOKEN}")
+
+          if [ "${http_code}" = "200" ] && jq -e '.access_token' resp.json >/dev/null 2>&1; then
+            expires_in=$(jq -r '.expires_in // "?"' resp.json)
+            echo "✅ Chrome Web Store OAuth client is active — token refreshed (expires_in=${expires_in}s). Google inactivity clock reset."
+            rm -f resp.json
+          else
+            err=$(jq -r '.error // "unknown_error"' resp.json 2>/dev/null || echo "unparseable_response")
+            rm -f resp.json
+            echo "::error::Token refresh failed (HTTP ${http_code}, error=${err}). The refresh token is likely revoked/expired — regenerate it and update the CHROME_REFRESH_TOKEN secret."
+            exit 1
+          fi
