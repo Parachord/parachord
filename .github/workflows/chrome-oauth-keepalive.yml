@@ -12,9 +12,15 @@ name: Chrome OAuth Keep-Alive
 
 on:
   workflow_dispatch:
-  schedule:
-    # 09:00 UTC on the 1st of every month — comfortably inside Google's window.
-    - cron: '0 9 1 * *'
+  # Monthly cron DISABLED while the CWS OAuth refresh token is dead and extension
+  # publishing is deferred (no updates planned) — see parachord#969. With no valid
+  # token the schedule only fails red every month without keeping anything alive.
+  # RE-ENABLE this block once the token is regenerated (app is already In production,
+  # so a freshly minted token is durable) — then the monthly run keeps the client
+  # from lapsing again.
+  # schedule:
+  #   # 09:00 UTC on the 1st of every month — comfortably inside Google's window.
+  #   - cron: '0 9 1 * *'
 
 permissions: {}
 
