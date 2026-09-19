@@ -27,11 +27,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          # macOS runner PINNED to macos-15 (Sequoia). Unpinned `macos-latest`
+          # rolled to a newer image that breaks electron-builder 24.9.1's mac
+          # code-signing keychain step — `security set-key-partition-list`
+          # exits 1 (readDirectoryAndSign / macPackager.ts). Last green build
+          # was on the prior image (2026-09-01); it broke 2026-09-19 with no
+          # signing-related code change. Revisit/unpin when electron-builder is
+          # upgraded to 25.x. See the build failure discussed on #970/#972.
+          - os: macos-15
             platform: mac
             arch: arm64
             arch_label: Apple-Silicon
-          - os: macos-latest
+          - os: macos-15
             platform: mac
             arch: x64
             arch_label: Intel
