@@ -22,6 +22,21 @@ const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu, nati
 const path = require('path');
 const fs = require('fs');
 
+// Canonical User-Agent for MetaBrainz services (MusicBrainz / ListenBrainz /
+// mapper / Cover Art Archive). Their rate-limiting + bot-mitigation require a
+// *meaningful* UA identifying the app with a live contact URL — see
+// https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting and the 2026-08
+// LB user-agent-blocking notice. This is set CENTRALLY because renderer `fetch`
+// cannot set User-Agent (it's a forbidden header — Chromium strips the value we
+// pass), so MetaBrainz otherwise sees Electron's default browser-shaped UA with
+// no contact info. The onBeforeSendHeaders hook (renderer traffic) and the
+// proxy-fetch handler (main-process traffic) both stamp this on MetaBrainz hosts.
+const METABRAINZ_UA = `Parachord/${app.getVersion()} ( https://github.com/Parachord/parachord )`;
+const METABRAINZ_HOST_RE = /(^|\.)(musicbrainz\.org|listenbrainz\.org|metabrainz\.org|coverartarchive\.org)$/i;
+function isMetaBrainzHost(urlStr) {
+  try { return METABRAINZ_HOST_RE.test(new URL(urlStr).hostname); } catch (_e) { return false; }
+}
+
 // Preserve the userData path before changing app.name, since Electron
 // derives the userData directory from app.name. Without this, changing
 // the name would move the data directory and lose all user settings.
@@ -1877,6 +1892,12 @@ app.whenReady().then(() => {
           // the cookie — the endpoint will 401 and the caller will handle it.
         }
       }
+    }
+    // Stamp the canonical MetaBrainz UA on their hosts. Renderer `fetch` can't
+    // set User-Agent (forbidden header), so this override is the only place a
+    // meaningful UA reaches MusicBrainz/ListenBrainz/CAA from renderer traffic.
+    if (isMetaBrainzHost(details.url)) {
+      details.requestHeaders['User-Agent'] = METABRAINZ_UA;
     }
     callback({ requestHeaders: details.requestHeaders });
   });
@@ -4122,6 +4143,12 @@ ipcMain.handle('proxy-fetch', async (event, url, options = {}) => {
         ...options.headers
       }
     };
+    // MetaBrainz hosts require a meaningful, contactable UA — override whatever
+    // the caller passed (often the generic browser default above or the dead
+    // github.com/harmonix string) with the canonical one. See METABRAINZ_UA.
+    if (isMetaBrainzHost(url)) {
+      fetchOptions.headers['User-Agent'] = METABRAINZ_UA;
+    }
 
     // Include body for POST/PUT requests
     if (options.body) {
