@@ -612,6 +612,63 @@ window.nativeMusicKitLimiter = window.createLimiter({
   }
 });
 
+// MusicBrainz request throttle (parachord#971). MusicBrainz rate-limits at
+// 1 request/sec/IP, and MetaBrainz's 2026-08 bot-mitigation blocks IPs that
+// burst past it. Our global search fires THREE parallel /ws/2/ queries per
+// (debounced) search — artist + release + recording — and ~50 other paths hit
+// /ws/2/ too (discography, album lookups, artist page, cover-art release
+// search…), all sharing the single per-IP budget. Firing them in parallel
+// guarantees 2 of every 3 get 429/503'd, and the callers render a throttled
+// response as an empty result set. Rather than thread a limiter through ~55
+// call sites, install ONE fetch interceptor: every musicbrainz.org/ws/2/
+// request serializes through a single-permit limiter (>=1.1s gap) and retries
+// 429/503 with backoff (honoring Retry-After); every other request passes
+// straight through to the original fetch, untouched.
+window.musicbrainzLimiter = window.createLimiter({
+  name: 'musicbrainzLimiter',
+  maxConcurrency: 1,     // MB is 1 req/sec/IP — parallelism only buys throttling
+  minGapMs: 1100,        // >= 1s between request starts, with margin
+  cooldownMs: 5000,      // pause after repeated exhausted-retry throttles
+  errorThreshold: 2,
+  isThrottleError: (err) => !!(err && err.mbThrottled)
+});
+(function installMusicBrainzThrottle() {
+  if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
+  const originalFetch = window.fetch.bind(window);
+  window.__mbOriginalFetch = originalFetch; // escape hatch for tests / non-throttled use
+  const isMbWs2 = (input) => {
+    try {
+      const raw = typeof input === 'string' ? input : (input && input.url);
+      if (!raw) return false;
+      const u = new URL(raw, window.location.href);
+      return u.hostname === 'musicbrainz.org' && u.pathname.startsWith('/ws/2/');
+    } catch (_e) { return false; }
+  };
+  window.fetch = function (input, init) {
+    if (!isMbWs2(input)) return originalFetch(input, init);
+    const signal = init && init.signal;
+    return window.musicbrainzLimiter.run(async () => {
+      const MAX_ATTEMPTS = 3;
+      for (let attempt = 1; ; attempt++) {
+        if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        const resp = await originalFetch(input, init);
+        if (resp.status !== 429 && resp.status !== 503) return resp;
+        if (attempt >= MAX_ATTEMPTS) {
+          const err = new Error(`MusicBrainz throttled (HTTP ${resp.status})`);
+          err.mbThrottled = true;
+          err.status = resp.status;
+          throw err; // counts toward the limiter cooldown
+        }
+        const retryAfter = parseInt((resp.headers && resp.headers.get('retry-after')) || '', 10);
+        const waitMs = Number.isFinite(retryAfter)
+          ? Math.min(retryAfter * 1000, 8000)
+          : Math.min(1000 * Math.pow(2, attempt - 1), 4000);
+        await new Promise(r => setTimeout(r, waitMs));
+      }
+    });
+  };
+})();
+
 // Global rate limiter for non-AM resolver search fan-out (parachord#797).
 // Covers YouTube, SoundCloud, Bandcamp (and any future search-capable
 // resolver that hits a CDN-backed search endpoint).
