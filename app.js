@@ -12591,6 +12591,21 @@ const Parachord = () => {
     return cleanup;
   }, []);
 
+  // Transport-action dedupe (parachord#976). A single hardware media-key press
+  // can now reach us through TWO paths — main's globalShortcut ('media-key'
+  // IPC) and the OS Now Playing session (navigator.mediaSession action
+  // handlers). Without a guard, one press of play/pause toggles twice (play →
+  // pause → play: looks like nothing happened). Drop an identical action that
+  // arrives within the window; the first path to deliver it wins.
+  const lastTransportRef = useRef({ action: null, at: 0 });
+  const isDuplicateTransport = (action) => {
+    const now = Date.now();
+    const last = lastTransportRef.current;
+    if (last.action === action && now - last.at < 300) return true;
+    lastTransportRef.current = { action, at: now };
+    return false;
+  };
+
   // Hardware media key handlers (keyboard media keys)
   useEffect(() => {
     if (!window.electron?.onMediaKey) return;
@@ -12599,12 +12614,15 @@ const Parachord = () => {
       console.log('🎹 Media key:', action);
       switch (action) {
         case 'playpause':
+          if (isDuplicateTransport('toggle')) return;
           if (handlePlayPauseRef.current) handlePlayPauseRef.current();
           break;
         case 'next':
+          if (isDuplicateTransport('next')) return;
           if (handleNextRef.current) handleNextRef.current();
           break;
         case 'previous':
+          if (isDuplicateTransport('previous')) return;
           if (handlePreviousRef.current) handlePreviousRef.current();
           break;
       }
@@ -12700,6 +12718,94 @@ const Parachord = () => {
     if (!window.electron?.mpris?.updateShuffle) return;
     window.electron.mpris.updateShuffle(shuffleMode).catch(() => {});
   }, [shuffleMode]);
+
+  // OS Now Playing via navigator.mediaSession (parachord#976) — macOS Now
+  // Playing widget / Control Center and the Windows media overlay (SMTC).
+  // Chromium already registers a media session with the OS whenever an
+  // <audio> element plays in this renderer (local files, SoundCloud, MusicKit
+  // JS, Spotify Web Playback SDK) — but with no MediaMetadata it falls back to
+  // the window title, so the widget showed "Parachord Desktop" with no track.
+  // These effects mirror the MPRIS feed above.
+  //
+  // Skipped on Linux: Chromium publishes mediaSession as its OWN MPRIS player,
+  // which would duplicate the native MPRIS integration above (#848).
+  //
+  // Coverage limit: playback that produces no renderer audio (Spotify Connect,
+  // native MusicKit helper, YouTube/Bandcamp in the browser) has no Chromium
+  // media session, so it isn't reported here — that needs a native
+  // MPNowPlayingInfoCenter bridge (follow-up).
+  const mediaSessionEnabled = () =>
+    typeof navigator !== 'undefined'
+    && 'mediaSession' in navigator
+    && window.electron?.platform !== 'linux';
+
+  // Transport controls from the widget / Control Center / hardware keys routed
+  // by the OS. play/pause are idempotent (a "pause" while already paused is a
+  // no-op rather than a toggle) and share the dedupe guard with the
+  // globalShortcut media-key path.
+  useEffect(() => {
+    if (!mediaSessionEnabled()) return;
+    const ms = navigator.mediaSession;
+    const handlers = {
+      play: () => {
+        if (isPlayingRef.current || isDuplicateTransport('toggle')) return;
+        handlePlayPauseRef.current?.();
+      },
+      pause: () => {
+        if (!isPlayingRef.current || isDuplicateTransport('toggle')) return;
+        handlePlayPauseRef.current?.();
+      },
+      nexttrack: () => {
+        if (isDuplicateTransport('next')) return;
+        handleNextRef.current?.();
+      },
+      previoustrack: () => {
+        if (isDuplicateTransport('previous')) return;
+        handlePreviousRef.current?.();
+      },
+    };
+    for (const [action, fn] of Object.entries(handlers)) {
+      try { ms.setActionHandler(action, fn); } catch (_e) { /* action unsupported on this platform */ }
+    }
+    return () => {
+      for (const action of Object.keys(handlers)) {
+        try { ms.setActionHandler(action, null); } catch (_e) { /* noop */ }
+      }
+    };
+  }, []);
+
+  // Track metadata on track change.
+  useEffect(() => {
+    if (!mediaSessionEnabled() || typeof MediaMetadata === 'undefined') return;
+    const ms = navigator.mediaSession;
+    if (!currentTrack) {
+      ms.metadata = null;
+      return;
+    }
+    const fields = {
+      title: currentTrack.title || '',
+      artist: currentTrack.artist || '',
+      album: currentTrack.album || '',
+    };
+    const art = currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt
+      || currentTrack.sources?.applemusic?.albumArt || null;
+    try {
+      ms.metadata = new MediaMetadata({
+        ...fields,
+        artwork: typeof art === 'string' && art ? [{ src: art, sizes: '512x512' }] : [],
+      });
+    } catch (_e) {
+      // An artwork src MediaMetadata can't parse (e.g. an app-internal
+      // scheme) throws — keep the text metadata rather than losing it.
+      try { ms.metadata = new MediaMetadata(fields); } catch (_e2) { /* give up quietly */ }
+    }
+  }, [currentTrack]);
+
+  // Playback state on play/pause.
+  useEffect(() => {
+    if (!mediaSessionEnabled()) return;
+    navigator.mediaSession.playbackState = currentTrack ? (isPlaying ? 'playing' : 'paused') : 'none';
+  }, [isPlaying, currentTrack]);
 
   // Protocol URL handler (parachord:// deep links)
   useEffect(() => {
