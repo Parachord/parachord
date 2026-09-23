@@ -104,11 +104,11 @@ When a user connects Apple Music in Parachord:
 
 1. Parachord launches the helper app (invisible background agent)
 2. Helper requests MusicKit authorization
-3. macOS shows system prompt: "Parachord MusicKit wants access to Apple Music"
+3. macOS shows system prompt: "Parachord wants access to Apple Music"
 4. User authorizes
 5. Full playback works!
 
-The authorization prompt shows "Parachord MusicKit" (from CFBundleName in Info.plist).
+The authorization prompt shows "Parachord" (from CFBundleName / CFBundleDisplayName in Info.plist). The same name labels the helper in the macOS Now Playing widget while native Apple Music is playing (MusicKit's `ApplicationMusicPlayer` publishes Now Playing under the helper process). It was "Parachord MusicKit" before parachord#976; MusicKit authorization is keyed by the bundle id (`dev.parachord.app`), not the name, so renaming does not reset existing grants.
 
 ## Troubleshooting
 
@@ -121,7 +121,7 @@ cd native/musickit-helper && ./build.sh
 ### "Authorization failed"
 - Ensure you have an active Apple Music subscription
 - Check System Preferences > Privacy & Security > Media & Apple Music
-- The "Parachord MusicKit" app needs to be allowed
+- The "Parachord" entry needs to be allowed (named "Parachord MusicKit" on builds before parachord#976)
 
 ### "Playback failed"
 - Verify your Apple Music subscription is active

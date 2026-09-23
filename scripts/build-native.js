@@ -27,12 +27,22 @@ function buildMusicKitHelper() {
     return;
   }
 
-  // Check if already built (skip if up to date)
-  const sourceFile = path.join(helperDir, 'Sources', 'MusicKitHelperApp.swift');
+  // Check if already built (skip if up to date). Compare against the NEWEST
+  // input, not just the Swift source — build.sh copies Info.plist and signs
+  // with the entitlements, so an edit to either (e.g. the parachord#976
+  // display-name rename) must trigger a rebuild. Previously only the .swift
+  // mtime was checked, so a plist-only change was silently skipped locally.
+  const inputs = [
+    path.join(helperDir, 'Sources', 'MusicKitHelperApp.swift'),
+    path.join(helperDir, 'Info.plist'),
+    path.join(helperDir, 'MusicKitHelper.entitlements'),
+    path.join(helperDir, 'Package.swift'),
+    buildScript,
+  ].filter((p) => fs.existsSync(p));
   if (fs.existsSync(outputApp)) {
-    const sourceStats = fs.statSync(sourceFile);
+    const newestInput = Math.max(...inputs.map((p) => fs.statSync(p).mtimeMs));
     const outputStats = fs.statSync(outputApp);
-    if (outputStats.mtime > sourceStats.mtime) {
+    if (outputStats.mtimeMs > newestInput) {
       console.log('✅ MusicKit helper already up to date');
       return;
     }

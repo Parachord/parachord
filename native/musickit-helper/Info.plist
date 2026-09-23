@@ -11,9 +11,9 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Parachord MusicKit</string>
+    <string>Parachord</string>
     <key>CFBundleDisplayName</key>
-    <string>Parachord MusicKit</string>
+    <string>Parachord</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
