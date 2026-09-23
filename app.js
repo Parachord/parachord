@@ -12643,22 +12643,34 @@ const Parachord = () => {
     if (!window.electron?.mpris?.onControl) return;
     const cleanup = window.electron.mpris.onControl((event) => {
       if (!event) return;
+      // parachord#848: explicit Play/Pause must be idempotent — only PlayPause
+      // toggles. Previously all three toggled, so `playerctl pause` (or KDE
+      // Connect / a headset unplug sending Pause) while already paused STARTED
+      // playback. Every control also goes through the shared
+      // isDuplicateTransport guard: since MPRIS registration was fixed (#881) a
+      // hardware media key can reach us via BOTH MPRIS and globalShortcut, and
+      // without the guard one press toggles twice (looks like a no-op).
       switch (event.action) {
         case 'play':
+          if (isPlayingRef.current || isDuplicateTransport('toggle')) break;
+          if (handlePlayPauseRef.current) handlePlayPauseRef.current();
+          break;
         case 'pause':
+        case 'stop':
+          if (!isPlayingRef.current || isDuplicateTransport('toggle')) break;
+          if (handlePlayPauseRef.current) handlePlayPauseRef.current();
+          break;
         case 'playpause':
+          if (isDuplicateTransport('toggle')) break;
           if (handlePlayPauseRef.current) handlePlayPauseRef.current();
           break;
         case 'next':
+          if (isDuplicateTransport('next')) break;
           if (handleNextRef.current) handleNextRef.current();
           break;
         case 'previous':
+          if (isDuplicateTransport('previous')) break;
           if (handlePreviousRef.current) handlePreviousRef.current();
-          break;
-        case 'stop':
-          if (handlePlayPauseRef.current && isPlayingRef.current) {
-            handlePlayPauseRef.current();
-          }
           break;
         case 'seek':
         case 'seek-relative':
