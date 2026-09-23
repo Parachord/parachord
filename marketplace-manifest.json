@@ -31,7 +31,7 @@
     {
       "id": "bandcamp",
       "name": "Bandcamp",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "Parachord Team",
       "description": "Find and purchase music on Bandcamp. Opens tracks in browser for streaming.",
       "icon": "🎸",
