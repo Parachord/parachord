@@ -1,3 +1,29 @@
+# Parachord v0.9.7
+
+**Release date:** 2026-09-23
+
+> A reliability release. Your Mac and Windows PC now show what Parachord is playing — title, artist, artwork and working controls — in the system Now Playing widget. Search is steadier, and Bandcamp search works again.
+
+---
+
+## Now Playing on macOS and Windows
+
+Parachord now tells your operating system what's playing. On macOS, the Now Playing widget and Control Center show the track's title, artist, album and artwork instead of just "Parachord Desktop", and the widget's play/pause and next/previous buttons control Parachord. The same information now appears in the Windows media overlay.
+
+- A single media-key press now always acts once — it can no longer toggle twice and look like nothing happened.
+- Apple Music playback through the native macOS player is now labeled **Parachord** (it read "Parachord MusicKit"), and so is the Apple Music permission prompt. Existing permissions carry over — no need to sign in again.
+- Tracks that play in another app — YouTube and Bandcamp in your browser, or Spotify in the Spotify app — still appear under that app, which is where their controls live.
+
+## More reliable search
+
+Search could come back empty or with missing sections, then work fine a minute later. Parachord was sending MusicBrainz several requests at once for every search, and MusicBrainz has recently tightened how many it accepts. Parachord now paces its MusicBrainz requests and backs off politely when asked to slow down, so results fill in reliably. It also now identifies itself properly to MusicBrainz and ListenBrainz, as those services now require.
+
+## Bandcamp search works again
+
+Bandcamp started blocking the search page Parachord relied on, so Bandcamp quietly stopped finding tracks. Parachord now uses Bandcamp's search service instead — it finds more tracks and matches them more accurately. (This fix also reaches existing installs automatically the next time you launch Parachord.)
+
+---
+
 # Parachord v0.9.6
 
 **Release date:** 2026-07-15
