@@ -583,6 +583,42 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Amazon Music operations — remote control of the Amazon Music desktop app
+  // over CDP (see main.js amazonMusicController for the protocol details).
+  // Playback happens inside the Amazon app (it owns the DRM'd audio pipeline);
+  // Parachord is the remote control, same posture as Spotify Connect.
+  amazonMusic: {
+    getStatus: () => ipcRenderer.invoke('amazonmusic-get-status'),
+    ensureApp: (params) => ipcRenderer.invoke('amazonmusic-ensure-app', params || {}),
+    searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks', { query }),
+    playTrack: (params) => ipcRenderer.invoke('amazonmusic-play-track', params),
+    pause: () => ipcRenderer.invoke('amazonmusic-pause'),
+    resume: () => ipcRenderer.invoke('amazonmusic-resume'),
+    stop: () => ipcRenderer.invoke('amazonmusic-stop'),
+    seek: (positionMs) => ipcRenderer.invoke('amazonmusic-seek', { positionMs }),
+    setVolume: (volume) => ipcRenderer.invoke('amazonmusic-set-volume', { volume }),
+    getPlaybackState: () => ipcRenderer.invoke('amazonmusic-get-playback-state'),
+
+    // Main process polling controls (background-safe, for auto-advance)
+    polling: {
+      start: (params) => ipcRenderer.invoke('amazonmusic-polling-start', params),
+      stop: () => ipcRenderer.invoke('amazonmusic-polling-stop'),
+      getStatus: () => ipcRenderer.invoke('amazonmusic-polling-status'),
+
+      // Listen for polling events from main process
+      onAdvance: (callback) => {
+        ipcRenderer.on('amazonmusic-polling-advance', (event, data) => {
+          callback(data);
+        });
+      },
+      onProgress: (callback) => {
+        ipcRenderer.on('amazonmusic-polling-progress', (event, data) => {
+          callback(data);
+        });
+      }
+    }
+  },
+
   // Ollama operations (local AI)
   ollama: {
     start: () => ipcRenderer.invoke('ollama:start'),

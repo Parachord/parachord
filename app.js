@@ -1889,13 +1889,14 @@ const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"bandcamp","name":"Bandcamp","version":"1.1.0","author":"Parachord Team","description":"Find and purchase music on Bandcamp. Opens tracks in browser for streaming.","icon":"🎸","color":"#629AA9","homepage":"https://bandcamp.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true,"purchase":true},"urlPatterns":["*.bandcamp.com/track/*","*.bandcamp.com/album/*"],"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) {\n  // parachord#977: Bandcamp's HTML search page (bandcamp.com/search) now serves a\n  // bot \"Client Challenge\" page, so scraping it returns nothing. Use the JSON API\n  // that bandcamp.com's own search box calls (tracks only), falling back to the\n  // mobile-app autocomplete endpoint if it errors or comes back empty.\n  var normalizeUrl = function(u) {\n    if (typeof u !== 'string' || !u) return null;\n    // app_autocomplete returns a doubled url (\"https://x.bandcamp.comhttps://x.bandcamp.com/track/y\"); keep the last absolute URL.\n    var i = u.lastIndexOf('https://');\n    return i > 0 ? u.slice(i) : u;\n  };\n  var toResult = function(r) {\n    if (!r || !r.name) return null;\n    var url = normalizeUrl(r.item_url_path || r.url);\n    if (!url) return null;\n    return {\n      id: 'bandcamp-' + (r.id || url),\n      title: r.name,\n      artist: r.band_name || 'Unknown Artist',\n      album: r.album_name || 'Single',\n      duration: 210,\n      sources: ['bandcamp'],\n      bandcampUrl: url,\n      purchaseUrl: url,\n      bandcampTrackId: r.id || null,\n      bandcampAlbumId: r.album_id || null,\n      albumArt: r.img ? r.img.replace('_3.jpg', '_10.jpg') : null\n    };\n  };\n  try {\n    console.log('Searching Bandcamp for:', query);\n    var items = [];\n    try {\n      var resp = await fetch('https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ search_text: query, search_filter: 't', full_page: false, fan_id: null })\n      });\n      if (resp.ok) {\n        var data = await resp.json();\n        items = (data && data.auto && data.auto.results) || [];\n      } else {\n        console.warn('Bandcamp search API returned', resp.status);\n      }\n    } catch (e) {\n      console.warn('Bandcamp search API error:', e && e.message);\n    }\n    if (items.length === 0) {\n      try {\n        var resp2 = await fetch('https://bandcamp.com/api/fuzzysearch/1/app_autocomplete?q=' + encodeURIComponent(query));\n        if (resp2.ok) {\n          var data2 = await resp2.json();\n          items = ((data2 && data2.results) || []).filter(function(x) { return x && x.type === 't'; });\n        }\n      } catch (e2) {\n        console.warn('Bandcamp autocomplete fallback error:', e2 && e2.message);\n      }\n    }\n    var results = [];\n    for (var i = 0; i < items.length && results.length < 20; i++) {\n      var t = toResult(items[i]);\n      if (t) results.push(t);\n    }\n    console.log('Found ' + results.length + ' Bandcamp results');\n    return results;\n  } catch (error) {\n    console.error('Bandcamp search error:', error);\n    return [];\n  }\n}","resolve":"async function(artist, track, album, config) {\n  // Prefer the first result that passes an artist+title containment check (the\n  // same shape as validateResolvedTrack in confidence-scoring.js), so the\n  // downstream 0.6 confidence floor doesn't drop a correct match that isn't\n  // ranked first. This is only a ranking hint - the platform-native confidence\n  // gate is still authoritative - so it uses engine-portable ASCII normalization\n  // (no Unicode property-escape regex, guarded String.normalize) because this .axe also runs in the\n  // mobile JS runtime. Non-Latin names normalize to '' and just fall through to\n  // the top result.\n  var norm = function(s) {\n    s = (s || '').toString().toLowerCase();\n    if (typeof s.normalize === 'function') s = s.normalize('NFKD').replace(/[̀-ͯ]/g, '');\n    return s.replace(/[^a-z0-9]/g, '');\n  };\n  var contains = function(a, b) { return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1); };\n  var targetArtist = norm(artist);\n  var targetTitle = norm(track);\n  var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config);\n  if (results.length === 0) return null;\n  for (var i = 0; i < results.length; i++) {\n    if (contains(norm(results[i].artist), targetArtist) && contains(norm(results[i].title), targetTitle)) return results[i];\n  }\n  return results[0];\n}","lookupUrl":"async function(url, config) { try { console.log('Bandcamp URL lookup:', url); const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const ldScripts = doc.querySelectorAll('script[type=\"application/ld+json\"]'); for (const ldEl of ldScripts) { try { const ld = JSON.parse(ldEl.textContent); if (ld['@type'] === 'MusicRecording') { let duration = 0; if (ld.duration) { const m = ld.duration.match(/P(?:\\d+H)?(\\d+)M(\\d+)S/); if (m) duration = parseInt(m[1]) * 60 + parseInt(m[2]); } const artist = ld.byArtist?.name || doc.querySelector('meta[property=\"og:site_name\"]')?.content || ''; const album = ld.inAlbum?.name || ''; const albumArt = doc.querySelector('meta[property=\"og:image\"]')?.content || ld.image || ''; return { id: `bandcamp-${Date.now()}`, title: ld.name, artist: artist, album: album, duration: duration, sources: ['bandcamp'], bandcampUrl: url, purchaseUrl: url, albumArt: albumArt }; } } catch (e) {} } const title = doc.querySelector('meta[property=\"og:title\"]')?.content; const artist = doc.querySelector('meta[property=\"og:site_name\"]')?.content; const albumArt = doc.querySelector('meta[property=\"og:image\"]')?.content; if (!title || !artist) return null; return { id: `bandcamp-${Date.now()}`, title: title, artist: artist, album: '', duration: 0, sources: ['bandcamp'], bandcampUrl: url, purchaseUrl: url, albumArt: albumArt }; } catch (error) { console.error('Bandcamp URL lookup error:', error); return null; } }","lookupAlbum":"async function(url, config) { try { console.log('Bandcamp album lookup:', url); const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const albumArt = doc.querySelector('meta[property=\"og:image\"]')?.content || ''; let albumName = ''; let artist = ''; let tracks = []; const ldScripts = doc.querySelectorAll('script[type=\"application/ld+json\"]'); for (const ldEl of ldScripts) { try { const ld = JSON.parse(ldEl.textContent); if (ld['@type'] === 'MusicAlbum' && ld.track) { albumName = ld.name || ''; artist = ld.byArtist?.name || ''; const items = ld.track.itemListElement || []; tracks = items.map((item, i) => { const t = item.item || item; let duration = 0; if (t.duration) { const m = t.duration.match(/P(?:\\d+H)?(\\d+)M(\\d+)S/); if (m) duration = parseInt(m[1]) * 60 + parseInt(m[2]); } const trackUrl = t['@id'] || t.mainEntityOfPage || url; return { id: `bandcamp-${Date.now()}-${i}`, title: t.name, artist: artist, album: albumName, duration: duration, sources: ['bandcamp'], bandcampUrl: trackUrl, purchaseUrl: trackUrl, trackNumber: item.position || i + 1 }; }); break; } } catch (e) {} } if (!albumName) albumName = doc.querySelector('meta[property=\"og:title\"]')?.content || ''; if (!artist) artist = doc.querySelector('meta[property=\"og:site_name\"]')?.content || ''; if (tracks.length === 0) return null; return { id: `bandcamp-album-${Date.now()}`, name: albumName, artist: artist, albumArt: albumArt, trackCount: tracks.length, tracks: tracks, url: url }; } catch (error) { console.error('Bandcamp album lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }","init":"async function(config) { console.log('Bandcamp resolver initialized'); }","cleanup":"async function() { console.log('Bandcamp resolver cleanup'); }"}},
   {"manifest":{"id":"soundcloud","name":"SoundCloud","version":"1.0.0","author":"Parachord Team","description":"Search and stream music from SoundCloud. Requires OAuth login for full access.","icon":"☁","color":"#FF5500","homepage":"https://soundcloud.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["soundcloud.com/*","*.soundcloud.com/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{"clientId":{"type":"text","label":"Client ID","advanced":true},"clientSecret":{"type":"text","label":"Client Secret","advanced":true}}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('SoundCloud: No token, skipping search'); return []; } try { console.log('Searching SoundCloud for:', query); const response = await fetch(`https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!response.ok) { console.error('SoundCloud search failed:', response.status); if (response.status === 401) { console.log('SoundCloud token expired or invalid'); } return []; } const tracks = await response.json(); if (!Array.isArray(tracks)) { console.log('No SoundCloud results found'); return []; } const results = tracks.map(track => ({ id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url, streamable: track.streamable && track.access !== 'blocked', waveformUrl: track.waveform_url })); console.log(`Found ${results.length} SoundCloud results`); return results; } catch (error) { console.error('SoundCloud search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) return null; const data = await resolveResponse.json(); if (data.location) { const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!trackResponse.ok) return null; const track = await trackResponse.json(); return { id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500'), streamable: track.streamable && track.access !== 'blocked' }; } return null; } catch (error) { console.error('SoundCloud URL lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.soundcloudUrl) { console.error('No SoundCloud URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.soundcloudUrl); return result && result.success; } else { const newWindow = window.open(track.soundcloudUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open SoundCloud link:', error); return false; } }","init":"async function(config) { console.log('SoundCloud resolver initialized'); }","cleanup":"async function() { console.log('SoundCloud resolver cleanup'); }"}},
   {"manifest":{"id":"applemusic","name":"Apple Music","version":"1.0.2","author":"Parachord Team","description":"Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.","icon":"🍎","color":"#FA243C","homepage":"https://music.apple.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["music.apple.com/*/album/*/*","music.apple.com/*/song/*/*","music.apple.com/*/playlist/*/*","itunes.apple.com/*"],"settings":{"requiresAuth":true,"authType":"musickit","configurable":{"developerToken":{"type":"text","label":"MusicKit Developer Token","default":"","description":"Optional: JWT from Apple Developer account for enhanced features"},"storefront":{"type":"text","label":"Storefront (Country)","default":"us","description":"Apple Music storefront code (e.g., us, gb, jp)"}}},"implementation":{"search":"async function(query, config) { try { if (query.trim().length < 2) { console.log('Query too short (min 2 chars)'); return []; } const storefront = config.storefront || 'us'; if (window.appleMusicSearchWithMusicKit) { return await window.appleMusicSearchWithMusicKit(query, storefront, 20); } console.log('Searching Apple Music/iTunes for:', query); const response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(query) + '&media=music&entity=song&limit=20&country=' + storefront); if (!response.ok) { console.error('iTunes search failed:', response.status); return []; } const data = await response.json(); if (!data.results || data.results.length === 0) { console.log('No iTunes results found'); return []; } const results = data.results.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName, releaseDate: track.releaseDate, artistId: track.artistId, collectionId: track.collectionId, appleMusicAlbumUrl: track.collectionViewUrl || null, isStreamable: track.isStreamable }; }); console.log('Found ' + results.length + ' Apple Music results'); return results; } catch (error) { console.error('Apple Music search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { var normalizeStr = function(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }; var targetArtist = normalizeStr(artist); var targetTrack = normalizeStr(track); var matchFromResults = function(results) { for (var i = 0; i < results.length; i++) { var r = results[i]; if (normalizeStr(r.artist).includes(targetArtist) && normalizeStr(r.title).includes(targetTrack)) { return r; } } return null; }; if (album) { if (!window._amAlbumCache) { window._amAlbumCache = {}; } if (!window._amAlbumPending) { window._amAlbumPending = {}; } var albumKey = normalizeStr(artist + '|' + album); var cached = window._amAlbumCache[albumKey]; if (cached) { var match = matchFromResults(cached); if (match) { return match; } } if (!cached) { if (window._amAlbumPending[albumKey]) { var albumResults = await window._amAlbumPending[albumKey]; } else { var self = this; var searchPromise = self.search(artist + ' ' + album, config); window._amAlbumPending[albumKey] = searchPromise; var albumResults = await searchPromise; window._amAlbumCache[albumKey] = albumResults; delete window._amAlbumPending[albumKey]; setTimeout(function() { delete window._amAlbumCache[albumKey]; }, 60000); } var match = matchFromResults(albumResults); if (match) { return match; } } } var query = artist + ' ' + track; var results = await this.search(query, config); if (results.length === 0) return null; var match = matchFromResults(results); return match || results[0]; }","lookupUrl":"async function(url, config) { try { console.log('Apple Music URL lookup:', url); var trackId = null; var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); var trackIdMatch = url.match(/[?&]i=(\\d+)/); var songIdMatch = url.match(/\\/song\\/[^/]+\\/(\\d+)/); if (trackIdMatch) { trackId = trackIdMatch[1]; } else if (songIdMatch) { trackId = songIdMatch[1]; } else if (albumIdMatch && !trackIdMatch) { console.log('URL is for album, not track. Use lookupAlbum instead.'); return null; } if (!trackId) { console.log('Could not extract track ID from URL'); return null; } var storefront = config.storefront || 'us'; if (window.appleMusicLookupSong) { return await window.appleMusicLookupSong(trackId, storefront); } var response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/lookup?id=' + trackId + '&entity=song'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var track = data.results.find(function(r) { return r.wrapperType === 'track'; }) || data.results[0]; return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl || url, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName }; } catch (error) { console.error('Apple Music URL lookup error:', error); return null; } }","lookupAlbum":"async function(url, config) { try { console.log('Apple Music album lookup:', url); var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); if (!albumIdMatch) { console.log('Could not extract album ID from URL'); return null; } var albumId = albumIdMatch[1]; var storefront = config.storefront || 'us'; if (window.appleMusicLookupAlbum) { var result = await window.appleMusicLookupAlbum(albumId, storefront); if (result) { result.url = url; return result; } } var response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/lookup?id=' + albumId + '&entity=song&limit=200'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var albumInfo = data.results.find(function(r) { return r.wrapperType === 'collection'; }); var trackResults = data.results.filter(function(r) { return r.wrapperType === 'track'; }); var tracks = trackResults.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName, duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, trackNumber: track.trackNumber, discNumber: track.discNumber }; }); tracks.sort(function(a, b) { if (a.discNumber !== b.discNumber) return a.discNumber - b.discNumber; return a.trackNumber - b.trackNumber; }); return { id: 'applemusic-album-' + albumId, name: albumInfo ? albumInfo.collectionName : 'Unknown Album', artist: albumInfo ? albumInfo.artistName : (tracks[0] ? tracks[0].artist : 'Unknown Artist'), albumArt: albumInfo && albumInfo.artworkUrl100 ? albumInfo.artworkUrl100.replace('100x100', '500x500') : null, releaseDate: albumInfo ? albumInfo.releaseDate : null, trackCount: albumInfo ? albumInfo.trackCount : tracks.length, tracks: tracks, url: url }; } catch (error) { console.error('Apple Music album lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { console.log('Apple Music playlist lookup:', url); var playlistIdMatch = url.match(/\\/playlist\\/[^/]+\\/(pl\\.[a-zA-Z0-9-]+)/); if (!playlistIdMatch) { console.log('Could not extract playlist ID from URL'); return null; } var playlistId = playlistIdMatch[1]; var storefront = config.storefront || 'us'; if (window.appleMusicLookupPlaylist) { var result = await window.appleMusicLookupPlaylist(playlistId, storefront); if (result) { result.url = url; return result; } } console.log('MusicKit not available for playlist lookup'); return null; } catch (error) { console.error('Apple Music playlist lookup error:', error); return null; } }","play":"async function(track, config) { console.log('[AppleMusic] Play called, track:', { id: track.id, appleMusicId: track.appleMusicId, hasUrl: !!track.appleMusicUrl, hasPreview: !!track.previewUrl }); var nativePlaySucceeded = false; if (window.electron && window.electron.musicKit && track.appleMusicId) { try { var authStatus = await window.electron.musicKit.checkAuth(); console.log('[AppleMusic] Native auth status:', authStatus); if (authStatus.success && authStatus.authorized) { console.log('[AppleMusic] Playing via native MusicKit:', track.appleMusicId); var playResult = await window.electron.musicKit.play(track.appleMusicId); console.log('[AppleMusic] Native play result:', JSON.stringify(playResult)); if (playResult.success) { return true; } console.log('[AppleMusic] Native MusicKit play failed, falling back to MusicKit JS'); } } catch (e) { console.log('[AppleMusic] Native MusicKit error:', e); } } if (!nativePlaySucceeded) { var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null; if (musicKitWeb && track.appleMusicId) { var status = musicKitWeb.getAuthStatus(); if (!status.configured && window.electron && window.electron.config) { try { var devToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN'); if (devToken) { console.log('[AppleMusic] Auto-configuring MusicKit JS with developer token'); await musicKitWeb.configure(devToken, 'Parachord', '1.0.0'); status = musicKitWeb.getAuthStatus(); } } catch (cfgErr) { console.log('[AppleMusic] MusicKit JS auto-configure failed:', cfgErr.message); } } console.log('[AppleMusic] MusicKit JS status:', status); if (status.configured && !status.authorized && window.electron && window.electron.platform === 'darwin') { try { console.log('[AppleMusic] MusicKit JS not authorized, requesting authorization...'); await musicKitWeb.authorize(); status = musicKitWeb.getAuthStatus(); console.log('[AppleMusic] MusicKit JS auth result:', status); } catch (authErr) { console.log('[AppleMusic] MusicKit JS authorization failed:', authErr.message); } } else if (status.configured && !status.authorized) { console.log('[AppleMusic] MusicKit JS not authorized; skipping popup on non-macOS (use Settings → Apple Music → Connect to sign in via the auth window). Falling back to 30s preview.'); } if (status.configured && status.authorized) { try { console.log('[AppleMusic] Playing via MusicKit JS:', track.appleMusicId); await musicKitWeb.play(track.appleMusicId); console.log('[AppleMusic] MusicKit JS playback started'); return true; } catch (mkError) { console.log('[AppleMusic] MusicKit JS play failed:', mkError.message); } } } } if (track.previewUrl) { console.log('[AppleMusic] Trying 30-second preview in-app playback'); try { if (!window._appleMusicPreviewAudio) { window._appleMusicPreviewAudio = new Audio(); window._appleMusicPreviewAudio.addEventListener('ended', function() { console.log('[AppleMusic] Preview ended'); if (window.dispatchEvent) { window.dispatchEvent(new CustomEvent('applemusic-preview-ended')); } }); } window._appleMusicPreviewAudio.src = track.previewUrl; window._appleMusicPreviewAudio.volume = 1.0; await window._appleMusicPreviewAudio.play(); console.log('[AppleMusic] Playing 30-second preview in-app'); return true; } catch (audioError) { console.log('[AppleMusic] Preview playback failed:', audioError); } } console.log('[AppleMusic] All playback methods failed, returning false to try next source'); return false; }","init":"async function(config) { console.log('Apple Music resolver initialized'); if (config.developerToken && window.getMusicKitWeb) { console.log('[AppleMusic] Configuring MusicKit JS with developer token'); try { var musicKitWeb = window.getMusicKitWeb(); await musicKitWeb.configure(config.developerToken, 'Parachord', '1.0.0'); console.log('[AppleMusic] MusicKit JS configured successfully'); var status = musicKitWeb.getAuthStatus(); if (!status.authorized) { console.log('[AppleMusic] MusicKit JS not authorized yet - will prompt on first play'); } } catch (configError) { console.error('[AppleMusic] Failed to configure MusicKit JS:', configError); } } if (window.electron && window.electron.musicKit) { window.electron.musicKit.isAvailable().then(function(avail) { if (avail) { console.log('Native MusicKit available for Apple Music playback'); } }); } }","cleanup":"async function() { console.log('Apple Music resolver cleanup'); var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null; if (musicKitWeb) { try { await musicKitWeb.stop(); } catch (e) {} } }"}},
+  {"manifest":{"id":"amazonmusic","name":"Amazon Music","version":"1.0.0","author":"Parachord Team","description":"Play music through the Amazon Music desktop app. Parachord remote-controls the app over its local CDP port (relaunches it under management on first use); playback, DRM and audio output happen inside the Amazon app. Requires Amazon Music for macOS.","icon":"🎵","color":"#25D1DA","homepage":"https://music.amazon.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"urlPatterns":[],"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { if (!window.electron || !window.electron.amazonMusic) { console.warn('Amazon Music: bridge not available'); return []; } if (!query || !query.trim() || query.trim().length < 2) return []; const result = await window.electron.amazonMusic.searchTracks(query.trim()); if (!result || !result.success) { if (result && result.reason === 'app-not-managed') { console.log('Amazon Music: app not under management, skipping search'); } return []; } const tracks = result.tracks || []; return tracks.map(function(t) { return { id: 'amazonmusic-' + t.asin, title: t.title, artist: t.artist, album: t.album, duration: t.duration || 0, sources: ['amazonmusic'], amazonAsin: t.asin, amazonUniqueId: t.uniqueId, genre: t.genre || null, explicit: !!t.explicit }; }); } catch (error) { console.error('Amazon Music search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { var norm = function(s) { s = (s || '').toString().toLowerCase(); if (typeof s.normalize === 'function') s = s.normalize('NFKD').replace(/[̀-ͯ]/g, ''); return s.replace(/[^a-z0-9]/g, ''); }; var contains = function(a, b) { return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1); }; var targetArtist = norm(artist); var targetTitle = norm(track); var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config); if (results.length === 0) return null; for (var i = 0; i < results.length; i++) { if (contains(norm(results[i].artist), targetArtist) && contains(norm(results[i].title), targetTitle)) return results[i]; } return null; }","play":"async function(track, config) { try { if (!window.electron || !window.electron.amazonMusic) { console.error('Amazon Music: bridge not available'); return false; } var asin = track.amazonAsin || track.asin; if (!asin) { console.error('Amazon Music: no ASIN on track'); return false; } var attempt = function() { return window.electron.amazonMusic.playTrack({ asin: asin, title: track.title, artist: track.artist }); }; var result = await attempt(); if (result && result.success) return true; if (result && result.reason === 'app-not-managed') { console.log('Amazon Music: app not under management, requesting user consent...'); var managed = false; if (typeof window.__parachordManageAmazonMusic === 'function') { managed = await window.__parachordManageAmazonMusic(); } if (!managed) return false; result = await attempt(); return !!(result && result.success); } console.error('Amazon Music play failed:', result && result.error); return false; } catch (error) { console.error('Amazon Music play error:', error); return false; } }","init":"async function(config) { console.log('Amazon Music resolver initialized'); return true; }","cleanup":"async function() { console.log('Amazon Music resolver cleanup'); try { if (window.electron && window.electron.amazonMusic && window.electron.amazonMusic.polling) { window.electron.amazonMusic.polling.stop(); } } catch (e) {} }"}},
   {"manifest":{"id":"youtube","name":"YouTube","version":"1.0.0","author":"Parachord Team","description":"Search and play music videos from YouTube. Free with ads. Opens videos in your browser.","icon":"🎥","color":"#FF0000","homepage":"https://youtube.com","email":"support@parachord.com"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true},"urlPatterns":["youtube.com/watch?v=*","www.youtube.com/watch?v=*","youtu.be/*","music.youtube.com/watch?v=*","m.youtube.com/watch?v=*","youtube.com/playlist?list=*","www.youtube.com/playlist?list=*","music.youtube.com/playlist?list=*"],"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching YouTube for:', query); const response = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' music')}&sp=EgIQAQ%253D%253D`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('YouTube search failed:', response.status); return []; } const html = await response.text(); const results = []; const videoDataMatches = html.matchAll(/\"videoId\":\"([^\"]+)\",\"thumbnail\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"ownerText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoDataMatches) { if (count >= 20) break; const [, videoId, title, channel] = match; if (videoId && title && channel) { results.push({ id: `youtube-${videoId}`, title: title, artist: channel, album: 'YouTube', duration: 180, sources: ['youtube'], youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/default.jpg`, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` }); count++; } } console.log(`Found ${results.length} YouTube results`); return results; } catch (error) { console.error('YouTube search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.youtubeUrl) { console.error('No YouTube URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.youtubeUrl); return result && result.success; } else { const newWindow = window.open(track.youtubeUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open YouTube link:', error); return false; } }","init":"async function(config) { console.log('YouTube resolver initialized'); }","cleanup":"async function() { console.log('YouTube resolver cleanup'); }","lookupUrl":"async function(url, config) { try { let videoId = null; if (url.includes('youtu.be/')) { const match = url.match(/youtu\\.be\\/([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } else { const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } if (!videoId) return null; const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`; const response = await fetch(oembedUrl); if (!response.ok) return null; const data = await response.json(); let title = data.title || ''; let artist = data.author_name || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); title = dashMatch[2].trim(); } return { title: title || 'Unknown Title', artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, sourceUrl: url, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }; } catch (error) { console.error('YouTube URL lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/); if (!listMatch) return null; const playlistId = listMatch[1]; const response = await fetch(`https://www.youtube.com/playlist?list=${playlistId}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const tracks = []; let playlistName = 'YouTube Playlist'; const titleMatch = html.match(/\"title\":\\s*\"([^\"]+)\",\\s*\"playlistId\":/); if (titleMatch) { playlistName = titleMatch[1]; } const videoMatches = html.matchAll(/\"videoId\":\"([^\"]+)\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"shortBylineText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoMatches) { if (count >= 100) break; const [, videoId, title, channel] = match; if (videoId && title) { let trackTitle = title; let artist = channel || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); trackTitle = dashMatch[2].trim(); } tracks.push({ title: trackTitle, artist: artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }); count++; } } if (tracks.length === 0) return null; return { type: 'playlist', name: playlistName, albumArt: tracks[0]?.albumArt, tracks: tracks }; } catch (error) { console.error('YouTube playlist lookup error:', error); return null; } }"}},
   {"manifest":{"id":"localfiles","name":"Local Files","version":"1.0.0","author":"Parachord Team","description":"Play music from your local library. Configure watch folders in settings.","icon":"📁","color":"#6366f1","homepage":"","email":""},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"urlPatterns":[],"settings":{"requiresAuth":false,"configurable":{}},"implementation":{"search":"async function(query, config) { if (!window.electron?.localFiles) { console.error('Local Files API not available'); return []; } try { const results = await window.electron.localFiles.search(query); return results || []; } catch (error) { console.error('Local Files search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { if (!window.electron?.localFiles) { console.error('Local Files API not available'); return null; } try { console.log('LocalFiles resolver querying:', artist, track, album); const results = await window.electron.localFiles.resolve({ artist, track, album }); console.log('LocalFiles resolver results:', results?.length || 0); if (!results || results.length === 0) return null; const best = results[0]; return { title: best.title, artist: best.artist, album: best.album, filePath: best.filePath, fileUrl: best.sources?.localfiles?.fileUrl || `file://${best.filePath}`, confidence: best.confidence || 0.95, duration: best.duration, albumArt: best.albumArt }; } catch (error) { console.error('Local Files resolve error:', error); return null; } }","play":"async function(track, config) { console.log('Local Files play:', track); return { type: 'local', url: track.fileUrl || track.filePath }; }","init":"async function(config) { console.log('Local Files resolver initialized'); return true; }","cleanup":"async function() { console.log('Local Files resolver cleanup'); }"}}
 ];
 
 
 // Canonical priority order for content resolvers (determines insertion position when enabling)
-const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'bandcamp', 'soundcloud', 'localfiles', 'youtube'];
+const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'youtube'];
 
 // Insert a resolver ID into an order array at its canonical position
 function insertInCanonicalOrder(order, newId) {
@@ -6135,12 +6136,21 @@ const Parachord = () => {
   const preMuteVolumeRef = useRef(30); // Remember volume before muting
   const isMutedRef = useRef(false); // Ref for mute state to avoid stale closures
   const spotifyVolumeTimeoutRef = useRef(null); // Debounce Spotify volume API calls
+  const amazonMusicVolumeTimeoutRef = useRef(null); // Debounce Amazon Music setVolume calls
 
   // Spotify device picker state
   const [devicePickerDialog, setDevicePickerDialog] = useState({
     show: false,
     devices: [],
     onSelect: null // callback(device) or null to cancel
+  });
+
+  // Amazon Music manage-app consent dialog (promise-based, mirrors devicePickerDialog).
+  // { show, onResolve: callback(true|false), relaunching: boolean }
+  const [amazonManageDialog, setAmazonManageDialog] = useState({
+    show: false,
+    onResolve: null,
+    relaunching: false
   });
   const [preferredSpotifyDeviceId, setPreferredSpotifyDeviceId] = useState(null);
   const preferredSpotifyDeviceIdRef = useRef(null);
@@ -6153,6 +6163,7 @@ const Parachord = () => {
   const [resolverVolumeOffsets, setResolverVolumeOffsets] = useState({
     spotify: 0,      // Spotify is already normalized
     applemusic: 0,   // Apple Music is already normalized
+    amazonmusic: 0,  // Amazon Music app has its own volume pipeline
     localfiles: 0,   // Local files vary, start neutral
     soundcloud: 0,   // SoundCloud varies, start neutral
     bandcamp: -3,    // Bandcamp tends to be slightly louder
@@ -8638,6 +8649,23 @@ const Parachord = () => {
   const flushPlaylistSourcesRef = useRef(null); // Ref to access flush function from beforeunload
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
+  // Amazon Music app connection status (fetched when its resolver detail modal opens):
+  // { appRunning, connected, signedIn } from the main-process CDP controller
+  const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
+  // Re-fetch the Amazon Music status when its detail modal opens
+  useEffect(() => {
+    if (selectedResolver?.id !== 'amazonmusic') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await window.electron.amazonMusic.getStatus();
+        if (!cancelled) setAmazonMusicStatus(s && s.success ? s : { appRunning: false, connected: false, signedIn: null, success: true });
+      } catch (e) {
+        if (!cancelled) setAmazonMusicStatus({ appRunning: false, connected: false, signedIn: null, success: true });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedResolver]);
   const [dynamicModelOptions, setDynamicModelOptions] = useState({}); // { [resolverId]: { loading, options: [{value,label}], error } }
 
   // Close add-to-playlist sort dropdown when clicking outside
@@ -9783,6 +9811,7 @@ const Parachord = () => {
 
     // Fall back to checking top-level properties (for older track formats)
     if ((track.spotifyUri || track.spotifyId) && active.includes('spotify')) return 'spotify';
+    if (track.amazonAsin && active.includes('amazonmusic')) return 'amazonmusic';
     if (track.bandcampUrl && active.includes('bandcamp')) return 'bandcamp';
     if ((track.youtubeUrl || track.youtubeId) && active.includes('youtube')) return 'youtube';
     if (track.qobuzId && active.includes('qobuz')) return 'qobuz';
@@ -9794,6 +9823,7 @@ const Parachord = () => {
       if (allSources.length > 0) return allSources[0];
     }
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
+    if (track.amazonAsin || track.sources?.amazonmusic) return 'amazonmusic';
     if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
     if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
@@ -9850,6 +9880,45 @@ const Parachord = () => {
       setSpotifyVolume(volumePercent, applyNormalization);
     }, 150); // 150ms debounce
   };
+
+  // Amazon Music manage-app flow (see docs/plans/2026-09-23-amazon-music-resolver-brainstorm.md).
+  // The amazonmusic .axe's play() calls this when the Amazon Music app isn't under
+  // Parachord's control (its CDP port is closed). Asks the user for consent once
+  // (persisted via electron.store key `amazonmusic_manage_app`), then relaunches the
+  // app with the local control port via the main-process controller. Resolves true
+  // when the app is now under management.
+  const manageAmazonMusic = async () => {
+    if (!window.electron?.amazonMusic) return false;
+    try {
+      let consent = false;
+      try {
+        consent = (await window.electron.store.get('amazonmusic_manage_app')) === true;
+      } catch (e) { /* store read failed — fall through to prompt */ }
+      if (!consent) {
+        const granted = await new Promise((resolve) => {
+          setAmazonManageDialog({ show: true, onResolve: resolve, relaunching: false });
+        });
+        if (!granted) return false;
+        try {
+          await window.electron.store.set('amazonmusic_manage_app', true);
+        } catch (e) { /* persist best-effort */ }
+      }
+      setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
+      const result = await window.electron.amazonMusic.ensureApp({});
+      setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+      if (result && result.success) {
+        showToast('Amazon Music is under Parachord control', 'success');
+        return true;
+      }
+      showToast('Could not manage Amazon Music: ' + ((result && result.error) || 'unknown error'), 'error');
+      return false;
+    } catch (error) {
+      setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+      console.error('Manage Amazon Music failed:', error);
+      return false;
+    }
+  };
+  window.__parachordManageAmazonMusic = manageAmazonMusic;
 
   // Apply normalized volume for HTML5 audio playback (local files and SoundCloud)
   const applyLocalFileVolume = (baseVolume, trackId, resolverId = 'localfiles') => {
@@ -13941,6 +14010,68 @@ ${trackListXml}
     }
   }, []);
 
+  // Main process Amazon Music polling event handlers
+  // This polling runs in main process and is not affected by OS timer throttling
+  useEffect(() => {
+    if (window.electron?.amazonMusic?.polling) {
+      // Handle advance signal from main process polling
+      window.electron.amazonMusic.polling.onAdvance((data) => {
+        console.log('🎵 [Main→Renderer] Amazon Music advance signal received:', data.reason);
+        if (handleNextRef.current) {
+          handleNextRef.current();
+        }
+      });
+
+      // Handle progress updates from the Amazon Music app (2s polls)
+      window.electron.amazonMusic.polling.onProgress((data) => {
+        const track = currentTrackRef.current;
+        // Only apply progress when Amazon Music is the active resolver and the
+        // user isn't dragging the progress bar
+        if (track?._activeResolver === 'amazonmusic' && data && typeof data.positionMs === 'number') {
+          const positionSec = data.positionMs / 1000;
+          if (!seekingRef.current) {
+            setProgress(positionSec);
+          }
+          // Always update interpolation baseline for smooth progress between polls
+          const isPlayingState = data.state === 'PLAYING';
+          amazonMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: isPlayingState };
+          // Notify scrobble manager of progress for scrobble threshold checking
+          if (window.scrobbleManager && isPlayingState) {
+            window.scrobbleManager.onProgressUpdate(positionSec);
+          }
+        }
+      });
+    }
+  }, []);
+
+  // Amazon Music smooth progress interpolation
+  // The Amazon Music poller reports position every 2 seconds from the main
+  // process. This effect interpolates between polls for smooth 1-second
+  // progress bar updates (same pattern as Spotify/Apple Music).
+  useEffect(() => {
+    const isAmazonMusicActive = currentTrack?._activeResolver === 'amazonmusic';
+    const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
+
+    if (isPlaying && isAmazonMusicActive && hasValidDuration) {
+      const interval = setInterval(() => {
+        const baseline = amazonMusicProgressBaselineRef.current;
+        if (baseline.timestamp > 0 && baseline.isPlaying && !seekingRef.current) {
+          const elapsed = (Date.now() - baseline.timestamp) / 1000;
+          const interpolatedProgress = baseline.progress + elapsed;
+
+          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
+            setProgress(interpolatedProgress);
+            if (window.scrobbleManager) {
+              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
+            }
+          }
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, currentTrack]);
+
   // Listen for MusicKit JS time updates (web-based Apple Music playback)
   // MusicKit JS fires playbackTimeDidChange events which we need to capture for progress updates
   useEffect(() => {
@@ -14659,6 +14790,11 @@ ${trackListXml}
   // Native MusicKit polls every 5 seconds from the main process. This baseline allows
   // smooth 1-second interpolation between polls (same pattern as Spotify).
   const appleMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
+
+  // Amazon Music polling interpolation baseline
+  // The Amazon Music poller (main process) reports position every 2s; interpolate
+  // between polls for a smooth progress bar (same pattern as Spotify/Apple Music).
+  const amazonMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
 
   useEffect(() => {
     // Only run interpolation if we're actually playing via Spotify
@@ -17360,6 +17496,17 @@ ${trackListXml}
       window._appleMusicPreviewAudio.currentTime = 0;
     }
 
+    // Always pause Amazon Music if the resolver is active (best-effort — a
+    // not-managed app returns {success:false} silently)
+    if ((activeResolversRef.current || []).includes('amazonmusic') && window.electron?.amazonMusic) {
+      console.log('⏹️ Pausing Amazon Music before playing new track');
+      pausePromises.push(
+        window.electron.amazonMusic.pause().then(r => {
+          if (r && r.success) window.electron.amazonMusic.polling.stop();
+        }).catch(() => {})
+      );
+    }
+
     // Always stop main process polling for both Spotify and Apple Music
     stopMainProcessPolling();
 
@@ -18419,6 +18566,8 @@ ${trackListXml}
             }).catch(() => {});
           } else if (resolverId === 'applemusic' && window.electron?.musicKit) {
             window.electron.musicKit.pause().catch(() => {});
+          } else if (resolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+            window.electron.amazonMusic.pause().catch(() => {});
           }
         }
         return;
@@ -18444,6 +18593,16 @@ ${trackListXml}
           if (window._appleMusicPreviewAudio) {
             window._appleMusicPreviewAudio.volume = effectiveVolume / 100;
           }
+        }
+
+        // Apply volume for Amazon Music (the app owns its own volume pipeline;
+        // drive it to Parachord's effective volume like the Spotify volume API)
+        if (resolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+          const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
+          const trackId = sourceToPlay.id || trackOrSource.id;
+          const effectiveVolume = getEffectiveVolume(volumeToApply, 'amazonmusic', trackId);
+          console.log(`🔊 Applied Amazon Music volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
+          window.electron.amazonMusic.setVolume(effectiveVolume / 100).catch(() => {});
         }
 
         // Reset browser playback state when playing via streaming resolver (Spotify, etc.)
@@ -18477,6 +18636,8 @@ ${trackListXml}
         trackNeedsExplicitStart.current = false;
         // Reset baseline for smooth progress interpolation
         spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
+        // Reset Amazon Music interpolation baseline as well (resolverId !== 'spotify'
+        // never reaches this line — spotify branch only; kept for symmetry below)
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
@@ -18485,6 +18646,11 @@ ${trackListXml}
 
         if (audioContext) {
           setStartTime(audioContext.currentTime);
+        }
+
+        // Reset the Amazon Music progress baseline when we started that track
+        if (resolverId === 'amazonmusic') {
+          amazonMusicProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
         }
       }
 
@@ -18764,6 +18930,27 @@ ${trackListXml}
       } else {
         console.warn('⚠️ Apple Music main process polling not available');
       }
+    } else if (resolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+      // Amazon Music app control — poll playerModel via main process for
+      // auto-advance + progress (renderer intervals throttle when backgrounded)
+      console.log(`🔄 Starting Amazon Music playback polling via main process...`);
+      console.log(`   Track: ${track.title} by ${track.artist}`);
+      console.log(`   ASIN: ${track.amazonAsin || (track.sources && track.sources.amazonmusic && track.sources.amazonmusic.amazonAsin)}`);
+      const asin = track.amazonAsin || (track.sources && track.sources.amazonmusic && track.sources.amazonmusic.amazonAsin) || track.asin;
+      if (asin) {
+        window.electron.amazonMusic.polling.start({
+          asin,
+          trackTitle: track.title,
+          trackArtist: track.artist,
+          duration: track.duration || 0
+        }).then(() => {
+          console.log('✅ Amazon Music main process polling started');
+        }).catch((err) => {
+          console.error('❌ Failed to start Amazon Music polling:', err);
+        });
+      } else {
+        console.warn('⚠️ No ASIN on Amazon Music track, auto-advance may not work');
+      }
     }
     // For future HTML5 audio resolvers, add event listener logic here
   };
@@ -18781,6 +18968,12 @@ ${trackListXml}
       window.electron.musicKit.polling.stop().catch((err) => {
         console.error('Error stopping Apple Music main process polling:', err);
       });
+    }
+    // Stop Amazon Music polling
+    if (window.electron?.amazonMusic?.polling) {
+      try { window.electron.amazonMusic.polling.stop(); } catch (err) {
+        console.error('Error stopping Amazon Music main process polling:', err);
+      }
     }
   };
 
@@ -19275,6 +19468,45 @@ ${trackListXml}
     const isSpotifyTrack = currentTrack._activeResolver === 'spotify' ||
       (!currentTrack._activeResolver && !isAppleMusicActive && (currentTrack.sources?.spotify || currentTrack.spotifyUri));
 
+    // Amazon Music app playback (remote-controlled over CDP)
+    const isAmazonMusicActive = currentTrack._activeResolver === 'amazonmusic' ||
+      (!currentTrack._activeResolver && !isAppleMusicActive && !isSpotifyTrack && (currentTrack.sources?.amazonmusic || currentTrack.amazonAsin));
+
+    if (isAmazonMusicActive && window.electron?.amazonMusic) {
+      try {
+        if (isPlaying) {
+          const r = await window.electron.amazonMusic.pause();
+          if (r && r.success) {
+            console.log('Paused Amazon Music playback');
+          }
+          setIsPlaying(false);
+          // Stop polling so stale state checks don't trigger auto-advance
+          window.electron.amazonMusic.polling.stop();
+        } else {
+          const r = await window.electron.amazonMusic.resume();
+          if (r && r.success) {
+            console.log('Resumed Amazon Music playback');
+          }
+          setIsPlaying(true);
+          // Restart polling for progress updates and auto-advance
+          const asin = currentTrack.amazonAsin || currentTrack.sources?.amazonmusic?.amazonAsin;
+          if (asin) {
+            window.electron.amazonMusic.polling.start({
+              asin,
+              trackTitle: currentTrack.title,
+              trackArtist: currentTrack.artist,
+              duration: currentTrack.duration || 0
+            }).catch(err => console.warn('Could not restart Amazon Music polling:', err.message));
+          }
+        }
+      } catch (error) {
+        console.error('Amazon Music play/pause error:', error);
+        // Update UI state even on error to avoid stuck state
+        setIsPlaying(!isPlaying);
+      }
+      return;
+    }
+
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
       const attemptSpotifyControl = async (token, isRetry = false) => {
@@ -19416,6 +19648,14 @@ ${trackListXml}
       }
       if (window.electron?.musicKit?.polling) {
         window.electron.musicKit.polling.stop().catch(() => {});
+      }
+      // Also stop Amazon Music polling + pause the app
+      if (window.electron?.amazonMusic?.polling) {
+        try { window.electron.amazonMusic.polling.stop(); } catch (e) {}
+      }
+      if ((activeResolversRef.current || []).includes('amazonmusic') && window.electron?.amazonMusic) {
+        console.log('⏹️ Pausing Amazon Music before next track');
+        window.electron.amazonMusic.pause().catch(() => {});
       }
 
       // Stop all local audio sources (HTML5 Audio for local files/SoundCloud, Qobuz audio)
@@ -19720,6 +19960,15 @@ ${trackListXml}
       console.log('⏹️ Stopping Apple Music preview audio');
       window._appleMusicPreviewAudio.pause();
       window._appleMusicPreviewAudio.currentTime = 0;
+    }
+
+    // Always pause Amazon Music before going back (best-effort)
+    if (window.electron?.amazonMusic?.polling) {
+      try { window.electron.amazonMusic.polling.stop(); } catch (e) {}
+    }
+    if ((activeResolversRef.current || []).includes('amazonmusic') && window.electron?.amazonMusic) {
+      console.log('⏹️ Pausing Amazon Music before previous track');
+      window.electron.amazonMusic.pause().catch(() => {});
     }
 
     // CRITICAL: Reset streaming playback flag when changing tracks
@@ -38723,6 +38972,11 @@ useEffect(() => {
         try { const musicKitWeb = window.getMusicKitWeb(); if (musicKitWeb?.seek) { await musicKitWeb.seek(newPosition); } } catch (err) { /* not the active method */ }
       }
     }
+    // Amazon Music (remote-controlled app; seek position is in seconds)
+    if (activeResolver === 'amazonmusic' && window.electron?.amazonMusic) {
+      amazonMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
+      try { await window.electron.amazonMusic.seek(newPosition * 1000); } catch (err) { console.warn('[Seek] Amazon Music seek failed:', err); }
+    }
     if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
     seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
   }, [currentTrack, browserPlaybackActive]);
@@ -56777,7 +57031,7 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || currentResolverId === 'amazonmusic' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -56802,6 +57056,10 @@ useEffect(() => {
                   const effectiveVol = getEffectiveVolume(restoredVolume, 'applemusic', currentTrackRef.current?.id);
                   window._appleMusicPreviewAudio.volume = effectiveVol / 100;
                 }
+                if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+                  const effectiveVol = getEffectiveVolume(restoredVolume, 'amazonmusic', currentTrackRef.current?.id);
+                  window.electron.amazonMusic.setVolume(effectiveVol / 100).catch(() => {});
+                }
               } else {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
@@ -56814,6 +57072,9 @@ useEffect(() => {
                 }
                 if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
                   window._appleMusicPreviewAudio.volume = 0;
+                }
+                if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+                  window.electron.amazonMusic.setVolume(0).catch(() => {});
                 }
               }
             };
@@ -56895,6 +57156,14 @@ useEffect(() => {
                     if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
                       const effectiveVol = getEffectiveVolume(newVolume, 'applemusic', currentTrackRef.current?.id);
                       window._appleMusicPreviewAudio.volume = effectiveVol / 100;
+                    }
+                    // Amazon Music: debounced setVolume through the CDP bridge
+                    if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+                      if (amazonMusicVolumeTimeoutRef.current) clearTimeout(amazonMusicVolumeTimeoutRef.current);
+                      amazonMusicVolumeTimeoutRef.current = setTimeout(() => {
+                        const effectiveVol = getEffectiveVolume(newVolume, 'amazonmusic', currentTrackRef.current?.id);
+                        window.electron.amazonMusic.setVolume(effectiveVol / 100).catch(() => {});
+                      }, 150);
                     }
                   },
                 className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
@@ -60609,6 +60878,77 @@ useEffect(() => {
               })
           ),
 
+          // Amazon Music settings section (app connection status + relaunch under management)
+          selectedResolver.id === 'amazonmusic' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('h3', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: 'var(--text-primary)',
+                marginBottom: '8px'
+              }
+            }, 'Amazon Music App'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginBottom: '12px',
+                lineHeight: '1.5'
+              }
+            },
+              'Parachord remote-controls the Amazon Music desktop app over a local control port. Playback, DRM and audio output happen inside the Amazon app.'
+            ),
+            React.createElement('div', {
+              className: 'flex items-center justify-between',
+              style: {
+                padding: '12px',
+                backgroundColor: 'var(--hover-bg-default)',
+                borderRadius: '8px',
+                marginBottom: '8px'
+              }
+            },
+              React.createElement('div', null,
+                React.createElement('p', {
+                  style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                }, !amazonMusicStatus ? 'Checking app status…' :
+                  !amazonMusicStatus.appRunning ? 'Amazon Music is not under Parachord control' :
+                  amazonMusicStatus.connected ? 'Amazon Music is under Parachord control' :
+                  'Amazon Music is running but the control port is unreachable'),
+                React.createElement('p', {
+                  style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                }, !amazonMusicStatus ? '' :
+                  amazonMusicStatus.connected
+                    ? (amazonMusicStatus.signedIn === false
+                        ? 'Open the Amazon Music app and sign in to play your library'
+                        : 'Signed in — search and playback are ready')
+                    : 'Relaunch it under Parachord control to search and play')
+              ),
+              React.createElement('button', {
+                onClick: async () => {
+                  showToast('Relaunching Amazon Music…', 'info');
+                  const r = await window.electron.amazonMusic.ensureApp({ force: true });
+                  if (r && r.success) {
+                    showToast('Amazon Music is under Parachord control', 'success');
+                    const s = await window.electron.amazonMusic.getStatus().catch(() => null);
+                    if (s && s.success) setAmazonMusicStatus(s);
+                  } else {
+                    showToast('Could not manage Amazon Music: ' + ((r && r.error) || 'unknown error'), 'error');
+                  }
+                },
+                style: {
+                  padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                  color: '#ffffff', backgroundColor: 'var(--accent-primary)',
+                  borderRadius: '8px'
+                }
+              }, 'Relaunch under control')
+            )
+          ),
+
           // Local Files settings section
           selectedResolver.id === 'localfiles' && React.createElement('div', {
             style: {
@@ -63292,6 +63632,76 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'OK')
+        )
+      )
+    ),
+
+    // Amazon Music Manage-App Dialog (consent to relaunch the app under Parachord's control)
+    amazonManageDialog.show && React.createElement('div', {
+      className: 'fixed inset-0 flex items-center justify-center z-[60]',
+      style: {
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        backdropFilter: 'blur(4px)'
+      },
+      onClick: (e) => {
+        if (e.target === e.currentTarget && !amazonManageDialog.relaunching && amazonManageDialog.onResolve) {
+          amazonManageDialog.onResolve(false);
+          setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+        }
+      }
+    },
+      React.createElement('div', {
+        style: {
+          backgroundColor: 'var(--card-bg)',
+          borderRadius: '16px',
+          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
+          maxWidth: '420px',
+          width: '100%',
+          margin: '0 16px',
+          overflow: 'hidden'
+        },
+        onClick: (e) => e.stopPropagation()
+      },
+        React.createElement('div', { style: { padding: '20px 24px' } },
+          React.createElement('h3', {
+            style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
+          }, 'Manage Amazon Music?'),
+          React.createElement('p', {
+            style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '8px' }
+          },
+            'Parachord needs to relaunch the Amazon Music app with a local control port (127.0.0.1:9225) to play music through it. The app will quit and reopen now — playback, DRM and audio output happen inside the Amazon app.'
+          ),
+          React.createElement('p', {
+            style: { fontSize: '12px', color: 'var(--text-tertiary)', lineHeight: '1.5', marginBottom: '16px' }
+          },
+            'Any other app on this Mac could also control Amazon Music while that port is open. You can opt out anytime by relaunching Amazon Music yourself.'
+          ),
+          React.createElement('div', { className: 'flex gap-2 justify-end' },
+            !amazonManageDialog.relaunching && React.createElement('button', {
+              onClick: () => {
+                if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(false);
+                setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+              },
+              style: {
+                padding: '8px 16px', fontSize: '13px', fontWeight: '500',
+                color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
+                borderRadius: '8px', border: '1px solid var(--border-subtle)'
+              }
+            }, 'Not now'),
+            React.createElement('button', {
+              onClick: () => {
+                if (amazonManageDialog.relaunching) return;
+                if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(true);
+                else setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
+              },
+              disabled: amazonManageDialog.relaunching,
+              style: {
+                padding: '8px 16px', fontSize: '13px', fontWeight: '500',
+                color: '#ffffff', backgroundColor: 'var(--accent-primary)',
+                borderRadius: '8px', opacity: amazonManageDialog.relaunching ? 0.7 : 1
+              }
+            }, amazonManageDialog.relaunching ? 'Relaunching Amazon Music…' : 'Relaunch')
+          )
         )
       )
     ),
