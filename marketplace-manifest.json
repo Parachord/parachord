@@ -137,6 +137,33 @@
       ]
     },
     {
+      "id": "amazonmusic",
+      "name": "Amazon Music",
+      "version": "1.0.0",
+      "author": "Parachord Team",
+      "description": "Play music through the Amazon Music desktop app. Parachord remote-controls the app over its local CDP port; playback, DRM and audio output happen inside the Amazon app. Requires Amazon Music for macOS.",
+      "icon": "🎵",
+      "color": "#25D1DA",
+      "homepage": "https://music.amazon.com",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": true,
+        "browse": false,
+        "urlLookup": false
+      },
+      "requiresAuth": false,
+      "builtin": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/amazonmusic.axe",
+      "category": "streaming",
+      "tags": [
+        "streaming",
+        "subscription",
+        "amazon",
+        "cdp"
+      ]
+    },
+    {
       "id": "localfiles",
       "name": "Local Files",
       "version": "1.0.0",
