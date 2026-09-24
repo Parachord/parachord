@@ -86,7 +86,7 @@
     {
       "id": "youtube",
       "name": "YouTube",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "Parachord Team",
       "description": "Search and play music videos from YouTube. Free with ads. Opens videos in your browser.",
       "icon": "🎥",
@@ -217,7 +217,7 @@
       "id": "ollama",
       "name": "Ollama (Local)",
       "type": "meta-service",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": "Parachord Team",
       "description": "Run AI locally with Ollama. Free, private, works offline.",
       "icon": "🦙",
