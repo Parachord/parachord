@@ -9,10 +9,31 @@ Main component: `const Parachord = () => { ... }` (L4951), rendered via `ReactDO
 ## Playback
 
 ### Resolver System
-- Resolvers provide playback, search, and metadata (Spotify, Apple Music, SoundCloud, YouTube, Bandcamp, local files)
-- `CANONICAL_RESOLVER_ORDER` (L1266): `['spotify', 'applemusic', 'bandcamp', 'soundcloud', 'localfiles', 'youtube']`
+- Resolvers provide playback, search, and metadata (Spotify, Apple Music, Amazon Music, SoundCloud, YouTube, Bandcamp, local files)
+- `CANONICAL_RESOLVER_ORDER` (L1266): `['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'youtube']`
 - Each track has a `sources` object keyed by resolver ID — playback picks the highest-priority available source above the confidence floor
 - Resolvers loaded into `loadedResolversRef` (L7756) with `.play()`, `.search()`, `.capabilities`
+
+### Amazon Music Resolver (parachord#988)
+
+Remote-control resolver: the Amazon Music **desktop app** is the audio engine (it owns the DRM'd Widevine-DASH pipeline), Parachord is the remote control — architecturally a sibling of Spotify Connect / MusicKit. No in-app streaming is possible (stock Electron ships no Widevine CDM). Full RE + protocol notes: `docs/plans/2026-09-23-amazon-music-resolver-brainstorm.md`.
+
+**Architecture.** The app is a CEF shell whose UI (`www.amazon.com/morpho/webapp/index.html`) exposes a native bridge at `window.Native`. Launching the app with `--remote-debugging-port=9225` exposes the webapp over CDP; `amazonMusicController` (main.js) drives the bridge via `Runtime.evaluate` over a `ws` WebSocket to the page target. The renderer resolver (`plugins/amazonmusic.axe`) calls it through `window.electron.amazonMusic` (preload.js). `amazonMusicPoller` (main process, 2s interval) signals `amazonmusic-polling-advance`/`-progress` to the renderer — same background-safe pattern as the Spotify/Apple Music pollers.
+
+**Bridge invariants** (validated live, app 9.5.2.2478):
+- Bridge functions validate argument COUNT strictly — pass exactly the documented arity or they throw `incorrectArguments`. `Player.seek` needs BOTH args: `(positionMs, "PROGRESS")`.
+- Data-returning calls hand back **live CEF proxy objects** that populate in place — poll until `prime.state === 'loaded'`, then `Native.Library.release(ref._id)`.
+- Search results have TWO result sets: `r.prime.sections` is the searchable catalog, `r.library.sections` is the user's own library. **Both are playable** — `searchTracks` merges them (catalog first, dedup by ASIN). Reading only `library.sections` silently returns wrong results for catalog tracks.
+- `playerModel.state`: `EMPTY`/`PLAYING`/`PAUSED`; `playbackProgress.currentTime` is ms; `currentPlayable.duration` is ms.
+- `uniqueId` (`ML-<uuid>`) is **session-scoped** — persist ASINs, not uniqueIds; re-mint fresh uniqueIds by re-searching on replay. The controller caches asin → selectionObj per session.
+
+**App management.** The app is single-instance and only honors the debug port at launch. `amazonMusicController.relaunchApp()` (quit via AppleScript → kill Helper → spawn with `--remote-debugging-port=9225`) only runs with user consent: the `.axe`'s `play()` gets `{reason: 'app-not-managed'}`, calls `window.__parachordManageAmazonMusic()` (registered by app.js), which shows the promise-based `amazonManageDialog` once, persists consent via electron-store key `amazonmusic_manage_app`, then relaunches. Subsequent manage attempts skip the prompt.
+
+**Auto-advance semantics** (`amazonMusicPoller`): at track end the app rolls into its own autoplay queue — position wraps to 0 while still `PLAYING`. The poller (a) signals advance at `durationMs - positionMs <= 4000` (≥2 poll intervals so a poll always lands in the window), and (b) detects the wrap (positionMs drops by >5s with lastPercent ≥80) as a fallback. The renderer's `handleNext` then plays Parachord's next track, superseding the app's own queue — Parachord's queue stays authoritative. Also signals on external track-change (asin mismatch after a 2-poll grace period).
+
+**IPC surface** (`window.electron.amazonMusic`): `getStatus`, `ensureApp({force})`, `searchTracks(query)`, `playTrack({asin,title,artist})`, `pause`, `resume`, `stop`, `seek(ms)`, `setVolume(0..1)`, `getPlaybackState`, `polling.{start,stop,getStatus,onAdvance,onProgress}`. IPC errors come back as `{success:false, error|reason}` — never thrown — so the resolver can branch on `reason: 'app-not-managed'`.
+
+**Parity requirements:** `plugins/amazonmusic.axe` ↔ the inline `FALLBACK_RESOLVERS` copy in app.js must be byte-identical (guarded by `tests/resolver/amazon-music-resolver.test.js`), and the `.axe` version must match `marketplace-manifest.json` (guarded by the same test). The resolver is in `RESOLVER_LIMITER_SKIP_IDS` (its search is local CDP IPC, not rate-limited network). `amazonmusic` playback only works on macOS (the controller guards `relaunchApp`); volume flows through `Player.setVolume(0..1)` with the standard `getEffectiveVolume` normalization (offset 0dB).
 
 ### Resolver Result Shape
 

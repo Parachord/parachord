@@ -1,0 +1,33 @@
+{
+  "manifest": {
+    "id": "amazonmusic",
+    "name": "Amazon Music",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Play music through the Amazon Music desktop app. Parachord remote-controls the app over its local CDP port (relaunches it under management on first use); playback, DRM and audio output happen inside the Amazon app. Requires Amazon Music for macOS.",
+    "icon": "🎵",
+    "color": "#25D1DA",
+    "homepage": "https://music.amazon.com",
+    "email": "support@parachord.dev"
+  },
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": true,
+    "browse": false,
+    "urlLookup": false
+  },
+  "urlPatterns": [],
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {}
+  },
+  "implementation": {
+    "search": "async function(query, config) { try { if (!window.electron || !window.electron.amazonMusic) { console.warn('Amazon Music: bridge not available'); return []; } if (!query || !query.trim() || query.trim().length < 2) return []; const result = await window.electron.amazonMusic.searchTracks(query.trim()); if (!result || !result.success) { if (result && result.reason === 'app-not-managed') { console.log('Amazon Music: app not under management, skipping search'); } return []; } const tracks = result.tracks || []; return tracks.map(function(t) { return { id: 'amazonmusic-' + t.asin, title: t.title, artist: t.artist, album: t.album, duration: t.duration || 0, sources: ['amazonmusic'], amazonAsin: t.asin, amazonUniqueId: t.uniqueId, genre: t.genre || null, explicit: !!t.explicit }; }); } catch (error) { console.error('Amazon Music search error:', error); return []; } }",
+    "resolve": "async function(artist, track, album, config) { var norm = function(s) { s = (s || '').toString().toLowerCase(); if (typeof s.normalize === 'function') s = s.normalize('NFKD').replace(/[̀-ͯ]/g, ''); return s.replace(/[^a-z0-9]/g, ''); }; var contains = function(a, b) { return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1); }; var targetArtist = norm(artist); var targetTitle = norm(track); var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config); if (results.length === 0) return null; for (var i = 0; i < results.length; i++) { if (contains(norm(results[i].artist), targetArtist) && contains(norm(results[i].title), targetTitle)) return results[i]; } return null; }",
+    "play": "async function(track, config) { try { if (!window.electron || !window.electron.amazonMusic) { console.error('Amazon Music: bridge not available'); return false; } var asin = track.amazonAsin || track.asin; if (!asin) { console.error('Amazon Music: no ASIN on track'); return false; } var attempt = function() { return window.electron.amazonMusic.playTrack({ asin: asin, title: track.title, artist: track.artist }); }; var result = await attempt(); if (result && result.success) return true; if (result && result.reason === 'app-not-managed') { console.log('Amazon Music: app not under management, requesting user consent...'); var managed = false; if (typeof window.__parachordManageAmazonMusic === 'function') { managed = await window.__parachordManageAmazonMusic(); } if (!managed) return false; result = await attempt(); return !!(result && result.success); } console.error('Amazon Music play failed:', result && result.error); return false; } catch (error) { console.error('Amazon Music play error:', error); return false; } }",
+    "init": "async function(config) { console.log('Amazon Music resolver initialized'); return true; }",
+    "cleanup": "async function() { console.log('Amazon Music resolver cleanup'); try { if (window.electron && window.electron.amazonMusic && window.electron.amazonMusic.polling) { window.electron.amazonMusic.polling.stop(); } } catch (e) {} }"
+  }
+}

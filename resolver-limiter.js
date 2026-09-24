@@ -97,7 +97,8 @@
   //   - applemusic: has its own dedicated limiter (different rate-limit profile)
   //   - spotify:    has its own per-token budget; not a burst issue
   //   - localfiles: in-process, no network
-  const RESOLVER_LIMITER_SKIP_IDS = new Set(['applemusic', 'spotify', 'localfiles']);
+  //   - amazonmusic: in-process CDP calls to the local Amazon Music app, no network
+  const RESOLVER_LIMITER_SKIP_IDS = new Set(['applemusic', 'spotify', 'localfiles', 'amazonmusic']);
 
   /**
    * Wrap each non-skipped resolver's `.search` method in
