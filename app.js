@@ -63841,7 +63841,7 @@ useEffect(() => {
               }
             }, amazonManageDialog.relaunching
               ? (amazonManageDialog.mode === 'web' ? 'Opening Amazon Music…' : 'Relaunching Amazon Music…')
-              : (amazonManageDialog.mode === 'web' ? 'Sign in' : 'Relaunch')
+              : (amazonManageDialog.mode === 'web' ? 'Sign in' : 'Relaunch'))
           )
         )
       )
