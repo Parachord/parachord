@@ -97,8 +97,10 @@
   //   - applemusic: has its own dedicated limiter (different rate-limit profile)
   //   - spotify:    has its own per-token budget; not a burst issue
   //   - localfiles: in-process, no network
-  //   - amazonmusic: in-process CDP calls to the local Amazon Music app, no network
-  const RESOLVER_LIMITER_SKIP_IDS = new Set(['applemusic', 'spotify', 'localfiles', 'amazonmusic']);
+  // amazonmusic is intentionally NOT skipped. Desktop-app search is local CDP
+  // but a playlist resolve still fans out one eval per track; the in-app web
+  // player search is a page load. Keep it under the shared limiter.
+  const RESOLVER_LIMITER_SKIP_IDS = new Set(['applemusic', 'spotify', 'localfiles']);
 
   /**
    * Wrap each non-skipped resolver's `.search` method in

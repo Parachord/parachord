@@ -7,7 +7,7 @@
  *   - resolve() containment matching (best match, not just first result)
  *   - play() app-not-managed flow (manage prompt + retry)
  *   - byte-identical FALLBACK_RESOLVERS copy in app.js (drift guard)
- *   - resolver-limiter skip set includes amazonmusic (local CDP IPC)
+ *   - resolver-limiter does NOT skip amazonmusic (CDP fan-out + web search)
  */
 
 const fs = require('fs');
@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.0.0');
+    expect(axe.manifest.version).toBe('1.1.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -100,12 +100,26 @@ describe('amazonmusic search', () => {
     }));
   });
 
-  test('returns [] when the app is not under management', async () => {
+  test('throws notReady when the app is not under management so resolve does not cache noMatch', async () => {
     global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
       success: false, reason: 'app-not-managed'
     });
     const resolver = instantiate(axe);
-    expect(await resolver.search('anything', {})).toEqual([]);
+    await expect(resolver.search('anything', {})).rejects.toMatchObject({
+      notReady: true,
+      code: 'app-not-managed'
+    });
+  });
+
+  test('throws notReady when the in-app player is not signed in', async () => {
+    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
+      success: false, reason: 'not-signed-in'
+    });
+    const resolver = instantiate(axe);
+    await expect(resolver.resolve('Daft Punk', 'Around the World', null, {})).rejects.toMatchObject({
+      notReady: true,
+      code: 'not-signed-in'
+    });
   });
 
   test('returns [] on short queries', async () => {
@@ -229,9 +243,9 @@ describe('app.js FALLBACK_RESOLVERS parity', () => {
 });
 
 describe('resolver limiter skip set', () => {
-  test('amazonmusic searches are not wrapped by the global resolver limiter (local CDP IPC)', () => {
+  test('amazonmusic searches stay under the global resolver limiter', () => {
     const { RESOLVER_LIMITER_SKIP_IDS } = require('../../resolver-limiter');
-    expect(RESOLVER_LIMITER_SKIP_IDS.has('amazonmusic')).toBe(true);
+    expect(RESOLVER_LIMITER_SKIP_IDS.has('amazonmusic')).toBe(false);
   });
 });
 

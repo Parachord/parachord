@@ -639,6 +639,16 @@ const appleMusicPoller = {
   }
 };
 
+const {
+  pickPlayableTrack,
+  playerDurationMs,
+  decidePollAdvance,
+  shouldPollFaster,
+  relaunchAllowed,
+  isNotReadyReason
+} = require('./amazon-music-logic');
+const amazonWebPlayer = require('./amazon-web-player');
+
 // Amazon Music Controller
 // Controls the Amazon Music desktop app over CDP. The app is a CEF shell whose
 // UI (a Vue webapp loaded from www.amazon.com/morpho/webapp) exposes a native
@@ -732,6 +742,8 @@ const amazonMusicController = {
     this.ws = null;
     for (const p of this.pending.values()) p.reject(new Error('Amazon Music CDP connection closed'));
     this.pending = new Map();
+    // uniqueId is session-scoped. A dead socket means the next play must re-search.
+    this.selectionCache.clear();
   },
 
   async evalExpr(expression, { awaitPromise = true, timeoutMs = 15000 } = {}) {
@@ -780,9 +792,13 @@ const amazonMusicController = {
   // renderer's manage-app confirm dialog.
   async relaunchApp() {
     if (process.platform !== 'darwin') {
-      throw new Error('Amazon Music resolver requires macOS');
+      const err = new Error('Amazon Music desktop app control is macOS-only');
+      err.reason = 'unsupported-platform';
+      throw err;
     }
-    const { exec } = require('child_process');
+    this.selectionCache.clear();
+    this.teardownWs();
+    const { exec, spawn } = require('child_process');
     // Ask the app to quit gracefully (lets it flush state)
     await new Promise((resolve) => {
       exec(`osascript -e 'tell application "Amazon Music" to quit'`, () => resolve());
@@ -799,18 +815,32 @@ const amazonMusicController = {
       if (!still) break;
       await new Promise(r => setTimeout(r, 1000));
     }
-    // Relaunch with the debug port
-    const { spawn } = require('child_process');
     const appBin = '/Applications/Amazon Music.app/Contents/MacOS/Amazon Music';
-    try {
+    if (!fs.existsSync(appBin)) {
+      const err = new Error('Amazon Music is not installed');
+      err.code = 'ENOENT';
+      err.reason = 'not-installed';
+      throw err;
+    }
+    await new Promise((resolve, reject) => {
+      let settled = false;
       const child = spawn(appBin, [`--remote-debugging-port=${this.port}`], {
         detached: true,
         stdio: 'ignore'
       });
+      child.once('error', (err) => {
+        if (settled) return;
+        settled = true;
+        const wrapped = new Error(err.code === 'ENOENT'
+          ? 'Amazon Music is not installed'
+          : ('Failed to launch Amazon Music: ' + err.message));
+        wrapped.code = err.code;
+        wrapped.reason = err.code === 'ENOENT' ? 'not-installed' : 'launch-failed';
+        reject(wrapped);
+      });
       child.unref();
-    } catch (err) {
-      throw new Error('Failed to launch Amazon Music: ' + err.message);
-    }
+      setTimeout(() => { if (!settled) { settled = true; resolve(); } }, 300);
+    });
     // Wait for CDP to come up (app boot + webapp load takes a few seconds)
     for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 1000));
@@ -903,20 +933,26 @@ const amazonMusicController = {
   },
 
   // Play a track by ASIN (searching for a fresh uniqueId if not cached).
+  async silencePlayback() {
+    try { await this.pause(); } catch { /* already stopped or socket dead */ }
+    try { await this.stop(); } catch { /* same */ }
+  },
+
   async playByAsin(asin, title, artist) {
     if (!asin) throw new Error('Amazon Music: no ASIN to play');
     let selection = this.selectionCache.get(asin);
+    // A cached selection for a different ASIN is a stale fuzzy hit. Never play it.
+    if (selection && selection.asin !== asin) {
+      this.selectionCache.delete(asin);
+      selection = null;
+    }
     if (!selection) {
       const query = `${artist || ''} ${title || ''}`.trim() || asin;
       const tracks = await this.searchTracks(query);
-      // Prefer the exact ASIN, then a containment match (asin matches are
-      // direct-ID; containment lets play-by-title work when the asin went stale)
-      const byAsin = tracks.find(t => t.asin === asin);
-      const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const fuzzy = tracks.find(t =>
-        norm(t.title).includes(norm(title)) && norm(t.artist).includes(norm(artist)));
-      const target = byAsin || fuzzy || null;
-      if (!target || !target.uniqueId) {
+      // Exact ASIN only. A fuzzy hit is a different recording; the poller would
+      // then see "track changed" and skip it a few seconds in.
+      const target = pickPlayableTrack(tracks, { asin, title, artist });
+      if (!target || !target.uniqueId || target.asin !== asin) {
         throw new Error(`Amazon Music: "${title}" not found in search results`);
       }
       selection = {
@@ -929,7 +965,9 @@ const amazonMusicController = {
       };
       this.selectionCache.set(asin, selection);
     }
-    const result = await this.evalJson(`
+    let result;
+    try {
+    result = await this.evalJson(`
       const selection = ${JSON.stringify([selection])};
       Native.Player.startPlayback(
         selection,
@@ -952,13 +990,22 @@ const amazonMusicController = {
       }
       return JSON.stringify({ confirmed, asin: selection[0].asin });
     `, { timeoutMs: 15000 });
+    } catch (err) {
+      this.selectionCache.delete(asin);
+      // Confirmation timed out (or the socket died) after startPlayback was
+      // already issued. Stop the app so handlePlay's fallback doesn't overlap it.
+      await this.silencePlayback();
+      throw err;
+    }
     if (!result || !result.confirmed) {
       // Stale uniqueId is the most common cause — drop the cache entry so the
-      // next attempt re-searches. Report failure so handlePlay falls back.
+      // next attempt re-searches. Pause so a late start doesn't overlap the
+      // next resolver.
       this.selectionCache.delete(asin);
+      await this.silencePlayback();
       throw new Error('Amazon Music: playback did not start (stale match or unavailable)');
     }
-    return { success: true };
+    return { success: true, asin: result.asin };
   },
 
   async pause() {
@@ -1001,8 +1048,10 @@ const amazonMusicController = {
       const cur = (m && m.currentPlayable && m.currentPlayable.track) || null;
       let durationMs = 0;
       try {
+        // currentPlayable.duration is milliseconds (validated on app 9.5.2).
+        // Search-result duration is seconds and is converted by the poller, not here.
         const d = m && (m.currentPlayable && m.currentPlayable.duration || m.duration);
-        if (typeof d === 'number' && d > 0) durationMs = d < 1000 ? d * 1000 : d; // seconds vs ms ambiguity
+        if (typeof d === 'number' && d > 0) durationMs = d;
       } catch (e) {}
       return JSON.stringify({
         state: m ? m.state : 'UNKNOWN',
@@ -1031,27 +1080,56 @@ const amazonMusicPoller = {
   errorCount: 0,
 
   POLL_INTERVAL: 2000,
+  FAST_POLL_INTERVAL: 400,
   MAX_ERRORS: 5,
+  generation: 0,
+  startTimer: null,
+  startResolve: null,
+  seekSuppressUntil: 0,
+  pollIntervalMs: 2000,
 
   async start({ asin, trackTitle, trackArtist, duration }) {
     console.log('🎵 [Main] Starting Amazon Music polling...');
     this.stop();
+    const generation = ++this.generation;
     this.expectedAsin = asin;
     this.trackTitle = trackTitle;
     this.trackArtist = trackArtist;
-    this.trackDurationMs = (duration || 0) * 1000; // duration arrives in seconds
+    // Resolver duration is seconds (search `t.duration`). Player duration is ms.
+    this.trackDurationMs = (duration || 0) * 1000;
     this.lastPositionMs = 0;
     this.lastState = null;
     this.pollCount = 0;
     this.errorCount = 0;
+    this.seekSuppressUntil = 0;
 
-    // Small delay so the player can actually start the new track
-    await new Promise(r => setTimeout(r, 1200));
+    // Cancellable delay so a quick skip doesn't start a second interval
+    // after this sleep returns.
+    await new Promise(resolve => {
+      this.startResolve = resolve;
+      this.startTimer = setTimeout(() => {
+        this.startTimer = null;
+        this.startResolve = null;
+        resolve();
+      }, 1200);
+    });
+    if (generation !== this.generation || !this.expectedAsin) return;
     await this.poll();
-    this.interval = setInterval(() => this.poll(), this.POLL_INTERVAL);
+    if (generation !== this.generation || !this.expectedAsin) return;
+    this.schedule(this.POLL_INTERVAL);
   },
 
   stop() {
+    this.generation++;
+    if (this.startTimer) {
+      clearTimeout(this.startTimer);
+      this.startTimer = null;
+    }
+    if (this.startResolve) {
+      const resolve = this.startResolve;
+      this.startResolve = null;
+      resolve();
+    }
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
@@ -1060,12 +1138,25 @@ const amazonMusicPoller = {
     console.log('⏹️ [Main] Amazon Music polling stopped');
   },
 
+  schedule(ms) {
+    if (this.interval) clearInterval(this.interval);
+    this.pollIntervalMs = ms;
+    this.interval = setInterval(() => this.poll(), ms);
+  },
+
+  noteUserSeek(positionMs) {
+    this.seekSuppressUntil = Date.now() + 4000;
+    if (typeof positionMs === 'number' && Number.isFinite(positionMs)) {
+      this.lastPositionMs = positionMs;
+    }
+  },
+
   async poll() {
     if (!this.expectedAsin) return;
     this.pollCount++;
     let s;
     try {
-      s = await amazonMusicController.getPlaybackState();
+      s = await amazonPlayback.getPlaybackState();
       this.errorCount = 0;
     } catch (err) {
       this.errorCount++;
@@ -1078,7 +1169,7 @@ const amazonMusicPoller = {
     }
 
     const positionMs = s.positionMs || 0;
-    const durationMs = s.durationMs > 0 ? s.durationMs : this.trackDurationMs;
+    const durationMs = playerDurationMs(s.durationMs) || this.trackDurationMs;
     const state = s.state;
 
     this.sendToRenderer('amazonmusic-polling-progress', {
@@ -1088,54 +1179,38 @@ const amazonMusicPoller = {
       percentComplete: durationMs > 0 ? (positionMs / durationMs) * 100 : 0
     });
 
-    // Track changed away from what we started (user interacted with the app or
-    // the app's own autoplay continued)
-    if (s.asin && s.asin !== this.expectedAsin) {
-      if (this.pollCount <= 2) {
-        // Grace period — the player may still be switching to our track
-        return;
+    if (state === 'PLAYING') {
+      const wantFast = shouldPollFaster(durationMs, positionMs);
+      if (wantFast && this.pollIntervalMs !== this.FAST_POLL_INTERVAL) {
+        this.schedule(this.FAST_POLL_INTERVAL);
+      } else if (!wantFast && this.pollIntervalMs !== this.POLL_INTERVAL) {
+        this.schedule(this.POLL_INTERVAL);
       }
-      console.log(`🎵 [Main] Amazon Music track changed (${s.asin} != ${this.expectedAsin}), advancing`);
-      this.sendToRenderer('amazonmusic-polling-advance', { reason: 'track-changed' });
+    }
+
+    const decision = decidePollAdvance({
+      state,
+      positionMs,
+      durationMs,
+      lastPositionMs: this.lastPositionMs,
+      lastState: this.lastState,
+      expectedAsin: this.expectedAsin,
+      actualAsin: s.asin,
+      pollCount: this.pollCount,
+      seekSuppress: Date.now() < this.seekSuppressUntil
+    });
+    if (decision.action === 'advance') {
+      console.log(`🎵 [Main] Amazon Music advance (${decision.reason})`);
+      this.sendToRenderer('amazonmusic-polling-advance', { reason: decision.reason });
       this.stop();
       return;
     }
-
-    if (state === 'PLAYING') {
-      // Near-end advance (same pattern as the Apple Music poller): let the
-      // renderer fire handleNext before the app's own autoplay queue rolls
-      // over. The 4s window is >= 2 poll intervals so a poll always lands in it.
-      if (durationMs > 0 && durationMs - positionMs <= 4000) {
-        this.sendToRenderer('amazonmusic-polling-advance', { reason: 'near-end' });
-        this.stop();
-        return;
-      }
-      // Position wrap while still PLAYING: the track finished and the app's own
-      // autoplay queue rolled to its next track. Signal advance so Parachord's
-      // queue (not the app's) stays authoritative.
-      const lastPercent = durationMs > 0 ? (this.lastPositionMs / durationMs) * 100 : 0;
-      if (this.lastPositionMs > 5000 && positionMs + 5000 < this.lastPositionMs && lastPercent >= 80) {
-        this.sendToRenderer('amazonmusic-polling-advance', { reason: 'finished' });
-        this.stop();
-        return;
-      }
+    if (decision.action === 'continue' || decision.updateLast) {
       this.lastPositionMs = positionMs;
       this.lastState = state;
       return;
     }
-
-    // Was playing, now stopped/empty and near the end -> finished
-    if (this.lastState === 'PLAYING' && (state === 'STOPPED' || state === 'EMPTY' || state === 'FINISHED')) {
-      const percent = durationMs > 0 ? (positionMs / durationMs) * 100 : (this.lastPositionMs / (durationMs || 1)) * 100;
-      const lastPercent = durationMs > 0 ? (this.lastPositionMs / durationMs) * 100 : 0;
-      if (lastPercent >= 90 || percent >= 90) {
-        this.sendToRenderer('amazonmusic-polling-advance', { reason: 'finished' });
-      } else {
-        this.sendToRenderer('amazonmusic-polling-advance', { reason: 'stopped' });
-      }
-      this.stop();
-      return;
-    }
+    if (decision.action === 'wait') return;
 
     // PAUSED mid-track: user pause (renderer handles it) — just track it
     this.lastState = state;
@@ -4285,13 +4360,82 @@ ipcMain.handle('applemusic-polling-status', async () => {
   };
 });
 
+// Which engine is actually playing. The poller reads through this so an
+// in-app Widevine session and the desktop-app session share one progress path.
+const amazonPlayback = {
+  engine: null,
+
+  async selectEngine({ forSearch = false } = {}) {
+    const mode = store.get('amazonmusic_playback_mode') || 'auto';
+    const cdm = amazonWebPlayer.cdmAvailable();
+    const signedIn = cdm ? await amazonWebPlayer.isSignedIn() : false;
+    const appPort = process.platform === 'darwin' ? await amazonMusicController.isPortOpen() : false;
+    if (mode === 'web') {
+      if (!cdm) return { engine: 'none', reason: 'no-cdm' };
+      if (forSearch && !signedIn) return { engine: 'none', reason: 'not-signed-in' };
+      return { engine: 'web' };
+    }
+    if (mode === 'app') {
+      if (process.platform !== 'darwin') return { engine: 'none', reason: 'unsupported-platform' };
+      if (!appPort) return { engine: 'none', reason: 'app-not-managed' };
+      return { engine: 'app' };
+    }
+    if (signedIn) return { engine: 'web' };
+    if (appPort) return { engine: 'app' };
+    if (cdm) return { engine: 'none', reason: forSearch ? 'not-signed-in' : 'not-ready' };
+    if (process.platform === 'darwin') return { engine: 'none', reason: 'app-not-managed' };
+    return { engine: 'none', reason: 'not-ready' };
+  },
+
+  async pause() {
+    if (this.engine === 'web') return amazonWebPlayer.pause();
+    return amazonMusicController.pause();
+  },
+  async resume() {
+    if (this.engine === 'web') return amazonWebPlayer.resume();
+    return amazonMusicController.resume();
+  },
+  async stop() {
+    if (this.engine === 'web') return amazonWebPlayer.stop();
+    return amazonMusicController.stop();
+  },
+  async seek(positionMs) {
+    if (this.engine === 'web') return amazonWebPlayer.seek(positionMs);
+    return amazonMusicController.seek(positionMs);
+  },
+  async setVolume(volume) {
+    if (this.engine === 'web') return amazonWebPlayer.setVolume(volume);
+    return amazonMusicController.setVolume(volume);
+  },
+  async getPlaybackState() {
+    if (this.engine === 'web') return amazonWebPlayer.getPlaybackState();
+    return amazonMusicController.getPlaybackState();
+  },
+  async silence() {
+    try { await this.pause(); } catch { /* not playing */ }
+    try { await this.stop(); } catch { /* not playing */ }
+  }
+};
+
 // Amazon Music IPC handlers
-// All Amazon Music control flows through the CDP controller above. Errors come
-// back as { success: false, error } rather than thrown IPC rejections so the
-// resolver can branch on the reason (e.g. app-not-managed -> prompt relaunch).
+// Errors come back as { success: false, error|reason } rather than thrown IPC
+// rejections so the resolver can branch (not-ready must not be cached as noMatch).
 ipcMain.handle('amazonmusic-get-status', async () => {
   try {
-    return { success: true, ...(await amazonMusicController.getStatus()) };
+    const appStatus = await amazonMusicController.getStatus();
+    const cdm = amazonWebPlayer.cdmAvailable();
+    const webSignedIn = cdm ? await amazonWebPlayer.isSignedIn() : false;
+    return {
+      success: true,
+      ...appStatus,
+      platform: process.platform,
+      playbackMode: store.get('amazonmusic_playback_mode') || 'auto',
+      web: {
+        cdm,
+        signedIn: webSignedIn,
+        cdmVersion: global.__parachordWidevineCdm && global.__parachordWidevineCdm.version
+      }
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -4300,46 +4444,96 @@ ipcMain.handle('amazonmusic-get-status', async () => {
 ipcMain.handle('amazonmusic-ensure-app', async (event, { force } = {}) => {
   try {
     const portOpen = await amazonMusicController.isPortOpen();
-    if (!portOpen || force) {
-      const result = await amazonMusicController.relaunchApp();
-      return { success: true, relaunched: true, ...result };
+    const gate = relaunchAllowed({
+      platform: process.platform,
+      consented: store.get('amazonmusic_manage_app') === true,
+      portOpen,
+      force: !!force
+    });
+    if (!gate.ok) {
+      return {
+        success: false,
+        reason: gate.reason,
+        error: gate.reason === 'consent-required'
+          ? 'Amazon Music app control requires consent'
+          : 'Amazon Music desktop app control is macOS-only'
+      };
     }
-    await amazonMusicController.connect();
-    return { success: true, relaunched: false };
+    if (!gate.relaunch) {
+      await amazonMusicController.connect();
+      return { success: true, relaunched: false };
+    }
+    const result = await amazonMusicController.relaunchApp();
+    return { success: true, relaunched: true, ...result };
+  } catch (error) {
+    return { success: false, reason: error.reason || 'launch-failed', error: error.message };
+  }
+});
+
+ipcMain.handle('amazonmusic-open-login', async () => {
+  try {
+    if (!amazonWebPlayer.cdmAvailable()) {
+      return { success: false, reason: 'no-cdm', error: 'Widevine CDM not found. Install Chrome, Edge, or Brave and restart Parachord.' };
+    }
+    return await amazonWebPlayer.openLogin();
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
+ipcMain.handle('amazonmusic-set-playback-mode', async (event, { mode } = {}) => {
+  const allowed = new Set(['auto', 'web', 'app']);
+  if (!allowed.has(mode)) return { success: false, error: 'Unknown playback mode' };
+  if (mode === 'app' && process.platform !== 'darwin') {
+    return { success: false, reason: 'unsupported-platform', error: 'The desktop app is macOS-only' };
+  }
+  store.set('amazonmusic_playback_mode', mode);
+  return { success: true, mode };
+});
+
 ipcMain.handle('amazonmusic-search-tracks', async (event, { query }) => {
   try {
-    const portOpen = await amazonMusicController.isPortOpen();
-    if (!portOpen) {
-      return { success: false, reason: 'app-not-managed' };
+    const selected = await amazonPlayback.selectEngine({ forSearch: true });
+    if (selected.engine === 'none') {
+      return { success: false, reason: selected.reason || 'not-ready' };
+    }
+    if (selected.engine === 'web') {
+      const tracks = await amazonWebPlayer.searchTracks(query);
+      return { success: true, engine: 'web', tracks };
     }
     const tracks = await amazonMusicController.searchTracks(query);
-    return { success: true, tracks };
+    return { success: true, engine: 'app', tracks };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, reason: error.reason && isNotReadyReason(error.reason) ? error.reason : undefined, error: error.message };
   }
 });
 
 ipcMain.handle('amazonmusic-play-track', async (event, { asin, title, artist }) => {
   try {
-    const portOpen = await amazonMusicController.isPortOpen();
-    if (!portOpen) {
-      return { success: false, reason: 'app-not-managed' };
+    const selected = await amazonPlayback.selectEngine();
+    if (selected.engine === 'none') {
+      return { success: false, reason: selected.reason || 'not-ready' };
+    }
+    amazonPlayback.engine = selected.engine;
+    if (selected.engine === 'web') {
+      const result = await amazonWebPlayer.playByAsin({ asin, title, artist });
+      if (!result || !result.success) {
+        await amazonWebPlayer.pause().catch(() => {});
+        return { success: false, engine: 'web', reason: result && result.reason, error: result && result.error };
+      }
+      return { success: true, engine: 'web', ...result };
     }
     const result = await amazonMusicController.playByAsin(asin, title, artist);
-    return { success: true, ...result };
+    return { success: true, engine: 'app', ...result };
   } catch (error) {
-    return { success: false, error: error.message };
+    try { await amazonPlayback.silence(); } catch { /* already stopped */ }
+    return { success: false, error: error.message, reason: error.reason };
   }
 });
 
 ipcMain.handle('amazonmusic-pause', async () => {
   try {
-    await amazonMusicController.pause();
+    await amazonPlayback.pause();
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -4348,7 +4542,7 @@ ipcMain.handle('amazonmusic-pause', async () => {
 
 ipcMain.handle('amazonmusic-resume', async () => {
   try {
-    await amazonMusicController.resume();
+    await amazonPlayback.resume();
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -4357,7 +4551,7 @@ ipcMain.handle('amazonmusic-resume', async () => {
 
 ipcMain.handle('amazonmusic-stop', async () => {
   try {
-    await amazonMusicController.stop();
+    await amazonPlayback.stop();
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -4366,7 +4560,8 @@ ipcMain.handle('amazonmusic-stop', async () => {
 
 ipcMain.handle('amazonmusic-seek', async (event, { positionMs }) => {
   try {
-    await amazonMusicController.seek(positionMs);
+    amazonMusicPoller.noteUserSeek(positionMs);
+    await amazonPlayback.seek(positionMs);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -4375,7 +4570,7 @@ ipcMain.handle('amazonmusic-seek', async (event, { positionMs }) => {
 
 ipcMain.handle('amazonmusic-set-volume', async (event, { volume }) => {
   try {
-    await amazonMusicController.setVolume(volume);
+    await amazonPlayback.setVolume(volume);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -4384,7 +4579,7 @@ ipcMain.handle('amazonmusic-set-volume', async (event, { volume }) => {
 
 ipcMain.handle('amazonmusic-get-playback-state', async () => {
   try {
-    const state = await amazonMusicController.getPlaybackState();
+    const state = await amazonPlayback.getPlaybackState();
     return { success: true, state };
   } catch (error) {
     return { success: false, error: error.message };
