@@ -3,7 +3,7 @@
     "id": "ollama",
     "name": "Ollama (Local)",
     "type": "meta-service",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "icon": "🦙",
     "color": "#000000",
     "author": "Parachord Team",
@@ -11,7 +11,8 @@
     "homepage": "https://ollama.ai"
   },
   "capabilities": {
-    "chat": true
+    "chat": true,
+    "mobile": false
   },
   "settings": {
     "requiresAuth": false,
