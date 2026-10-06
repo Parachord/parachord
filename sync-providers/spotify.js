@@ -469,13 +469,25 @@ const SpotifySyncProvider = {
    * Check if token is valid
    */
   async checkAuth(token) {
+    return (await this.checkAuthStatus(token)).ok;
+  },
+
+  /**
+   * Like checkAuth, but also returns the HTTP status so callers can tell an
+   * invalid token (401, fixed by re-authenticating) from a valid token that
+   * Spotify refused for another reason (403/429/5xx, which a new login can't
+   * fix). parachord#986: treating every non-OK as "not authenticated" sent
+   * the sync flow into an endless consent loop.
+   * @returns {Promise<{ok: boolean, status: number|null}>}
+   */
+  async checkAuthStatus(token) {
     try {
       const response = await fetch(`${SPOTIFY_API_BASE}/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      return response.ok;
+      return { ok: response.ok, status: response.status };
     } catch {
-      return false;
+      return { ok: false, status: null };
     }
   },
 

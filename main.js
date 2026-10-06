@@ -132,6 +132,7 @@ const WebSocket = require('ws');
 const LocalFilesService = require('./local-files');
 const { getMusicKitBridge } = require('./musickit-bridge');
 const { startMcpServer, stopMcpServer, handleRendererResponse } = require('./services/mcp-server');
+const { STARTUP_POLL_INTERVAL_MS, STARTUP_GRACE_MS, matchesExpectedTrack, startupPollVerdict } = require('./spotify-startup-grace');
 
 // Auto-updater configuration
 if (autoUpdater) {
@@ -168,6 +169,11 @@ const spotifyPoller = {
   lastProgressMs: 0,
   lastKnownDurationMs: 0,
   pendingTrackChange: null,
+  // Startup grace (parachord#985): until the expected track is seen playing,
+  // "nothing playing" answers mean the device is still waking up.
+  startedAt: 0,
+  confirmedStarted: false,
+  startupTimer: null,
 
   POLL_INTERVAL: 20000, // 20 seconds - more reliable for background execution
   RECOVERY_INTERVAL: 30000, // 30 seconds for recovery
@@ -191,17 +197,40 @@ const spotifyPoller = {
     this.lastProgressMs = 0;
     this.lastKnownDurationMs = 0;
     this.pendingTrackChange = null;
+    this.startedAt = Date.now();
+    this.confirmedStarted = false;
 
     // Do an immediate poll, then set up interval
     await this.poll();
+    if (!this.token) return; // the immediate poll already advanced/stopped
 
     this.interval = setInterval(() => this.poll(), this.POLL_INTERVAL);
+
+    // Poll faster while the device may still be waking up, so a track that
+    // starts late is confirmed quickly and one that never starts is skipped
+    // shortly after the grace window rather than at the next 20s tick. The
+    // last tick lands just past the window and applies the normal logic.
+    const startToken = this.startedAt;
+    const tick = async () => {
+      this.startupTimer = null;
+      if (!this.token || this.confirmedStarted || this.startedAt !== startToken) return;
+      await this.poll();
+      if (this.token && !this.confirmedStarted && this.startedAt === startToken &&
+          Date.now() - this.startedAt <= STARTUP_GRACE_MS + STARTUP_POLL_INTERVAL_MS) {
+        this.startupTimer = setTimeout(tick, STARTUP_POLL_INTERVAL_MS);
+      }
+    };
+    this.startupTimer = setTimeout(tick, STARTUP_POLL_INTERVAL_MS);
   },
 
   stop() {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
+    }
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer);
+      this.startupTimer = null;
     }
     if (this.recoveryInterval) {
       clearInterval(this.recoveryInterval);
@@ -235,8 +264,6 @@ const spotifyPoller = {
       return;
     }
 
-    this.pollCount++;
-
     try {
       const response = await fetch('https://api.spotify.com/v1/me/player', {
         headers: { 'Authorization': `Bearer ${this.token}` }
@@ -251,6 +278,31 @@ const spotifyPoller = {
         throw new Error(`Spotify API error: ${response.status}`);
       }
 
+      const data = response.status === 204 ? null : await response.json();
+      this.errorCount = 0; // Reset on success
+
+      // Startup grace (parachord#985): the play command was accepted, but the
+      // device may not be active yet. Don't read "nothing playing" as "track
+      // over" until the expected track has been seen or the window runs out.
+      const verdict = startupPollVerdict({
+        status: response.status,
+        data,
+        expectedUri: this.expectedTrackUri,
+        elapsedMs: Date.now() - this.startedAt,
+        confirmed: this.confirmedStarted,
+      });
+      if (verdict === 'confirmed') {
+        this.confirmedStarted = true;
+        console.log(`✅ [Main] Spotify playback confirmed after ${Date.now() - this.startedAt}ms`);
+      } else if (verdict === 'wait') {
+        console.log(`⏳ [Main] Waiting for Spotify playback to start (${Date.now() - this.startedAt}ms, ${response.status === 204 ? 'no active device' : (data?.item?.uri || 'no item')})`);
+        return;
+      }
+
+      // pollCount only counts polls past startup, so the track-changed grace
+      // below still gets its two confirmation polls.
+      this.pollCount++;
+
       // Handle 204 No Content (no active playback)
       if (response.status === 204) {
         console.log('🔄 [Main] No active Spotify playback');
@@ -258,9 +310,6 @@ const spotifyPoller = {
         this.stop();
         return;
       }
-
-      const data = await response.json();
-      this.errorCount = 0; // Reset on success
 
       if (!data.item) {
         console.log('🎵 [Main] Spotify playback ended (no item), signaling advance...');
@@ -284,8 +333,9 @@ const spotifyPoller = {
         currentUri
       });
 
-      // Check if we're still playing the expected track
-      if (currentUri === this.expectedTrackUri) {
+      // Check if we're still playing the expected track (relinked copies
+      // report the requested URI under item.linked_from)
+      if (matchesExpectedTrack(data.item, this.expectedTrackUri)) {
         const isNearEnd = progressMs >= durationMs - 2000; // Within 2 seconds
         const isAtEnd = progressMs >= durationMs - 100;
 
@@ -7074,6 +7124,20 @@ ipcMain.handle('sync:check-auth', async (event, providerId) => {
 
   if (!token) {
     return { authenticated: false, error: 'No token found' };
+  }
+
+  // Spotify: only a 401 means the token itself is bad. A 403/429/5xx on a
+  // freshly issued token can't be fixed by logging in again, and reporting
+  // it as "not authenticated" made the sync flow re-open the consent screen
+  // forever (parachord#986). Report the token as valid, surface the status,
+  // and let the sync itself report the real error.
+  if (typeof provider.checkAuthStatus === 'function') {
+    const { ok, status } = await provider.checkAuthStatus(token);
+    if (!ok && status && status !== 401) {
+      console.warn(`[Sync] ${providerId} auth check got HTTP ${status}; token treated as valid (re-auth only helps on 401)`);
+      return { authenticated: true, status };
+    }
+    return { authenticated: ok, status };
   }
 
   const isValid = await provider.checkAuth(token);
