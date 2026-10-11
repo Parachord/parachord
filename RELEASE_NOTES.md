@@ -1,3 +1,36 @@
+# Parachord v0.9.8
+
+**Release date:** 2026-10-11
+
+> Apple Music should now play full tracks on Windows and Linux, not just 30-second previews. Spotify on Windows stops skipping through albums in silence, and media controls on Linux behave the way you'd expect.
+
+---
+
+## Full Apple Music tracks on Windows and Linux
+
+On Windows and Linux, Apple Music only ever played 30-second previews. The cause turned out to be deeper than sign-in: the version of Electron Parachord was built on (the engine underneath the app) can't play copy-protected music at all. Parachord is now built on a version of Electron with Google's Widevine content protection, the same technology Chrome uses for Apple Music, Amazon Music and other streaming services, and its builds are certified to use it.
+
+- The first time you launch this version, Parachord downloads Google's Widevine module in the background. That launch can take a few extra seconds; after that it's instant.
+- This also lays the groundwork for more streaming services that need the same protection, on every platform.
+- I tested full playback on a Mac but don't have Windows or Linux machines with Apple Music to test on. If it still plays only previews for you, please say so on [#882](https://github.com/Parachord/parachord/issues/882).
+
+## Spotify fixes
+
+- **Albums no longer skip in silence on Windows.** Right after you pressed play, Parachord checked what Spotify was playing. The Spotify desktop app takes a few seconds to wake up, so it answered "nothing", and Parachord took that as the track ending and skipped to the next one, all the way through the album. Parachord now waits for playback to actually start, and nudges Spotify once more if it hasn't.
+- **No more endless Spotify sign-in loop.** With Library Sync open, signing in to Spotify could send you back to the consent screen again and again. That's fixed; if Spotify refuses a sync request for another reason, you'll now see the actual error instead.
+- **Clearer setup steps.** The Spotify setup instructions now tell you to tick both **Web API** and **Web Playback SDK** when creating your Spotify developer app. Without the second one, playback can fail.
+
+## Media controls on Linux
+
+- **Pause no longer starts music.** Sending Pause while already paused (from a desktop widget, `playerctl`, or KDE Connect pausing for a phone call) used to start playback instead. Play and Pause now do exactly what they say.
+- **One key press, one action.** A media key could reach Parachord twice and toggle twice, looking like nothing happened. Parachord now ignores the duplicate.
+
+## Under the hood
+
+- Plugin housekeeping: Parachord no longer re-downloads the SoundCloud, ChatGPT and Gemini plugins on every launch (or logs that it's "downgrading" them). A version mismatch in the plugin catalog made them look out of date.
+
+---
+
 # Parachord v0.9.7
 
 **Release date:** 2026-09-23
