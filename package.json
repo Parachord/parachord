@@ -43,7 +43,7 @@
   "devDependencies": {
     "@tanstack/react-virtual": "^3.13.18",
     "chrome-webstore-upload-cli": "^3.3.1",
-    "electron": "^39.2.7",
+    "electron": "https://github.com/castlabs/electron-releases#v39.8.10+wvcus",
     "electron-builder": "^24.9.1",
     "jest": "^30.2.0",
     "jose": "^6.1.3",
@@ -116,7 +116,11 @@
         ]
       }
     ],
-    "afterSign": "scripts/notarize.js",
+    "afterPack": "scripts/after-pack.js",
+    "afterSign": "scripts/after-sign.js",
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/v"
+    },
     "mac": {
       "category": "public.app-category.music",
       "icon": "assets/icons/icon.icns",

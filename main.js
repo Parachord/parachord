@@ -43,78 +43,33 @@ function isMetaBrainzHost(urlStr) {
 app.setPath('userData', path.join(app.getPath('appData'), 'parachord-desktop'));
 app.name = 'Parachord';
 
-// Widevine CDM: load Chrome's CDM on non-macOS platforms so MusicKit JS
-// can play full DRM-protected streams (macOS uses native MusicKit instead).
-// Note: Linux works out of the box; Windows requires VMP signing (Castlabs fork)
-// so this is primarily useful on Linux for now.
-if (process.platform !== 'darwin') {
-  const localAppData = process.env.LOCALAPPDATA || '';
-  const programFiles = process.env.PROGRAMFILES || '';
-  const home = process.env.HOME || '';
-
-  const cdmSearchPaths = process.platform === 'win32'
-    ? [
-        // Chrome
-        path.join(localAppData, 'Google', 'Chrome', 'User Data', 'WidevineCdm'),
-        path.join(programFiles, 'Google', 'Chrome', 'Application', 'WidevineCdm'),
-        // Edge
-        path.join(localAppData, 'Microsoft', 'Edge', 'User Data', 'WidevineCdm'),
-        // Brave
-        path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'User Data', 'WidevineCdm'),
-        // Vivaldi
-        path.join(localAppData, 'Vivaldi', 'User Data', 'WidevineCdm'),
-        // Opera
-        path.join(localAppData, 'Opera Software', 'Opera Stable', 'WidevineCdm'),
-        // Dia (The Browser Company)
-        path.join(localAppData, 'Dia', 'User Data', 'WidevineCdm'),
-        path.join(localAppData, 'TheBrowserCompany', 'Dia', 'User Data', 'WidevineCdm'),
-      ]
-    : [
-        // Chrome
-        '/opt/google/chrome/WidevineCdm',
-        // Chromium
-        '/usr/lib/chromium/WidevineCdm',
-        // Edge
-        '/opt/microsoft/msedge/WidevineCdm',
-        // Brave
-        '/opt/brave.com/brave/WidevineCdm',
-        // Vivaldi
-        '/opt/vivaldi/WidevineCdm',
-        // Shared / user-local
-        path.join(home, '.local', 'lib', 'WidevineCdm'),
-      ];
-
-  const cdmLib = process.platform === 'win32' ? 'widevinecdm.dll' : 'libwidevinecdm.so';
-  let cdmFound = false;
-
-  for (const searchPath of cdmSearchPaths) {
-    try {
-      if (!fs.existsSync(searchPath)) continue;
-
-      // CDM structure: <searchPath>/<version>/_platform_specific/<arch>/<lib>
-      const versions = fs.readdirSync(searchPath).filter(d => /^\d/.test(d)).sort().reverse();
-      for (const version of versions) {
-        const arch = process.platform === 'win32'
-          ? (process.arch === 'x64' ? 'win_x64' : 'win_x86')
-          : (process.arch === 'x64' ? 'linux_x64' : `linux_${process.arch}`);
-        const cdmPath = path.join(searchPath, version, '_platform_specific', arch, cdmLib);
-
-        if (fs.existsSync(cdmPath)) {
-          console.log(`[Widevine] Found CDM v${version} at: ${cdmPath}`);
-          app.commandLine.appendSwitch('widevine-cdm-path', cdmPath);
-          app.commandLine.appendSwitch('widevine-cdm-version', version);
-          cdmFound = true;
-          break;
-        }
-      }
-      if (cdmFound) break;
-    } catch (e) {
-      // Ignore permission errors etc.
-    }
+// Widevine (parachord#882): Parachord runs on castlabs' Electron for Content
+// Security (ECS), which delivers the Widevine CDM through Chromium's Component
+// Updater. Stock Electron has no Widevine at all: the old approach here
+// (borrowing a browser's CDM via --widevine-cdm-path) did nothing, because that
+// switch no longer exists in Electron, so MusicKit JS on Windows/Linux only ever
+// got 30-second previews. castlabs recommends waiting for the CDM before opening
+// a BrowserWindow. After the first launch it's already installed and resolves
+// quickly; the first launch downloads it, so the wait is capped.
+const WIDEVINE_WAIT_MS = 10000;
+async function waitForWidevine() {
+  const { components } = require('electron');
+  if (!components) {
+    console.log('[Widevine] Stock Electron build: no Widevine CDM (castlabs ECS required for DRM playback)');
+    return;
   }
-
-  if (!cdmFound) {
-    console.log('[Widevine] CDM not found — install a Chromium-based browser (Chrome, Edge, Brave, etc.) for full Apple Music playback via MusicKit JS');
+  let timer;
+  try {
+    await Promise.race([
+      components.whenReady(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`timed out after ${WIDEVINE_WAIT_MS}ms`)), WIDEVINE_WAIT_MS); }),
+    ]);
+    console.log('[Widevine] CDM ready:', JSON.stringify(components.status()));
+  } catch (e) {
+    // Never block startup on DRM; playback that needs it will fail visibly.
+    console.warn('[Widevine] CDM not ready, continuing:', (e && e.message) || e);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -1716,8 +1671,12 @@ if (!gotTheLock) {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.log('=== Electron App Starting ===');
+
+  // Wait (bounded) for the Widevine CDM before anything opens a window. Kept at
+  // the top so the rest of startup runs in the same order as before.
+  await waitForWidevine();
 
   // Begin periodic in-app announcements fetch
   startAnnouncementsPolling();
