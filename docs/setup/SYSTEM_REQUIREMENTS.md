@@ -29,6 +29,7 @@ If the MusicKit helper is unavailable, Parachord falls back to the MusicKit JS w
 | **Architecture** | x64, arm64 |
 | **Disk space** | ~250 MB for application, plus space for local music database |
 | **Distribution formats** | `.exe` (NSIS installer), portable |
+| **Widevine CDM** | Downloaded automatically on first launch (about 20 MB on disk); needed for full Apple Music playback |
 
 No additional OS-level dependencies are required beyond a standard Windows 10+ installation.
 
@@ -40,6 +41,7 @@ No additional OS-level dependencies are required beyond a standard Windows 10+ i
 | **Architecture** | x64 |
 | **Disk space** | ~250 MB for application, plus space for local music database |
 | **Distribution formats** | `.AppImage`, `.deb`, `.rpm` |
+| **Widevine CDM** | Downloaded automatically on first launch (about 20 MB on disk); needed for full Apple Music playback |
 
 ### Audio subsystem
 
@@ -106,5 +108,6 @@ Parachord streams music from external services and requires internet access for 
 - **Last.fm** - Scrobbling and recommendations (`ws.audioscrobbler.com`)
 - **Cover Art Archive** - Album artwork (`coverartarchive.org`)
 - **GitHub** - Auto-update checks (`github.com`)
+- **Google** - Widevine CDM download and updates via Chromium's component updater (`update.googleapis.com`, `clients2.google.com`, plus Google's download CDN). Fetched once on first launch; without it, DRM-protected services such as Apple Music on Windows and Linux play only previews, and startup waits up to 10 seconds for the download before giving up for that launch
 
 Local file playback works fully offline.
