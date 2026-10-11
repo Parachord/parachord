@@ -76,6 +76,16 @@ This split preserves the Achordion contribution path: local-only listeners playi
 - `getEffectiveVolume()` (L7867): Combines base volume + resolver offset + track offset
 - Spotify volume API calls are debounced via `spotifyVolumeTimeoutRef`
 
+## Widevine / castlabs Electron (ECS)
+
+Parachord is built on [castlabs Electron for Content Security](https://github.com/castlabs/electron-releases), not stock Electron (`package.json` `devDependencies.electron` is a GitHub URL with a `+wvcus` tag; electron-builder downloads the matching binary via `build.electronDownload.mirror`). **Stock Electron has no Widevine at all.** The old `--widevine-cdm-path` block in main.js that tried to borrow a browser's CDM did nothing (the switch no longer exists in Electron), which is why Apple Music through MusicKit JS on Windows/Linux only ever played 30-second previews (parachord#882). Tracking issue with the spike results: parachord#988; landed in #989, shipped in v0.9.8.
+
+- **Startup:** `waitForWidevine()` (main.js, called first thing in the `app.whenReady` handler) awaits `components.whenReady()` with a 10s cap, then the rest of startup runs in the old order. It's a no-op on stock Electron (`components` undefined). Don't move window creation ahead of it: a page already open may not pick up a CDM that finishes installing later.
+- **VMP signing is what makes production licence servers accept the build.** castlabs' prebuilt binaries are signed for development only: Widevine's test servers and the Amazon Music web player accept that, Apple's licence server refuses it (`MEDIA_LICENSE`). `scripts/vmp-sign.js` production-signs via `python -m castlabs_evs.vmp sign-pkg --streaming`. **Order is platform-specific and load-bearing:** macOS before Apple code signing (`scripts/after-pack.js`), Windows after Authenticode (`scripts/after-sign.js`, which then hands off to `scripts/notarize.js`). Linux has no VMP. Verified on v0.9.8: app, zip and DMG notarize, staple and pass Gatekeeper with the VMP `.sig` in place.
+- **EVS account:** free, named `parachord`. CI logs in every run from `EVS_ACCOUNT_NAME` / `EVS_PASSWD` (tokens expire monthly). `EVS_REQUIRED=1` is set on release tags so a tag can't ship with the dev signature; other builds (including fork PRs with no secrets) warn and keep it. Locally, `python3 -m castlabs_evs.account reauth` once, then `EVS_PYTHON=<python with castlabs-evs>` for the hooks.
+- **What Widevine does and doesn't give us:** Amazon's web player streams its lossless tier (FLAC is in the decryptable codec list; see castlabs' [VMP Lab](https://castlabs.github.io/wv-vmp-lab/) for a build's status). Apple via MusicKit JS stays at 256 kbps AAC (no lossless on Apple's web stack, no ALAC in Chromium). macOS Apple Music uses the native MusicKit helper, not Widevine.
+- **Version tracking:** castlabs tags follow stock Electron (`v39.8.10+wvcus`). Their supported majors are the three latest (42+ as of 2026-10); 39.x is end-of-support but still inside the window where it can download a CDM. Bump together with the electron-builder upgrade, and run `npx electron-builder install-app-deps` after changing it so `better-sqlite3` is rebuilt.
+
 ## Spotify Device Handling
 
 ### Device Discovery
@@ -1266,6 +1276,11 @@ When tagging a new version, three places must agree on the version string. Missi
 3. `RELEASE_NOTES.md` — add a new entry at the top with `# Parachord vX.Y.Z` heading, release date, and grouped highlights. The in-app "What's New" modal renders this file (parsed via the bundled fallback or fetched from GitHub) so users see your bullet points on first launch after upgrade.
 
 Then commit (`X.Y.Z` is conventional for the commit subject), push, and `git tag vX.Y.Z` + `git push origin vX.Y.Z`. The CI build picks up from the tag.
+
+Two release-only failure modes to know about:
+
+- **Apple notarization 403 "A required agreement is missing or has expired"** (surfaces as `Unexpected token 'E', "Error: HTT"... is not valid JSON` from @electron/notarize). Apple periodically requires the account holder to accept an updated agreement at developer.apple.com/account; until then every notarization is refused. Accept it, then `gh run rerun <id> --failed`. Acceptance can take a minute to propagate, so a job that started just before may need one more rerun (v0.9.8 did).
+- **VMP signing** (see the Widevine section): release tags set `EVS_REQUIRED=1`, so if EVS is down or the `EVS_*` secrets are missing, the Mac and Windows builds fail on purpose rather than ship a build Apple's licence server would refuse.
 
 ## Voice when responding to external contributors
 

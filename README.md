@@ -17,7 +17,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 
 ### Supported Sources
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
-- **Apple Music** - Full playback via native MusicKit on macOS or MusicKit JS on other platforms (subscription required)
+- **Apple Music** - Full playback via native MusicKit on macOS or MusicKit JS on Windows and Linux (subscription required). Windows and Linux playback needs the Widevine CDM, which Parachord downloads on first launch (see [System Requirements](#system-requirements))
 - **YouTube** - Stream audio from YouTube videos
 - **Bandcamp** - Browse, play, and purchase from independent artists
 - **SoundCloud** - Stream from SoundCloud's catalog
@@ -88,11 +88,13 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Windows
 - **Windows 10** or later
 - x64 or arm64
+- Full Apple Music playback needs Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
 
 ### Linux
 - **Ubuntu 18.04+**, **Debian 10+**, **Fedora 32+**, or equivalent
 - x64
 - PulseAudio or PipeWire (for audio output)
+- Full Apple Music playback needs Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
 
 ### Building from Source
 - **Node.js 20** (LTS)
@@ -124,6 +126,10 @@ npm install
 # Start the app
 npm start
 ```
+
+Parachord is built on [castlabs Electron for Content Security](https://github.com/castlabs/electron-releases) (ECS), a fork of Electron with the Widevine CDM. It isn't on the npm registry, so `npm install` fetches it from castlabs' GitHub releases. Stock Electron has no Widevine, so DRM-protected services (Apple Music on Windows and Linux) can't play full tracks on it.
+
+Locally built apps carry castlabs' development VMP signature. That's enough for Widevine's test servers, but Apple's licence server refuses it, so Apple Music on Windows and Linux plays only 30-second previews in a local build. Release builds get a production signature through [castlabs EVS](https://github.com/castlabs/electron-releases/wiki/EVS) in CI (see [CI/CD](#cicd)). To sign a local build yourself, create a free EVS account and run `python3 -m castlabs_evs.vmp sign-pkg dist/<platform-dir>` before code signing on macOS or after it on Windows.
 
 ## Architecture
 
@@ -161,7 +167,7 @@ Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript 
 
 ## Tech Stack
 
-- **Electron** - Desktop application framework
+- **castlabs Electron for Content Security** - Electron fork with the Widevine CDM, for DRM-protected streaming
 - **React 18** - UI framework (via CDN, no build step)
 - **Tailwind CSS** - Utility-first styling (via CDN)
 - **SQLite** - Local music library database (via better-sqlite3)
@@ -189,6 +195,8 @@ The project uses GitHub Actions for automated builds on all platforms. Builds ar
 - Version tags (v*)
 
 Tagged releases automatically create draft GitHub Releases with all platform artifacts.
+
+macOS and Windows builds are VMP-signed through castlabs EVS (`scripts/vmp-sign.js`), so Widevine's production licence servers accept them. The signing runs before Apple code signing on macOS and after Authenticode on Windows; Linux needs no VMP signature. CI logs in to EVS from the `EVS_ACCOUNT_NAME` and `EVS_PASSWD` repository secrets on every run. Pull-request builds from forks have no secrets, so they keep the development signature; release tags fail instead of shipping an unsigned build.
 
 ## Keyboard Shortcuts
 
