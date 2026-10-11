@@ -148,6 +148,34 @@ jobs:
           cp scripts/codesign-retry.sh "$HOME/.local/bin/codesign"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # Widevine VMP signing (parachord#882). Parachord runs on castlabs'
+      # Electron for Content Security; its binaries are only VMP-signed for
+      # development, which production license servers (Apple Music) refuse.
+      # scripts/vmp-sign.js production-signs via castlabs EVS from the
+      # electron-builder hooks (macOS before code signing, Windows after).
+      # Linux needs no VMP signature. EVS login tokens expire monthly, so log
+      # in fresh on every run. Fork PRs have no secrets: the hook warns and
+      # leaves the development signature.
+      - name: Setup Python for castlabs EVS
+        if: matrix.platform != 'linux'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Log in to castlabs EVS
+        if: matrix.platform != 'linux'
+        shell: bash
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+        run: |
+          python -m pip install --upgrade castlabs-evs
+          if [ -n "$EVS_ACCOUNT_NAME" ] && [ -n "$EVS_PASSWD" ]; then
+            python -m castlabs_evs.account -n reauth -A "$EVS_ACCOUNT_NAME" -P "$EVS_PASSWD"
+          else
+            echo "[CI] EVS secrets not set (likely a fork PR): build keeps the development VMP signature"
+          fi
+
       # Diagnostic: verify Apple notarization credentials before spending time
       # building. @electron/notarize@2.2.1 crashes on non-JSON notarytool output
       # (see "Unexpected token 'E'" JSON.parse error), which swallows the
@@ -208,6 +236,10 @@ jobs:
           APPLE_ID: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_ID || '' }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_TEAM_ID || '' }}
+          # Release builds must be production VMP-signed; fail rather than ship
+          # one that can't get Widevine licenses. Other builds warn and skip.
+          EVS_REQUIRED: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '' }}
+          EVS_PYTHON: python
 
       # macOS: Notarize and staple the DMG so Gatekeeper on macOS Sequoia
       # accepts the downloaded disk image (not just the .app inside it).
