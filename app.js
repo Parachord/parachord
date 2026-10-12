@@ -17887,9 +17887,10 @@ ${trackListXml}
         // filter below — even when they'd validate cleanly. Re-score on the
         // fly using the canonical (track artist, track title) target so
         // legacy cache entries survive until they age out (7-day TTL).
-        const confidence = typeof src?.confidence === 'number'
-          ? src.confidence
-          : calculateConfidence({ artist: trackOrSource.artist, title: trackOrSource.title }, src);
+        const confidence = confidenceForSource(
+          { artist: trackOrSource.artist, title: trackOrSource.title },
+          src
+        );
         return {
           resolverId: resId,
           source: src,
@@ -26332,7 +26333,7 @@ ${trackListXml}
       const displaySources = {};
       const targetTrackForScoring = { artist: artistName || track.artist || '', title: track.title || '' };
       for (const [resolverId, source] of Object.entries(filteredCached)) {
-        const rescored = calculateConfidence(targetTrackForScoring, source);
+        const rescored = confidenceForSource(targetTrackForScoring, source);
         displaySources[resolverId] = { ...source, confidence: rescored };
       }
       // If the cache had entries but they were ALL noMatch sentinels, mark the
@@ -26410,7 +26411,7 @@ ${trackListXml}
       const targetTrackForScoring = { artist: artistName || track.artist || '', title: track.title || '' };
       const rescoredPersisted = {};
       for (const [resolverId, source] of Object.entries(realPersistedSources)) {
-        const rescored = calculateConfidence(targetTrackForScoring, source);
+        const rescored = confidenceForSource(targetTrackForScoring, source);
         rescoredPersisted[resolverId] = { ...source, confidence: rescored };
       }
 
@@ -28122,6 +28123,18 @@ ${trackListXml}
       return foundTrack.confidence;
     }
     return 0.95;
+  };
+
+  // Library localfiles rows identify the recording by path and often omit
+  // artist/title. calculateConfidence then returns 0.5, and the selection
+  // floor drops a file that is on disk — Collection click shows "No Enabled
+  // Source" for a track whose badge is the local resolver. Keep the stored
+  // score in that case; only rescore sources that actually carry names.
+  const confidenceForSource = (target, source) => {
+    if (source?.filePath && (!source.artist || !source.title)) {
+      return typeof source.confidence === 'number' ? source.confidence : 1.0;
+    }
+    return calculateConfidence(target, source);
   };
 
   // Fetch album art suggestions from MusicBrainz/Cover Art Archive
