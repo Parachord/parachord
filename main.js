@@ -788,6 +788,10 @@ const amazonMusicPoller = {
     });
     if (decision.action === 'advance') {
       console.log(`🎵 [Main] Amazon Music advance (${decision.reason})`);
+      // Blank before signaling so Amazon's own autoplay cannot overlap the
+      // next resolver. Awaited so it cannot race the next playByAsin loadURL.
+      await amazonWebPlayer.haltPlayback().catch(() => {});
+      if (!this.expectedAsin) return;
       this.sendToRenderer('amazonmusic-polling-advance', { reason: decision.reason });
       this.stop();
       return;
@@ -4001,12 +4005,12 @@ ipcMain.handle('amazonmusic-play-track', async (event, { asin, title, artist }) 
   try {
     const result = await amazonWebPlayer.playByAsin({ asin, title, artist });
     if (!result || !result.success) {
-      await amazonWebPlayer.pause().catch(() => {});
+      await amazonWebPlayer.haltPlayback().catch(() => {});
       return { success: false, engine: 'web', reason: result && result.reason, error: result && result.error };
     }
     return { success: true, engine: 'web', ...result };
   } catch (error) {
-    try { await amazonWebPlayer.pause(); } catch { /* already stopped */ }
+    try { await amazonWebPlayer.haltPlayback(); } catch { /* already stopped */ }
     return { success: false, error: error.message, reason: error.reason };
   }
 });

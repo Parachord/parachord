@@ -127,6 +127,11 @@ function normalizeStreamingQuality(value) {
 // with an artist sibling, so a scrape that accepts any track link returns
 // the currently playing song before the results exist. The match gate then
 // rejects that hit and the track looks unresolved.
+function asinFromPlayerUrl(url) {
+  const m = (url || '').match(/\/tracks\/([A-Z0-9]{10})/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
 function isAmazonSearchTrackLink(testId) {
   const id = testId || '';
   if (/miniplayer|nowplaying|playbacktransport/i.test(id)) return false;
@@ -143,6 +148,7 @@ module.exports = {
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   isAmazonSearchTrackLink,
+  asinFromPlayerUrl,
   NEAR_END_MS,
   WRAP_POSITION_MS,
   FAST_POLL_REMAINING_MS

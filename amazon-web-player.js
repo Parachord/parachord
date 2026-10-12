@@ -18,7 +18,8 @@ const {
   pageBlocksPlayback,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
-  isAmazonSearchTrackLink
+  isAmazonSearchTrackLink,
+  asinFromPlayerUrl
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -157,7 +158,6 @@ const amazonWebPlayer = {
   playerView: null,
   searchWindow: null,
   authWindow: null,
-  inspectWindow: null,
   host: null,
   searchChain: Promise.resolve(),
   emeProbed: null,
@@ -281,7 +281,6 @@ const amazonWebPlayer = {
     win.on('closed', () => {
       if (this.searchWindow === win) this.searchWindow = null;
       if (this.authWindow === win) this.authWindow = null;
-      if (this.inspectWindow === win) this.inspectWindow = null;
     });
     return win;
   },
@@ -305,56 +304,39 @@ const amazonWebPlayer = {
     const parent = host.contentView;
     try {
       const kids = parent.children || [];
-      if (!kids.includes(view)) parent.addChildView(view);
+      // Insert at 0 so we sit behind Parachord's own WebContentsView. Do not
+      // re-add if already a child: addChildView() without care reorders to top.
+      if (!kids.includes(view)) parent.addChildView(view, 0);
     } catch { /* host tearing down */ }
     try {
-      const [width, height] = host.getContentSize();
-      const w = Math.max(width || 0, 1100);
-      const h = Math.max(height || 0, 760);
-      // Off the window clip rect so Amazon never covers Parachord, even if
-      // contentView paints children above the page. Still attached to a mapped
-      // window, so Chromium treats the document as visible for ?do=play.
-      view.setBounds({ x: -w, y: 0, width: w, height: h });
+      const [cw, ch] = host.getContentSize();
+      const w = Math.max(cw || 0, 1100);
+      const h = Math.max(ch || 0, 760);
+      const kids = parent.children || [];
+      if (kids[0] === view) {
+        view.setBounds({ x: 0, y: 0, width: w, height: h });
+      } else {
+        // Would paint on top of Parachord. Keep a 1px in-window paint rect
+        // so Chromium still composites the document (off-clip views get culled).
+        view.setBounds({ x: 0, y: Math.max((ch || 1) - 1, 0), width: 1, height: 1 });
+      }
       view.setVisible(true);
     } catch { /* destroyed */ }
   },
 
-  // Playback is a WebContentsView stacked behind Parachord's UI — no extra OS
-  // window, so nothing to show() or focus(). The host window is already mapped,
-  // which is enough for Amazon's ?do=play autoplay + Widevine. visible=true is
-  // the rare sign-in / "why didn't this play" path: a real window, same session.
-  presentPlayer(_target, visible) {
-    if (visible) this.showInspect();
-    else {
-      this.parkPlayer();
-      this.closeInspect();
-    }
-  },
-
-  showInspect() {
-    const { BrowserWindow } = electron();
-    const url = this.alive(this.playerView) ? this.playerView.webContents.getURL() : HOME_URL;
-    let win = this.inspectWindow;
-    if (!this.alive(win)) {
-      this.session();
-      win = this.attachWindow(new BrowserWindow({
-        ...this.windowOptions(true),
-        parent: this.host && !this.host.isDestroyed() ? this.host : undefined,
-        title: 'Amazon Music'
-      }));
-      this.inspectWindow = win;
-    }
-    if (url && url !== 'about:blank') win.loadURL(url).catch(() => {});
-    win.show();
-    win.focus();
-  },
-
-  closeInspect() {
-    const win = this.inspectWindow;
-    if (this.alive(win)) {
-      try { win.close(); } catch { /* gone */ }
-    }
-    this.inspectWindow = null;
+  // Pause is not enough on a confirm timeout: the <video> may not exist yet,
+  // then Amazon starts a few hundred ms later on top of the next resolver.
+  // Blanking the document kills that late start. Do not open a second window.
+  async haltPlayback() {
+    this.currentAsin = null;
+    await this.pause().catch(() => {});
+    const view = this.playerView;
+    if (!this.alive(view)) return { ok: false };
+    try {
+      const url = view.webContents.getURL();
+      if (url && url !== 'about:blank') await view.webContents.loadURL('about:blank');
+    } catch { /* gone */ }
+    return { ok: true };
   },
 
   asPage(target) {
@@ -396,7 +378,7 @@ const amazonWebPlayer = {
       });
       this.playerView = view;
     }
-    this.presentPlayer(this.playerView, show);
+    this.parkPlayer();
     return this.asPage(this.playerView);
   },
 
@@ -527,7 +509,7 @@ const amazonWebPlayer = {
       };
     }
     const win = await this.ensureWindow('player', { show: false });
-    this.presentPlayer(win, false);
+    this.parkPlayer();
     this.currentAsin = asin;
     // A 400 from the license endpoint is Amazon refusing this build's
     // Widevine certificate (development VMP). Detect it instead of waiting
@@ -550,7 +532,7 @@ const amazonWebPlayer = {
     await win.loadURL(`https://music.amazon.com/tracks/${encodeURIComponent(asin)}?do=play`);
     const landed = win.webContents.getURL();
     if (pageBlocksPlayback(landed)) {
-      this.presentPlayer(win, true);
+      await this.haltPlayback();
       return { success: false, reason: 'not-signed-in', error: 'Choose an Amazon Music profile, then try again' };
     }
     await this.evalOn(win, HOOK_SCRIPT).catch(() => {});
@@ -590,7 +572,7 @@ const amazonWebPlayer = {
         playingSince = 0;
       }
     }
-    await this.pause().catch(() => {});
+    await this.haltPlayback();
     if (licenseDenied) {
       return {
         success: false,
@@ -598,9 +580,6 @@ const amazonWebPlayer = {
         error: 'Amazon refused the Widevine license. This build needs a production VMP signature.'
       };
     }
-    // Show Amazon's own page so a subscription, region, or explicit-content
-    // block is visible instead of a silent failure.
-    this.presentPlayer(win, true);
     return {
       success: false,
       reason: 'playback-failed',
@@ -624,7 +603,7 @@ const amazonWebPlayer = {
     }
     return {
       state: state.state,
-      asin: this.currentAsin,
+      asin: asinFromPlayerUrl(state.href) || this.currentAsin,
       title: null,
       artist: null,
       positionMs: state.positionMs || 0,
@@ -652,8 +631,7 @@ const amazonWebPlayer = {
   },
 
   async stop() {
-    this.currentAsin = null;
-    return this.withMedia('m.pause(); try { m.currentTime = 0; } catch (e) {}');
+    return this.haltPlayback();
   },
 
   async seek(positionMs) {
@@ -674,8 +652,8 @@ const amazonWebPlayer = {
   // window global). The player view is behind the UI, so Amazon's own modal
   // is unreachable. Read and write the same store the modal writes.
   async withQualityController(mutatorSource) {
-    // Do not presentPlayer(true) here. Settings must not overlay Amazon or
-    // steal focus. The parked view can still run hornet.
+    // Do not surface Amazon here. Settings must not overlay or steal focus.
+    // The parked view can still run hornet.
     const win = await this.ensureWindow('player', { show: false });
     let url = win.webContents.getURL();
     if (pageBlocksPlayback(url)) {

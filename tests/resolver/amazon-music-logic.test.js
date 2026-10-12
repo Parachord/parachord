@@ -8,6 +8,7 @@ const {
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   isAmazonSearchTrackLink,
+  asinFromPlayerUrl,
   NEAR_END_MS
 } = require('../../amazon-music-logic');
 
@@ -120,6 +121,14 @@ describe('normalizeStreamingQuality', () => {
     expect(AMAZON_QUALITY_OPTIONS.map(o => o.value)).toEqual([
       'BEST_AVAILABLE', 'STANDARD', 'DATA_SAVER'
     ]);
+  });
+});
+
+describe('asinFromPlayerUrl', () => {
+  test('reads the playing track ASIN from the player URL', () => {
+    expect(asinFromPlayerUrl('https://music.amazon.com/tracks/B000SNWG5Q?do=play')).toBe('B000SNWG5Q');
+    expect(asinFromPlayerUrl('https://music.amazon.com/')).toBeNull();
+    expect(asinFromPlayerUrl('')).toBeNull();
   });
 });
 

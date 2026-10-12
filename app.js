@@ -19616,7 +19616,7 @@ ${trackListXml}
     const isSpotifyTrack = currentTrack._activeResolver === 'spotify' ||
       (!currentTrack._activeResolver && !isAppleMusicActive && (currentTrack.sources?.spotify || currentTrack.spotifyUri));
 
-    // Amazon Music app playback (remote-controlled over CDP)
+    // Amazon Music in-app web player (Widevine WebContentsView)
     const isAmazonMusicActive = currentTrack._activeResolver === 'amazonmusic' ||
       (!currentTrack._activeResolver && !isAppleMusicActive && !isSpotifyTrack && (currentTrack.sources?.amazonmusic || currentTrack.amazonAsin));
 
