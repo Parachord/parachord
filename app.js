@@ -10012,38 +10012,35 @@ const Parachord = () => {
   };
 
   // MBID Mapper v2.0: fast fuzzy lookup of MusicBrainz IDs from artist + recording name
-  // Returns { recording_mbid, artist_credit_mbids, release_mbid, confidence } or null
+  // Returns { recording_mbid, artist_credit_mbids, release_mbid, confidence, source } or null.
+  // Goes through mbid-lookup.js, which falls back to the labs acr-lookup dataset
+  // when the mapper can't be reached (unreachable since 2026-09-21: TLS
+  // mismatch + 502). The fallback returns the same shape, so the canonical-name
+  // retry in handlePlay and the artist-page fast path keep working.
+  // acr-lookup is a stricter matcher than the mapper, so one of its misses is
+  // only trusted for a few hours rather than the mapper's 90 days.
+  const ACR_MISS_TTL = 6 * 60 * 60 * 1000;
   const lookupMbidMapper = async (artist, title, album) => {
     if (!artist || !title) return null;
     const cacheKey = `${artist.toLowerCase().trim()}|${title.toLowerCase().trim()}`;
     const cached = mbidMapperCache.current[cacheKey];
-    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL.mbidMapper) {
-      return cached.result;
+    if (cached) {
+      const ttl = (!cached.result && cached.source === 'acr-lookup') ? ACR_MISS_TTL : CACHE_TTL.mbidMapper;
+      if ((Date.now() - cached.timestamp) < ttl) return cached.result;
     }
     try {
-      const params = new URLSearchParams({
-        artist_credit_name: artist,
-        recording_name: title
-      });
-      if (album) params.set('release_name', album);
-      const response = await fetch(`https://mapper.listenbrainz.org/mapping/lookup?${params}`);
-      if (!response.ok) return null;
-      const data = await response.json();
-      if (data && data.recording_mbid) {
-        const result = {
-          recording_mbid: data.recording_mbid,
-          artist_credit_mbids: data.artist_credit_mbids || [],
-          release_mbid: data.release_mbid || null,
-          recording_name: data.recording_name,
-          artist_credit_name: data.artist_credit_name,
-          release_name: data.release_name,
-          confidence: data.confidence || 0
-        };
-        mbidMapperCache.current[cacheKey] = { result, timestamp: Date.now() };
+      const { status, source, result, errors } = await window.resolveRecordingMbid(artist, title, album);
+      if (status === 'hit') {
+        mbidMapperCache.current[cacheKey] = { result, timestamp: Date.now(), source };
         return result;
       }
-      // Cache misses too to avoid repeated lookups for unknown tracks
-      mbidMapperCache.current[cacheKey] = { result: null, timestamp: Date.now() };
+      if (status === 'miss') {
+        // Cache misses too to avoid repeated lookups for unknown tracks
+        mbidMapperCache.current[cacheKey] = { result: null, timestamp: Date.now(), source };
+        return null;
+      }
+      // Unreachable: not cached, so the next call tries again.
+      console.warn(`MBID lookup: mapper and labs acr-lookup both unreachable for "${artist} – ${title}"`, errors);
       return null;
     } catch (error) {
       console.warn('MBID Mapper lookup failed:', error.message);
