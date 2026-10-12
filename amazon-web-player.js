@@ -1,9 +1,10 @@
 // In-app Amazon Music player.
 //
 // Parachord runs on castlabs Electron, which ships a Widevine CDM. A
-// WebContentsView behind the main UI loads music.amazon.com and Amazon's
-// own page does the license exchange. No extra OS window, no desktop app,
-// no borrowed browser CDM, no separate Chrome process.
+// non-focusable opacity-0 BrowserWindow loads music.amazon.com and Amazon's
+// own page does the license exchange. It is not a child of the main window
+// and is never attached to contentView — those views paint on top of the
+// app and replace the UI. No desktop app, no borrowed browser CDM.
 //
 // Search uses a hidden window on the same session so a lookup cannot
 // navigate the document that is currently playing. Sign-in is a real
@@ -155,7 +156,7 @@ function notReady(reason, message) {
 }
 
 const amazonWebPlayer = {
-  playerView: null,
+  playerWindow: null,
   searchWindow: null,
   authWindow: null,
   host: null,
@@ -163,7 +164,6 @@ const amazonWebPlayer = {
   emeProbed: null,
   currentAsin: null,
   _onHostClosed: null,
-  _onHostResize: null,
 
   // castlabs Electron exposes electron.components. Stock Electron does not,
   // and the old --widevine-cdm-path switch does nothing there. EME probe is
@@ -208,7 +208,7 @@ const amazonWebPlayer = {
   // from an earlier step is already set.
   async isSignedIn() {
     if (!(await this.hasAuthCookie())) return false;
-    for (const target of [this.authWindow, this.playerView, this.searchWindow]) {
+    for (const target of [this.authWindow, this.playerWindow, this.searchWindow]) {
       if (!this.alive(target)) continue;
       if (pageBlocksPlayback(target.webContents.getURL())) return false;
     }
@@ -218,20 +218,15 @@ const amazonWebPlayer = {
   setHost(win) {
     if (this.host && this._onHostClosed) {
       try { this.host.off('closed', this._onHostClosed); } catch { /* gone */ }
-      try { this.host.off('resize', this._onHostResize); } catch { /* gone */ }
     }
     this.host = win && !win.isDestroyed() ? win : null;
     this._onHostClosed = null;
-    this._onHostResize = null;
     if (!this.host) {
-      this.destroyPlayerView();
+      this.destroyPlayer();
       return;
     }
     this._onHostClosed = () => this.setHost(null);
-    this._onHostResize = () => this.parkPlayer();
     this.host.on('closed', this._onHostClosed);
-    this.host.on('resize', this._onHostResize);
-    this.parkPlayer();
   },
 
   webPreferences() {
@@ -279,48 +274,42 @@ const amazonWebPlayer = {
   attachWindow(win) {
     this.attachContents(win.webContents);
     win.on('closed', () => {
+      if (this.playerWindow === win) this.playerWindow = null;
       if (this.searchWindow === win) this.searchWindow = null;
       if (this.authWindow === win) this.authWindow = null;
     });
     return win;
   },
 
-  destroyPlayerView() {
-    const view = this.playerView;
-    this.playerView = null;
-    if (!view) return;
-    try {
-      if (this.host && !this.host.isDestroyed()) this.host.contentView.removeChildView(view);
-    } catch { /* already detached */ }
-    try {
-      if (view.webContents && !view.webContents.isDestroyed()) view.webContents.close();
-    } catch { /* gone */ }
+  ghostOptions() {
+    return {
+      ...this.windowOptions(false),
+      frame: false,
+      focusable: false,
+      skipTaskbar: true,
+      opacity: 0,
+      // Not a child of main. contentView children paint on top of the app.
+      parent: undefined
+    };
   },
 
-  parkPlayer() {
-    const host = this.host;
-    const view = this.playerView;
-    if (!host || host.isDestroyed() || !this.alive(view)) return;
-    const parent = host.contentView;
+  destroyPlayer() {
+    const win = this.playerWindow;
+    this.playerWindow = null;
+    if (!this.alive(win)) return;
+    try { win.destroy(); } catch { /* gone */ }
+  },
+
+  // Mapped so ?do=play + Widevine can start, but invisible and not focusable.
+  // Never show() and never main.focus() — that yanks the user back.
+  presentGhost() {
+    const win = this.playerWindow;
+    if (!this.alive(win)) return;
     try {
-      const kids = parent.children || [];
-      // Insert at 0 so we sit behind Parachord's own WebContentsView. Do not
-      // re-add if already a child: addChildView() without care reorders to top.
-      if (!kids.includes(view)) parent.addChildView(view, 0);
-    } catch { /* host tearing down */ }
-    try {
-      const [cw, ch] = host.getContentSize();
-      const w = Math.max(cw || 0, 1100);
-      const h = Math.max(ch || 0, 760);
-      const kids = parent.children || [];
-      if (kids[0] === view) {
-        view.setBounds({ x: 0, y: 0, width: w, height: h });
-      } else {
-        // Would paint on top of Parachord. Keep a 1px in-window paint rect
-        // so Chromium still composites the document (off-clip views get culled).
-        view.setBounds({ x: 0, y: Math.max((ch || 1) - 1, 0), width: 1, height: 1 });
-      }
-      view.setVisible(true);
+      win.setOpacity(0);
+      win.setSkipTaskbar(true);
+      if (typeof win.setFocusable === 'function') win.setFocusable(false);
+      if (!win.isVisible()) win.showInactive();
     } catch { /* destroyed */ }
   },
 
@@ -330,28 +319,17 @@ const amazonWebPlayer = {
   async haltPlayback() {
     this.currentAsin = null;
     await this.pause().catch(() => {});
-    const view = this.playerView;
-    if (!this.alive(view)) return { ok: false };
+    const win = this.playerWindow;
+    if (!this.alive(win)) return { ok: false };
     try {
-      const url = view.webContents.getURL();
-      if (url && url !== 'about:blank') await view.webContents.loadURL('about:blank');
+      const url = win.webContents.getURL();
+      if (url && url !== 'about:blank') await win.loadURL('about:blank');
     } catch { /* gone */ }
     return { ok: true };
   },
 
-  asPage(target) {
-    if (!this.alive(target)) return null;
-    if (typeof target.loadURL === 'function') return target;
-    const wc = target.webContents;
-    return {
-      webContents: wc,
-      loadURL: (url) => wc.loadURL(url),
-      isDestroyed: () => wc.isDestroyed()
-    };
-  },
-
   async ensureWindow(kind, { show = false } = {}) {
-    const { BrowserWindow, WebContentsView } = electron();
+    const { BrowserWindow } = electron();
     if (kind === 'search') {
       if (this.alive(this.searchWindow)) {
         if (show) {
@@ -366,20 +344,13 @@ const amazonWebPlayer = {
       return win;
     }
 
-    if (!this.alive(this.playerView)) {
-      if (!this.host || this.host.isDestroyed()) {
-        throw notReady('not-ready', 'Amazon Music player has no host window');
-      }
+    if (!this.alive(this.playerWindow)) {
       this.session();
-      const view = new WebContentsView({ webPreferences: this.webPreferences() });
-      this.attachContents(view.webContents);
-      view.webContents.on('destroyed', () => {
-        if (this.playerView && this.playerView.webContents === view.webContents) this.playerView = null;
-      });
-      this.playerView = view;
+      const win = this.attachWindow(new BrowserWindow(this.ghostOptions()));
+      this.playerWindow = win;
     }
-    this.parkPlayer();
-    return this.asPage(this.playerView);
+    this.presentGhost();
+    return this.playerWindow;
   },
 
   async evalOn(win, script) {
@@ -509,7 +480,7 @@ const amazonWebPlayer = {
       };
     }
     const win = await this.ensureWindow('player', { show: false });
-    this.parkPlayer();
+    this.presentGhost();
     this.currentAsin = asin;
     // A 400 from the license endpoint is Amazon refusing this build's
     // Widevine certificate (development VMP). Detect it instead of waiting
@@ -528,7 +499,7 @@ const amazonWebPlayer = {
     try {
     // Amazon's own result links use ?do=play. A bare /tracks/{asin} page
     // renders a Play button whose click() does not start Widevine; the query
-    // does, once the document is in a mapped window (the parked WebContentsView).
+    // does, once the ghost window is mapped (opacity 0, not focusable).
     await win.loadURL(`https://music.amazon.com/tracks/${encodeURIComponent(asin)}?do=play`);
     const landed = win.webContents.getURL();
     if (pageBlocksPlayback(landed)) {
@@ -591,7 +562,7 @@ const amazonWebPlayer = {
   },
 
   async readState() {
-    const win = this.playerView;
+    const win = this.playerWindow;
     if (!this.alive(win)) {
       return { state: 'EMPTY', asin: this.currentAsin, title: null, artist: null, positionMs: 0, durationMs: 0 };
     }
@@ -612,7 +583,7 @@ const amazonWebPlayer = {
   },
 
   async withMedia(expr) {
-    const win = this.playerView;
+    const win = this.playerWindow;
     if (!this.alive(win)) return { ok: false };
     return this.evalOn(win, `(() => {
       const m = window.__parachordAmazonMedia;
@@ -649,11 +620,11 @@ const amazonWebPlayer = {
   },
 
   // Hornet keeps Audio Quality on playbackController (metro module, not a
-  // window global). The player view is behind the UI, so Amazon's own modal
+  // window global). The player window is opacity 0, so Amazon's own modal
   // is unreachable. Read and write the same store the modal writes.
   async withQualityController(mutatorSource) {
-    // Do not surface Amazon here. Settings must not overlay or steal focus.
-    // The parked view can still run hornet.
+    // Do not surface Amazon here. Settings must not show the ghost window
+    // or steal focus. The ghost window can still run hornet.
     const win = await this.ensureWindow('player', { show: false });
     let url = win.webContents.getURL();
     if (pageBlocksPlayback(url)) {
