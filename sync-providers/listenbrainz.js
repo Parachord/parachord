@@ -12,6 +12,8 @@
 //   - artists: false  (LB has no library-of-artists concept)
 
 const LB_BASE = 'https://api.listenbrainz.org';
+// Recording-MBID lookup shared with the renderer: mapper, then labs acr-lookup.
+const { resolveRecordingMbid } = require('../mbid-lookup');
 
 const capabilities = {
   playlists: true,
@@ -129,22 +131,14 @@ async function resolveTrackMbid(track, hydration) {
     // budget); a fresh / cooldown-expired track returns skip:false to look up live.
     if (decision && decision.skip) return decision.mbid || null;
   }
-  let resolved = null;
-  try {
-    const url = new URL('https://mapper.listenbrainz.org/mapping/lookup');
-    url.searchParams.set('artist_credit_name', track.artist);
-    url.searchParams.set('recording_name', track.title);
-    if (track.album) url.searchParams.set('release_name', track.album);
-    const res = await fetch(url.toString());
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.recording_mbid && typeof data.confidence === 'number' && data.confidence >= 0.7) {
-        resolved = data.recording_mbid;
-      }
-    }
-  } catch {
-    resolved = null;
-  }
+  // Mapper first, labs acr-lookup when the mapper can't be reached (mbid-lookup.js).
+  const { status, result } = await resolveRecordingMbid(track.artist, track.title, track.album);
+  // Nothing answered. That's not a miss: recording it as one put every track
+  // into the 7→30 day cooldown during the 2026-09 mapper outage, so the whole
+  // playlist stopped hydrating for a month. Leave the cache alone and retry
+  // next cycle.
+  if (status === 'unreachable') return null;
+  const resolved = status === 'hit' && result.confidence >= 0.7 ? result.recording_mbid : null;
   if (hydration) hydration.record(track, resolved);
   return resolved;
 }

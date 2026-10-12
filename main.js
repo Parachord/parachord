@@ -5548,6 +5548,21 @@ let _lbHydrationCtx = null;
 function getLbHydration() {
   if (_lbHydrationCtx) return _lbHydrationCtx;
   const cache = new Map(Object.entries(store.get('lb_mbid_hydration_cache') || {}));
+  // One-time cleanup: until mbid-lookup.js landed, a lookup that couldn't reach
+  // the mapper was recorded as a miss, so the 2026-09 outage (TLS mismatch +
+  // 502 for weeks) put every LB-synced track into the 7→30 day cooldown. Drop
+  // the misses once; resolved ids are kept.
+  if (store.get('lb_mbid_hydration_misses_reset') !== 1) {
+    let dropped = 0;
+    for (const [key, entry] of cache) {
+      if (!entry || !entry.mbid) { cache.delete(key); dropped++; }
+    }
+    try {
+      store.set('lb_mbid_hydration_cache', Object.fromEntries(cache));
+      store.set('lb_mbid_hydration_misses_reset', 1);
+    } catch {}
+    if (dropped) console.log(`[LB hydration] Dropped ${dropped} cached misses recorded while the MBID mapper was unreachable`);
+  }
   const budget = createBudget();
   let dirty = false;
   _lbHydrationCtx = {

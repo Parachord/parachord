@@ -119,4 +119,34 @@ describe('resolveTracks threads the hydration guard', () => {
     expect(resolved[0].mbid).toBe(MBID);
     expect(recorded).toEqual([['B', MBID]]);
   });
+
+  test('mapper unreachable, labs acr-lookup answers: resolved via labs and recorded as a hit', async () => {
+    global.fetch = jest.fn(async (url) => {
+      if (url.startsWith('https://mapper.listenbrainz.org/')) throw new TypeError('Failed to fetch');
+      return { ok: true, json: async () => ([{ recording_mbid: MBID, artist_mbids: [], recording_name: 'B', artist_credit_name: 'A' }]) };
+    });
+    const recorded = [];
+    const hydration = { resolve: () => ({ skip: false }), record: (t, mbid) => recorded.push([t.title, mbid]), flush: jest.fn() };
+    const { resolved } = await lb.resolveTracks([{ artist: 'A', title: 'B' }], 'tok', { hydration });
+    expect(resolved[0].mbid).toBe(MBID);
+    expect(recorded).toEqual([['B', MBID]]);
+  });
+
+  test('nothing reachable: unresolved this cycle but NOT recorded as a miss', async () => {
+    // Recording it would start the 7→30 day cooldown for an outage that isn't
+    // the track's fault (the 2026-09 mapper outage did exactly that).
+    global.fetch = jest.fn(async () => { throw new TypeError('Failed to fetch'); });
+    const hydration = { resolve: () => ({ skip: false }), record: jest.fn(), flush: jest.fn() };
+    const { resolved, unresolved } = await lb.resolveTracks([{ artist: 'A', title: 'B' }], 'tok', { hydration });
+    expect(resolved).toEqual([]);
+    expect(unresolved).toHaveLength(1);
+    expect(hydration.record).not.toHaveBeenCalled();
+  });
+
+  test('a service answers with no match: recorded as a miss', async () => {
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({}) }));
+    const hydration = { resolve: () => ({ skip: false }), record: jest.fn(), flush: jest.fn() };
+    await lb.resolveTracks([{ artist: 'A', title: 'B' }], 'tok', { hydration });
+    expect(hydration.record).toHaveBeenCalledWith(expect.objectContaining({ title: 'B' }), null);
+  });
 });

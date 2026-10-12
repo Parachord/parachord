@@ -820,10 +820,13 @@ We use the [ListenBrainz MBID Mapper v2.0](https://mapper.listenbrainz.org) to r
 8. **Fresh Drops** — mapper cache checked before rate-limited MB artist search (saves ~1100ms per hit)
 9. **Scrobblers** — ListenBrainz sends `recording_mbid`, `artist_mbids`, `release_mbid` in `additional_info`; Last.fm/Libre.fm sends `mbid` parameter
 
+### Outage fallback: labs `acr-lookup`
+`mapper.listenbrainz.org` has been unreachable since 2026-09-21 (it serves a `*.musicbrainz.org` certificate that doesn't cover its own hostname, and answers 502 even with verification skipped), and was 502 for two days in June. Upstream ticket: [LB-2007](https://tickets.metabrainz.org/browse/LB-2007) (filed 2026-06-18, no reply as of 2026-10). The resolvers never used it, so playback was unaffected; what broke was MBID enrichment for ISRC-less tracks, the canonical-name retry in `handlePlay`, and ListenBrainz playlist sync. `mbid-lookup.js` (root; loaded by index.html for the renderer, `require`d by `sync-providers/listenbrainz.js`) is the one lookup both sides use: mapper first, then the labs dataset hoster's `acr-lookup` (`labs.api.listenbrainz.org/acr-lookup/json`, valid cert, CORS `*`) when the mapper can't be reached. acr-lookup returns the same identifiers (recording/artist/release MBIDs, canonical names) as a mapper-shaped result with `source: 'acr-lookup'` and a fixed `confidence` of 0.9; it is a semi-exact matcher (case/punctuation normalized, suffixes like "(Remastered)" not), so an acr miss is trusted for 6h in the renderer cache instead of 90 days, and labs calls go through a 2-concurrent / 150ms gate. `resolveRecordingMbid` returns `status: 'hit' | 'miss' | 'unreachable'`; **`unreachable` is never cached and never counted against a track** — the LB hydration guard recording it as a miss is what put every LB-synced track into the 7→30 day cooldown during the outage (main.js drops those cached misses once via `lb_mbid_hydration_misses_reset`). Mobile has the same mapper dependency and needs the same fallback.
+
 ### Cache Strategy
-- **Key**: `"artist_lowercase|title_lowercase"` → `{ result, timestamp }`
-- **TTL**: 90 days (MBIDs are permanent identifiers)
-- **Null caching**: misses are cached too to avoid repeated lookups for unknown tracks
+- **Key**: `"artist_lowercase|title_lowercase"` → `{ result, timestamp, source? }`
+- **TTL**: 90 days (MBIDs are permanent identifiers); 6 hours for an `acr-lookup` miss
+- **Null caching**: misses are cached too to avoid repeated lookups for unknown tracks; an `unreachable` lookup is not cached
 - **Persisted**: saved/loaded via `electron.store` key `cache_mbid_mapper`
 - **Helper**: `getArtistMbidFromMapperCache(artistName)` scans cache for any track by that artist
 
