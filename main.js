@@ -3074,7 +3074,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'cache_ai_suggestions', 'cache_album_art', 'cache_album_release_ids', 'cache_artist_data',
   'cache_artist_images', 'cache_charts', 'cache_concerts', 'cache_mbid_mapper', 'cache_new_releases', 'cache_playlist_covers', 'cache_track_sources',
   'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
-  'discovery_seen_charts', 'discovery_seen_criticsPicks', 'discovery_seen_recommendations',
+  'discovery_seen_charts', 'discovery_seen_concerts', 'discovery_seen_criticsPicks', 'discovery_seen_newReleases', 'discovery_seen_recommendations',
   'friends', 'last_active_view', 'local_playlists', 'media-key-handling',
   'meta_service_configs', 'pinnedFriendIds', 'playlists_view_mode', 'preferred_spotify_device_id',
   'recommendation_blocklist', 'remember_queue', 'resolver_blocklist',
@@ -3094,11 +3094,11 @@ const ALLOWED_STORE_KEYS = new Set([
   // Added 2026-10-12 after finding main had been silently dropping these
   // (store-set returns false and logs "Blocked store-set"; the renderer never
   // sees the failure). cache_critics_picks / hosted_playlists /
-  // sync_engine_mode / discovery_seen_* had never persisted.
+  // sync_engine_mode / discovery_seen_* had never persisted (the two
+  // discovery_seen_* keys now sit in the alphabetical block above, via #994).
   // tests/store/allowed-store-keys.test.js now cross-checks this list against
   // every key the renderer uses; add new keys here first.
   'cache_critics_picks', 'cache_release_details',
-  'discovery_seen_concerts', 'discovery_seen_newReleases',
   'hosted_playlists', 'sync_engine_mode', 'sync_playlist_channels',
 ]);
 

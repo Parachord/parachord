@@ -23543,7 +23543,7 @@ ${trackListXml}
         'show_discovery_badges', 'playlists_view_mode', 'ai_include_history',
         'recommendation_blocklist', 'resolver_blocklist', 'ai_chat_histories',
         'selected_chat_provider', 'discovery_seen_recommendations', 'discovery_seen_criticsPicks',
-        'discovery_seen_charts',
+        'discovery_seen_charts', 'discovery_seen_newReleases', 'discovery_seen_concerts',
         // Concerts location
         'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
         // Queue & tutorial
@@ -24011,6 +24011,8 @@ ${trackListXml}
       const savedSeenRecommendations = d['discovery_seen_recommendations'];
       const savedSeenCriticsPicks = d['discovery_seen_criticsPicks'];
       const savedSeenCharts = d['discovery_seen_charts'];
+      const savedSeenNewReleases = d['discovery_seen_newReleases'];
+      const savedSeenConcerts = d['discovery_seen_concerts'];
 
       if (savedActiveResolvers) {
         // Deduplicate and strip removed resolvers (e.g. qobuz) from persisted data
@@ -24255,7 +24257,9 @@ ${trackListXml}
       discoverySeenHashes.current = {
         recommendations: savedSeenRecommendations || null,
         criticsPicks: savedSeenCriticsPicks || null,
-        charts: savedSeenCharts || null
+        charts: savedSeenCharts || null,
+        newReleases: savedSeenNewReleases || null,
+        concerts: savedSeenConcerts || null
       };
       console.log('📦 Loaded discovery seen hashes');
 
