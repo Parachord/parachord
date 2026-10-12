@@ -478,21 +478,22 @@ window.resolveMbidForLove = async (track) => {
   if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return track.mbid;
   if (!track?.artist || !track?.title) return null;
 
-  // Tier 2: MBID Mapper
+  // Tier 2: MBID Mapper via mbid-lookup.js, which falls back to the labs
+  // acr-lookup dataset while mapper.listenbrainz.org is down (parachord#991).
+  // Calling the mapper directly here logged a certificate error on every
+  // scrobble and love push for nothing: tiers 3 and 4 picked up the slack
+  // but the noise hid real problems.
   try {
-    const url = `https://mapper.listenbrainz.org/mapping/lookup?artist_credit_name=${encodeURIComponent(track.artist)}&recording_name=${encodeURIComponent(track.title)}`;
-    const resp = await fetch(url);
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data?.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(data.recording_mbid || '')) {
-        return data.recording_mbid;
+    if (typeof window.resolveRecordingMbid === 'function') {
+      const { status, result } = await window.resolveRecordingMbid(track.artist, track.title, track.album);
+      if (status === 'hit' && result.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(result.recording_mbid || '')) {
+        return result.recording_mbid;
       }
-      // Mapper succeeded but no high-confidence match — could be a new
-      // recording the mapper hasn't indexed yet. Fall through to tier 3.
+      // Hit below the confidence floor, a miss, or unreachable: fall through
+      // to tier 3 (ISRC) and tier 4 (MusicBrainz search).
     }
-    // Mapper non-OK (502, 5xx, 429) — fall through to tier 3.
   } catch (e) {
-    // Mapper network error — fall through to tier 3.
+    // Fall through to tier 3.
   }
 
   // Tier 3: Exact ISRC → MBID. Fires whenever ISRC is present anywhere
@@ -644,14 +645,38 @@ window.musicbrainzLimiter = window.createLimiter({
       return u.hostname === 'musicbrainz.org' && u.pathname.startsWith('/ws/2/');
     } catch (_e) { return false; }
   };
+  window.isMusicBrainzWs2Url = isMbWs2;
+  // Callers that want a timeout on an MB request should pass
+  // `queuedTimeoutMs` instead of a pre-armed AbortSignal. A request can wait
+  // in this queue for a long time (a 50-artist Fresh Drops pass is ~1 minute
+  // at 1 req/s), and a signal armed before queueing counts that wait as
+  // request time: Fresh Drops' 10s timeout was aborting requests that had
+  // never left the queue ("signal is aborted without reason"), silently
+  // skipping artists. queuedTimeoutMs is armed per attempt once the request
+  // actually starts. A caller-supplied signal is still honored.
   window.fetch = function (input, init) {
     if (!isMbWs2(input)) return originalFetch(input, init);
-    const signal = init && init.signal;
+    const { queuedTimeoutMs, ...fetchInit } = init || {};
+    const callerSignal = fetchInit.signal;
+    const hasQueuedTimeout = Number.isFinite(queuedTimeoutMs) && queuedTimeoutMs > 0;
     return window.musicbrainzLimiter.run(async () => {
       const MAX_ATTEMPTS = 3;
       for (let attempt = 1; ; attempt++) {
-        if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
-        const resp = await originalFetch(input, init);
+        if (callerSignal && callerSignal.aborted) throw new DOMException('Aborted', 'AbortError');
+        let attemptInit = fetchInit;
+        let timer = null;
+        if (hasQueuedTimeout) {
+          const controller = new AbortController();
+          if (callerSignal) callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+          timer = setTimeout(() => controller.abort(), queuedTimeoutMs);
+          attemptInit = { ...fetchInit, signal: controller.signal };
+        }
+        let resp;
+        try {
+          resp = await originalFetch(input, attemptInit);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
         if (resp.status !== 429 && resp.status !== 503) return resp;
         if (attempt >= MAX_ATTEMPTS) {
           const err = new Error(`MusicBrainz throttled (HTTP ${resp.status})`);
@@ -17443,7 +17468,11 @@ ${trackListXml}
     const pausePromises = [];
 
     // Always pause Spotify if we have a token
-    if (spotifyToken) {
+    // Only when Parachord's current playback is on Spotify. "Always pause"
+    // paused the user's own Spotify session while Parachord was playing
+    // something else, and answered 403 (already paused) in the console on
+    // every skip.
+    if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
       console.log('⏹️ Pausing Spotify before playing new track');
       pausePromises.push(
         fetch('https://api.spotify.com/v1/me/player/pause', {
@@ -19630,8 +19659,8 @@ ${trackListXml}
       // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
       // This handles race conditions during async track loading
 
-      // Always pause Spotify if we have a token
-      if (spotifyToken) {
+      // Pause Spotify only if Parachord's current playback is on it (see handlePlay)
+      if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
         console.log('⏹️ Pausing Spotify before next track');
         fetch('https://api.spotify.com/v1/me/player/pause', {
           method: 'PUT',
@@ -19891,8 +19920,8 @@ ${trackListXml}
     // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
     // This prevents race conditions where the streamingPlaybackActiveRef flag may be stale
 
-    // Always pause Spotify if we have a token (fire-and-forget, ignore errors)
-    if (spotifyToken) {
+    // Pause Spotify only if Parachord's current playback is on it (see handlePlay)
+    if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
       console.log('⏹️ Pausing Spotify before previous track');
       fetch('https://api.spotify.com/v1/me/player/pause', {
         method: 'PUT',
@@ -30180,6 +30209,13 @@ ${tracks}
 
     // Fetch with a timeout to prevent a single hanging request from stalling the loop
     const fetchWithTimeout = (url, options, timeoutMs = 10000) => {
+      // MusicBrainz requests queue behind the 1 req/s limiter, so the limiter
+      // arms the timeout when the request actually starts (see the
+      // musicbrainzLimiter fetch wrapper). A signal armed here counted the
+      // queue wait and aborted requests that never started.
+      if (window.isMusicBrainzWs2Url && window.isMusicBrainzWs2Url(url)) {
+        return fetch(url, { ...options, queuedTimeoutMs: timeoutMs });
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
@@ -30962,7 +30998,23 @@ ${tracks}
       // Use concurrency pool to avoid hammering APIs while keeping it fast
       const dedicatedPromise = (async () => {
         const dedicatedEvents = [];
-        const concurrency = 5; // max parallel artist queries
+        // Ticketmaster allows 5 req/s and each artist lookup is 2 calls
+        // (attraction search, then events), so 5 parallel artists was a
+        // guaranteed burst of 429s and missing concerts. Gate every provider
+        // call through one limiter: 2 in flight, 400ms between starts, and a
+        // cooldown after repeated 429s. The pool just feeds the limiter.
+        if (!window.__concertsLimiter && window.createLimiter) {
+          window.__concertsLimiter = window.createLimiter({
+            name: 'concertsLimiter',
+            maxConcurrency: 2,
+            minGapMs: 400,
+            cooldownMs: 5000,
+            errorThreshold: 2,
+            isThrottleError: (err) => /\b429\b|rate.?limit|too many/i.test(String(err && err.message))
+          });
+        }
+        const concertsLimiter = window.__concertsLimiter;
+        const concurrency = 3; // artist workers feeding the limiter
         let idx = 0;
         const fetchArtist = async (artist) => {
           const results = [];
@@ -30974,7 +31026,9 @@ ${tracks}
               const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
                 ? { ...rawConfig, [authField]: rawConfig.apiKey }
                 : rawConfig;
-              const events = await service.searchArtistEvents(artist.name, config);
+              const events = concertsLimiter
+                ? await concertsLimiter.run(() => service.searchArtistEvents(artist.name, config))
+                : await service.searchArtistEvents(artist.name, config);
               if (events && events.length > 0) {
                 results.push(...events.map(e => ({ event: e, artist: artist.name })));
               }
