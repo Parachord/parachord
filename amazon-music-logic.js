@@ -123,6 +123,16 @@ function normalizeStreamingQuality(value) {
   return null;
 }
 
+// Search pages also render the mini player. Its title is a /tracks/ link
+// with an artist sibling, so a scrape that accepts any track link returns
+// the currently playing song before the results exist. The match gate then
+// rejects that hit and the track looks unresolved.
+function isAmazonSearchTrackLink(testId) {
+  const id = testId || '';
+  if (/miniplayer|nowplaying|playbacktransport/i.test(id)) return false;
+  return /searchresults/i.test(id);
+}
+
 module.exports = {
   pickPlayableTrack,
   playerDurationMs,
@@ -132,6 +142,7 @@ module.exports = {
   isNotReadyReason,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
+  isAmazonSearchTrackLink,
   NEAR_END_MS,
   WRAP_POSITION_MS,
   FAST_POLL_REMAINING_MS

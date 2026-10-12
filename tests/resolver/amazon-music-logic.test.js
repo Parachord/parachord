@@ -7,6 +7,7 @@ const {
   isNotReadyReason,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
+  isAmazonSearchTrackLink,
   NEAR_END_MS
 } = require('../../amazon-music-logic');
 
@@ -119,6 +120,15 @@ describe('normalizeStreamingQuality', () => {
     expect(AMAZON_QUALITY_OPTIONS.map(o => o.value)).toEqual([
       'BEST_AVAILABLE', 'STANDARD', 'DATA_SAVER'
     ]);
+  });
+});
+
+describe('isAmazonSearchTrackLink', () => {
+  test('keeps search rows and drops the mini player', () => {
+    expect(isAmazonSearchTrackLink('SearchResultsWidget_Item_Metadata_TrackTitle')).toBe(true);
+    expect(isAmazonSearchTrackLink('SearchResultsWidget_TopResults_TrackItem_Metadata_TrackTitle')).toBe(true);
+    expect(isAmazonSearchTrackLink('MiniPlayer_Title')).toBe(false);
+    expect(isAmazonSearchTrackLink('')).toBe(false);
   });
 });
 

@@ -17,7 +17,8 @@ const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
 const {
   pageBlocksPlayback,
   AMAZON_QUALITY_OPTIONS,
-  normalizeStreamingQuality
+  normalizeStreamingQuality,
+  isAmazonSearchTrackLink
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -81,6 +82,7 @@ const HOOK_SCRIPT = `(() => {
 })()`;
 
 const SCRAPE_SCRIPT = `(() => {
+  const isAmazonSearchTrackLink = ${isAmazonSearchTrackLink.toString()};
   const out = [];
   const seen = new Set();
   const links = [];
@@ -97,6 +99,7 @@ const SCRAPE_SCRIPT = `(() => {
     const album = href.match(/\\/albums\\/([A-Z0-9]{10})/i);
     const asin = (track && track[1]) || (queryAsin && queryAsin[1]) || null;
     if (!asin || seen.has(asin)) continue;
+    if (!isAmazonSearchTrackLink(a.getAttribute('data-testid'))) continue;
     seen.add(asin);
     // The title link's own text is only the title. Artist and album are
     // sibling links (/artists/, /albums/) on the track row. closest() matches
