@@ -5,6 +5,8 @@ const {
   shouldPollFaster,
   pageBlocksPlayback,
   isNotReadyReason,
+  AMAZON_QUALITY_OPTIONS,
+  normalizeStreamingQuality,
   NEAR_END_MS
 } = require('../../amazon-music-logic');
 
@@ -104,6 +106,19 @@ describe('pageBlocksPlayback', () => {
   test('the player home is usable', () => {
     expect(pageBlocksPlayback('https://music.amazon.com/')).toBeNull();
     expect(pageBlocksPlayback('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
+  });
+});
+
+describe('normalizeStreamingQuality', () => {
+  test('maps the modal radios and the legacy HD value', () => {
+    expect(normalizeStreamingQuality('BEST_AVAILABLE')).toBe('BEST_AVAILABLE');
+    expect(normalizeStreamingQuality('HD')).toBe('BEST_AVAILABLE');
+    expect(normalizeStreamingQuality('STANDARD')).toBe('STANDARD');
+    expect(normalizeStreamingQuality('DATA_SAVER')).toBe('DATA_SAVER');
+    expect(normalizeStreamingQuality('ULTRA_HD')).toBeNull();
+    expect(AMAZON_QUALITY_OPTIONS.map(o => o.value)).toEqual([
+      'BEST_AVAILABLE', 'STANDARD', 'DATA_SAVER'
+    ]);
   });
 });
 

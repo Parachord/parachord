@@ -4055,6 +4055,22 @@ ipcMain.handle('amazonmusic-get-playback-state', async () => {
   }
 });
 
+ipcMain.handle('amazonmusic-get-quality', async () => {
+  try {
+    return await amazonWebPlayer.getQuality();
+  } catch (error) {
+    return { success: false, reason: error.reason, error: error.message };
+  }
+});
+
+ipcMain.handle('amazonmusic-set-quality', async (event, settings) => {
+  try {
+    return await amazonWebPlayer.setQuality(settings || {});
+  } catch (error) {
+    return { success: false, reason: error.reason, error: error.message };
+  }
+});
+
 ipcMain.handle('amazonmusic-polling-start', async (event, { asin, trackTitle, trackArtist, duration }) => {
   await amazonMusicPoller.start({ asin, trackTitle, trackArtist, duration });
   return { success: true };

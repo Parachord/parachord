@@ -24,7 +24,9 @@ Main component: `const Parachord = () => { ... }` (L4951), rendered via `ReactDO
 
 **Auto-advance.** `amazonMusicPoller` reads the in-app media element. It polls faster near the end and signals advance only in the last ~700ms, or when position wraps to ~0 after 80% (Amazon's own autoplay). A backward seek is not a finish. `stop()` cancels the startup delay so a quick skip cannot stack intervals.
 
-**IPC** (`window.electron.amazonMusic`): `getStatus`, `openLogin()`, `searchTracks`, `playTrack`, `pause`, `resume`, `stop`, `seek`, `setVolume`, `getPlaybackState`, `polling.*`. Errors are `{success:false, reason}` — `not-signed-in`, `no-cdm`, `not-ready`. There is no desktop-app IPC.
+**Audio quality.** The player window is opacity 0, so Amazon's Audio Quality modal is unreachable. Settings writes the same hornet store the modal writes (`playbackController.audioQualitySettings`): `BEST_AVAILABLE` (labeled HD/Ultra HD), `STANDARD`, `DATA_SAVER`, plus `abrEnabled` (Auto adjust). A stored `HD` displays as HD/Ultra HD. The change is also written to the `playback-controller` localStorage entry, because hornet's persistence reaction does not notice a nested field change while nothing is playing.
+
+**IPC** (`window.electron.amazonMusic`): `getStatus`, `openLogin()`, `searchTracks`, `playTrack`, `pause`, `resume`, `stop`, `seek`, `setVolume`, `getPlaybackState`, `getQuality`, `setQuality`, `polling.*`. Errors are `{success:false, reason}` — `not-signed-in`, `no-cdm`, `not-ready`. There is no desktop-app IPC.
 
 **Parity:** `plugins/amazonmusic.axe` must match the inline copy in app.js and `marketplace-manifest.json`. Not in `RESOLVER_LIMITER_SKIP_IDS` (a playlist resolve is one page load per track). Volume uses `getEffectiveVolume` (offset 0dB) on the in-app media element. Search-result `duration` is seconds; the poller multiplies by 1000. Player duration is milliseconds.
 

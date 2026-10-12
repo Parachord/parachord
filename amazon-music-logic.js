@@ -107,6 +107,22 @@ function isNotReadyReason(reason) {
   return NOT_READY_REASONS.has(reason);
 }
 
+// Hornet's Audio Quality modal. HD and BEST_AVAILABLE both mean the
+// "HD/Ultra HD" radio; the modal writes BEST_AVAILABLE. Data Saver and
+// Standard are the other two radios. Auto-adjust is abrEnabled, separate
+// from the radio.
+const AMAZON_QUALITY_OPTIONS = [
+  { value: 'BEST_AVAILABLE', label: 'HD/Ultra HD' },
+  { value: 'STANDARD', label: 'Standard' },
+  { value: 'DATA_SAVER', label: 'Data Saver' }
+];
+
+function normalizeStreamingQuality(value) {
+  if (value === 'BEST_AVAILABLE' || value === 'HD') return 'BEST_AVAILABLE';
+  if (value === 'STANDARD' || value === 'DATA_SAVER') return value;
+  return null;
+}
+
 module.exports = {
   pickPlayableTrack,
   playerDurationMs,
@@ -114,6 +130,8 @@ module.exports = {
   shouldPollFaster,
   pageBlocksPlayback,
   isNotReadyReason,
+  AMAZON_QUALITY_OPTIONS,
+  normalizeStreamingQuality,
   NEAR_END_MS,
   WRAP_POSITION_MS,
   FAST_POLL_REMAINING_MS

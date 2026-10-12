@@ -14,7 +14,11 @@ const path = require('path');
 const HOME_URL = 'https://music.amazon.com/';
 const PARTITION = 'persist:amazon-music';
 const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
-const { pageBlocksPlayback } = require('./amazon-music-logic');
+const {
+  pageBlocksPlayback,
+  AMAZON_QUALITY_OPTIONS,
+  normalizeStreamingQuality
+} = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
   if (window.__parachordAmazonHook) return true;
@@ -553,6 +557,122 @@ const amazonWebPlayer = {
 
   async getPlaybackState() {
     return this.readState();
+  },
+
+  // Hornet keeps Audio Quality on playbackController (metro module, not a
+  // window global). The player window is opacity 0, so Amazon's own modal
+  // is unreachable. Read and write the same store the modal writes.
+  async withQualityController(mutatorSource) {
+    // Do not presentPlayer here. Settings must not flash the opacity-0
+    // window or steal focus. A hidden window can still run hornet.
+    let win = this.playerWindow;
+    if (!win || win.isDestroyed()) {
+      const { BrowserWindow } = electron();
+      this.session();
+      win = this.attach(new BrowserWindow(this.windowOptions(false)));
+      this.playerWindow = win;
+    }
+    let url = win.webContents.getURL();
+    if (pageBlocksPlayback(url)) {
+      const err = new Error('Sign in and choose an Amazon Music profile');
+      err.reason = 'not-signed-in';
+      throw err;
+    }
+    if (!url || url === 'about:blank') {
+      await win.loadURL(HOME_URL);
+      url = win.webContents.getURL();
+      if (pageBlocksPlayback(url)) {
+        const err = new Error('Sign in and choose an Amazon Music profile');
+        err.reason = 'not-signed-in';
+        throw err;
+      }
+    }
+    const script = `(() => {
+      const read = () => {
+        const pc = window.__parachordAmazonPlayback;
+        if (!pc || !pc.audioQualitySettings) return null;
+        const s = pc.audioQualitySettings;
+        return { streamingQuality: s.streamingQuality || null, abrEnabled: !!s.abrEnabled };
+      };
+      const bind = (id) => {
+        try {
+          const mod = window.__r(id);
+          const pc = mod && mod.playbackController;
+          if (!pc || !pc.audioQualitySettings) return false;
+          window.__parachordAmazonPlayback = pc;
+          window.__parachordAmazonPlaybackModuleId = id;
+          return true;
+        } catch (e) { return false; }
+      };
+      if (!read()) {
+        if (typeof window.__r !== 'function') return null;
+        if (window.__parachordAmazonPlaybackScanAt && Date.now() - window.__parachordAmazonPlaybackScanAt < 2000) return null;
+        window.__parachordAmazonPlaybackScanAt = Date.now();
+        const remembered = window.__parachordAmazonPlaybackModuleId;
+        if (remembered == null || !bind(remembered)) {
+          if (!bind(2198)) {
+            for (let id = 0; id < 4000; id++) {
+              if (id === 2198) continue;
+              if (bind(id)) break;
+            }
+          }
+        }
+      }
+      const pc = window.__parachordAmazonPlayback;
+      if (!pc || !pc.audioQualitySettings) return null;
+      ${mutatorSource}
+      const current = read();
+      if (!current) return null;
+      try {
+        const key = Object.keys(localStorage).find(k => k.indexOf('playback-controller') !== -1);
+        if (key) {
+          const parsed = JSON.parse(localStorage.getItem(key));
+          if (parsed && parsed.data) {
+            parsed.data.audioQualitySettings = Object.assign({}, parsed.data.audioQualitySettings, {
+              streamingQuality: pc.audioQualitySettings.streamingQuality,
+              abrEnabled: !!pc.audioQualitySettings.abrEnabled
+            });
+            localStorage.setItem(key, JSON.stringify(parsed));
+          }
+        }
+      } catch (e) {}
+      return current;
+    })()`;
+    const deadline = Date.now() + 12000;
+    let last = null;
+    while (Date.now() < deadline) {
+      try { last = await this.evalOn(win, script); } catch { last = null; }
+      if (last && last.streamingQuality) return last;
+      await new Promise(r => setTimeout(r, 250));
+    }
+    return last;
+  },
+
+  async getQuality() {
+    const current = await this.withQualityController('');
+    if (!current) return { success: false, reason: 'not-ready', error: 'Amazon Music quality settings are not available yet' };
+    return {
+      success: true,
+      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || 'STANDARD',
+      abrEnabled: !!current.abrEnabled,
+      options: AMAZON_QUALITY_OPTIONS
+    };
+  },
+
+  async setQuality({ streamingQuality, abrEnabled } = {}) {
+    const quality = normalizeStreamingQuality(streamingQuality);
+    if (!quality) return { success: false, reason: 'invalid', error: 'Unknown Amazon Music audio quality' };
+    const abr = !!abrEnabled;
+    const current = await this.withQualityController(
+      `pc.audioQualitySettings.streamingQuality = ${JSON.stringify(quality)};\n      pc.audioQualitySettings.abrEnabled = ${abr};`
+    );
+    if (!current) return { success: false, reason: 'not-ready', error: 'Amazon Music quality settings are not available yet' };
+    return {
+      success: true,
+      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || quality,
+      abrEnabled: !!current.abrEnabled,
+      options: AMAZON_QUALITY_OPTIONS
+    };
   }
 };
 

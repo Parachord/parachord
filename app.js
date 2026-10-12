@@ -8655,14 +8655,23 @@ const Parachord = () => {
   // Amazon Music app connection status (fetched when its resolver detail modal opens):
   // { appRunning, connected, signedIn } from the main-process CDP controller
   const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
-  // Re-fetch the Amazon Music status when its detail modal opens
+  const [amazonMusicQuality, setAmazonMusicQuality] = useState(null);
+  // Re-fetch Amazon Music status and audio quality when its detail modal opens.
   useEffect(() => {
     if (selectedResolver?.id !== 'amazonmusic') return;
     let cancelled = false;
     (async () => {
       try {
         const s = await window.electron.amazonMusic.getStatus();
-        if (!cancelled) setAmazonMusicStatus(s && s.success ? s : { appRunning: false, connected: false, signedIn: null, success: true });
+        if (cancelled) return;
+        const status = s && s.success ? s : { appRunning: false, connected: false, signedIn: null, success: true };
+        setAmazonMusicStatus(status);
+        if (!status.web?.signedIn) {
+          setAmazonMusicQuality(null);
+          return;
+        }
+        const q = await window.electron.amazonMusic.getQuality();
+        if (!cancelled && q && q.success) setAmazonMusicQuality(q);
       } catch (e) {
         if (!cancelled) setAmazonMusicStatus({ appRunning: false, connected: false, signedIn: null, success: true });
       }
@@ -61016,6 +61025,8 @@ useEffect(() => {
                   if (ok) {
                     const s = await window.electron.amazonMusic.getStatus().catch(() => null);
                     if (s && s.success) setAmazonMusicStatus(s);
+                    const q = await window.electron.amazonMusic.getQuality().catch(() => null);
+                    if (q && q.success) setAmazonMusicQuality(q);
                   }
                 },
                 style: {
@@ -61024,6 +61035,94 @@ useEffect(() => {
                   borderRadius: '8px'
                 }
               }, amazonMusicStatus?.web?.signedIn ? 'Signed in' : 'Sign in')
+            ),
+            React.createElement('div', {
+              style: {
+                padding: '12px',
+                backgroundColor: 'var(--hover-bg-default)',
+                borderRadius: '8px'
+              }
+            },
+              React.createElement('div', {
+                className: 'flex items-center justify-between',
+                style: { marginBottom: '10px', gap: '12px' }
+              },
+                React.createElement('div', null,
+                  React.createElement('p', {
+                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Audio quality'),
+                  React.createElement('p', {
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                  }, amazonMusicStatus?.web?.signedIn
+                    ? 'Same choices as Amazon\'s Audio Quality menu. Applies on the next track.'
+                    : 'Sign in to change audio quality')
+                ),
+                React.createElement('select', {
+                  value: amazonMusicQuality?.streamingQuality || 'STANDARD',
+                  disabled: !amazonMusicStatus?.web?.signedIn || !amazonMusicQuality,
+                  onChange: async (e) => {
+                    const result = await window.electron.amazonMusic.setQuality({
+                      streamingQuality: e.target.value,
+                      abrEnabled: amazonMusicQuality?.abrEnabled !== false
+                    });
+                    if (result && result.success) setAmazonMusicQuality(result);
+                    else showToast(result?.error || 'Could not change Amazon Music audio quality', 'error');
+                  },
+                  style: {
+                    backgroundColor: 'var(--card-bg)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '8px',
+                    padding: '6px 8px',
+                    fontSize: '12px'
+                  }
+                },
+                  (amazonMusicQuality?.options || [
+                    { value: 'BEST_AVAILABLE', label: 'HD/Ultra HD' },
+                    { value: 'STANDARD', label: 'Standard' },
+                    { value: 'DATA_SAVER', label: 'Data Saver' }
+                  ]).map(option => React.createElement('option', {
+                    key: option.value,
+                    value: option.value
+                  }, option.label))
+                )
+              ),
+              React.createElement('div', {
+                className: 'flex items-center justify-between',
+                style: { gap: '12px' }
+              },
+                React.createElement('div', null,
+                  React.createElement('p', {
+                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Auto adjust quality'),
+                  React.createElement('p', {
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                  }, 'Choose the best audio quality for the current network speed.')
+                ),
+                React.createElement('select', {
+                  value: amazonMusicQuality?.abrEnabled === false ? 'off' : 'on',
+                  disabled: !amazonMusicStatus?.web?.signedIn || !amazonMusicQuality,
+                  onChange: async (e) => {
+                    const result = await window.electron.amazonMusic.setQuality({
+                      streamingQuality: amazonMusicQuality?.streamingQuality || 'STANDARD',
+                      abrEnabled: e.target.value === 'on'
+                    });
+                    if (result && result.success) setAmazonMusicQuality(result);
+                    else showToast(result?.error || 'Could not change Amazon Music audio quality', 'error');
+                  },
+                  style: {
+                    backgroundColor: 'var(--card-bg)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '8px',
+                    padding: '6px 8px',
+                    fontSize: '12px'
+                  }
+                },
+                  React.createElement('option', { value: 'on' }, 'On'),
+                  React.createElement('option', { value: 'off' }, 'Off')
+                )
+              )
             )
           ),
 

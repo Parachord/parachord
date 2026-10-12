@@ -596,6 +596,8 @@ contextBridge.exposeInMainWorld('electron', {
     seek: (positionMs) => ipcRenderer.invoke('amazonmusic-seek', { positionMs }),
     setVolume: (volume) => ipcRenderer.invoke('amazonmusic-set-volume', { volume }),
     getPlaybackState: () => ipcRenderer.invoke('amazonmusic-get-playback-state'),
+    getQuality: () => ipcRenderer.invoke('amazonmusic-get-quality'),
+    setQuality: (settings) => ipcRenderer.invoke('amazonmusic-set-quality', settings),
 
     // Main process polling controls (background-safe, for auto-advance)
     polling: {
