@@ -10022,12 +10022,25 @@ const Parachord = () => {
   // superset). Mimics the subset of Response the callers use (ok / status /
   // json()); non-OK responses are passed through untouched so the
   // 404 → "maybe it's a release-group ID" fallbacks keep working.
-  const RELEASE_DETAILS_CACHE_MAX = 400; // ~30KB each; pruned on save
-  const fetchReleaseDetails = async (releaseId, fetchImpl = fetch) => {
+  const RELEASE_DETAILS_CACHE_MAX = 400; // ~10-30KB each; pruned on save
+  // Entries are either { data, timestamp } for a release ID, or
+  // { alias: <releaseId>, timestamp } for a release-group ID that a caller
+  // resolved to a release (see rememberReleaseGroupAlias). Following the alias
+  // means an album opened from search (which carries a release-group ID) costs
+  // zero MusicBrainz calls on a revisit instead of a 404 probe plus the
+  // release-group lookup. The result carries the real `releaseId`; callers
+  // that keep using the ID afterwards should adopt it.
+  const fetchReleaseDetails = async (requestedId, fetchImpl = fetch) => {
+    const now = Date.now();
+    let releaseId = requestedId;
+    const aliasEntry = releaseDetailsCache.current[requestedId];
+    if (aliasEntry && aliasEntry.alias && (now - aliasEntry.timestamp) < CACHE_TTL.releaseDetails) {
+      releaseId = aliasEntry.alias;
+    }
     const cached = releaseDetailsCache.current[releaseId];
-    if (cached && cached.data && (Date.now() - cached.timestamp) < CACHE_TTL.releaseDetails) {
-      console.log(`📦 Release details from cache: ${releaseId}`);
-      return { ok: true, status: 200, fromCache: true, json: async () => cached.data };
+    if (cached && cached.data && (now - cached.timestamp) < CACHE_TTL.releaseDetails) {
+      console.log(`📦 Release details from cache: ${releaseId}${releaseId !== requestedId ? ` (via release-group ${requestedId})` : ''}`);
+      return { ok: true, status: 200, fromCache: true, releaseId, json: async () => cached.data };
     }
     const response = await fetchImpl(
       `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
@@ -10036,7 +10049,12 @@ const Parachord = () => {
     if (!response.ok) return response;
     const data = await response.json();
     releaseDetailsCache.current[releaseId] = { data, timestamp: Date.now() };
-    return { ok: true, status: response.status, fromCache: false, json: async () => data };
+    return { ok: true, status: response.status, fromCache: false, releaseId, json: async () => data };
+  };
+  const rememberReleaseGroupAlias = (releaseGroupId, releaseId) => {
+    if (releaseGroupId && releaseId && releaseGroupId !== releaseId) {
+      releaseDetailsCache.current[releaseGroupId] = { alias: releaseId, timestamp: Date.now() };
+    }
   };
 
   // MBID Mapper v2.0: fast fuzzy lookup of MusicBrainz IDs from artist + recording name
@@ -23336,7 +23354,7 @@ ${trackListXml}
 
       // Load release details cache (tracklists by release ID); drop expired entries
       if (releaseDetailsData) {
-        const fresh = Object.entries(releaseDetailsData).filter(([, e]) => e && e.data && (now - e.timestamp) < CACHE_TTL.releaseDetails);
+        const fresh = Object.entries(releaseDetailsData).filter(([, e]) => e && (e.data || e.alias) && (now - e.timestamp) < CACHE_TTL.releaseDetails);
         releaseDetailsCache.current = Object.fromEntries(fresh);
         console.log(`📦 Loaded ${fresh.length} release tracklists from cache`);
       }
@@ -24045,7 +24063,7 @@ ${trackListXml}
       // Save album-to-release-ID mapping cache
       await window.electron.store.set('cache_album_release_ids', albumToReleaseIdCache.current);
 
-      // Save release details cache, pruned to the most recent entries (~30KB each)
+      // Save release details cache, pruned to the most recent entries (~10-30KB each)
       {
         const entries = Object.entries(releaseDetailsCache.current);
         if (entries.length > RELEASE_DETAILS_CACHE_MAX) {
@@ -24054,6 +24072,7 @@ ${trackListXml}
         }
       }
       await window.electron.store.set('cache_release_details', releaseDetailsCache.current);
+      console.log(`💾 Caches saved (${Object.keys(releaseDetailsCache.current).length} release details)`);
 
       // Save playlist cover cache
       await window.electron.store.set('cache_playlist_covers', playlistCoverCache.current);
@@ -25198,6 +25217,7 @@ ${trackListXml}
         // Use the first official release ID
         releaseId = releaseGroupData.releases[0].id;
         console.log('Converted release-group to release ID:', releaseId);
+        rememberReleaseGroupAlias(release.id, releaseId);
 
         // Fetch again with the converted ID
         releaseDetailsResponse = await fetchReleaseDetails(releaseId, fetchWithRetry);
@@ -25206,6 +25226,8 @@ ${trackListXml}
       if (!releaseDetailsResponse.ok) {
         throw new Error('Release not found');
       }
+      // A cached alias answers with the real release ID; keep using that one.
+      releaseId = releaseDetailsResponse.releaseId || releaseId;
 
       const releaseData = await releaseDetailsResponse.json();
       
@@ -25410,10 +25432,12 @@ ${trackListXml}
         if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return;
 
         releaseId = releaseGroupData.releases[0].id;
+        rememberReleaseGroupAlias(release.id, releaseId);
         releaseDetailsResponse = await fetchReleaseDetails(releaseId);
       }
 
       if (!releaseDetailsResponse.ok) return;
+      releaseId = releaseDetailsResponse.releaseId || releaseId;
 
       const releaseData = await releaseDetailsResponse.json();
 
