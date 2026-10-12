@@ -394,13 +394,14 @@ const unsupportedAudioMessage = (ext) => {
 // /ws/2/isrc/ returns only the recording itself (no canonical artist/release
 // MBIDs, no canonical names), so a cached ISRC-only entry would block a
 // richer mapper entry once the mapper recovers (parachord#887).
-window.resolveMbidViaIsrc = async (isrc) => {
+window.resolveMbidViaIsrc = async (isrc, opts) => {
   if (!isrc || typeof isrc !== 'string') return null;
   const trimmed = isrc.trim().toUpperCase();
   if (!/^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(trimmed)) return null;
   try {
     const url = `https://musicbrainz.org/ws/2/isrc/${encodeURIComponent(trimmed)}?fmt=json`;
     const resp = await fetch(url, {
+      mbBackground: !!(opts && opts.background),
       headers: {
         'User-Agent': 'Parachord/0.9.3 (https://github.com/Parachord/parachord)',
         'Accept': 'application/json',
@@ -485,7 +486,7 @@ window.resolveMbidForLove = async (track) => {
   // but the noise hid real problems.
   try {
     if (typeof window.resolveRecordingMbid === 'function') {
-      const { status, result } = await window.resolveRecordingMbid(track.artist, track.title, track.album);
+      const { status, result } = await window.resolveRecordingMbid(track.artist, track.title, track.album, { background: true });
       if (status === 'hit' && result.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(result.recording_mbid || '')) {
         return result.recording_mbid;
       }
@@ -506,7 +507,7 @@ window.resolveMbidForLove = async (track) => {
   // doesn't.
   const isrc = window.pickTrackIsrc(track);
   if (isrc) {
-    const isrcMbid = await window.resolveMbidViaIsrc(isrc);
+    const isrcMbid = await window.resolveMbidViaIsrc(isrc, { background: true });
     if (isrcMbid) {
       console.log(`[resolveMbidForLove] ISRC fallback resolved "${track.artist} – ${track.title}" via ${isrc}`);
       return isrcMbid;
@@ -527,6 +528,7 @@ window.resolveMbidForLove = async (track) => {
     const query = `artist:"${escapedArtist}" AND recording:"${escapedTitle}"`;
     const url = `https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=3`;
     const resp = await fetch(url, {
+      mbBackground: true,
       headers: {
         'User-Agent': 'Parachord/0.9.3 (https://github.com/Parachord/parachord)',
         'Accept': 'application/json',
@@ -656,7 +658,7 @@ window.musicbrainzLimiter = window.createLimiter({
   // actually starts. A caller-supplied signal is still honored.
   window.fetch = function (input, init) {
     if (!isMbWs2(input)) return originalFetch(input, init);
-    const { queuedTimeoutMs, ...fetchInit } = init || {};
+    const { queuedTimeoutMs, mbBackground, ...fetchInit } = init || {};
     const callerSignal = fetchInit.signal;
     const hasQueuedTimeout = Number.isFinite(queuedTimeoutMs) && queuedTimeoutMs > 0;
     return window.musicbrainzLimiter.run(async () => {
@@ -690,7 +692,7 @@ window.musicbrainzLimiter = window.createLimiter({
           : Math.min(1000 * Math.pow(2, attempt - 1), 4000);
         await new Promise(r => setTimeout(r, waitMs));
       }
-    });
+    }, { background: !!mbBackground }); // mbBackground: bulk work queues behind user-initiated requests
   };
 })();
 
@@ -10137,7 +10139,7 @@ const Parachord = () => {
   // acr-lookup is a stricter matcher than the mapper, so one of its misses is
   // only trusted for a few hours rather than the mapper's 90 days.
   const ACR_MISS_TTL = 6 * 60 * 60 * 1000;
-  const lookupMbidMapper = async (artist, title, album) => {
+  const lookupMbidMapper = async (artist, title, album, opts = {}) => {
     if (!artist || !title) return null;
     const cacheKey = `${artist.toLowerCase().trim()}|${title.toLowerCase().trim()}`;
     const cached = mbidMapperCache.current[cacheKey];
@@ -10146,7 +10148,7 @@ const Parachord = () => {
       if ((Date.now() - cached.timestamp) < ttl) return cached.result;
     }
     try {
-      const { status, source, result, errors } = await window.resolveRecordingMbid(artist, title, album);
+      const { status, source, result, errors } = await window.resolveRecordingMbid(artist, title, album, { background: !!opts.background });
       if (status === 'hit') {
         mbidMapperCache.current[cacheKey] = { result, timestamp: Date.now(), source };
         return result;
@@ -10177,10 +10179,11 @@ const Parachord = () => {
   };
 
   // Enrich a track object with MBID metadata from the mapper (mutates track in-place)
-  const enrichTrackWithMbid = async (track) => {
+  // opts.background: queue the lookups behind user-initiated ones (bulk passes).
+  const enrichTrackWithMbid = async (track, opts = {}) => {
     if (!track.artist || !track.title) return;
     if (track.mbid) return; // Already enriched
-    const result = await lookupMbidMapper(track.artist, track.title, track.album);
+    const result = await lookupMbidMapper(track.artist, track.title, track.album, opts);
     if (result && result.recording_mbid) {
       track.mbid = result.recording_mbid;
       track.artistMbids = result.artist_credit_mbids;
@@ -10199,7 +10202,7 @@ const Parachord = () => {
     // circuits on the next call for the same track.
     const isrc = window.pickTrackIsrc ? window.pickTrackIsrc(track) : (track.isrc || null);
     if (isrc && window.resolveMbidViaIsrc) {
-      const isrcMbid = await window.resolveMbidViaIsrc(isrc);
+      const isrcMbid = await window.resolveMbidViaIsrc(isrc, opts);
       if (isrcMbid) {
         track.mbid = isrcMbid;
       }
@@ -10210,7 +10213,7 @@ const Parachord = () => {
   const enrichTracksWithMbids = (tracks) => {
     if (!tracks || tracks.length === 0) return;
     // Fire all lookups in parallel, don't block
-    Promise.all(tracks.map(track => enrichTrackWithMbid(track).catch(() => {}))).catch(() => {});
+    Promise.all(tracks.map(track => enrichTrackWithMbid(track, { background: true }).catch(() => {}))).catch(() => {});
   };
 
   // Fetch album art for a track using its releaseMbid from MBID mapper (fast path, no MusicBrainz search needed)
@@ -10319,8 +10322,23 @@ const Parachord = () => {
   const enrichLocalTracksWithArtwork = async (tracks) => {
     if (!tracks || tracks.length === 0) return;
 
-    // Phase 1: MBID enrichment (all in parallel)
-    await Promise.all(tracks.map(track => enrichTrackWithMbid(track).catch(() => {})));
+    // Phase 1: MBID enrichment, only for tracks that still lack art (the
+    // user-visible payoff of this pass; a track that already has embedded or
+    // folder art gets its MBID lazily on play). Used to be Promise.all over
+    // the WHOLE library: with the mapper down that was thousands of queued
+    // lookups per launch, and every one of them sat ahead of the lookup
+    // handlePlay waits on and of the MusicBrainz calls behind search and
+    // artist pages. Now: 4 in flight, background lane on both limiters.
+    const needsArt = tracks.filter(t => !t.albumArt);
+    const ENRICH_CONCURRENCY = 4;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < needsArt.length) {
+        const track = needsArt[cursor++];
+        await enrichTrackWithMbid(track, { background: true }).catch(() => {});
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(ENRICH_CONCURRENCY, needsArt.length) }, worker));
 
     // Phase 2: Fetch artwork for tracks that lack albumArt but got a releaseMbid
     const artlessTracks = tracks.filter(t => !t.albumArt && t.releaseMbid);
@@ -30140,7 +30158,7 @@ ${tracks}
       // musicbrainzLimiter fetch wrapper). A signal armed here counted the
       // queue wait and aborted requests that never started.
       if (window.isMusicBrainzWs2Url && window.isMusicBrainzWs2Url(url)) {
-        return fetch(url, { ...options, queuedTimeoutMs: timeoutMs });
+        return fetch(url, { ...options, queuedTimeoutMs: timeoutMs, mbBackground: true });
       }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
