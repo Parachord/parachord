@@ -139,9 +139,9 @@
     {
       "id": "amazonmusic",
       "name": "Amazon Music",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "author": "Parachord Team",
-      "description": "Play Amazon Music in-app with Widevine, or on macOS by remote-controlling the desktop app. In-app playback uses a Chromium browser's Widevine CDM (same approach as Apple Music on Linux) and an Amazon sign-in. The desktop app path is macOS-only and requires consent before opening a local debugging port.",
+      "description": "Uses Amazon's web player and this app's Widevine CDM. Does not use the Amazon Music desktop app.",
       "icon": "🎵",
       "color": "#25D1DA",
       "homepage": "https://music.amazon.com",
@@ -160,7 +160,7 @@
         "streaming",
         "subscription",
         "amazon",
-        "cdp"
+        "widevine"
       ]
     },
     {

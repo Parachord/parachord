@@ -3,7 +3,7 @@ const {
   playerDurationMs,
   decidePollAdvance,
   shouldPollFaster,
-  relaunchAllowed,
+  pageBlocksPlayback,
   isNotReadyReason,
   NEAR_END_MS
 } = require('../../amazon-music-logic');
@@ -95,34 +95,23 @@ describe('decidePollAdvance', () => {
   });
 });
 
-describe('relaunchAllowed', () => {
-  test('refuses to relaunch without stored consent', () => {
-    expect(relaunchAllowed({ platform: 'darwin', consented: false, portOpen: false, force: false }))
-      .toEqual({ ok: false, reason: 'consent-required' });
+describe('pageBlocksPlayback', () => {
+  test('profile picker and sign-in are not a finished session', () => {
+    expect(pageBlocksPlayback('https://music.amazon.com/identity/who-is-listening')).toBe('not-signed-in');
+    expect(pageBlocksPlayback('https://www.amazon.com/ap/signin?openid.return_to=music')).toBe('not-signed-in');
   });
 
-  test('a renderer cannot force the port open without consent', () => {
-    expect(relaunchAllowed({ platform: 'darwin', consented: false, portOpen: false, force: true }).reason)
-      .toBe('consent-required');
-  });
-
-  test('desktop app control is macOS-only', () => {
-    expect(relaunchAllowed({ platform: 'linux', consented: true, portOpen: false }).reason)
-      .toBe('unsupported-platform');
-  });
-
-  test('an already-managed app does not relaunch unless forced', () => {
-    expect(relaunchAllowed({ platform: 'darwin', consented: true, portOpen: true, force: false }))
-      .toEqual({ ok: true, relaunch: false });
-    expect(relaunchAllowed({ platform: 'darwin', consented: true, portOpen: true, force: true }).relaunch)
-      .toBe(true);
+  test('the player home is usable', () => {
+    expect(pageBlocksPlayback('https://music.amazon.com/')).toBeNull();
+    expect(pageBlocksPlayback('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
   });
 });
 
 describe('isNotReadyReason', () => {
-  test('connect-needed reasons are not empty search results', () => {
-    expect(isNotReadyReason('app-not-managed')).toBe(true);
+  test('sign-in and missing-CDM are not empty search results', () => {
     expect(isNotReadyReason('not-signed-in')).toBe(true);
+    expect(isNotReadyReason('no-cdm')).toBe(true);
     expect(isNotReadyReason('playback-failed')).toBe(false);
+    expect(isNotReadyReason('app-not-managed')).toBe(false);
   });
 });

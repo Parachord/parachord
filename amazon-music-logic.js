@@ -1,6 +1,6 @@
 // Pure helpers for the Amazon Music resolver. Kept out of main.js so the
-// review fixes (wrong-ASIN play, empty-string match, seek-vs-end, consent
-// gate, duration units) can be tested without Electron.
+// review fixes (wrong-ASIN play, empty-string match, seek-vs-end, duration
+// units, sign-in page detection) can be tested without Electron.
 
 function normalizeMatchKey(value) {
   return (value || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -87,25 +87,20 @@ function shouldPollFaster(durationMs, positionMs) {
   return durationMs - positionMs <= FAST_POLL_REMAINING_MS && durationMs - positionMs >= 0;
 }
 
-// Main-process gate for relaunching the desktop app with a debug port.
-// Consent lives in the main process so a renderer (including a marketplace
-// plugin) cannot open the port by calling the IPC alone.
-function relaunchAllowed({ platform, consented, portOpen, force } = {}) {
-  if (platform !== 'darwin') {
-    return { ok: false, reason: 'unsupported-platform' };
-  }
-  if (portOpen && !force) return { ok: true, relaunch: false };
-  if (!consented) return { ok: false, reason: 'consent-required' };
-  return { ok: true, relaunch: true };
+// Amazon's web player is not usable for search or play while it is still
+// on the account sign-in page or the post-login profile picker. Cookies can
+// already exist at that point; the URL is the signal that selection finished.
+function pageBlocksPlayback(url) {
+  const value = url || '';
+  if (/\/identity\/who-is-listening/i.test(value)) return 'not-signed-in';
+  if (/\/ap\/signin/i.test(value)) return 'not-signed-in';
+  return null;
 }
 
 const NOT_READY_REASONS = new Set([
-  'app-not-managed',
   'not-ready',
-  'consent-required',
   'not-signed-in',
-  'no-cdm',
-  'unsupported-platform'
+  'no-cdm'
 ]);
 
 function isNotReadyReason(reason) {
@@ -117,7 +112,7 @@ module.exports = {
   playerDurationMs,
   decidePollAdvance,
   shouldPollFaster,
-  relaunchAllowed,
+  pageBlocksPlayback,
   isNotReadyReason,
   NEAR_END_MS,
   WRAP_POSITION_MS,

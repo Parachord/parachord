@@ -583,15 +583,11 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
-  // Amazon Music operations — remote control of the Amazon Music desktop app
-  // over CDP (see main.js amazonMusicController for the protocol details).
-  // Playback happens inside the Amazon app (it owns the DRM'd audio pipeline);
-  // Parachord is the remote control, same posture as Spotify Connect.
+  // Amazon Music — in-app web player. A BrowserWindow loads music.amazon.com
+  // and castlabs Electron's Widevine CDM decrypts. The desktop app is not used.
   amazonMusic: {
     getStatus: () => ipcRenderer.invoke('amazonmusic-get-status'),
-    ensureApp: (params) => ipcRenderer.invoke('amazonmusic-ensure-app', params || {}),
     openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
-    setPlaybackMode: (mode) => ipcRenderer.invoke('amazonmusic-set-playback-mode', { mode }),
     searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks', { query }),
     playTrack: (params) => ipcRenderer.invoke('amazonmusic-play-track', params),
     pause: () => ipcRenderer.invoke('amazonmusic-pause'),

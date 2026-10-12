@@ -1,12 +1,9 @@
 # Amazon Music Resolver — Exploration Findings & Architecture Brainstorm
 
 Date: 2026-09-23
-Status: **implemented** — shipped in the same working session as parachord#988 (resolver
-`amazonmusic`, CDP controller in main.js, poller, manage-app consent flow, tests). Live
-end-to-end validated: search (catalog + library merge), play, pause, resume, seek, stop,
-cached replay, and the near-end auto-advance signal. This document now serves as the
-RE reference / protocol notes; the operational invariants live in CLAUDE.md § Amazon Music
-Resolver.
+Status: **historical.** Playback now runs inside Parachord (`amazon-web-player.js`) on castlabs Electron (v0.9.8). Amazon's web player accepts that build's development VMP signature. The desktop-app CDP controller described below is not used. Operational invariants live in CLAUDE.md § Amazon Music Resolver.
+
+The CDP path was live-validated on 2026-09-23: search (catalog + library merge), play, pause, resume, seek, stop, cached replay, and the near-end auto-advance signal.
 
 ## TL;DR
 

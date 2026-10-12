@@ -5,7 +5,7 @@
  *   - structural validity (manifest/capabilities/implementation compile)
  *   - search result mapping (bridge -> resolver track shape)
  *   - resolve() containment matching (best match, not just first result)
- *   - play() app-not-managed flow (manage prompt + retry)
+ *   - play() not-signed-in flow (sign-in prompt + retry)
  *   - byte-identical FALLBACK_RESOLVERS copy in app.js (drift guard)
  *   - resolver-limiter does NOT skip amazonmusic (CDP fan-out + web search)
  */
@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.1.0');
+    expect(axe.manifest.version).toBe('1.2.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -100,14 +100,14 @@ describe('amazonmusic search', () => {
     }));
   });
 
-  test('throws notReady when the app is not under management so resolve does not cache noMatch', async () => {
+  test('throws notReady when the player is not signed in so resolve does not cache noMatch', async () => {
     global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
-      success: false, reason: 'app-not-managed'
+      success: false, reason: 'not-signed-in'
     });
     const resolver = instantiate(axe);
     await expect(resolver.search('anything', {})).rejects.toMatchObject({
       notReady: true,
-      code: 'app-not-managed'
+      code: 'not-signed-in'
     });
   });
 
@@ -194,9 +194,9 @@ describe('amazonmusic play', () => {
     });
   });
 
-  test('app-not-managed triggers the manage prompt and retries once', async () => {
+  test('not-signed-in triggers the sign-in prompt and retries once', async () => {
     global.window.electron.amazonMusic.playTrack
-      .mockResolvedValueOnce({ success: false, reason: 'app-not-managed' })
+      .mockResolvedValueOnce({ success: false, reason: 'not-signed-in' })
       .mockResolvedValueOnce({ success: true });
     const resolver = instantiate(axe);
     const ok = await resolver.play({ amazonAsin: 'B1', title: 'T', artist: 'A' }, {});
@@ -205,9 +205,9 @@ describe('amazonmusic play', () => {
     expect(global.window.electron.amazonMusic.playTrack).toHaveBeenCalledTimes(2);
   });
 
-  test('declined manage prompt returns false without retrying', async () => {
+  test('declined sign-in returns false without retrying', async () => {
     managePrompt.mockResolvedValue(false);
-    global.window.electron.amazonMusic.playTrack.mockResolvedValue({ success: false, reason: 'app-not-managed' });
+    global.window.electron.amazonMusic.playTrack.mockResolvedValue({ success: false, reason: 'not-signed-in' });
     const resolver = instantiate(axe);
     const ok = await resolver.play({ amazonAsin: 'B1', title: 'T', artist: 'A' }, {});
     expect(ok).toBe(false);
