@@ -16133,36 +16133,25 @@ ${trackListXml}
 
   // Remove track from collection
   const removeTrackFromCollection = useCallback((track) => {
-    const filePath = track?.filePath || track?.sources?.localfiles?.filePath || null;
-    // Collection list rows are library files unioned with collection.json.
-    // The context menu always offers Remove, but only collection.json used to
-    // be searched — a local-library row then toasted "not in your collection"
-    // and stayed on screen. Match the saved row by id, generated id, or path,
-    // and drop a library-only row from the index so it actually disappears.
-    const findSavedIndex = (tracks) => {
-      if (!tracks || !track) return -1;
-      if (track.id) {
-        const byId = tracks.findIndex(t => t.id === track.id);
-        if (byId !== -1) return byId;
-      }
-      const generatedId = generateTrackId(track.artist, track.title, track.album);
-      const byGenerated = tracks.findIndex(t => t.id === generatedId);
-      if (byGenerated !== -1) return byGenerated;
-      if (filePath) {
-        const byPath = tracks.findIndex(t =>
-          t.filePath === filePath || t.sources?.localfiles?.filePath === filePath
-        );
-        if (byPath !== -1) return byPath;
-      }
-      return -1;
-    };
-
-    let removedSaved = false;
     setCollectionData(prev => {
-      const existingIndex = findSavedIndex(prev.tracks);
-      if (existingIndex === -1) return prev;
-      removedSaved = true;
-      const matchId = prev.tracks[existingIndex].id;
+      // Try to find by stored ID first (handles synced tracks where ID was generated
+      // from different metadata than the stored artist/title/album fields)
+      let existingIndex = -1;
+      let matchId = null;
+      if (track.id) {
+        existingIndex = prev.tracks.findIndex(t => t.id === track.id);
+        matchId = track.id;
+      }
+      // Fall back to generated ID (for tracks from playbar or other views without matching IDs)
+      if (existingIndex === -1) {
+        const generatedId = generateTrackId(track.artist, track.title, track.album);
+        existingIndex = prev.tracks.findIndex(t => t.id === generatedId);
+        matchId = generatedId;
+      }
+      if (existingIndex === -1) {
+        showToast(`${track.title} is not in your collection`);
+        return prev;
+      }
 
       const existingTrack = prev.tracks[existingIndex];
 
@@ -16202,57 +16191,9 @@ ${trackListXml}
       const newData = { ...prev, tracks: newTracks };
       // Save async (don't block state update)
       saveCollection(newData);
+      showToast(`Removed ${track.title} from Collection`);
       return newData;
     });
-
-    // Library rows are merged into the Collection list but are not saved
-    // tracks. Suppress the path so the row goes away and a rescan cannot
-    // put it back.
-    let removedLibrary = false;
-    if (filePath) {
-      setLibrary(prev => {
-        const next = prev.filter(t => t.filePath !== filePath && t.sources?.localfiles?.filePath !== filePath);
-        if (next.length !== prev.length) removedLibrary = true;
-        return next;
-      });
-      window.electron?.localFiles?.suppressTrack?.(filePath)
-        .catch(err => console.warn('[LocalFiles] suppress failed:', err?.message || err));
-      // Drop the cached localfiles hit so an album page doesn't keep a badge
-      // for a file the user just removed.
-      setTrackSources(prev => {
-        let changed = false;
-        const next = {};
-        for (const [id, sources] of Object.entries(prev || {})) {
-          const lf = sources?.localfiles;
-          if (lf && !lf.noMatch && (lf.filePath === filePath || lf.fileUrl === `file://${filePath}`)) {
-            const { localfiles, ...rest } = sources;
-            next[id] = rest;
-            changed = true;
-          } else {
-            next[id] = sources;
-          }
-        }
-        return changed ? next : prev;
-      });
-      if (trackSourcesCache.current) {
-        for (const entry of Object.values(trackSourcesCache.current)) {
-          const lf = entry?.sources?.localfiles;
-          if (lf && (lf.filePath === filePath || lf.fileUrl === `file://${filePath}`)) {
-            delete entry.sources.localfiles;
-          }
-        }
-      }
-    }
-
-    if (removedSaved || removedLibrary) {
-      showToast(`Removed ${track.title} from Collection`);
-    } else if (!filePath) {
-      showToast(`${track.title} is not in your collection`);
-    } else {
-      // Had a path but it wasn't in the in-memory library. Still suppress so
-      // a stale cache row doesn't come back, and tell the user it's gone.
-      showToast(`Removed ${track.title} from Collection`);
-    }
   }, [saveCollection, showToast, deriveTombstoneEntries]);
 
   // Add album to collection

@@ -180,11 +180,6 @@ class FileScanner {
   }
 
   async processFile(filePath) {
-    // User removed this file from Collection. Don't re-index it on scan.
-    if (this.db.isSuppressed && this.db.isSuppressed(filePath)) {
-      return 'skipped';
-    }
-
     // Check if file already exists in DB
     const existing = this.db.getTrackByPath(filePath);
 
@@ -233,10 +228,6 @@ class FileScanner {
     console.log(`[LocalFiles] File ${changeType}: ${filePath}`);
 
     if (changeType === 'add' || changeType === 'change') {
-      if (this.db.isSuppressed && this.db.isSuppressed(filePath)) {
-        console.log(`[LocalFiles] Skipping suppressed file: ${filePath}`);
-        return { action: 'skipped', filePath };
-      }
       if (!MetadataReader.isSupported(filePath)) return;
 
       try {

@@ -6796,16 +6796,6 @@ ipcMain.handle('localFiles:rescanFolder', async (event, folderPath) => {
   }
 });
 
-ipcMain.handle('localFiles:suppressTrack', async (_event, filePath) => {
-  try {
-    const service = await waitForLocalFilesService();
-    return service.suppressTrack(filePath);
-  } catch (error) {
-    console.error('Suppress local track error:', error);
-    return { success: false, error: error.message };
-  }
-});
-
 ipcMain.handle('localFiles:getAllTracks', async () => {
   const service = await waitForLocalFilesService();
   return service.getAllTracks();
