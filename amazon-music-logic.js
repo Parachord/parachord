@@ -3,7 +3,12 @@
 // units, sign-in page detection) can be tested without Electron.
 
 function normalizeMatchKey(value) {
-  return (value || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+  return (value || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}]/gu, '');
 }
 
 function containsNonEmpty(haystack, needle) {

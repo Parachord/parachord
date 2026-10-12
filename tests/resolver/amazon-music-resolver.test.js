@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.2.0');
+    expect(axe.manifest.version).toBe('1.2.1');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -157,6 +157,19 @@ describe('amazonmusic resolve', () => {
     const match = await resolver.resolve('Daft Punk', 'Around the World', null, {});
     expect(match).toBeTruthy();
     expect(match.amazonAsin).toBe('B2');
+  });
+
+  test('matches Cyrillic titles instead of stripping them to empty', async () => {
+    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
+      success: true,
+      tracks: [
+        { asin: 'B9', uniqueId: 'ML-9', title: 'На рахунок три', artist: 'Tember Blanche', album: 'На рахунок три', duration: 180 }
+      ]
+    });
+    const resolver = instantiate(axe);
+    const match = await resolver.resolve('Tember Blanche', 'На рахунок три', null, {});
+    expect(match).toBeTruthy();
+    expect(match.amazonAsin).toBe('B9');
   });
 
   test('falls back to null when nothing matches', async () => {

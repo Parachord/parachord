@@ -35,6 +35,11 @@ describe('pickPlayableTrack', () => {
   test('fuzzy match requires both axes when no ASIN was requested', () => {
     expect(pickPlayableTrack(tracks, { title: 'Creep', artist: 'Radiohead' }).asin).toBe('B1');
   });
+
+  test('Cyrillic titles are not stripped to empty', () => {
+    const tracks = [{ asin: 'B9', title: 'На рахунок три', artist: 'Tember Blanche' }];
+    expect(pickPlayableTrack(tracks, { title: 'На рахунок три', artist: 'Tember Blanche' }).asin).toBe('B9');
+  });
 });
 
 describe('playerDurationMs', () => {
