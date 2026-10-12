@@ -1,14 +1,14 @@
 // In-app Amazon Music player.
 //
 // Parachord runs on castlabs Electron, which ships a Widevine CDM. A
-// BrowserWindow loads music.amazon.com and Amazon's own page does the
-// license exchange. No desktop app, no borrowed browser CDM, no separate
-// Chrome process.
+// WebContentsView behind the main UI loads music.amazon.com and Amazon's
+// own page does the license exchange. No extra OS window, no desktop app,
+// no borrowed browser CDM, no separate Chrome process.
 //
-// Search uses a second hidden window on the same session so a lookup
-// cannot navigate the window that is currently playing. Sign-in is not
-// finished until the user also picks a profile — Amazon shows
-// /identity/who-is-listening after login when the account has more than one.
+// Search uses a hidden window on the same session so a lookup cannot
+// navigate the document that is currently playing. Sign-in is a real
+// window — Amazon shows /identity/who-is-listening after login when the
+// account has more than one profile.
 
 const path = require('path');
 const HOME_URL = 'https://music.amazon.com/';
@@ -154,12 +154,16 @@ function notReady(reason, message) {
 }
 
 const amazonWebPlayer = {
-  playerWindow: null,
+  playerView: null,
   searchWindow: null,
   authWindow: null,
+  inspectWindow: null,
+  host: null,
   searchChain: Promise.resolve(),
   emeProbed: null,
   currentAsin: null,
+  _onHostClosed: null,
+  _onHostResize: null,
 
   // castlabs Electron exposes electron.components. Stock Electron does not,
   // and the old --widevine-cdm-path switch does nothing there. EME probe is
@@ -204,11 +208,43 @@ const amazonWebPlayer = {
   // from an earlier step is already set.
   async isSignedIn() {
     if (!(await this.hasAuthCookie())) return false;
-    for (const win of [this.authWindow, this.playerWindow, this.searchWindow]) {
-      if (!win || win.isDestroyed()) continue;
-      if (pageBlocksPlayback(win.webContents.getURL())) return false;
+    for (const target of [this.authWindow, this.playerView, this.searchWindow]) {
+      if (!this.alive(target)) continue;
+      if (pageBlocksPlayback(target.webContents.getURL())) return false;
     }
     return true;
+  },
+
+  setHost(win) {
+    if (this.host && this._onHostClosed) {
+      try { this.host.off('closed', this._onHostClosed); } catch { /* gone */ }
+      try { this.host.off('resize', this._onHostResize); } catch { /* gone */ }
+    }
+    this.host = win && !win.isDestroyed() ? win : null;
+    this._onHostClosed = null;
+    this._onHostResize = null;
+    if (!this.host) {
+      this.destroyPlayerView();
+      return;
+    }
+    this._onHostClosed = () => this.setHost(null);
+    this._onHostResize = () => this.parkPlayer();
+    this.host.on('closed', this._onHostClosed);
+    this.host.on('resize', this._onHostResize);
+    this.parkPlayer();
+  },
+
+  webPreferences() {
+    return {
+      partition: PARTITION,
+      nodeIntegration: false,
+      contextIsolation: false,
+      sandbox: false,
+      preload: PRELOAD,
+      webSecurity: true,
+      backgroundThrottling: false,
+      autoplayPolicy: 'no-user-gesture-required'
+    };
   },
 
   windowOptions(show) {
@@ -219,80 +255,153 @@ const amazonWebPlayer = {
       title: 'Amazon Music',
       backgroundColor: '#000000',
       skipTaskbar: !show,
-      webPreferences: {
-        partition: PARTITION,
-        nodeIntegration: false,
-        contextIsolation: false,
-        sandbox: false,
-        preload: PRELOAD,
-        webSecurity: true,
-        backgroundThrottling: false,
-        autoplayPolicy: 'no-user-gesture-required'
-      }
+      webPreferences: this.webPreferences()
     };
   },
 
-  attach(win) {
+  alive(target) {
+    return !!(target && target.webContents && !target.webContents.isDestroyed());
+  },
+
+  attachContents(wc) {
     const harden = () => {
-      try { win.webContents.setUserAgent(chromeUserAgent()); } catch { /* destroyed */ }
+      try { wc.setUserAgent(chromeUserAgent()); } catch { /* destroyed */ }
     };
     harden();
-    try { win.webContents.setBackgroundThrottling(false); } catch { /* destroyed */ }
-    win.webContents.on('did-start-navigation', harden);
-    win.webContents.on('dom-ready', () => {
-      win.webContents.executeJavaScript(HOOK_SCRIPT).catch(() => {});
+    try { wc.setBackgroundThrottling(false); } catch { /* destroyed */ }
+    wc.on('did-start-navigation', harden);
+    wc.on('dom-ready', () => {
+      wc.executeJavaScript(HOOK_SCRIPT).catch(() => {});
     });
+    return wc;
+  },
+
+  attachWindow(win) {
+    this.attachContents(win.webContents);
     win.on('closed', () => {
-      if (this.playerWindow === win) this.playerWindow = null;
       if (this.searchWindow === win) this.searchWindow = null;
       if (this.authWindow === win) this.authWindow = null;
+      if (this.inspectWindow === win) this.inspectWindow = null;
     });
     return win;
   },
 
-  // Hidden windows have visibilityState 'hidden'; Chromium then ignores
-  // Amazon's ?do=play autoplay even with autoplayPolicy. The window must be
-  // mapped (opacity 0 is fine). showInactive() is enough now that this build
-  // ships a Widevine CDM — the earlier show() + main.focus() dance was a
-  // leftover that yanked Parachord to the front on every track, including
-  // queue auto-advance. Do not focus main here: the user may be in another app.
-  presentPlayer(win, visible) {
-    if (!win || win.isDestroyed()) return;
+  destroyPlayerView() {
+    const view = this.playerView;
+    this.playerView = null;
+    if (!view) return;
     try {
-      win.setOpacity(visible ? 1 : 0);
-      win.setSkipTaskbar(!visible);
-      if (visible) {
-        win.show();
-        win.focus();
-        return;
-      }
-      if (!win.isVisible()) win.showInactive();
+      if (this.host && !this.host.isDestroyed()) this.host.contentView.removeChildView(view);
+    } catch { /* already detached */ }
+    try {
+      if (view.webContents && !view.webContents.isDestroyed()) view.webContents.close();
+    } catch { /* gone */ }
+  },
+
+  parkPlayer() {
+    const host = this.host;
+    const view = this.playerView;
+    if (!host || host.isDestroyed() || !this.alive(view)) return;
+    const parent = host.contentView;
+    try {
+      const kids = parent.children || [];
+      if (!kids.includes(view)) parent.addChildView(view);
+    } catch { /* host tearing down */ }
+    try {
+      const [width, height] = host.getContentSize();
+      const w = Math.max(width || 0, 1100);
+      const h = Math.max(height || 0, 760);
+      // Off the window clip rect so Amazon never covers Parachord, even if
+      // contentView paints children above the page. Still attached to a mapped
+      // window, so Chromium treats the document as visible for ?do=play.
+      view.setBounds({ x: -w, y: 0, width: w, height: h });
+      view.setVisible(true);
     } catch { /* destroyed */ }
   },
 
-  async ensureWindow(kind, { show = false } = {}) {
-    const { BrowserWindow } = electron();
-    const current = kind === 'search' ? this.searchWindow : this.playerWindow;
-    if (current && !current.isDestroyed()) {
-      if (kind !== 'search') this.presentPlayer(current, show);
-      else if (show) {
-        current.show();
-        current.focus();
-      }
-      return current;
-    }
-    this.session();
-    const win = this.attach(new BrowserWindow(this.windowOptions(show)));
-    if (kind === 'search') this.searchWindow = win;
+  // Playback is a WebContentsView stacked behind Parachord's UI — no extra OS
+  // window, so nothing to show() or focus(). The host window is already mapped,
+  // which is enough for Amazon's ?do=play autoplay + Widevine. visible=true is
+  // the rare sign-in / "why didn't this play" path: a real window, same session.
+  presentPlayer(_target, visible) {
+    if (visible) this.showInspect();
     else {
-      this.playerWindow = win;
-      this.presentPlayer(win, show);
+      this.parkPlayer();
+      this.closeInspect();
     }
-    return win;
+  },
+
+  showInspect() {
+    const { BrowserWindow } = electron();
+    const url = this.alive(this.playerView) ? this.playerView.webContents.getURL() : HOME_URL;
+    let win = this.inspectWindow;
+    if (!this.alive(win)) {
+      this.session();
+      win = this.attachWindow(new BrowserWindow({
+        ...this.windowOptions(true),
+        parent: this.host && !this.host.isDestroyed() ? this.host : undefined,
+        title: 'Amazon Music'
+      }));
+      this.inspectWindow = win;
+    }
+    if (url && url !== 'about:blank') win.loadURL(url).catch(() => {});
+    win.show();
+    win.focus();
+  },
+
+  closeInspect() {
+    const win = this.inspectWindow;
+    if (this.alive(win)) {
+      try { win.close(); } catch { /* gone */ }
+    }
+    this.inspectWindow = null;
+  },
+
+  asPage(target) {
+    if (!this.alive(target)) return null;
+    if (typeof target.loadURL === 'function') return target;
+    const wc = target.webContents;
+    return {
+      webContents: wc,
+      loadURL: (url) => wc.loadURL(url),
+      isDestroyed: () => wc.isDestroyed()
+    };
+  },
+
+  async ensureWindow(kind, { show = false } = {}) {
+    const { BrowserWindow, WebContentsView } = electron();
+    if (kind === 'search') {
+      if (this.alive(this.searchWindow)) {
+        if (show) {
+          this.searchWindow.show();
+          this.searchWindow.focus();
+        }
+        return this.searchWindow;
+      }
+      this.session();
+      const win = this.attachWindow(new BrowserWindow(this.windowOptions(false)));
+      this.searchWindow = win;
+      return win;
+    }
+
+    if (!this.alive(this.playerView)) {
+      if (!this.host || this.host.isDestroyed()) {
+        throw notReady('not-ready', 'Amazon Music player has no host window');
+      }
+      this.session();
+      const view = new WebContentsView({ webPreferences: this.webPreferences() });
+      this.attachContents(view.webContents);
+      view.webContents.on('destroyed', () => {
+        if (this.playerView && this.playerView.webContents === view.webContents) this.playerView = null;
+      });
+      this.playerView = view;
+    }
+    this.presentPlayer(this.playerView, show);
+    return this.asPage(this.playerView);
   },
 
   async evalOn(win, script) {
-    if (!win || win.isDestroyed()) throw new Error('Amazon Music web player window is closed');
+    if (!this.alive(win)) throw new Error('Amazon Music web player window is closed');
     return win.webContents.executeJavaScript(script);
   },
 
@@ -327,12 +436,10 @@ const amazonWebPlayer = {
   async openLogin() {
     const { BrowserWindow } = electron();
     let win = this.authWindow;
-    if (!win || win.isDestroyed()) {
+    if (!this.alive(win)) {
       this.session();
-      const parent = BrowserWindow.getAllWindows().find(w =>
-        !w.isDestroyed() && w !== this.playerWindow && w !== this.searchWindow
-      ) || null;
-      win = this.attach(new BrowserWindow({
+      const parent = this.host && !this.host.isDestroyed() ? this.host : null;
+      win = this.attachWindow(new BrowserWindow({
         ...this.windowOptions(true),
         width: 980,
         height: 760,
@@ -439,7 +546,7 @@ const amazonWebPlayer = {
     try {
     // Amazon's own result links use ?do=play. A bare /tracks/{asin} page
     // renders a Play button whose click() does not start Widevine; the query
-    // does, once the window is shown (even at opacity 0).
+    // does, once the document is in a mapped window (the parked WebContentsView).
     await win.loadURL(`https://music.amazon.com/tracks/${encodeURIComponent(asin)}?do=play`);
     const landed = win.webContents.getURL();
     if (pageBlocksPlayback(landed)) {
@@ -505,8 +612,8 @@ const amazonWebPlayer = {
   },
 
   async readState() {
-    const win = this.playerWindow;
-    if (!win || win.isDestroyed()) {
+    const win = this.playerView;
+    if (!this.alive(win)) {
       return { state: 'EMPTY', asin: this.currentAsin, title: null, artist: null, positionMs: 0, durationMs: 0 };
     }
     let state = null;
@@ -526,8 +633,8 @@ const amazonWebPlayer = {
   },
 
   async withMedia(expr) {
-    const win = this.playerWindow;
-    if (!win || win.isDestroyed()) return { ok: false };
+    const win = this.playerView;
+    if (!this.alive(win)) return { ok: false };
     return this.evalOn(win, `(() => {
       const m = window.__parachordAmazonMedia;
       if (!m) return { ok: false };
@@ -564,18 +671,12 @@ const amazonWebPlayer = {
   },
 
   // Hornet keeps Audio Quality on playbackController (metro module, not a
-  // window global). The player window is opacity 0, so Amazon's own modal
+  // window global). The player view is behind the UI, so Amazon's own modal
   // is unreachable. Read and write the same store the modal writes.
   async withQualityController(mutatorSource) {
-    // Do not presentPlayer here. Settings must not flash the opacity-0
-    // window or steal focus. A hidden window can still run hornet.
-    let win = this.playerWindow;
-    if (!win || win.isDestroyed()) {
-      const { BrowserWindow } = electron();
-      this.session();
-      win = this.attach(new BrowserWindow(this.windowOptions(false)));
-      this.playerWindow = win;
-    }
+    // Do not presentPlayer(true) here. Settings must not overlay Amazon or
+    // steal focus. The parked view can still run hornet.
+    const win = await this.ensureWindow('player', { show: false });
     let url = win.webContents.getURL();
     if (pageBlocksPlayback(url)) {
       const err = new Error('Sign in and choose an Amazon Music profile');

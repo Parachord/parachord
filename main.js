@@ -979,6 +979,7 @@ function createWindow() {
     show: false
   });
 
+  amazonWebPlayer.setHost(mainWindow);
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -1101,6 +1102,7 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    amazonWebPlayer.setHost(null);
     mainWindow = null;
   });
 
