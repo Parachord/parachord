@@ -13,7 +13,8 @@ const {
   pageBlocksPlayback,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
-  isAmazonSearchTrackLink,
+  acceptAmazonSearchAnchor,
+  isAmazonPlayerChrome,
   asinFromPlayerUrl
 } = require('./amazon-music-logic');
 
@@ -78,25 +79,47 @@ const HOOK_SCRIPT = `(() => {
 })()`;
 
 const SCRAPE_SCRIPT = `(() => {
-  const isAmazonSearchTrackLink = ${isAmazonSearchTrackLink.toString()};
+  try {
+  const isAmazonPlayerChrome = ${isAmazonPlayerChrome.toString()};
+  const acceptAmazonSearchAnchor = ${acceptAmazonSearchAnchor.toString()};
   const out = [];
   const seen = new Set();
   const links = [];
   const walk = (root) => {
     if (!root || !root.querySelectorAll) return;
-    root.querySelectorAll('a[href]').forEach((a) => links.push(a));
+    root.querySelectorAll('a, [href*="/tracks/"], [primary-href*="/tracks/"], [data-href*="/tracks/"]').forEach((a) => links.push(a));
     root.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) walk(el.shadowRoot); });
   };
   walk(document);
+  const onSearch = /\\/search\\//.test(location.pathname) || /[?&]searchTerm=/.test(location.search);
+  const debug = { anchors: links.length, withAsin: 0, rejected: 0, samples: [] };
+  const ancestorIds = (el) => {
+    const ids = [];
+    let n = el;
+    for (let i = 0; i < 16 && n; i++) {
+      const id = n.getAttribute && n.getAttribute('data-testid');
+      if (id) ids.push(id);
+      const root = n.getRootNode && n.getRootNode();
+      n = n.parentElement || (root && root.host) || null;
+    }
+    return ids;
+  };
   for (const a of links) {
-    const href = a.href || a.getAttribute('href') || '';
+    const href = a.href || a.getAttribute('href') || a.getAttribute('primary-href') || a.getAttribute('data-href') || '';
     const track = href.match(/\\/tracks\\/([A-Z0-9]{10})/i);
     const queryAsin = href.match(/[?&]trackAsin=([A-Z0-9]{10})/i);
     const album = href.match(/\\/albums\\/([A-Z0-9]{10})/i);
     const asin = (track && track[1]) || (queryAsin && queryAsin[1]) || null;
-    if (!asin || seen.has(asin)) continue;
-    if (!isAmazonSearchTrackLink(a.getAttribute('data-testid'))) continue;
-    seen.add(asin);
+    if (!asin) continue;
+    debug.withAsin++;
+    const ids = ancestorIds(a);
+    if (!acceptAmazonSearchAnchor(ids, onSearch)) {
+      debug.rejected++;
+      if (debug.samples.length < 5) debug.samples.push({ href: href.slice(0, 140), ids: ids.slice(0, 4), text: (a.textContent || '').trim().slice(0, 80) });
+      continue;
+    }
+    if (seen.has(asin.toUpperCase())) continue;
+    seen.add(asin.toUpperCase());
     // The title link's own text is only the title. Artist and album are
     // sibling links (/artists/, /albums/) on the track row. closest() matches
     // the title <a> itself, so walk up until those siblings are in scope.
@@ -126,7 +149,49 @@ const SCRAPE_SCRIPT = `(() => {
     });
     if (out.length >= 20) break;
   }
-  return { href: location.href, tracks: out };
+  // Result rows are <button data-testid="HorizontalItem,SearchResultsWidget_...">,
+  // not /tracks/ anchors. The track ASIN is a descendant id (the like button),
+  // distinct from the /artists/ ASIN.
+  const items = [];
+  const walkItems = (root) => {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll('[data-testid="HorizontalItem,SearchResultsWidget_TopResults_TrackItem"], [data-testid="HorizontalItem,SearchResultsWidget_Item"]').forEach((el) => items.push(el));
+    root.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) walkItems(el.shadowRoot); });
+  };
+  walkItems(document);
+  for (const item of items) {
+    if (out.length >= 20) break;
+    const label = item.getAttribute('aria-label') || '';
+    const by = label.match(/^(.+?)\\s+by\\s+(.+)$/i);
+    const titleEl = item.querySelector('[data-testid$="_Metadata_TrackTitle"]');
+    const artistLink = item.querySelector('a[href*="/artists/"]');
+    const title = ((titleEl && titleEl.textContent) || (by && by[1]) || '').trim();
+    const artist = ((artistLink && artistLink.textContent) || (by && by[2]) || '').trim();
+    const artistAsin = (((artistLink && (artistLink.href || artistLink.getAttribute('href'))) || '').match(/\\/artists\\/([A-Z0-9]{10})/i) || [])[1];
+    let asin = null;
+    const ids = [];
+    const walkIds = (el) => {
+      if (!el) return;
+      if (el.id) ids.push(el.id);
+      for (const c of el.children || []) walkIds(c);
+      if (el.shadowRoot) walkIds(el.shadowRoot);
+    };
+    walkIds(item);
+    for (const id of ids) {
+      if (!/^B[A-Z0-9]{9}$/i.test(id)) continue;
+      if (artistAsin && id.toUpperCase() === artistAsin.toUpperCase()) continue;
+      asin = id.toUpperCase();
+      break;
+    }
+    if (!asin || seen.has(asin) || !title) continue;
+    seen.add(asin);
+    out.push({ asin, title: title.slice(0, 200), artist: artist.slice(0, 200), album: '', duration: 0, albumAsin: null });
+  }
+  debug.items = items.length;
+  return { href: location.href, tracks: out, debug };
+  } catch (e) {
+    return { href: location.href, tracks: [], debug: { error: String(e && (e.stack || e.message || e)) } };
+  }
 })()`;
 
 function electron() {
@@ -310,24 +375,15 @@ const amazonWebPlayer = {
     return kids.find(v => v && v.webContents && v.webContents.id === host.webContents.id) || null;
   },
 
-  // Search results do not render in a 0×0 document. If Parachord's page is a
-  // sibling, size the search view for real and put the app back on top.
-  // Do not attach webContents.debugger here — Emulation.setDeviceMetricsOverride
-  // on this view segfaults the process (seen on the first search).
+  // Search rows do not mount in a 0×0 view (the widget collapses to
+  // max-width: 0). Park the search view at a real size but left of the
+  // window so it cannot cover Parachord. Do not attach the debugger.
   layoutSearch(view) {
-    const host = this.host;
-    if (!host || host.isDestroyed() || !view) return 'none';
-    const kids = host.contentView.children || [];
-    const app = this.appView();
-    console.log(`[Amazon] layout children=${kids.length} appSibling=${!!app}`);
-    if (app && app !== view) {
-      const [w, h] = host.getContentSize();
-      view.setBounds({ x: 0, y: 0, width: Math.max(w || 0, 1100), height: Math.max(h || 0, 800) });
-      host.contentView.addChildView(app);
-      return 'under-app';
-    }
-    this.collapse(view);
-    return 'zero';
+    if (!view) return 'none';
+    try {
+      view.setBounds({ x: -1200, y: 0, width: 1100, height: 800 });
+    } catch { /* gone */ }
+    return 'offscreen';
   },
 
   ensureView(which) {
@@ -479,7 +535,14 @@ const amazonWebPlayer = {
         const n = last && Array.isArray(last.tracks) ? last.tracks.length : 0;
         if (i === 0 || i === 4 || i === 8 || n > 0) {
           const sample = (last.tracks || []).slice(0, 3).map(t => `${t.artist || '?'} — ${t.title || '?'}`).join(' | ');
-          console.log(`[Amazon] search poll ${i} href=${href} tracks=${n}${sample ? ' ' + sample : ''}`);
+          const dbg = last.debug ? ` asinLinks=${last.debug.withAsin} rejected=${last.debug.rejected} anchors=${last.debug.anchors}` : '';
+          console.log(`[Amazon] search poll ${i} href=${href} tracks=${n}${sample ? ' ' + sample : ''}${dbg}`);
+          if (n === 0 && last.debug && last.debug.error) {
+            console.warn('[Amazon] scrape error', last.debug.error.split('\n')[0]);
+          }
+          if (n === 0 && last.debug && last.debug.samples && last.debug.samples.length) {
+            console.log('[Amazon] rejected samples', JSON.stringify(last.debug.samples));
+          }
         }
         if (n > 0) {
           // Title links render before the artist link. Returning early used
@@ -492,8 +555,26 @@ const amazonWebPlayer = {
         }
       }
       try {
-        const diag = await this.evalOn(win, `({ w: innerWidth, h: innerHeight, title: document.title, trackLinks: document.querySelectorAll('a[href*="/tracks/"]').length, body: (document.body && document.body.innerText || '').slice(0, 180) })`);
-        console.log('[Amazon] search empty page', JSON.stringify(diag));
+        const diag = await this.evalOn(win, `(() => {
+          const item = document.querySelector('[data-testid="HorizontalItem,SearchResultsWidget_TopResults_TrackItem"]')
+            || document.querySelector('[data-testid="HorizontalItem,SearchResultsWidget_Item"]');
+          if (!item) return { missing: true };
+          const attrs = [];
+          const walk = (el, depth) => {
+            if (!el || depth > 6 || attrs.length > 40) return;
+            if (el.attributes) {
+              for (const a of el.attributes) {
+                const v = String(a.value);
+                if (/asin|href|track|B0|primary|entity/i.test(a.name + v)) attrs.push(a.name + '=' + v.slice(0, 160));
+              }
+            }
+            for (const c of el.children || []) walk(c, depth + 1);
+            if (el.shadowRoot) walk(el.shadowRoot, depth + 1);
+          };
+          walk(item, 0);
+          return { testid: item.getAttribute('data-testid'), text: (item.innerText || '').slice(0, 180), attrs, html: (item.outerHTML || '').slice(0, 700) };
+        })()`);
+        console.log('[Amazon] search row markup', JSON.stringify(diag));
       } catch (e) {
         console.warn('[Amazon] search diag failed:', e && e.message);
       }

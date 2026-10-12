@@ -8,6 +8,7 @@ const {
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   isAmazonSearchTrackLink,
+  acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
   NEAR_END_MS
 } = require('../../amazon-music-logic');
@@ -143,6 +144,13 @@ describe('isAmazonSearchTrackLink', () => {
     expect(isAmazonSearchTrackLink('SearchResultsWidget_TopResults_TrackItem_Metadata_TrackTitle')).toBe(true);
     expect(isAmazonSearchTrackLink('MiniPlayer_Title')).toBe(false);
     expect(isAmazonSearchTrackLink('')).toBe(false);
+  });
+
+  test('search page keeps rows that are not player chrome', () => {
+    expect(acceptAmazonSearchAnchor(['SearchResultsWidget_Item'], true)).toBe(true);
+    expect(acceptAmazonSearchAnchor([], true)).toBe(true);
+    expect(acceptAmazonSearchAnchor(['MiniPlayer_Title'], true)).toBe(false);
+    expect(acceptAmazonSearchAnchor([], false)).toBe(false);
   });
 });
 

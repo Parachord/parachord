@@ -132,15 +132,29 @@ function normalizeStreamingQuality(value) {
 // with an artist sibling, so a scrape that accepts any track link returns
 // the currently playing song before the results exist. The match gate then
 // rejects that hit and the track looks unresolved.
+//
+// Current Amazon search rows often have no SearchResults testid on the
+// anchor itself. Reject player chrome by ancestor testids; on a /search/
+// page keep the rest.
 function asinFromPlayerUrl(url) {
   const m = (url || '').match(/\/tracks\/([A-Z0-9]{10})/i);
   return m ? m[1].toUpperCase() : null;
 }
 
+function isAmazonPlayerChrome(testIds) {
+  return /miniplayer|nowplaying|playbacktransport/i.test((testIds || []).join(' '));
+}
+
 function isAmazonSearchTrackLink(testId) {
   const id = testId || '';
-  if (/miniplayer|nowplaying|playbacktransport/i.test(id)) return false;
+  if (isAmazonPlayerChrome([id])) return false;
   return /searchresults/i.test(id);
+}
+
+function acceptAmazonSearchAnchor(testIds, onSearchPage) {
+  if (isAmazonPlayerChrome(testIds)) return false;
+  if (/searchresults|topresults/i.test((testIds || []).join(' '))) return true;
+  return !!onSearchPage;
 }
 
 module.exports = {
@@ -153,6 +167,8 @@ module.exports = {
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   isAmazonSearchTrackLink,
+  isAmazonPlayerChrome,
+  acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
   NEAR_END_MS,
   WRAP_POSITION_MS,
