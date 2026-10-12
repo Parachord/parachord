@@ -15026,7 +15026,7 @@ ${trackListXml}
   }, []);
 
   useEffect(() => {
-    // Skip progress tracking for streaming tracks (Spotify, Apple Music) - they have their own polling
+    // Skip progress tracking for streaming tracks (Spotify, Apple Music, Amazon Music) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
     // Skip for SoundCloud - they use HTML5 Audio with timeupdate event
     // Skip for browser-based tracks (YouTube, Bandcamp) - they use extension events
@@ -15034,7 +15034,7 @@ ${trackListXml}
     //
     // Use _activeResolver to determine the actual playback source, not just what sources exist
     const activeResolver = currentTrack?._activeResolver;
-    const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic';
+    const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic' || activeResolver === 'amazonmusic';
     const isLocalFile = activeResolver === 'localfiles';
     const isSoundCloud = activeResolver === 'soundcloud';
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
