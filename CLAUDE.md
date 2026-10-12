@@ -769,7 +769,7 @@ Big libraries (50k–150k tracks) used to freeze the app for tens of seconds dur
 ### Key Persisted Values
 - `saved_volume`, `preferred_spotify_device_id`, `active_resolvers`, `resolver_order`
 - `saved_queue`, `saved_playback_context`, `auto_launch_spotify`, `skip_external_prompt`
-- Caches with TTLs: album art (30 days), artist data (version-checked), charts, concerts
+- Caches with TTLs: album art (90 days), artist data (30 days, version-checked), release details / tracklists by MB release ID (`cache_release_details`, 30 days, pruned to the 400 most recent on save; every `/ws/2/release/{id}?inc=recordings` fetch goes through `fetchReleaseDetails(releaseId, fetchImpl?)` in app.js, which mimics the `ok`/`status`/`json()` subset of Response so the 404 → release-group fallbacks still work), MBID mapper (90 days), charts, new releases, concerts
 
 ### Save Triggers
 - On unmount (cleanup effect)
