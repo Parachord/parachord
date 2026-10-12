@@ -222,6 +222,7 @@ const amazonWebPlayer = {
   searchChain: Promise.resolve(),
   emeProbed: null,
   currentAsin: null,
+  playGeneration: 0,
   _onHostClosed: null,
 
   // castlabs Electron exposes electron.components. Stock Electron does not,
@@ -297,8 +298,8 @@ const amazonWebPlayer = {
     return {
       partition: PARTITION,
       nodeIntegration: false,
-      contextIsolation: false,
-      sandbox: false,
+      contextIsolation: true,
+      sandbox: true,
       preload: PRELOAD,
       webSecurity: true,
       backgroundThrottling: false,
@@ -600,20 +601,27 @@ const amazonWebPlayer = {
         error: 'Widevine is not usable yet. The CDM may still be downloading, or this build is not VMP-signed for Amazon.'
       };
     }
+    const generation = ++this.playGeneration;
+    const ownsPlay = () => this.playGeneration === generation && this.currentAsin === asin;
     const win = await this.ensureWindow('player');
+    // A newer playByAsin may have started during ensureWindow. Do not claim
+    // the player or its license listener if so — haltPlayback would blank the
+    // track that just replaced us, and detaching the filter would drop theirs.
+    if (this.playGeneration !== generation) return { success: false, reason: 'superseded' };
     this.collapse(this.playerView);
     this.currentAsin = asin;
     // A 400 from the license endpoint is Amazon refusing this build's
     // Widevine certificate (development VMP). Detect it instead of waiting
-    // out a generic timeout. Always detach the listener, including the
-    // sign-in redirect return below.
+    // out a generic timeout. Region segment is NA/EU/FE, not only NA.
+    // Detach only if this play still owns the listener.
     let licenseDenied = false;
     const ses = this.session();
-    const licenseFilter = { urls: ['https://music.amazon.com/NA/api/dmls/*'] };
+    const licenseFilter = { urls: ['https://music.amazon.com/*/api/dmls/*'] };
     const onLicense = (details) => {
-      if (details.statusCode === 400) licenseDenied = true;
+      if (details.statusCode === 400 && ownsPlay()) licenseDenied = true;
     };
     const detachLicense = () => {
+      if (this.playGeneration !== generation) return;
       try { ses.webRequest.onCompleted(licenseFilter, null); } catch { /* none */ }
     };
     try { ses.webRequest.onCompleted(licenseFilter, onLicense); } catch { /* filter already registered */ }
@@ -622,6 +630,7 @@ const amazonWebPlayer = {
     // renders a Play button whose click() does not start Widevine; the query
     // does, once the document is attached (0×0 bounds — it must not cover the app).
     await win.loadURL(`https://music.amazon.com/tracks/${encodeURIComponent(asin)}?do=play`);
+    if (!ownsPlay()) return { success: false, reason: 'superseded' };
     const landed = win.webContents.getURL();
     if (pageBlocksPlayback(landed)) {
       await this.haltPlayback();
@@ -652,18 +661,22 @@ const amazonWebPlayer = {
     let playingSince = 0;
     for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 400));
+      // Clicking B while A is still in this loop used to read B's media element
+      // and report success for A. The superseded branch then paused B.
+      if (!ownsPlay()) return { success: false, reason: 'superseded' };
       if (licenseDenied) break;
       const state = await read();
       const advancing = state && state.state === 'PLAYING' && state.positionMs > 0;
       if (advancing) {
         if (!playingSince) playingSince = Date.now();
-        if (Date.now() - playingSince >= 1500) {
+        if (Date.now() - playingSince >= 1500 && ownsPlay()) {
           return { success: true, confirmed: true, asin, engine: 'web' };
         }
       } else {
         playingSince = 0;
       }
     }
+    if (!ownsPlay()) return { success: false, reason: 'superseded' };
     await this.haltPlayback();
     if (licenseDenied) {
       return {
@@ -784,8 +797,8 @@ const amazonWebPlayer = {
         window.__parachordAmazonPlaybackScanAt = Date.now();
         const remembered = window.__parachordAmazonPlaybackModuleId;
         if (remembered == null || !bind(remembered)) {
-          if (!bind(2198)) {
-            for (let id = 0; id < 4000; id++) {
+          if (!bind(2198) && ${this.currentAsin ? 'false' : 'true'}) {
+            for (let id = 0; id < 500; id++) {
               if (id === 2198) continue;
               if (bind(id)) break;
             }
@@ -827,7 +840,7 @@ const amazonWebPlayer = {
     if (!current) return { success: false, reason: 'not-ready', error: 'Amazon Music quality settings are not available yet' };
     return {
       success: true,
-      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || 'STANDARD',
+      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || current.streamingQuality || null,
       abrEnabled: !!current.abrEnabled,
       options: AMAZON_QUALITY_OPTIONS
     };
@@ -835,15 +848,20 @@ const amazonWebPlayer = {
 
   async setQuality({ streamingQuality, abrEnabled } = {}) {
     const quality = normalizeStreamingQuality(streamingQuality);
-    if (!quality) return { success: false, reason: 'invalid', error: 'Unknown Amazon Music audio quality' };
+    // An unrecognized tier (ULTRA_HD, a future hornet value) must not be
+    // rewritten as STANDARD when the caller only flipped Auto-adjust.
+    if (streamingQuality && !quality && abrEnabled === undefined) {
+      return { success: false, reason: 'invalid', error: 'Unknown Amazon Music audio quality' };
+    }
     const abr = !!abrEnabled;
-    const current = await this.withQualityController(
-      `pc.audioQualitySettings.streamingQuality = ${JSON.stringify(quality)};\n      pc.audioQualitySettings.abrEnabled = ${abr};`
-    );
+    const assign = quality
+      ? `pc.audioQualitySettings.streamingQuality = ${JSON.stringify(quality)};\n      pc.audioQualitySettings.abrEnabled = ${abr};`
+      : `pc.audioQualitySettings.abrEnabled = ${abr};`;
+    const current = await this.withQualityController(assign);
     if (!current) return { success: false, reason: 'not-ready', error: 'Amazon Music quality settings are not available yet' };
     return {
       success: true,
-      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || quality,
+      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || current.streamingQuality || quality,
       abrEnabled: !!current.abrEnabled,
       options: AMAZON_QUALITY_OPTIONS
     };
