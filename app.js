@@ -8577,6 +8577,7 @@ const Parachord = () => {
   const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
   const localFileNetworkRetryRef = useRef(0); // MEDIA_ERR_NETWORK retries for a stalled network mount
   const localFileSeekTargetRef = useRef(null); // Last local-file seek, so a failed seek can resume there
+  const localFileRetryCommitRef = useRef(null); // Post-play state commit, deferred until a MEDIA_ERR_NETWORK retry succeeds
   const pageResolutionAbortRef = useRef(null); // AbortController for cancelling page resolution
 
   // Refs for collection tracks visibility tracking
@@ -18033,7 +18034,10 @@ ${trackListXml}
                   ?? progressRef.current
                   ?? 0;
                 const generation = playbackGenerationRef.current;
-                console.warn(`🎵 Local file network error — retrying at ${Number(resumeAt).toFixed(2)}s`);
+                // A failed seek on a paused track must come back paused; an
+                // initial play that is waiting on its commit must play.
+                const wasPlaying = !!localFileRetryCommitRef.current || isPlayingRef.current || !audio.paused;
+                console.warn(`🎵 Local file network error — retrying at ${Number(resumeAt).toFixed(2)}s${wasPlaying ? '' : ' (paused)'}`);
                 setTimeout(() => {
                   const el = audioRef.current;
                   if (!el || playbackGenerationRef.current !== generation) return;
@@ -18047,12 +18051,33 @@ ${trackListXml}
                     } catch (err) {
                       console.warn('🎵 Local file retry seek failed:', err);
                     }
-                    el.play().catch(err => console.warn('🎵 Local file retry play failed:', err));
+                    if (!wasPlaying) return;
+                    el.play().then(() => {
+                      const commit = localFileRetryCommitRef.current;
+                      localFileRetryCommitRef.current = null;
+                      if (commit && playbackGenerationRef.current === generation) commit();
+                    }).catch(err => console.warn('🎵 Local file retry play failed:', err));
                   };
                   el.addEventListener('loadedmetadata', onReady);
                   el.src = base + '?r=' + Date.now();
                   el.load();
                 }, 400);
+                return;
+              }
+              // Retry spent. Prefer another source over a dialog, as the
+              // initial-play path did before network errors were routed here.
+              localFileRetryCommitRef.current = null;
+              const failedTrack = localFilePlaybackTrackRef.current;
+              const otherSources = failedTrack?.sources
+                ? Object.keys(failedTrack.sources).filter(id => id !== 'localfiles' && !failedTrack.sources[id]?.noMatch)
+                : [];
+              if (otherSources.length > 0 && !localFileFallbackInProgressRef.current) {
+                console.log('🔄 Local file still failing after retry — falling back to next available source...');
+                localFileFallbackInProgressRef.current = true;
+                handlePlay({
+                  ...failedTrack,
+                  sources: Object.fromEntries(Object.entries(failedTrack.sources).filter(([id]) => id !== 'localfiles'))
+                });
                 return;
               }
               errorMessage = 'Network error while reading the file. If it is on a network drive, the connection may have stalled — try again. Otherwise the file may have been moved or deleted.';
@@ -18086,6 +18111,7 @@ ${trackListXml}
         : `local-audio://${filePath}`;
       localFileNetworkRetryRef.current = 0;
       localFileSeekTargetRef.current = null;
+      localFileRetryCommitRef.current = null;
       console.log('🎵 Audio URL:', audioUrl);
       audioRef.current.src = audioUrl;
       // Apply normalized volume for local files (respect mute state)
@@ -18097,8 +18123,11 @@ ${trackListXml}
       // Explicitly load to trigger metadata events
       audioRef.current.load();
 
-      try {
-        await audioRef.current.play();
+      // Post-play state commit. Also run by the audio error listener when a
+      // MEDIA_ERR_NETWORK retry succeeds (localFileRetryCommitRef), so a track
+      // that only starts on the second attempt still gets currentTrack /
+      // isPlaying / scrobbling.
+      const commitLocalPlayback = () => {
 
         // Set current track state
         // Duration from local files is already in seconds
@@ -18173,6 +18202,11 @@ ${trackListXml}
             }
           })();
         }
+      };
+
+      try {
+        await audioRef.current.play();
+        commitLocalPlayback();
       } catch (error) {
         console.error('❌ Local file playback failed:', error);
 
@@ -18181,6 +18215,10 @@ ${trackListXml}
         // through here would also pop a dialog (or abandon the local file
         // for another resolver) for a blip the retry can absorb.
         if (audioRef.current?.error?.code === MediaError.MEDIA_ERR_NETWORK) {
+          // The listener commits the track state if its retry succeeds; if
+          // the retry is spent too, it falls back to another source or
+          // shows the dialog.
+          localFileRetryCommitRef.current = commitLocalPlayback;
           setTrackLoading(false);
           return;
         }

@@ -408,7 +408,7 @@
                 }
                 state.emptyReads = 0;
                 state.position += bytesRead;
-                controller.enqueue(Buffer.from(buf.subarray(0, bytesRead)));
+                controller.enqueue(buf.subarray(0, bytesRead)); // view, not a second copy; buf is not reused
                 return;
               } catch (err) {
                 lastErr = err;
@@ -430,7 +430,16 @@
                 } catch (_e) { /* stale fd */ }
                 try {
                   await delay(150 * (attempt + 1), signal);
-                  state.handle = await openWithRetry(resolvedPath, signal);
+                  const fresh = await openWithRetry(resolvedPath, signal);
+                  if (state.closed || (signal && signal.aborted)) {
+                    // A cancel landed while the reopen was in flight: closeState
+                    // already ran with handle=null, so close this fd here or it
+                    // leaks (one per seek on a stalled mount).
+                    try { await fresh.close(); } catch (_e) { /* already closed */ }
+                    try { controller.close(); } catch (_e) { /* already closed */ }
+                    return;
+                  }
+                  state.handle = fresh;
                 } catch (reopenErr) {
                   if (isAbortError(reopenErr, signal) || state.closed) {
                     await closeState();

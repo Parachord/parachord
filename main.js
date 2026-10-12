@@ -1758,7 +1758,7 @@ app.whenReady().then(async () => {
     fs,
     path,
     log: (...args) => console.log(...args),
-    warn: (...args) => console.error(...args),
+    warn: (...args) => console.warn(...args), // retries are recoverable, not errors
     // null until the library service is up (serve the path, same as before).
     // After that, restoreWatchedPath allowlists against watch folders and
     // puts back the original case Chromium stripped from the URL host.
