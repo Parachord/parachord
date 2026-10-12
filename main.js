@@ -21,6 +21,7 @@ console.log('=========================');
 const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu, nativeTheme, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { createLocalAudioHandler } = require('./local-files/audio-protocol');
 
 // Canonical User-Agent for MetaBrainz services (MusicBrainz / ListenBrainz /
 // mapper / Cover Art Archive). Their rate-limiting + bot-mitigation require a
@@ -1613,9 +1614,19 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'local-audio',
     privileges: {
+      // standard is load-bearing for <audio> seeks. Without it Chromium aborts
+      // the Range request a seek issues (net::ERR_ABORTED → MEDIA_ERR_NETWORK)
+      // even when the 206 body is correct — the "file may have been moved or
+      // deleted" dialog. Large files and network mounts hit this constantly
+      // because the first response isn't fully buffered before the user seeks.
+      // Verified on Electron 39: the same bytes seek successfully once the
+      // scheme is standard (as file:// and http:// already do) and fail when
+      // it isn't.
+      standard: true,
       secure: true,
       supportFetchAPI: true,
       stream: true,
+      corsEnabled: true,
       bypassCSP: true
     }
   },
@@ -1739,96 +1750,23 @@ app.whenReady().then(async () => {
     global.pendingProtocolUrl = protocolUrlArg;
   }
 
-  // Register protocol handler for local audio files
-  protocol.handle('local-audio', async (request) => {
-    try {
-      // URL format: local-audio:///path/to/file.mp3
-      const filePath = decodeURIComponent(request.url.replace('local-audio://', ''));
-      console.log('[LocalAudio] Requested file:', filePath);
-
-      // Security: resolve the real path to prevent directory traversal via symlinks/..
-      const resolvedPath = path.resolve(filePath);
-
-      // Validate the file is within a watched folder
-      if (localFilesService?.initialized) {
-        const watchFolders = localFilesService.getWatchFolders();
-        const isInWatchedFolder = watchFolders.some(folder =>
-          resolvedPath.startsWith(folder.path + path.sep) || resolvedPath === folder.path
-        );
-        if (!isInWatchedFolder) {
-          console.error('[LocalAudio] Access denied — file not in a watched folder:', resolvedPath);
-          return new Response('Access denied', { status: 403 });
-        }
-      }
-
-      // Verify file exists and get stats
-      const stats = await fs.promises.stat(resolvedPath);
-      if (!stats.isFile()) {
-        console.error('[LocalAudio] Not a file:', resolvedPath);
-        return new Response('Not a file', { status: 404 });
-      }
-
-      // Get file extension for MIME type
-      const ext = path.extname(resolvedPath).toLowerCase();
-      const mimeTypes = {
-        '.mp3': 'audio/mpeg',
-        '.m4a': 'audio/mp4',
-        '.aac': 'audio/aac',
-        '.wav': 'audio/wav',
-        '.flac': 'audio/flac',
-        '.ogg': 'audio/ogg',
-        '.opus': 'audio/opus',
-        '.wma': 'audio/x-ms-wma',
-        '.aiff': 'audio/aiff',
-        '.alac': 'audio/mp4'
-      };
-      const mimeType = mimeTypes[ext] || 'audio/mpeg';
-
-      // Handle range requests for seeking
-      const rangeHeader = request.headers.get('range');
-      if (rangeHeader) {
-        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-        if (match) {
-          const start = parseInt(match[1], 10);
-          const end = match[2] ? parseInt(match[2], 10) : stats.size - 1;
-          const chunkSize = end - start + 1;
-
-          console.log(`[LocalAudio] Range request: ${start}-${end}/${stats.size}`);
-
-          const fileHandle = await fs.promises.open(resolvedPath, 'r');
-          const buffer = Buffer.alloc(chunkSize);
-          await fileHandle.read(buffer, 0, chunkSize, start);
-          await fileHandle.close();
-
-          return new Response(buffer, {
-            status: 206,
-            headers: {
-              'Content-Type': mimeType,
-              'Content-Length': chunkSize.toString(),
-              'Content-Range': `bytes ${start}-${end}/${stats.size}`,
-              'Accept-Ranges': 'bytes'
-            }
-          });
-        }
-      }
-
-      // Full file request
-      const buffer = await fs.promises.readFile(resolvedPath);
-      console.log(`[LocalAudio] Serving full file: ${buffer.length} bytes`);
-
-      return new Response(buffer, {
-        status: 200,
-        headers: {
-          'Content-Type': mimeType,
-          'Content-Length': stats.size.toString(),
-          'Accept-Ranges': 'bytes'
-        }
-      });
-    } catch (error) {
-      console.error('[LocalAudio] Error serving file:', error);
-      return new Response('File not found', { status: 404 });
+  // Register protocol handler for local audio files. Streams the file
+  // (including Range requests) instead of buffering the whole range — a seek
+  // on a network mount asks for `bytes=<offset>-` through EOF, and reading
+  // that in one shot is what turns an SMB stall into MEDIA_ERR_NETWORK.
+  protocol.handle('local-audio', createLocalAudioHandler({
+    fs,
+    path,
+    log: (...args) => console.log(...args),
+    warn: (...args) => console.warn(...args), // retries are recoverable, not errors
+    // null until the library service is up (serve the path, same as before).
+    // After that, restoreWatchedPath allowlists against watch folders and
+    // puts back the original case Chromium stripped from the URL host.
+    watchFolders: () => {
+      if (!localFilesService?.initialized) return null;
+      return localFilesService.getWatchFolders();
     }
-  });
+  }));
 
   // Generate MusicKit developer token from .p8 key.
   // Store the promise so config-get can await it (avoids race with renderer).
