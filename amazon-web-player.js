@@ -15,7 +15,8 @@ const {
   normalizeStreamingQuality,
   acceptAmazonSearchAnchor,
   isAmazonPlayerChrome,
-  asinFromPlayerUrl
+  reportedPlaybackAsin,
+  shouldRevealPlayerOnFailure
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -43,13 +44,37 @@ const HOOK_SCRIPT = `(() => {
     const m = window.__parachordAmazonMedia;
     if (!m) return null;
     const d = Number.isFinite(m.duration) ? m.duration : 0;
+    const asinOf = (href) => {
+      const match = String(href || '').match(new RegExp('/tracks/([A-Z0-9]{10})', 'i'));
+      return match ? match[1].toUpperCase() : null;
+    };
+    let playingAsin = null;
+    const walkLinks = (root) => {
+      if (!root || !root.querySelectorAll || playingAsin) return;
+      root.querySelectorAll('a[href*="/tracks/"]').forEach((a) => {
+        if (playingAsin) return;
+        const ids = [];
+        let el = a;
+        for (let i = 0; el && i < 8; i++) {
+          const id = el.getAttribute && el.getAttribute('data-testid');
+          if (id) ids.push(id);
+          el = el.parentElement || (el.getRootNode && el.getRootNode().host);
+        }
+        if (/miniplayer|nowplaying/i.test(ids.join(' '))) {
+          playingAsin = asinOf(a.href || a.getAttribute('href'));
+        }
+      });
+      if (!playingAsin) root.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) walkLinks(el.shadowRoot); });
+    };
+    walkLinks(document);
     return {
       positionMs: Math.round((m.currentTime || 0) * 1000),
       durationMs: d > 0 ? Math.round(d * 1000) : 0,
       paused: !!m.paused,
       ended: !!m.ended,
       state: m.ended ? 'FINISHED' : (m.paused ? 'PAUSED' : 'PLAYING'),
-      href: location.href
+      href: location.href,
+      playingAsin
     };
   };
   window.__parachordAmazonClickPlay = () => {
@@ -677,6 +702,11 @@ const amazonWebPlayer = {
       }
     }
     if (!ownsPlay()) return { success: false, reason: 'superseded' };
+    // Never show or focus the player here, including during radio. A run of
+    // unplayable tracks used to surface the page on every miss.
+    if (shouldRevealPlayerOnFailure()) {
+      throw new Error('Amazon playback failure must not reveal the player');
+    }
     await this.haltPlayback();
     if (licenseDenied) {
       return {
@@ -698,17 +728,17 @@ const amazonWebPlayer = {
   async readState() {
     const win = this.playerView;
     if (!this.alive(win)) {
-      return { state: 'EMPTY', asin: this.currentAsin, title: null, artist: null, positionMs: 0, durationMs: 0 };
+      return { state: 'EMPTY', asin: null, title: null, artist: null, positionMs: 0, durationMs: 0 };
     }
     let state = null;
     try { state = await this.evalOn(win, 'window.__parachordAmazonRead ? window.__parachordAmazonRead() : null'); }
     catch { state = null; }
     if (!state) {
-      return { state: 'EMPTY', asin: this.currentAsin, title: null, artist: null, positionMs: 0, durationMs: 0 };
+      return { state: 'EMPTY', asin: null, title: null, artist: null, positionMs: 0, durationMs: 0 };
     }
     return {
       state: state.state,
-      asin: asinFromPlayerUrl(state.href) || this.currentAsin,
+      asin: reportedPlaybackAsin(state),
       title: null,
       artist: null,
       positionMs: state.positionMs || 0,

@@ -2,42 +2,11 @@
 // review fixes (wrong-ASIN play, empty-string match, seek-vs-end, duration
 // units, sign-in page detection) can be tested without Electron.
 
-function normalizeMatchKey(value) {
-  return (value || '')
-    .toString()
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .replace(/[^\p{L}\p{N}]/gu, '');
-}
-
-function containsNonEmpty(haystack, needle) {
-  if (!haystack || !needle) return false;
-  return haystack.includes(needle) || needle.includes(haystack);
-}
-
-// Never substitute a different ASIN when the caller asked for one. Fuzzy
-// match is only for title+artist playback, and an empty field must not
-// match everything (`'anything'.includes('')` is true).
-function pickPlayableTrack(tracks, { asin, title, artist } = {}) {
-  const list = Array.isArray(tracks) ? tracks : [];
-  if (asin) {
-    return list.find(t => t && t.asin === asin) || null;
-  }
-  const targetTitle = normalizeMatchKey(title);
-  const targetArtist = normalizeMatchKey(artist);
-  if (!targetTitle || !targetArtist) return null;
-  return list.find(t => t &&
-    containsNonEmpty(normalizeMatchKey(t.title), targetTitle) &&
-    containsNonEmpty(normalizeMatchKey(t.artist), targetArtist)
-  ) || null;
-}
-
-// Desktop-app playerModel duration is milliseconds (validated against
-// currentPlayable.duration). Search-result duration is seconds and is
-// converted by the poller (`duration * 1000`), not here. Do not guess:
-// a "< 1000 means seconds" heuristic turns a 20-minute track reported in
-// seconds into 1.2s, and a short ms value into a multi-minute one.
+// The <video> element reports duration in seconds; the poller stores
+// milliseconds. Search-result duration is seconds and is converted by the
+// poller (`duration * 1000`), not here. Do not guess: a "< 1000 means
+// seconds" heuristic turns a 20-minute track reported in seconds into 1.2s,
+// and a short ms value into a multi-minute one.
 function playerDurationMs(raw) {
   if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return 0;
   return raw;
@@ -141,6 +110,21 @@ function asinFromPlayerUrl(url) {
   return m ? m[1].toUpperCase() : null;
 }
 
+// The poller compares this to the ASIN we asked to play. Echoing that
+// requested ASIN makes the track-changed branch unreachable: a page that
+// moved on, or a mini player showing a different track, still looks like
+// the track we loaded. Never fill a missing read with the expected ASIN.
+function reportedPlaybackAsin(state) {
+  if (!state) return null;
+  return state.playingAsin || asinFromPlayerUrl(state.playingHref) || asinFromPlayerUrl(state.href) || null;
+}
+
+// Playback failure must not reveal the player. Sign-in is the only window.
+// A run of unplayable radio tracks used to show and focus the page.
+function shouldRevealPlayerOnFailure() {
+  return false;
+}
+
 function isAmazonPlayerChrome(testIds) {
   return /miniplayer|nowplaying|playbacktransport/i.test((testIds || []).join(' '));
 }
@@ -158,7 +142,8 @@ function acceptAmazonSearchAnchor(testIds, onSearchPage) {
 }
 
 module.exports = {
-  pickPlayableTrack,
+  reportedPlaybackAsin,
+  shouldRevealPlayerOnFailure,
   playerDurationMs,
   decidePollAdvance,
   shouldPollFaster,

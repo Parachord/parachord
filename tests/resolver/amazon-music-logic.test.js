@@ -1,5 +1,6 @@
 const {
-  pickPlayableTrack,
+  reportedPlaybackAsin,
+  shouldRevealPlayerOnFailure,
   playerDurationMs,
   decidePollAdvance,
   shouldPollFaster,
@@ -13,33 +14,30 @@ const {
   NEAR_END_MS
 } = require('../../amazon-music-logic');
 
-describe('pickPlayableTrack', () => {
-  const tracks = [
-    { asin: 'B1', title: 'Creep', artist: 'Radiohead' },
-    { asin: 'B2', title: 'Creep', artist: 'Someone Else' },
-    { asin: 'B3', title: '', artist: '' }
-  ];
-
-  test('exact ASIN wins and never falls through to a different track', () => {
-    expect(pickPlayableTrack(tracks, { asin: 'B1', title: 'Creep', artist: 'Someone Else' }).asin).toBe('B1');
+describe('reportedPlaybackAsin', () => {
+  test('uses the mini player ASIN ahead of the page URL', () => {
+    expect(reportedPlaybackAsin({
+      playingAsin: 'B0NEWTRACK',
+      href: 'https://music.amazon.com/tracks/B0OLDTRACK?do=play'
+    })).toBe('B0NEWTRACK');
   });
 
-  test('missing requested ASIN does not fuzzy-match a different ASIN', () => {
-    expect(pickPlayableTrack(tracks, { asin: 'B9', title: 'Creep', artist: 'Radiohead' })).toBeNull();
+  test('reads a track ASIN from the player URL when the mini player has none', () => {
+    expect(reportedPlaybackAsin({
+      href: 'https://music.amazon.com/tracks/B0URLTRACK?do=play'
+    })).toBe('B0URLTRACK');
   });
 
-  test('empty title or artist does not match everything', () => {
-    expect(pickPlayableTrack(tracks, { title: '', artist: 'Radiohead' })).toBeNull();
-    expect(pickPlayableTrack(tracks, { title: 'Creep', artist: '' })).toBeNull();
+  test('does not echo the ASIN we asked to play when the page has none', () => {
+    expect(reportedPlaybackAsin({ href: 'https://music.amazon.com/', expectedAsin: 'B0ASKED' })).toBeNull();
+    expect(reportedPlaybackAsin(null)).toBeNull();
   });
+});
 
-  test('fuzzy match requires both axes when no ASIN was requested', () => {
-    expect(pickPlayableTrack(tracks, { title: 'Creep', artist: 'Radiohead' }).asin).toBe('B1');
-  });
-
-  test('Cyrillic titles are not stripped to empty', () => {
-    const tracks = [{ asin: 'B9', title: 'На рахунок три', artist: 'Tember Blanche' }];
-    expect(pickPlayableTrack(tracks, { title: 'На рахунок три', artist: 'Tember Blanche' }).asin).toBe('B9');
+describe('shouldRevealPlayerOnFailure', () => {
+  test('a playback miss never reveals the player, including during radio', () => {
+    expect(shouldRevealPlayerOnFailure({ advancing: true })).toBe(false);
+    expect(shouldRevealPlayerOnFailure({ advancing: false, licenseDenied: false })).toBe(false);
   });
 });
 
