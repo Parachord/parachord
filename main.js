@@ -1759,14 +1759,12 @@ app.whenReady().then(async () => {
     path,
     log: (...args) => console.log(...args),
     warn: (...args) => console.error(...args),
-    isPathAllowed: (resolvedPath) => {
-      // Before the library service is up, keep the previous behavior (serve
-      // the path). Once it is, the file must sit in a watched folder.
-      if (!localFilesService?.initialized) return true;
-      const watchFolders = localFilesService.getWatchFolders();
-      return watchFolders.some(folder =>
-        resolvedPath.startsWith(folder.path + path.sep) || resolvedPath === folder.path
-      );
+    // null until the library service is up (serve the path, same as before).
+    // After that, restoreWatchedPath allowlists against watch folders and
+    // puts back the original case Chromium stripped from the URL host.
+    watchFolders: () => {
+      if (!localFilesService?.initialized) return null;
+      return localFilesService.getWatchFolders();
     }
   }));
 

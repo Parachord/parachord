@@ -80,39 +80,50 @@
     });
   }
 
-  /**
-   * Filesystem path → local-audio URL. Percent-encode each segment so
-   * spaces, '#', '?', and '%' survive the media element's URL parser.
-   * Mirrors the shape Chromium requests once the scheme is standard
-   * (`local-audio:///Volumes/...` collapses to host + path; the parser
-   * below accepts both).
-   */
-  function localAudioUrlFromPath(filePath) {
-    if (!filePath || typeof filePath !== 'string') return '';
-    const isUnc = filePath.startsWith('\\\\') || filePath.startsWith('//');
-    let normalized = filePath.replace(/\\/g, '/');
-    if (isUnc) {
-      normalized = normalized.replace(/^\/+/, '');
-      return 'local-audio://' + normalized.split('/').map(encodeURIComponent).join('/');
-    }
-    if (/^[A-Za-z]:\//.test(normalized)) normalized = '/' + normalized;
-    if (!normalized.startsWith('/')) normalized = '/' + normalized;
-    const encoded = normalized.split('/').map((seg, i) => {
+  // Fixed host. A standard scheme puts the first path segment in the host,
+  // and Chromium lowercases hosts. `local-audio:///Volumes/...` arrives as
+  // host `volumes`, the allowlist compares `/volumes/...` to the watch folder
+  // `/Volumes/...`, and every local file 403s. The media element reports that
+  // as MEDIA_ERR_SRC_NOT_SUPPORTED ("this MP3 appears corrupted").
+  const LOCAL_AUDIO_HOST = 'local';
+
+  function encodePathSegments(absPathWithLeadingSlash) {
+    return absPathWithLeadingSlash.split('/').map((seg, i) => {
       if (i === 0) return '';
       // Keep "C:" intact. encodeURIComponent would turn it into "C%3A".
       if (/^[A-Za-z]:$/.test(seg)) return seg;
       return encodeURIComponent(seg);
     }).join('/');
-    return 'local-audio://' + encoded;
+  }
+
+  /**
+   * Filesystem path → local-audio URL. Percent-encode each segment so
+   * spaces, '#', '?', and '%' survive the media element's URL parser.
+   * The host is the fixed token `local` so the real path stays in the
+   * pathname, which Chromium does not lowercase.
+   */
+  function localAudioUrlFromPath(filePath) {
+    if (!filePath || typeof filePath !== 'string') return '';
+    const isUnc = filePath.startsWith('\\\\') || filePath.startsWith('//');
+    if (isUnc) {
+      const normalized = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+      return 'local-audio://' + LOCAL_AUDIO_HOST + '/unc/' +
+        normalized.split('/').map(encodeURIComponent).join('/');
+    }
+    let normalized = filePath.replace(/\\/g, '/');
+    if (/^[A-Za-z]:\//.test(normalized)) normalized = '/' + normalized;
+    if (!normalized.startsWith('/')) normalized = '/' + normalized;
+    return 'local-audio://' + LOCAL_AUDIO_HOST + encodePathSegments(normalized);
   }
 
   /**
    * Request URL → filesystem path.
    *
-   * With a standard scheme, Chromium rewrites `local-audio:///Volumes/NAS/a.flac`
-   * to `local-audio://Volumes/NAS/a.flac` (the first segment becomes the host).
-   * On Windows a drive URL stays `local-audio:///C:/Music/a.flac` or collapses
-   * to `local-audio://C:/Music/a.flac`. UNC paths are `local-audio://server/share/a.flac`.
+   * Preferred form is `local-audio://local/Volumes/NAS/a.flac` (fixed host,
+   * path case preserved). Also accepts the collapsed form Chromium produces
+   * from an older `local-audio:///Volumes/...` URL (`local-audio://Volumes/...`),
+   * whose first segment has already been lowercased — restoreWatchedPath
+   * puts the watch-folder case back before the file is opened.
    */
   function filePathFromLocalAudioUrl(url, platform) {
     const plat = platform || (typeof process !== 'undefined' && process.platform) || 'darwin';
@@ -129,22 +140,54 @@
       throw new Error('empty local-audio path');
     }
 
+    if (decoded === LOCAL_AUDIO_HOST || decoded.startsWith(LOCAL_AUDIO_HOST + '/')) {
+      decoded = decoded.slice(LOCAL_AUDIO_HOST.length);
+      if (!decoded) throw new Error('empty local-audio path');
+    }
+
     if (plat === 'win32') {
+      if (decoded.startsWith('/unc/') || decoded.startsWith('unc/')) {
+        return ('\\\\' + decoded.replace(/^\/?unc\//, '')).replace(/\//g, '\\');
+      }
       if (/^[A-Za-z]:[\\/]/.test(decoded)) return decoded.replace(/\//g, '\\');
       if (decoded.startsWith('/')) {
         const drive = decoded.match(/^\/([A-Za-z]:[\\/].*)$/);
         if (drive) return drive[1].replace(/\//g, '\\');
         return decoded.replace(/\//g, '\\');
       }
-      // No drive letter and no leading slash: UNC (\\server\share\...) or a
-      // collapsed standard-scheme URL. Windows absolute paths are one or the
-      // other; treat host/path as UNC.
       return ('\\\\' + decoded).replace(/\//g, '\\');
     }
 
+    if (decoded.startsWith('/unc/')) return '/' + decoded.slice('/unc/'.length);
     if (/^[A-Za-z]:[\\/]/.test(decoded)) return decoded;
     if (!decoded.startsWith('/')) decoded = '/' + decoded;
     return decoded;
+  }
+
+  /**
+   * If `resolvedPath` sits in a watch folder, return the path to open.
+   * A lowercased host (`/volumes/...` vs watch folder `/Volumes/...`) is
+   * rewritten to the folder's stored case. Returns null when the path is
+   * outside every folder.
+   */
+  function restoreWatchedPath(resolvedPath, folders, sep) {
+    const separator = sep || '/';
+    const roots = (folders || [])
+      .map(folder => (typeof folder === 'string' ? folder : folder && folder.path))
+      .filter(Boolean);
+    for (const root of roots) {
+      if (resolvedPath === root || resolvedPath.startsWith(root + separator)) return resolvedPath;
+    }
+    const lower = resolvedPath.toLowerCase();
+    for (const root of roots) {
+      const rootLower = root.toLowerCase();
+      const prefixLower = rootLower + separator;
+      if (lower === rootLower) return root;
+      if (lower.startsWith(prefixLower)) {
+        return root + separator + resolvedPath.slice(prefixLower.length);
+      }
+    }
+    return null;
   }
 
   /**
@@ -223,16 +266,26 @@
         return new Response('Bad path', { status: 400 });
       }
 
-      const resolvedPath = pathImpl.resolve(filePath);
-      let allowed = false;
+      let resolvedPath = pathImpl.resolve(filePath);
       try {
-        allowed = isPathAllowed(resolvedPath) !== false;
+        if (typeof opts.watchFolders === 'function') {
+          const folders = opts.watchFolders();
+          // null = library service not ready yet; keep the previous behavior
+          // of serving the path. An array is the allowlist.
+          if (folders != null) {
+            const restored = restoreWatchedPath(resolvedPath, folders, pathImpl.sep);
+            if (!restored) {
+              warn('[LocalAudio] Access denied — file not in a watched folder:', resolvedPath);
+              return new Response('Access denied', { status: 403 });
+            }
+            resolvedPath = restored;
+          }
+        } else if (isPathAllowed(resolvedPath) === false) {
+          warn('[LocalAudio] Access denied — file not in a watched folder:', resolvedPath);
+          return new Response('Access denied', { status: 403 });
+        }
       } catch (err) {
         warn('[LocalAudio] allowlist check failed:', err && err.message ? err.message : err);
-        return new Response('Access denied', { status: 403 });
-      }
-      if (!allowed) {
-        warn('[LocalAudio] Access denied — file not in a watched folder:', resolvedPath);
         return new Response('Access denied', { status: 403 });
       }
 
@@ -429,6 +482,7 @@
     isTransientFsError,
     localAudioUrlFromPath,
     filePathFromLocalAudioUrl,
+    restoreWatchedPath,
     parseByteRange,
     createLocalAudioHandler
   };

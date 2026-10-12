@@ -14,6 +14,7 @@ const path = require('path');
 const {
   localAudioUrlFromPath,
   filePathFromLocalAudioUrl,
+  restoreWatchedPath,
   parseByteRange,
   createLocalAudioHandler,
   isTransientFsError
@@ -30,15 +31,15 @@ async function readBody(response) {
 }
 
 describe('local-audio URL round-trip', () => {
-  test('encodes spaces, hash, and percent, and parses the collapsed standard-scheme form', () => {
+  test('encodes spaces, hash, and percent under a fixed host so case survives', () => {
     const filePath = '/Volumes/NAS/My Song #1 100%.flac';
     const url = localAudioUrlFromPath(filePath);
-    expect(url).toBe('local-audio:///Volumes/NAS/My%20Song%20%231%20100%25.flac');
+    expect(url).toBe('local-audio://local/Volumes/NAS/My%20Song%20%231%20100%25.flac');
     expect(filePathFromLocalAudioUrl(url, 'darwin')).toBe(filePath);
-    // Chromium, once the scheme is standard, drops the empty host and the
-    // first segment becomes the host: local-audio://Volumes/NAS/...
-    const collapsed = 'local-audio://Volumes/NAS/My%20Song%20%231%20100%25.flac';
-    expect(filePathFromLocalAudioUrl(collapsed, 'darwin')).toBe(filePath);
+    // Older builder: Chromium lowercases the host. Parser still extracts a
+    // path; restoreWatchedPath puts the watch-folder case back.
+    const collapsed = 'local-audio://volumes/NAS/My%20Song%20%231%20100%25.flac';
+    expect(filePathFromLocalAudioUrl(collapsed, 'darwin')).toBe('/volumes/NAS/My Song #1 100%.flac');
   });
 
   test('strips a retry query without eating the filename', () => {
@@ -48,23 +49,31 @@ describe('local-audio URL round-trip', () => {
 
   test('windows drive letters and UNC paths', () => {
     expect(localAudioUrlFromPath('C:\\Music\\My Song.mp3'))
-      .toBe('local-audio:///C:/Music/My%20Song.mp3');
-    expect(filePathFromLocalAudioUrl('local-audio:///C:/Music/My%20Song.mp3', 'win32'))
+      .toBe('local-audio://local/C:/Music/My%20Song.mp3');
+    expect(filePathFromLocalAudioUrl('local-audio://local/C:/Music/My%20Song.mp3', 'win32'))
       .toBe('C:\\Music\\My Song.mp3');
     expect(filePathFromLocalAudioUrl('local-audio://C:/Music/My%20Song.mp3', 'win32'))
       .toBe('C:\\Music\\My Song.mp3');
-    // Colon may arrive percent-encoded; still a drive letter after decode.
     expect(filePathFromLocalAudioUrl('local-audio:///C%3A/Music/My%20Song.mp3', 'win32'))
       .toBe('C:\\Music\\My Song.mp3');
 
     expect(localAudioUrlFromPath('\\\\server\\share\\My Song.mp3'))
-      .toBe('local-audio://server/share/My%20Song.mp3');
-    expect(filePathFromLocalAudioUrl('local-audio://server/share/My%20Song.mp3', 'win32'))
+      .toBe('local-audio://local/unc/server/share/My%20Song.mp3');
+    expect(filePathFromLocalAudioUrl('local-audio://local/unc/server/share/My%20Song.mp3', 'win32'))
       .toBe('\\\\server\\share\\My Song.mp3');
   });
 
   test('rejects an empty path', () => {
     expect(() => filePathFromLocalAudioUrl('local-audio://', 'darwin')).toThrow(/empty/);
+  });
+
+  test('restores watch-folder case after Chromium lowercases the host', () => {
+    expect(restoreWatchedPath(
+      '/volumes/public/music/Iron Maiden/song.mp3',
+      ['/Volumes/public/music'],
+      '/'
+    )).toBe('/Volumes/public/music/Iron Maiden/song.mp3');
+    expect(restoreWatchedPath('/etc/passwd', ['/Volumes/public/music'], '/')).toBeNull();
   });
 });
 
@@ -127,9 +136,7 @@ describe('local-audio handler', () => {
     expect(full.headers.get('content-type')).toBe('audio/mpeg');
     expect(await readBody(full)).toEqual(bytes);
 
-    // Collapsed standard-scheme URL, as Chromium sends it on seek.
-    const collapsed = 'local-audio://' + localAudioUrlFromPath(filePath).replace(/^local-audio:\/\//, '').replace(/^\//, '');
-    const ranged = await handle(requestFor(collapsed + '?r=1', { Range: 'bytes=100-149' }));
+    const ranged = await handle(requestFor(localAudioUrlFromPath(filePath) + '?r=1', { Range: 'bytes=100-149' }));
     expect(ranged.status).toBe(206);
     expect(ranged.headers.get('content-range')).toBe('bytes 100-149/1000');
     expect(ranged.headers.get('content-length')).toBe('50');
