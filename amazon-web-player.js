@@ -303,6 +303,45 @@ const amazonWebPlayer = {
     };
   },
 
+  appView() {
+    const host = this.host;
+    if (!host || host.isDestroyed()) return null;
+    const kids = host.contentView.children || [];
+    return kids.find(v => v && v.webContents && v.webContents.id === host.webContents.id) || null;
+  },
+
+  // Search results do not render in a 0×0 document. If Parachord's page is a
+  // sibling, size the search view for real and put the app back on top.
+  // Otherwise keep 0×0 and force a layout viewport over CDP.
+  async layoutSearch(view) {
+    const host = this.host;
+    if (!host || host.isDestroyed() || !view) return 'none';
+    const kids = host.contentView.children || [];
+    const app = this.appView();
+    console.log(`[Amazon] layout children=${kids.length} appSibling=${!!app}`);
+    if (app && app !== view) {
+      const [w, h] = host.getContentSize();
+      view.setBounds({ x: 0, y: 0, width: Math.max(w || 0, 1100), height: Math.max(h || 0, 800) });
+      host.contentView.addChildView(app);
+      return 'under-app';
+    }
+    this.collapse(view);
+    try {
+      const wc = view.webContents;
+      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+      await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+        width: 1280,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false
+      });
+      return 'viewport';
+    } catch (e) {
+      console.warn('[Amazon] viewport override failed:', e && e.message);
+      return 'zero';
+    }
+  },
+
   ensureView(which) {
     const { WebContentsView } = electron();
     const key = which === 'search' ? 'searchView' : 'playerView';
@@ -433,23 +472,44 @@ const amazonWebPlayer = {
       throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
     return this.enqueueSearch(async () => {
-      const win = await this.ensureWindow('search', { show: false });
+      const win = await this.ensureWindow('search');
+      const mode = await this.layoutSearch(this.searchView);
       const url = `https://music.amazon.com/search/${encodeURIComponent(query.trim())}`;
+      console.log(`[Amazon] search "${query.trim()}" mode=${mode} ${url}`);
       await win.loadURL(url);
       let last = { tracks: [] };
       for (let i = 0; i < 16; i++) {
         await new Promise(r => setTimeout(r, 400));
         const href = win.isDestroyed() ? '' : win.webContents.getURL();
         if (pageBlocksPlayback(href)) {
+          console.warn(`[Amazon] search blocked: ${href}`);
           throw notReady('not-signed-in', 'Choose an Amazon Music profile');
         }
-        try { last = await this.evalOn(win, SCRAPE_SCRIPT) || last; } catch { /* page still loading */ }
-        if (last && Array.isArray(last.tracks) && last.tracks.length > 0) {
+        try { last = await this.evalOn(win, SCRAPE_SCRIPT) || last; } catch (e) {
+          if (i === 0 || i === 8) console.warn('[Amazon] scrape failed:', e && e.message);
+        }
+        const n = last && Array.isArray(last.tracks) ? last.tracks.length : 0;
+        if (i === 0 || i === 4 || i === 8 || n > 0) {
+          const sample = (last.tracks || []).slice(0, 3).map(t => `${t.artist || '?'} — ${t.title || '?'}`).join(' | ');
+          console.log(`[Amazon] search poll ${i} href=${href} tracks=${n}${sample ? ' ' + sample : ''}`);
+        }
+        if (n > 0) {
           // Title links render before the artist link. Returning early used
           // to attach title-only hits that the artist+title gate then dropped.
-          if (last.tracks.some(t => t.artist) || i >= 12) return last.tracks;
+          if (last.tracks.some(t => t.artist) || i >= 12) {
+            console.log(`[Amazon] search returning ${n} tracks`);
+            this.collapse(this.searchView);
+            return last.tracks;
+          }
         }
       }
+      try {
+        const diag = await this.evalOn(win, `({ w: innerWidth, h: innerHeight, title: document.title, trackLinks: document.querySelectorAll('a[href*="/tracks/"]').length, body: (document.body && document.body.innerText || '').slice(0, 180) })`);
+        console.log('[Amazon] search empty page', JSON.stringify(diag));
+      } catch (e) {
+        console.warn('[Amazon] search diag failed:', e && e.message);
+      }
+      this.collapse(this.searchView);
       return (last && Array.isArray(last.tracks)) ? last.tracks : [];
     });
   },
