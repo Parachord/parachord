@@ -5256,6 +5256,52 @@ const executeDjTool = async (name, args, context) => {
         const playlist = await context.createPlaylist(args.name, metadataTracks);
         return { success: true, playlist: { id: playlist.id, name: playlist.title || args.name, trackCount: metadataTracks.length } };
       }
+      // seek / get_position / block_recommendation (parachord#857) were defined in
+      // tools/dj-tools.js (which the MCP server advertises) but never added to
+      // this switch, which is what both the MCP path and the AI chat actually
+      // dispatch through, so callers got "Unknown tool". Bodies mirror the
+      // dj-tools.js execute() wrappers; tests/chat/dj-tools-executor-parity.test.js
+      // fails if the registry and this switch drift again.
+      case 'seek': {
+        if (typeof context.handleSeek !== 'function') {
+          return { success: false, supported: false, error: 'seek not wired in this build' };
+        }
+        const result = await context.handleSeek(Number(args.offset_ms) || 0);
+        return result ?? { success: true };
+      }
+      case 'get_position': {
+        if (typeof context.getCurrentPosition !== 'function') {
+          return { position_ms: 0, duration_ms: 0, supported: false };
+        }
+        const pos = context.getCurrentPosition() || {};
+        return {
+          position_ms: Number(pos.position_ms) || 0,
+          duration_ms: Number(pos.duration_ms) || 0,
+          supported: pos.supported !== false
+        };
+      }
+      case 'block_recommendation': {
+        const { type, name: artistName, title, artist } = args || {};
+        if (typeof context.blockRecommendation !== 'function') {
+          return { success: false, error: 'blocklist not available in this context' };
+        }
+        if (type === 'artist') {
+          if (!artistName) return { success: false, error: 'Artist name is required' };
+          context.blockRecommendation('artist', { name: artistName });
+          return { success: true, blocked: { type: 'artist', name: artistName } };
+        }
+        if (type === 'album') {
+          if (!title || !artist) return { success: false, error: 'Album title and artist are required' };
+          context.blockRecommendation('album', { title, artist });
+          return { success: true, blocked: { type: 'album', title, artist } };
+        }
+        if (type === 'track') {
+          if (!title || !artist) return { success: false, error: 'Track title and artist are required' };
+          context.blockRecommendation('track', { title, artist });
+          return { success: true, blocked: { type: 'track', title, artist } };
+        }
+        return { success: false, error: 'Invalid type. Use artist, album, or track.' };
+      }
       case 'shuffle': {
         context.setShuffle(args.enabled);
         return { success: true, shuffle: args.enabled };
@@ -12391,6 +12437,24 @@ const Parachord = () => {
   }, [currentTrack, isPlaying, volume]);
 
   // MCP server event handlers (Claude Desktop integration)
+  // Shared by the AI-chat tool context and the MCP tool context (the latter used
+  // to stub this as a no-op, so block_recommendation over MCP silently did
+  // nothing). type: 'artist' | 'album' | 'track'; item: { name } for artist,
+  // { title, artist } for album/track.
+  const addToRecommendationBlocklist = (type, item) => {
+    setRecommendationBlocklist(prev => {
+      const key = type === 'artist' ? 'artists' : type === 'album' ? 'albums' : 'tracks';
+      // Check if already blocked (avoid duplicates)
+      const exists = prev[key].some(existing => {
+        if (type === 'artist') return existing.name?.toLowerCase() === item.name?.toLowerCase();
+        return existing.title?.toLowerCase() === item.title?.toLowerCase() &&
+               existing.artist?.toLowerCase() === item.artist?.toLowerCase();
+      });
+      if (exists) return prev;
+      return { ...prev, [key]: [...prev[key], item] };
+    });
+  };
+
   useEffect(() => {
     if (!window.electron?.mcp) return;
 
@@ -12424,7 +12488,7 @@ const Parachord = () => {
           getCurrentTrack: () => currentTrackRef.current,
           getQueue: () => currentQueueRef.current || [],
           getIsPlaying: () => isPlayingRef.current,
-          blockRecommendation: () => {},
+          blockRecommendation: addToRecommendationBlocklist,
           // Seek the active playback engine to a position (ms within the track).
           // Mirrors the playbar slider's onChange — only the same engines that
           // support seek there support it here. Spotify (Web SDK + Connect) is
@@ -20774,22 +20838,7 @@ ${trackListXml}
       getCurrentTrack: () => currentTrackRef.current,
       getQueue: () => currentQueueRef.current || [],
       getIsPlaying: () => isPlayingRef.current,
-      blockRecommendation: (type, item) => {
-        // Add item to the recommendation blocklist
-        // type: 'artist' | 'album' | 'track'
-        // item: { name } for artist, { title, artist } for album/track
-        setRecommendationBlocklist(prev => {
-          const key = type === 'artist' ? 'artists' : type === 'album' ? 'albums' : 'tracks';
-          // Check if already blocked (avoid duplicates)
-          const exists = prev[key].some(existing => {
-            if (type === 'artist') return existing.name?.toLowerCase() === item.name?.toLowerCase();
-            return existing.title?.toLowerCase() === item.title?.toLowerCase() &&
-                   existing.artist?.toLowerCase() === item.artist?.toLowerCase();
-          });
-          if (exists) return prev;
-          return { ...prev, [key]: [...prev[key], item] };
-        });
-      },
+      blockRecommendation: addToRecommendationBlocklist,
       getBlocklist: () => recommendationBlocklistRef.current,
       isDataSharingEnabled: () => aiIncludeHistoryRef.current,
       startCollectionRadio: () => {
