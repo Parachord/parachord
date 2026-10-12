@@ -877,7 +877,7 @@ The three OAuth-based scrobblers (Last.fm, ListenBrainz, Libre.fm) live **inline
 
 3. **Marketplace hot-push is wrong for load-bearing code.** A bad Achordion `.axe` push = "submit pipeline idle this session." A bad scrobbler push = "user's plays don't scrobble until next desktop release." For users who scrobble, that's the central feature — risk profile too asymmetric for the marketplace path.
 
-4. **Earlier modular attempt didn't pan out.** There's a `scrobblers/` directory + `scrobble-manager.js` (a separate older copy) still in the tree. Commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd) is the explicit consolidation: *"The app uses ScrobbleManager from scrobbler-loader.js (not the separate scrobble-manager.js file)"* — keeping two implementations in sync was a recurring source of bugs. The `scrobblers/` files are functionally dead; treat `scrobbler-loader.js` as the source of truth.
+4. **Earlier modular attempt didn't pan out.** A `scrobblers/` directory + `scrobble-manager.js` (a separate older copy) sat dead in the tree until 2026-10 (parachord#757). Commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd) was the explicit consolidation: *"The app uses ScrobbleManager from scrobbler-loader.js (not the separate scrobble-manager.js file)"* — keeping two implementations in sync was a recurring source of bugs. `scrobbler-loader.js` is the only implementation now.
 
 ### What CAN come from an `.axe`
 
@@ -900,7 +900,7 @@ The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, s
 | Recommendations / library metadata for those services | `plugins/lastfm.axe`, `listenbrainz.axe`, `librefm.axe` (meta-service) |
 | Playback-telemetry plugin (Achordion) | [plugins/achordion.axe](plugins/achordion.axe) |
 | Loved-tracks push toggles + backfill | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` |
-| Stale ignore | `scrobblers/` directory and `scrobble-manager.js` — superseded by scrobbler-loader.js (see commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
+| Removed | `scrobblers/` directory and `scrobble-manager.js` were a dead older copy, deleted 2026-10 (parachord#757; consolidation was commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
 
 ## Achordion Pre-resolution Plugin
 
