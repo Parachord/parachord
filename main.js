@@ -4226,6 +4226,7 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false,
       autoplayPolicy: 'no-user-gesture-required' // Enable autoplay!
     },
     parent: mainWindow,
@@ -4351,7 +4352,9 @@ ipcMain.handle('open-playback-window', async (event, url, options = {}) => {
   });
 
   playbackWindow.once('ready-to-show', () => {
-    playbackWindow.show();
+    // showInactive: the mini-player can appear without yanking focus off
+    // whatever the user is doing when the queue auto-advances.
+    if (playbackWindow && !playbackWindow.isDestroyed()) playbackWindow.showInactive();
   });
 
   playbackWindow.on('closed', () => {

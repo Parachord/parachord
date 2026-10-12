@@ -250,22 +250,23 @@ const amazonWebPlayer = {
     return win;
   },
 
-  // Chromium refuses Amazon's ?do=play autoplay in a hidden window, and
-  // showInactive() is not enough either. show() at opacity 0 starts playback.
-  // Focus is handed back to the main window so the invisible player does not
-  // steal the user's place.
+  // Hidden windows have visibilityState 'hidden'; Chromium then ignores
+  // Amazon's ?do=play autoplay even with autoplayPolicy. The window must be
+  // mapped (opacity 0 is fine). showInactive() is enough now that this build
+  // ships a Widevine CDM — the earlier show() + main.focus() dance was a
+  // leftover that yanked Parachord to the front on every track, including
+  // queue auto-advance. Do not focus main here: the user may be in another app.
   presentPlayer(win, visible) {
     if (!win || win.isDestroyed()) return;
     try {
       win.setOpacity(visible ? 1 : 0);
-      win.show();
+      win.setSkipTaskbar(!visible);
       if (visible) {
+        win.show();
         win.focus();
         return;
       }
-      const { BrowserWindow } = electron();
-      const main = BrowserWindow.getAllWindows().find(w => w !== win && w !== this.searchWindow && !w.isDestroyed());
-      if (main) main.focus();
+      if (!win.isVisible()) win.showInactive();
     } catch { /* destroyed */ }
   },
 
