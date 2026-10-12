@@ -18682,10 +18682,13 @@ ${trackListXml}
           await resolveTrack(trackData, artistName, { forceRefresh: true });
 
           if (autoSkipIfAdvancing('playback failed; re-resolved in background')) return;
+          // Name the resolver: a bare "Playback failed" gave no clue which
+          // source refused the track (a resolver author read it as a Parachord
+          // bug while his own play() was returning false).
           showConfirmDialog({
             type: 'info',
             title: 'Track Re-resolved',
-            message: 'Playback failed. Track has been re-resolved. Please try playing again.'
+            message: `Playback via ${resolver.name} failed, so the track has been re-resolved with fresh sources. Try playing it again.\n\nIf it keeps failing, the developer console (View > Toggle Developer Tools) shows what ${resolver.name} reported.`
           });
         }
       }
@@ -18693,12 +18696,20 @@ ${trackListXml}
       console.error(`❌ Error playing with ${resolver.name}:`, error);
       setTrackLoading(false); // Clear loading state on error
 
-      // On error, also try to re-resolve
+      // On error, also try to re-resolve. This path used to be silent: the
+      // spinner cleared and nothing happened. Say what failed, same as the
+      // play()-returned-false path above, and respect auto-advance.
       if (sourceToPlay.artist && sourceToPlay.title) {
         console.log('🔄 Playback error - attempting to re-resolve...');
         const artistName = sourceToPlay.artist;
         const trackData = { position: sourceToPlay.position || 1, title: sourceToPlay.title, length: sourceToPlay.duration };
         await resolveTrack(trackData, artistName, { forceRefresh: true });
+        if (autoSkipIfAdvancing('playback error; re-resolved in background')) return;
+        showConfirmDialog({
+          type: 'error',
+          title: 'Track Re-resolved',
+          message: `Playback via ${resolver.name} hit an error (${error?.message || error}), so the track has been re-resolved with fresh sources. Try playing it again.`
+        });
       }
     }
   };
