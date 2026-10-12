@@ -68,6 +68,12 @@ class LocalFilesDatabase {
         track_count INTEGER DEFAULT 0
       );
 
+      -- Paths the user removed from Collection. Scans must not re-index them.
+      CREATE TABLE IF NOT EXISTS suppressed_paths (
+        file_path TEXT PRIMARY KEY,
+        suppressed_at INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist_normalized);
       CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title_normalized);
       CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_normalized);
@@ -163,6 +169,27 @@ class LocalFilesDatabase {
   removeTrack(filePath) {
     const stmt = this.db.prepare(`DELETE FROM tracks WHERE file_path = ?`);
     return stmt.run(filePath);
+  }
+
+  // Drop the index row and remember the path so the next scan/watch event
+  // does not put the track back. Collection "Remove" uses this for local
+  // files, which are shown in the collection list but are not collection.json
+  // entries.
+  suppressTrack(filePath) {
+    const remove = this.db.prepare(`DELETE FROM tracks WHERE file_path = ?`);
+    const remember = this.db.prepare(
+      `INSERT OR REPLACE INTO suppressed_paths (file_path, suppressed_at) VALUES (?, ?)`
+    );
+    const tx = this.db.transaction((p) => {
+      remove.run(p);
+      remember.run(p, Date.now());
+    });
+    tx(filePath);
+  }
+
+  isSuppressed(filePath) {
+    if (!filePath) return false;
+    return !!this.db.prepare(`SELECT 1 FROM suppressed_paths WHERE file_path = ?`).get(filePath);
   }
 
   getTrackByPath(filePath) {

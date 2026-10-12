@@ -91,6 +91,19 @@ class LocalFilesService {
     return this.db.getWatchFolders();
   }
 
+  // Remove a local file from the library index and keep scans from
+  // resurrecting it. Called when the user removes a library track from
+  // the Collection list (those rows are not collection.json entries).
+  suppressTrack(filePath) {
+    if (!filePath) return { success: false, error: 'missing path' };
+    console.log(`[LocalFiles] Suppressing track: ${filePath}`);
+    this.db.suppressTrack(filePath);
+    if (this.watcher?.onLibraryChanged) {
+      this.watcher.onLibraryChanged([{ action: 'removed', filePath }]);
+    }
+    return { success: true, filePath };
+  }
+
   // Scanning
   async scanFolder(folderPath, onProgress) {
     const result = await this.scanner.scanFolder(folderPath, onProgress);
