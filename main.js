@@ -3089,6 +3089,15 @@ const ALLOWED_STORE_KEYS = new Set([
   'cached_announcements', 'dismissed_announcement_ids',
   'playlists_sort',
   'hidden_friend_keys',
+  // Added 2026-10-12 after finding main had been silently dropping these
+  // (store-set returns false and logs "Blocked store-set"; the renderer never
+  // sees the failure). cache_critics_picks / hosted_playlists /
+  // sync_engine_mode / discovery_seen_* had never persisted.
+  // tests/store/allowed-store-keys.test.js now cross-checks this list against
+  // every key the renderer uses; add new keys here first.
+  'cache_critics_picks', 'cache_release_details',
+  'discovery_seen_concerts', 'discovery_seen_newReleases',
+  'hosted_playlists', 'sync_engine_mode', 'sync_playlist_channels',
 ]);
 
 // Sensitive keys that should only be accessed by dedicated IPC handlers

@@ -10113,6 +10113,7 @@ const Parachord = () => {
   // Cache for MBID Mapper lookups (artist|title -> { result: { recording_mbid, artist_credit_mbids, ... }, timestamp })
   // Uses ListenBrainz MBID Mapper v2.0 for fast metadata-to-MBID resolution (~4ms)
   const mbidMapperCache = useRef({});
+  const releaseDetailsCache = useRef({}); // MB release details (tracklist + artist credits) by release ID; persisted as cache_release_details
 
   // Cache for playlist cover art (playlistId -> { covers: [url1, url2, url3, url4], timestamp })
   const playlistCoverCache = useRef({});
@@ -10172,7 +10173,52 @@ const Parachord = () => {
     charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
     newReleases: 6 * 60 * 60 * 1000,        // 6 hours (new releases don't change that often)
     concerts: 24 * 60 * 60 * 1000,             // 24 hours (concert listings don't change that often)
-    mbidMapper: 90 * 24 * 60 * 60 * 1000       // 90 days (MBIDs are permanent identifiers)
+    mbidMapper: 90 * 24 * 60 * 60 * 1000,      // 90 days (MBIDs are permanent identifiers)
+    releaseDetails: 30 * 24 * 60 * 60 * 1000 // 30 days (a release's tracklist never changes for a given ID)
+  };
+
+  // Release details (tracklist + artist credits) by MusicBrainz release ID.
+  // Album pages used to refetch /ws/2/release/{id}?inc=recordings on every
+  // open, even for an album opened a minute earlier, and MB allows one call
+  // per second. A release's tracklist never changes for a given ID, so cache
+  // it like album art. Always requests recordings+artist-credits so one
+  // cached shape serves every caller (sites that only need recordings get a
+  // superset). Mimics the subset of Response the callers use (ok / status /
+  // json()); non-OK responses are passed through untouched so the
+  // 404 → "maybe it's a release-group ID" fallbacks keep working.
+  const RELEASE_DETAILS_CACHE_MAX = 400; // ~10-30KB each; pruned on save
+  // Entries are either { data, timestamp } for a release ID, or
+  // { alias: <releaseId>, timestamp } for a release-group ID that a caller
+  // resolved to a release (see rememberReleaseGroupAlias). Following the alias
+  // means an album opened from search (which carries a release-group ID) costs
+  // zero MusicBrainz calls on a revisit instead of a 404 probe plus the
+  // release-group lookup. The result carries the real `releaseId`; callers
+  // that keep using the ID afterwards should adopt it.
+  const fetchReleaseDetails = async (requestedId, fetchImpl = fetch) => {
+    const now = Date.now();
+    let releaseId = requestedId;
+    const aliasEntry = releaseDetailsCache.current[requestedId];
+    if (aliasEntry && aliasEntry.alias && (now - aliasEntry.timestamp) < CACHE_TTL.releaseDetails) {
+      releaseId = aliasEntry.alias;
+    }
+    const cached = releaseDetailsCache.current[releaseId];
+    if (cached && cached.data && (now - cached.timestamp) < CACHE_TTL.releaseDetails) {
+      console.log(`📦 Release details from cache: ${releaseId}${releaseId !== requestedId ? ` (via release-group ${requestedId})` : ''}`);
+      return { ok: true, status: 200, fromCache: true, releaseId, json: async () => cached.data };
+    }
+    const response = await fetchImpl(
+      `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+    );
+    if (!response.ok) return response;
+    const data = await response.json();
+    releaseDetailsCache.current[releaseId] = { data, timestamp: Date.now() };
+    return { ok: true, status: response.status, fromCache: false, releaseId, json: async () => data };
+  };
+  const rememberReleaseGroupAlias = (releaseGroupId, releaseId) => {
+    if (releaseGroupId && releaseId && releaseGroupId !== releaseId) {
+      releaseDetailsCache.current[releaseGroupId] = { alias: releaseId, timestamp: Date.now() };
+    }
   };
 
   // MBID Mapper v2.0: fast fuzzy lookup of MusicBrainz IDs from artist + recording name
@@ -11248,10 +11294,7 @@ const Parachord = () => {
       const releaseId = releaseData.releases[0].id;
 
       // Fetch release details with tracks
-      const detailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
+      const detailsResponse = await fetchReleaseDetails(releaseId);
 
       if (!detailsResponse.ok) {
         throw new Error('Failed to fetch release details');
@@ -16411,10 +16454,7 @@ ${trackListXml}
           if (cancelled) break;
 
           // Get release details with track count
-          const detailsResponse = await fetch(
-            `https://musicbrainz.org/ws/2/release/${release.id}?inc=recordings&fmt=json`,
-            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-          );
+          const detailsResponse = await fetchReleaseDetails(release.id);
 
           if (!detailsResponse.ok) continue;
 
@@ -23482,7 +23522,7 @@ ${trackListXml}
       // network-fallback paths.
       const BIG_CACHE_KEYS = [
         'cache_album_art', 'cache_artist_data', 'cache_track_sources',
-        'cache_artist_images', 'cache_mbid_mapper', 'cache_album_release_ids',
+        'cache_artist_images', 'cache_mbid_mapper', 'cache_album_release_ids', 'cache_release_details',
         'cache_playlist_covers', 'cache_charts', 'cache_new_releases',
         'cache_concerts',
       ];
@@ -23567,6 +23607,7 @@ ${trackListXml}
         const trackSourcesData = dCaches['cache_track_sources'];
         const artistImageData = dCaches['cache_artist_images'];
         const albumReleaseIdData = dCaches['cache_album_release_ids'];
+        const releaseDetailsData = dCaches['cache_release_details'];
         const playlistCoverData = dCaches['cache_playlist_covers'];
         const chartsData = dCaches['cache_charts'];
         const newReleasesData = dCaches['cache_new_releases'];
@@ -23630,6 +23671,13 @@ ${trackListXml}
       if (albumReleaseIdData) {
         albumToReleaseIdCache.current = albumReleaseIdData;
         console.log(`📦 Loaded ${Object.keys(albumReleaseIdData).length} album-to-release-ID mappings from cache`);
+      }
+
+      // Load release details cache (tracklists by release ID); drop expired entries
+      if (releaseDetailsData) {
+        const fresh = Object.entries(releaseDetailsData).filter(([, e]) => e && (e.data || e.alias) && (now - e.timestamp) < CACHE_TTL.releaseDetails);
+        releaseDetailsCache.current = Object.fromEntries(fresh);
+        console.log(`📦 Loaded ${fresh.length} release tracklists from cache`);
       }
 
       // Load playlist cover cache
@@ -24335,6 +24383,17 @@ ${trackListXml}
 
       // Save album-to-release-ID mapping cache
       await window.electron.store.set('cache_album_release_ids', albumToReleaseIdCache.current);
+
+      // Save release details cache, pruned to the most recent entries (~10-30KB each)
+      {
+        const entries = Object.entries(releaseDetailsCache.current);
+        if (entries.length > RELEASE_DETAILS_CACHE_MAX) {
+          entries.sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
+          releaseDetailsCache.current = Object.fromEntries(entries.slice(0, RELEASE_DETAILS_CACHE_MAX));
+        }
+      }
+      await window.electron.store.set('cache_release_details', releaseDetailsCache.current);
+      console.log(`💾 Caches saved (${Object.keys(releaseDetailsCache.current).length} release details)`);
 
       // Save playlist cover cache
       await window.electron.store.set('cache_playlist_covers', playlistCoverCache.current);
@@ -25454,10 +25513,7 @@ ${trackListXml}
 
       // Try fetching as a direct release ID first (for artist discography)
       let releaseId = release.id;
-      let releaseDetailsResponse = await fetchWithRetry(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
+      let releaseDetailsResponse = await fetchReleaseDetails(releaseId, fetchWithRetry);
 
       // If that fails (404), it might be a release-group ID (from search)
       // Try converting release-group to release ID
@@ -25482,17 +25538,17 @@ ${trackListXml}
         // Use the first official release ID
         releaseId = releaseGroupData.releases[0].id;
         console.log('Converted release-group to release ID:', releaseId);
+        rememberReleaseGroupAlias(release.id, releaseId);
 
         // Fetch again with the converted ID
-        releaseDetailsResponse = await fetchWithRetry(
-          `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-        );
+        releaseDetailsResponse = await fetchReleaseDetails(releaseId, fetchWithRetry);
       }
 
       if (!releaseDetailsResponse.ok) {
         throw new Error('Release not found');
       }
+      // A cached alias answers with the real release ID; keep using that one.
+      releaseId = releaseDetailsResponse.releaseId || releaseId;
 
       const releaseData = await releaseDetailsResponse.json();
       
@@ -25682,10 +25738,7 @@ ${trackListXml}
 
       // Try fetching as a direct release ID first
       let releaseId = release.id;
-      let releaseDetailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
+      let releaseDetailsResponse = await fetchReleaseDetails(releaseId);
 
       // If that fails (404), it might be a release-group ID
       if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
@@ -25700,13 +25753,12 @@ ${trackListXml}
         if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return;
 
         releaseId = releaseGroupData.releases[0].id;
-        releaseDetailsResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-        );
+        rememberReleaseGroupAlias(release.id, releaseId);
+        releaseDetailsResponse = await fetchReleaseDetails(releaseId);
       }
 
       if (!releaseDetailsResponse.ok) return;
+      releaseId = releaseDetailsResponse.releaseId || releaseId;
 
       const releaseData = await releaseDetailsResponse.json();
 
@@ -25779,10 +25831,7 @@ ${trackListXml}
       const releaseId = releaseGroupData.releases[0].id;
 
       // Fetch the release details with tracks
-      const releaseDetailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -25860,10 +25909,7 @@ ${trackListXml}
       const releaseId = releaseGroupData.releases[0].id;
 
       // Fetch the release details with tracks
-      const releaseDetailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
 
       if (!releaseDetailsResponse.ok) return null;
 
@@ -30070,10 +30116,7 @@ ${tracks}
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
-      const releaseDetailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -30131,10 +30174,7 @@ ${tracks}
       }
 
       const releaseId = mbData.releases[0].id;
-      const tracksResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      const tracksResponse = await fetchReleaseDetails(releaseId);
 
       if (!tracksResponse.ok) throw new Error('Failed to fetch tracks');
 
@@ -32181,10 +32221,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (!release) return [];
 
       // Fetch full release with recordings
-      const detailResp = await fetch(
-        `https://musicbrainz.org/ws/2/release/${release.id}?inc=recordings&fmt=json`,
-        { headers: mbHeaders }
-      );
+      const detailResp = await fetchReleaseDetails(release.id);
       if (!detailResp.ok) return [];
       const detailData = await detailResp.json();
 
@@ -34321,10 +34358,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         if (releases.length === 0) return;
 
         const releaseId = releases[0].id;
-        const releaseDetailsResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-        );
+        const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
 
         if (!releaseDetailsResponse.ok) return;
 
@@ -34384,10 +34418,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const releaseId = release.id;
 
       // Fetch the release details with tracks
-      const releaseDetailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
 
       if (!releaseDetailsResponse.ok) {
         console.log(`Failed to fetch release details for: ${releaseId}`);
@@ -34625,10 +34656,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
-      const releaseDetailsResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -55311,6 +55339,7 @@ useEffect(() => {
                       albumArtCache.current = {};
                       artistDataCache.current = {};
                       albumToReleaseIdCache.current = {};
+                      releaseDetailsCache.current = {};
 
                       // Clear persisted caches
                       if (window.electron?.store) {
@@ -55318,6 +55347,7 @@ useEffect(() => {
                         await window.electron.store.set('cache_album_art', {});
                         await window.electron.store.set('cache_artist_data', {});
                         await window.electron.store.set('cache_album_release_ids', {});
+                        await window.electron.store.set('cache_release_details', {});
                       }
 
                       // Show confirmation (using a simple alert for now)

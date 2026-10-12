@@ -785,12 +785,17 @@ Big libraries (50k–150k tracks) used to freeze the app for tens of seconds dur
 ### Key Persisted Values
 - `saved_volume`, `preferred_spotify_device_id`, `active_resolvers`, `resolver_order`
 - `saved_queue`, `saved_playback_context`, `auto_launch_spotify`, `skip_external_prompt`
-- Caches with TTLs: album art (30 days), artist data (version-checked), charts, concerts
+- Caches with TTLs: album art (90 days), artist data (30 days, version-checked), release details / tracklists by MB release ID (`cache_release_details`, 30 days, pruned to the 400 most recent on save, entries are 10-30 KB; release-group IDs resolved on the album page are stored as `{ alias: releaseId }` so a revisit from search makes zero MB calls; every `/ws/2/release/{id}?inc=recordings` fetch goes through `fetchReleaseDetails(releaseId, fetchImpl?)` in app.js, which mimics the `ok`/`status`/`json()` subset of Response so the 404 → release-group fallbacks still work), MBID mapper (90 days), charts, new releases, concerts
 
 ### Save Triggers
 - On unmount (cleanup effect)
 - Periodically (every 5 minutes)
 - Immediately on preference change (volume, preferred device, etc.)
+
+**In practice only the 5-minute timer persists the big caches between launches.** Quit goes through main's `before-quit` → `app.exit(0)`, which never unmounts the renderer, so the unmount save doesn't run. A cache populated in a session shorter than five minutes is lost. (Known gap, not fixed; flushing several multi-MB `store.set` calls from `beforeunload` isn't reliable.)
+
+### Allowlist trap: every persisted key must be in `ALLOWED_STORE_KEYS` (main.js)
+The `store-get` / `store-set` / `store-delete` / `store-get-batch` IPC handlers refuse keys that aren't in `ALLOWED_STORE_KEYS`. **The refusal is silent from the renderer's side**: `store.set` resolves `false` (nobody checks it) and main logs `⚠️ Blocked store-set for non-whitelisted key: <key>`. Until 2026-10-12 `cache_critics_picks`, `hosted_playlists`, `sync_engine_mode`, `sync_playlist_channels`, `discovery_seen_concerts` and `discovery_seen_newReleases` were all missing, so Critical Darlings never persisted, the sync-engine mode toggle never stuck across restarts, and the renderer always read `{}` for channel overrides. `tests/store/allowed-store-keys.test.js` parses the allowlist and every literal key the renderer passes to `store.*` (plus the `discovery_seen_${feature}` and `scrobbler-config-${id}` families) and fails on any key that isn't allowlisted. When adding a persisted key: add it to `ALLOWED_STORE_KEYS` first, then use it. If a value "mysteriously" doesn't persist, grep the main-process log for `Blocked store-`.
 
 ## Dialog Patterns
 
@@ -888,7 +893,7 @@ The three OAuth-based scrobblers (Last.fm, ListenBrainz, Libre.fm) live **inline
 
 3. **Marketplace hot-push is wrong for load-bearing code.** A bad Achordion `.axe` push = "submit pipeline idle this session." A bad scrobbler push = "user's plays don't scrobble until next desktop release." For users who scrobble, that's the central feature — risk profile too asymmetric for the marketplace path.
 
-4. **Earlier modular attempt didn't pan out.** There's a `scrobblers/` directory + `scrobble-manager.js` (a separate older copy) still in the tree. Commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd) is the explicit consolidation: *"The app uses ScrobbleManager from scrobbler-loader.js (not the separate scrobble-manager.js file)"* — keeping two implementations in sync was a recurring source of bugs. The `scrobblers/` files are functionally dead; treat `scrobbler-loader.js` as the source of truth.
+4. **Earlier modular attempt didn't pan out.** A `scrobblers/` directory + `scrobble-manager.js` (a separate older copy) sat dead in the tree until 2026-10 (parachord#757). Commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd) was the explicit consolidation: *"The app uses ScrobbleManager from scrobbler-loader.js (not the separate scrobble-manager.js file)"* — keeping two implementations in sync was a recurring source of bugs. `scrobbler-loader.js` is the only implementation now.
 
 ### What CAN come from an `.axe`
 
@@ -911,7 +916,7 @@ The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, s
 | Recommendations / library metadata for those services | `plugins/lastfm.axe`, `listenbrainz.axe`, `librefm.axe` (meta-service) |
 | Playback-telemetry plugin (Achordion) | [plugins/achordion.axe](plugins/achordion.axe) |
 | Loved-tracks push toggles + backfill | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` |
-| Stale ignore | `scrobblers/` directory and `scrobble-manager.js` — superseded by scrobbler-loader.js (see commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
+| Removed | `scrobblers/` directory and `scrobble-manager.js` were a dead older copy, deleted 2026-10 (parachord#757; consolidation was commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
 
 ## Achordion Pre-resolution Plugin
 
