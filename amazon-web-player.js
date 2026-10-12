@@ -312,8 +312,9 @@ const amazonWebPlayer = {
 
   // Search results do not render in a 0×0 document. If Parachord's page is a
   // sibling, size the search view for real and put the app back on top.
-  // Otherwise keep 0×0 and force a layout viewport over CDP.
-  async layoutSearch(view) {
+  // Do not attach webContents.debugger here — Emulation.setDeviceMetricsOverride
+  // on this view segfaults the process (seen on the first search).
+  layoutSearch(view) {
     const host = this.host;
     if (!host || host.isDestroyed() || !view) return 'none';
     const kids = host.contentView.children || [];
@@ -326,20 +327,7 @@ const amazonWebPlayer = {
       return 'under-app';
     }
     this.collapse(view);
-    try {
-      const wc = view.webContents;
-      if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
-      await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
-        width: 1280,
-        height: 900,
-        deviceScaleFactor: 1,
-        mobile: false
-      });
-      return 'viewport';
-    } catch (e) {
-      console.warn('[Amazon] viewport override failed:', e && e.message);
-      return 'zero';
-    }
+    return 'zero';
   },
 
   ensureView(which) {
