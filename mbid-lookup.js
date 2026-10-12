@@ -66,15 +66,18 @@
   // Small concurrency gate for the labs host. The mapper answered in ~4ms so
   // batch enrichment could fire every lookup at once; the dataset hoster is a
   // smaller service on infrastructure MetaBrainz has said is under strain.
+  // run(fn, { background: true }) queues behind every foreground job: a bulk
+  // library pass must never delay the lookup handlePlay is waiting on.
   function createGate({ maxConcurrency, minGapMs }) {
     let inFlight = 0;
     let lastStartAt = 0;
     const pending = [];
+    const pendingBackground = [];
     const drain = () => {
-      if (inFlight >= maxConcurrency || pending.length === 0) return;
+      if (inFlight >= maxConcurrency || (pending.length === 0 && pendingBackground.length === 0)) return;
       const wait = Math.max(0, lastStartAt + minGapMs - Date.now());
       if (wait > 0) { setTimeout(drain, wait); return; }
-      const job = pending.shift();
+      const job = pending.length > 0 ? pending.shift() : pendingBackground.shift();
       inFlight++;
       lastStartAt = Date.now();
       Promise.resolve()
@@ -82,7 +85,10 @@
         .then(job.resolve, job.reject)
         .finally(() => { inFlight--; drain(); });
     };
-    return { run: (fn) => new Promise((resolve, reject) => { pending.push({ fn, resolve, reject }); drain(); }) };
+    return {
+      run: (fn, opts) => new Promise((resolve, reject) => { (opts && opts.background ? pendingBackground : pending).push({ fn, resolve, reject }); drain(); }),
+      getQueueLength: () => pending.length + pendingBackground.length,
+    };
   }
   const labsGate = createGate({ maxConcurrency: 2, minGapMs: 150 });
 
@@ -94,6 +100,7 @@
   //   'unreachable' — nothing answered (network/TLS error or non-2xx on both).
   //                   Not a miss: don't cache it or count it against the track.
   //                   `errors` says what each service did, for logging.
+  // opts.background: queue the labs call behind user-initiated lookups.
   async function resolveRecordingMbid(artist, title, album, opts) {
     const o = opts || {};
     const fetchImpl = o.fetch || (typeof fetch === 'function' ? fetch : null);
@@ -113,7 +120,7 @@
     }
 
     try {
-      const res = await labsGate.run(() => fetchImpl(acrLookupUrl(artist, title, album)));
+      const res = await labsGate.run(() => fetchImpl(acrLookupUrl(artist, title, album)), { background: !!o.background });
       if (res && res.ok) {
         const rows = await res.json();
         const result = Array.isArray(rows) ? acrRowToResult(rows[0]) : null;

@@ -394,13 +394,14 @@ const unsupportedAudioMessage = (ext) => {
 // /ws/2/isrc/ returns only the recording itself (no canonical artist/release
 // MBIDs, no canonical names), so a cached ISRC-only entry would block a
 // richer mapper entry once the mapper recovers (parachord#887).
-window.resolveMbidViaIsrc = async (isrc) => {
+window.resolveMbidViaIsrc = async (isrc, opts) => {
   if (!isrc || typeof isrc !== 'string') return null;
   const trimmed = isrc.trim().toUpperCase();
   if (!/^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(trimmed)) return null;
   try {
     const url = `https://musicbrainz.org/ws/2/isrc/${encodeURIComponent(trimmed)}?fmt=json`;
     const resp = await fetch(url, {
+      mbBackground: !!(opts && opts.background),
       headers: {
         'User-Agent': 'Parachord/0.9.3 (https://github.com/Parachord/parachord)',
         'Accept': 'application/json',
@@ -478,21 +479,22 @@ window.resolveMbidForLove = async (track) => {
   if (track?.mbid && /^[a-f0-9-]{36}$/i.test(track.mbid)) return track.mbid;
   if (!track?.artist || !track?.title) return null;
 
-  // Tier 2: MBID Mapper
+  // Tier 2: MBID Mapper via mbid-lookup.js, which falls back to the labs
+  // acr-lookup dataset while mapper.listenbrainz.org is down (parachord#991).
+  // Calling the mapper directly here logged a certificate error on every
+  // scrobble and love push for nothing: tiers 3 and 4 picked up the slack
+  // but the noise hid real problems.
   try {
-    const url = `https://mapper.listenbrainz.org/mapping/lookup?artist_credit_name=${encodeURIComponent(track.artist)}&recording_name=${encodeURIComponent(track.title)}`;
-    const resp = await fetch(url);
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data?.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(data.recording_mbid || '')) {
-        return data.recording_mbid;
+    if (typeof window.resolveRecordingMbid === 'function') {
+      const { status, result } = await window.resolveRecordingMbid(track.artist, track.title, track.album, { background: true });
+      if (status === 'hit' && result.confidence >= 0.7 && /^[a-f0-9-]{36}$/i.test(result.recording_mbid || '')) {
+        return result.recording_mbid;
       }
-      // Mapper succeeded but no high-confidence match — could be a new
-      // recording the mapper hasn't indexed yet. Fall through to tier 3.
+      // Hit below the confidence floor, a miss, or unreachable: fall through
+      // to tier 3 (ISRC) and tier 4 (MusicBrainz search).
     }
-    // Mapper non-OK (502, 5xx, 429) — fall through to tier 3.
   } catch (e) {
-    // Mapper network error — fall through to tier 3.
+    // Fall through to tier 3.
   }
 
   // Tier 3: Exact ISRC → MBID. Fires whenever ISRC is present anywhere
@@ -505,7 +507,7 @@ window.resolveMbidForLove = async (track) => {
   // doesn't.
   const isrc = window.pickTrackIsrc(track);
   if (isrc) {
-    const isrcMbid = await window.resolveMbidViaIsrc(isrc);
+    const isrcMbid = await window.resolveMbidViaIsrc(isrc, { background: true });
     if (isrcMbid) {
       console.log(`[resolveMbidForLove] ISRC fallback resolved "${track.artist} – ${track.title}" via ${isrc}`);
       return isrcMbid;
@@ -526,6 +528,7 @@ window.resolveMbidForLove = async (track) => {
     const query = `artist:"${escapedArtist}" AND recording:"${escapedTitle}"`;
     const url = `https://musicbrainz.org/ws/2/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=3`;
     const resp = await fetch(url, {
+      mbBackground: true,
       headers: {
         'User-Agent': 'Parachord/0.9.3 (https://github.com/Parachord/parachord)',
         'Accept': 'application/json',
@@ -644,14 +647,38 @@ window.musicbrainzLimiter = window.createLimiter({
       return u.hostname === 'musicbrainz.org' && u.pathname.startsWith('/ws/2/');
     } catch (_e) { return false; }
   };
+  window.isMusicBrainzWs2Url = isMbWs2;
+  // Callers that want a timeout on an MB request should pass
+  // `queuedTimeoutMs` instead of a pre-armed AbortSignal. A request can wait
+  // in this queue for a long time (a 50-artist Fresh Drops pass is ~1 minute
+  // at 1 req/s), and a signal armed before queueing counts that wait as
+  // request time: Fresh Drops' 10s timeout was aborting requests that had
+  // never left the queue ("signal is aborted without reason"), silently
+  // skipping artists. queuedTimeoutMs is armed per attempt once the request
+  // actually starts. A caller-supplied signal is still honored.
   window.fetch = function (input, init) {
     if (!isMbWs2(input)) return originalFetch(input, init);
-    const signal = init && init.signal;
+    const { queuedTimeoutMs, mbBackground, ...fetchInit } = init || {};
+    const callerSignal = fetchInit.signal;
+    const hasQueuedTimeout = Number.isFinite(queuedTimeoutMs) && queuedTimeoutMs > 0;
     return window.musicbrainzLimiter.run(async () => {
       const MAX_ATTEMPTS = 3;
       for (let attempt = 1; ; attempt++) {
-        if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
-        const resp = await originalFetch(input, init);
+        if (callerSignal && callerSignal.aborted) throw new DOMException('Aborted', 'AbortError');
+        let attemptInit = fetchInit;
+        let timer = null;
+        if (hasQueuedTimeout) {
+          const controller = new AbortController();
+          if (callerSignal) callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+          timer = setTimeout(() => controller.abort(), queuedTimeoutMs);
+          attemptInit = { ...fetchInit, signal: controller.signal };
+        }
+        let resp;
+        try {
+          resp = await originalFetch(input, attemptInit);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
         if (resp.status !== 429 && resp.status !== 503) return resp;
         if (attempt >= MAX_ATTEMPTS) {
           const err = new Error(`MusicBrainz throttled (HTTP ${resp.status})`);
@@ -665,7 +692,7 @@ window.musicbrainzLimiter = window.createLimiter({
           : Math.min(1000 * Math.pow(2, attempt - 1), 4000);
         await new Promise(r => setTimeout(r, waitMs));
       }
-    });
+    }, { background: !!mbBackground }); // mbBackground: bulk work queues behind user-initiated requests
   };
 })();
 
@@ -5256,6 +5283,52 @@ const executeDjTool = async (name, args, context) => {
         }));
         const playlist = await context.createPlaylist(args.name, metadataTracks);
         return { success: true, playlist: { id: playlist.id, name: playlist.title || args.name, trackCount: metadataTracks.length } };
+      }
+      // seek / get_position / block_recommendation (parachord#857) were defined in
+      // tools/dj-tools.js (which the MCP server advertises) but never added to
+      // this switch, which is what both the MCP path and the AI chat actually
+      // dispatch through, so callers got "Unknown tool". Bodies mirror the
+      // dj-tools.js execute() wrappers; tests/chat/dj-tools-executor-parity.test.js
+      // fails if the registry and this switch drift again.
+      case 'seek': {
+        if (typeof context.handleSeek !== 'function') {
+          return { success: false, supported: false, error: 'seek not wired in this build' };
+        }
+        const result = await context.handleSeek(Number(args.offset_ms) || 0);
+        return result ?? { success: true };
+      }
+      case 'get_position': {
+        if (typeof context.getCurrentPosition !== 'function') {
+          return { position_ms: 0, duration_ms: 0, supported: false };
+        }
+        const pos = context.getCurrentPosition() || {};
+        return {
+          position_ms: Number(pos.position_ms) || 0,
+          duration_ms: Number(pos.duration_ms) || 0,
+          supported: pos.supported !== false
+        };
+      }
+      case 'block_recommendation': {
+        const { type, name: artistName, title, artist } = args || {};
+        if (typeof context.blockRecommendation !== 'function') {
+          return { success: false, error: 'blocklist not available in this context' };
+        }
+        if (type === 'artist') {
+          if (!artistName) return { success: false, error: 'Artist name is required' };
+          context.blockRecommendation('artist', { name: artistName });
+          return { success: true, blocked: { type: 'artist', name: artistName } };
+        }
+        if (type === 'album') {
+          if (!title || !artist) return { success: false, error: 'Album title and artist are required' };
+          context.blockRecommendation('album', { title, artist });
+          return { success: true, blocked: { type: 'album', title, artist } };
+        }
+        if (type === 'track') {
+          if (!title || !artist) return { success: false, error: 'Track title and artist are required' };
+          context.blockRecommendation('track', { title, artist });
+          return { success: true, blocked: { type: 'track', title, artist } };
+        }
+        return { success: false, error: 'Invalid type. Use artist, album, or track.' };
       }
       case 'shuffle': {
         context.setShuffle(args.enabled);
@@ -10247,7 +10320,7 @@ const Parachord = () => {
   // acr-lookup is a stricter matcher than the mapper, so one of its misses is
   // only trusted for a few hours rather than the mapper's 90 days.
   const ACR_MISS_TTL = 6 * 60 * 60 * 1000;
-  const lookupMbidMapper = async (artist, title, album) => {
+  const lookupMbidMapper = async (artist, title, album, opts = {}) => {
     if (!artist || !title) return null;
     const cacheKey = `${artist.toLowerCase().trim()}|${title.toLowerCase().trim()}`;
     const cached = mbidMapperCache.current[cacheKey];
@@ -10256,7 +10329,7 @@ const Parachord = () => {
       if ((Date.now() - cached.timestamp) < ttl) return cached.result;
     }
     try {
-      const { status, source, result, errors } = await window.resolveRecordingMbid(artist, title, album);
+      const { status, source, result, errors } = await window.resolveRecordingMbid(artist, title, album, { background: !!opts.background });
       if (status === 'hit') {
         mbidMapperCache.current[cacheKey] = { result, timestamp: Date.now(), source };
         return result;
@@ -10287,10 +10360,11 @@ const Parachord = () => {
   };
 
   // Enrich a track object with MBID metadata from the mapper (mutates track in-place)
-  const enrichTrackWithMbid = async (track) => {
+  // opts.background: queue the lookups behind user-initiated ones (bulk passes).
+  const enrichTrackWithMbid = async (track, opts = {}) => {
     if (!track.artist || !track.title) return;
     if (track.mbid) return; // Already enriched
-    const result = await lookupMbidMapper(track.artist, track.title, track.album);
+    const result = await lookupMbidMapper(track.artist, track.title, track.album, opts);
     if (result && result.recording_mbid) {
       track.mbid = result.recording_mbid;
       track.artistMbids = result.artist_credit_mbids;
@@ -10309,7 +10383,7 @@ const Parachord = () => {
     // circuits on the next call for the same track.
     const isrc = window.pickTrackIsrc ? window.pickTrackIsrc(track) : (track.isrc || null);
     if (isrc && window.resolveMbidViaIsrc) {
-      const isrcMbid = await window.resolveMbidViaIsrc(isrc);
+      const isrcMbid = await window.resolveMbidViaIsrc(isrc, opts);
       if (isrcMbid) {
         track.mbid = isrcMbid;
       }
@@ -10320,7 +10394,7 @@ const Parachord = () => {
   const enrichTracksWithMbids = (tracks) => {
     if (!tracks || tracks.length === 0) return;
     // Fire all lookups in parallel, don't block
-    Promise.all(tracks.map(track => enrichTrackWithMbid(track).catch(() => {}))).catch(() => {});
+    Promise.all(tracks.map(track => enrichTrackWithMbid(track, { background: true }).catch(() => {}))).catch(() => {});
   };
 
   // Fetch album art for a track using its releaseMbid from MBID mapper (fast path, no MusicBrainz search needed)
@@ -10429,8 +10503,23 @@ const Parachord = () => {
   const enrichLocalTracksWithArtwork = async (tracks) => {
     if (!tracks || tracks.length === 0) return;
 
-    // Phase 1: MBID enrichment (all in parallel)
-    await Promise.all(tracks.map(track => enrichTrackWithMbid(track).catch(() => {})));
+    // Phase 1: MBID enrichment, only for tracks that still lack art (the
+    // user-visible payoff of this pass; a track that already has embedded or
+    // folder art gets its MBID lazily on play). Used to be Promise.all over
+    // the WHOLE library: with the mapper down that was thousands of queued
+    // lookups per launch, and every one of them sat ahead of the lookup
+    // handlePlay waits on and of the MusicBrainz calls behind search and
+    // artist pages. Now: 4 in flight, background lane on both limiters.
+    const needsArt = tracks.filter(t => !t.albumArt);
+    const ENRICH_CONCURRENCY = 4;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < needsArt.length) {
+        const track = needsArt[cursor++];
+        await enrichTrackWithMbid(track, { background: true }).catch(() => {});
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(ENRICH_CONCURRENCY, needsArt.length) }, worker));
 
     // Phase 2: Fetch artwork for tracks that lack albumArt but got a releaseMbid
     const artlessTracks = tracks.filter(t => !t.albumArt && t.releaseMbid);
@@ -12572,6 +12661,24 @@ const Parachord = () => {
   }, [currentTrack, isPlaying, volume]);
 
   // MCP server event handlers (Claude Desktop integration)
+  // Shared by the AI-chat tool context and the MCP tool context (the latter used
+  // to stub this as a no-op, so block_recommendation over MCP silently did
+  // nothing). type: 'artist' | 'album' | 'track'; item: { name } for artist,
+  // { title, artist } for album/track.
+  const addToRecommendationBlocklist = (type, item) => {
+    setRecommendationBlocklist(prev => {
+      const key = type === 'artist' ? 'artists' : type === 'album' ? 'albums' : 'tracks';
+      // Check if already blocked (avoid duplicates)
+      const exists = prev[key].some(existing => {
+        if (type === 'artist') return existing.name?.toLowerCase() === item.name?.toLowerCase();
+        return existing.title?.toLowerCase() === item.title?.toLowerCase() &&
+               existing.artist?.toLowerCase() === item.artist?.toLowerCase();
+      });
+      if (exists) return prev;
+      return { ...prev, [key]: [...prev[key], item] };
+    });
+  };
+
   useEffect(() => {
     if (!window.electron?.mcp) return;
 
@@ -12605,7 +12712,7 @@ const Parachord = () => {
           getCurrentTrack: () => currentTrackRef.current,
           getQueue: () => currentQueueRef.current || [],
           getIsPlaying: () => isPlayingRef.current,
-          blockRecommendation: () => {},
+          blockRecommendation: addToRecommendationBlocklist,
           // Seek the active playback engine to a position (ms within the track).
           // Mirrors the playbar slider's onChange — only the same engines that
           // support seek there support it here. Spotify (Web SDK + Connect) is
@@ -17629,7 +17736,11 @@ ${trackListXml}
     const pausePromises = [];
 
     // Always pause Spotify if we have a token
-    if (spotifyToken) {
+    // Only when Parachord's current playback is on Spotify. "Always pause"
+    // paused the user's own Spotify session while Parachord was playing
+    // something else, and answered 403 (already paused) in the console on
+    // every skip.
+    if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
       console.log('⏹️ Pausing Spotify before playing new track');
       pausePromises.push(
         fetch('https://api.spotify.com/v1/me/player/pause', {
@@ -19832,8 +19943,8 @@ ${trackListXml}
       // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
       // This handles race conditions during async track loading
 
-      // Always pause Spotify if we have a token
-      if (spotifyToken) {
+      // Pause Spotify only if Parachord's current playback is on it (see handlePlay)
+      if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
         console.log('⏹️ Pausing Spotify before next track');
         fetch('https://api.spotify.com/v1/me/player/pause', {
           method: 'PUT',
@@ -20093,8 +20204,8 @@ ${trackListXml}
     // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
     // This prevents race conditions where the streamingPlaybackActiveRef flag may be stale
 
-    // Always pause Spotify if we have a token (fire-and-forget, ignore errors)
-    if (spotifyToken) {
+    // Pause Spotify only if Parachord's current playback is on it (see handlePlay)
+    if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
       console.log('⏹️ Pausing Spotify before previous track');
       fetch('https://api.spotify.com/v1/me/player/pause', {
         method: 'PUT',
@@ -21116,22 +21227,7 @@ ${trackListXml}
       getCurrentTrack: () => currentTrackRef.current,
       getQueue: () => currentQueueRef.current || [],
       getIsPlaying: () => isPlayingRef.current,
-      blockRecommendation: (type, item) => {
-        // Add item to the recommendation blocklist
-        // type: 'artist' | 'album' | 'track'
-        // item: { name } for artist, { title, artist } for album/track
-        setRecommendationBlocklist(prev => {
-          const key = type === 'artist' ? 'artists' : type === 'album' ? 'albums' : 'tracks';
-          // Check if already blocked (avoid duplicates)
-          const exists = prev[key].some(existing => {
-            if (type === 'artist') return existing.name?.toLowerCase() === item.name?.toLowerCase();
-            return existing.title?.toLowerCase() === item.title?.toLowerCase() &&
-                   existing.artist?.toLowerCase() === item.artist?.toLowerCase();
-          });
-          if (exists) return prev;
-          return { ...prev, [key]: [...prev[key], item] };
-        });
-      },
+      blockRecommendation: addToRecommendationBlocklist,
       getBlocklist: () => recommendationBlocklistRef.current,
       isDataSharingEnabled: () => aiIncludeHistoryRef.current,
       startCollectionRadio: () => {
@@ -30402,6 +30498,13 @@ ${tracks}
 
     // Fetch with a timeout to prevent a single hanging request from stalling the loop
     const fetchWithTimeout = (url, options, timeoutMs = 10000) => {
+      // MusicBrainz requests queue behind the 1 req/s limiter, so the limiter
+      // arms the timeout when the request actually starts (see the
+      // musicbrainzLimiter fetch wrapper). A signal armed here counted the
+      // queue wait and aborted requests that never started.
+      if (window.isMusicBrainzWs2Url && window.isMusicBrainzWs2Url(url)) {
+        return fetch(url, { ...options, queuedTimeoutMs: timeoutMs, mbBackground: true });
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
@@ -31184,7 +31287,23 @@ ${tracks}
       // Use concurrency pool to avoid hammering APIs while keeping it fast
       const dedicatedPromise = (async () => {
         const dedicatedEvents = [];
-        const concurrency = 5; // max parallel artist queries
+        // Ticketmaster allows 5 req/s and each artist lookup is 2 calls
+        // (attraction search, then events), so 5 parallel artists was a
+        // guaranteed burst of 429s and missing concerts. Gate every provider
+        // call through one limiter: 2 in flight, 400ms between starts, and a
+        // cooldown after repeated 429s. The pool just feeds the limiter.
+        if (!window.__concertsLimiter && window.createLimiter) {
+          window.__concertsLimiter = window.createLimiter({
+            name: 'concertsLimiter',
+            maxConcurrency: 2,
+            minGapMs: 400,
+            cooldownMs: 5000,
+            errorThreshold: 2,
+            isThrottleError: (err) => /\b429\b|rate.?limit|too many/i.test(String(err && err.message))
+          });
+        }
+        const concertsLimiter = window.__concertsLimiter;
+        const concurrency = 3; // artist workers feeding the limiter
         let idx = 0;
         const fetchArtist = async (artist) => {
           const results = [];
@@ -31196,7 +31315,9 @@ ${tracks}
               const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
                 ? { ...rawConfig, [authField]: rawConfig.apiKey }
                 : rawConfig;
-              const events = await service.searchArtistEvents(artist.name, config);
+              const events = concertsLimiter
+                ? await concertsLimiter.run(() => service.searchArtistEvents(artist.name, config))
+                : await service.searchArtistEvents(artist.name, config);
               if (events && events.length > 0) {
                 results.push(...events.map(e => ({ event: e, artist: artist.name })));
               }

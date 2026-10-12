@@ -41,9 +41,13 @@
     let consecutiveErrors = 0;
     let cooldownUntil = 0;
     const pending = [];
+    // Background lane: drained only when the foreground queue is empty, so a
+    // bulk pass (library enrichment, Fresh Drops) can never make a user-initiated
+    // request wait behind it. run(fn, { background: true }) lands here.
+    const pendingBackground = [];
 
     const drain = () => {
-      while (pending.length > 0 && inFlight < maxConcurrency) {
+      while ((pending.length > 0 || pendingBackground.length > 0) && inFlight < maxConcurrency) {
         const now = Date.now();
         if (now < cooldownUntil) {
           setTimeout(drain, cooldownUntil - now);
@@ -54,7 +58,7 @@
           setTimeout(drain, minGapMs - sinceLast);
           return;
         }
-        const job = pending.shift();
+        const job = pending.length > 0 ? pending.shift() : pendingBackground.shift();
         inFlight++;
         lastStartAt = Date.now();
         (async () => {
@@ -83,11 +87,12 @@
     };
 
     return {
-      run: (fn) => new Promise((resolve, reject) => {
-        pending.push({ fn, resolve, reject });
+      run: (fn, opts) => new Promise((resolve, reject) => {
+        (opts && opts.background ? pendingBackground : pending).push({ fn, resolve, reject });
         drain();
       }),
-      getQueueLength: () => pending.length,
+      getQueueLength: () => pending.length + pendingBackground.length,
+      getBackgroundQueueLength: () => pendingBackground.length,
       isCoolingDown: () => Date.now() < cooldownUntil,
     };
   };
