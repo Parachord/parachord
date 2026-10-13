@@ -13,6 +13,8 @@ const {
   pageBlocksPlayback,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
+  readPersistedQuality,
+  writePersistedQuality,
   acceptAmazonSearchAnchor,
   isAmazonPlayerChrome,
   reportedPlaybackAsin,
@@ -792,7 +794,15 @@ const amazonWebPlayer = {
   // Hornet keeps Audio Quality on playbackController (metro module, not a
   // window global). The player view is 0×0, so Amazon's own modal
   // is unreachable. Read and write the same store the modal writes.
-  async withQualityController(mutatorSource) {
+  //
+  // The store is never found by requiring modules — executing hornet module
+  // factories out of order wedges the page (observed live). The preload trap
+  // captures it passively when Amazon's own code requires the module; until
+  // then the persisted playback-controller localStorage entry, which hornet
+  // rehydrates from at boot, is the source of truth.
+  //
+  // `apply` is null for reads, or the quality fields to write.
+  async withQualityController(apply) {
     // Do not expand the view here. Settings must not cover the app.
     const win = await this.ensureWindow('player', { show: false });
     let url = win.webContents.getURL();
@@ -811,55 +821,28 @@ const amazonWebPlayer = {
       }
     }
     const script = `(() => {
-      const read = () => {
-        const pc = window.__parachordAmazonPlayback;
-        if (!pc || !pc.audioQualitySettings) return null;
-        const s = pc.audioQualitySettings;
-        return { streamingQuality: s.streamingQuality || null, abrEnabled: !!s.abrEnabled };
-      };
-      const bind = (id) => {
-        try {
-          const mod = window.__r(id);
-          const pc = mod && mod.playbackController;
-          if (!pc || !pc.audioQualitySettings) return false;
-          window.__parachordAmazonPlayback = pc;
-          window.__parachordAmazonPlaybackModuleId = id;
-          return true;
-        } catch (e) { return false; }
-      };
-      if (!read()) {
-        if (typeof window.__r !== 'function') return null;
-        if (window.__parachordAmazonPlaybackScanAt && Date.now() - window.__parachordAmazonPlaybackScanAt < 2000) return null;
-        window.__parachordAmazonPlaybackScanAt = Date.now();
-        const remembered = window.__parachordAmazonPlaybackModuleId;
-        if (remembered == null || !bind(remembered)) {
-          if (!bind(2198) && ${this.currentAsin ? 'false' : 'true'}) {
-            for (let id = 0; id < 500; id++) {
-              if (id === 2198) continue;
-              if (bind(id)) break;
-            }
-          }
+      const readPersistedQuality = ${readPersistedQuality.toString()};
+      const writePersistedQuality = ${writePersistedQuality.toString()};
+      const apply = ${apply ? JSON.stringify(apply) : 'null'};
+      const store = window.__parachordAmazonPlayback;
+      const s = store && store.audioQualitySettings;
+      if (s) {
+        if (apply) {
+          if (apply.streamingQuality) s.streamingQuality = apply.streamingQuality;
+          if (apply.abrEnabled != null) s.abrEnabled = !!apply.abrEnabled;
         }
+        const current = { streamingQuality: s.streamingQuality || null, abrEnabled: !!s.abrEnabled };
+        // Mirror the store into the persisted entry: hornet's persistence
+        // reaction does not notice a nested change while nothing is playing.
+        writePersistedQuality(localStorage, current);
+        return current;
       }
-      const pc = window.__parachordAmazonPlayback;
-      if (!pc || !pc.audioQualitySettings) return null;
-      ${mutatorSource}
-      const current = read();
-      if (!current) return null;
-      try {
-        const key = Object.keys(localStorage).find(k => k.indexOf('playback-controller') !== -1);
-        if (key) {
-          const parsed = JSON.parse(localStorage.getItem(key));
-          if (parsed && parsed.data) {
-            parsed.data.audioQualitySettings = Object.assign({}, parsed.data.audioQualitySettings, {
-              streamingQuality: pc.audioQualitySettings.streamingQuality,
-              abrEnabled: !!pc.audioQualitySettings.abrEnabled
-            });
-            localStorage.setItem(key, JSON.stringify(parsed));
-          }
-        }
-      } catch (e) {}
-      return current;
+      const persisted = readPersistedQuality(localStorage);
+      if (apply) {
+        const wrote = writePersistedQuality(localStorage, apply);
+        if (wrote) return readPersistedQuality(localStorage) || persisted;
+      }
+      return persisted || { streamingQuality: null, abrEnabled: true };
     })()`;
     const deadline = Date.now() + 12000;
     let last = null;
@@ -872,7 +855,7 @@ const amazonWebPlayer = {
   },
 
   async getQuality() {
-    const current = await this.withQualityController('');
+    const current = await this.withQualityController(null);
     if (!current) return { success: false, reason: 'not-ready', error: 'Amazon Music quality settings are not available yet' };
     return {
       success: true,
@@ -883,21 +866,17 @@ const amazonWebPlayer = {
   },
 
   async setQuality({ streamingQuality, abrEnabled } = {}) {
-    const quality = normalizeStreamingQuality(streamingQuality);
-    // An unrecognized tier (ULTRA_HD, a future hornet value) must not be
-    // rewritten as STANDARD when the caller only flipped Auto-adjust.
-    if (streamingQuality && !quality && abrEnabled === undefined) {
+    const apply = {};
+    if (streamingQuality) apply.streamingQuality = streamingQuality;
+    if (abrEnabled !== undefined) apply.abrEnabled = !!abrEnabled;
+    if (!apply.streamingQuality && abrEnabled === undefined) {
       return { success: false, reason: 'invalid', error: 'Unknown Amazon Music audio quality' };
     }
-    const abr = !!abrEnabled;
-    const assign = quality
-      ? `pc.audioQualitySettings.streamingQuality = ${JSON.stringify(quality)};\n      pc.audioQualitySettings.abrEnabled = ${abr};`
-      : `pc.audioQualitySettings.abrEnabled = ${abr};`;
-    const current = await this.withQualityController(assign);
+    const current = await this.withQualityController(apply);
     if (!current) return { success: false, reason: 'not-ready', error: 'Amazon Music quality settings are not available yet' };
     return {
       success: true,
-      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || current.streamingQuality || quality,
+      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || current.streamingQuality || apply.streamingQuality || null,
       abrEnabled: !!current.abrEnabled,
       options: AMAZON_QUALITY_OPTIONS
     };

@@ -8,6 +8,9 @@ const {
   isNotReadyReason,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
+  installAmazonRequireTrap,
+  readPersistedQuality,
+  writePersistedQuality,
   isAmazonSearchTrackLink,
   amazonSongSearchUrl,
   isAmazonSongResultItem,
@@ -148,6 +151,162 @@ describe('normalizeStreamingQuality', () => {
     expect(AMAZON_QUALITY_OPTIONS.map(o => o.value)).toEqual([
       'BEST_AVAILABLE', 'STANDARD', 'DATA_SAVER'
     ]);
+  });
+});
+
+// window.__r is Metro's require. The trap observes requires Amazon's own
+// code makes — it never calls __r itself.
+const makeMetroScope = () => {
+  const scope = {};
+  scope.require = (id) => {
+    if (id === 123) return { playbackController: { audioQualitySettings: { streamingQuality: 'STANDARD', abrEnabled: true } } };
+    if (id === 456) return { other: true };
+    throw new Error(`Requiring unknown module "${id}"`);
+  };
+  return scope;
+};
+
+describe('installAmazonRequireTrap', () => {
+  test('captures the playbackController when Amazon requires its module', () => {
+    const scope = makeMetroScope();
+    installAmazonRequireTrap(scope);
+    scope.__r = scope.require;
+    scope.__r(456);
+    expect(scope.__parachordAmazonPlayback).toBeUndefined();
+    scope.__r(123);
+    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
+    expect(scope.__parachordAmazonPlayback.audioQualitySettings.streamingQuality).toBe('STANDARD');
+  });
+
+  test('wraps a require that was already assigned before the trap', () => {
+    const scope = makeMetroScope();
+    scope.__r = scope.require;
+    installAmazonRequireTrap(scope);
+    scope.__r(123);
+    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
+  });
+
+  test('the wrapped require still passes through calls and extra properties', () => {
+    const scope = makeMetroScope();
+    installAmazonRequireTrap(scope);
+    const asyncChunk = () => {};
+    scope.require.async = asyncChunk;
+    scope.__r = scope.require;
+    expect(scope.__r).not.toBe(scope.require);
+    expect(scope.__r.async).toBe(asyncChunk);
+    expect(scope.__r(456)).toEqual({ other: true });
+  });
+
+  test('re-assignment re-wraps without double wrapping, and install is idempotent', () => {
+    const scope = makeMetroScope();
+    installAmazonRequireTrap(scope);
+    scope.__r = scope.require;
+    const first = scope.__r;
+    scope.__r = scope.require; // a lazy chunk exposes __r again
+    expect(scope.__r).not.toBe(first);
+    scope.__r(123);
+    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
+    installAmazonRequireTrap(scope);
+    expect(scope.__r).toBe(scope.__r); // no-op re-install
+  });
+
+  test('a throwing module export does not break the require', () => {
+    const scope = {};
+    const hostile = { get playbackController() { throw new Error('getter'); } };
+    scope.require = (id) => (id === 7 ? hostile : { ok: 1 });
+    installAmazonRequireTrap(scope);
+    scope.__r = scope.require;
+    expect(() => scope.__r(7)).not.toThrow();
+    expect(scope.__r(8)).toEqual({ ok: 1 });
+    expect(scope.__parachordAmazonPlayback).toBeUndefined();
+  });
+
+  test('serializes self-contained for evaluation inside the Amazon page', () => {
+    // The preload embeds this function with .toString() and runs it in the
+    // page world, where module-scope identifiers do not exist. new Function
+    // gives it the same bare scope, so a closure reference fails here instead
+    // of inside Amazon's page.
+    const embedded = new Function(`return (${installAmazonRequireTrap.toString()})`)();
+    const scope = makeMetroScope();
+    embedded(scope);
+    scope.__r = scope.require;
+    scope.__r(123);
+    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
+  });
+});
+
+// Real localStorage exposes stored entries as enumerable own properties,
+// which is how the helpers find the playback-controller key. Model that.
+const makeStorage = (initial) => {
+  const storage = {};
+  for (const [k, v] of Object.entries(initial || {})) storage[k] = String(v);
+  Object.defineProperty(storage, 'getItem', { value: (k) => (k in storage ? storage[k] : null), enumerable: false });
+  Object.defineProperty(storage, 'setItem', { value: (k, v) => { storage[k] = String(v); }, enumerable: false });
+  return storage;
+};
+
+const playbackControllerEntry = (quality) => JSON.stringify({
+  data: { audioQualitySettings: quality, unrelated: { keep: true } }
+});
+
+describe('readPersistedQuality', () => {
+  test('reads audio quality from the playback-controller entry', () => {
+    const storage = makeStorage({
+      'hornet:playback-controller:v2': playbackControllerEntry({ streamingQuality: 'HD', abrEnabled: false })
+    });
+    expect(readPersistedQuality(storage)).toEqual({ streamingQuality: 'HD', abrEnabled: false });
+  });
+
+  test('returns null when no entry, malformed JSON, or no audioQualitySettings', () => {
+    expect(readPersistedQuality(makeStorage({}))).toBeNull();
+    expect(readPersistedQuality(makeStorage({ 'playback-controller': '{not json' }))).toBeNull();
+    expect(readPersistedQuality(makeStorage({ 'playback-controller': JSON.stringify({ data: {} }) }))).toBeNull();
+    expect(readPersistedQuality(makeStorage({ 'playback-controller': JSON.stringify({ data: { audioQualitySettings: null } }) }))).toBeNull();
+  });
+
+  test('serializes self-contained for evaluation inside the Amazon page', () => {
+    const embedded = new Function(`return (${readPersistedQuality.toString()})`)();
+    const storage = makeStorage({
+      'playback-controller': playbackControllerEntry({ streamingQuality: 'STANDARD', abrEnabled: true })
+    });
+    expect(embedded(storage)).toEqual({ streamingQuality: 'STANDARD', abrEnabled: true });
+  });
+});
+
+describe('writePersistedQuality', () => {
+  test('merges quality into the entry and preserves unrelated data', () => {
+    const storage = makeStorage({
+      'playback-controller': playbackControllerEntry({ streamingQuality: 'STANDARD', abrEnabled: true })
+    });
+    expect(writePersistedQuality(storage, { streamingQuality: 'BEST_AVAILABLE', abrEnabled: false })).toBe(true);
+    const parsed = JSON.parse(storage.getItem('playback-controller'));
+    expect(parsed.data.audioQualitySettings).toEqual({ streamingQuality: 'BEST_AVAILABLE', abrEnabled: false });
+    expect(parsed.data.unrelated).toEqual({ keep: true });
+  });
+
+  test('a patch with undefined fields keeps the stored tier', () => {
+    // Flipping only Auto-adjust must not clobber the persisted streamingQuality.
+    const storage = makeStorage({
+      'playback-controller': playbackControllerEntry({ streamingQuality: 'HD', abrEnabled: true })
+    });
+    expect(writePersistedQuality(storage, { abrEnabled: false })).toBe(true);
+    const parsed = JSON.parse(storage.getItem('playback-controller'));
+    expect(parsed.data.audioQualitySettings).toEqual({ streamingQuality: 'HD', abrEnabled: false });
+  });
+
+  test('returns false when there is no entry to merge into', () => {
+    const storage = makeStorage({});
+    expect(writePersistedQuality(storage, { streamingQuality: 'STANDARD' })).toBe(false);
+    expect(readPersistedQuality(storage)).toBeNull();
+  });
+
+  test('serializes self-contained for evaluation inside the Amazon page', () => {
+    const embedded = new Function(`return (${writePersistedQuality.toString()})`)();
+    const storage = makeStorage({
+      'playback-controller': playbackControllerEntry({ streamingQuality: 'STANDARD', abrEnabled: true })
+    });
+    expect(embedded(storage, { abrEnabled: false })).toBe(true);
+    expect(readPersistedQuality(storage)).toEqual({ streamingQuality: 'STANDARD', abrEnabled: false });
   });
 });
 

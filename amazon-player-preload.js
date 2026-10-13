@@ -2,10 +2,19 @@
 // Widevine element when the window blurs. The player view is 0×0 and must not
 // keep keyboard focus, so the page is told it is still visible.
 //
+// It also installs the window.__r trap: hornet's playbackController lives in
+// a Metro module whose id renumbers on every redeploy, and executing module
+// factories to find it wedges the page — so the trap only observes requires
+// that Amazon's own code makes and captures the store passively.
+//
 // contextIsolation puts this file in a different world from the page. Patching
 // document here would not affect Amazon's scripts, so the stub is evaluated in
 // the page world (isolated world 0).
+const { installAmazonRequireTrap } = require('./amazon-music-logic');
+
 const PAGE_STUB = `(function () {
+  const installAmazonRequireTrap = ${installAmazonRequireTrap.toString()};
+  installAmazonRequireTrap(window);
   const stop = (event) => { event.stopImmediatePropagation(); };
   window.addEventListener('blur', stop, true);
   window.addEventListener('pagehide', stop, true);

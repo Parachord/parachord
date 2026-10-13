@@ -97,6 +97,88 @@ function normalizeStreamingQuality(value) {
   return null;
 }
 
+// Hornet keeps the playbackController in a Metro module; window.__r is the
+// only handle, and Amazon redeploys hornet continuously, renumbering modules
+// on every bundle change. Executing module factories to find it (require-by-
+// id scans) runs Amazon's code out of order and can wedge the whole page —
+// observed live: a renderer pegged in V8 churn with every Amazon call hanging.
+// So never call __r ourselves. Instead install a trap before the bundle runs:
+// when Amazon's own code requires the module, the wrapper observes the exports
+// and captures the store. Self-contained by design — serialized with
+// .toString() and evaluated inside the Amazon page (world 0), so it must not
+// close over anything in this module.
+function installAmazonRequireTrap(scope) {
+  if (scope.__parachordRequireTrap) return;
+  scope.__parachordRequireTrap = true;
+  let current = null;
+  const consider = (mod, id) => {
+    try {
+      const pc = mod && mod.playbackController;
+      if (pc && pc.audioQualitySettings) {
+        scope.__parachordAmazonPlayback = pc;
+        scope.__parachordAmazonPlaybackModuleId = id;
+      }
+    } catch (e) {}
+  };
+  const wrap = (require) => {
+    if (typeof require !== 'function' || require.__parachordWrapped) return require;
+    const wrapped = function () {
+      const mod = require.apply(this, arguments);
+      consider(mod, arguments[0]);
+      return mod;
+    };
+    // Keep require's own properties (e.g. metro's require.async) reachable
+    // through the wrapper.
+    try { Object.setPrototypeOf(wrapped, require); } catch (e) {}
+    try { Object.defineProperty(wrapped, '__parachordWrapped', { value: true }); } catch (e) {}
+    return wrapped;
+  };
+  try {
+    // The bundle exposes __r as a global assignment, which routes through the
+    // setter; a var declaration in a later script leaves the property alone.
+    // If __r was already assigned before the trap installs, wrap that value.
+    if (typeof scope.__r === 'function') current = wrap(scope.__r);
+    Object.defineProperty(scope, '__r', {
+      configurable: true,
+      get() { return current; },
+      set(v) { current = wrap(v); return current; }
+    });
+  } catch (e) {}
+}
+
+// Hornet persists the playbackController store to a localStorage entry whose
+// key contains 'playback-controller' and rehydrates audioQualitySettings from
+// it at boot — its persistence reaction misses nested changes while nothing
+// plays, so quality writes go to both the live store and this entry. Both
+// helpers take the page's localStorage so they can run inside the page world
+// and be unit tested against a plain object. Self-contained by design, same
+// as installAmazonRequireTrap.
+function readPersistedQuality(storage) {
+  try {
+    const key = Object.keys(storage).find(k => k.indexOf('playback-controller') !== -1);
+    if (!key) return null;
+    const parsed = JSON.parse(storage.getItem(key));
+    const s = parsed && parsed.data && parsed.data.audioQualitySettings;
+    if (!s) return null;
+    return { streamingQuality: s.streamingQuality || null, abrEnabled: !!s.abrEnabled };
+  } catch (e) { return null; }
+}
+
+function writePersistedQuality(storage, settings) {
+  try {
+    const key = Object.keys(storage).find(k => k.indexOf('playback-controller') !== -1);
+    if (!key) return false;
+    const parsed = JSON.parse(storage.getItem(key));
+    if (!parsed || !parsed.data) return false;
+    const patch = {};
+    if (settings && settings.streamingQuality != null) patch.streamingQuality = settings.streamingQuality;
+    if (settings && settings.abrEnabled != null) patch.abrEnabled = !!settings.abrEnabled;
+    parsed.data.audioQualitySettings = Object.assign({}, parsed.data.audioQualitySettings, patch);
+    storage.setItem(key, JSON.stringify(parsed));
+    return true;
+  } catch (e) { return false; }
+}
+
 // Search pages also render the mini player. Its title is a /tracks/ link
 // with an artist sibling, so a scrape that accepts any track link returns
 // the currently playing song before the results exist. The match gate then
@@ -180,6 +262,9 @@ module.exports = {
   isNotReadyReason,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
+  installAmazonRequireTrap,
+  readPersistedQuality,
+  writePersistedQuality,
   isAmazonSearchTrackLink,
   isAmazonPlayerChrome,
   amazonSongSearchUrl,
