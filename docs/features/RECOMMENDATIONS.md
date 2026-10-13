@@ -145,7 +145,7 @@ Shuffles the local library plus collection tracks, deduplicated. Buttons on Home
 
 Code: protocol switch ~L13406, `activateSpinoffFromPool` (~L35810), `refillSpinoffPool` (~L35740), parser `parseProtocolTracklist` (~L36880). Public docs in [protocol-schema.md](../protocol-schema.md).
 
-- **Mode B** (`?artist=`, optionally `&title=`): calls the in-app spinoff starter. Because the starter requires a title, an artist-only link clears the queue and plays nothing. See "Known gaps".
+- **Mode B** (`?artist=`, optionally `&title=`): calls the in-app spinoff starter. With no title, `resolveSpinoffSeed` picks the artist's top Last.fm track as the seed before the queue is cleared; if none is found the queue is kept and an error toast is shown (parachord#1005).
 - **Mode C** (`?tracks=` inline and/or `?url=` / `?refill=`): an externally curated pool. Supports `shuffle=1` and `name=` or `title=`. Skips up to 20 unplayable tracks, resolves two tracks ahead, refills when fewer than three remain (at most once per 5 seconds, stopping after three empty refills), deduplicates by MBID, then ISRC, then artist|title, and applies the public-URL guard and a 100 KB body cap.
 - **ListenBrainz lb-radio** works only through Mode C with a URL such as `https://api.listenbrainz.org/1/explore/lb-radio?prompt=...`. `buildProtocolFetchHeaders` (~L7490) attaches the user's ListenBrainz token from the scrobbler config for `api.listenbrainz.org`; without one the request fails with 401. There is no in-app lb-radio prompt box.
 
@@ -199,9 +199,8 @@ From the manifests in `plugins/*.axe`. The app only reads `generate`, `chat`, `c
 
 Found while writing this inventory; none are fixed by this document.
 
-1. `parachord://play/radio?artist=X` with no title plays nothing: the handler (~L13413) passes a null title and `startSpinoff` returns early on missing track info (~L35947). protocol-schema.md documents artist-only as supported. (parachord#1005)
-2. The one-shot AI Playlist panel cannot be opened from the playbar button with bundled plugins, because chat takes priority whenever a chat-capable plugin is enabled.
-3. When ListenBrainz has no recommendation playlist for the user, the Recommendations page shows their own most-played tracks of the month under the ListenBrainz tag.
-4. There is no UI to view or clear the recommendation blocklist.
+1. The one-shot AI Playlist panel cannot be opened from the playbar button with bundled plugins, because chat takes priority whenever a chat-capable plugin is enabled.
+2. When ListenBrainz has no recommendation playlist for the user, the Recommendations page shows their own most-played tracks of the month under the ListenBrainz tag.
+3. There is no UI to view or clear the recommendation blocklist.
 
-Fixed since the first version: the blocklist is now applied and listed in the chat prompt (parachord#1006), in-app chat offers `block_recommendation` (parachord#1007), and the MCP playlist tools work (parachord#1008).
+Fixed since the first version: artist-only radio links now seed from the artist's top track (parachord#1005), the blocklist is applied and listed in the chat prompt (parachord#1006), in-app chat offers `block_recommendation` (parachord#1007), and the MCP playlist tools work (parachord#1008).

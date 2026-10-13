@@ -13591,10 +13591,16 @@ const Parachord = () => {
               try {
                 // Mode B: artist-only seed → existing similar-tracks spinoff
                 if (params.artist && !params.tracks && !params.url) {
+                  // Resolve the seed BEFORE clearing the queue (parachord#1005):
+                  // an artist with no title needs a top-track lookup, and if
+                  // that finds nothing the user keeps their queue and gets a
+                  // toast instead of silence.
+                  const seed = await resolveSpinoffSeed({ artist: params.artist, title: params.title || null });
+                  if (!seed) break;
                   // Clear prior queue so its in-flight background resolution
                   // doesn't compete with the new spinoff pool.
                   clearQueue();
-                  await startSpinoffRef.current({ artist: params.artist, title: params.title || null });
+                  await startSpinoffRef.current(seed);
                   break;
                 }
                 // Mode C: inline tracks and/or URL-based refill.
@@ -36141,6 +36147,26 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Start spinoff mode - play similar tracks based on current track,
   // OR play from a pre-resolved pool when called with { pool, displayName, refillUrl }.
+  // Turn an artist-only seed into an artist+title seed (parachord#1005).
+  // Last.fm track.getsimilar needs a track, so `parachord://play/radio?artist=X`
+  // used to clear the queue and then bail in startSpinoff with "missing track
+  // info". Picks the artist's top Last.fm track. Returns { artist, title } or
+  // null (after a toast) so callers can refuse before touching the queue.
+  const resolveSpinoffSeed = async (seed) => {
+    if (!seed || !seed.artist) {
+      console.log('🔀 Cannot start spinoff: missing track info');
+      return null;
+    }
+    if (seed.title) return { artist: seed.artist, title: seed.title };
+    const top = await getArtistTopTracks(seed.artist, 1);
+    if (!top.length) {
+      showToast(`Couldn't find a track by ${seed.artist} to seed the radio`, 'error');
+      return null;
+    }
+    console.log(`🔀 Seeding spinoff for ${seed.artist} from top track "${top[0].title}"`);
+    return { artist: seed.artist, title: top[0].title };
+  };
+
   const startSpinoff = async (track) => {
     // New path: pre-resolved pool (used by parachord://play-radio)
     if (track && Array.isArray(track.pool)) {
@@ -36150,6 +36176,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       });
     }
 
+    if (track && track.artist && !track.title) {
+      // Artist-only seed (protocol Mode B or any caller with just a name).
+      track = await resolveSpinoffSeed(track);
+    }
     if (!track || !track.artist || !track.title) {
       console.log('🔀 Cannot start spinoff: missing track info');
       return;
