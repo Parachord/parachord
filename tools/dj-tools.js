@@ -127,7 +127,7 @@ const controlTool = {
         return { success: true, action: 'paused' };
 
       case 'resume':
-        context.handlePlay();
+        context.handleResume();
         return { success: true, action: 'resumed' };
 
       case 'skip':

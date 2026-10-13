@@ -5040,6 +5040,23 @@ const djTools = [
       required: []
     }
   },
+  // Same definition as tools/dj-tools.js. The system prompt has told the model
+  // to call this since #857, but it was never in this list, so in-app chat
+  // could not call it (parachord#1007). Keep in step with the registry.
+  {
+    name: 'block_recommendation',
+    description: 'Block an artist, album, or track from future AI recommendations. Use when user says "don\'t recommend X", "I don\'t like X", "stop suggesting X", etc.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['artist', 'album', 'track'], description: 'What to block: artist (blocks all their music), album, or track' },
+        name: { type: 'string', description: 'For artists: the artist name. Not used for albums/tracks.' },
+        title: { type: 'string', description: 'For albums/tracks: the album or track title' },
+        artist: { type: 'string', description: 'For albums/tracks: the artist name' }
+      },
+      required: ['type']
+    }
+  },
   {
     name: 'get_playlists',
     description: 'Get all of the user\'s playlists with names, IDs, and track counts. Use when the user asks about their playlists, wants to browse them, or before modifying a playlist.',
@@ -5926,6 +5943,12 @@ class AIChatService {
       lines.push('\n⛔ DO NOT RECOMMEND (user already knows these artists):');
       lines.push(`  ${sortedArtists.join(', ')}`);
       lines.push('  When user asks for "new" or "unheard" music, NEVER recommend any artist from this list.');
+    }
+
+    // The persisted blocklist (block_recommendation tool). The prompt above
+    // promises the model it is listed here; until parachord#1006 it never was.
+    if (window.recommendationBlocklist) {
+      lines.push(...window.recommendationBlocklist.formatForPrompt(context.blocklist));
     }
 
     // Add user's playlists for context
@@ -12502,6 +12525,139 @@ const Parachord = () => {
     });
   }, [currentTrack, isPlaying, volume]);
 
+  // Playlist methods shared by the AI-chat tool context and the MCP tool
+  // context (parachord#1008). The MCP context used to provide only
+  // createPlaylist, so get_playlists / add_to_playlist / remove_from_playlist /
+  // reorder_playlist / rename_playlist / delete_playlist / get_playlist_tracks
+  // over MCP all failed with "context.X is not a function". Built lazily (it is
+  // called inside effects and tool calls) so it can reference component
+  // functions declared later in the file.
+  const buildPlaylistToolContext = () => ({
+    getPlaylists: () => {
+      return (playlistsRef.current || []).map(p => ({
+        id: p.id,
+        name: p.title || p.name,
+        trackCount: (p.tracks || []).length,
+        tracks: (p.tracks || []).map((t, i) => ({
+          index: i,
+          artist: t.artist,
+          title: t.title,
+          album: t.album
+        }))
+      }));
+    },
+    findPlaylist: (name) => {
+      const allPlaylists = playlistsRef.current || [];
+      const lower = name.toLowerCase();
+      // Exact match first
+      let match = allPlaylists.find(p => (p.title || p.name || '').toLowerCase() === lower);
+      // Partial match fallback
+      if (!match) match = allPlaylists.find(p => (p.title || p.name || '').toLowerCase().includes(lower));
+      return match;
+    },
+    addTracksToPlaylist: (playlistId, tracks) => {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === playlistId) {
+          // Set locallyModified inline so the single save persists it. The
+          // older split (save first, mark second) only updated React state,
+          // so the store never saw the flag — push loops missed the edit.
+          // Only flag if the playlist is actually synced somewhere; unsynced
+          // local-only playlists don't need the marker.
+          const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+          const updatedPlaylist = {
+            ...p,
+            tracks: [...(p.tracks || []), ...tracks],
+            lastModified: Date.now(),
+            ...(shouldFlag ? { locallyModified: true } : {})
+          };
+          savePlaylistToStore(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
+    },
+    removeTrackFromPlaylist: (playlistId, trackIndex) => {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === playlistId) {
+          const newTracks = [...(p.tracks || [])];
+          newTracks.splice(trackIndex, 1);
+          const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+          const updatedPlaylist = {
+            ...p,
+            tracks: newTracks,
+            lastModified: Date.now(),
+            ...(shouldFlag ? { locallyModified: true } : {})
+          };
+          savePlaylistToStore(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
+      // Update displayed tracks if viewing this playlist
+      if (selectedPlaylistRef.current?.id === playlistId) {
+        setPlaylistTracks(prev => {
+          const newTracks = [...prev];
+          newTracks.splice(trackIndex, 1);
+          return newTracks;
+        });
+      }
+    },
+    moveTrackInPlaylist: (playlistId, fromIndex, toIndex) => {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === playlistId) {
+          const newTracks = [...(p.tracks || [])];
+          const [removed] = newTracks.splice(fromIndex, 1);
+          newTracks.splice(toIndex, 0, removed);
+          const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+          const updatedPlaylist = {
+            ...p,
+            tracks: newTracks,
+            lastModified: Date.now(),
+            ...(shouldFlag ? { locallyModified: true } : {})
+          };
+          savePlaylistToStore(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
+      // Update displayed tracks if viewing this playlist
+      if (selectedPlaylistRef.current?.id === playlistId) {
+        setPlaylistTracks(prev => {
+          const newTracks = [...prev];
+          const [removed] = newTracks.splice(fromIndex, 1);
+          newTracks.splice(toIndex, 0, removed);
+          return newTracks;
+        });
+      }
+    },
+    renamePlaylist: (playlistId, newName) => {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === playlistId) {
+          const updatedPlaylist = { ...p, title: newName, lastModified: Date.now() };
+          savePlaylistToStore(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
+      // Update selected playlist if viewing this one
+      if (selectedPlaylistRef.current?.id === playlistId) {
+        setSelectedPlaylist(prev => ({ ...prev, title: newName, lastModified: Date.now() }));
+      }
+    },
+    deletePlaylist: async (playlistId) => {
+      // Use the shared helper so a hosted XSPF is removed from BOTH stores
+      // (else the load+merge re-imports it).
+      const target = (playlistsRef.current || []).find(p => p.id === playlistId) || { id: playlistId };
+      await deletePlaylistLocally(target);
+      if (selectedPlaylistRef.current?.id === playlistId) {
+        setSelectedPlaylist(null);
+        setPlaylistTracks([]);
+        navigateTo('playlists');
+      }
+      return { success: true };
+    }
+  });
+
   // MCP server event handlers (Claude Desktop integration)
   // Shared by the AI-chat tool context and the MCP tool context (the latter used
   // to stub this as a no-op, so block_recommendation over MCP silently did
@@ -12551,10 +12707,15 @@ const Parachord = () => {
           handlePrevious: () => handlePreviousRef.current(),
           setShuffle: (enabled) => setShuffleMode(enabled),
           createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
+          // get/find/add/remove/move/rename/delete playlist (parachord#1008).
+          // No isDataSharingEnabled gate here: that setting belongs to the
+          // in-app chat; the MCP server is its own opt-in.
+          ...buildPlaylistToolContext(),
           getCurrentTrack: () => currentTrackRef.current,
           getQueue: () => currentQueueRef.current || [],
           getIsPlaying: () => isPlayingRef.current,
           blockRecommendation: addToRecommendationBlocklist,
+          getBlocklist: () => recommendationBlocklistRef.current,
           // Seek the active playback engine to a position (ms within the track).
           // Mirrors the playbar slider's onChange — only the same engines that
           // support seek there support it here. Spotify (Web SDK + Connect) is
@@ -21075,130 +21236,8 @@ ${trackListXml}
 
         return { success: true, trackCount: uniqueTracks.length };
       },
-      // Playlist management functions
-      getPlaylists: () => {
-        return (playlistsRef.current || []).map(p => ({
-          id: p.id,
-          name: p.title || p.name,
-          trackCount: (p.tracks || []).length,
-          tracks: (p.tracks || []).map((t, i) => ({
-            index: i,
-            artist: t.artist,
-            title: t.title,
-            album: t.album
-          }))
-        }));
-      },
-      findPlaylist: (name) => {
-        const allPlaylists = playlistsRef.current || [];
-        const lower = name.toLowerCase();
-        // Exact match first
-        let match = allPlaylists.find(p => (p.title || p.name || '').toLowerCase() === lower);
-        // Partial match fallback
-        if (!match) match = allPlaylists.find(p => (p.title || p.name || '').toLowerCase().includes(lower));
-        return match;
-      },
-      addTracksToPlaylist: (playlistId, tracks) => {
-        setPlaylists(prev => prev.map(p => {
-          if (p.id === playlistId) {
-            // Set locallyModified inline so the single save persists it. The
-            // older split (save first, mark second) only updated React state,
-            // so the store never saw the flag — push loops missed the edit.
-            // Only flag if the playlist is actually synced somewhere; unsynced
-            // local-only playlists don't need the marker.
-            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
-            const updatedPlaylist = {
-              ...p,
-              tracks: [...(p.tracks || []), ...tracks],
-              lastModified: Date.now(),
-              ...(shouldFlag ? { locallyModified: true } : {})
-            };
-            savePlaylistToStore(updatedPlaylist);
-            return updatedPlaylist;
-          }
-          return p;
-        }));
-      },
-      removeTrackFromPlaylist: (playlistId, trackIndex) => {
-        setPlaylists(prev => prev.map(p => {
-          if (p.id === playlistId) {
-            const newTracks = [...(p.tracks || [])];
-            newTracks.splice(trackIndex, 1);
-            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
-            const updatedPlaylist = {
-              ...p,
-              tracks: newTracks,
-              lastModified: Date.now(),
-              ...(shouldFlag ? { locallyModified: true } : {})
-            };
-            savePlaylistToStore(updatedPlaylist);
-            return updatedPlaylist;
-          }
-          return p;
-        }));
-        // Update displayed tracks if viewing this playlist
-        if (selectedPlaylistRef.current?.id === playlistId) {
-          setPlaylistTracks(prev => {
-            const newTracks = [...prev];
-            newTracks.splice(trackIndex, 1);
-            return newTracks;
-          });
-        }
-      },
-      moveTrackInPlaylist: (playlistId, fromIndex, toIndex) => {
-        setPlaylists(prev => prev.map(p => {
-          if (p.id === playlistId) {
-            const newTracks = [...(p.tracks || [])];
-            const [removed] = newTracks.splice(fromIndex, 1);
-            newTracks.splice(toIndex, 0, removed);
-            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
-            const updatedPlaylist = {
-              ...p,
-              tracks: newTracks,
-              lastModified: Date.now(),
-              ...(shouldFlag ? { locallyModified: true } : {})
-            };
-            savePlaylistToStore(updatedPlaylist);
-            return updatedPlaylist;
-          }
-          return p;
-        }));
-        // Update displayed tracks if viewing this playlist
-        if (selectedPlaylistRef.current?.id === playlistId) {
-          setPlaylistTracks(prev => {
-            const newTracks = [...prev];
-            const [removed] = newTracks.splice(fromIndex, 1);
-            newTracks.splice(toIndex, 0, removed);
-            return newTracks;
-          });
-        }
-      },
-      renamePlaylist: (playlistId, newName) => {
-        setPlaylists(prev => prev.map(p => {
-          if (p.id === playlistId) {
-            const updatedPlaylist = { ...p, title: newName, lastModified: Date.now() };
-            savePlaylistToStore(updatedPlaylist);
-            return updatedPlaylist;
-          }
-          return p;
-        }));
-        // Update selected playlist if viewing this one
-        if (selectedPlaylistRef.current?.id === playlistId) {
-          setSelectedPlaylist(prev => ({ ...prev, title: newName, lastModified: Date.now() }));
-        }
-      },
-      deletePlaylist: async (playlistId) => {
-        // Use the shared helper so a hosted XSPF is removed from BOTH stores
-        // (else the load+merge re-imports it).
-        const target = (playlistsRef.current || []).find(p => p.id === playlistId) || { id: playlistId };
-        await deletePlaylistLocally(target);
-        if (selectedPlaylistRef.current?.id === playlistId) {
-          setSelectedPlaylist(null);
-          setPlaylistTracks([]);
-          navigateTo('playlists');
-        }
-        return { success: true };
-      }
+      // Playlist management functions, shared with the MCP context (parachord#1008)
+      ...buildPlaylistToolContext()
     };
 
     // Create context getter for system prompt
@@ -30383,6 +30422,9 @@ ${tracks}
               const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
 
               if (primaryType === 'broadcast' || secondaryTypes.includes('compilation') || secondaryTypes.includes('live') || secondaryTypes.includes('broadcast')) return;
+              // parachord#1006: a blocked artist or album never shows in Fresh Drops.
+              if (window.recommendationBlocklist
+                && window.recommendationBlocklist.isBlocked(recommendationBlocklistRef.current, { artist: artist.name, title: rg.title })) return;
 
               allNewReleases.push({
                 id: rg.id,
@@ -31459,7 +31501,11 @@ Return ONLY the JSON array, no other text.`;
 
     if (cacheValid) {
       console.log(`⭐ Using cached recommendations (${Math.round((now - recommendationsCache.current.timestamp) / 60000)}m old)`);
-      const tracks = recommendationsCache.current.tracks;
+      // parachord#1006: honour the blocklist on the cached path too, since a
+      // block made since the cache was filled must take effect immediately.
+      const tracks = window.recommendationBlocklist
+        ? window.recommendationBlocklist.filterBlocked(recommendationBlocklistRef.current, recommendationsCache.current.tracks)
+        : recommendationsCache.current.tracks;
 
       // Extract unique artists, pre-populating images from cache for instant display
       const artistMap = new Map();
@@ -31529,8 +31575,14 @@ Return ONLY the JSON array, no other text.`;
       // Merge and de-dupe tracks (ListenBrainz first since it has MBID metadata)
       const seenTracks = new Set();
       const tracks = [];
+      // parachord#1006: drop anything the user blocked. Tracks carry artist +
+      // title (+ album when the service supplies it), so blocked artists,
+      // albums and tracks all apply.
+      const isBlockedTrack = (t) => !!window.recommendationBlocklist
+        && window.recommendationBlocklist.isBlocked(recommendationBlocklistRef.current, t);
 
       for (const track of listenbrainzTracks) {
+        if (isBlockedTrack(track)) continue;
         const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}`;
         if (!seenTracks.has(key)) {
           seenTracks.add(key);
@@ -31539,6 +31591,7 @@ Return ONLY the JSON array, no other text.`;
       }
 
       for (const track of lastfmTracks) {
+        if (isBlockedTrack(track)) continue;
         const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}`;
         if (!seenTracks.has(key)) {
           seenTracks.add(key);
@@ -31985,10 +32038,15 @@ Return ONLY the JSON array, no other text.`;
     const prevAlbums = previousAiSuggestions.current.albums;
     const prevArtists = previousAiSuggestions.current.artists;
     let exclusionNote = '';
-    if (prevAlbums.length > 0 || prevArtists.length > 0) {
+    const suggestionBlocklist = recommendationBlocklistRef.current;
+    const blocklistLines = window.recommendationBlocklist ? window.recommendationBlocklist.formatForPrompt(suggestionBlocklist) : [];
+    if (prevAlbums.length > 0 || prevArtists.length > 0 || blocklistLines.length > 0) {
       const parts = [];
       if (prevAlbums.length > 0) parts.push('Albums already suggested (DO NOT repeat these): ' + prevAlbums.map(a => `${a.artist} - ${a.title}`).join(', '));
       if (prevArtists.length > 0) parts.push('Artists already suggested (DO NOT repeat these): ' + prevArtists.map(a => a.name).join(', '));
+      // parachord#1006: the user's blocklist goes to the model too, and is
+      // filtered at the code level below in case the model ignores it.
+      parts.push(...blocklistLines.map(l => l.trim()));
       exclusionNote = '\n\n' + parts.join('\n');
     }
 
@@ -32039,12 +32097,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       const parsed = JSON.parse(jsonStr);
-      const candidateAlbums = (parsed.albums || []).slice(0, 12).map(a => ({
+      const notBlocked = (items, pick) => window.recommendationBlocklist
+        ? window.recommendationBlocklist.filterBlocked(suggestionBlocklist, items, pick)
+        : items;
+      const candidateAlbums = notBlocked((parsed.albums || []).slice(0, 12).map(a => ({
         title: a.title || a.album || 'Unknown Album',
         artist: a.artist || 'Unknown Artist',
         reason: a.reason || '',
         art: null // Will be loaded asynchronously
-      }));
+      })));
 
       // Validate albums against MusicBrainz: must be a studio album (single API call per album)
       const mbHeaders = { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' };
@@ -32090,11 +32151,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const prevArtistNames = new Set(
         previousAiSuggestions.current.artists.map(a => a.name.toLowerCase())
       );
-      const artists = (parsed.artists || []).map(a => ({
+      const artists = notBlocked((parsed.artists || []).map(a => ({
         name: a.name || a.artist || 'Unknown Artist',
         reason: a.reason || '',
         image: undefined // Will be loaded asynchronously
-      })).filter(a => !prevArtistNames.has(a.name.toLowerCase())).slice(0, 5);
+      })), a => ({ artist: a.name })).filter(a => !prevArtistNames.has(a.name.toLowerCase())).slice(0, 5);
       if (onUpdate) onUpdate({ artists });
 
       // Validate albums one at a time, respecting MusicBrainz rate limit (~1 req/sec).
