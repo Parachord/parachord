@@ -35,7 +35,7 @@ Nothing in the app calls ListenBrainz `cf/recommendation`, `similar-users` or la
 
 **Cache lifetimes** (`CACHE_TTL`, ~L10073): recommendations 1 hour (memory only), charts 24 hours, Fresh Drops 6 hours, concerts 24 hours, Critical Darlings 4 hours.
 
-**Recommendation blocklist.** `addToRecommendationBlocklist` (~L12487) stores `{ artists, albums, tracks }` under the store key `recommendation_blocklist`. Today it is write-only: no surface filters by it, and the chat system prompt does not include it even though the prompt text tells the model it will. The only ways to add to it are the MCP `block_recommendation` tool and the in-app `executeDjTool` case. There is no UI to view or clear it. See "Known gaps".
+**Recommendation blocklist.** `addToRecommendationBlocklist` (~L12640) stores `{ artists, albums, tracks }` under the store key `recommendation_blocklist`, written by the `block_recommendation` tool from in-app chat or MCP. `recommendation-blocklist.js` (root, loaded by index.html as `window.recommendationBlocklist`) decides what "blocked" means: a blocked artist blocks everything by them, a blocked album blocks that album and tracks on it, a blocked track blocks that track only, all case-insensitive and exact. It is applied by the Recommendations page (cached and fresh paths), Fresh Drops, the Home Shuffleupagus suggestions (filtered in code and listed in the prompt), and the chat system prompt (a BLOCKLIST section after the "do not recommend" list). Charts, Critical Darlings and Spinoff are not personalized and do not consult it. There is no UI to view or clear the list yet.
 
 ## Recommendations page
 
@@ -76,7 +76,7 @@ Code: `AIChatService` (~L5647), `AI_CHAT_SYSTEM_PROMPT` (~L5488), `buildSystemPr
 
 Entry points: the playbar AI button (opens chat whenever any chat provider is enabled), "Chat with Shuffleupagus" on Home, and `parachord://chat?prompt=` (asks for confirmation first).
 
-Tools offered to the model (the inline `djTools` list, ~L4902): play, control, search, queue_add, queue_remove, queue_clear, create_playlist, shuffle, collection_radio, get_playlists, get_playlist_tracks, add_to_playlist, remove_from_playlist, reorder_playlist, rename_playlist, delete_playlist. The playlist tools are only offered when "Share my data" is on. `block_recommendation` is implemented in `executeDjTool` and described in the system prompt but is not in this list, so the in-app model cannot call it (the MCP server does advertise it; see below).
+Tools offered to the model (the inline `djTools` list, ~L4922): play, control, search, queue_add, queue_remove, queue_clear, create_playlist, shuffle, collection_radio, block_recommendation, get_playlists, get_playlist_tracks, add_to_playlist, remove_from_playlist, reorder_playlist, rename_playlist, delete_playlist. The playlist tools are only offered when "Share my data" is on. `tests/chat/dj-tools-executor-parity.test.js` fails if a registry tool other than `seek` and `get_position` is missing from this list.
 
 Context injected when sharing is on: now playing, the next 10 queue items, shuffle state, 10 collection artists, 8 albums and 10 tracks, listening history per period (5 each) and 10 recently played, a "do not recommend" list of up to 30 artists the user already knows, 15 playlists with sample tracks, time of day, 8 recent session items, 5 recent searches, up to 5 friends' weekly favourites, and whether local files are enabled. With sharing off the model gets a minimal prompt that asks it to suggest enabling sharing once.
 
@@ -84,7 +84,7 @@ Listening context (`fetchListeningContext`, ~L20339) is shared with the Home sug
 
 ## MCP server
 
-`services/mcp-server.js` advertises the registry in `tools/dj-tools.js` (17 tools) to external agents such as Claude Desktop. That set differs from the in-app chat list: it includes `block_recommendation`, `seek` and `get_position` and lacks `queue_remove` and `collection_radio`. Both dispatch through `executeDjTool` in app.js; `tests/chat/dj-tools-executor-parity.test.js` fails if a registry tool has no executor case.
+`services/mcp-server.js` advertises the registry in `tools/dj-tools.js` (17 tools) to external agents such as Claude Desktop. That set differs from the in-app chat list: it includes `seek` and `get_position` and lacks `queue_remove` and `collection_radio`. Both dispatch through `executeDjTool` in app.js with their own context objects; the playlist methods are built once by `buildPlaylistToolContext` and spread into both. The MCP context has no "Share my data" gate because the MCP server is its own opt-in. `tests/chat/dj-tools-executor-parity.test.js` fails if a registry tool has no executor case or if the MCP context lacks a method the executor calls.
 
 ## AI Playlist (one shot)
 
@@ -199,8 +199,9 @@ From the manifests in `plugins/*.axe`. The app only reads `generate`, `chat`, `c
 
 Found while writing this inventory; none are fixed by this document.
 
-1. `parachord://play/radio?artist=X` with no title plays nothing: the handler (~L13413) passes a null title and `startSpinoff` returns early on missing track info (~L35947). protocol-schema.md documents artist-only as supported.
-2. The recommendation blocklist is never applied. No surface filters by it, and `buildSystemPrompt` does not include it although the prompt tells the model it is listed under current state.
-3. In-app chat never offers `block_recommendation`; it is missing from the inline tool list even though the system prompt instructs the model to call it. Only the MCP server advertises it.
-4. The one-shot AI Playlist panel cannot be opened from the playbar button with bundled plugins, because chat takes priority whenever a chat-capable plugin is enabled.
-5. When ListenBrainz has no recommendation playlist for the user, the Recommendations page shows their own most-played tracks of the month under the ListenBrainz tag.
+1. `parachord://play/radio?artist=X` with no title plays nothing: the handler (~L13413) passes a null title and `startSpinoff` returns early on missing track info (~L35947). protocol-schema.md documents artist-only as supported. (parachord#1005)
+2. The one-shot AI Playlist panel cannot be opened from the playbar button with bundled plugins, because chat takes priority whenever a chat-capable plugin is enabled.
+3. When ListenBrainz has no recommendation playlist for the user, the Recommendations page shows their own most-played tracks of the month under the ListenBrainz tag.
+4. There is no UI to view or clear the recommendation blocklist.
+
+Fixed since the first version: the blocklist is now applied and listed in the chat prompt (parachord#1006), in-app chat offers `block_recommendation` (parachord#1007), and the MCP playlist tools work (parachord#1008).
