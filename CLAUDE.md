@@ -1081,15 +1081,17 @@ The client checks `cachedVersion !== marketplaceVersion` (main.js L3674). If you
 - Pulls community contributions from `parachord-plugins` back into this repo via PR
 
 ### Dynamic Model Selection
-- AI plugins (Ollama, ChatGPT, Gemini) use `type: "dynamic-select"` in their model setting
+- AI plugins (Ollama, ChatGPT, Gemini, Custom LLM) use `type: "dynamic-select"` in their model setting
 - Each plugin implements a `listModels(config)` function that fetches available models from the provider's API
 - **Ollama**: `GET {endpoint}/api/tags` — returns locally installed models
 - **ChatGPT**: `GET /v1/models` with blocklist filter (excludes `dall-e`, `whisper`, `tts`, `text-embedding`, `babbage`, `davinci`, `canary`, `moderation`, `embedding`, plus `realtime`/`audio`/`transcri`)
 - **Gemini**: `GET /v1beta/models?key=` filtered by `supportedGenerationMethods.includes('generateContent')`
 - **Claude**: No list endpoint — stays curated with static `type: "select"`
+- **Custom LLM** (`customllm.axe`, parachord#997): dialect-aware — `GET {baseUrl}/models` (openai) or `GET {baseUrl}/v1/models` (anthropic). Sets `allowCustom: true` on its dynamic-select, so the settings UI renders a free-text input + `<datalist>` instead of a select — typing an arbitrary model id must always work because not every endpoint implements the list route. Model suggestions refresh when the `baseUrl` or `api` fields change (the generic extra-field renderer in the AI config block refetches dynamic models for those field keys).
 - App-side: `dynamicModelOptions` state tracks loading/options/error per resolver; `fetchDynamicModels()` called on settings panel open and after API key/endpoint changes
 - `fallbackOptions` in the plugin manifest shown when fetch fails or no API key configured yet
 - Refresh button (↻) next to model label for manual re-fetch
+- The AI config block renders extra `settings.configurable` fields generically (select/text/number) beyond the auth key + model pair — `customllm` uses it for `api` (dialect select), `baseUrl`, `maxTokens`; older AI plugins declare only apiKey + model so they render nothing extra. For `requiresAuth: false` AI services the block also renders an explicit **Enable toggle** (these services are enabled *solely* by `config.enabled === true` — see `isServiceEnabled` — so the flag must be visible and flippable, same as Ollama's own block), the modal footer's Enable button tracks `enabled !== true` (a set `apiKey` does NOT count as enabled for them), and the apiKey onBlur preserves the toggle (`state.enabled === true || !!value` — deliberately NOT `??`: nullish coalescing doesn't fall through on `false`, so an early empty-key blur would poison `enabled: false` and a later key entry could never re-enable — that exact sequence shipped customllm with a configured-but-disabled service).
 
 ### AI Chat (Shuffleupagus)
 - `AIChatService` (L4700s): Manages conversation, tool calls, and provider communication
