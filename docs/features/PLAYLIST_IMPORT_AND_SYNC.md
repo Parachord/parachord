@@ -136,7 +136,9 @@ Apple Music writes degrade to append-only when Apple rejects PUT; removals stay 
 
 **Sync wizard** (`openSyncSetupModal`, ~L11284). Opened from the Collection header Sync dropdown (~L48262), the Collection empty-state buttons, the plugin detail page in Settings (sync, Manage Sync, Stop Syncing), and automatically after Spotify authorisation completes. ListenBrainz requires the scrobbler token first. Steps: options (Playlists, Liked Songs, Saved Albums, Followed Artists, filtered by what the provider supports), playlists (All / Created by Me / Following filters, Select All, and for ListenBrainz a "Push my Parachord playlists" toggle that defaults off), syncing, complete. The checked set is seeded from saved selections plus existing `syncedFrom` and `syncedTo` links. ListenBrainz imports every playlist by default; unticked ones go to `suppressed_sync_playlists`. Start Sync runs `sync:start` with `fullSync: true` and then creates or pushes local playlists.
 
-**Background sync** (`runBackgroundSync`, ~L6786): first run 60 seconds after launch, then every 15 minutes, and 30 seconds after the window loses focus with a 5-minute staleness gate. Background runs process a batch of the oldest-stale playlists per cycle; the wizard bypasses the stagger. A return to the foreground cancels an in-flight background sync.
+**Background sync** (`runBackgroundSync`, ~L6829): first run 60 seconds after launch, then every 15 minutes, and 30 seconds after the window loses focus with a 5-minute staleness gate. Background runs process a batch of the oldest-stale playlists per cycle; the wizard and "Sync Now" bypass the stagger. A return to the foreground cancels an in-flight background sync.
+
+**Sync status and "Sync Now".** The Collection header's Sync dropdown has a "Sync status & Sync Now" entry (shown once any provider is enabled) that opens the Library Sync modal: per-provider last-sync time and live progress, a "Sync Now" button that runs `sync:start` with `fullSync: true` for every enabled, authenticated provider and reloads the collection and playlists, and a "Manage settings" link to the Plugins tab (parachord#1009).
 
 **Pull and push** (classic engine). `sync:start` (main.js ~L7130) imports the selected remote playlists as `${providerId}-${externalId}`. A changed remote snapshot sets `hasUpdates`; tracks are re-fetched automatically only when the local copy is empty or the playlist is Spotify-curated. Otherwise the playlist banner (~L44466) offers Pull (`handlePull`, ~L44575), Push (`handlePush`, ~L44536), or dismiss, and shows a conflict state when both sides changed. The renderer push loop creates or updates remote copies of local playlists, skipping `localOnly` ones and honouring per-playlist channel overrides. A playlist can mirror to several providers at once; a pull from one provider marks the others for push.
 
@@ -152,7 +154,7 @@ Apple Music writes degrade to append-only when Apple rejects PUT; removals stay 
 
 **One-shot AI Playlist.** Plugins with the `generate` capability (ChatGPT, Gemini) return a track list shown in a sidebar with Play, Add to Queue and Add to Playlist (`handleAiAddToPlaylist`, ~L20712, which opens the Add-to-Playlist panel). `handleAiSavePlaylist` (~L29064) and its dialog are defined but never called. The panel itself is only reachable when no chat-capable plugin is enabled.
 
-**MCP server.** `services/mcp-server.js` serves `tools/dj-tools.js` on 127.0.0.1:9421. Of the playlist tools it advertises, only `create_playlist` works today: the MCP tool context (~L12514 onward) provides `createPlaylist` but none of the get, find, add, remove, move, rename or delete methods the other seven need, so they fail with a caught "not a function" error. See "Known gaps".
+**MCP server.** `services/mcp-server.js` serves `tools/dj-tools.js` on 127.0.0.1:9421. All eight playlist tools work: the playlist methods are built once by `buildPlaylistToolContext` and spread into both the chat and MCP tool contexts (parachord#1008). The MCP context has no "Share my data" gate, since that setting belongs to in-app chat and the MCP server is its own opt-in.
 
 ## Other ways a playlist is created
 
@@ -169,8 +171,7 @@ Where the code or CLAUDE.md states parity: `play/playlist` provider sniffing mir
 
 Found while writing this inventory; none are fixed by this document.
 
-1. **"Sync Now" is unreachable.** The button lives inside `syncStatusModal` (~L64686), and nothing ever sets that modal open; the only explicit full sync is the wizard's Start Sync. (parachord#1009)
-2. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup.
-3. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import.
+1. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup.
+2. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import.
 
-Fixed since the first version: the MCP playlist tools work (parachord#1008), playlist XSPF export is wired to the UI (parachord#1010), the URL import path has the public-URL guard and body cap (parachord#1011), and the chat share link host and stale line numbers in CLAUDE.md were corrected (parachord#1012; the link deliberately uses `achordion.xyz/go`, which renders a preview page, rather than the static `parachord.com/go` bounce).
+Fixed since the first version: the MCP playlist tools work (parachord#1008), "Sync Now" is reachable from the Collection Sync dropdown (parachord#1009), playlist XSPF export is wired to the UI (parachord#1010), the URL import path has the public-URL guard and body cap (parachord#1011), and the chat share link host and stale line numbers in CLAUDE.md were corrected (parachord#1012; the link deliberately uses `achordion.xyz/go`, which renders a preview page, rather than the static `parachord.com/go` bounce).

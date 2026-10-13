@@ -48586,6 +48586,44 @@ useEffect(() => {
                   overflow: 'hidden'
                 }
               },
+                // Sync status + "Sync Now" (parachord#1009). The Library Sync
+                // modal has existed since 2026-01 but nothing opened it, so the
+                // only full sync a user could trigger was the wizard's Start Sync.
+                Object.values(resolverSyncSettings).some(s => s?.enabled) && React.createElement('button', {
+                  key: 'sync-status',
+                  onClick: () => { setSyncMenuOpen(false); setSyncStatusModal({ open: true }); },
+                  style: {
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '10px 14px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    transition: 'background-color 100ms ease'
+                  },
+                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
+                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
+                },
+                  React.createElement('div', {
+                    style: {
+                      width: '28px', height: '28px', borderRadius: '8px',
+                      backgroundColor: '#06b6d4',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0
+                    }
+                  },
+                    React.createElement('svg', { style: { width: '16px', height: '16px' }, fill: 'none', viewBox: '0 0 24 24', stroke: '#ffffff' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                    )
+                  ),
+                  Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync status & Sync Now'
+                ),
                 Object.entries(syncProviderConfig).map(([pid, config]) =>
                   React.createElement('button', {
                     key: pid,
@@ -64920,7 +64958,8 @@ useEffect(() => {
           React.createElement('button', {
             onClick: () => {
               setSyncStatusModal({ open: false });
-              // Navigate to settings - to be wired up later
+              navigateTo('settings');
+              setSettingsTab('plugins');
             },
             style: {
               fontSize: '13px',
