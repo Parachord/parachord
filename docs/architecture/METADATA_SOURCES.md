@@ -83,16 +83,22 @@ Used throughout the app for album displays, track lists, and playlist mosaics.
 |----------|----------|---------------|-------|
 | Cover Art Archive | `coverartarchive.org/release-group/{id}/front` | No | Via MusicBrainz release lookup |
 | Cover Art Archive | `coverartarchive.org/release/{id}/front` | No | Fallback if release-group fails |
+| Enabled resolvers | Each resolver's `search()` results (`albumArt` field) | Per resolver | Spotify, Apple Music, Bandcamp, SoundCloud, YouTube |
+| iTunes Search | `itunes.apple.com/search?entity=album` (or `song`) | No | Through `window.iTunesRateLimiter`; hit must name the artist and album |
+| Deezer | `api.deezer.com/search/album` (or `/search`) | No | Through the main-process proxy (no CORS for file://); hit must name the artist and album |
 | Embedded | Local file metadata | N/A | ID3v2/Vorbis tags |
 | Folder | `cover.jpg`, `folder.jpg`, `album.jpg`, etc. | N/A | Same directory as audio files |
 
-**Code Location:** `app.js` → `getAlbumArt()` (~line 18915)
+**Code Location:** `app.js` → `getAlbumArt()` (the one pipeline; search for "THE album-art pipeline"), `getAlbumArtFromResolvers()`, `getTrackArt()`; `album-art-catalog.js` (iTunes → Deezer chain, tests in `tests/resolver/album-art-catalog.test.js`)
 
-**Lookup Process:**
-1. Search MusicBrainz for release matching artist + album
-2. Try Cover Art Archive with release-group ID
-3. Fall back to release ID if release-group fails
-4. Cache result with album-to-release-ID mapping
+**Lookup Process (one pipeline for every surface):**
+1. Caches: `albumArtCache` by MusicBrainz id, plus `resolver:` / `catalog:` keys by artist+album
+2. Search MusicBrainz for the release, then Cover Art Archive by release-group id, then release id
+3. Enabled resolvers' search results, walked in priority order until one returns a result with art
+4. iTunes Search, then Deezer, validated against the requested artist and album
+5. A miss is remembered for the session only when every source answered; thrown searches are retried next time
+
+Callers that have a track title but no album (chat cards from prose) use `getTrackArt()`, the catalog chain's song search. Don't add surface-specific shortcuts: the chat card had a resolvers-only "fast" path and that is why AI-recommended tracks showed no art.
 
 **Cache:** `albumArtCache` and `albumToReleaseIdCache`, persisted to electron store.
 

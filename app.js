@@ -21058,7 +21058,10 @@ ${trackListXml}
   //   earlyReturn: if true, returns as soon as the first resolver finds results (faster for single track play)
   //   targetArtist/targetTitle: if provided with earlyReturn, returns early only if an exact match is found
   const searchResolvers = async (query, options = {}) => {
-    const { earlyReturn = false, targetArtist, targetTitle } = options;
+    // requireAlbumArt: with earlyReturn, keep walking resolvers until one returns
+    // a result that carries albumArt (the album-art pipeline's use), instead of
+    // stopping at the first resolver that returns anything.
+    const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false } = options;
     const allResolvers = loadedResolversRef.current || [];
     const activeIds = activeResolversRef.current || [];
     const resolverOrder = resolverOrderRef.current || [];
@@ -21102,7 +21105,7 @@ ${trackListXml}
               if (hasExactMatch) {
                 return results;
               }
-            } else {
+            } else if (!requireAlbumArt || taggedTracks.some(t => t.albumArt)) {
               // No target specified, return early with any results
               return results;
             }
@@ -21478,14 +21481,14 @@ ${trackListXml}
           }
         }
 
-        if (!albumName || !artist) {
-          if (!cancelled) setLoading(false);
-          return;
-        }
-
         try {
-          // Use fast iTunes-based lookup for ChatCards (much faster than MusicBrainz)
-          const artUrl = await getAlbumArtFast(artist, albumName);
+          // The shared album-art pipeline (MusicBrainz + Cover Art Archive →
+          // resolvers → iTunes → Deezer), same as every other surface. A
+          // track card with no album name (common when the model answers in
+          // prose) falls back to the catalog chain's song search.
+          const artUrl = (albumName && artist)
+            ? await getAlbumArt(artist, albumName)
+            : (type === 'track' ? await getTrackArt(artist, title) : null);
           if (!cancelled && artUrl) {
             setImageUrl(artUrl);
           }
@@ -34773,8 +34776,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Cache for resolver-based album art lookups
   const resolverArtCache = useRef({});
 
-  // Search enabled resolvers for album art (used as fallback when MusicBrainz/CAA fails)
-  // Returns the first albumArt URL found from the user's enabled resolvers
+  // Adapters for the catalog art chain (album-art-catalog.js). iTunes goes
+  // through the shared limiter (~20 req/min/IP); Deezer sends no CORS header
+  // for file:// origins, so it goes through the main-process proxy.
+  const catalogArtDeps = () => ({
+    fetchItunes: (url) => window.iTunesRateLimiter.fetch(url),
+    fetchDeezer: async (url) => {
+      const r = await window.electron?.proxyFetch?.(url, { headers: { Accept: 'application/json' } });
+      return { ok: !!(r && r.success), json: async () => JSON.parse(r.text || 'null') };
+    }
+  });
+
+  // Steps 3 and 4 of the shared album-art pipeline (see getAlbumArt): the
+  // enabled resolvers' search results, then the iTunes → Deezer catalog chain.
+  // Called by getAlbumArt after MusicBrainz + Cover Art Archive miss. A miss is
+  // remembered for the session (resolverArtCache null) only when every source
+  // answered; a thrown search (network, throttle) is not cached, so the next
+  // render tries again.
   const getAlbumArtFromResolvers = async (artist, album) => {
     if (!artist || !album) return null;
 
@@ -34785,56 +34803,76 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       return resolverArtCache.current[cacheKey]; // null = previously failed
     }
 
+    const remember = (url, source) => {
+      resolverArtCache.current[cacheKey] = url;
+      // Also store in shared albumArtCache for cross-lookup (getCachedAlbumArt)
+      albumArtCache.current[`${source}:${cacheKey}`] = { url, timestamp: Date.now() };
+      return url;
+    };
+
     try {
-      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true });
-      if (!results || results.length === 0) {
-        resolverArtCache.current[cacheKey] = null;
-        return null;
-      }
+      // Walk resolvers in priority order until one returns a result WITH art;
+      // stopping at the first resolver that returned anything (the old
+      // behaviour) let an art-less hit from a higher-priority resolver hide
+      // Spotify's or Bandcamp's cover.
+      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true, requireAlbumArt: true });
 
       // Find best match - prefer exact artist+album match
       const normalizedAlbum = album.toLowerCase();
       const normalizedArtist = artist.toLowerCase();
 
-      const bestMatch = results.find(r =>
+      const bestMatch = (results || []).find(r =>
         r.albumArt &&
         r.artist?.toLowerCase() === normalizedArtist &&
         r.album?.toLowerCase() === normalizedAlbum
-      ) || results.find(r =>
+      ) || (results || []).find(r =>
         r.albumArt &&
         r.artist?.toLowerCase() === normalizedArtist
-      ) || results.find(r => r.albumArt);
+      ) || (results || []).find(r => r.albumArt);
 
-      if (bestMatch?.albumArt) {
-        resolverArtCache.current[cacheKey] = bestMatch.albumArt;
-        // Also store in shared albumArtCache for cross-lookup
-        const artCacheEntry = { url: bestMatch.albumArt, timestamp: Date.now() };
-        const artLookupKey = `resolver:${cacheKey}`;
-        albumArtCache.current[artLookupKey] = artCacheEntry;
-        return bestMatch.albumArt;
-      }
-
-      resolverArtCache.current[cacheKey] = null;
-      return null;
+      if (bestMatch?.albumArt) return remember(bestMatch.albumArt, 'resolver');
     } catch (err) {
       console.error('Resolver album art lookup failed:', err);
       return null;
     }
+
+    // Catalog fallback: iTunes Search, then Deezer (no auth, independent of
+    // which resolvers are enabled). Validated hits only.
+    if (window.albumArtCatalog) {
+      const catalogUrl = await window.albumArtCatalog.getCatalogAlbumArtwork(artist, album, catalogArtDeps());
+      if (catalogUrl) return remember(catalogUrl, 'catalog');
+    }
+
+    resolverArtCache.current[cacheKey] = null;
+    return null;
   };
 
-  // Fast album art lookup using enabled resolvers (for ChatCards and other quick lookups)
-  const getAlbumArtFast = async (artist, album) => {
-    if (!artist || !album) return null;
-
-    // Check the main albumArtCache first
-    const cachedArt = getCachedAlbumArt(artist, album);
-    if (cachedArt) return cachedArt;
-
-    // Search enabled resolvers
-    return getAlbumArtFromResolvers(artist, album);
+  // Track-level art for callers that have a title but no album name (chat
+  // cards from prose): the catalog chain's song search, which returns the
+  // matched track's album cover. Same validation as the album chain.
+  // Session-cached by artist|title.
+  const getTrackArt = async (artist, title) => {
+    if (!artist || !title) return null;
+    const cacheKey = `track:${artist}|${title}`.toLowerCase();
+    if (resolverArtCache.current[cacheKey] !== undefined) return resolverArtCache.current[cacheKey];
+    let url = null;
+    if (window.albumArtCatalog) {
+      url = await window.albumArtCatalog.getCatalogTrackArtwork(artist, title, catalogArtDeps());
+    }
+    resolverArtCache.current[cacheKey] = url;
+    return url;
   };
 
   // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
+  // THE album-art pipeline. Every surface that shows a cover (playbar, queue,
+  // Recommendations, Fresh Drops, chat cards, playlist mosaics, ...) goes
+  // through this one function so coverage and caching are identical:
+  //   1. caches (albumArtCache by MB id, resolver:/catalog: keys)
+  //   2. MusicBrainz release search → Cover Art Archive (release-group, then release)
+  //   3. enabled resolvers' search results (getAlbumArtFromResolvers)
+  //   4. iTunes Search → Deezer catalog chain (album-art-catalog.js)
+  // Don't add a surface-specific shortcut; the chat card had one ("fast",
+  // resolvers only) and it is why AI-recommended tracks rendered without art.
   const getAlbumArt = async (artist, album) => {
     if (!artist || !album) return null;
 
@@ -34977,6 +35015,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Then check albumToReleaseIdCache by artist+album name
     if (artist && album) {
       const lookupKey = `${artist}-${album}`.toLowerCase();
+      // Resolver / catalog hits are stored under prefixed keys (no MB id)
+      const fallbackHit = albumArtCache.current[`resolver:${lookupKey}`]?.url
+        || albumArtCache.current[`catalog:${lookupKey}`]?.url;
+      if (fallbackHit) return fallbackHit;
       const cachedLookup = albumToReleaseIdCache.current[lookupKey];
       if (cachedLookup) {
         // Handle both old format (string) and new format ({ releaseId, releaseGroupId })
