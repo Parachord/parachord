@@ -574,9 +574,8 @@ describe('Track Resolution for Local Files', () => {
   });
 
   test('local file URL uses custom protocol', () => {
+    const { localAudioUrlFromPath } = require('../../local-files/audio-protocol');
     const filePath = '/music/My Song.mp3';
-    const audioUrl = `local-audio://${encodeURIComponent(filePath)}`;
-
-    expect(audioUrl).toBe('local-audio://%2Fmusic%2FMy%20Song.mp3');
+    expect(localAudioUrlFromPath(filePath)).toBe('local-audio://local/music/My%20Song.mp3');
   });
 });

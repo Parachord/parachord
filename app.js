@@ -8600,6 +8600,9 @@ const Parachord = () => {
   const audioBlobUrlRef = useRef(null); // Current blob URL for audio (for cleanup)
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
   const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
+  const localFileNetworkRetryRef = useRef(0); // MEDIA_ERR_NETWORK retries for a stalled network mount
+  const localFileSeekTargetRef = useRef(null); // Last local-file seek, so a failed seek can resume there
+  const localFileRetryCommitRef = useRef(null); // Post-play state commit, deferred until a MEDIA_ERR_NETWORK retry succeeds
   const pageResolutionAbortRef = useRef(null); // AbortController for cancelling page resolution
 
   // Refs for collection tracks visibility tracking
@@ -18079,9 +18082,10 @@ ${trackListXml}
         // filter below — even when they'd validate cleanly. Re-score on the
         // fly using the canonical (track artist, track title) target so
         // legacy cache entries survive until they age out (7-day TTL).
-        const confidence = typeof src?.confidence === 'number'
-          ? src.confidence
-          : calculateConfidence({ artist: trackOrSource.artist, title: trackOrSource.title }, src);
+        const confidence = confidenceForSource(
+          { artist: trackOrSource.artist, title: trackOrSource.title },
+          src
+        );
         return {
           resolverId: resId,
           source: src,
@@ -18255,6 +18259,22 @@ ${trackListXml}
           console.log('🎵 Local file playback ended');
           handleNextRef.current?.();
         });
+        audioRef.current.addEventListener('playing', () => {
+          // Reset the network-retry budget only after playback has held.
+          // Clearing it on this event itself loops: a seek retry sets
+          // currentTime from loadedmetadata, 'playing' fires, the budget
+          // drops to 0, and the seek error immediately retries again.
+          if (!audioRef.current?.src?.startsWith('local-audio:')) return;
+          const generation = playbackGenerationRef.current;
+          setTimeout(() => {
+            const el = audioRef.current;
+            if (!el || playbackGenerationRef.current !== generation) return;
+            if (!el.error && !el.paused && el.src.startsWith('local-audio:')) {
+              localFileNetworkRetryRef.current = 0;
+              localFileSeekTargetRef.current = null;
+            }
+          }, 1500);
+        });
         audioRef.current.addEventListener('error', (e) => {
           const mediaError = e.target.error;
           console.error('🎵 Audio error:', mediaError);
@@ -18272,7 +18292,71 @@ ${trackListXml}
             const ext = filePath.split('.').pop()?.toLowerCase();
             errorMessage = unsupportedAudioMessage(ext);
           } else if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
-            errorMessage = 'Network error while loading the file. The file may have been moved or deleted.';
+            const audio = audioRef.current;
+            const src = audio?.src || '';
+            // A seek (or a stalled read) on a network mount surfaces as
+            // MEDIA_ERR_NETWORK even when the file is still there. Retry once
+            // from the position the user asked for before telling them the
+            // file was deleted.
+            if (src.startsWith('local-audio:')) {
+              if (localFileNetworkRetryRef.current < 1) {
+                localFileNetworkRetryRef.current += 1;
+                const fromElement = audio.currentTime;
+                const resumeAt = (fromElement > 0.25 ? fromElement : null)
+                  ?? localFileSeekTargetRef.current
+                  ?? progressRef.current
+                  ?? 0;
+                const generation = playbackGenerationRef.current;
+                // A failed seek on a paused track must come back paused; an
+                // initial play that is waiting on its commit must play.
+                const wasPlaying = !!localFileRetryCommitRef.current || isPlayingRef.current || !audio.paused;
+                console.warn(`🎵 Local file network error — retrying at ${Number(resumeAt).toFixed(2)}s${wasPlaying ? '' : ' (paused)'}`);
+                setTimeout(() => {
+                  const el = audioRef.current;
+                  if (!el || playbackGenerationRef.current !== generation) return;
+                  if (!el.src.startsWith('local-audio:')) return;
+                  const base = src.split('?')[0];
+                  const onReady = () => {
+                    el.removeEventListener('loadedmetadata', onReady);
+                    if (playbackGenerationRef.current !== generation) return;
+                    try {
+                      if (resumeAt > 0) el.currentTime = resumeAt;
+                    } catch (err) {
+                      console.warn('🎵 Local file retry seek failed:', err);
+                    }
+                    if (!wasPlaying) return;
+                    el.play().then(() => {
+                      const commit = localFileRetryCommitRef.current;
+                      localFileRetryCommitRef.current = null;
+                      if (commit && playbackGenerationRef.current === generation) commit();
+                    }).catch(err => console.warn('🎵 Local file retry play failed:', err));
+                  };
+                  el.addEventListener('loadedmetadata', onReady);
+                  el.src = base + '?r=' + Date.now();
+                  el.load();
+                }, 400);
+                return;
+              }
+              // Retry spent. Prefer another source over a dialog, as the
+              // initial-play path did before network errors were routed here.
+              localFileRetryCommitRef.current = null;
+              const failedTrack = localFilePlaybackTrackRef.current;
+              const otherSources = failedTrack?.sources
+                ? Object.keys(failedTrack.sources).filter(id => id !== 'localfiles' && !failedTrack.sources[id]?.noMatch)
+                : [];
+              if (otherSources.length > 0 && !localFileFallbackInProgressRef.current) {
+                console.log('🔄 Local file still failing after retry — falling back to next available source...');
+                localFileFallbackInProgressRef.current = true;
+                handlePlay({
+                  ...failedTrack,
+                  sources: Object.fromEntries(Object.entries(failedTrack.sources).filter(([id]) => id !== 'localfiles'))
+                });
+                return;
+              }
+              errorMessage = 'Network error while reading the file. If it is on a network drive, the connection may have stalled — try again. Otherwise the file may have been moved or deleted.';
+            } else {
+              errorMessage = 'Network error while loading the file. The file may have been moved or deleted.';
+            }
           } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
             errorMessage = 'Error decoding the audio file. The file may be corrupted or use an unsupported format.';
           }
@@ -18290,9 +18374,17 @@ ${trackListXml}
       localFilePlaybackTrackRef.current = trackOrSource;
       localFileFallbackInProgressRef.current = false;
 
-      // Use custom local-audio:// protocol for secure local file playback
+      // Use custom local-audio:// protocol for secure local file playback.
+      // Encode the path (localAudioUrlFromPath) so '#', '?', and '%' in
+      // filenames aren't eaten by the media element's URL parser — a standard
+      // scheme, which seeks require, treats those as delimiters.
       const filePath = sourceToPlay.filePath || sourceToPlay.fileUrl?.replace('file://', '');
-      const audioUrl = `local-audio://${filePath}`;
+      const audioUrl = window.localAudioUrlFromPath
+        ? window.localAudioUrlFromPath(filePath)
+        : `local-audio://${filePath}`;
+      localFileNetworkRetryRef.current = 0;
+      localFileSeekTargetRef.current = null;
+      localFileRetryCommitRef.current = null;
       console.log('🎵 Audio URL:', audioUrl);
       audioRef.current.src = audioUrl;
       // Apply normalized volume for local files (respect mute state)
@@ -18304,8 +18396,11 @@ ${trackListXml}
       // Explicitly load to trigger metadata events
       audioRef.current.load();
 
-      try {
-        await audioRef.current.play();
+      // Post-play state commit. Also run by the audio error listener when a
+      // MEDIA_ERR_NETWORK retry succeeds (localFileRetryCommitRef), so a track
+      // that only starts on the second attempt still gets currentTrack /
+      // isPlaying / scrobbling.
+      const commitLocalPlayback = () => {
 
         // Set current track state
         // Duration from local files is already in seconds
@@ -18380,8 +18475,26 @@ ${trackListXml}
             }
           })();
         }
+      };
+
+      try {
+        await audioRef.current.play();
+        commitLocalPlayback();
       } catch (error) {
         console.error('❌ Local file playback failed:', error);
+
+        // Network errors are owned by the audio element's error listener,
+        // which retries a stalled mount before showing a dialog. Falling
+        // through here would also pop a dialog (or abandon the local file
+        // for another resolver) for a blip the retry can absorb.
+        if (audioRef.current?.error?.code === MediaError.MEDIA_ERR_NETWORK) {
+          // The listener commits the track state if its retry succeeds; if
+          // the retry is spent too, it falls back to another source or
+          // shows the dialog.
+          localFileRetryCommitRef.current = commitLocalPlayback;
+          setTrackLoading(false);
+          return;
+        }
 
         // Try fallback to next available source if we have the original track with sources
         if (trackOrSource.sources && Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch).length > 1) {
@@ -26503,7 +26616,7 @@ ${trackListXml}
       const displaySources = {};
       const targetTrackForScoring = { artist: artistName || track.artist || '', title: track.title || '' };
       for (const [resolverId, source] of Object.entries(filteredCached)) {
-        const rescored = calculateConfidence(targetTrackForScoring, source);
+        const rescored = confidenceForSource(targetTrackForScoring, source);
         displaySources[resolverId] = { ...source, confidence: rescored };
       }
       // If the cache had entries but they were ALL noMatch sentinels, mark the
@@ -26581,7 +26694,7 @@ ${trackListXml}
       const targetTrackForScoring = { artist: artistName || track.artist || '', title: track.title || '' };
       const rescoredPersisted = {};
       for (const [resolverId, source] of Object.entries(realPersistedSources)) {
-        const rescored = calculateConfidence(targetTrackForScoring, source);
+        const rescored = confidenceForSource(targetTrackForScoring, source);
         rescoredPersisted[resolverId] = { ...source, confidence: rescored };
       }
 
@@ -28296,6 +28409,18 @@ ${trackListXml}
       return foundTrack.confidence;
     }
     return 0.95;
+  };
+
+  // Library localfiles rows identify the recording by path and often omit
+  // artist/title. calculateConfidence then returns 0.5, and the selection
+  // floor drops a file that is on disk — Collection click shows "No Enabled
+  // Source" for a track whose badge is the local resolver. Keep the stored
+  // score in that case; only rescore sources that actually carry names.
+  const confidenceForSource = (target, source) => {
+    if (source?.filePath && (!source.artist || !source.title)) {
+      return typeof source.confidence === 'number' ? source.confidence : 1.0;
+    }
+    return calculateConfidence(target, source);
   };
 
   // Fetch album art suggestions from MusicBrainz/Cover Art Archive
@@ -39229,6 +39354,9 @@ useEffect(() => {
     setProgress(newPosition);
     // Local files + SoundCloud use HTML5 Audio
     if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || activeResolver === 'soundcloud') && audioRef.current) {
+      if (audioRef.current.src?.startsWith('local-audio:')) {
+        localFileSeekTargetRef.current = newPosition;
+      }
       audioRef.current.currentTime = newPosition;
     }
     // Apple Music (native MusicKit, MusicKit JS, or preview audio)
