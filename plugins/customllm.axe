@@ -3,7 +3,7 @@
     "id": "customllm",
     "name": "Custom LLM",
     "type": "meta-service",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "icon": "🔌",
     "color": "#8b5cf6",
     "author": "Parachord Team",
@@ -11,7 +11,8 @@
   },
   "capabilities": {
     "generate": true,
-    "chat": true
+    "chat": true,
+    "mobile": false
   },
   "settings": {
     "requiresAuth": false,
