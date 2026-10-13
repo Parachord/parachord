@@ -31,7 +31,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 
 ### AI Companion
 - **Shuffleupagus** - Built-in AI DJ that can recommend music, generate playlists, and control playback
-- **Multiple AI Backends** - Choose from ChatGPT, Claude, Google Gemini, or Ollama (local/offline)
+- **Multiple AI Backends** - Choose from ChatGPT, Claude, Google Gemini, Ollama (local/offline), or any OpenAI- or Anthropic-compatible endpoint via the Custom LLM plug-in (LM Studio, vLLM, llama.cpp, OpenRouter, ...)
 - **MCP Server** - Exposes playback and queue controls to external AI agents like Claude Desktop via the Model Context Protocol
 
 ### Library Sync
