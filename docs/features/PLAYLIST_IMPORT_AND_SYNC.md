@@ -171,7 +171,7 @@ Where the code or CLAUDE.md states parity: `play/playlist` provider sniffing mir
 
 Found while writing this inventory; none are fixed by this document.
 
-1. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup.
-2. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import.
+1. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup. (parachord#1018)
+2. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import. (parachord#1019)
 
 Fixed since the first version: the MCP playlist tools work (parachord#1008), "Sync Now" is reachable from the Collection Sync dropdown (parachord#1009), playlist XSPF export is wired to the UI (parachord#1010), the URL import path has the public-URL guard and body cap (parachord#1011), and the chat share link host and stale line numbers in CLAUDE.md were corrected (parachord#1012; the link deliberately uses `achordion.xyz/go`, which renders a preview page, rather than the static `parachord.com/go` bounce).

@@ -199,8 +199,8 @@ From the manifests in `plugins/*.axe`. The app only reads `generate`, `chat`, `c
 
 Found while writing this inventory; none are fixed by this document.
 
-1. The one-shot AI Playlist panel cannot be opened from the playbar button with bundled plugins, because chat takes priority whenever a chat-capable plugin is enabled.
-2. When ListenBrainz has no recommendation playlist for the user, the Recommendations page shows their own most-played tracks of the month under the ListenBrainz tag.
-3. There is no UI to view or clear the recommendation blocklist.
+1. The one-shot AI Playlist panel cannot be opened from the playbar button with bundled plugins, because chat takes priority whenever a chat-capable plugin is enabled. (parachord#1020)
+2. When ListenBrainz has no recommendation playlist for the user, the Recommendations page shows their own most-played tracks of the month under the ListenBrainz tag. (parachord#1021)
+3. There is no UI to view or clear the recommendation blocklist. (parachord#1022)
 
 Fixed since the first version: artist-only radio links now seed from the artist's top track (parachord#1005), the blocklist is applied and listed in the chat prompt (parachord#1006), in-app chat offers `block_recommendation` (parachord#1007), and the MCP playlist tools work (parachord#1008).
