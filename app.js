@@ -237,6 +237,46 @@ window.hostedPlaylistFetchProblem = (requestedUrl, finalUrl, bodyLength) => {
   return null;
 };
 
+// Album name for a track that may have none on its own record (tracks played
+// from search, chat cards, playlists, radio and Last.fm top tracks often
+// arrive with album ''): the track's field, else any resolved source's album
+// (Apple Music's web search fills 'Single' when it has nothing; skip that),
+// else the mapper's canonical release name. Pure; used by the playbar's
+// album-art click so it always has something to open.
+window.pickAlbumNameForTrack = (track, mapperResult) => {
+  const clean = (s) => (typeof s === 'string' ? s.trim() : '');
+  if (!track) return '';
+  const own = clean(track.album);
+  if (own) return own;
+  const sources = track.sources && typeof track.sources === 'object' ? Object.values(track.sources) : [];
+  for (const s of sources) {
+    const a = clean(s && s.album);
+    if (a && a.toLowerCase() !== 'single' && !s.noMatch) return a;
+  }
+  return clean(mapperResult && mapperResult.release_name);
+};
+
+// Choose which MusicBrainz release-group search result to open for a track's
+// album: an Album by the right artist, else anything by the right artist,
+// else the first Album, else the first result. "Right artist" is a
+// normalized containment match on the artist credit, so a same-titled album
+// by someone else doesn't win just because it sorted first.
+window.pickReleaseGroupForAlbum = (results, artist) => {
+  const list = Array.isArray(results) ? results : [];
+  if (list.length === 0) return null;
+  const want = normalizeStr(artist || '');
+  const byArtist = (r) => {
+    if (!want) return false;
+    const credit = normalizeStr((r['artist-credit'] || []).map((c) => c && c.name).filter(Boolean).join(' '));
+    return !!credit && (credit.includes(want) || want.includes(credit));
+  };
+  const isAlbum = (r) => r['primary-type'] === 'Album';
+  return list.find((r) => isAlbum(r) && byArtist(r))
+    || list.find(byArtist)
+    || list.find(isAlbum)
+    || list[0];
+};
+
 // Classify a parachord://play/playlist?url=<url> target so the protocol handler
 // knows how to turn it into tracks (parachord#930). Provider playlist *pages*
 // (Spotify / Apple Music / SoundCloud) are NOT tracklist documents — they have
@@ -25958,6 +25998,72 @@ ${trackListXml}
   };
 
   // Handle album click from search - fetch release data by release-group ID
+  // Open the album page for whatever is playing, from any playback context.
+  // The playbar's album-art click used to require track.album, which is set
+  // when playing from the album page and often empty everywhere else, so the
+  // click silently did nothing outside that page. Order:
+  //   1. album name from the track / its sources / the MBID mapper → MB
+  //      release-group search, picking an Album by this artist;
+  //   2. no name but a release MBID (mapper enrichment) → look the release up
+  //      and open its release-group;
+  //   3. toast.
+  const openAlbumForTrack = async (track) => {
+    if (!track || !track.artist) {
+      showToast('No album information for this track');
+      return;
+    }
+    const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' };
+    let albumName = window.pickAlbumNameForTrack(track, null);
+    let releaseMbid = track.releaseMbid || null;
+    if ((!albumName || !releaseMbid) && track.title) {
+      try {
+        const mapped = await lookupMbidMapper(track.artist, track.title, albumName || null);
+        if (mapped) {
+          if (!albumName) albumName = window.pickAlbumNameForTrack(track, mapped);
+          if (!releaseMbid && mapped.release_mbid) releaseMbid = mapped.release_mbid;
+        }
+      } catch (e) { /* mapper down: carry on with what we have */ }
+    }
+
+    try {
+      if (albumName) {
+        const query = encodeURIComponent(`"${albumName}" AND artist:"${track.artist}"`);
+        const response = await fetch(
+          `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
+          { headers: mbHeaders }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const album = window.pickReleaseGroupForAlbum(data['release-groups'], track.artist);
+          if (album) return handleAlbumClick(album);
+        }
+      }
+      if (releaseMbid) {
+        const response = await fetch(
+          `https://musicbrainz.org/ws/2/release/${releaseMbid}?inc=release-groups+artist-credits&fmt=json`,
+          { headers: mbHeaders }
+        );
+        if (response.ok) {
+          const release = await response.json();
+          const rg = release['release-group'];
+          if (rg && rg.id) {
+            rememberReleaseGroupAlias(rg.id, releaseMbid);
+            return handleAlbumClick({
+              id: rg.id,
+              title: rg.title || release.title,
+              'primary-type': rg['primary-type'],
+              'artist-credit': release['artist-credit'] || [{ name: track.artist }]
+            });
+          }
+        }
+      }
+      showToast(albumName ? `Album "${albumName}" not found` : 'No album found for this track');
+    } catch (error) {
+      console.error('Error opening album for track:', error);
+      showToast('Failed to load album');
+    }
+  };
+
   const handleAlbumClick = async (album) => {
     try {
       console.log('Fetching album from search:', album.title);
@@ -56714,36 +56820,11 @@ useEffect(() => {
                   }
                 },
                 onClick: (e) => {
-                  console.log('Album art clicked!', { defaultPrevented: e.defaultPrevented, album: currentTrack.album, artist: currentTrack.artist });
                   // Prevent click if we just finished a drag operation
                   if (e.defaultPrevented) return;
-                  // Search for the album and open its page
-                  if (currentTrack.album && currentTrack.artist) {
-                    // Search MusicBrainz for the release - get multiple results to prefer albums over singles
-                    const query = encodeURIComponent(`"${currentTrack.album}" AND artist:"${currentTrack.artist}"`);
-                    fetch(
-                      `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
-                      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-                    ).then(response => {
-                      if (response.ok) {
-                        return response.json();
-                      }
-                    }).then(data => {
-                      if (data) {
-                        const results = data['release-groups'] || [];
-                        if (results.length > 0) {
-                          // Prefer albums over singles/EPs - find first album type, fall back to first result
-                          const album = results.find(r => r['primary-type'] === 'Album') || results[0];
-                          handleAlbumClick(album);
-                        } else {
-                          showToast(`Album "${currentTrack.album}" not found`);
-                        }
-                      }
-                    }).catch(error => {
-                      console.error('Error searching for album:', error);
-                      showToast('Failed to load album');
-                    });
-                  }
+                  // Always opens the album page, whatever context the track was
+                  // played from (derives the album when the track has none).
+                  openAlbumForTrack(currentTrack);
                 },
                 className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
                 style: { position: 'relative' }
