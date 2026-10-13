@@ -269,7 +269,7 @@
       "id": "customllm",
       "name": "Custom LLM",
       "type": "meta-service",
-      "version": "1.0.1",
+      "version": "1.1.0",
       "author": "Parachord Team",
       "description": "Bring your own LLM endpoint - any OpenAI-compatible or Anthropic-compatible server (LM Studio, vLLM, llama.cpp, OpenRouter, ...).",
       "icon": "🔌",

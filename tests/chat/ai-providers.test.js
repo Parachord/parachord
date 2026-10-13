@@ -942,6 +942,201 @@ describe('Custom LLM generate', () => {
   });
 });
 
+describe('Custom LLM reasoning effort', () => {
+  let chat;
+  let generate;
+
+  beforeEach(() => {
+    chat = loadChatFn('customllm.axe');
+    generate = loadGenerateFn('customllm.axe');
+  });
+
+  const respondWith = (payload) => {
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(payload) });
+  };
+  const lastBody = () => {
+    const calls = mockFetch.mock.calls;
+    return JSON.parse(calls[calls.length - 1][1].body);
+  };
+
+  test('generic endpoint (vLLM): default off disables thinking via chat_template_kwargs', async () => {
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3' });
+
+    expect(lastBody().chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(lastBody()).not.toHaveProperty('reasoning_effort');
+  });
+
+  test('generic endpoint: auto sends no reasoning params at all', async () => {
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3', reasoningEffort: 'auto' });
+
+    expect(lastBody()).not.toHaveProperty('chat_template_kwargs');
+    expect(lastBody()).not.toHaveProperty('reasoning_effort');
+  });
+
+  test('generic endpoint: a level requests that effort and enables thinking', async () => {
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3', reasoningEffort: 'high' });
+
+    expect(lastBody().reasoning_effort).toBe('high');
+    expect(lastBody().chat_template_kwargs).toEqual({ enable_thinking: true });
+  });
+
+  test('OpenRouter: off maps to reasoning.effort none, levels pass through', async () => {
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'https://openrouter.ai/api/v1', model: 'z-ai/glm-5.3' });
+    expect(lastBody().reasoning).toEqual({ effort: 'none' });
+    expect(lastBody()).not.toHaveProperty('chat_template_kwargs');
+
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'https://openrouter.ai/api/v1', model: 'z-ai/glm-5.3', reasoningEffort: 'low' });
+    expect(lastBody().reasoning).toEqual({ effort: 'low' });
+  });
+
+  test('hosted OpenAI-style APIs: off sends nothing, a level sends reasoning_effort only', async () => {
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.1' });
+    expect(lastBody()).not.toHaveProperty('reasoning_effort');
+    expect(lastBody()).not.toHaveProperty('chat_template_kwargs');
+
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.1', reasoningEffort: 'medium' });
+    expect(lastBody().reasoning_effort).toBe('medium');
+    expect(lastBody()).not.toHaveProperty('chat_template_kwargs');
+  });
+
+  test('DeepSeek: off disables thinking via the thinking param', async () => {
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' });
+    expect(lastBody().thinking).toEqual({ type: 'disabled' });
+  });
+
+  test('Z.ai (GLM): off disables thinking, a level enables it with clear_thinking kept', async () => {
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'https://api.z.ai/v1', model: 'glm-5.3' });
+    expect(lastBody().thinking).toEqual({ type: 'disabled' });
+
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'https://api.z.ai/v1', model: 'glm-5.3', reasoningEffort: 'high' });
+    expect(lastBody().thinking).toEqual({ type: 'enabled', clear_thinking: false });
+  });
+
+  test('x.ai: no reasoning params are ever sent (Grok rejects reasoning_effort)', async () => {
+    respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+    await chat(sampleMessages, [], { baseUrl: 'https://api.x.ai/v1', model: 'grok-4', reasoningEffort: 'high' });
+    expect(lastBody()).not.toHaveProperty('reasoning_effort');
+    expect(lastBody()).not.toHaveProperty('reasoning');
+    expect(lastBody()).not.toHaveProperty('chat_template_kwargs');
+  });
+
+  test('anthropic dialect: a level maps to a thinking budget that fits max_tokens', async () => {
+    respondWith({ content: [{ type: 'text', text: 'Hi' }] });
+    await chat(sampleMessages, [], {
+      baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514',
+      api: 'anthropic', reasoningEffort: 'high'
+    });
+
+    const body = lastBody();
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 8192 });
+    expect(body.max_tokens).toBeGreaterThan(8192);
+  });
+
+  test('anthropic dialect: off sends no thinking param', async () => {
+    respondWith({ content: [{ type: 'text', text: 'Hi' }] });
+    await chat(sampleMessages, [], {
+      baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', api: 'anthropic'
+    });
+    expect(lastBody()).not.toHaveProperty('thinking');
+  });
+
+  test('chat: reasoning-only response with finish_reason length throws a budget hint', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: null, reasoning: 'Let me analyze...' }, finish_reason: 'length' }]
+      })
+    });
+
+    await expect(chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3' }))
+      .rejects.toThrow(/finish_reason "length".*Max Tokens/);
+  });
+
+  test('chat: reasoning_content sibling (DeepSeek naming) with no answer also throws', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: null, reasoning_content: 'hmm' }, finish_reason: 'stop' }]
+      })
+    });
+
+    await expect(chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3' }))
+      .rejects.toThrow(/only reasoning/);
+  });
+
+  test('chat: tool calls with empty content are not a reasoning failure', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{
+          message: {
+            content: null,
+            reasoning: 'thoughts',
+            tool_calls: [{ id: 'call-1', function: { name: 'play', arguments: '{"artist":"x"}' } }]
+          },
+          finish_reason: 'tool_calls'
+        }]
+      })
+    });
+
+    const result = await chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3' });
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.content).toBe('');
+  });
+
+  test('chat: content alongside reasoning returns the content', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: 'Here you go!', reasoning: 'thoughts' } }]
+      })
+    });
+
+    const result = await chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3' });
+    expect(result.content).toBe('Here you go!');
+  });
+
+  test('anthropic dialect: thinking-only response throws a budget hint', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: 'thinking', thinking: 'long thoughts' }],
+        stop_reason: 'max_tokens'
+      })
+    });
+
+    await expect(chat(sampleMessages, [], {
+      baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514',
+      api: 'anthropic', reasoningEffort: 'low'
+    })).rejects.toThrow(/thinking.*stop_reason "max_tokens"/);
+  });
+
+  test('generate: maps the effort and detects reasoning-only responses', async () => {
+    respondWith({ choices: [{ message: { content: '[{"title":"Creep","artist":"Radiohead"}]' } }] });
+    await generate('rock songs', { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3' });
+    expect(lastBody().chat_template_kwargs).toEqual({ enable_thinking: false });
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: null, reasoning: 'thinking...' }, finish_reason: 'length' }]
+      })
+    });
+    await expect(generate('rock songs', { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3', reasoningEffort: 'auto' }))
+      .rejects.toThrow(/finish_reason "length"/);
+  });
+});
+
 describe('Custom LLM listModels', () => {
   let listModels;
 
