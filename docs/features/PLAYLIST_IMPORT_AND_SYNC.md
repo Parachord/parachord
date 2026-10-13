@@ -65,7 +65,7 @@ There is no file drop. `dataTransfer.files` is never read, so dropping `.xspf`, 
 
 **Import.** "Load from File" in the Import modal (~L58278) calls `handleImportPlaylist` (~L36747), which uses the `playlists-import` IPC (main.js ~L5279). The file dialog allows `.xspf` only and checks for a `<playlist>` element. Saved as `imported-${Date.now()}` with `source: 'imported-xspf'`. One-shot.
 
-**Export.** `handleExportPlaylist` (~L37262) and the `playlists-export` IPC (main.js ~L6576, XSPF save dialog) exist but nothing calls the handler, so there is no way to export a playlist to a file from the UI. File menu "Export Queue as Playlist..." saves the queue into the library, not to a file. See "Known gaps".
+**Export.** `handleExportPlaylist` (~L37530) writes an `.xspf` through the `playlists-export` IPC save dialog (main.js ~L6526). Reachable from the playlist header's Share menu ("Export as XSPF…"), the playlist row context menu, and the queue save dialog's "Save to file" button (the dialog's "Save" still saves into the library). Playlists created in-app carry no stored XSPF, so the document is generated from their tracks.
 
 ## `parachord://` deep links
 
@@ -169,10 +169,8 @@ Where the code or CLAUDE.md states parity: `play/playlist` provider sniffing mir
 
 Found while writing this inventory; none are fixed by this document.
 
-1. **"Sync Now" is unreachable.** The button lives inside `syncStatusModal` (~L64686), and nothing ever sets that modal open; the only explicit full sync is the wizard's Start Sync.
-2. **Seven MCP playlist tools fail.** The MCP context lacks the playlist methods, so only `create_playlist` works over MCP.
-3. **Playlist file export is not wired.** `handleExportPlaylist` and the `playlists-export` IPC exist but no UI calls them.
-4. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup.
-5. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import.
+1. **"Sync Now" is unreachable.** The button lives inside `syncStatusModal` (~L64686), and nothing ever sets that modal open; the only explicit full sync is the wizard's Start Sync. (parachord#1009)
+2. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup.
+3. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import.
 
-Fixed since the first version: the URL import path now has the public-URL guard and body cap (parachord#1011), and the chat share link host and stale line numbers in CLAUDE.md were corrected (parachord#1012; the link deliberately uses `achordion.xyz/go`, which renders a preview page, rather than the static `parachord.com/go` bounce).
+Fixed since the first version: the MCP playlist tools work (parachord#1008), playlist XSPF export is wired to the UI (parachord#1010), the URL import path has the public-URL guard and body cap (parachord#1011), and the chat share link host and stale line numbers in CLAUDE.md were corrected (parachord#1012; the link deliberately uses `achordion.xyz/go`, which renders a preview page, rather than the static `parachord.com/go` bounce).

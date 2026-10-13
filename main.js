@@ -4695,6 +4695,16 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 
     menuItems.push({ type: 'separator' });
     menuItems.push({
+      label: 'Export as XSPF…',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', {
+          action: 'export-playlist',
+          playlistId: data.playlistId,
+          name: data.name
+        });
+      }
+    });
+    menuItems.push({
       label: 'Delete Playlist',
       click: () => {
         safeSendToRenderer('track-context-menu-action', {
