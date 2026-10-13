@@ -47,7 +47,7 @@ Resolvers that implement `lookupPlaylist`:
 
 The imported playlist gets the id `hosted-${hash(url)}`, `sourceUrl: url`, and `source` of `${resolverId}-import` or `hosted-xspf`. The URL is also appended to the `hosted_playlists` store list. Re-importing an existing URL updates the playlist in place and sets `locallyModified` only when the content changed. Because resolver imports also carry a `sourceUrl`, they join the poller below.
 
-This path has no public-URL guard, no redirect restriction, and no size or track cap. Only the `parachord://import` entry applies the SSRF check before calling it.
+The hosted fetch goes through `fetchHostedPlaylistText`, which applies `hostedPlaylistFetchProblem` (module scope, next to `isPublicHttpUrl`): the requested URL must be a public http(s) address, redirects are followed but the final URL must also be public, and the body is capped at 5 MB (roughly 10k tracks of XSPF). There is no track cap on this path.
 
 ## Drag and drop
 
@@ -118,7 +118,7 @@ The popup scrapes Spotify and Apple Music playlists in-page (three attempts), Ba
 Any URL import creates a hosted playlist. There is no checkbox and no `.xspf` extension check; any URL no resolver claims is treated as XSPF.
 
 - **Startup reload.** `loadHostedPlaylists` (~L37219) runs two seconds after launch, deduplicates `hosted_playlists`, and re-imports every stored URL, including provider URLs, re-applying stored title and creator overrides.
-- **Poller.** `pollHostedPlaylists` (~L37173) runs ten seconds after mount and then every five minutes, yielding to idle. It covers every playlist with a `sourceUrl`, fetches it with a plain renderer `fetch`, and re-imports when the body differs from the stored `xspf`. For provider page URLs the body is HTML, so the comparison always differs; in practice the browser's CORS rules usually block that fetch and the failure is swallowed, so provider-imported playlists refresh at startup rather than on the poll.
+- **Poller.** `pollHostedPlaylists` (~L37330) runs ten seconds after mount and then every five minutes, yielding to idle. It covers every playlist with a `sourceUrl`, fetches it through the same guarded and capped `fetchHostedPlaylistText` as the import path, and re-imports when the body differs from the stored `xspf`. For provider page URLs the body is HTML, so the comparison always differs; in practice the browser's CORS rules usually block that fetch and the failure is swallowed, so provider-imported playlists refresh at startup rather than on the poll.
 - **Edits.** `savePlaylistToStore` writes only title and creator overrides for hosted playlists.
 - **Sync.** The pull banner is suppressed for hosted playlists (~L44500) because the URL is canonical and any linked provider copy is a mirror. "Mirror only" is locked on (main.js ~L4735). In the classic engine the push loop skips `hosted-*` playlists for ListenBrainz unless a channel override includes them.
 
@@ -172,8 +172,7 @@ Found while writing this inventory; none are fixed by this document.
 1. **"Sync Now" is unreachable.** The button lives inside `syncStatusModal` (~L64686), and nothing ever sets that modal open; the only explicit full sync is the wizard's Start Sync.
 2. **Seven MCP playlist tools fail.** The MCP context lacks the playlist methods, so only `create_playlist` works over MCP.
 3. **Playlist file export is not wired.** `handleExportPlaylist` and the `playlists-export` IPC exist but no UI calls them.
-4. **The URL import path has no SSRF guard** and no size cap; only the `parachord://import` entry checks the URL.
-5. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup.
-6. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import.
-7. **The chat share link** uses `achordion.xyz/go` (~L57541) while CLAUDE.md says `parachord.com/go`.
-8. **Stale line numbers in CLAUDE.md** for the protocol switch, `resolveProtocolPlayInput`, `parseProtocolTracklist` and `pollHostedPlaylists`.
+4. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup.
+5. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import.
+
+Fixed since the first version: the URL import path now has the public-URL guard and body cap (parachord#1011), and the chat share link host and stale line numbers in CLAUDE.md were corrected (parachord#1012; the link deliberately uses `achordion.xyz/go`, which renders a preview page, rather than the static `parachord.com/go` bounce).

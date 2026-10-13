@@ -217,6 +217,26 @@ window.isPublicHttpUrl = (urlString) => {
   return true;
 };
 
+// Hosted-playlist fetch limits (parachord#1011). The URL import path (modal,
+// Playlists-page drop, File menu, startup reload, 5-minute poller) fetches any
+// URL no resolver claims and parses the whole body as XSPF. Redirects are
+// followed because hosted XSPF commonly sits behind one (http->https, Dropbox
+// dl=1), so the guard checks both the requested URL and the URL the response
+// actually came from, and caps the body so a runaway document can't be parsed
+// on the main thread every five minutes. 5 MB is roughly 10k tracks of XSPF.
+// Returns a user-facing problem string, or null when the fetch is acceptable.
+//
+// SYNC: tests/helpers/url-safety.js — keep byte-identical with the body below.
+window.HOSTED_PLAYLIST_MAX_BYTES = 5 * 1024 * 1024;
+window.hostedPlaylistFetchProblem = (requestedUrl, finalUrl, bodyLength) => {
+  if (!window.isPublicHttpUrl(requestedUrl)) return 'Playlist URL must be a public http(s) address';
+  if (finalUrl && finalUrl !== requestedUrl && !window.isPublicHttpUrl(finalUrl)) return 'Playlist URL redirected to a private address';
+  if (typeof bodyLength === 'number' && bodyLength > window.HOSTED_PLAYLIST_MAX_BYTES) {
+    return `Playlist is too large (max ${Math.round(window.HOSTED_PLAYLIST_MAX_BYTES / (1024 * 1024))} MB)`;
+  }
+  return null;
+};
+
 // Classify a parachord://play/playlist?url=<url> target so the protocol handler
 // knows how to turn it into tracks (parachord#930). Provider playlist *pages*
 // (Spotify / Apple Music / SoundCloud) are NOT tracklist documents — they have
@@ -37029,6 +37049,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
   // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
   // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
+  // Fetch a hosted playlist document with the public-URL guard and body cap
+  // (parachord#1011). Shared by the URL import below and the 5-minute poller
+  // so neither can fetch a private address or parse an unbounded body.
+  const fetchHostedPlaylistText = async (url) => {
+    const problem = window.hostedPlaylistFetchProblem(url, null, 0);
+    if (problem) throw new Error(problem);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+    }
+    const text = await response.text();
+    const afterProblem = window.hostedPlaylistFetchProblem(url, response.url, text.length);
+    if (afterProblem) throw new Error(afterProblem);
+    return text;
+  };
+
   const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
@@ -37070,13 +37106,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         // Generate XSPF for storage so the playlist can be reloaded without the service
         content = generateXSPF({ ...parsed, createdAt: Date.now() });
       } else {
-        // Hosted XSPF — fetch and parse directly
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
-        }
-
-        content = await response.text();
+        // Hosted XSPF — fetch (guarded + capped) and parse directly
+        content = await fetchHostedPlaylistText(url);
         parsed = parseXSPF(content);
       }
 
@@ -37303,10 +37334,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       for (const playlist of hostedPlaylists) {
         try {
-          const response = await fetch(playlist.sourceUrl);
-          if (!response.ok) continue;
-
-          const content = await response.text();
+          // Same guard + cap as the import path (parachord#1011): a stored
+          // URL that now fails the check (or has grown past the cap) is
+          // skipped this tick instead of being parsed.
+          const content = await fetchHostedPlaylistText(playlist.sourceUrl);
 
           // Check if content changed
           if (content !== playlist.xspf) {

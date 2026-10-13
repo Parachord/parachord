@@ -40,4 +40,17 @@ function isPublicHttpUrl(urlString) {
   }
   return true;
 }
-module.exports = { isPublicHttpUrl };
+
+// Hosted-playlist fetch limits (parachord#1011). See app.js for the rationale.
+// SYNC: app.js — keep byte-identical with window.hostedPlaylistFetchProblem
+// (with `window.` prefixes removed).
+const HOSTED_PLAYLIST_MAX_BYTES = 5 * 1024 * 1024;
+function hostedPlaylistFetchProblem(requestedUrl, finalUrl, bodyLength) {
+  if (!isPublicHttpUrl(requestedUrl)) return 'Playlist URL must be a public http(s) address';
+  if (finalUrl && finalUrl !== requestedUrl && !isPublicHttpUrl(finalUrl)) return 'Playlist URL redirected to a private address';
+  if (typeof bodyLength === 'number' && bodyLength > HOSTED_PLAYLIST_MAX_BYTES) {
+    return `Playlist is too large (max ${Math.round(HOSTED_PLAYLIST_MAX_BYTES / (1024 * 1024))} MB)`;
+  }
+  return null;
+}
+module.exports = { isPublicHttpUrl, hostedPlaylistFetchProblem, HOSTED_PLAYLIST_MAX_BYTES };
