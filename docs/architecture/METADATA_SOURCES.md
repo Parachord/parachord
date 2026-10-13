@@ -139,18 +139,16 @@ Displayed on the "Critical Darlings" page.
 
 ## Recommendations
 
-Personalized recommendations displayed on the "Recommendations" page.
+Every recommendation and discovery surface (Recommendations page, Weekly Jams, Shuffleupagus suggestions and chat, Related Artists, Fresh Drops, Critical Darlings, charts, Spinoff, Collection Radio, protocol radio, Concerts, friends) is inventoried in [docs/features/RECOMMENDATIONS.md](../features/RECOMMENDATIONS.md), with the endpoint, seed data and output type for each.
+
+The Recommendations page itself uses:
 
 | Provider | Endpoint | Auth Required | Notes |
 |----------|----------|---------------|-------|
-| Last.fm | `last.fm/player/station/user/{username}/recommended` | API key | Artist recommendations |
-| ListenBrainz | `api.listenbrainz.org/1/stats/user/{username}` | Bearer token | Based on listening stats |
+| Last.fm | `last.fm/player/station/user/{username}/recommended` | None (website JSON, no API key) | Recommended tracks |
+| ListenBrainz | `api.listenbrainz.org/1/user/{username}/playlists/recommendations`, then `/1/playlist/{id}` | None | Falls back to `/1/stats/user/{username}/recordings?range=month` when no recommendation playlist exists |
 
-**Additional Last.fm Endpoints:**
-- `artist.gettoptracks` - Top tracks for recommended artists
-- `track.getsimilar` - Similar tracks for seeding
-
-**Code Location:** `app.js` → `loadRecommendations()` (~line 16700)
+**Code Location:** `app.js` → `loadRecommendations()` (~line 31293)
 
 ---
 
@@ -165,7 +163,7 @@ Track listening history to external services.
 | ListenBrainz | `api.listenbrainz.org/1/submit-listens` | Bearer token | Open source alternative |
 | Libre.fm | `libre.fm/2.0/` | Session key | Last.fm-compatible API |
 
-**Code Location:** `scrobblers/` directory
+**Code Location:** `scrobbler-loader.js` (`ScrobbleManager` plus one class per service)
 
 **Scrobble Rules:**
 - Track must be >30 seconds long
@@ -176,18 +174,15 @@ Track listening history to external services.
 
 ## Library Sync
 
-Import library from external services.
+Import library and playlists from external services, and keep playlists mirrored to them. Every import path (URL, drag and drop, XSPF files, deep links, the browser extension, hosted playlists, AI chat, MCP) and the sync behaviour per provider is inventoried in [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](../features/PLAYLIST_IMPORT_AND_SYNC.md). Sync internals (data model, duplicate prevention, push semantics) are in the Syncing System section of CLAUDE.md.
 
-| Provider | Endpoints | Auth | Data Imported |
-|----------|-----------|------|---------------|
-| Spotify | `api.spotify.com/v1/me/tracks` | OAuth | Liked songs |
-| Spotify | `api.spotify.com/v1/me/albums` | OAuth | Saved albums |
-| Spotify | `api.spotify.com/v1/me/following?type=artist` | OAuth | Followed artists |
-| Spotify | `api.spotify.com/v1/me/playlists` | OAuth | User playlists |
+| Provider | Module | Auth | Data |
+|----------|--------|------|------|
+| Spotify | `sync-providers/spotify.js` | OAuth | Liked songs, saved albums, followed artists, playlists |
+| Apple Music | `sync-providers/applemusic.js` | MusicKit user token | Library songs, albums, artists, playlists (append-only writes) |
+| ListenBrainz | `sync-providers/listenbrainz.js` | User token | Playlists only (JSPF, recording MBID per track) |
 
-**Code Location:** `sync-providers/spotify.js`
-
-**Rate Limiting:** 100ms delay between requests, respects 429 responses with retry-after header.
+**Rate Limiting:** 100ms delay between Spotify requests, respects 429 responses with retry-after header. Apple Music catalog calls go through a dedicated limiter.
 
 ---
 

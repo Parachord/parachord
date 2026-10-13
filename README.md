@@ -70,7 +70,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Additional Features
 - **Global Search** - Search across all sources with unified results
 - **Collection View** - Browse your aggregated music collection
-- **Recommendations** - Personalized suggestions via Last.fm, ListenBrainz Weekly Jams, and AI
+- **Recommendations** - Personalized suggestions via Last.fm, ListenBrainz Weekly Jams, and AI (full inventory in [docs/features/RECOMMENDATIONS.md](docs/features/RECOMMENDATIONS.md); import and sync paths in [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](docs/features/PLAYLIST_IMPORT_AND_SYNC.md))
 - **Scrobbling** - Track your listening history with Last.fm, ListenBrainz, and Libre.fm
 - **Smart Links** - Generate shareable cross-service links for any track
 - **Deep Links** - `parachord://` protocol for opening artists, albums, playlists, and search from other apps
