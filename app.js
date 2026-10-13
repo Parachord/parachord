@@ -16795,6 +16795,10 @@ ${trackListXml}
               lastModified: Date.now()
             }));
           }
+        } else if (data.action === 'export-playlist' && data.playlistId) {
+          // Read via playlistsRef for the same stale-closure reason as delete below.
+          const playlistToExport = (playlistsRef.current || []).find(p => p.id === data.playlistId);
+          if (playlistToExport) await handleExportPlaylist(playlistToExport);
         } else if (data.action === 'delete-playlist' && data.playlistId) {
           // If the playlist mirrors to/from any remote (a synced playlist OR a
           // hosted XSPF mirrored to Spotify/AM), ask whether to delete from those
@@ -20633,6 +20637,21 @@ ${trackListXml}
     // Close dialog
     setQueueSaveDialogOpen(false);
     showToast(`Saved playlist: ${queueSavePlaylistName.trim()}`);
+  };
+
+  // "Save to file" in the same dialog: write the queue as an .xspf without
+  // adding it to the library (parachord#1010).
+  const handleSaveQueueToFile = async () => {
+    const tracksToSave = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
+    if (tracksToSave.length === 0 || !queueSavePlaylistName.trim()) return;
+    setQueueSaveDialogOpen(false);
+    await handleExportPlaylist({
+      id: `queue-${Date.now()}`,
+      title: queueSavePlaylistName.trim(),
+      creator: 'Queue',
+      tracks: tracksToSave,
+      createdAt: Date.now()
+    });
   };
 
   // Fetch listening context from Last.fm or ListenBrainz for AI prompt enrichment
@@ -37506,12 +37525,31 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return () => clearTimeout(timer);
   }, []);
 
+  // Export a playlist to an .xspf file via the main-process save dialog.
+  // Reachable from the playlist header's Share menu, the playlist row context
+  // menu ("Export as XSPF…") and the queue save dialog ("Save to file")
+  // (parachord#1010; the handler and IPC existed with no caller). Playlists
+  // created in-app (queue-*, ai-chat-*, playlist-*) carry no `xspf` field, so
+  // the document is generated from `tracks` when it is missing.
   const handleExportPlaylist = async (playlist) => {
     try {
       console.log(`📤 Exporting playlist: ${playlist.id}`);
-      
-      const defaultFilename = playlist.filename || `${playlist.id}.xspf`;
-      const result = await window.electron.playlists.export(defaultFilename, playlist.xspf);
+
+      const tracks = playlist.tracks || [];
+      if (!playlist.xspf && tracks.length === 0) {
+        showToast('Nothing to export: this playlist has no tracks', 'error');
+        return;
+      }
+      const content = playlist.xspf || generateXSPF({
+        title: playlist.title || playlist.name || 'Playlist',
+        creator: playlist.creator,
+        createdAt: playlist.createdAt,
+        tracks
+      });
+      const slug = String(playlist.title || playlist.name || playlist.id || 'playlist')
+        .trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').slice(0, 80) || 'playlist';
+      const defaultFilename = playlist.filename || `${slug}.xspf`;
+      const result = await window.electron.playlists.export(defaultFilename, content);
       
       if (!result) {
         console.log('Export cancelled');
@@ -45342,6 +45380,24 @@ useEffect(() => {
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
                     ),
                     'Copy Link'
+                  ),
+                  React.createElement('button', {
+                    onClick: () => {
+                      setShareDropdownOpen(false);
+                      // Prefer the loaded tracklist (it may be richer than the
+                      // stored one); fall back to the stored tracks.
+                      handleExportPlaylist({
+                        ...selectedPlaylist,
+                        tracks: (playlistTracks && playlistTracks.length) ? playlistTracks : (selectedPlaylist.tracks || [])
+                      });
+                    },
+                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                    style: { fontSize: '12px', fontWeight: 500 }
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
+                    ),
+                    'Export as XSPF…'
                   )
                 )
               )
@@ -58319,6 +58375,12 @@ useEffect(() => {
             onClick: () => setQueueSaveDialogOpen(false),
             className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors'
           }, 'Cancel'),
+          React.createElement('button', {
+            onClick: handleSaveQueueToFile,
+            disabled: !queueSavePlaylistName.trim(),
+            title: 'Write an .xspf file instead of adding to your playlists',
+            className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
+          }, 'Save to file'),
           React.createElement('button', {
             onClick: handleSaveQueueConfirm,
             disabled: !queueSavePlaylistName.trim(),

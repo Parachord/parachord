@@ -50,7 +50,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Playlists & Queue
 - **URL Import** - Paste Spotify, Apple Music, or hosted .xspf playlist URLs
 - **File Import** - Load local .xspf playlist files
-- **Export** - Save your queue as an .xspf playlist
+- **Export** - Save any playlist, or the current queue, as an .xspf file
 - **Queue Management** - Add tracks, reorder, and manage your listening queue
 - **Shuffle & Spinoff** - Shuffle your queue, or "spinoff" from any track into a radio station of similar music
 - **Mixed-Source Queues** - Seamlessly play tracks from different services
