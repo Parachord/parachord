@@ -537,3 +537,467 @@ describe('ChatGPT generate', () => {
     expect(body.messages[0].content).toContain('Radiohead');
   });
 });
+
+// Helper to extract the listModels function from .axe JSON
+function loadListModelsFn(axeFile) {
+  const axe = loadAxe(axeFile);
+  if (!axe.implementation.listModels) return null;
+  return eval(`(${axe.implementation.listModels})`);
+}
+
+describe('Custom LLM Provider (openai dialect)', () => {
+  let chat;
+
+  beforeEach(() => {
+    chat = loadChatFn('customllm.axe');
+  });
+
+  const openaiConfig = {
+    baseUrl: 'http://localhost:1234/v1',
+    model: 'qwen2.5-coder:7b',
+    api: 'openai',
+    apiKey: 'sk-local'
+  };
+
+  test('sends correct request format', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: 'Here you go!', tool_calls: null } }]
+      })
+    });
+
+    await chat(sampleMessages, sampleTools, openaiConfig);
+
+    expect(mockFetch).toHaveBeenCalledWith('http://localhost:1234/v1/chat/completions', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({
+        'Authorization': 'Bearer sk-local'
+      })
+    }));
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.model).toBe('qwen2.5-coder:7b');
+    expect(body.messages).toHaveLength(2);
+    expect(body.tools).toHaveLength(2);
+    expect(body.tools[0].type).toBe('function');
+    expect(body.tools[0].function.name).toBe('play');
+    expect(body.tool_choice).toBe('auto');
+  });
+
+  test('defaults to the openai dialect and omits auth header without a key', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: 'Hi', tool_calls: null } }]
+      })
+    });
+
+    await chat(sampleMessages, [], { baseUrl: 'http://localhost:1234/v1', model: 'llama3.1' });
+
+    expect(mockFetch).toHaveBeenCalledWith('http://localhost:1234/v1/chat/completions', expect.anything());
+    expect(mockFetch.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.tools).toBeUndefined();
+  });
+
+  test('parses tool call response with string arguments', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{
+          message: {
+            content: null,
+            tool_calls: [{
+              id: 'call_123',
+              type: 'function',
+              function: { name: 'play', arguments: '{"artist":"Radiohead","title":"Creep"}' }
+            }]
+          }
+        }]
+      })
+    });
+
+    const result = await chat(sampleMessages, sampleTools, openaiConfig);
+
+    expect(result.content).toBe('');
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].id).toBe('call_123');
+    expect(result.toolCalls[0].arguments).toEqual({ artist: 'Radiohead', title: 'Creep' });
+  });
+
+  test('handles already-object tool arguments from local servers', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{
+          message: {
+            content: null,
+            tool_calls: [{
+              function: { name: 'play', arguments: { artist: 'Radiohead', title: 'Creep' } }
+            }]
+          }
+        }]
+      })
+    });
+
+    const result = await chat(sampleMessages, sampleTools, openaiConfig);
+
+    expect(result.toolCalls[0].arguments).toEqual({ artist: 'Radiohead', title: 'Creep' });
+    expect(result.toolCalls[0].id).toBeDefined(); // synthesized when server omits it
+  });
+
+  test('survives malformed tool arguments', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{
+          message: {
+            content: null,
+            tool_calls: [{ function: { name: 'play', arguments: 'not json{' } }]
+          }
+        }]
+      })
+    });
+
+    const result = await chat(sampleMessages, sampleTools, openaiConfig);
+
+    expect(result.toolCalls[0].arguments).toEqual({});
+  });
+
+  test('converts tool_calls in assistant messages to OpenAI format', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: 'Done!', tool_calls: null } }]
+      })
+    });
+
+    await chat(messagesWithToolCalls, sampleTools, openaiConfig);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const assistantMsg = body.messages.find(m => m.role === 'assistant' && m.tool_calls);
+
+    expect(assistantMsg.tool_calls[0].type).toBe('function');
+    expect(typeof assistantMsg.tool_calls[0].function.arguments).toBe('string');
+  });
+
+  test('includes max_tokens when configured', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: 'Hi', tool_calls: null } }]
+      })
+    });
+
+    await chat(sampleMessages, [], { ...openaiConfig, maxTokens: '2048' });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.max_tokens).toBe(2048);
+  });
+
+  test('strips trailing slashes from baseUrl', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: 'Hi', tool_calls: null } }]
+      })
+    });
+
+    await chat(sampleMessages, [], { ...openaiConfig, baseUrl: 'http://localhost:1234/v1//' });
+
+    expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:1234/v1/chat/completions');
+  });
+
+  test('throws on missing baseUrl', async () => {
+    await expect(chat(sampleMessages, sampleTools, { model: 'llama3.1' }))
+      .rejects.toThrow('Base URL');
+  });
+
+  test('throws on missing model', async () => {
+    await expect(chat(sampleMessages, sampleTools, { baseUrl: 'http://localhost:1234/v1' }))
+      .rejects.toThrow('model');
+  });
+
+  test('hints at the /v1 path on 404', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve('not found')
+    });
+
+    await expect(chat(sampleMessages, sampleTools, { baseUrl: 'http://localhost:1234', model: 'llama3.1' }))
+      .rejects.toThrow('/v1');
+  });
+});
+
+describe('Custom LLM Provider (anthropic dialect)', () => {
+  let chat;
+
+  beforeEach(() => {
+    chat = loadChatFn('customllm.axe');
+  });
+
+  const anthropicConfig = {
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-sonnet-4-20250514',
+    api: 'anthropic',
+    apiKey: 'sk-ant-test'
+  };
+
+  test('sends correct request format', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: 'text', text: 'Here you go!' }]
+      })
+    });
+
+    await chat(sampleMessages, sampleTools, anthropicConfig);
+
+    expect(mockFetch).toHaveBeenCalledWith('https://api.anthropic.com/v1/messages', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({
+        'x-api-key': 'sk-ant-test',
+        'anthropic-version': '2023-06-01'
+      })
+    }));
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.model).toBe('claude-sonnet-4-20250514');
+    expect(body.system).toBe('You are a DJ assistant.');
+    // System message should NOT be in the messages array
+    expect(body.messages.every(m => m.role !== 'system')).toBe(true);
+    expect(body.messages).toHaveLength(1); // only user message
+    expect(body.tools[0].input_schema).toBeDefined();
+    expect(body.max_tokens).toBe(1024); // required by the API — default
+  });
+
+  test('omits x-api-key header when no key set', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: 'text', text: 'Hi' }]
+      })
+    });
+
+    await chat(sampleMessages, [], { baseUrl: 'http://localhost:8082', model: 'claude-3-5-sonnet', api: 'anthropic' });
+
+    expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:8082/v1/messages');
+    expect(mockFetch.mock.calls[0][1].headers).not.toHaveProperty('x-api-key');
+  });
+
+  test('uses maxTokens when configured', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: 'text', text: 'Hi' }]
+      })
+    });
+
+    await chat(sampleMessages, [], { ...anthropicConfig, maxTokens: '4096' });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.max_tokens).toBe(4096);
+  });
+
+  test('parses text and tool_use response', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [
+          { type: 'text', text: 'Let me play that for you' },
+          { type: 'tool_use', id: 'tu_123', name: 'play', input: { artist: 'Radiohead', title: 'Creep' } }
+        ]
+      })
+    });
+
+    const result = await chat(sampleMessages, sampleTools, anthropicConfig);
+
+    expect(result.content).toBe('Let me play that for you');
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].id).toBe('tu_123');
+    expect(result.toolCalls[0].arguments).toEqual({ artist: 'Radiohead', title: 'Creep' });
+  });
+
+  test('converts tool results to user messages with tool_result', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: 'text', text: 'Done!' }]
+      })
+    });
+
+    await chat(messagesWithToolCalls, sampleTools, anthropicConfig);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const toolResultMsg = body.messages.find(m =>
+      m.role === 'user' && Array.isArray(m.content) && m.content[0]?.type === 'tool_result'
+    );
+    expect(toolResultMsg).toBeDefined();
+    expect(toolResultMsg.content[0].tool_use_id).toBe('call-1');
+  });
+
+  test('converts assistant tool_calls to tool_use blocks', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: 'text', text: 'Done!' }]
+      })
+    });
+
+    await chat(messagesWithToolCalls, sampleTools, anthropicConfig);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const assistantMsg = body.messages.find(m => m.role === 'assistant' && Array.isArray(m.content));
+    expect(assistantMsg).toBeDefined();
+    const toolUseBlock = assistantMsg.content.find(c => c.type === 'tool_use');
+    expect(toolUseBlock.name).toBe('play');
+    expect(toolUseBlock.input).toEqual({ artist: 'Radiohead', title: 'Creep' });
+  });
+
+  test('accepts the anthropic-messages alias', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: 'text', text: 'Hi' }]
+      })
+    });
+
+    await chat(sampleMessages, [], { ...anthropicConfig, api: 'anthropic-messages' });
+
+    expect(mockFetch.mock.calls[0][0]).toBe('https://api.anthropic.com/v1/messages');
+  });
+});
+
+describe('Custom LLM generate', () => {
+  let generate;
+
+  beforeEach(() => {
+    generate = loadGenerateFn('customllm.axe');
+  });
+
+  test('openai dialect: parses JSON array from response', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{
+          message: {
+            content: '[{"title":"Creep","artist":"Radiohead"},{"title":"Smells Like Teen Spirit","artist":"Nirvana"}]'
+          }
+        }]
+      })
+    });
+
+    const result = await generate('Give me rock songs', {
+      baseUrl: 'http://localhost:1234/v1',
+      model: 'qwen2.5-coder:7b',
+      api: 'openai'
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ title: 'Creep', artist: 'Radiohead' });
+  });
+
+  test('openai dialect: includes listening context in prompt', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: '[]' } }]
+      })
+    });
+
+    const listeningContext = { topArtists: ['Radiohead'] };
+    await generate('test', { baseUrl: 'http://localhost:1234/v1', model: 'llama3.1' }, listeningContext);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.messages[0].content).toContain('Radiohead');
+  });
+
+  test('anthropic dialect: parses JSON from content blocks', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        content: [{ type: 'text', text: '[{"title":"Creep","artist":"Radiohead"}]' }]
+      })
+    });
+
+    const result = await generate('Give me rock songs', {
+      baseUrl: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-20250514',
+      api: 'anthropic',
+      apiKey: 'sk-ant-test'
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ title: 'Creep', artist: 'Radiohead' });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.system).toContain('music expert');
+    expect(body.max_tokens).toBe(1024);
+  });
+
+  test('throws on missing baseUrl', async () => {
+    await expect(generate('test', { model: 'llama3.1' })).rejects.toThrow('Base URL');
+  });
+});
+
+describe('Custom LLM listModels', () => {
+  let listModels;
+
+  beforeEach(() => {
+    listModels = loadListModelsFn('customllm.axe');
+  });
+
+  test('openai dialect: fetches {baseUrl}/models with Bearer auth', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        data: [{ id: 'qwen2.5-coder:7b' }, { id: 'llama3.1' }]
+      })
+    });
+
+    const result = await listModels({ baseUrl: 'http://localhost:1234/v1', api: 'openai', apiKey: 'sk-local' });
+
+    expect(mockFetch).toHaveBeenCalledWith('http://localhost:1234/v1/models', {
+      headers: { 'Authorization': 'Bearer sk-local' }
+    });
+    expect(result).toEqual([
+      { value: 'qwen2.5-coder:7b', label: 'qwen2.5-coder:7b' },
+      { value: 'llama3.1', label: 'llama3.1' }
+    ]);
+  });
+
+  test('anthropic dialect: fetches {baseUrl}/v1/models with anthropic headers', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        data: [
+          { id: 'claude-sonnet-4-20250514', display_name: 'Claude Sonnet 4' }
+        ]
+      })
+    });
+
+    const result = await listModels({ baseUrl: 'https://api.anthropic.com', api: 'anthropic', apiKey: 'sk-ant-test' });
+
+    expect(mockFetch).toHaveBeenCalledWith('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': 'sk-ant-test',
+        'anthropic-version': '2023-06-01'
+      }
+    });
+    expect(result).toEqual([
+      { value: 'claude-sonnet-4-20250514', label: 'claude-sonnet-4-20250514 (Claude Sonnet 4)' }
+    ]);
+  });
+
+  test('throws when baseUrl is not set', async () => {
+    await expect(listModels({ api: 'openai' })).rejects.toThrow('Base URL');
+  });
+
+  test('throws on HTTP error', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 404 });
+
+    await expect(listModels({ baseUrl: 'http://localhost:1234/v1' })).rejects.toThrow('HTTP 404');
+  });
+});

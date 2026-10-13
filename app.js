@@ -6013,7 +6013,17 @@ class AIChatService {
         this._lastErrorType = 'ollama_connection';
         return "Can't connect to Ollama. Attempting to start it...";
       }
+      if (this.provider.id === 'customllm') {
+        return "Can't connect to your custom LLM endpoint. Check that the server is running and the Base URL is correct.";
+      }
       return "Can't connect to the AI service. Check your internet connection.";
+    }
+
+    // Custom-LLM plugin errors are already user-facing — they carry endpoint-
+    // specific hints (e.g. the /v1 path suggestion on 404) that a generic
+    // rewrite would discard.
+    if (this.provider.id === 'customllm') {
+      return message;
     }
 
     // Quota/rate limit errors (Gemini, OpenAI)
@@ -20930,8 +20940,11 @@ ${trackListXml}
     // Recreate if model or other settings changed
     if (aiChatServiceRef.current?.provider?.id === provider.id) {
       const currentConfig = aiChatServiceRef.current.provider.config || {};
-      const configChanged = currentConfig.model !== config.model ||
-                           currentConfig.endpoint !== config.endpoint;
+      // Compare every config field, not just model/endpoint — the service
+      // captured its config at creation time, and custom-LLM plugins swap
+      // behavior on baseUrl / api dialect / token limits.
+      const configChanged = Object.keys({ ...currentConfig, ...config })
+        .some(k => currentConfig[k] !== config[k]);
       if (!configChanged) {
         return aiChatServiceRef.current;
       }
@@ -60522,10 +60535,20 @@ useEffect(() => {
                 type: 'password',
                 defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '',
                 onBlur: (e) => {
+                  // Services whose key is optional (requiresAuth: false, e.g. local
+                  // custom-LLM endpoints) keep their explicit enabled toggle — blurring
+                  // an empty key field must not silently disable them. Note `=== true ||`,
+                  // NOT `??`: nullish coalescing doesn't fall through on `false`, so an
+                  // early empty-field blur would poison `enabled: false` forever — a
+                  // later key entry has to be able to re-enable the service.
+                  const svcRequiresAuth = selectedResolver.settings?.requiresAuth ?? selectedResolver.requiresAuth;
+                  const keyRequired = svcRequiresAuth !== false;
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
                     [authFieldKey]: e.target.value,
-                    enabled: !!e.target.value
+                    enabled: keyRequired
+                      ? !!e.target.value
+                      : (metaServiceConfigs[selectedResolver.id]?.enabled === true || !!e.target.value)
                   });
                   // Re-fetch dynamic models after API key change
                   setTimeout(() => {
@@ -60603,6 +60626,64 @@ useEffect(() => {
                 const dynamicState = isDynamic ? dynamicModelOptions[selectedResolver.id] : null;
                 const isLoading = dynamicState?.loading;
 
+                const modelInputStyle = {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: 'var(--text-primary)',
+                  backgroundColor: 'var(--card-bg)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  outline: 'none'
+                };
+
+                // Free-form model id — for endpoints whose model names aren't a fixed list
+                if (modelSetting?.type === 'text') {
+                  return React.createElement('input', {
+                    type: 'text',
+                    defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
+                    placeholder: modelSetting?.placeholder || '',
+                    onBlur: (e) => {
+                      saveMetaServiceConfig(selectedResolver.id, {
+                        ...metaServiceConfigs[selectedResolver.id],
+                        model: e.target.value.trim()
+                      });
+                    },
+                    style: modelInputStyle
+                  });
+                }
+
+                // Free-form model id with fetched suggestions (allowCustom) — lets users
+                // type any model id while still offering the endpoint's model list as
+                // datalist suggestions (the list endpoint isn't universal, so typing must
+                // always work)
+                if (isDynamic && modelSetting?.allowCustom) {
+                  const suggestions = dynamicState?.options?.length > 0
+                    ? dynamicState.options
+                    : (modelSetting?.fallbackOptions || []);
+                  const listId = `model-suggestions-${selectedResolver.id}`;
+                  return React.createElement('div', null,
+                    React.createElement('input', {
+                      type: 'text',
+                      list: listId,
+                      defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
+                      placeholder: modelSetting?.placeholder || 'model id',
+                      onBlur: (e) => {
+                        saveMetaServiceConfig(selectedResolver.id, {
+                          ...metaServiceConfigs[selectedResolver.id],
+                          model: e.target.value.trim()
+                        });
+                      },
+                      style: modelInputStyle
+                    }),
+                    React.createElement('datalist', { id: listId },
+                      suggestions.map(opt =>
+                        React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
+                      )
+                    )
+                  );
+                }
+
                 // Determine which options to show
                 let options;
                 if (isDynamic && dynamicState?.options?.length > 0) {
@@ -60644,6 +60725,136 @@ useEffect(() => {
                       )
                 );
               })()
+            ),
+            // Additional configurable fields (API dialect, base URL, token limits, ...)
+            // beyond the standard key + model pair. Rendered generically from the
+            // plugin's settings.configurable so any meta-service plugin can declare
+            // them (e.g. the customllm endpoint config). Existing AI plugins only
+            // declare apiKey + model, so they render nothing here.
+            ...Object.entries(configurable)
+              .filter(([fieldKey, fieldSetting]) => fieldSetting && fieldKey !== 'model' && fieldKey !== authFieldKey)
+              .map(([fieldKey, fieldSetting]) => {
+                const savedValue = metaServiceConfigs[selectedResolver.id]?.[fieldKey];
+                const fieldInputStyle = {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: 'var(--text-primary)',
+                  backgroundColor: 'var(--card-bg)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  outline: 'none'
+                };
+                // Changing the endpoint or dialect can change the model list — refresh it
+                const refetchModels = (fieldKey === 'baseUrl' || fieldKey === 'endpoint' || fieldKey === 'api')
+                  ? (newValue) => {
+                      setTimeout(() => {
+                        const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                        const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                        if (modelSetting?.type === 'dynamic-select') {
+                          fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], [fieldKey]: newValue });
+                        }
+                      }, 100);
+                    }
+                  : null;
+                return React.createElement('div', { key: fieldKey, style: { marginBottom: '16px' } },
+                  React.createElement('label', {
+                    style: {
+                      display: 'block',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)',
+                      marginBottom: '6px'
+                    }
+                  }, fieldSetting.label || fieldKey),
+                  fieldSetting.description && React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginTop: '-2px',
+                      marginBottom: '8px',
+                      lineHeight: '1.5'
+                    }
+                  }, fieldSetting.description),
+                  fieldSetting.type === 'select'
+                    ? React.createElement('select', {
+                        value: savedValue || fieldSetting.default || (fieldSetting.options?.[0]?.value ?? ''),
+                        onChange: (e) => {
+                          saveMetaServiceConfig(selectedResolver.id, {
+                            ...metaServiceConfigs[selectedResolver.id],
+                            [fieldKey]: e.target.value
+                          });
+                          if (refetchModels) refetchModels(e.target.value);
+                        },
+                        style: { ...fieldInputStyle, cursor: 'pointer' }
+                      },
+                        (fieldSetting.options || []).map(opt =>
+                          React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
+                        )
+                      )
+                    : React.createElement('input', {
+                        type: fieldSetting.type === 'number' ? 'number' : 'text',
+                        defaultValue: savedValue || fieldSetting.default || '',
+                        placeholder: fieldSetting.placeholder || '',
+                        onBlur: (e) => {
+                          saveMetaServiceConfig(selectedResolver.id, {
+                            ...metaServiceConfigs[selectedResolver.id],
+                            [fieldKey]: e.target.value.trim()
+                          });
+                          if (refetchModels) refetchModels(e.target.value.trim());
+                        },
+                        style: fieldInputStyle
+                      })
+                );
+              }),
+            // Explicit enable toggle for no-key AI services (requiresAuth: false).
+            // These services are enabled solely by the `enabled` flag (see
+            // isServiceEnabled) — a set apiKey alone does NOT enable them, so the
+            // flag must be visible and directly flippable (same affordance the
+            // Ollama block has). Keyed services (chatgpt/claude/gemini) stay
+            // key-gated and render no toggle.
+            (selectedResolver.settings?.requiresAuth ?? selectedResolver.requiresAuth) === false && React.createElement('div', {
+              className: 'flex items-center justify-between',
+              style: { marginTop: '4px' }
+            },
+              React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)' } },
+                `Enable ${selectedResolver.name || selectedResolver.id}`),
+              React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
+                React.createElement('input', {
+                  type: 'checkbox',
+                  checked: metaServiceConfigs[selectedResolver.id]?.enabled === true,
+                  onChange: async (e) => {
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      enabled: e.target.checked
+                    });
+                    // When enabling, ensure the plugin is actually loaded (e.g.
+                    // previously uninstalled)
+                    if (e.target.checked) {
+                      const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
+                      if (!isLoaded) {
+                        const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
+                        if (uninstalled.includes(selectedResolver.id)) {
+                          await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(id => id !== selectedResolver.id));
+                        }
+                        const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
+                        if (marketplaceItem) {
+                          await handleInstallFromMarketplace(marketplaceItem);
+                        }
+                      }
+                    }
+                  },
+                  className: 'sr-only peer'
+                }),
+                React.createElement('div', {
+                  className: 'w-full h-full rounded-full transition-colors',
+                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-primary)' : 'rgba(0, 0, 0, 0.15)' }
+                }),
+                React.createElement('div', {
+                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'translateX(20px)' : 'translateX(0)' }
+                })
+              )
             ),
             // Connection status
             metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
@@ -61233,7 +61444,18 @@ useEffect(() => {
               if (isContentResolver) {
                 showEnable = !activeResolvers.includes(selectedResolver.id);
               } else if (isMetaService) {
-                showEnable = !(config?.enabled || config?.apiKey || config?.appId || config?.clientId || config?.username);
+                // No-key AI services (Ollama, Custom LLM) are enabled solely by the
+                // explicit `enabled` flag (see isServiceEnabled) — a set apiKey does
+                // NOT count as enabled for them, so the button must track the flag.
+                // Otherwise a configured-but-not-enabled service shows "Done" with no
+                // visible way to enable it.
+                const isNoKeyAiService = (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat)
+                  && (selectedResolver.settings?.requiresAuth === false || selectedResolver.requiresAuth === false);
+                if (isNoKeyAiService) {
+                  showEnable = config?.enabled !== true;
+                } else {
+                  showEnable = !(config?.enabled || config?.apiKey || config?.appId || config?.clientId || config?.username);
+                }
               }
 
               return React.createElement('button', {

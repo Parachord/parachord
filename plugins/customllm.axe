@@ -1,0 +1,70 @@
+{
+  "manifest": {
+    "id": "customllm",
+    "name": "Custom LLM",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "icon": "🔌",
+    "color": "#8b5cf6",
+    "author": "Parachord Team",
+    "description": "Bring your own LLM endpoint - any OpenAI-compatible or Anthropic-compatible server (LM Studio, vLLM, llama.cpp, OpenRouter, ...)."
+  },
+  "capabilities": {
+    "generate": true,
+    "chat": true
+  },
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {
+      "apiKey": {
+        "type": "password",
+        "label": "API Key",
+        "description": "Your endpoint's API key, if it requires one. Leave empty for local servers (LM Studio, llama.cpp, vLLM) that don't.",
+        "placeholder": "sk-... (optional)"
+      },
+      "api": {
+        "type": "select",
+        "label": "API",
+        "description": "The request dialect your endpoint speaks",
+        "options": [
+          {
+            "value": "openai",
+            "label": "OpenAI-compatible (chat/completions)"
+          },
+          {
+            "value": "anthropic",
+            "label": "Anthropic (messages)"
+          }
+        ],
+        "default": "openai"
+      },
+      "baseUrl": {
+        "type": "text",
+        "label": "Base URL",
+        "description": "Server root URL. OpenAI-compatible: include the version path, e.g. http://localhost:1234/v1 or https://openrouter.ai/api/v1. Anthropic: just the host, e.g. https://api.anthropic.com",
+        "placeholder": "http://localhost:1234/v1"
+      },
+      "model": {
+        "type": "dynamic-select",
+        "allowCustom": true,
+        "label": "Model",
+        "description": "Model id served by your endpoint",
+        "default": "",
+        "placeholder": "e.g. qwen2.5-coder:7b",
+        "fallbackOptions": []
+      },
+      "maxTokens": {
+        "type": "text",
+        "label": "Max Tokens (optional)",
+        "description": "Response token limit. Anthropic requires it - defaults to 1024.",
+        "placeholder": "1024"
+      }
+    }
+  },
+  "implementation": {
+    "chat": "async function(messages, tools, config) {\n  const baseUrl = (config.baseUrl || '').trim().replace(/\\/+$/, '');\n  if (!baseUrl) throw new Error('Set a Base URL for your custom endpoint in settings');\n\n  const model = (config.model || '').trim();\n  if (!model) throw new Error('Set a model for your custom endpoint in settings');\n\n  const api = (config.api || 'openai').toLowerCase();\n  const isAnthropic = api === 'anthropic' || api === 'anthropic-messages';\n  const maxTokens = parseInt(config.maxTokens, 10);\n\n  const formatError = (text, status) => {\n    let msg = 'Custom LLM error (' + status + ')';\n    try {\n      const errData = JSON.parse(text);\n      msg = errData.error?.message || errData.message || msg;\n    } catch (e) {\n      if (text) msg = text.slice(0, 300);\n    }\n    if (status === 404) {\n      msg += isAnthropic\n        ? '. Check your Base URL - the Anthropic Messages path (/v1/messages) is appended automatically.'\n        : '. Check your Base URL - OpenAI-compatible endpoints usually need the /v1 path (e.g. http://localhost:1234/v1).';\n    }\n    return msg;\n  };\n\n  if (isAnthropic) {\n    // Anthropic Messages dialect\n    let systemPrompt = '';\n    const apiMessages = [];\n\n    for (const msg of messages) {\n      if (msg.role === 'system') {\n        systemPrompt += (systemPrompt ? '\\n\\n' : '') + (msg.content || '');\n      } else if (msg.role === 'user') {\n        apiMessages.push({ role: 'user', content: msg.content });\n      } else if (msg.role === 'assistant') {\n        if (msg.tool_calls && msg.tool_calls.length > 0) {\n          const content = [];\n          if (msg.content) content.push({ type: 'text', text: msg.content });\n          for (const tc of msg.tool_calls) {\n            let input = {};\n            if (typeof tc.arguments === 'string') {\n              try { input = JSON.parse(tc.arguments); } catch (e) { input = {}; }\n            } else if (tc.arguments && typeof tc.arguments === 'object') {\n              input = tc.arguments;\n            }\n            content.push({\n              type: 'tool_use',\n              id: tc.id || tc.name,\n              name: tc.name,\n              input: input\n            });\n          }\n          apiMessages.push({ role: 'assistant', content });\n        } else {\n          apiMessages.push({ role: 'assistant', content: msg.content });\n        }\n      } else if (msg.role === 'tool') {\n        apiMessages.push({\n          role: 'user',\n          content: [{\n            type: 'tool_result',\n            tool_use_id: msg.tool_call_id,\n            content: msg.content\n          }]\n        });\n      }\n    }\n\n    const body = {\n      model: model,\n      max_tokens: Number.isFinite(maxTokens) ? maxTokens : 1024,\n      messages: apiMessages\n    };\n    if (systemPrompt) body.system = systemPrompt;\n\n    if (tools && tools.length > 0) {\n      body.tools = tools.map(t => ({\n        name: t.name,\n        description: t.description,\n        input_schema: t.parameters\n      }));\n    }\n\n    const headers = {\n      'Content-Type': 'application/json',\n      'anthropic-version': '2023-06-01'\n    };\n    if (config.apiKey) headers['x-api-key'] = config.apiKey;\n\n    const response = await fetch(baseUrl + '/v1/messages', {\n      method: 'POST',\n      headers: headers,\n      body: JSON.stringify(body)\n    });\n\n    if (!response.ok) {\n      const text = await response.text();\n      throw new Error(formatError(text, response.status));\n    }\n\n    const data = await response.json();\n\n    let content = '';\n    let toolCalls = null;\n    if (data.content && Array.isArray(data.content)) {\n      for (const block of data.content) {\n        if (block.type === 'text') {\n          content += block.text;\n        } else if (block.type === 'tool_use') {\n          if (!toolCalls) toolCalls = [];\n          toolCalls.push({ id: block.id, name: block.name, arguments: block.input });\n        }\n      }\n    }\n\n    return { content: content, toolCalls: toolCalls };\n  }\n\n  // OpenAI chat/completions dialect\n  const openaiTools = tools && tools.length > 0 ? tools.map(tool => ({\n    type: 'function',\n    function: {\n      name: tool.name,\n      description: tool.description,\n      parameters: tool.parameters\n    }\n  })) : undefined;\n\n  const openaiMessages = messages.map(msg => {\n    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {\n      return {\n        role: 'assistant',\n        content: msg.content || null,\n        tool_calls: msg.tool_calls.map(tc => ({\n          id: tc.id,\n          type: 'function',\n          function: {\n            name: tc.name,\n            arguments: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments)\n          }\n        }))\n      };\n    }\n    return msg;\n  });\n\n  const body = {\n    model: model,\n    messages: openaiMessages,\n    temperature: 0.7\n  };\n  if (openaiTools && openaiTools.length > 0) {\n    body.tools = openaiTools;\n    body.tool_choice = 'auto';\n  }\n  if (Number.isFinite(maxTokens)) body.max_tokens = maxTokens;\n\n  const headers = { 'Content-Type': 'application/json' };\n  if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;\n\n  const response = await fetch(baseUrl + '/chat/completions', {\n    method: 'POST',\n    headers: headers,\n    body: JSON.stringify(body)\n  });\n\n  if (!response.ok) {\n    const text = await response.text();\n    throw new Error(formatError(text, response.status));\n  }\n\n  const data = await response.json();\n  const message = data.choices?.[0]?.message;\n\n  const result = {\n    content: message?.content || '',\n    toolCalls: null\n  };\n\n  if (message?.tool_calls && message.tool_calls.length > 0) {\n    result.toolCalls = message.tool_calls.map(tc => {\n      let args = {};\n      try {\n        args = typeof tc.function.arguments === 'string'\n          ? JSON.parse(tc.function.arguments)\n          : (tc.function.arguments || {});\n      } catch (e) {\n        // Some local servers emit malformed JSON arguments - degrade to no args\n        args = {};\n      }\n      return {\n        id: tc.id || ('call_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9)),\n        name: tc.function.name,\n        arguments: args\n      };\n    });\n  }\n\n  return result;\n}",
+    "generate": "async function(prompt, config, listeningContext) {\n  const baseUrl = (config.baseUrl || '').trim().replace(/\\/+$/, '');\n  if (!baseUrl) throw new Error('Set a Base URL for your custom endpoint in settings');\n\n  const model = (config.model || '').trim();\n  if (!model) throw new Error('Set a model for your custom endpoint in settings');\n\n  const api = (config.api || 'openai').toLowerCase();\n  const isAnthropic = api === 'anthropic' || api === 'anthropic-messages';\n  const maxTokens = parseInt(config.maxTokens, 10);\n\n  let systemPrompt = 'You are a music expert. Generate a playlist based on the user\\'s request. Return ONLY a JSON array of objects with \"title\" and \"artist\" fields. No explanations, just the JSON array. Example: [{\"title\": \"Song Name\", \"artist\": \"Artist Name\"}]';\n\n  if (listeningContext) {\n    systemPrompt += '\\n\\nUser\\'s listening history for context:\\n' + JSON.stringify(listeningContext);\n  }\n\n  const formatError = (text, status) => {\n    let msg = 'Custom LLM error (' + status + ')';\n    try {\n      const errData = JSON.parse(text);\n      msg = errData.error?.message || errData.message || msg;\n    } catch (e) {\n      if (text) msg = text.slice(0, 300);\n    }\n    if (status === 404) {\n      msg += isAnthropic\n        ? '. Check your Base URL - the Anthropic Messages path (/v1/messages) is appended automatically.'\n        : '. Check your Base URL - OpenAI-compatible endpoints usually need the /v1 path (e.g. http://localhost:1234/v1).';\n    }\n    return msg;\n  };\n\n  let content;\n  if (isAnthropic) {\n    const headers = {\n      'Content-Type': 'application/json',\n      'anthropic-version': '2023-06-01'\n    };\n    if (config.apiKey) headers['x-api-key'] = config.apiKey;\n\n    const body = {\n      model: model,\n      max_tokens: Number.isFinite(maxTokens) ? maxTokens : 1024,\n      system: systemPrompt,\n      messages: [{ role: 'user', content: prompt }]\n    };\n\n    const response = await fetch(baseUrl + '/v1/messages', {\n      method: 'POST',\n      headers: headers,\n      body: JSON.stringify(body)\n    });\n\n    if (!response.ok) {\n      const text = await response.text();\n      throw new Error(formatError(text, response.status));\n    }\n\n    const data = await response.json();\n    content = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');\n  } else {\n    const headers = { 'Content-Type': 'application/json' };\n    if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;\n\n    const body = {\n      model: model,\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: prompt }\n      ],\n      temperature: 0.7\n    };\n    if (Number.isFinite(maxTokens)) body.max_tokens = maxTokens;\n\n    const response = await fetch(baseUrl + '/chat/completions', {\n      method: 'POST',\n      headers: headers,\n      body: JSON.stringify(body)\n    });\n\n    if (!response.ok) {\n      const text = await response.text();\n      throw new Error(formatError(text, response.status));\n    }\n\n    const data = await response.json();\n    content = data.choices?.[0]?.message?.content || '[]';\n  }\n\n  try {\n    const jsonMatch = content.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);\n    if (jsonMatch) return JSON.parse(jsonMatch[0]);\n    return JSON.parse(content);\n  } catch (e) {\n    console.error('Failed to parse custom LLM response:', content);\n    throw new Error('Could not parse playlist from response');\n  }\n}",
+    "listModels": "async function(config) {\n  const baseUrl = (config.baseUrl || '').trim().replace(/\\/+$/, '');\n  if (!baseUrl) throw new Error('Set a Base URL first');\n\n  const api = (config.api || 'openai').toLowerCase();\n  const isAnthropic = api === 'anthropic' || api === 'anthropic-messages';\n\n  let url, headers = {};\n  if (isAnthropic) {\n    url = baseUrl + '/v1/models';\n    headers['anthropic-version'] = '2023-06-01';\n    if (config.apiKey) headers['x-api-key'] = config.apiKey;\n  } else {\n    url = baseUrl + '/models';\n    if (config.apiKey) headers['Authorization'] = 'Bearer ' + config.apiKey;\n  }\n\n  const response = await fetch(url, { headers });\n  if (!response.ok) throw new Error('HTTP ' + response.status);\n\n  const data = await response.json();\n  const models = data.data || data.models || [];\n  return models.map(m => {\n    const id = m.id || m.name;\n    return {\n      value: id,\n      label: m.display_name ? (id + ' (' + m.display_name + ')') : id\n    };\n  }).filter(m => m.value);\n}"
+  }
+}
