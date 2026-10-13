@@ -588,7 +588,8 @@ contextBridge.exposeInMainWorld('electron', {
   amazonMusic: {
     getStatus: () => ipcRenderer.invoke('amazonmusic-get-status'),
     openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
-    searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks', { query }),
+    searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks',
+      query && typeof query === 'object' ? query : { query }),
     playTrack: (params) => ipcRenderer.invoke('amazonmusic-play-track', params),
     pause: () => ipcRenderer.invoke('amazonmusic-pause'),
     resume: () => ipcRenderer.invoke('amazonmusic-resume'),

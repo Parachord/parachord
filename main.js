@@ -3926,10 +3926,10 @@ ipcMain.handle('amazonmusic-open-login', async () => {
   }
 });
 
-ipcMain.handle('amazonmusic-search-tracks', async (event, { query }) => {
-  console.log(`[Amazon] IPC search ${JSON.stringify(query)}`);
+ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
+  console.log(`[Amazon] IPC search ${JSON.stringify(payload)}`);
   try {
-    const tracks = await amazonWebPlayer.searchTracks(query);
+    const tracks = await amazonWebPlayer.searchTracks(payload || {});
     console.log(`[Amazon] IPC search done ${(tracks && tracks.length) || 0} tracks`);
     return { success: true, engine: 'web', tracks };
   } catch (error) {

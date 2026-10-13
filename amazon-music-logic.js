@@ -135,6 +135,35 @@ function isAmazonSearchTrackLink(testId) {
   return /searchresults/i.test(id);
 }
 
+// A loose "Stations Warning" search misses the song. Amazon's songs tab
+// with both terms quoted does not: /search/"stations" "Warning"/songs.
+function amazonSongSearchUrl({ title, artist, query, songs } = {}) {
+  const quote = (value) => '"' + String(value || '').replace(/"/g, '').trim() + '"';
+  let q = '';
+  let songsOnly = !!songs;
+  if ((title && String(title).trim()) || (artist && String(artist).trim())) {
+    const parts = [];
+    if (title && String(title).trim()) parts.push(quote(title));
+    if (artist && String(artist).trim()) parts.push(quote(artist));
+    q = parts.join(' ');
+    songsOnly = true;
+  } else {
+    q = String(query || '').trim();
+  }
+  if (!q) return null;
+  return 'https://music.amazon.com/search/' + encodeURIComponent(q) + (songsOnly ? '/songs' : '');
+}
+
+// The songs tab does not use SearchResultsWidget. Its rows are
+// <button data-testid="HorizontalItem,undefined">. The general search
+// page uses HorizontalItem,SearchResultsWidget_Item. Mini-player chrome
+// is not a HorizontalItem.
+function isAmazonSongResultItem(testId) {
+  const id = testId || '';
+  if (!/^HorizontalItem,/i.test(id)) return false;
+  return !isAmazonPlayerChrome([id]);
+}
+
 function acceptAmazonSearchAnchor(testIds, onSearchPage) {
   if (isAmazonPlayerChrome(testIds)) return false;
   if (/searchresults|topresults/i.test((testIds || []).join(' '))) return true;
@@ -153,6 +182,8 @@ module.exports = {
   normalizeStreamingQuality,
   isAmazonSearchTrackLink,
   isAmazonPlayerChrome,
+  amazonSongSearchUrl,
+  isAmazonSongResultItem,
   acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
   NEAR_END_MS,

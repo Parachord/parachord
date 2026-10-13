@@ -16,7 +16,9 @@ const {
   acceptAmazonSearchAnchor,
   isAmazonPlayerChrome,
   reportedPlaybackAsin,
-  shouldRevealPlayerOnFailure
+  shouldRevealPlayerOnFailure,
+  amazonSongSearchUrl,
+  isAmazonSongResultItem
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -107,6 +109,7 @@ const SCRAPE_SCRIPT = `(() => {
   try {
   const isAmazonPlayerChrome = ${isAmazonPlayerChrome.toString()};
   const acceptAmazonSearchAnchor = ${acceptAmazonSearchAnchor.toString()};
+  const isAmazonSongResultItem = ${isAmazonSongResultItem.toString()};
   const out = [];
   const seen = new Set();
   const links = [];
@@ -180,7 +183,9 @@ const SCRAPE_SCRIPT = `(() => {
   const items = [];
   const walkItems = (root) => {
     if (!root || !root.querySelectorAll) return;
-    root.querySelectorAll('[data-testid="HorizontalItem,SearchResultsWidget_TopResults_TrackItem"], [data-testid="HorizontalItem,SearchResultsWidget_Item"]').forEach((el) => items.push(el));
+    root.querySelectorAll('[data-testid^="HorizontalItem,"]').forEach((el) => {
+      if (isAmazonSongResultItem(el.getAttribute('data-testid'))) items.push(el);
+    });
     root.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) walkItems(el.shadowRoot); });
   };
   walkItems(document);
@@ -188,7 +193,7 @@ const SCRAPE_SCRIPT = `(() => {
     if (out.length >= 20) break;
     const label = item.getAttribute('aria-label') || '';
     const by = label.match(/^(.+?)\\s+by\\s+(.+)$/i);
-    const titleEl = item.querySelector('[data-testid$="_Metadata_TrackTitle"]');
+    const titleEl = item.querySelector('[data-testid$="_Metadata_TrackTitle"], [data-testid="TrackItem_Title"]');
     const artistLink = item.querySelector('a[href*="/artists/"]');
     const title = ((titleEl && titleEl.textContent) || (by && by[1]) || '').trim();
     const artist = ((artistLink && artistLink.textContent) || (by && by[2]) || '').trim();
@@ -536,16 +541,17 @@ const amazonWebPlayer = {
     return run;
   },
 
-  async searchTracks(query) {
-    if (!query || !query.trim()) return [];
+  async searchTracks(input) {
+    const opts = typeof input === 'string' ? { query: input } : (input || {});
+    const url = amazonSongSearchUrl(opts);
+    if (!url) return [];
     if (!(await this.isSignedIn())) {
       throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
     return this.enqueueSearch(async () => {
       const win = await this.ensureWindow('search');
       const mode = await this.layoutSearch(this.searchView);
-      const url = `https://music.amazon.com/search/${encodeURIComponent(query.trim())}`;
-      console.log(`[Amazon] search "${query.trim()}" mode=${mode} ${url}`);
+      console.log(`[Amazon] search mode=${mode} ${url}`);
       await win.loadURL(url);
       let last = { tracks: [] };
       for (let i = 0; i < 16; i++) {
@@ -561,7 +567,7 @@ const amazonWebPlayer = {
         const n = last && Array.isArray(last.tracks) ? last.tracks.length : 0;
         if (i === 0 || i === 4 || i === 8 || n > 0) {
           const sample = (last.tracks || []).slice(0, 3).map(t => `${t.artist || '?'} — ${t.title || '?'}`).join(' | ');
-          const dbg = last.debug ? ` asinLinks=${last.debug.withAsin} rejected=${last.debug.rejected} anchors=${last.debug.anchors}` : '';
+          const dbg = last.debug ? ` asinLinks=${last.debug.withAsin} rejected=${last.debug.rejected} anchors=${last.debug.anchors} items=${last.debug.items || 0}` : '';
           console.log(`[Amazon] search poll ${i} href=${href} tracks=${n}${sample ? ' ' + sample : ''}${dbg}`);
           if (n === 0 && last.debug && last.debug.error) {
             console.warn('[Amazon] scrape error', last.debug.error.split('\n')[0]);

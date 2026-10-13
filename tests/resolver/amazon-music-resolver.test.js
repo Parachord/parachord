@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.2.3');
+    expect(axe.manifest.version).toBe('1.2.4');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -157,6 +157,10 @@ describe('amazonmusic resolve', () => {
     const match = await resolver.resolve('Daft Punk', 'Around the World', null, {});
     expect(match).toBeTruthy();
     expect(match.amazonAsin).toBe('B2');
+    expect(global.window.electron.amazonMusic.searchTracks).toHaveBeenCalledWith({
+      title: 'Around the World',
+      artist: 'Daft Punk'
+    });
   });
 
   test('matches Cyrillic titles instead of stripping them to empty', async () => {

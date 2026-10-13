@@ -9,6 +9,8 @@ const {
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   isAmazonSearchTrackLink,
+  amazonSongSearchUrl,
+  isAmazonSongResultItem,
   acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
   NEAR_END_MS
@@ -112,6 +114,27 @@ describe('pageBlocksPlayback', () => {
   test('the player home is usable', () => {
     expect(pageBlocksPlayback('https://music.amazon.com/')).toBeNull();
     expect(pageBlocksPlayback('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
+  });
+});
+
+describe('amazonSongSearchUrl', () => {
+  test('quotes title then artist and stays on the songs tab', () => {
+    expect(amazonSongSearchUrl({ title: 'stations', artist: 'Warning' }))
+      .toBe('https://music.amazon.com/search/%22stations%22%20%22Warning%22/songs');
+  });
+
+  test('still uses the songs tab when only one field is present', () => {
+    expect(amazonSongSearchUrl({ title: 'stations' })).toMatch(/\/songs$/);
+    expect(amazonSongSearchUrl({ artist: 'Warning' })).toMatch(/\/songs$/);
+  });
+});
+
+describe('isAmazonSongResultItem', () => {
+  test('accepts the songs tab row and the general search row', () => {
+    expect(isAmazonSongResultItem('HorizontalItem,undefined')).toBe(true);
+    expect(isAmazonSongResultItem('HorizontalItem,SearchResultsWidget_Item')).toBe(true);
+    expect(isAmazonSongResultItem('TrackItem_Title')).toBe(false);
+    expect(isAmazonSongResultItem('HorizontalItem,MiniPlayer_Title')).toBe(false);
   });
 });
 
