@@ -83,16 +83,22 @@ Used throughout the app for album displays, track lists, and playlist mosaics.
 |----------|----------|---------------|-------|
 | Cover Art Archive | `coverartarchive.org/release-group/{id}/front` | No | Via MusicBrainz release lookup |
 | Cover Art Archive | `coverartarchive.org/release/{id}/front` | No | Fallback if release-group fails |
+| Enabled resolvers | Each resolver's `search()` results (`albumArt` field) | Per resolver | Spotify, Apple Music, Bandcamp, SoundCloud, YouTube |
+| iTunes Search | `itunes.apple.com/search?entity=album` (or `song`) | No | Through `window.iTunesRateLimiter`; hit must name the artist and album |
+| Deezer | `api.deezer.com/search/album` (or `/search`) | No | Through the main-process proxy (no CORS for file://); hit must name the artist and album |
 | Embedded | Local file metadata | N/A | ID3v2/Vorbis tags |
 | Folder | `cover.jpg`, `folder.jpg`, `album.jpg`, etc. | N/A | Same directory as audio files |
 
-**Code Location:** `app.js` → `getAlbumArt()` (~line 18915)
+**Code Location:** `app.js` → `getAlbumArt()` (the one pipeline; search for "THE album-art pipeline"), `getAlbumArtFromResolvers()`, `getTrackArt()`; `album-art-catalog.js` (iTunes → Deezer chain, tests in `tests/resolver/album-art-catalog.test.js`)
 
-**Lookup Process:**
-1. Search MusicBrainz for release matching artist + album
-2. Try Cover Art Archive with release-group ID
-3. Fall back to release ID if release-group fails
-4. Cache result with album-to-release-ID mapping
+**Lookup Process (one pipeline for every surface):**
+1. Caches: `albumArtCache` by MusicBrainz id, plus `resolver:` / `catalog:` keys by artist+album
+2. Search MusicBrainz for the release, then Cover Art Archive by release-group id, then release id
+3. Enabled resolvers' search results, walked in priority order until one returns a result with art
+4. iTunes Search, then Deezer, validated against the requested artist and album
+5. A miss is remembered for the session only when every source answered; thrown searches are retried next time
+
+Callers that have a track title but no album (chat cards from prose) use `getTrackArt()`, the catalog chain's song search. Don't add surface-specific shortcuts: the chat card had a resolvers-only "fast" path and that is why AI-recommended tracks showed no art.
 
 **Cache:** `albumArtCache` and `albumToReleaseIdCache`, persisted to electron store.
 
@@ -139,18 +145,16 @@ Displayed on the "Critical Darlings" page.
 
 ## Recommendations
 
-Personalized recommendations displayed on the "Recommendations" page.
+Every recommendation and discovery surface (Recommendations page, Weekly Jams, Shuffleupagus suggestions and chat, Related Artists, Fresh Drops, Critical Darlings, charts, Spinoff, Collection Radio, protocol radio, Concerts, friends) is inventoried in [docs/features/RECOMMENDATIONS.md](../features/RECOMMENDATIONS.md), with the endpoint, seed data and output type for each.
+
+The Recommendations page itself uses:
 
 | Provider | Endpoint | Auth Required | Notes |
 |----------|----------|---------------|-------|
-| Last.fm | `last.fm/player/station/user/{username}/recommended` | API key | Artist recommendations |
-| ListenBrainz | `api.listenbrainz.org/1/stats/user/{username}` | Bearer token | Based on listening stats |
+| Last.fm | `last.fm/player/station/user/{username}/recommended` | None (website JSON, no API key) | Recommended tracks |
+| ListenBrainz | `api.listenbrainz.org/1/user/{username}/playlists/recommendations`, then `/1/playlist/{id}` | None | Falls back to `/1/stats/user/{username}/recordings?range=month` when no recommendation playlist exists |
 
-**Additional Last.fm Endpoints:**
-- `artist.gettoptracks` - Top tracks for recommended artists
-- `track.getsimilar` - Similar tracks for seeding
-
-**Code Location:** `app.js` → `loadRecommendations()` (~line 16700)
+**Code Location:** `app.js` → `loadRecommendations()` (~line 31293)
 
 ---
 
@@ -165,7 +169,7 @@ Track listening history to external services.
 | ListenBrainz | `api.listenbrainz.org/1/submit-listens` | Bearer token | Open source alternative |
 | Libre.fm | `libre.fm/2.0/` | Session key | Last.fm-compatible API |
 
-**Code Location:** `scrobblers/` directory
+**Code Location:** `scrobbler-loader.js` (`ScrobbleManager` plus one class per service)
 
 **Scrobble Rules:**
 - Track must be >30 seconds long
@@ -176,18 +180,15 @@ Track listening history to external services.
 
 ## Library Sync
 
-Import library from external services.
+Import library and playlists from external services, and keep playlists mirrored to them. Every import path (URL, drag and drop, XSPF files, deep links, the browser extension, hosted playlists, AI chat, MCP) and the sync behaviour per provider is inventoried in [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](../features/PLAYLIST_IMPORT_AND_SYNC.md). Sync internals (data model, duplicate prevention, push semantics) are in the Syncing System section of CLAUDE.md.
 
-| Provider | Endpoints | Auth | Data Imported |
-|----------|-----------|------|---------------|
-| Spotify | `api.spotify.com/v1/me/tracks` | OAuth | Liked songs |
-| Spotify | `api.spotify.com/v1/me/albums` | OAuth | Saved albums |
-| Spotify | `api.spotify.com/v1/me/following?type=artist` | OAuth | Followed artists |
-| Spotify | `api.spotify.com/v1/me/playlists` | OAuth | User playlists |
+| Provider | Module | Auth | Data |
+|----------|--------|------|------|
+| Spotify | `sync-providers/spotify.js` | OAuth | Liked songs, saved albums, followed artists, playlists |
+| Apple Music | `sync-providers/applemusic.js` | MusicKit user token | Library songs, albums, artists, playlists (append-only writes) |
+| ListenBrainz | `sync-providers/listenbrainz.js` | User token | Playlists only (JSPF, recording MBID per track) |
 
-**Code Location:** `sync-providers/spotify.js`
-
-**Rate Limiting:** 100ms delay between requests, respects 429 responses with retry-after header.
+**Rate Limiting:** 100ms delay between Spotify requests, respects 429 responses with retry-after header. Apple Music catalog calls go through a dedicated limiter.
 
 ---
 

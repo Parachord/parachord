@@ -269,7 +269,7 @@ The HTTPS share form of any of these (e.g. `https://parachord.com/play/playlist?
 
 Play a never-ending pool. Differs from `play/playlist` in that the pool auto-extends from a refill URL when running low. Two seeding modes:
 
-**Mode B — seed from artist (or artist+title):** Parachord generates the pool using its existing in-app similar-tracks endpoint. Same UX as right-clicking a track and choosing "Spinoff."
+**Mode B — seed from artist (or artist+title):** Parachord generates the pool using its existing in-app similar-tracks endpoint. Same UX as right-clicking a track and choosing "Spinoff." With `artist` alone, the artist's top Last.fm track is used as the seed; if no track can be found, the current queue is left alone and an error toast is shown.
 
 ```
 parachord://play/radio?artist={artist}

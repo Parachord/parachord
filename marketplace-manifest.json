@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2026-01-24T20:00:00Z",
+  "lastUpdated": "2026-10-13T00:00:00Z",
   "plugins": [
     {
       "id": "spotify",
@@ -291,6 +291,33 @@
         "generation",
         "google",
         "gemini"
+      ]
+    },
+    {
+      "id": "customllm",
+      "name": "Custom LLM",
+      "type": "meta-service",
+      "version": "1.0.1",
+      "author": "Parachord Team",
+      "description": "Bring your own LLM endpoint - any OpenAI-compatible or Anthropic-compatible server (LM Studio, vLLM, llama.cpp, OpenRouter, ...).",
+      "icon": "🔌",
+      "color": "#8b5cf6",
+      "capabilities": {
+        "generate": true,
+        "chat": true,
+        "concerts": true
+      },
+      "requiresAuth": false,
+      "builtin": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/customllm.axe",
+      "category": "ai",
+      "tags": [
+        "ai",
+        "chat",
+        "local",
+        "self-hosted",
+        "openai-compatible",
+        "anthropic"
       ]
     },
     {

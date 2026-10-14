@@ -217,6 +217,66 @@ window.isPublicHttpUrl = (urlString) => {
   return true;
 };
 
+// Hosted-playlist fetch limits (parachord#1011). The URL import path (modal,
+// Playlists-page drop, File menu, startup reload, 5-minute poller) fetches any
+// URL no resolver claims and parses the whole body as XSPF. Redirects are
+// followed because hosted XSPF commonly sits behind one (http->https, Dropbox
+// dl=1), so the guard checks both the requested URL and the URL the response
+// actually came from, and caps the body so a runaway document can't be parsed
+// on the main thread every five minutes. 5 MB is roughly 10k tracks of XSPF.
+// Returns a user-facing problem string, or null when the fetch is acceptable.
+//
+// SYNC: tests/helpers/url-safety.js — keep byte-identical with the body below.
+window.HOSTED_PLAYLIST_MAX_BYTES = 5 * 1024 * 1024;
+window.hostedPlaylistFetchProblem = (requestedUrl, finalUrl, bodyLength) => {
+  if (!window.isPublicHttpUrl(requestedUrl)) return 'Playlist URL must be a public http(s) address';
+  if (finalUrl && finalUrl !== requestedUrl && !window.isPublicHttpUrl(finalUrl)) return 'Playlist URL redirected to a private address';
+  if (typeof bodyLength === 'number' && bodyLength > window.HOSTED_PLAYLIST_MAX_BYTES) {
+    return `Playlist is too large (max ${Math.round(window.HOSTED_PLAYLIST_MAX_BYTES / (1024 * 1024))} MB)`;
+  }
+  return null;
+};
+
+// Album name for a track that may have none on its own record (tracks played
+// from search, chat cards, playlists, radio and Last.fm top tracks often
+// arrive with album ''): the track's field, else any resolved source's album
+// (Apple Music's web search fills 'Single' when it has nothing; skip that),
+// else the mapper's canonical release name. Pure; used by the playbar's
+// album-art click so it always has something to open.
+window.pickAlbumNameForTrack = (track, mapperResult) => {
+  const clean = (s) => (typeof s === 'string' ? s.trim() : '');
+  if (!track) return '';
+  const own = clean(track.album);
+  if (own) return own;
+  const sources = track.sources && typeof track.sources === 'object' ? Object.values(track.sources) : [];
+  for (const s of sources) {
+    const a = clean(s && s.album);
+    if (a && a.toLowerCase() !== 'single' && !s.noMatch) return a;
+  }
+  return clean(mapperResult && mapperResult.release_name);
+};
+
+// Choose which MusicBrainz release-group search result to open for a track's
+// album: an Album by the right artist, else anything by the right artist,
+// else the first Album, else the first result. "Right artist" is a
+// normalized containment match on the artist credit, so a same-titled album
+// by someone else doesn't win just because it sorted first.
+window.pickReleaseGroupForAlbum = (results, artist) => {
+  const list = Array.isArray(results) ? results : [];
+  if (list.length === 0) return null;
+  const want = normalizeStr(artist || '');
+  const byArtist = (r) => {
+    if (!want) return false;
+    const credit = normalizeStr((r['artist-credit'] || []).map((c) => c && c.name).filter(Boolean).join(' '));
+    return !!credit && (credit.includes(want) || want.includes(credit));
+  };
+  const isAlbum = (r) => r['primary-type'] === 'Album';
+  return list.find((r) => isAlbum(r) && byArtist(r))
+    || list.find(byArtist)
+    || list.find(isAlbum)
+    || list[0];
+};
+
 // Classify a parachord://play/playlist?url=<url> target so the protocol handler
 // knows how to turn it into tracks (parachord#930). Provider playlist *pages*
 // (Spotify / Apple Music / SoundCloud) are NOT tracklist documents — they have
@@ -5040,6 +5100,23 @@ const djTools = [
       required: []
     }
   },
+  // Same definition as tools/dj-tools.js. The system prompt has told the model
+  // to call this since #857, but it was never in this list, so in-app chat
+  // could not call it (parachord#1007). Keep in step with the registry.
+  {
+    name: 'block_recommendation',
+    description: 'Block an artist, album, or track from future AI recommendations. Use when user says "don\'t recommend X", "I don\'t like X", "stop suggesting X", etc.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['artist', 'album', 'track'], description: 'What to block: artist (blocks all their music), album, or track' },
+        name: { type: 'string', description: 'For artists: the artist name. Not used for albums/tracks.' },
+        title: { type: 'string', description: 'For albums/tracks: the album or track title' },
+        artist: { type: 'string', description: 'For albums/tracks: the artist name' }
+      },
+      required: ['type']
+    }
+  },
   {
     name: 'get_playlists',
     description: 'Get all of the user\'s playlists with names, IDs, and track counts. Use when the user asks about their playlists, wants to browse them, or before modifying a playlist.',
@@ -5928,6 +6005,12 @@ class AIChatService {
       lines.push('  When user asks for "new" or "unheard" music, NEVER recommend any artist from this list.');
     }
 
+    // The persisted blocklist (block_recommendation tool). The prompt above
+    // promises the model it is listed here; until parachord#1006 it never was.
+    if (window.recommendationBlocklist) {
+      lines.push(...window.recommendationBlocklist.formatForPrompt(context.blocklist));
+    }
+
     // Add user's playlists for context
     if (context.playlists && context.playlists.length > 0) {
       lines.push('\nUSER\'S PLAYLISTS:');
@@ -6033,7 +6116,17 @@ class AIChatService {
         this._lastErrorType = 'ollama_connection';
         return "Can't connect to Ollama. Attempting to start it...";
       }
+      if (this.provider.id === 'customllm') {
+        return "Can't connect to your custom LLM endpoint. Check that the server is running and the Base URL is correct.";
+      }
       return "Can't connect to the AI service. Check your internet connection.";
+    }
+
+    // Custom-LLM plugin errors are already user-facing — they carry endpoint-
+    // specific hints (e.g. the /v1 path suggestion on 404) that a generic
+    // rewrite would discard.
+    if (this.provider.id === 'customllm') {
+      return message;
     }
 
     // Quota/rate limit errors (Gemini, OpenAI)
@@ -12695,6 +12788,139 @@ const Parachord = () => {
     });
   }, [currentTrack, isPlaying, volume]);
 
+  // Playlist methods shared by the AI-chat tool context and the MCP tool
+  // context (parachord#1008). The MCP context used to provide only
+  // createPlaylist, so get_playlists / add_to_playlist / remove_from_playlist /
+  // reorder_playlist / rename_playlist / delete_playlist / get_playlist_tracks
+  // over MCP all failed with "context.X is not a function". Built lazily (it is
+  // called inside effects and tool calls) so it can reference component
+  // functions declared later in the file.
+  const buildPlaylistToolContext = () => ({
+    getPlaylists: () => {
+      return (playlistsRef.current || []).map(p => ({
+        id: p.id,
+        name: p.title || p.name,
+        trackCount: (p.tracks || []).length,
+        tracks: (p.tracks || []).map((t, i) => ({
+          index: i,
+          artist: t.artist,
+          title: t.title,
+          album: t.album
+        }))
+      }));
+    },
+    findPlaylist: (name) => {
+      const allPlaylists = playlistsRef.current || [];
+      const lower = name.toLowerCase();
+      // Exact match first
+      let match = allPlaylists.find(p => (p.title || p.name || '').toLowerCase() === lower);
+      // Partial match fallback
+      if (!match) match = allPlaylists.find(p => (p.title || p.name || '').toLowerCase().includes(lower));
+      return match;
+    },
+    addTracksToPlaylist: (playlistId, tracks) => {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === playlistId) {
+          // Set locallyModified inline so the single save persists it. The
+          // older split (save first, mark second) only updated React state,
+          // so the store never saw the flag — push loops missed the edit.
+          // Only flag if the playlist is actually synced somewhere; unsynced
+          // local-only playlists don't need the marker.
+          const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+          const updatedPlaylist = {
+            ...p,
+            tracks: [...(p.tracks || []), ...tracks],
+            lastModified: Date.now(),
+            ...(shouldFlag ? { locallyModified: true } : {})
+          };
+          savePlaylistToStore(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
+    },
+    removeTrackFromPlaylist: (playlistId, trackIndex) => {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === playlistId) {
+          const newTracks = [...(p.tracks || [])];
+          newTracks.splice(trackIndex, 1);
+          const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+          const updatedPlaylist = {
+            ...p,
+            tracks: newTracks,
+            lastModified: Date.now(),
+            ...(shouldFlag ? { locallyModified: true } : {})
+          };
+          savePlaylistToStore(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
+      // Update displayed tracks if viewing this playlist
+      if (selectedPlaylistRef.current?.id === playlistId) {
+        setPlaylistTracks(prev => {
+          const newTracks = [...prev];
+          newTracks.splice(trackIndex, 1);
+          return newTracks;
+        });
+      }
+    },
+    moveTrackInPlaylist: (playlistId, fromIndex, toIndex) => {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === playlistId) {
+          const newTracks = [...(p.tracks || [])];
+          const [removed] = newTracks.splice(fromIndex, 1);
+          newTracks.splice(toIndex, 0, removed);
+          const shouldFlag = !!(p.syncedFrom || p.syncedTo);
+          const updatedPlaylist = {
+            ...p,
+            tracks: newTracks,
+            lastModified: Date.now(),
+            ...(shouldFlag ? { locallyModified: true } : {})
+          };
+          savePlaylistToStore(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
+      // Update displayed tracks if viewing this playlist
+      if (selectedPlaylistRef.current?.id === playlistId) {
+        setPlaylistTracks(prev => {
+          const newTracks = [...prev];
+          const [removed] = newTracks.splice(fromIndex, 1);
+          newTracks.splice(toIndex, 0, removed);
+          return newTracks;
+        });
+      }
+    },
+    renamePlaylist: (playlistId, newName) => {
+      setPlaylists(prev => prev.map(p => {
+        if (p.id === playlistId) {
+          const updatedPlaylist = { ...p, title: newName, lastModified: Date.now() };
+          savePlaylistToStore(updatedPlaylist);
+          return updatedPlaylist;
+        }
+        return p;
+      }));
+      // Update selected playlist if viewing this one
+      if (selectedPlaylistRef.current?.id === playlistId) {
+        setSelectedPlaylist(prev => ({ ...prev, title: newName, lastModified: Date.now() }));
+      }
+    },
+    deletePlaylist: async (playlistId) => {
+      // Use the shared helper so a hosted XSPF is removed from BOTH stores
+      // (else the load+merge re-imports it).
+      const target = (playlistsRef.current || []).find(p => p.id === playlistId) || { id: playlistId };
+      await deletePlaylistLocally(target);
+      if (selectedPlaylistRef.current?.id === playlistId) {
+        setSelectedPlaylist(null);
+        setPlaylistTracks([]);
+        navigateTo('playlists');
+      }
+      return { success: true };
+    }
+  });
+
   // MCP server event handlers (Claude Desktop integration)
   // Shared by the AI-chat tool context and the MCP tool context (the latter used
   // to stub this as a no-op, so block_recommendation over MCP silently did
@@ -12744,10 +12970,15 @@ const Parachord = () => {
           handlePrevious: () => handlePreviousRef.current(),
           setShuffle: (enabled) => setShuffleMode(enabled),
           createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
+          // get/find/add/remove/move/rename/delete playlist (parachord#1008).
+          // No isDataSharingEnabled gate here: that setting belongs to the
+          // in-app chat; the MCP server is its own opt-in.
+          ...buildPlaylistToolContext(),
           getCurrentTrack: () => currentTrackRef.current,
           getQueue: () => currentQueueRef.current || [],
           getIsPlaying: () => isPlayingRef.current,
           blockRecommendation: addToRecommendationBlocklist,
+          getBlocklist: () => recommendationBlocklistRef.current,
           // Seek the active playback engine to a position (ms within the track).
           // Mirrors the playbar slider's onChange — only the same engines that
           // support seek there support it here. Spotify (Web SDK + Connect) is
@@ -13624,10 +13855,16 @@ const Parachord = () => {
               try {
                 // Mode B: artist-only seed → existing similar-tracks spinoff
                 if (params.artist && !params.tracks && !params.url) {
+                  // Resolve the seed BEFORE clearing the queue (parachord#1005):
+                  // an artist with no title needs a top-track lookup, and if
+                  // that finds nothing the user keeps their queue and gets a
+                  // toast instead of silence.
+                  const seed = await resolveSpinoffSeed({ artist: params.artist, title: params.title || null });
+                  if (!seed) break;
                   // Clear prior queue so its in-flight background resolution
                   // doesn't compete with the new spinoff pool.
                   clearQueue();
-                  await startSpinoffRef.current({ artist: params.artist, title: params.title || null });
+                  await startSpinoffRef.current(seed);
                   break;
                 }
                 // Mode C: inline tracks and/or URL-based refill.
@@ -16893,6 +17130,10 @@ ${trackListXml}
               lastModified: Date.now()
             }));
           }
+        } else if (data.action === 'export-playlist' && data.playlistId) {
+          // Read via playlistsRef for the same stale-closure reason as delete below.
+          const playlistToExport = (playlistsRef.current || []).find(p => p.id === data.playlistId);
+          if (playlistToExport) await handleExportPlaylist(playlistToExport);
         } else if (data.action === 'delete-playlist' && data.playlistId) {
           // If the playlist mirrors to/from any remote (a synced playlist OR a
           // hosted XSPF mirrored to Spotify/AM), ask whether to delete from those
@@ -20846,6 +21087,21 @@ ${trackListXml}
     showToast(`Saved playlist: ${queueSavePlaylistName.trim()}`);
   };
 
+  // "Save to file" in the same dialog: write the queue as an .xspf without
+  // adding it to the library (parachord#1010).
+  const handleSaveQueueToFile = async () => {
+    const tracksToSave = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
+    if (tracksToSave.length === 0 || !queueSavePlaylistName.trim()) return;
+    setQueueSaveDialogOpen(false);
+    await handleExportPlaylist({
+      id: `queue-${Date.now()}`,
+      title: queueSavePlaylistName.trim(),
+      creator: 'Queue',
+      tracks: tracksToSave,
+      createdAt: Date.now()
+    });
+  };
+
   // Fetch listening context from Last.fm or ListenBrainz for AI prompt enrichment
   const fetchListeningContext = async () => {
     const lastfmConfig = metaServiceConfigs.lastfm;
@@ -21240,7 +21496,10 @@ ${trackListXml}
   //   earlyReturn: if true, returns as soon as the first resolver finds results (faster for single track play)
   //   targetArtist/targetTitle: if provided with earlyReturn, returns early only if an exact match is found
   const searchResolvers = async (query, options = {}) => {
-    const { earlyReturn = false, targetArtist, targetTitle } = options;
+    // requireAlbumArt: with earlyReturn, keep walking resolvers until one returns
+    // a result that carries albumArt (the album-art pipeline's use), instead of
+    // stopping at the first resolver that returns anything.
+    const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false } = options;
     const allResolvers = loadedResolversRef.current || [];
     const activeIds = activeResolversRef.current || [];
     const resolverOrder = resolverOrderRef.current || [];
@@ -21284,7 +21543,7 @@ ${trackListXml}
               if (hasExactMatch) {
                 return results;
               }
-            } else {
+            } else if (!requireAlbumArt || taggedTracks.some(t => t.albumArt)) {
               // No target specified, return early with any results
               return results;
             }
@@ -21328,8 +21587,11 @@ ${trackListXml}
     // Recreate if model or other settings changed
     if (aiChatServiceRef.current?.provider?.id === provider.id) {
       const currentConfig = aiChatServiceRef.current.provider.config || {};
-      const configChanged = currentConfig.model !== config.model ||
-                           currentConfig.endpoint !== config.endpoint;
+      // Compare every config field, not just model/endpoint — the service
+      // captured its config at creation time, and custom-LLM plugins swap
+      // behavior on baseUrl / api dialect / token limits.
+      const configChanged = Object.keys({ ...currentConfig, ...config })
+        .some(k => currentConfig[k] !== config[k]);
       if (!configChanged) {
         return aiChatServiceRef.current;
       }
@@ -21453,130 +21715,8 @@ ${trackListXml}
 
         return { success: true, trackCount: uniqueTracks.length };
       },
-      // Playlist management functions
-      getPlaylists: () => {
-        return (playlistsRef.current || []).map(p => ({
-          id: p.id,
-          name: p.title || p.name,
-          trackCount: (p.tracks || []).length,
-          tracks: (p.tracks || []).map((t, i) => ({
-            index: i,
-            artist: t.artist,
-            title: t.title,
-            album: t.album
-          }))
-        }));
-      },
-      findPlaylist: (name) => {
-        const allPlaylists = playlistsRef.current || [];
-        const lower = name.toLowerCase();
-        // Exact match first
-        let match = allPlaylists.find(p => (p.title || p.name || '').toLowerCase() === lower);
-        // Partial match fallback
-        if (!match) match = allPlaylists.find(p => (p.title || p.name || '').toLowerCase().includes(lower));
-        return match;
-      },
-      addTracksToPlaylist: (playlistId, tracks) => {
-        setPlaylists(prev => prev.map(p => {
-          if (p.id === playlistId) {
-            // Set locallyModified inline so the single save persists it. The
-            // older split (save first, mark second) only updated React state,
-            // so the store never saw the flag — push loops missed the edit.
-            // Only flag if the playlist is actually synced somewhere; unsynced
-            // local-only playlists don't need the marker.
-            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
-            const updatedPlaylist = {
-              ...p,
-              tracks: [...(p.tracks || []), ...tracks],
-              lastModified: Date.now(),
-              ...(shouldFlag ? { locallyModified: true } : {})
-            };
-            savePlaylistToStore(updatedPlaylist);
-            return updatedPlaylist;
-          }
-          return p;
-        }));
-      },
-      removeTrackFromPlaylist: (playlistId, trackIndex) => {
-        setPlaylists(prev => prev.map(p => {
-          if (p.id === playlistId) {
-            const newTracks = [...(p.tracks || [])];
-            newTracks.splice(trackIndex, 1);
-            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
-            const updatedPlaylist = {
-              ...p,
-              tracks: newTracks,
-              lastModified: Date.now(),
-              ...(shouldFlag ? { locallyModified: true } : {})
-            };
-            savePlaylistToStore(updatedPlaylist);
-            return updatedPlaylist;
-          }
-          return p;
-        }));
-        // Update displayed tracks if viewing this playlist
-        if (selectedPlaylistRef.current?.id === playlistId) {
-          setPlaylistTracks(prev => {
-            const newTracks = [...prev];
-            newTracks.splice(trackIndex, 1);
-            return newTracks;
-          });
-        }
-      },
-      moveTrackInPlaylist: (playlistId, fromIndex, toIndex) => {
-        setPlaylists(prev => prev.map(p => {
-          if (p.id === playlistId) {
-            const newTracks = [...(p.tracks || [])];
-            const [removed] = newTracks.splice(fromIndex, 1);
-            newTracks.splice(toIndex, 0, removed);
-            const shouldFlag = !!(p.syncedFrom || p.syncedTo);
-            const updatedPlaylist = {
-              ...p,
-              tracks: newTracks,
-              lastModified: Date.now(),
-              ...(shouldFlag ? { locallyModified: true } : {})
-            };
-            savePlaylistToStore(updatedPlaylist);
-            return updatedPlaylist;
-          }
-          return p;
-        }));
-        // Update displayed tracks if viewing this playlist
-        if (selectedPlaylistRef.current?.id === playlistId) {
-          setPlaylistTracks(prev => {
-            const newTracks = [...prev];
-            const [removed] = newTracks.splice(fromIndex, 1);
-            newTracks.splice(toIndex, 0, removed);
-            return newTracks;
-          });
-        }
-      },
-      renamePlaylist: (playlistId, newName) => {
-        setPlaylists(prev => prev.map(p => {
-          if (p.id === playlistId) {
-            const updatedPlaylist = { ...p, title: newName, lastModified: Date.now() };
-            savePlaylistToStore(updatedPlaylist);
-            return updatedPlaylist;
-          }
-          return p;
-        }));
-        // Update selected playlist if viewing this one
-        if (selectedPlaylistRef.current?.id === playlistId) {
-          setSelectedPlaylist(prev => ({ ...prev, title: newName, lastModified: Date.now() }));
-        }
-      },
-      deletePlaylist: async (playlistId) => {
-        // Use the shared helper so a hosted XSPF is removed from BOTH stores
-        // (else the load+merge re-imports it).
-        const target = (playlistsRef.current || []).find(p => p.id === playlistId) || { id: playlistId };
-        await deletePlaylistLocally(target);
-        if (selectedPlaylistRef.current?.id === playlistId) {
-          setSelectedPlaylist(null);
-          setPlaylistTracks([]);
-          navigateTo('playlists');
-        }
-        return { success: true };
-      }
+      // Playlist management functions, shared with the MCP context (parachord#1008)
+      ...buildPlaylistToolContext()
     };
 
     // Create context getter for system prompt
@@ -21779,14 +21919,14 @@ ${trackListXml}
           }
         }
 
-        if (!albumName || !artist) {
-          if (!cancelled) setLoading(false);
-          return;
-        }
-
         try {
-          // Use fast iTunes-based lookup for ChatCards (much faster than MusicBrainz)
-          const artUrl = await getAlbumArtFast(artist, albumName);
+          // The shared album-art pipeline (MusicBrainz + Cover Art Archive →
+          // resolvers → iTunes → Deezer), same as every other surface. A
+          // track card with no album name (common when the model answers in
+          // prose) falls back to the catalog chain's song search.
+          const artUrl = (albumName && artist)
+            ? await getAlbumArt(artist, albumName)
+            : (type === 'track' ? await getTrackArt(artist, title) : null);
           if (!cancelled && artUrl) {
             setImageUrl(artUrl);
           }
@@ -26256,6 +26396,72 @@ ${trackListXml}
   };
 
   // Handle album click from search - fetch release data by release-group ID
+  // Open the album page for whatever is playing, from any playback context.
+  // The playbar's album-art click used to require track.album, which is set
+  // when playing from the album page and often empty everywhere else, so the
+  // click silently did nothing outside that page. Order:
+  //   1. album name from the track / its sources / the MBID mapper → MB
+  //      release-group search, picking an Album by this artist;
+  //   2. no name but a release MBID (mapper enrichment) → look the release up
+  //      and open its release-group;
+  //   3. toast.
+  const openAlbumForTrack = async (track) => {
+    if (!track || !track.artist) {
+      showToast('No album information for this track');
+      return;
+    }
+    const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' };
+    let albumName = window.pickAlbumNameForTrack(track, null);
+    let releaseMbid = track.releaseMbid || null;
+    if ((!albumName || !releaseMbid) && track.title) {
+      try {
+        const mapped = await lookupMbidMapper(track.artist, track.title, albumName || null);
+        if (mapped) {
+          if (!albumName) albumName = window.pickAlbumNameForTrack(track, mapped);
+          if (!releaseMbid && mapped.release_mbid) releaseMbid = mapped.release_mbid;
+        }
+      } catch (e) { /* mapper down: carry on with what we have */ }
+    }
+
+    try {
+      if (albumName) {
+        const query = encodeURIComponent(`"${albumName}" AND artist:"${track.artist}"`);
+        const response = await fetch(
+          `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
+          { headers: mbHeaders }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const album = window.pickReleaseGroupForAlbum(data['release-groups'], track.artist);
+          if (album) return handleAlbumClick(album);
+        }
+      }
+      if (releaseMbid) {
+        const response = await fetch(
+          `https://musicbrainz.org/ws/2/release/${releaseMbid}?inc=release-groups+artist-credits&fmt=json`,
+          { headers: mbHeaders }
+        );
+        if (response.ok) {
+          const release = await response.json();
+          const rg = release['release-group'];
+          if (rg && rg.id) {
+            rememberReleaseGroupAlias(rg.id, releaseMbid);
+            return handleAlbumClick({
+              id: rg.id,
+              title: rg.title || release.title,
+              'primary-type': rg['primary-type'],
+              'artist-credit': release['artist-credit'] || [{ name: track.artist }]
+            });
+          }
+        }
+      }
+      showToast(albumName ? `Album "${albumName}" not found` : 'No album found for this track');
+    } catch (error) {
+      console.error('Error opening album for track:', error);
+      showToast('Failed to load album');
+    }
+  };
+
   const handleAlbumClick = async (album) => {
     try {
       console.log('Fetching album from search:', album.title);
@@ -30764,6 +30970,9 @@ ${tracks}
               const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
 
               if (primaryType === 'broadcast' || secondaryTypes.includes('compilation') || secondaryTypes.includes('live') || secondaryTypes.includes('broadcast')) return;
+              // parachord#1006: a blocked artist or album never shows in Fresh Drops.
+              if (window.recommendationBlocklist
+                && window.recommendationBlocklist.isBlocked(recommendationBlocklistRef.current, { artist: artist.name, title: rg.title })) return;
 
               allNewReleases.push({
                 id: rg.id,
@@ -31840,7 +32049,11 @@ Return ONLY the JSON array, no other text.`;
 
     if (cacheValid) {
       console.log(`⭐ Using cached recommendations (${Math.round((now - recommendationsCache.current.timestamp) / 60000)}m old)`);
-      const tracks = recommendationsCache.current.tracks;
+      // parachord#1006: honour the blocklist on the cached path too, since a
+      // block made since the cache was filled must take effect immediately.
+      const tracks = window.recommendationBlocklist
+        ? window.recommendationBlocklist.filterBlocked(recommendationBlocklistRef.current, recommendationsCache.current.tracks)
+        : recommendationsCache.current.tracks;
 
       // Extract unique artists, pre-populating images from cache for instant display
       const artistMap = new Map();
@@ -31910,8 +32123,14 @@ Return ONLY the JSON array, no other text.`;
       // Merge and de-dupe tracks (ListenBrainz first since it has MBID metadata)
       const seenTracks = new Set();
       const tracks = [];
+      // parachord#1006: drop anything the user blocked. Tracks carry artist +
+      // title (+ album when the service supplies it), so blocked artists,
+      // albums and tracks all apply.
+      const isBlockedTrack = (t) => !!window.recommendationBlocklist
+        && window.recommendationBlocklist.isBlocked(recommendationBlocklistRef.current, t);
 
       for (const track of listenbrainzTracks) {
+        if (isBlockedTrack(track)) continue;
         const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}`;
         if (!seenTracks.has(key)) {
           seenTracks.add(key);
@@ -31920,6 +32139,7 @@ Return ONLY the JSON array, no other text.`;
       }
 
       for (const track of lastfmTracks) {
+        if (isBlockedTrack(track)) continue;
         const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}`;
         if (!seenTracks.has(key)) {
           seenTracks.add(key);
@@ -32366,10 +32586,15 @@ Return ONLY the JSON array, no other text.`;
     const prevAlbums = previousAiSuggestions.current.albums;
     const prevArtists = previousAiSuggestions.current.artists;
     let exclusionNote = '';
-    if (prevAlbums.length > 0 || prevArtists.length > 0) {
+    const suggestionBlocklist = recommendationBlocklistRef.current;
+    const blocklistLines = window.recommendationBlocklist ? window.recommendationBlocklist.formatForPrompt(suggestionBlocklist) : [];
+    if (prevAlbums.length > 0 || prevArtists.length > 0 || blocklistLines.length > 0) {
       const parts = [];
       if (prevAlbums.length > 0) parts.push('Albums already suggested (DO NOT repeat these): ' + prevAlbums.map(a => `${a.artist} - ${a.title}`).join(', '));
       if (prevArtists.length > 0) parts.push('Artists already suggested (DO NOT repeat these): ' + prevArtists.map(a => a.name).join(', '));
+      // parachord#1006: the user's blocklist goes to the model too, and is
+      // filtered at the code level below in case the model ignores it.
+      parts.push(...blocklistLines.map(l => l.trim()));
       exclusionNote = '\n\n' + parts.join('\n');
     }
 
@@ -32420,12 +32645,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       const parsed = JSON.parse(jsonStr);
-      const candidateAlbums = (parsed.albums || []).slice(0, 12).map(a => ({
+      const notBlocked = (items, pick) => window.recommendationBlocklist
+        ? window.recommendationBlocklist.filterBlocked(suggestionBlocklist, items, pick)
+        : items;
+      const candidateAlbums = notBlocked((parsed.albums || []).slice(0, 12).map(a => ({
         title: a.title || a.album || 'Unknown Album',
         artist: a.artist || 'Unknown Artist',
         reason: a.reason || '',
         art: null // Will be loaded asynchronously
-      }));
+      })));
 
       // Validate albums against MusicBrainz: must be a studio album (single API call per album)
       const mbHeaders = { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' };
@@ -32471,11 +32699,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const prevArtistNames = new Set(
         previousAiSuggestions.current.artists.map(a => a.name.toLowerCase())
       );
-      const artists = (parsed.artists || []).map(a => ({
+      const artists = notBlocked((parsed.artists || []).map(a => ({
         name: a.name || a.artist || 'Unknown Artist',
         reason: a.reason || '',
         image: undefined // Will be loaded asynchronously
-      })).filter(a => !prevArtistNames.has(a.name.toLowerCase())).slice(0, 5);
+      })), a => ({ artist: a.name })).filter(a => !prevArtistNames.has(a.name.toLowerCase())).slice(0, 5);
       if (onUpdate) onUpdate({ artists });
 
       // Validate albums one at a time, respecting MusicBrainz rate limit (~1 req/sec).
@@ -35055,8 +35283,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Cache for resolver-based album art lookups
   const resolverArtCache = useRef({});
 
-  // Search enabled resolvers for album art (used as fallback when MusicBrainz/CAA fails)
-  // Returns the first albumArt URL found from the user's enabled resolvers
+  // Adapters for the catalog art chain (album-art-catalog.js). iTunes goes
+  // through the shared limiter (~20 req/min/IP); Deezer sends no CORS header
+  // for file:// origins, so it goes through the main-process proxy.
+  const catalogArtDeps = () => ({
+    fetchItunes: (url) => window.iTunesRateLimiter.fetch(url),
+    fetchDeezer: async (url) => {
+      const r = await window.electron?.proxyFetch?.(url, { headers: { Accept: 'application/json' } });
+      return { ok: !!(r && r.success), json: async () => JSON.parse(r.text || 'null') };
+    }
+  });
+
+  // Steps 3 and 4 of the shared album-art pipeline (see getAlbumArt): the
+  // enabled resolvers' search results, then the iTunes → Deezer catalog chain.
+  // Called by getAlbumArt after MusicBrainz + Cover Art Archive miss. A miss is
+  // remembered for the session (resolverArtCache null) only when every source
+  // answered; a thrown search (network, throttle) is not cached, so the next
+  // render tries again.
   const getAlbumArtFromResolvers = async (artist, album) => {
     if (!artist || !album) return null;
 
@@ -35067,56 +35310,76 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       return resolverArtCache.current[cacheKey]; // null = previously failed
     }
 
+    const remember = (url, source) => {
+      resolverArtCache.current[cacheKey] = url;
+      // Also store in shared albumArtCache for cross-lookup (getCachedAlbumArt)
+      albumArtCache.current[`${source}:${cacheKey}`] = { url, timestamp: Date.now() };
+      return url;
+    };
+
     try {
-      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true });
-      if (!results || results.length === 0) {
-        resolverArtCache.current[cacheKey] = null;
-        return null;
-      }
+      // Walk resolvers in priority order until one returns a result WITH art;
+      // stopping at the first resolver that returned anything (the old
+      // behaviour) let an art-less hit from a higher-priority resolver hide
+      // Spotify's or Bandcamp's cover.
+      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true, requireAlbumArt: true });
 
       // Find best match - prefer exact artist+album match
       const normalizedAlbum = album.toLowerCase();
       const normalizedArtist = artist.toLowerCase();
 
-      const bestMatch = results.find(r =>
+      const bestMatch = (results || []).find(r =>
         r.albumArt &&
         r.artist?.toLowerCase() === normalizedArtist &&
         r.album?.toLowerCase() === normalizedAlbum
-      ) || results.find(r =>
+      ) || (results || []).find(r =>
         r.albumArt &&
         r.artist?.toLowerCase() === normalizedArtist
-      ) || results.find(r => r.albumArt);
+      ) || (results || []).find(r => r.albumArt);
 
-      if (bestMatch?.albumArt) {
-        resolverArtCache.current[cacheKey] = bestMatch.albumArt;
-        // Also store in shared albumArtCache for cross-lookup
-        const artCacheEntry = { url: bestMatch.albumArt, timestamp: Date.now() };
-        const artLookupKey = `resolver:${cacheKey}`;
-        albumArtCache.current[artLookupKey] = artCacheEntry;
-        return bestMatch.albumArt;
-      }
-
-      resolverArtCache.current[cacheKey] = null;
-      return null;
+      if (bestMatch?.albumArt) return remember(bestMatch.albumArt, 'resolver');
     } catch (err) {
       console.error('Resolver album art lookup failed:', err);
       return null;
     }
+
+    // Catalog fallback: iTunes Search, then Deezer (no auth, independent of
+    // which resolvers are enabled). Validated hits only.
+    if (window.albumArtCatalog) {
+      const catalogUrl = await window.albumArtCatalog.getCatalogAlbumArtwork(artist, album, catalogArtDeps());
+      if (catalogUrl) return remember(catalogUrl, 'catalog');
+    }
+
+    resolverArtCache.current[cacheKey] = null;
+    return null;
   };
 
-  // Fast album art lookup using enabled resolvers (for ChatCards and other quick lookups)
-  const getAlbumArtFast = async (artist, album) => {
-    if (!artist || !album) return null;
-
-    // Check the main albumArtCache first
-    const cachedArt = getCachedAlbumArt(artist, album);
-    if (cachedArt) return cachedArt;
-
-    // Search enabled resolvers
-    return getAlbumArtFromResolvers(artist, album);
+  // Track-level art for callers that have a title but no album name (chat
+  // cards from prose): the catalog chain's song search, which returns the
+  // matched track's album cover. Same validation as the album chain.
+  // Session-cached by artist|title.
+  const getTrackArt = async (artist, title) => {
+    if (!artist || !title) return null;
+    const cacheKey = `track:${artist}|${title}`.toLowerCase();
+    if (resolverArtCache.current[cacheKey] !== undefined) return resolverArtCache.current[cacheKey];
+    let url = null;
+    if (window.albumArtCatalog) {
+      url = await window.albumArtCatalog.getCatalogTrackArtwork(artist, title, catalogArtDeps());
+    }
+    resolverArtCache.current[cacheKey] = url;
+    return url;
   };
 
   // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
+  // THE album-art pipeline. Every surface that shows a cover (playbar, queue,
+  // Recommendations, Fresh Drops, chat cards, playlist mosaics, ...) goes
+  // through this one function so coverage and caching are identical:
+  //   1. caches (albumArtCache by MB id, resolver:/catalog: keys)
+  //   2. MusicBrainz release search → Cover Art Archive (release-group, then release)
+  //   3. enabled resolvers' search results (getAlbumArtFromResolvers)
+  //   4. iTunes Search → Deezer catalog chain (album-art-catalog.js)
+  // Don't add a surface-specific shortcut; the chat card had one ("fast",
+  // resolvers only) and it is why AI-recommended tracks rendered without art.
   const getAlbumArt = async (artist, album) => {
     if (!artist || !album) return null;
 
@@ -35259,6 +35522,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Then check albumToReleaseIdCache by artist+album name
     if (artist && album) {
       const lookupKey = `${artist}-${album}`.toLowerCase();
+      // Resolver / catalog hits are stored under prefixed keys (no MB id)
+      const fallbackHit = albumArtCache.current[`resolver:${lookupKey}`]?.url
+        || albumArtCache.current[`catalog:${lookupKey}`]?.url;
+      if (fallbackHit) return fallbackHit;
       const cachedLookup = albumToReleaseIdCache.current[lookupKey];
       if (cachedLookup) {
         // Handle both old format (string) and new format ({ releaseId, releaseGroupId })
@@ -36461,6 +36728,26 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Start spinoff mode - play similar tracks based on current track,
   // OR play from a pre-resolved pool when called with { pool, displayName, refillUrl }.
+  // Turn an artist-only seed into an artist+title seed (parachord#1005).
+  // Last.fm track.getsimilar needs a track, so `parachord://play/radio?artist=X`
+  // used to clear the queue and then bail in startSpinoff with "missing track
+  // info". Picks the artist's top Last.fm track. Returns { artist, title } or
+  // null (after a toast) so callers can refuse before touching the queue.
+  const resolveSpinoffSeed = async (seed) => {
+    if (!seed || !seed.artist) {
+      console.log('🔀 Cannot start spinoff: missing track info');
+      return null;
+    }
+    if (seed.title) return { artist: seed.artist, title: seed.title };
+    const top = await getArtistTopTracks(seed.artist, 1);
+    if (!top.length) {
+      showToast(`Couldn't find a track by ${seed.artist} to seed the radio`, 'error');
+      return null;
+    }
+    console.log(`🔀 Seeding spinoff for ${seed.artist} from top track "${top[0].title}"`);
+    return { artist: seed.artist, title: top[0].title };
+  };
+
   const startSpinoff = async (track) => {
     // New path: pre-resolved pool (used by parachord://play-radio)
     if (track && Array.isArray(track.pool)) {
@@ -36470,6 +36757,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       });
     }
 
+    if (track && track.artist && !track.title) {
+      // Artist-only seed (protocol Mode B or any caller with just a name).
+      track = await resolveSpinoffSeed(track);
+    }
     if (!track || !track.artist || !track.title) {
       console.log('🔀 Cannot start spinoff: missing track info');
       return;
@@ -37430,6 +37721,28 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
   // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
   // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
+  // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
+  // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
+  // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
+  // Fetch a hosted playlist document with the public-URL guard and body cap
+  // (parachord#1011). Shared by the URL import below and the 5-minute poller
+  // so neither can fetch a private address or parse an unbounded body.
+  const fetchHostedPlaylistText = async (url) => {
+    const problem = window.hostedPlaylistFetchProblem(url, null, 0);
+    if (problem) throw new Error(problem);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+    }
+    const text = await response.text();
+    const afterProblem = window.hostedPlaylistFetchProblem(url, response.url, text.length);
+    if (afterProblem) throw new Error(afterProblem);
+    return text;
+  };
+
+  // background: true from the startup reload list and the 5-minute poller —
+  // a zero-track parse throws (logged by the caller) instead of showing a
+  // modal dialog. Background work must never modal-error.
   const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null, { background = false } = {}) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
@@ -37471,13 +37784,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         // Generate XSPF for storage so the playlist can be reloaded without the service
         content = generateXSPF({ ...parsed, createdAt: Date.now() });
       } else {
-        // Hosted XSPF — fetch and parse directly
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
-        }
-
-        content = await response.text();
+        // Hosted XSPF — fetch (guarded + capped) and parse directly
+        content = await fetchHostedPlaylistText(url);
         parsed = parseXSPF(content);
       }
 
@@ -37722,10 +38030,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       for (const playlist of hostedPlaylists) {
         try {
-          const response = await fetch(playlist.sourceUrl);
-          if (!response.ok) continue;
-
-          const content = await response.text();
+          // Same guard + cap as the import path (parachord#1011): a stored
+          // URL that now fails the check (or has grown past the cap) is
+          // skipped this tick instead of being parsed.
+          const content = await fetchHostedPlaylistText(playlist.sourceUrl);
 
           // Check if content changed
           if (content !== playlist.xspf) {
@@ -37836,12 +38144,31 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return () => clearTimeout(timer);
   }, []);
 
+  // Export a playlist to an .xspf file via the main-process save dialog.
+  // Reachable from the playlist header's Share menu, the playlist row context
+  // menu ("Export as XSPF…") and the queue save dialog ("Save to file")
+  // (parachord#1010; the handler and IPC existed with no caller). Playlists
+  // created in-app (queue-*, ai-chat-*, playlist-*) carry no `xspf` field, so
+  // the document is generated from `tracks` when it is missing.
   const handleExportPlaylist = async (playlist) => {
     try {
       console.log(`📤 Exporting playlist: ${playlist.id}`);
-      
-      const defaultFilename = playlist.filename || `${playlist.id}.xspf`;
-      const result = await window.electron.playlists.export(defaultFilename, playlist.xspf);
+
+      const tracks = playlist.tracks || [];
+      if (!playlist.xspf && tracks.length === 0) {
+        showToast('Nothing to export: this playlist has no tracks', 'error');
+        return;
+      }
+      const content = playlist.xspf || generateXSPF({
+        title: playlist.title || playlist.name || 'Playlist',
+        creator: playlist.creator,
+        createdAt: playlist.createdAt,
+        tracks
+      });
+      const slug = String(playlist.title || playlist.name || playlist.id || 'playlist')
+        .trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').slice(0, 80) || 'playlist';
+      const defaultFilename = playlist.filename || `${slug}.xspf`;
+      const result = await window.electron.playlists.export(defaultFilename, content);
       
       if (!result) {
         console.log('Export cancelled');
@@ -45677,6 +46004,24 @@ useEffect(() => {
                       React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' })
                     ),
                     'Copy Link'
+                  ),
+                  React.createElement('button', {
+                    onClick: () => {
+                      setShareDropdownOpen(false);
+                      // Prefer the loaded tracklist (it may be richer than the
+                      // stored one); fall back to the stored tracks.
+                      handleExportPlaylist({
+                        ...selectedPlaylist,
+                        tracks: (playlistTracks && playlistTracks.length) ? playlistTracks : (selectedPlaylist.tracks || [])
+                      });
+                    },
+                    className: 'w-full px-3 py-2 text-left text-white hover:bg-white/10 flex items-center gap-2 no-drag',
+                    style: { fontSize: '12px', fontWeight: 500 }
+                  },
+                    React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
+                    ),
+                    'Export as XSPF…'
                   )
                 )
               )
@@ -48865,6 +49210,44 @@ useEffect(() => {
                   overflow: 'hidden'
                 }
               },
+                // Sync status + "Sync Now" (parachord#1009). The Library Sync
+                // modal has existed since 2026-01 but nothing opened it, so the
+                // only full sync a user could trigger was the wizard's Start Sync.
+                Object.values(resolverSyncSettings).some(s => s?.enabled) && React.createElement('button', {
+                  key: 'sync-status',
+                  onClick: () => { setSyncMenuOpen(false); setSyncStatusModal({ open: true }); },
+                  style: {
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '10px 14px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    transition: 'background-color 100ms ease'
+                  },
+                  onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)',
+                  onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'transparent'
+                },
+                  React.createElement('div', {
+                    style: {
+                      width: '28px', height: '28px', borderRadius: '8px',
+                      backgroundColor: '#06b6d4',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0
+                    }
+                  },
+                    React.createElement('svg', { style: { width: '16px', height: '16px' }, fill: 'none', viewBox: '0 0 24 24', stroke: '#ffffff' },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' })
+                    )
+                  ),
+                  Object.values(syncStatus).some(s => s?.inProgress) ? 'Syncing…' : 'Sync status & Sync Now'
+                ),
                 Object.entries(syncProviderConfig).map(([pid, config]) =>
                   React.createElement('button', {
                     key: pid,
@@ -56900,36 +57283,11 @@ useEffect(() => {
                   }
                 },
                 onClick: (e) => {
-                  console.log('Album art clicked!', { defaultPrevented: e.defaultPrevented, album: currentTrack.album, artist: currentTrack.artist });
                   // Prevent click if we just finished a drag operation
                   if (e.defaultPrevented) return;
-                  // Search for the album and open its page
-                  if (currentTrack.album && currentTrack.artist) {
-                    // Search MusicBrainz for the release - get multiple results to prefer albums over singles
-                    const query = encodeURIComponent(`"${currentTrack.album}" AND artist:"${currentTrack.artist}"`);
-                    fetch(
-                      `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
-                      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-                    ).then(response => {
-                      if (response.ok) {
-                        return response.json();
-                      }
-                    }).then(data => {
-                      if (data) {
-                        const results = data['release-groups'] || [];
-                        if (results.length > 0) {
-                          // Prefer albums over singles/EPs - find first album type, fall back to first result
-                          const album = results.find(r => r['primary-type'] === 'Album') || results[0];
-                          handleAlbumClick(album);
-                        } else {
-                          showToast(`Album "${currentTrack.album}" not found`);
-                        }
-                      }
-                    }).catch(error => {
-                      console.error('Error searching for album:', error);
-                      showToast('Failed to load album');
-                    });
-                  }
+                  // Always opens the album page, whatever context the track was
+                  // played from (derives the album when the track has none).
+                  openAlbumForTrack(currentTrack);
                 },
                 className: 'flex-shrink-0 hover:opacity-80 transition-opacity cursor-pointer no-drag',
                 style: { position: 'relative' }
@@ -58669,6 +59027,12 @@ useEffect(() => {
             onClick: () => setQueueSaveDialogOpen(false),
             className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors'
           }, 'Cancel'),
+          React.createElement('button', {
+            onClick: handleSaveQueueToFile,
+            disabled: !queueSavePlaylistName.trim(),
+            title: 'Write an .xspf file instead of adding to your playlists',
+            className: 'flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed'
+          }, 'Save to file'),
           React.createElement('button', {
             onClick: handleSaveQueueConfirm,
             disabled: !queueSavePlaylistName.trim(),
@@ -60994,10 +61358,20 @@ useEffect(() => {
                 type: 'password',
                 defaultValue: metaServiceConfigs[selectedResolver.id]?.[authFieldKey] || '',
                 onBlur: (e) => {
+                  // Services whose key is optional (requiresAuth: false, e.g. local
+                  // custom-LLM endpoints) keep their explicit enabled toggle — blurring
+                  // an empty key field must not silently disable them. Note `=== true ||`,
+                  // NOT `??`: nullish coalescing doesn't fall through on `false`, so an
+                  // early empty-field blur would poison `enabled: false` forever — a
+                  // later key entry has to be able to re-enable the service.
+                  const svcRequiresAuth = selectedResolver.settings?.requiresAuth ?? selectedResolver.requiresAuth;
+                  const keyRequired = svcRequiresAuth !== false;
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
                     [authFieldKey]: e.target.value,
-                    enabled: !!e.target.value
+                    enabled: keyRequired
+                      ? !!e.target.value
+                      : (metaServiceConfigs[selectedResolver.id]?.enabled === true || !!e.target.value)
                   });
                   // Re-fetch dynamic models after API key change
                   setTimeout(() => {
@@ -61075,6 +61449,64 @@ useEffect(() => {
                 const dynamicState = isDynamic ? dynamicModelOptions[selectedResolver.id] : null;
                 const isLoading = dynamicState?.loading;
 
+                const modelInputStyle = {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: 'var(--text-primary)',
+                  backgroundColor: 'var(--card-bg)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  outline: 'none'
+                };
+
+                // Free-form model id — for endpoints whose model names aren't a fixed list
+                if (modelSetting?.type === 'text') {
+                  return React.createElement('input', {
+                    type: 'text',
+                    defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
+                    placeholder: modelSetting?.placeholder || '',
+                    onBlur: (e) => {
+                      saveMetaServiceConfig(selectedResolver.id, {
+                        ...metaServiceConfigs[selectedResolver.id],
+                        model: e.target.value.trim()
+                      });
+                    },
+                    style: modelInputStyle
+                  });
+                }
+
+                // Free-form model id with fetched suggestions (allowCustom) — lets users
+                // type any model id while still offering the endpoint's model list as
+                // datalist suggestions (the list endpoint isn't universal, so typing must
+                // always work)
+                if (isDynamic && modelSetting?.allowCustom) {
+                  const suggestions = dynamicState?.options?.length > 0
+                    ? dynamicState.options
+                    : (modelSetting?.fallbackOptions || []);
+                  const listId = `model-suggestions-${selectedResolver.id}`;
+                  return React.createElement('div', null,
+                    React.createElement('input', {
+                      type: 'text',
+                      list: listId,
+                      defaultValue: metaServiceConfigs[selectedResolver.id]?.model || modelSetting?.default || '',
+                      placeholder: modelSetting?.placeholder || 'model id',
+                      onBlur: (e) => {
+                        saveMetaServiceConfig(selectedResolver.id, {
+                          ...metaServiceConfigs[selectedResolver.id],
+                          model: e.target.value.trim()
+                        });
+                      },
+                      style: modelInputStyle
+                    }),
+                    React.createElement('datalist', { id: listId },
+                      suggestions.map(opt =>
+                        React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
+                      )
+                    )
+                  );
+                }
+
                 // Determine which options to show
                 let options;
                 if (isDynamic && dynamicState?.options?.length > 0) {
@@ -61116,6 +61548,136 @@ useEffect(() => {
                       )
                 );
               })()
+            ),
+            // Additional configurable fields (API dialect, base URL, token limits, ...)
+            // beyond the standard key + model pair. Rendered generically from the
+            // plugin's settings.configurable so any meta-service plugin can declare
+            // them (e.g. the customllm endpoint config). Existing AI plugins only
+            // declare apiKey + model, so they render nothing here.
+            ...Object.entries(configurable)
+              .filter(([fieldKey, fieldSetting]) => fieldSetting && fieldKey !== 'model' && fieldKey !== authFieldKey)
+              .map(([fieldKey, fieldSetting]) => {
+                const savedValue = metaServiceConfigs[selectedResolver.id]?.[fieldKey];
+                const fieldInputStyle = {
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  color: 'var(--text-primary)',
+                  backgroundColor: 'var(--card-bg)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  outline: 'none'
+                };
+                // Changing the endpoint or dialect can change the model list — refresh it
+                const refetchModels = (fieldKey === 'baseUrl' || fieldKey === 'endpoint' || fieldKey === 'api')
+                  ? (newValue) => {
+                      setTimeout(() => {
+                        const resolver = metaServices.find(s => s.id === selectedResolver.id) || selectedResolver;
+                        const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
+                        if (modelSetting?.type === 'dynamic-select') {
+                          fetchDynamicModels(resolver, { ...metaServiceConfigs[selectedResolver.id], [fieldKey]: newValue });
+                        }
+                      }, 100);
+                    }
+                  : null;
+                return React.createElement('div', { key: fieldKey, style: { marginBottom: '16px' } },
+                  React.createElement('label', {
+                    style: {
+                      display: 'block',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      color: 'var(--text-primary)',
+                      marginBottom: '6px'
+                    }
+                  }, fieldSetting.label || fieldKey),
+                  fieldSetting.description && React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginTop: '-2px',
+                      marginBottom: '8px',
+                      lineHeight: '1.5'
+                    }
+                  }, fieldSetting.description),
+                  fieldSetting.type === 'select'
+                    ? React.createElement('select', {
+                        value: savedValue || fieldSetting.default || (fieldSetting.options?.[0]?.value ?? ''),
+                        onChange: (e) => {
+                          saveMetaServiceConfig(selectedResolver.id, {
+                            ...metaServiceConfigs[selectedResolver.id],
+                            [fieldKey]: e.target.value
+                          });
+                          if (refetchModels) refetchModels(e.target.value);
+                        },
+                        style: { ...fieldInputStyle, cursor: 'pointer' }
+                      },
+                        (fieldSetting.options || []).map(opt =>
+                          React.createElement('option', { key: opt.value, value: opt.value }, opt.label)
+                        )
+                      )
+                    : React.createElement('input', {
+                        type: fieldSetting.type === 'number' ? 'number' : 'text',
+                        defaultValue: savedValue || fieldSetting.default || '',
+                        placeholder: fieldSetting.placeholder || '',
+                        onBlur: (e) => {
+                          saveMetaServiceConfig(selectedResolver.id, {
+                            ...metaServiceConfigs[selectedResolver.id],
+                            [fieldKey]: e.target.value.trim()
+                          });
+                          if (refetchModels) refetchModels(e.target.value.trim());
+                        },
+                        style: fieldInputStyle
+                      })
+                );
+              }),
+            // Explicit enable toggle for no-key AI services (requiresAuth: false).
+            // These services are enabled solely by the `enabled` flag (see
+            // isServiceEnabled) — a set apiKey alone does NOT enable them, so the
+            // flag must be visible and directly flippable (same affordance the
+            // Ollama block has). Keyed services (chatgpt/claude/gemini) stay
+            // key-gated and render no toggle.
+            (selectedResolver.settings?.requiresAuth ?? selectedResolver.requiresAuth) === false && React.createElement('div', {
+              className: 'flex items-center justify-between',
+              style: { marginTop: '4px' }
+            },
+              React.createElement('span', { style: { fontSize: '13px', color: 'var(--text-primary)' } },
+                `Enable ${selectedResolver.name || selectedResolver.id}`),
+              React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer' },
+                React.createElement('input', {
+                  type: 'checkbox',
+                  checked: metaServiceConfigs[selectedResolver.id]?.enabled === true,
+                  onChange: async (e) => {
+                    saveMetaServiceConfig(selectedResolver.id, {
+                      ...metaServiceConfigs[selectedResolver.id],
+                      enabled: e.target.checked
+                    });
+                    // When enabling, ensure the plugin is actually loaded (e.g.
+                    // previously uninstalled)
+                    if (e.target.checked) {
+                      const isLoaded = metaServices.some(s => s.id === selectedResolver.id);
+                      if (!isLoaded) {
+                        const uninstalled = await window.electron.store.get('uninstalled_resolvers') || [];
+                        if (uninstalled.includes(selectedResolver.id)) {
+                          await window.electron.store.set('uninstalled_resolvers', uninstalled.filter(id => id !== selectedResolver.id));
+                        }
+                        const marketplaceItem = (marketplaceManifest?.plugins || []).find(r => r.id === selectedResolver.id);
+                        if (marketplaceItem) {
+                          await handleInstallFromMarketplace(marketplaceItem);
+                        }
+                      }
+                    }
+                  },
+                  className: 'sr-only peer'
+                }),
+                React.createElement('div', {
+                  className: 'w-full h-full rounded-full transition-colors',
+                  style: { backgroundColor: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'var(--accent-primary)' : 'rgba(0, 0, 0, 0.15)' }
+                }),
+                React.createElement('div', {
+                  className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                  style: { transform: metaServiceConfigs[selectedResolver.id]?.enabled === true ? 'translateX(20px)' : 'translateX(0)' }
+                })
+              )
             ),
             // Connection status
             metaServiceConfigs[selectedResolver.id]?.[authFieldKey] && React.createElement('div', {
@@ -61869,7 +62431,18 @@ useEffect(() => {
               if (isContentResolver) {
                 showEnable = !activeResolvers.includes(selectedResolver.id);
               } else if (isMetaService) {
-                showEnable = !(config?.enabled || config?.apiKey || config?.appId || config?.clientId || config?.username);
+                // No-key AI services (Ollama, Custom LLM) are enabled solely by the
+                // explicit `enabled` flag (see isServiceEnabled) — a set apiKey does
+                // NOT count as enabled for them, so the button must track the flag.
+                // Otherwise a configured-but-not-enabled service shows "Done" with no
+                // visible way to enable it.
+                const isNoKeyAiService = (selectedResolver.capabilities?.generate || selectedResolver.capabilities?.chat)
+                  && (selectedResolver.settings?.requiresAuth === false || selectedResolver.requiresAuth === false);
+                if (isNoKeyAiService) {
+                  showEnable = config?.enabled !== true;
+                } else {
+                  showEnable = !(config?.enabled || config?.apiKey || config?.appId || config?.clientId || config?.username);
+                }
               }
 
               return React.createElement('button', {
@@ -65442,7 +66015,8 @@ useEffect(() => {
           React.createElement('button', {
             onClick: () => {
               setSyncStatusModal({ open: false });
-              // Navigate to settings - to be wired up later
+              navigateTo('settings');
+              setSettingsTab('plugins');
             },
             style: {
               fontSize: '13px',

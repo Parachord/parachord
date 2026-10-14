@@ -31,7 +31,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 
 ### AI Companion
 - **Shuffleupagus** - Built-in AI DJ that can recommend music, generate playlists, and control playback
-- **Multiple AI Backends** - Choose from ChatGPT, Claude, Google Gemini, or Ollama (local/offline)
+- **Multiple AI Backends** - Choose from ChatGPT, Claude, Google Gemini, Ollama (local/offline), or any OpenAI- or Anthropic-compatible endpoint via the Custom LLM plug-in (LM Studio, vLLM, llama.cpp, OpenRouter, ...)
 - **MCP Server** - Exposes playback and queue controls to external AI agents like Claude Desktop via the Model Context Protocol
 
 ### Library Sync
@@ -50,7 +50,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Playlists & Queue
 - **URL Import** - Paste Spotify, Apple Music, or hosted .xspf playlist URLs
 - **File Import** - Load local .xspf playlist files
-- **Export** - Save your queue as an .xspf playlist
+- **Export** - Save any playlist, or the current queue, as an .xspf file
 - **Queue Management** - Add tracks, reorder, and manage your listening queue
 - **Shuffle & Spinoff** - Shuffle your queue, or "spinoff" from any track into a radio station of similar music
 - **Mixed-Source Queues** - Seamlessly play tracks from different services
@@ -70,7 +70,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Additional Features
 - **Global Search** - Search across all sources with unified results
 - **Collection View** - Browse your aggregated music collection
-- **Recommendations** - Personalized suggestions via Last.fm, ListenBrainz Weekly Jams, and AI
+- **Recommendations** - Personalized suggestions via Last.fm, ListenBrainz Weekly Jams, and AI (full inventory in [docs/features/RECOMMENDATIONS.md](docs/features/RECOMMENDATIONS.md); import and sync paths in [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](docs/features/PLAYLIST_IMPORT_AND_SYNC.md))
 - **Scrobbling** - Track your listening history with Last.fm, ListenBrainz, and Libre.fm
 - **Smart Links** - Generate shareable cross-service links for any track
 - **Deep Links** - `parachord://` protocol for opening artists, albums, playlists, and search from other apps
