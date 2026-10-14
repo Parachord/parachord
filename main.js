@@ -3982,7 +3982,10 @@ ipcMain.handle('amazonmusic-play-track', async (event, { asin, title, artist }) 
 
 ipcMain.handle('amazonmusic-pause', async () => {
   try {
-    await amazonWebPlayer.pause();
+    const r = await amazonWebPlayer.pause();
+    // No media element (view blanked by haltPlayback) is not a successful
+    // pause — callers deciding from the result need the truth.
+    if (r && r.ok === false) return { success: false, reason: 'no-media', error: 'Amazon Music has no media element right now' };
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -3991,7 +3994,8 @@ ipcMain.handle('amazonmusic-pause', async () => {
 
 ipcMain.handle('amazonmusic-resume', async () => {
   try {
-    await amazonWebPlayer.resume();
+    const r = await amazonWebPlayer.resume();
+    if (r && r.ok === false) return { success: false, reason: 'no-media', error: 'Amazon Music has no media element right now' };
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };

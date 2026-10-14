@@ -19883,20 +19883,43 @@ ${trackListXml}
           // Stop polling so stale state checks don't trigger auto-advance
           window.electron.amazonMusic.polling.stop();
         } else {
-          const r = await window.electron.amazonMusic.resume();
+          let r = await window.electron.amazonMusic.resume();
+          if (r && r.success === false) {
+            // No media element: the view was blanked (haltPlayback after an
+            // advance with nothing to advance to). Nothing to resume — replay
+            // the current track from its ASIN instead of showing a playing UI
+            // over silence with a poller reading EMPTY forever.
+            const asin = currentTrack.amazonAsin || currentTrack.sources?.amazonmusic?.amazonAsin;
+            if (asin) {
+              console.log('Amazon Music view is blank — replaying current track');
+              r = await window.electron.amazonMusic.playTrack({ asin, title: currentTrack.title, artist: currentTrack.artist });
+              if (r && r.success) {
+                // A fresh page starts its element at full volume; drive it to
+                // Parachord's effective volume like handlePlay does.
+                const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
+                const effectiveVolume = getEffectiveVolume(volumeToApply, 'amazonmusic', currentTrack.id);
+                window.electron.amazonMusic.setVolume(effectiveVolume / 100).catch(() => {});
+                amazonMusicProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
+              }
+            }
+          }
           if (r && r.success) {
             console.log('Resumed Amazon Music playback');
-          }
-          setIsPlaying(true);
-          // Restart polling for progress updates and auto-advance
-          const asin = currentTrack.amazonAsin || currentTrack.sources?.amazonmusic?.amazonAsin;
-          if (asin) {
-            window.electron.amazonMusic.polling.start({
-              asin,
-              trackTitle: currentTrack.title,
-              trackArtist: currentTrack.artist,
-              duration: currentTrack.duration || 0
-            }).catch(err => console.warn('Could not restart Amazon Music polling:', err.message));
+            setIsPlaying(true);
+            // Restart polling for progress updates and auto-advance
+            const asin = currentTrack.amazonAsin || currentTrack.sources?.amazonmusic?.amazonAsin;
+            if (asin) {
+              window.electron.amazonMusic.polling.start({
+                asin,
+                trackTitle: currentTrack.title,
+                trackArtist: currentTrack.artist,
+                duration: currentTrack.duration || 0
+              }).catch(err => console.warn('Could not restart Amazon Music polling:', err.message));
+            }
+          } else {
+            // Nothing to resume and nothing to replay — leave the play button
+            // alone rather than faking a playing state.
+            console.warn('Amazon Music resume failed:', (r && r.error) || 'no media element');
           }
         }
       } catch (error) {
