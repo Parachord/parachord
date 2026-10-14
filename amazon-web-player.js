@@ -377,13 +377,19 @@ const amazonWebPlayer = {
     this.collapse(this.searchView);
   },
 
-  webPreferences() {
+  // The hidden player/search views get the full treatment: the preload's
+  // visibility stub + __r trap, and the media-element HOOK_SCRIPT. The
+  // sign-in window gets neither — it is the one visible Amazon page and must
+  // behave like a normal browser window (real focus events, real
+  // document.hidden, no tampering that Amazon's sign-in flows or bot
+  // heuristics could trip over).
+  webPreferences({ preload = PRELOAD } = {}) {
     return {
       partition: PARTITION,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      preload: PRELOAD,
+      preload,
       webSecurity: true,
       backgroundThrottling: false,
       autoplayPolicy: 'no-user-gesture-required'
@@ -406,21 +412,24 @@ const amazonWebPlayer = {
     return !!(target && target.webContents && !target.webContents.isDestroyed());
   },
 
-  attachContents(wc) {
+  attachContents(wc, { hook = true } = {}) {
     const harden = () => {
       try { wc.setUserAgent(chromeUserAgent()); } catch { /* destroyed */ }
     };
     harden();
     try { wc.setBackgroundThrottling(false); } catch { /* destroyed */ }
     wc.on('did-start-navigation', harden);
-    wc.on('dom-ready', () => {
-      wc.executeJavaScript(HOOK_SCRIPT).catch(() => {});
-    });
+    if (hook) {
+      wc.on('dom-ready', () => {
+        wc.executeJavaScript(HOOK_SCRIPT).catch(() => {});
+      });
+    }
     return wc;
   },
 
   attachWindow(win) {
-    this.attachContents(win.webContents);
+    // No media hook on the sign-in window: nothing plays there.
+    this.attachContents(win.webContents, { hook: false });
     win.on('closed', () => {
       if (this.authWindow === win) this.authWindow = null;
     });
@@ -559,7 +568,10 @@ const amazonWebPlayer = {
         width: 980,
         height: 760,
         parent: parent || undefined,
-        title: 'Sign in to Amazon Music'
+        title: 'Sign in to Amazon Music',
+        // No preload here: the visibility stub and __r trap are for the hidden
+        // player views. This window is visible and must behave normally.
+        webPreferences: this.webPreferences({ preload: null })
       }));
       this.authWindow = win;
       // Unbudgeted on purpose: this is the one window the user watches. A
