@@ -270,6 +270,33 @@ function notReady(reason, message) {
   return err;
 }
 
+// loadURL resolves on did-finish-load, which on a stalled network can hang for
+// the Chromium network-stack timeout (minutes). Every other step in this module
+// is budgeted (search 16×400ms, play 20×400ms, playlist 40×500ms); the loads
+// themselves are the one unbounded wait — and searchTracks and lookupPlaylist
+// share enqueueSearch, so one hung page wedges both surfaces and queues every
+// later search behind it. Race the load: the loser keeps loading in the
+// renderer (the next loadURL aborts it, or the failure paths blank it), we
+// just stop waiting. A load that fails this way is transient (offline, captive
+// portal, stall), so it throws notReady('load-failed') — NOT an empty result,
+// which the resolver would cache as a 30-day noMatch.
+const LOAD_URL_TIMEOUT_MS = 30000;
+async function loadURLBudgeted(page, url, timeoutMs = LOAD_URL_TIMEOUT_MS) {
+  const loaded = page.loadURL(url);
+  loaded.catch(() => {}); // a late rejection after the race lost must not be unhandled
+  let timer = null;
+  try {
+    await Promise.race([
+      loaded,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(notReady('load-failed', `Amazon Music page did not finish loading within ${timeoutMs}ms: ${url}`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const amazonWebPlayer = {
   playerView: null,
   searchView: null,
@@ -496,7 +523,7 @@ const amazonWebPlayer = {
     try {
       const win = await this.ensureWindow('player', { show: false });
       const url = win.webContents.getURL();
-      if (!url || url === 'about:blank') await win.loadURL(HOME_URL);
+      if (!url || url === 'about:blank') await loadURLBudgeted(win, HOME_URL);
       this.emeProbed = await this.evalOn(win, `(async () => {
         if (!navigator.requestMediaKeySystemAccess) return false;
         try {
@@ -512,7 +539,10 @@ const amazonWebPlayer = {
           return false;
         }
       })()`);
-    } catch {
+    } catch (error) {
+      // A page that never loaded is a network condition, not a missing CDM —
+      // let it surface as load-failed instead of "Widevine is not usable".
+      if (error && error.reason === 'load-failed') throw error;
       this.emeProbed = false;
     }
     return this.emeProbed;
@@ -532,6 +562,10 @@ const amazonWebPlayer = {
         title: 'Sign in to Amazon Music'
       }));
       this.authWindow = win;
+      // Unbudgeted on purpose: this is the one window the user watches. A
+      // stalled load here is visible (and recoverable by the user retrying),
+      // and rejecting the openLogin promise at 30s would abandon a sign-in
+      // flow that may still complete.
       await win.loadURL(HOME_URL);
     }
     win.show();
@@ -578,7 +612,7 @@ const amazonWebPlayer = {
       const win = await this.ensureWindow('search');
       const mode = await this.layoutSearch(this.searchView);
       console.log(`[Amazon] search mode=${mode} ${url}`);
-      await win.loadURL(url);
+      await loadURLBudgeted(win, url);
       let last = { tracks: [] };
       for (let i = 0; i < 16; i++) {
         await new Promise(r => setTimeout(r, 400));
@@ -689,7 +723,7 @@ const amazonWebPlayer = {
         try { ses.webRequest.onBeforeRequest(gqlFilter, onRequest); } catch { /* already registered */ }
         try { ses.webRequest.onBeforeSendHeaders(gqlFilter, onSendHeaders); } catch { /* already registered */ }
 
-        await win.loadURL(rawUrl);
+        await loadURLBudgeted(win, rawUrl);
         // Wait for the page's own playlistDetail request. Boot + query is
         // ~2-4s on a cold view; the poll window covers a slow load. The
         // entry must also have its headers (onBeforeSendHeaders fires
@@ -799,7 +833,7 @@ const amazonWebPlayer = {
     // Amazon's own result links use ?do=play. A bare /tracks/{asin} page
     // renders a Play button whose click() does not start Widevine; the query
     // does, once the document is attached (0×0 bounds — it must not cover the app).
-    await win.loadURL(`https://music.amazon.com/tracks/${encodeURIComponent(asin)}?do=play`);
+    await loadURLBudgeted(win, `https://music.amazon.com/tracks/${encodeURIComponent(asin)}?do=play`);
     if (!ownsPlay()) return { success: false, reason: 'superseded' };
     const landed = win.webContents.getURL();
     if (pageBlocksPlayback(landed)) {
@@ -952,7 +986,7 @@ const amazonWebPlayer = {
       throw err;
     }
     if (!url || url === 'about:blank') {
-      await win.loadURL(HOME_URL);
+      await loadURLBudgeted(win, HOME_URL);
       url = win.webContents.getURL();
       if (pageBlocksPlayback(url)) {
         const err = new Error('Sign in and choose an Amazon Music profile');

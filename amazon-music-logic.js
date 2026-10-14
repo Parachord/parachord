@@ -71,16 +71,6 @@ function pageBlocksPlayback(url) {
   return null;
 }
 
-const NOT_READY_REASONS = new Set([
-  'not-ready',
-  'not-signed-in',
-  'no-cdm'
-]);
-
-function isNotReadyReason(reason) {
-  return NOT_READY_REASONS.has(reason);
-}
-
 // Hornet's Audio Quality modal. HD and BEST_AVAILABLE both mean the
 // "HD/Ultra HD" radio; the modal writes BEST_AVAILABLE. Data Saver and
 // Standard are the other two radios. Auto-adjust is abrEnabled, separate
@@ -362,7 +352,6 @@ module.exports = {
   decidePollAdvance,
   shouldPollFaster,
   pageBlocksPlayback,
-  isNotReadyReason,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   installAmazonRequireTrap,

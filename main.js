@@ -648,8 +648,7 @@ const appleMusicPoller = {
 const {
   playerDurationMs,
   decidePollAdvance,
-  shouldPollFaster,
-  isNotReadyReason
+  shouldPollFaster
 } = require('./amazon-music-logic');
 const amazonWebPlayer = require('./amazon-web-player');
 
@@ -3934,9 +3933,12 @@ ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
     return { success: true, engine: 'web', tracks };
   } catch (error) {
     console.warn(`[Amazon] IPC search failed: ${error && error.reason} ${error && error.message}`);
+    // Pass the reason through verbatim — the resolver (.axe) decides which
+    // reasons are notReady (skipped from the noMatch cache) and which are
+    // plain misses.
     return {
       success: false,
-      reason: error.reason && isNotReadyReason(error.reason) ? error.reason : error.reason,
+      reason: error.reason,
       error: error.message
     };
   }
@@ -3952,7 +3954,7 @@ ipcMain.handle('amazonmusic-lookup-playlist', async (event, { url } = {}) => {
     console.warn(`[Amazon] IPC playlist failed: ${error && error.reason} ${error && error.message}`);
     return {
       success: false,
-      reason: error.reason && isNotReadyReason(error.reason) ? error.reason : error.reason,
+      reason: error.reason,
       error: error.message
     };
   }

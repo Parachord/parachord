@@ -5,7 +5,6 @@ const {
   decidePollAdvance,
   shouldPollFaster,
   pageBlocksPlayback,
-  isNotReadyReason,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   installAmazonRequireTrap,
@@ -336,15 +335,6 @@ describe('isAmazonSearchTrackLink', () => {
     expect(acceptAmazonSearchAnchor([], true)).toBe(true);
     expect(acceptAmazonSearchAnchor(['MiniPlayer_Title'], true)).toBe(false);
     expect(acceptAmazonSearchAnchor([], false)).toBe(false);
-  });
-});
-
-describe('isNotReadyReason', () => {
-  test('sign-in and missing-CDM are not empty search results', () => {
-    expect(isNotReadyReason('not-signed-in')).toBe(true);
-    expect(isNotReadyReason('no-cdm')).toBe(true);
-    expect(isNotReadyReason('playback-failed')).toBe(false);
-    expect(isNotReadyReason('app-not-managed')).toBe(false);
   });
 });
 

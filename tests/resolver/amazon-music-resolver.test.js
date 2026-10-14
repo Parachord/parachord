@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.4.0');
+    expect(axe.manifest.version).toBe('1.4.1');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -119,6 +119,17 @@ describe('amazonmusic search', () => {
     await expect(resolver.resolve('Daft Punk', 'Around the World', null, {})).rejects.toMatchObject({
       notReady: true,
       code: 'not-signed-in'
+    });
+  });
+
+  test('throws notReady when the page never loaded, so a stalled network is not cached as noMatch', async () => {
+    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
+      success: false, reason: 'load-failed', error: 'Amazon Music page did not finish loading within 30000ms'
+    });
+    const resolver = instantiate(axe);
+    await expect(resolver.search('daft punk', {})).rejects.toMatchObject({
+      notReady: true,
+      code: 'load-failed'
     });
   });
 
@@ -236,6 +247,20 @@ describe('amazonmusic play', () => {
     expect(await resolver.play({ title: 'T', artist: 'A' }, {})).toBe(false);
     expect(global.window.electron.amazonMusic.playTrack).not.toHaveBeenCalled();
   });
+
+  test('a page that never loaded fails the play without offering a sign-in prompt', async () => {
+    // load-failed is a network condition (bounded loadURL): the account is not
+    // the problem, so no manage prompt and no retry — the resolver falls
+    // through to the next one in priority order.
+    global.window.electron.amazonMusic.playTrack.mockResolvedValue({
+      success: false, reason: 'load-failed', error: 'Amazon Music page did not finish loading within 30000ms'
+    });
+    const resolver = instantiate(axe);
+    const ok = await resolver.play({ amazonAsin: 'B1', title: 'T', artist: 'A' }, {});
+    expect(ok).toBe(false);
+    expect(managePrompt).not.toHaveBeenCalled();
+    expect(global.window.electron.amazonMusic.playTrack).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('amazonmusic lookupPlaylist', () => {
@@ -343,6 +368,19 @@ describe('amazonmusic lookupPlaylist', () => {
     });
     const resolver = instantiate(axe);
     await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toThrow(/403/);
+  });
+
+  test('a page that never loaded is not reported as a missing playlist', async () => {
+    // load-failed means the import never got to ask Amazon (offline, captive
+    // portal, stalled load) — 'Playlist not found' would be a lie.
+    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
+      success: false, reason: 'load-failed', error: 'Amazon Music page did not finish loading within 30000ms'
+    });
+    const resolver = instantiate(axe);
+    await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toMatchObject({
+      notReady: true,
+      code: 'load-failed'
+    });
   });
 
   test('a bridge rejection surfaces as null, not a throw', async () => {
