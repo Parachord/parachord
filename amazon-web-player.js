@@ -626,6 +626,28 @@ const amazonWebPlayer = {
     return this.emeProbed;
   },
 
+  // Diagnostic for the preload: did the stub/trap actually run in the live
+  // player page? null = no page loaded yet (fresh start, about:blank) or the
+  // page could not be read; false on a loaded music.amazon.com page means the
+  // preload did not run there — the exact failure mode that hid for weeks
+  // behind the localStorage fallback. storeCaptured flips true once Amazon's
+  // own code has required the playbackController module.
+  async preloadProbe() {
+    const view = this.playerView;
+    if (!this.alive(view)) return { stub: null, storeCaptured: null };
+    let url = '';
+    try { url = view.webContents.getURL(); } catch { /* destroyed */ }
+    if (!url || url === 'about:blank') return { stub: null, storeCaptured: null };
+    try {
+      return await this.evalOn(view, `(() => ({
+        stub: window.__parachordRequireTrap === true,
+        storeCaptured: !!window.__parachordAmazonPlayback
+      }))()`);
+    } catch {
+      return { stub: null, storeCaptured: null };
+    }
+  },
+
   async openLogin() {
     const { BrowserWindow } = electron();
     let win = this.authWindow;

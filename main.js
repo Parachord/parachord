@@ -3918,11 +3918,15 @@ ipcMain.handle('amazonmusic-get-status', async () => {
   try {
     const cdm = amazonWebPlayer.cdmAvailable();
     const signedIn = await amazonWebPlayer.isSignedIn();
+    const preload = await amazonWebPlayer.preloadProbe();
     return {
       success: true,
       platform: process.platform,
       engine: 'web',
-      web: { cdm, signedIn }
+      web: { cdm, signedIn },
+      // Live proof the preload is alive in the player page: stub false on a
+      // loaded page = the sandboxed-preload failure mode came back.
+      preload
     };
   } catch (error) {
     return { success: false, error: error.message };
