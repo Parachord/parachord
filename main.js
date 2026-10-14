@@ -674,6 +674,7 @@ const amazonMusicPoller = {
   startResolve: null,
   seekSuppressUntil: 0,
   pollIntervalMs: 2000,
+  emptyWhilePausedPolls: 0,
 
   async start({ asin, trackTitle, trackArtist, duration }) {
     console.log('🎵 [Main] Starting Amazon Music polling...');
@@ -689,6 +690,7 @@ const amazonMusicPoller = {
     this.pollCount = 0;
     this.errorCount = 0;
     this.seekSuppressUntil = 0;
+    this.emptyWhilePausedPolls = 0;
 
     // Cancellable delay so a quick skip doesn't start a second interval
     // after this sleep returns.
@@ -775,6 +777,15 @@ const amazonMusicPoller = {
       }
     }
 
+    // EMPTY while paused means the page tore the element down under a pause
+    // (external pause + idle teardown): dead and unresumable. Count those
+    // polls so decidePollAdvance can stop waiting after the grace window.
+    if ((state === 'EMPTY' || state === 'STOPPED' || state === 'FINISHED') && this.lastState === 'PAUSED') {
+      this.emptyWhilePausedPolls++;
+    } else {
+      this.emptyWhilePausedPolls = 0;
+    }
+
     const decision = decidePollAdvance({
       state,
       positionMs,
@@ -784,7 +795,8 @@ const amazonMusicPoller = {
       expectedAsin: this.expectedAsin,
       actualAsin: s.asin,
       pollCount: this.pollCount,
-      seekSuppress: Date.now() < this.seekSuppressUntil
+      seekSuppress: Date.now() < this.seekSuppressUntil,
+      emptyWhilePausedPolls: this.emptyWhilePausedPolls
     });
     if (decision.action === 'advance') {
       console.log(`🎵 [Main] Amazon Music advance (${decision.reason})`);

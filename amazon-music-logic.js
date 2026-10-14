@@ -17,6 +17,12 @@ function playerDurationMs(raw) {
 const NEAR_END_MS = 700;
 const WRAP_POSITION_MS = 2500;
 const FAST_POLL_REMAINING_MS = 8000;
+// A page torn down while paused (element removed after the user paused via
+// media keys and the page idled out) polls EMPTY with lastState PAUSED — dead,
+// unresumable, and previously stuck in {action:'track'} forever. Give the
+// pause a generous grace window (~60s at the 2s cadence), then treat it like
+// any other dead player.
+const EMPTY_WHILE_PAUSED_POLL_LIMIT = 30;
 
 function decidePollAdvance({
   state,
@@ -27,7 +33,8 @@ function decidePollAdvance({
   expectedAsin = null,
   actualAsin = null,
   pollCount = 0,
-  seekSuppress = false
+  seekSuppress = false,
+  emptyWhilePausedPolls = 0
 } = {}) {
   if (actualAsin && expectedAsin && actualAsin !== expectedAsin) {
     if (pollCount <= 2) return { action: 'wait' };
@@ -50,6 +57,14 @@ function decidePollAdvance({
     const lastPercent = durationMs > 0 ? (lastPositionMs / durationMs) * 100 : 0;
     const percent = durationMs > 0 ? (positionMs / durationMs) * 100 : lastPercent;
     if (lastPercent >= 90 || percent >= 90) return { action: 'advance', reason: 'finished' };
+    return { action: 'advance', reason: 'stopped' };
+  }
+
+  // A page torn down while paused: EMPTY with lastState PAUSED is dead and
+  // cannot be resumed. Wait out the grace window (the user did pause), then
+  // advance like any other dead player instead of polling forever.
+  if (lastState === 'PAUSED' && (state === 'EMPTY' || state === 'STOPPED' || state === 'FINISHED') &&
+      emptyWhilePausedPolls >= EMPTY_WHILE_PAUSED_POLL_LIMIT) {
     return { action: 'advance', reason: 'stopped' };
   }
 
@@ -370,5 +385,6 @@ module.exports = {
   playlistFromGql,
   NEAR_END_MS,
   WRAP_POSITION_MS,
-  FAST_POLL_REMAINING_MS
+  FAST_POLL_REMAINING_MS,
+  EMPTY_WHILE_PAUSED_POLL_LIMIT
 };

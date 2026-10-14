@@ -20,7 +20,8 @@ const {
   amazonGqlFetchHeaders,
   playlistTrackFromGqlEdge,
   playlistFromGql,
-  NEAR_END_MS
+  NEAR_END_MS,
+  EMPTY_WHILE_PAUSED_POLL_LIMIT
 } = require('../../amazon-music-logic');
 
 describe('reportedPlaybackAsin', () => {
@@ -109,6 +110,26 @@ describe('decidePollAdvance', () => {
   test('a different ASIN after the grace period advances', () => {
     expect(decidePollAdvance({ ...playing, pollCount: 1, actualAsin: 'B9' }).action).toBe('wait');
     expect(decidePollAdvance({ ...playing, pollCount: 3, actualAsin: 'B9' }).reason).toBe('track-changed');
+  });
+
+  test('a page torn down while paused waits out a grace window, then advances', () => {
+    const emptyWhilePaused = { state: 'EMPTY', positionMs: 0, durationMs: 180000, lastPositionMs: 60000, lastState: 'PAUSED', expectedAsin: 'B1' };
+    // Still inside the window: keep polling — the user paused, and the page
+    // may just be between documents.
+    expect(decidePollAdvance({ ...emptyWhilePaused, emptyWhilePausedPolls: 5 })).toEqual({ action: 'track' });
+    // Past the window: the element is gone and cannot be resumed — the pause
+    // was honored long enough; playback is dead.
+    expect(decidePollAdvance({ ...emptyWhilePaused, emptyWhilePausedPolls: EMPTY_WHILE_PAUSED_POLL_LIMIT }))
+      .toEqual({ action: 'advance', reason: 'stopped' });
+    // STOPPED/FINISHED while paused count the same as EMPTY.
+    expect(decidePollAdvance({ ...emptyWhilePaused, state: 'STOPPED', emptyWhilePausedPolls: EMPTY_WHILE_PAUSED_POLL_LIMIT }))
+      .toEqual({ action: 'advance', reason: 'stopped' });
+  });
+
+  test('an empty player while nothing ever played does not advance', () => {
+    // lastState null (never PLAYING): the page is still loading — a fresh
+    // poller must not advance on its first EMPTY reads.
+    expect(decidePollAdvance({ state: 'EMPTY', lastState: null, emptyWhilePausedPolls: 99 })).toEqual({ action: 'track' });
   });
 });
 
