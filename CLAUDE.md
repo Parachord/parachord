@@ -289,6 +289,13 @@ Keeper selection guarantees no local ever gets silently re-pointed to a copy it 
 
 A playlist with `sourceUrl` is a **hosted XSPF** — it mirrors a remote URL polled every 5 minutes (`pollHostedPlaylists` effect, app.js L32167+). The XSPF is canonical; Spotify (if linked) is a passive mirror.
 
+**A provider playlist page is NOT a hosted XSPF (2026-10 fix).** A `sourceUrl` owned by a resolver as a playlist page (`window.isProviderPlaylistUrl(url, resolverLoaderRef.current)` — mirrored in `tests/helpers/playlist-url-classify.js`, tested in `tests/protocol/playlist-url-classify.test.js`) means the playlist was a **resolver import** (Spotify/Apple Music/Amazon/SoundCloud) — a snapshot, not a mirror. The provider page's fetched HTML never equals the stored XSPF, so the poller's content-compare re-runs a full resolver import every 5 minutes forever; and before resolvers finish loading, `handleImportPlaylistFromUrl`'s dispatch falls into the XSPF branch and shows "Import Failed / Failed to parse XSPF file from URL" at startup for a playlist that imported fine (observed with an Amazon playlist import — Electron's `file://` renderer does NOT enforce CORS on these fetches, so the provider page HTML reaches `parseXSPF` and parses to zero tracks). Rules:
+
+- The resolver branch of `handleImportPlaylistFromUrl` keeps `sourceUrl` on the playlist object (provenance + the on-demand refresh button, which re-runs the resolver import) but must NOT push the URL into the `hosted_playlists` startup-reload store — that write is gated on `!resolverId`.
+- `loadHostedPlaylists` awaits resolver init (`resolversInitRef`, bounded 15s) before dispatching imports, and **self-heals** pre-fix state: provider URLs already enrolled in the `hosted_playlists` store list are dropped (logged).
+- `pollHostedPlaylists` filters `p.sourceUrl && !isProviderPlaylistUrl(p.sourceUrl)` — only true hosted documents are polled.
+- Background reloads (startup list + poller) call `handleImportPlaylistFromUrl` with `{ background: true }`: a zero-track parse **throws** (logged by the caller's catch) instead of showing a modal dialog — background work must never modal-error.
+
 Flow:
 1. Poller fetches `sourceUrl`. If `content !== playlist.xspf`, call `handleImportPlaylistFromUrl` → replaces `tracks`, sets `locallyModified: true`.
 2. Next sync push loop pushes local tracks to Spotify via `updatePlaylistTracks` (full replace).

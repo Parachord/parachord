@@ -1,6 +1,8 @@
-// SYNC MIRROR of app.js `window.classifyPlaylistUrl` (parachord#930).
-// Keep the function BODY byte-identical with app.js. This is the test-side
-// source of truth for the parachord://play/playlist?url= routing decision.
+// SYNC MIRROR of app.js `window.classifyPlaylistUrl` (parachord#930) and
+// `window.isProviderPlaylistUrl` (hosted-XSPF vs provider-playlist-page
+// discrimination). Keep the function BODIES byte-identical with app.js. This
+// is the test-side source of truth for the parachord://play/playlist?url=
+// routing decision and the hosted-playlist reload/poller filters.
 
 function classifyPlaylistUrl(urlString) {
   let u;
@@ -22,4 +24,22 @@ function classifyPlaylistUrl(urlString) {
   return { kind: 'standard' };
 }
 
-module.exports = { classifyPlaylistUrl };
+// A provider playlist URL — a playlist PAGE owned by a resolver (Spotify,
+// Apple Music, Amazon, a SoundCloud set, …), not a hosted tracklist document.
+// Provider imports are snapshots: the hosted-XSPF machinery (the startup
+// reload list, the 5-minute poller) must not touch them. Fetching the page
+// HTML to "compare content" never matches the stored XSPF (so every poll
+// re-runs a full resolver import), and when resolvers have not finished
+// loading the dispatch falls into the XSPF branch and reports "Failed to
+// parse XSPF" for a playlist that imported fine.
+function isProviderPlaylistUrl(url, loader) {
+  if (!url || !loader) return false;
+  try {
+    const id = loader.findResolverForUrl(url);
+    return !!(id && loader.getUrlType(url) === 'playlist');
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { classifyPlaylistUrl, isProviderPlaylistUrl };

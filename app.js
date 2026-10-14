@@ -248,6 +248,25 @@ window.classifyPlaylistUrl = (urlString) => {
   return { kind: 'standard' };
 };
 
+// A provider playlist URL — a playlist PAGE owned by a resolver (Spotify,
+// Apple Music, Amazon, a SoundCloud set, …), not a hosted tracklist document.
+// Provider imports are snapshots: the hosted-XSPF machinery (the startup
+// reload list, the 5-minute poller) must not touch them. Fetching the page
+// HTML to "compare content" never matches the stored XSPF (so every poll
+// re-runs a full resolver import), and when resolvers have not finished
+// loading the dispatch falls into the XSPF branch and reports "Failed to
+// parse XSPF" for a playlist that imported fine. SYNC MIRROR: keep the
+// function body byte-identical with tests/helpers/playlist-url-classify.js.
+window.isProviderPlaylistUrl = (url, loader) => {
+  if (!url || !loader) return false;
+  try {
+    const id = loader.findResolverForUrl(url);
+    return !!(id && loader.getUrlType(url) === 'playlist');
+  } catch {
+    return false;
+  }
+};
+
 // Resolver match validation + minimum confidence threshold.
 //
 // SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
@@ -8562,6 +8581,10 @@ const Parachord = () => {
   const [queueAnimating, setQueueAnimating] = useState(false);
   const queueContentRef = useRef(null); // Ref for queue content scrolling
   const resolverLoaderRef = useRef(null);
+  // Resolves when initResolvers finishes (mount-effect). Hosted-playlist
+  // reload must wait on it: dispatching an import depends on
+  // findResolverForUrl, which returns null until resolvers are loaded.
+  const resolversInitRef = useRef(null);
 
   // Browser extension state (null = unknown/checking, false = not connected, true = connected)
   const [extensionConnected, setExtensionConnected] = useState(null);
@@ -10855,7 +10878,10 @@ const Parachord = () => {
       }
     };
     
-    initResolvers();
+    // Run init and store the in-flight promise so startup hosted-playlist
+    // loading can await it (see loadHostedPlaylists) — dispatching imports
+    // before resolvers load races provider URLs into the hosted-XSPF branch.
+    resolversInitRef.current = initResolvers().catch(() => {});
   }, []);
 
   // Hot-reload meta services when marketplace sync downloads updated plugins
@@ -37404,7 +37430,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
   // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
   // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
-  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null) => {
+  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null, { background = false } = {}) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
 
@@ -37456,6 +37482,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       if (!parsed || !parsed.tracks?.length) {
+        // Background reloads (the startup hosted list, the 5-minute poller)
+        // must never modal-error: a provider page that parses to zero tracks
+        // here is not something the user asked for. Throw so the background
+        // caller's catch logs it; user-initiated imports keep the dialog.
+        if (background) {
+          throw new Error(resolverId
+            ? `No tracks found for ${resolverId} playlist`
+            : 'Failed to parse XSPF file from URL');
+        }
         showConfirmDialog({
           type: 'error',
           title: 'Import Failed',
@@ -37589,9 +37624,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Fetch covers for the 2x2 grid display immediately
       fetchPlaylistCovers(id, parsed.tracks || []);
 
-      // Save URL to persistent storage for reload on app start
-      // Skip this when loading from storage to avoid duplicates
-      if (!skipStorageUpdate) {
+      // Save URL to persistent storage for reload on app start — hosted
+      // tracklist DOCUMENTS only. A resolver import is a snapshot: it keeps its
+      // sourceUrl for provenance and on-demand refresh, but enrolling it here
+      // would put a provider playlist PAGE into the hosted machinery — the
+      // startup reload would re-run a full resolver import every launch (and
+      // race resolver init into "Failed to parse XSPF"), and the 5-minute
+      // poller would fetch the page HTML forever.
+      if (!skipStorageUpdate && !resolverId) {
         const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
         hostedPlaylists.push({ url, id, addedAt: Date.now() });
         await window.electron?.store?.set('hosted_playlists', hostedPlaylists);
@@ -37671,7 +37711,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   useEffect(() => {
     // Start polling for hosted playlist updates (every 5 minutes)
     const pollHostedPlaylists = async () => {
-      const hostedPlaylists = playlists.filter(p => p.sourceUrl);
+      // Hosted tracklist documents only. A provider playlist page (Spotify,
+      // Apple Music, Amazon — kept via sourceUrl for provenance/refresh) is
+      // not an XSPF: its fetched HTML never matches the stored XSPF, so every
+      // poll would re-run a full resolver import.
+      const hostedPlaylists = playlists.filter(p => p.sourceUrl && !window.isProviderPlaylistUrl(p.sourceUrl, resolverLoaderRef.current));
       if (hostedPlaylists.length === 0) return;
 
       console.log(`🔄 Checking ${hostedPlaylists.length} hosted playlist(s) for updates...`);
@@ -37686,7 +37730,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           // Check if content changed
           if (content !== playlist.xspf) {
             console.log(`📝 Hosted playlist changed: ${playlist.title}`);
-            await handleImportPlaylistFromUrl(playlist.sourceUrl);
+            await handleImportPlaylistFromUrl(playlist.sourceUrl, false, null, null, { background: true });
           }
         } catch (error) {
           console.error(`Failed to check playlist ${playlist.title}:`, error);
@@ -37741,10 +37785,43 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       console.log(`📦 Loading ${hostedPlaylistUrls.length} hosted playlist(s)...`);
 
+      // Wait for resolver init (bounded) before dispatching: the import below
+      // depends on findResolverForUrl, which returns null until resolvers load.
+      // A provider playlist URL dispatched before that races into the
+      // hosted-XSPF branch: the provider page's HTML parses to zero tracks
+      // and startup showed "Failed to parse XSPF" for a playlist that
+      // imported fine (observed with an Amazon playlist import).
+      if (resolversInitRef.current) {
+        await Promise.race([
+          resolversInitRef.current,
+          new Promise(resolve => setTimeout(resolve, 15000))
+        ]);
+      }
+
+      // Self-heal: provider playlist URLs enrolled by the pre-fix import path
+      // are snapshots, not hosted documents — drop them from the reload list.
+      // The playlist object keeps its sourceUrl (provenance + the refresh
+      // button, which re-runs the resolver import on demand), and the poller
+      // skips provider URLs too, so nothing re-imports them automatically.
+      const kept = [];
+      const dropped = [];
+      for (const item of hostedPlaylistUrls) {
+        (window.isProviderPlaylistUrl(item.url, resolverLoaderRef.current) ? dropped : kept).push(item);
+      }
+      if (dropped.length > 0) {
+        console.log(`🧹 Dropped ${dropped.length} provider playlist URL(s) from the hosted reload list (resolver imports are snapshots, not hosted XSPF):`, dropped.map(d => d.url).join(', '));
+        hostedPlaylistUrls = kept;
+        await window.electron?.store?.set('hosted_playlists', kept);
+      }
+      if (hostedPlaylistUrls.length === 0) {
+        setPlaylistsLoading(false);
+        return;
+      }
+
       for (const { url, addedAt, title, creator } of hostedPlaylistUrls) {
         try {
           // Pass true to skip storage update (already in storage), and stored metadata to preserve overrides
-          await handleImportPlaylistFromUrl(url, true, addedAt, { title, creator });
+          await handleImportPlaylistFromUrl(url, true, addedAt, { title, creator }, { background: true });
         } catch (error) {
           console.error(`Failed to load hosted playlist from ${url}:`, error);
         }
