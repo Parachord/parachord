@@ -36,15 +36,15 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.2.4');
+    expect(axe.manifest.version).toBe('1.4.0');
   });
 
   test('declares streaming capabilities without auth', () => {
     expect(axe.capabilities).toEqual(
-      expect.objectContaining({ resolve: true, search: true, stream: true, mobile: false })
+      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, mobile: false })
     );
     expect(axe.settings.requiresAuth).toBe(false);
-    expect(axe.urlPatterns).toEqual([]);
+    expect(axe.urlPatterns).toEqual(['music.amazon.com/playlists/*', 'music.amazon.com/my/playlists/*']);
   });
 
   test('implementation functions compile', () => {
@@ -53,7 +53,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['cleanup', 'init', 'play', 'resolve', 'search'].sort()
+      ['cleanup', 'init', 'lookupPlaylist', 'play', 'resolve', 'search'].sort()
     );
   });
 });
@@ -238,6 +238,120 @@ describe('amazonmusic play', () => {
   });
 });
 
+describe('amazonmusic lookupPlaylist', () => {
+  const playlistUrl = 'https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A';
+
+  const bridgePlaylist = {
+    success: true,
+    engine: 'web',
+    playlist: {
+      id: 'PP6417A00A9C99470BBC8834FF3BF6009A',
+      name: 'Alexa Chill',
+      owner: null,
+      albumArt: 'https://m.media-amazon.com/images/I/71Yr0gqZPpL._SX500_SY500_.jpg',
+      tracks: [
+        { asin: 'B000SNWG5Q', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430, albumAsin: 'B000031W1M' },
+        { asin: 'B07XLSKGGK', title: 'Master of Puppets (Remastered)', artist: 'Metallica', album: 'Master of Puppets', duration: 515, albumAsin: null }
+      ]
+    }
+  };
+
+  beforeEach(() => {
+    global.window = {
+      electron: {
+        amazonMusic: {
+          lookupPlaylist: jest.fn().mockResolvedValue(bridgePlaylist)
+        }
+      }
+    };
+  });
+
+  afterEach(() => {
+    delete global.window;
+  });
+
+  test('maps bridge tracks to the resolver playlist shape', async () => {
+    const resolver = instantiate(axe);
+    const playlist = await resolver.lookupPlaylist(playlistUrl, {});
+    expect(playlist).toEqual(expect.objectContaining({
+      id: 'amazonmusic-playlist-PP6417A00A9C99470BBC8834FF3BF6009A',
+      name: 'Alexa Chill',
+      trackCount: 2,
+      url: playlistUrl,
+      albumArt: 'https://m.media-amazon.com/images/I/71Yr0gqZPpL._SX500_SY500_.jpg'
+    }));
+    expect(playlist.tracks[0]).toEqual(expect.objectContaining({
+      id: 'amazonmusic-B000SNWG5Q',
+      title: 'Around the World',
+      artist: 'Daft Punk',
+      album: 'Homework',
+      duration: 430,
+      sources: ['amazonmusic'],
+      amazonAsin: 'B000SNWG5Q',
+      albumAsin: 'B000031W1M'
+    }));
+    expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledWith(playlistUrl);
+  });
+
+  describe('not signed in', () => {
+    let managePrompt;
+
+    const makeResolver = () => {
+      managePrompt = jest.fn().mockResolvedValue(true);
+      global.window.__parachordManageAmazonMusic = managePrompt;
+      return instantiate(axe);
+    };
+
+    test('prompts for sign-in and retries once, like play()', async () => {
+      const resolver = makeResolver();
+      global.window.electron.amazonMusic.lookupPlaylist
+        .mockResolvedValueOnce({ success: false, reason: 'not-signed-in' })
+        .mockResolvedValueOnce(bridgePlaylist);
+      const playlist = await resolver.lookupPlaylist(playlistUrl, {});
+      expect(playlist.trackCount).toBe(2);
+      expect(managePrompt).toHaveBeenCalledTimes(1);
+      expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledTimes(2);
+    });
+
+    test('declined sign-in throws notReady so the import is not reported as a missing playlist', async () => {
+      const resolver = makeResolver();
+      managePrompt.mockResolvedValue(false);
+      global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
+        success: false, reason: 'not-signed-in'
+      });
+      await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toMatchObject({
+        notReady: true,
+        code: 'not-signed-in'
+      });
+      expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test('a playlist that never loaded is a not-found, not an empty import', async () => {
+    // The gql replay never fires for a deleted/private playlist -> main returns
+    // success with playlist: null.
+    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
+      success: true, playlist: null
+    });
+    const resolver = instantiate(axe);
+    await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toThrow(/not found on Amazon Music/);
+  });
+
+  test('a bridge error surfaces its message', async () => {
+    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
+      success: false, reason: 'lookup-failed', error: 'Amazon playlist query failed (403)'
+    });
+    const resolver = instantiate(axe);
+    await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toThrow(/403/);
+  });
+
+  test('a bridge rejection surfaces as null, not a throw', async () => {
+    global.window.electron.amazonMusic.lookupPlaylist.mockRejectedValue(new Error('ipc broke'));
+    const resolver = instantiate(axe);
+    await expect(resolver.lookupPlaylist(playlistUrl, {})).resolves.toBeNull();
+  });
+});
+
 describe('app.js FALLBACK_RESOLVERS parity', () => {
   test('the inline amazonmusic fallback is byte-identical to plugins/amazonmusic.axe', () => {
     const appSrc = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
@@ -263,6 +377,34 @@ describe('resolver limiter skip set', () => {
   test('amazonmusic searches stay under the global resolver limiter', () => {
     const { RESOLVER_LIMITER_SKIP_IDS } = require('../../resolver-limiter');
     expect(RESOLVER_LIMITER_SKIP_IDS.has('amazonmusic')).toBe(false);
+  });
+});
+
+describe('playlist URL routing', () => {
+  const ResolverLoader = require('../../resolver-loader');
+  const loader = () => {
+    const l = new ResolverLoader();
+    l.urlPatterns = axe.urlPatterns.map(pattern => ({ pattern, resolverId: 'amazonmusic' }));
+    return l;
+  };
+
+  test('shared/brand and my-music playlist pages route to amazonmusic as playlists', () => {
+    const l = loader();
+    expect(l.findResolverForUrl('https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A'))
+      .toBe('amazonmusic');
+    expect(l.getUrlType('https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A'))
+      .toBe('playlist');
+    expect(l.findResolverForUrl('https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh'))
+      .toBe('amazonmusic');
+    expect(l.getUrlType('https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh'))
+      .toBe('playlist');
+  });
+
+  test('track pages do not match the playlist patterns (the resolver has no lookupUrl)', () => {
+    const l = loader();
+    expect(l.findResolverForUrl('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
+    expect(l.getUrlType('https://music.amazon.com/tracks/B000SNWG5Q')).toBe('track');
+    expect(l.getUrlType('https://music.amazon.com/albums/B000031W1M')).toBe('album');
   });
 });
 

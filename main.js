@@ -3942,6 +3942,22 @@ ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
   }
 });
 
+ipcMain.handle('amazonmusic-lookup-playlist', async (event, { url } = {}) => {
+  console.log(`[Amazon] IPC playlist lookup ${url}`);
+  try {
+    const playlist = await amazonWebPlayer.lookupPlaylist(url);
+    console.log(`[Amazon] IPC playlist done ${(playlist && playlist.tracks && playlist.tracks.length) || 0} tracks`);
+    return { success: true, engine: 'web', playlist };
+  } catch (error) {
+    console.warn(`[Amazon] IPC playlist failed: ${error && error.reason} ${error && error.message}`);
+    return {
+      success: false,
+      reason: error.reason && isNotReadyReason(error.reason) ? error.reason : error.reason,
+      error: error.message
+    };
+  }
+});
+
 ipcMain.handle('amazonmusic-play-track', async (event, { asin, title, artist }) => {
   try {
     const result = await amazonWebPlayer.playByAsin({ asin, title, artist });

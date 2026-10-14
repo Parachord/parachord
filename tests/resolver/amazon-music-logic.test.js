@@ -16,6 +16,11 @@ const {
   isAmazonSongResultItem,
   acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
+  amazonPlaylistIdFromUrl,
+  amazonPlaylistDetailRequest,
+  amazonGqlFetchHeaders,
+  playlistTrackFromGqlEdge,
+  playlistFromGql,
   NEAR_END_MS
 } = require('../../amazon-music-logic');
 
@@ -340,5 +345,178 @@ describe('isNotReadyReason', () => {
     expect(isNotReadyReason('no-cdm')).toBe(true);
     expect(isNotReadyReason('playback-failed')).toBe(false);
     expect(isNotReadyReason('app-not-managed')).toBe(false);
+  });
+});
+
+describe('amazonPlaylistIdFromUrl', () => {
+  test('reads the id off shared/brand and my-music playlist pages', () => {
+    expect(amazonPlaylistIdFromUrl('https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A'))
+      .toBe('PP6417A00A9C99470BBC8834FF3BF6009A');
+    expect(amazonPlaylistIdFromUrl('https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh'))
+      .toBe('PP6417A00A9C99470BBC8834FF3BF6009A');
+  });
+
+  test('track, album and non-Amazon URLs are not playlists', () => {
+    expect(amazonPlaylistIdFromUrl('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
+    expect(amazonPlaylistIdFromUrl('https://music.amazon.com/albums/B000031W1M')).toBeNull();
+    expect(amazonPlaylistIdFromUrl('https://open.spotify.com/playlist/abc')).toBeNull();
+    expect(amazonPlaylistIdFromUrl('')).toBeNull();
+  });
+});
+
+describe('amazonPlaylistDetailRequest', () => {
+  const detail = (id) => JSON.stringify({
+    operationName: 'playlistDetail',
+    variables: { id, firstLimit: 100, isAuthenticated: true, includeCollaborators: false },
+    extensions: { persistedQuery: { version: 1, sha256Hash: '41c5f472' } }
+  });
+
+  test('finds the playlistDetail request for our playlist among the captured gql bodies', () => {
+    const bodies = [
+      JSON.stringify({ operationName: 'Transport', variables: {} }),
+      detail('PP6417A00A9C99470BBC8834FF3BF6009A'),
+      JSON.stringify({ operationName: 'playlistSuggestions', variables: { recsUri: 'uri:///playlist/x/suggested-tracks' } }),
+      '{not json'
+    ];
+    const req = amazonPlaylistDetailRequest(bodies, 'PP6417A00A9C99470BBC8834FF3BF6009A');
+    expect(req.operationName).toBe('playlistDetail');
+    expect(req.variables.id).toBe('PP6417A00A9C99470BBC8834FF3BF6009A');
+    expect(req.extensions.persistedQuery.sha256Hash).toBe('41c5f472');
+  });
+
+  test('a playlistDetail for another playlist is not ours', () => {
+    expect(amazonPlaylistDetailRequest([detail('PPOTHER')], 'PP6417A00A9C99470BBC8834FF3BF6009A')).toBeNull();
+    expect(amazonPlaylistDetailRequest([detail('pp6417a00a9c99470bbc8834ff3bf6009a')], 'PP6417A00A9C99470BBC8834FF3BF6009A')).not.toBeNull();
+    expect(amazonPlaylistDetailRequest([], 'PP6417A00A9C99470BBC8834FF3BF6009A')).toBeNull();
+    expect(amazonPlaylistDetailRequest(null, 'x')).toBeNull();
+  });
+});
+
+describe('amazonGqlFetchHeaders', () => {
+  test('keeps the gql auth headers and drops browser-managed ones', () => {
+    const headers = amazonGqlFetchHeaders({
+      'content-type': 'application/json',
+      accept: 'application/graphql-response+json, application/json',
+      'x-api-key': 'amzn1.application.4ff5579ca2e3407aba989a1f5dbdaf69',
+      'csrf-token': 'dAFuzikk=',
+      'csrf-rnd': '2128471272',
+      'csrf-ts': '1791997974',
+      'music-territory': 'US',
+      'x-amzn-device-id': '14354613042605242',
+      Cookie: 'at-main=secret; session-id=143',
+      Origin: 'https://music.amazon.com',
+      Referer: 'https://music.amazon.com/',
+      'User-Agent': 'Mozilla/5.0',
+      'sec-fetch-site': 'same-site',
+      'sec-ch-ua': '"Not_A Brand"',
+      'Accept-Encoding': 'gzip',
+      Host: 'gql.music.amazon.com'
+    });
+    expect(Object.keys(headers).sort()).toEqual([
+      'accept', 'content-type', 'csrf-rnd', 'csrf-token', 'csrf-ts',
+      'music-territory', 'x-amzn-device-id', 'x-api-key'
+    ]);
+    expect(headers['x-api-key']).toBe('amzn1.application.4ff5579ca2e3407aba989a1f5dbdaf69');
+    expect(headers.Cookie).toBeUndefined();
+  });
+
+  test('tolerates missing headers', () => {
+    expect(amazonGqlFetchHeaders(null)).toEqual({});
+  });
+});
+
+describe('playlistTrackFromGqlEdge', () => {
+  const edge = (node) => ({ node });
+
+  test('maps a track node with artists, album, and duration', () => {
+    const track = playlistTrackFromGqlEdge(edge({
+      id: 'B00136J8K8',
+      title: 'Metal Health (Bang Your Head)',
+      duration: 317,
+      contributingArtists: {
+        edges: [
+          { role: 'PRIMARY', node: { name: 'Quiet Riot' } },
+          { role: 'FEATURED', node: { name: 'Someone Else' } }
+        ]
+      },
+      album: { id: 'B00136JQEQ', shortTitle: 'Metal Health' }
+    }));
+    expect(track).toEqual({
+      asin: 'B00136J8K8',
+      title: 'Metal Health (Bang Your Head)',
+      artist: 'Quiet Riot',
+      album: 'Metal Health',
+      albumAsin: 'B00136JQEQ',
+      duration: 317
+    });
+  });
+
+  test('joins multiple artists when none are PRIMARY, and falls back to the album title', () => {
+    const track = playlistTrackFromGqlEdge(edge({
+      id: 'B1',
+      title: 'Song',
+      contributingArtists: { edges: [{ node: { name: 'A' } }, { role: 'FEATURED', node: { name: 'B' } }] },
+      album: { id: 'B2', title: 'Full Album Title' }
+    }));
+    expect(track.artist).toBe('A, B');
+    expect(track.album).toBe('Full Album Title');
+  });
+
+  test('drops rows without asin, title, or artist', () => {
+    expect(playlistTrackFromGqlEdge(edge({ id: 'B1', title: 'No artists', contributingArtists: { edges: [] } }))).toBeNull();
+    expect(playlistTrackFromGqlEdge(edge({ title: 'No asin', contributingArtists: { edges: [{ node: { name: 'A' } }] } }))).toBeNull();
+    expect(playlistTrackFromGqlEdge(null)).toBeNull();
+  });
+});
+
+describe('playlistFromGql', () => {
+  const gqlPlaylist = (overrides = {}) => ({
+    id: 'PP6417A00A9C99470BBC8834FF3BF6009A',
+    title: 'My Discovery Mix',
+    trackCount: 2,
+    images: [
+      { url: 'https://m.media-amazon.com/images/I/banner.jpg', width: 4188, height: 2094, imageType: null },
+      { url: 'https://m.media-amazon.com/images/I/cover.jpg', width: 2400, height: 2400, imageType: 'PRIMARY' }
+    ],
+    curator: { name: 'Amazon' },
+    tracks: {
+      edges: [
+        { node: { id: 'B00136J8K8', title: 'Metal Health (Bang Your Head)', duration: 317, contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Quiet Riot' } }] }, album: { id: 'B00136JQEQ', shortTitle: 'Metal Health' } } },
+        { node: { id: 'B07XLSKGGK', title: 'Master of Puppets (Remastered)', duration: 515, contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Metallica' } }] }, album: { id: 'B000031W1M', shortTitle: 'Master of Puppets' } } }
+      ]
+    },
+    ...overrides
+  });
+
+  test('maps the response playlist with the PRIMARY cover', () => {
+    const out = playlistFromGql({ playlist: gqlPlaylist() });
+    expect(out.id).toBe('PP6417A00A9C99470BBC8834FF3BF6009A');
+    expect(out.name).toBe('My Discovery Mix');
+    expect(out.owner).toBe('Amazon');
+    expect(out.albumArt).toBe('https://m.media-amazon.com/images/I/cover.jpg');
+    expect(out.trackCount).toBe(2);
+    expect(out.tracks).toHaveLength(2);
+    expect(out.tracks[0]).toEqual({
+      asin: 'B00136J8K8',
+      title: 'Metal Health (Bang Your Head)',
+      artist: 'Quiet Riot',
+      album: 'Metal Health',
+      albumAsin: 'B00136JQEQ',
+      duration: 317
+    });
+  });
+
+  test('null playlist (deleted/private) maps to null, not an empty import', () => {
+    expect(playlistFromGql({ playlist: null })).toBeNull();
+    expect(playlistFromGql(null)).toBeNull();
+  });
+
+  test('curator variants: string curator, algorithmic null curator, widest non-PRIMARY fallback', () => {
+    expect(playlistFromGql({ playlist: gqlPlaylist({ curator: 'Rhino' }) }).owner).toBe('Rhino');
+    expect(playlistFromGql({ playlist: gqlPlaylist({ curator: null }) }).owner).toBeNull();
+    const noPrimary = playlistFromGql({
+      playlist: gqlPlaylist({ images: [{ url: 'https://x/small.jpg', width: 300, imageType: null }, { url: 'https://x/big.jpg', width: 3000, imageType: null }] })
+    });
+    expect(noPrimary.albumArt).toBe('https://x/big.jpg');
   });
 });

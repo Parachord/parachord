@@ -20,7 +20,11 @@ const {
   reportedPlaybackAsin,
   shouldRevealPlayerOnFailure,
   amazonSongSearchUrl,
-  isAmazonSongResultItem
+  isAmazonSongResultItem,
+  amazonPlaylistIdFromUrl,
+  amazonPlaylistDetailRequest,
+  amazonGqlFetchHeaders,
+  playlistFromGql
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -223,6 +227,26 @@ const SCRAPE_SCRIPT = `(() => {
   return { href: location.href, tracks: out, debug };
   } catch (e) {
     return { href: location.href, tracks: [], debug: { error: String(e && (e.stack || e.message || e)) } };
+  }
+})()`;
+
+// Replay fetch, evaluated in the page world of the search view. The page
+// context supplies cookies (credentials: 'include') and the headers we copied
+// from the request the page itself made (x-api-key, csrf-*, music-territory,
+// x-amzn-*); the APQ hash in the body comes from that request too, so it is
+// always current for this hornet deploy. firstLimit is raised so one request
+// returns the whole playlist (the page asks for 100 per page).
+const PLAYLIST_GQL_SCRIPT = (url, headers, body) => `(async () => {
+  try {
+    const r = await fetch(${JSON.stringify(url)}, {
+      method: 'POST',
+      credentials: 'include',
+      headers: ${JSON.stringify(headers)},
+      body: ${JSON.stringify(body)}
+    });
+    return { status: r.status, text: await r.text() };
+  } catch (e) {
+    return { error: String(e && (e.message || e)) };
   }
 })()`;
 
@@ -616,6 +640,115 @@ const amazonWebPlayer = {
       return (last && Array.isArray(last.tracks)) ? last.tracks : [];
     });
   },
+
+  // Import a playlist page (music.amazon.com/playlists/<id>) via the page's
+  // own GraphQL. Hornet fetches the playlist with a persisted query (APQ)
+  // whose hash renumbers on every redeploy, so nothing is hardcoded: the
+  // playlist page is loaded in the (offscreen) search view, the gql request
+  // the page itself makes is captured (URL, headers, APQ hash), and that exact
+  // request is replayed from the page world with a bigger firstLimit — one
+  // request returns the whole playlist, so no DOM scraping and no pagination.
+  // Runs on the search chain: lookupPlaylist and searchTracks share the search
+  // view, so they must not interleave page loads.
+  async lookupPlaylist(rawUrl) {
+    if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
+      throw notReady('not-ready', 'Not an Amazon Music playlist URL');
+    }
+    const playlistId = amazonPlaylistIdFromUrl(rawUrl);
+    if (!playlistId) {
+      throw notReady('not-ready', 'Not an Amazon Music playlist URL');
+    }
+    if (!(await this.isSignedIn())) {
+      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    return this.enqueueSearch(async () => {
+      const win = await this.ensureWindow('search');
+      const mode = await this.layoutSearch(this.searchView);
+      console.log(`[Amazon] playlist lookup mode=${mode} ${rawUrl}`);
+
+      // Capture gql requests (bodies from onBeforeRequest, headers paired by
+      // request id) while the page loads and fires playlistDetail itself.
+      const ses = this.session();
+      const gqlFilter = { urls: ['https://gql.music.amazon.com/*'] };
+      const captured = [];
+      const onRequest = (details, callback) => {
+        try {
+          if (details.uploadData && details.uploadData.length) {
+            const body = details.uploadData.map(d => (d.bytes ? d.bytes.toString('utf8') : '')).join('');
+            captured.push({ id: details.id, body });
+          }
+        } catch (e) { /* keep other requests flowing */ }
+        callback({});
+      };
+      const onSendHeaders = (details, callback) => {
+        const mine = captured.find(r => r.id === details.id);
+        if (mine) mine.headers = details.requestHeaders;
+        callback({ requestHeaders: details.requestHeaders });
+      };
+      try {
+        try { ses.webRequest.onBeforeRequest(gqlFilter, onRequest); } catch { /* already registered */ }
+        try { ses.webRequest.onBeforeSendHeaders(gqlFilter, onSendHeaders); } catch { /* already registered */ }
+
+        await win.loadURL(rawUrl);
+        // Wait for the page's own playlistDetail request. Boot + query is
+        // ~2-4s on a cold view; the poll window covers a slow load. The
+        // entry must also have its headers (onBeforeSendHeaders fires
+        // milliseconds after onBeforeRequest — accepting the body alone
+        // races that) before we take it.
+        let entry = null;
+        for (let i = 0; i < 40; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          const href = win.isDestroyed() ? '' : win.webContents.getURL();
+          if (pageBlocksPlayback(href)) {
+            console.warn(`[Amazon] playlist blocked: ${href}`);
+            throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+          }
+          entry = captured.find(r => r.headers && amazonPlaylistDetailRequest([r.body], playlistId));
+          if (entry) break;
+        }
+        if (!entry) {
+          // The page loaded but never asked for this playlist: deleted,
+          // private, or not available in the user's territory.
+          return null;
+        }
+        const request = amazonPlaylistDetailRequest([entry.body], playlistId);
+        if (!request || !request.variables || typeof request.variables !== 'object') {
+          throw notReady('lookup-failed', 'Unexpected Amazon playlist query shape');
+        }
+
+        // Replay the page's request with the whole playlist in one go. The
+        // page asks for 100 tracks per request; firstLimit 500 matches the
+        // import cap (bigger playlists are truncated there too).
+        const headers = amazonGqlFetchHeaders(entry.headers);
+        const body = {
+          operationName: 'playlistDetail',
+          variables: { ...request.variables, id: playlistId, firstLimit: 500 },
+          extensions: request.extensions || {}
+        };
+        console.log(`[Amazon] playlist replaying playlistDetail via gql (${Object.keys(headers).length} headers)`);
+        const replay = await this.evalOn(win, PLAYLIST_GQL_SCRIPT('https://gql.music.amazon.com/', headers, JSON.stringify(body)));
+        if (!replay || replay.error) {
+          throw notReady('lookup-failed', (replay && replay.error) || 'Amazon playlist query failed');
+        }
+        if (replay.status !== 200) {
+          throw notReady('lookup-failed', `Amazon playlist query failed (${replay.status})`);
+        }
+        let parsed = null;
+        try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
+        if (parsed && Array.isArray(parsed.errors) && parsed.errors.length && !(parsed.data && parsed.data.playlist)) {
+          throw notReady('lookup-failed', String((parsed.errors[0] || {}).message || 'Amazon playlist query error'));
+        }
+        const playlist = playlistFromGql(parsed && parsed.data);
+        console.log(`[Amazon] playlist lookup returning ${playlist ? playlist.tracks.length : 0} tracks "${playlist ? playlist.name : ''}"`);
+        return playlist;
+      } finally {
+        try { ses.webRequest.onBeforeRequest(gqlFilter, null); } catch { /* none */ }
+        try { ses.webRequest.onBeforeSendHeaders(gqlFilter, null); } catch { /* none */ }
+        this.collapse(this.searchView);
+      }
+    });
+  },
+
 
   async playByAsin({ asin, title, artist } = {}) {
     if (!asin) throw new Error('Amazon Music: no ASIN to play');

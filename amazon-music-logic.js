@@ -252,6 +252,109 @@ function acceptAmazonSearchAnchor(testIds, onSearchPage) {
   return !!onSearchPage;
 }
 
+// A playlist page lives at /playlists/<id> (shared/brand playlists) or
+// /my/playlists/<id> (the user's own). The id is a long alphanumeric token
+// (PP…), not the 10-char ASIN a track uses — brand playlists use those too.
+function amazonPlaylistIdFromUrl(url) {
+  const m = String(url || '').match(/music\.amazon\.com\/(?:my\/)?playlists\/([A-Za-z0-9]+)/i);
+  return m ? m[1] : null;
+}
+
+// The page fetches its playlist via a persisted GraphQL query (APQ) against
+// gql.music.amazon.com: {operationName: 'playlistDetail', variables: {id,
+// firstLimit: 100, ...}, extensions: {persistedQuery: {sha256Hash}}}. The hash
+// renumbers on every hornet redeploy, so we never hardcode it — we capture the
+// request the page itself makes for the playlist we loaded, then replay it from
+// the page world with a bigger firstLimit. Given the captured request bodies
+// (strings), return the parsed playlistDetail request for OUR playlist id, or
+// null when the page never made one (not found / private / other region).
+function amazonPlaylistDetailRequest(bodies, playlistId) {
+  const wanted = String(playlistId || '').toLowerCase();
+  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { continue; }
+    const batch = Array.isArray(parsed) ? parsed : [parsed];
+    for (const req of batch) {
+      if (!req || req.operationName !== 'playlistDetail') continue;
+      const id = req.variables && req.variables.id;
+      if (!id) continue;
+      if (wanted && String(id).toLowerCase() !== wanted) continue;
+      return req;
+    }
+  }
+  return null;
+}
+
+// Headers to copy onto the replayed gql fetch. The request the page made is
+// authoritative (x-api-key, csrf-*, music-territory, x-amzn-*); the browser
+// adds cookies (credentials: 'include') and origin/referer/sec-* itself, and
+// setting them from JS is either forbidden or wrong, so strip those.
+const GQL_REPLAY_DROP_HEADERS = new Set([
+  'cookie', 'origin', 'referer', 'user-agent', 'accept-encoding', 'accept-language',
+  'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'sec-fetch-user',
+  'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'host', 'connection',
+  'content-length'
+]);
+
+function amazonGqlFetchHeaders(headers) {
+  const out = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    if (!GQL_REPLAY_DROP_HEADERS.has(String(k).toLowerCase())) out[k] = v;
+  }
+  return out;
+}
+
+// One tracks.edges[] entry -> the lookupPlaylist track shape. Artist is the
+// joined contributing artists (PRIMARY first); album is the album shortTitle
+// (the detail response has no full album title). A row without asin + title +
+// artist is dropped (the import path filters on both anyway).
+function playlistTrackFromGqlEdge(edge) {
+  const node = edge && edge.node;
+  if (!node || !node.id || !node.title) return null;
+  const artists = (node.contributingArtists && Array.isArray(node.contributingArtists.edges))
+    ? node.contributingArtists.edges : [];
+  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
+  const all = artists.filter(a => a && a.node && a.node.name);
+  const chosen = primary.length ? primary : all;
+  const artist = chosen.map(a => a.node.name).join(', ');
+  if (!artist) return null;
+  const album = node.album || {};
+  return {
+    asin: node.id,
+    title: String(node.title).slice(0, 200),
+    artist: artist.slice(0, 200),
+    album: String(album.shortTitle || album.title || '').slice(0, 200),
+    albumAsin: album.id || null,
+    duration: typeof node.duration === 'number' ? node.duration : 0
+  };
+}
+
+// The gql response's data.playlist -> the lookupPlaylist result shape. Picks
+// the cover (imageType PRIMARY, else the largest) and a best-effort owner.
+// Returns null when data.playlist is null (deleted / private / other region).
+function playlistFromGql(data) {
+  const playlist = data && data.playlist;
+  if (!playlist) return null;
+  // Cover: the widest imageType=PRIMARY entry (the 2400×2400 square); when
+  // there is no PRIMARY, the widest image overall.
+  const images = (Array.isArray(playlist.images) ? playlist.images : []).filter(i => i && i.url);
+  const widest = (list) => (list.length ? list.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
+  const cover = (widest(images.filter(i => i.imageType === 'PRIMARY')) || widest(images) || {}).url || null;
+  const curator = playlist.curator;
+  const owner = (curator && typeof curator === 'object' && curator.name) || (typeof curator === 'string' ? curator : null);
+  const tracks = (playlist.tracks && Array.isArray(playlist.tracks.edges))
+    ? playlist.tracks.edges.map(playlistTrackFromGqlEdge).filter(Boolean)
+    : [];
+  return {
+    id: playlist.id,
+    name: playlist.title || 'Amazon Music Playlist',
+    owner,
+    albumArt: cover,
+    trackCount: typeof playlist.trackCount === 'number' ? playlist.trackCount : tracks.length,
+    tracks
+  };
+}
+
 module.exports = {
   reportedPlaybackAsin,
   shouldRevealPlayerOnFailure,
@@ -271,6 +374,11 @@ module.exports = {
   isAmazonSongResultItem,
   acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
+  amazonPlaylistIdFromUrl,
+  amazonPlaylistDetailRequest,
+  amazonGqlFetchHeaders,
+  playlistTrackFromGqlEdge,
+  playlistFromGql,
   NEAR_END_MS,
   WRAP_POSITION_MS,
   FAST_POLL_REMAINING_MS
