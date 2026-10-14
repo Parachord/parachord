@@ -306,6 +306,7 @@ const amazonWebPlayer = {
   emeProbed: null,
   currentAsin: null,
   playGeneration: 0,
+  cookieWarned: false,
   _onHostClosed: null,
 
   // castlabs Electron exposes electron.components. Stock Electron does not,
@@ -350,12 +351,33 @@ const amazonWebPlayer = {
   // the profile picker or the sign-in page is not ready, even if a cookie
   // from an earlier step is already set.
   async isSignedIn() {
-    if (!(await this.hasAuthCookie())) return false;
+    if (await this.hasAuthCookie()) {
+      for (const target of [this.authWindow, this.playerView, this.searchView]) {
+        if (!this.alive(target)) continue;
+        if (pageBlocksPlayback(target.webContents.getURL())) return false;
+      }
+      return true;
+    }
+    // The auth-cookie names are an implementation detail Amazon can rotate;
+    // when they do, hasAuthCookie matches nothing and every call looks
+    // signed-out forever — including the sign-in flow's own completion gate,
+    // which would strand openLogin. A rendered, non-sign-in music.amazon.com
+    // page means the session is live: trust the page over the cookie list. A
+    // stale-page false positive self-corrects on the next load — search and
+    // play re-check the URL mid-flight and throw not-signed-in when Amazon
+    // redirects to sign-in.
     for (const target of [this.authWindow, this.playerView, this.searchView]) {
       if (!this.alive(target)) continue;
-      if (pageBlocksPlayback(target.webContents.getURL())) return false;
+      const url = target.webContents.getURL();
+      if (/^https:\/\/music\.amazon\.com\//i.test(url) && !pageBlocksPlayback(url)) {
+        if (!this.cookieWarned) {
+          this.cookieWarned = true;
+          console.warn('[Amazon] no auth cookie matched (at-main|sess-at-main|at-acb) but the page is signed in — Amazon may have rotated cookie names');
+        }
+        return true;
+      }
     }
-    return true;
+    return false;
   },
 
   setHost(win) {
@@ -591,12 +613,15 @@ const amazonWebPlayer = {
         clearInterval(timer);
         resolve({ success: !!signedIn, signedIn: !!signedIn });
       };
-      const timer = setInterval(async () => {
+      const timer = setInterval(() => {
         if (win.isDestroyed()) return;
         const url = win.webContents.getURL();
         if (pageBlocksPlayback(url)) return;
-        if (!(await this.hasAuthCookie())) return;
         if (!/music\.amazon\.com/i.test(url)) return;
+        // The window IS the user's signed-in browser context: a
+        // music.amazon.com page past sign-in and profile-pick means the session
+        // is live. Deliberately not also gated on hasAuthCookie — Amazon
+        // rotating cookie names would leave this timer waiting forever.
         clearInterval(timer);
         setTimeout(() => {
           if (win && !win.isDestroyed()) win.close();
