@@ -776,6 +776,10 @@ const amazonWebPlayer = {
     if (this.playGeneration !== generation) return { success: false, reason: 'superseded' };
     this.collapse(this.playerView);
     this.currentAsin = asin;
+    // Everything from here on is post-claim: if a newer playByAsin started
+    // (our loadURL aborted by its loadURL, our confirm loop reading its media
+    // element), that is supersession, not failure — report it instead of
+    // throwing so the IPC wrapper does not halt the newer play.
     // A 400 from the license endpoint is Amazon refusing this build's
     // Widevine certificate (development VMP). Detect it instead of waiting
     // out a generic timeout. Region segment is NA/EU/FE, not only NA.
@@ -861,6 +865,9 @@ const amazonWebPlayer = {
       reason: 'playback-failed',
       error: `In-app playback did not start for ${title || asin}${artist ? ' by ' + artist : ''}`
     };
+    } catch (error) {
+      if (!ownsPlay()) return { success: false, reason: 'superseded', error: error && error.message };
+      throw error;
     } finally {
       detachLicense();
     }

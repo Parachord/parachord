@@ -3962,7 +3962,13 @@ ipcMain.handle('amazonmusic-play-track', async (event, { asin, title, artist }) 
   try {
     const result = await amazonWebPlayer.playByAsin({ asin, title, artist });
     if (!result || !result.success) {
-      await amazonWebPlayer.haltPlayback().catch(() => {});
+      // 'superseded' means a newer play owns the player view right now.
+      // Halting here would blank its page and null its ASIN — both plays
+      // would fail. playByAsin already halts on its own genuine failure
+      // paths, so only halt for real failures.
+      if (!result || result.reason !== 'superseded') {
+        await amazonWebPlayer.haltPlayback().catch(() => {});
+      }
       return { success: false, engine: 'web', reason: result && result.reason, error: result && result.error };
     }
     return { success: true, engine: 'web', ...result };
