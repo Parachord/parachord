@@ -316,6 +316,17 @@ function notReady(reason, message) {
 // portal, stall), so it throws notReady('load-failed') — NOT an empty result,
 // which the resolver would cache as a 30-day noMatch.
 const LOAD_URL_TIMEOUT_MS = 30000;
+
+// How long quality reads/writes wait for the __r trap to capture the live
+// playbackController store. Live observation (2026-10, hornet 1.18x):
+// storeCaptured stays false on track pages — hornet's factories appear to use
+// a closure-scoped require, or the store materializes after require time — so
+// this wait mostly times out. The persisted playback-controller localStorage
+// entry is the working mechanism (hornet rehydrates from it at boot, i.e.
+// "applies on the next track"); the live-store write is an opportunistic
+// upgrade if a hornet deploy ever routes requires through the global __r.
+// Keep this short so the settings panel does not spin on a first read.
+const QUALITY_WAIT_MS = 3000;
 async function loadURLBudgeted(page, url, timeoutMs = LOAD_URL_TIMEOUT_MS) {
   const loaded = page.loadURL(url);
   loaded.catch(() => {}); // a late rejection after the race lost must not be unhandled
@@ -630,8 +641,10 @@ const amazonWebPlayer = {
   // player page? null = no page loaded yet (fresh start, about:blank) or the
   // page could not be read; false on a loaded music.amazon.com page means the
   // preload did not run there — the exact failure mode that hid for weeks
-  // behind the localStorage fallback. storeCaptured flips true once Amazon's
-  // own code has required the playbackController module.
+  // behind the localStorage fallback. storeCaptured is opportunistic: it
+  // flips true only if the page's own requires route through the global __r —
+  // observed false on track pages (2026-10), where the persisted localStorage
+  // entry is what quality actually uses.
   async preloadProbe() {
     const view = this.playerView;
     if (!this.alive(view)) return { stub: null, storeCaptured: null };
@@ -1078,10 +1091,13 @@ const amazonWebPlayer = {
   // is unreachable. Read and write the same store the modal writes.
   //
   // The store is never found by requiring modules — executing hornet module
-  // factories out of order wedges the page (observed live). The preload trap
-  // captures it passively when Amazon's own code requires the module; until
-  // then the persisted playback-controller localStorage entry, which hornet
-  // rehydrates from at boot, is the source of truth.
+  // factories out of order wedges the page (observed live). The preload's
+  // passive __r trap would capture it if Amazon's code routed requires through
+  // the global — live observation says it does not on track pages, so the
+  // persisted playback-controller localStorage entry (which hornet rehydrates
+  // from at boot — "applies on the next track") is the working mechanism, and
+  // the trap is an opportunistic upgrade. getStatus's `preload.storeCaptured`
+  // reports which path a page is on.
   //
   // `apply` is null for reads, or the quality fields to write.
   async withQualityController(apply) {
@@ -1126,7 +1142,7 @@ const amazonWebPlayer = {
       }
       return persisted || { streamingQuality: null, abrEnabled: true };
     })()`;
-    const deadline = Date.now() + 12000;
+    const deadline = Date.now() + QUALITY_WAIT_MS;
     let last = null;
     while (Date.now() < deadline) {
       try { last = await this.evalOn(win, script); } catch { last = null; }
