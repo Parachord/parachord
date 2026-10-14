@@ -203,7 +203,7 @@ function asinFromPlayerUrl(url) {
 // the track we loaded. Never fill a missing read with the expected ASIN.
 function reportedPlaybackAsin(state) {
   if (!state) return null;
-  return state.playingAsin || asinFromPlayerUrl(state.playingHref) || asinFromPlayerUrl(state.href) || null;
+  return state.playingAsin || asinFromPlayerUrl(state.href) || null;
 }
 
 // Playback failure must not reveal the player. Sign-in is the only window.
@@ -214,12 +214,6 @@ function shouldRevealPlayerOnFailure() {
 
 function isAmazonPlayerChrome(testIds) {
   return /miniplayer|nowplaying|playbacktransport/i.test((testIds || []).join(' '));
-}
-
-function isAmazonSearchTrackLink(testId) {
-  const id = testId || '';
-  if (isAmazonPlayerChrome([id])) return false;
-  return /searchresults/i.test(id);
 }
 
 // A loose "Stations Warning" search misses the song. Amazon's songs tab
@@ -372,7 +366,6 @@ module.exports = {
   installAmazonRequireTrap,
   readPersistedQuality,
   writePersistedQuality,
-  isAmazonSearchTrackLink,
   isAmazonPlayerChrome,
   amazonSongSearchUrl,
   isAmazonSongResultItem,

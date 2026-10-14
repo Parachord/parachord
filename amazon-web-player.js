@@ -4,6 +4,41 @@
 // and search are WebContentsViews on the main window with 0×0 bounds, so
 // they cannot cover the app and there is no extra OS window. Sign-in is the
 // only real window — the user has to see Amazon's page to pick a profile.
+//
+// ── Amazon page contract ─────────────────────────────────────────────────────
+// Everything in this module scrapes or hooks music.amazon.com (hornet), and
+// hornet redeploys continuously. When playback/search breaks, check these
+// assumptions first — they are the surfaces most likely to rot. Pure parsers
+// live in amazon-music-logic.js (unit-tested); the scripts below serialize
+// those functions into the page world.
+//
+//   URLs            /tracks/{10-char ASIN}, /albums/{ASIN}, /artists/{ASIN},
+//                   /playlists/{id} and /my/playlists/{id},
+//                   /search/{q}/songs (quoted terms; a loose combined query
+//                   misses songs), /tracks/{asin}?do=play is what actually
+//                   starts Widevine — a bare page's Play-button click() does not
+//   Sign-in walls   /ap/signin, /identity/who-is-listening (pageBlocksPlayback)
+//   Cookies         at-main|sess-at-main|at-acb — fast path only; the rendered
+//                   page is ground truth (see isSignedIn)
+//   Media element   the Widevine <video>; the page also has an empty <audio>
+//                   decoy — HOOK_SCRIPT scores elements by paused/currentSrc/
+//                   tagName so last-wins cannot latch onto it
+//   Search rows     <button data-testid="HorizontalItem,…"> with a descendant
+//                   /artists/ link for the artist; a title link's own text is
+//                   title only (artist/album are sibling links); row
+//                   durations render as "N MIN M SEC"; mini-player chrome
+//                   carries miniplayer|nowplaying testids and must be
+//                   rejected or the currently-playing song is returned as a
+//                   search result
+//   GraphQL         gql.music.amazon.com, persisted query (APQ) whose sha256Hash
+//                   renumbers per redeploy — capture the page's own
+//                   playlistDetail request and replay it, never hardcode it
+//   Quality store   metro module playbackController (audioQualitySettings),
+//                   captured by the window.__r trap in the preload; persisted
+//                   fallback under a localStorage key containing
+//                   'playback-controller'
+//   License refusal  POST /*/api/dmls/ answering 400 = this build's VMP
+//                   signature refused (development certificate)
 
 const path = require('path');
 const HOME_URL = 'https://music.amazon.com/';
@@ -331,8 +366,20 @@ const amazonWebPlayer = {
     const { session } = electron();
     const ses = session.fromPartition(PARTITION);
     if (!ses.__parachordAmazonPerms) {
-      ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(true));
-      ses.setPermissionCheckHandler(() => true);
+      // Deny the privacy-sensitive permissions outright (the player never
+      // legitimately needs them; the sign-in window does not either) and let the
+      // rest through — media/fullscreen/DRM grants the page may want. Every
+      // denial is logged so an unexpected request is visible in the field.
+      const denied = new Set(['camera', 'microphone', 'geolocation', 'notifications', 'display-capture', 'clipboard-read']);
+      const allow = (permission) => {
+        if (denied.has(permission)) {
+          console.warn(`[Amazon] denied permission request: ${permission}`);
+          return false;
+        }
+        return true;
+      };
+      ses.setPermissionRequestHandler((_wc, permission, callback) => callback(allow(permission)));
+      ses.setPermissionCheckHandler((_wc, permission) => allow(permission));
       ses.__parachordAmazonPerms = true;
     }
     return ses;
@@ -552,7 +599,7 @@ const amazonWebPlayer = {
     if (!this.cdmAvailable()) return false;
     if (this.emeProbed === true) return true;
     try {
-      const win = await this.ensureWindow('player', { show: false });
+      const win = await this.ensureWindow('player');
       const url = win.webContents.getURL();
       if (!url || url === 'about:blank') await loadURLBudgeted(win, HOME_URL);
       this.emeProbed = await this.evalOn(win, `(async () => {
@@ -757,8 +804,8 @@ const amazonWebPlayer = {
         callback({ requestHeaders: details.requestHeaders });
       };
       try {
-        try { ses.webRequest.onBeforeRequest(gqlFilter, onRequest); } catch { /* already registered */ }
-        try { ses.webRequest.onBeforeSendHeaders(gqlFilter, onSendHeaders); } catch { /* already registered */ }
+        try { ses.webRequest.onBeforeRequest(gqlFilter, onRequest); } catch { /* a second registration replaces */ }
+        try { ses.webRequest.onBeforeSendHeaders(gqlFilter, onSendHeaders); } catch { /* a second registration replaces */ }
 
         await loadURLBudgeted(win, rawUrl);
         // Wait for the page's own playlistDetail request. Boot + query is
@@ -865,7 +912,7 @@ const amazonWebPlayer = {
       if (this.playGeneration !== generation) return;
       try { ses.webRequest.onCompleted(licenseFilter, null); } catch { /* none */ }
     };
-    try { ses.webRequest.onCompleted(licenseFilter, onLicense); } catch { /* filter already registered */ }
+    try { ses.webRequest.onCompleted(licenseFilter, onLicense); } catch { /* a second registration replaces; generation guards the detach */ }
     try {
     // Amazon's own result links use ?do=play. A bare /tracks/{asin} page
     // renders a Play button whose click() does not start Widevine; the query
@@ -918,8 +965,10 @@ const amazonWebPlayer = {
       }
     }
     if (!ownsPlay()) return { success: false, reason: 'superseded' };
-    // Never show or focus the player here, including during radio. A run of
-    // unplayable tracks used to surface the page on every miss.
+    // Always false by design: playback failure must never reveal the hidden
+    // player (a run of unplayable radio tracks used to show and focus it).
+    // shouldRevealPlayerOnFailure + this throw is the regression guard — the
+    // function is tested to stay false.
     if (shouldRevealPlayerOnFailure()) {
       throw new Error('Amazon playback failure must not reveal the player');
     }
@@ -1015,7 +1064,7 @@ const amazonWebPlayer = {
   // `apply` is null for reads, or the quality fields to write.
   async withQualityController(apply) {
     // Do not expand the view here. Settings must not cover the app.
-    const win = await this.ensureWindow('player', { show: false });
+    const win = await this.ensureWindow('player');
     let url = win.webContents.getURL();
     if (pageBlocksPlayback(url)) {
       const err = new Error('Sign in and choose an Amazon Music profile');

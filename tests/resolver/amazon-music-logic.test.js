@@ -7,11 +7,10 @@ const {
   pageBlocksPlayback,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
+  amazonSongSearchUrl,
   installAmazonRequireTrap,
   readPersistedQuality,
   writePersistedQuality,
-  isAmazonSearchTrackLink,
-  amazonSongSearchUrl,
   isAmazonSongResultItem,
   acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
@@ -343,14 +342,7 @@ describe('asinFromPlayerUrl', () => {
   });
 });
 
-describe('isAmazonSearchTrackLink', () => {
-  test('keeps search rows and drops the mini player', () => {
-    expect(isAmazonSearchTrackLink('SearchResultsWidget_Item_Metadata_TrackTitle')).toBe(true);
-    expect(isAmazonSearchTrackLink('SearchResultsWidget_TopResults_TrackItem_Metadata_TrackTitle')).toBe(true);
-    expect(isAmazonSearchTrackLink('MiniPlayer_Title')).toBe(false);
-    expect(isAmazonSearchTrackLink('')).toBe(false);
-  });
-
+describe('acceptAmazonSearchAnchor', () => {
   test('search page keeps rows that are not player chrome', () => {
     expect(acceptAmazonSearchAnchor(['SearchResultsWidget_Item'], true)).toBe(true);
     expect(acceptAmazonSearchAnchor([], true)).toBe(true);
