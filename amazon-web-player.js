@@ -656,9 +656,20 @@ const amazonWebPlayer = {
     if (this.emeProbed === true) return true;
     try {
       const win = await this.ensureWindow('player');
-      const url = win.webContents.getURL();
-      if (!url || url === 'about:blank') await loadURLBudgeted(win, HOME_URL);
-      this.emeProbed = await this.evalOn(win, `(async () => {
+      // The home page can start its own media — autoplay is allowed and the page
+      // is told it is visible — so a probe load is MUTED and parked again
+      // afterward. A probe is a capability check, never an audible event, and
+      // the page must not sit there mid-autoplay if the play aborts after us.
+      let loadedHome = false;
+      const genAtStart = this.playGeneration;
+      try {
+        const url = win.webContents.getURL();
+        if (!url || url === 'about:blank') {
+          try { win.webContents.setAudioMuted(true); } catch { /* gone */ }
+          loadedHome = true;
+          await loadURLBudgeted(win, HOME_URL);
+        }
+        this.emeProbed = await this.evalOn(win, `(async () => {
         if (!navigator.requestMediaKeySystemAccess) return false;
         try {
           await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
@@ -673,9 +684,27 @@ const amazonWebPlayer = {
           return false;
         }
       })()`);
+      } catch (error) {
+        // A page that never loaded is a network condition, not a missing CDM —
+        // let it surface as load-failed instead of "Widevine is not usable".
+        if (error && error.reason === 'load-failed') throw error;
+        this.emeProbed = false;
+      } finally {
+        if (loadedHome) {
+          // Skip the park if a newer play claimed the player mid-probe (its
+          // loadURL owns the view now); always restore the mute state.
+          if (this.playGeneration === genAtStart) {
+            try {
+              const u = win.webContents.getURL();
+              if (u && u !== 'about:blank') await win.webContents.loadURL('about:blank');
+            } catch { /* gone */ }
+          }
+          try { win.webContents.setAudioMuted(false); } catch { /* gone */ }
+        }
+      }
     } catch (error) {
       // A page that never loaded is a network condition, not a missing CDM —
-      // let it surface as load-failed instead of "Widevine is not usable".
+      // surface load-failed instead of caching "Widevine is not usable".
       if (error && error.reason === 'load-failed') throw error;
       this.emeProbed = false;
     }
@@ -1172,22 +1201,28 @@ const amazonWebPlayer = {
   async withQualityController(apply) {
     // Do not expand the view here. Settings must not cover the app.
     const win = await this.ensureWindow('player');
-    let url = win.webContents.getURL();
-    if (pageBlocksPlayback(url)) {
-      const err = new Error('Sign in and choose an Amazon Music profile');
-      err.reason = 'not-signed-in';
-      throw err;
-    }
-    if (!url || url === 'about:blank') {
-      await loadURLBudgeted(win, HOME_URL);
-      url = win.webContents.getURL();
+    // Quality reads need a music.amazon.com document (localStorage is
+    // origin-scoped). When the player is parked, the home page is loaded
+    // MUTED — autoplay is allowed and the page is told it is visible, so an
+    // unmuted home load could start audible playback from a settings read —
+    // and parked again afterward. A real playback page is used as-is.
+    let loadedHome = false;
+    const genAtStart = this.playGeneration;
+    try {
+      let url = win.webContents.getURL();
       if (pageBlocksPlayback(url)) {
-        const err = new Error('Sign in and choose an Amazon Music profile');
-        err.reason = 'not-signed-in';
-        throw err;
+        throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
       }
-    }
-    const script = `(() => {
+      if (!url || url === 'about:blank') {
+        try { win.webContents.setAudioMuted(true); } catch { /* gone */ }
+        loadedHome = true;
+        await loadURLBudgeted(win, HOME_URL);
+        url = win.webContents.getURL();
+        if (pageBlocksPlayback(url)) {
+          throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+        }
+      }
+      const script = `(() => {
       const readPersistedQuality = ${readPersistedQuality.toString()};
       const writePersistedQuality = ${writePersistedQuality.toString()};
       const apply = ${apply ? JSON.stringify(apply) : 'null'};
@@ -1211,14 +1246,27 @@ const amazonWebPlayer = {
       }
       return persisted || { streamingQuality: null, abrEnabled: true };
     })()`;
-    const deadline = Date.now() + QUALITY_WAIT_MS;
-    let last = null;
-    while (Date.now() < deadline) {
-      try { last = await this.evalOn(win, script); } catch { last = null; }
-      if (last && last.streamingQuality) return last;
-      await new Promise(r => setTimeout(r, 250));
+      const deadline = Date.now() + QUALITY_WAIT_MS;
+      let last = null;
+      while (Date.now() < deadline) {
+        try { last = await this.evalOn(win, script); } catch { last = null; }
+        if (last && last.streamingQuality) return last;
+        await new Promise(r => setTimeout(r, 250));
+      }
+      return last;
+    } finally {
+      if (loadedHome) {
+        // Skip the park if a newer play claimed the player while we read (its
+        // loadURL owns the view now); always restore the mute state.
+        if (this.playGeneration === genAtStart) {
+          try {
+            const u = win.webContents.getURL();
+            if (u && u !== 'about:blank') await win.webContents.loadURL('about:blank');
+          } catch { /* gone */ }
+        }
+        try { win.webContents.setAudioMuted(false); } catch { /* gone */ }
+      }
     }
-    return last;
   },
 
   async getQuality() {
@@ -1233,8 +1281,15 @@ const amazonWebPlayer = {
   },
 
   async setQuality({ streamingQuality, abrEnabled } = {}) {
+    // Validate before writing anything into hornet's store: a bogus tier
+    // written here is rehydrated from the persisted entry on every boot until
+    // Amazon's own modal overwrites it. 'HD' maps to the tier the modal writes.
+    const normalized = streamingQuality ? normalizeStreamingQuality(streamingQuality) : null;
+    if (streamingQuality && !normalized) {
+      return { success: false, reason: 'invalid', error: `Unknown Amazon Music audio quality: ${streamingQuality}` };
+    }
     const apply = {};
-    if (streamingQuality) apply.streamingQuality = streamingQuality;
+    if (normalized) apply.streamingQuality = normalized;
     if (abrEnabled !== undefined) apply.abrEnabled = !!abrEnabled;
     if (!apply.streamingQuality && abrEnabled === undefined) {
       return { success: false, reason: 'invalid', error: 'Unknown Amazon Music audio quality' };

@@ -54,3 +54,30 @@ describe('Amazon page scripts evaluate after serialization', () => {
     expect(window.__parachordAmazonRead()).toBeNull();
   });
 });
+
+describe('setQuality validates before writing hornet\'s store', () => {
+  const withController = jest.fn(async (apply) => ({
+    streamingQuality: (apply && apply.streamingQuality) || 'STANDARD',
+    abrEnabled: !!(apply && apply.abrEnabled)
+  }));
+
+  test('an unknown tier is rejected without touching the store', async () => {
+    webPlayer.withQualityController = withController;
+    const bad = await webPlayer.setQuality({ streamingQuality: 'ULTRA_HD' });
+    expect(bad).toMatchObject({ success: false, reason: 'invalid' });
+    expect(withController).not.toHaveBeenCalled();
+  });
+
+  test('the legacy HD value maps to the tier the modal writes', async () => {
+    const ok = await webPlayer.setQuality({ streamingQuality: 'HD' });
+    expect(ok.success).toBe(true);
+    expect(ok.streamingQuality).toBe('BEST_AVAILABLE');
+    expect(withController).toHaveBeenCalledWith({ streamingQuality: 'BEST_AVAILABLE' });
+  });
+
+  test('an abrEnabled-only change passes through without a tier', async () => {
+    const ok = await webPlayer.setQuality({ abrEnabled: false });
+    expect(ok.success).toBe(true);
+    expect(withController).toHaveBeenCalledWith({ abrEnabled: false });
+  });
+});
