@@ -391,20 +391,26 @@ const amazonWebPlayer = {
     const { session } = electron();
     const ses = session.fromPartition(PARTITION);
     if (!ses.__parachordAmazonPerms) {
-      // Deny the privacy-sensitive permissions outright (the player never
-      // legitimately needs them; the sign-in window does not either) and let the
-      // rest through — media/fullscreen/DRM grants the page may want. Every
-      // denial is logged so an unexpected request is visible in the field.
-      const denied = new Set(['camera', 'microphone', 'geolocation', 'notifications', 'display-capture', 'clipboard-read']);
-      const allow = (permission) => {
-        if (denied.has(permission)) {
+      // Allowlist, not a denylist. Playback needs no permission grant at all
+      // (HTMLMediaElement and EME/Widevine are not gated by permission
+      // handlers), so the hidden page gets fullscreen and nothing else. The
+      // previous deny-list default-allowed everything it did not name -
+      // including 'media', which is the umbrella getUserMedia permission for
+      // camera/microphone on a hidden third-party page. Every denial is
+      // logged once per permission name (checks fire often) so an unexpected
+      // request is visible in the field without console spam.
+      const allowed = new Set(['fullscreen']);
+      const warned = new Set();
+      const check = (permission) => {
+        if (allowed.has(permission)) return true;
+        if (!warned.has(permission)) {
+          warned.add(permission);
           console.warn(`[Amazon] denied permission request: ${permission}`);
-          return false;
         }
-        return true;
+        return false;
       };
-      ses.setPermissionRequestHandler((_wc, permission, callback) => callback(allow(permission)));
-      ses.setPermissionCheckHandler((_wc, permission) => allow(permission));
+      ses.setPermissionRequestHandler((_wc, permission, callback) => callback(check(permission)));
+      ses.setPermissionCheckHandler((_wc, permission) => check(permission));
       ses.__parachordAmazonPerms = true;
     }
     return ses;
