@@ -27,7 +27,8 @@
  * source attached is streaming through Spotify, and a localfiles-played
  * track with a Spotify id is streaming from disk.
  *
- * Currently populated by: localfiles (exact, from the file scan).
+ * Currently populated by: localfiles (exact, parsed from the file at play
+ * time; see LocalFilesService.getStreamInfo).
  * Loaded by index.html for the renderer and require()d by the tests.
  */
 (function () {
@@ -51,13 +52,19 @@
     if (raw) {
       if (raw === 'flac') return 'FLAC';
       if (raw === 'alac') return 'ALAC';
-      if (raw === 'pcm') return 'WAV';
+      // music-metadata reports uncompressed AIFF as 'PCM' too; the
+      // container tells them apart.
+      if (raw === 'pcm') {
+        const c = String((streamQuality && streamQuality.container) || '').toLowerCase();
+        return (c === 'aif' || c === 'aiff' || c === 'aifc') ? 'AIFF' : 'WAV';
+      }
       // music-metadata emits 'MPEG 1 Layer 3' (older versions 'Layer III')
       if (raw.includes('layer 3') || raw.includes('layer iii') || raw === 'mp3') return 'MP3';
       if (raw === 'aac' || raw === 'mp4a' || raw.includes('aac')) return 'AAC';
     }
-    // No codec label captured (e.g. a row indexed before the `codec` column
-    // existed) — fall back to the container/extension.
+    // No recognised codec label (music-metadata didn't report one, or it's a
+    // codec not mapped above such as Vorbis or Opus) — fall back to the
+    // container/extension.
     const container = String((streamQuality && streamQuality.container) || '').toLowerCase();
     if (!container) return null;
     if (container === 'm4a') return 'M4A';

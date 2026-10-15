@@ -260,7 +260,9 @@ class LocalFilesService {
   async getStreamInfo(filePath) {
     if (!filePath || typeof filePath !== 'string') return null;
     try {
-      const stats = fs.statSync(filePath);
+      // Async stat: this runs in the main process on every track start, and a
+      // sync stat on an SMB/NFS mount blocks the whole main process.
+      const stats = await fs.promises.stat(filePath);
       const cached = this._streamInfoCache && this._streamInfoCache.get(filePath);
       if (cached && cached.mtimeMs === stats.mtimeMs) return cached.info;
       const info = await MetadataReader.getStreamInfo(filePath);

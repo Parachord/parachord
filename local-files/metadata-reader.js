@@ -205,7 +205,8 @@ class MetadataReader {
    */
   static async getStreamInfo(filePath) {
     try {
-      const metadata = await mm.parseFile(filePath);
+      // skipCovers: format info only; don't load embedded art (can be several MB).
+      const metadata = await mm.parseFile(filePath, { skipCovers: true });
       const format = metadata.format || {};
       const ext = path.extname(filePath).slice(1).toLowerCase();
       const info = {};

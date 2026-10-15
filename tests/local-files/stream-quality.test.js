@@ -108,3 +108,41 @@ describe('stream-quality', () => {
     });
   });
 });
+
+// Follow-ups to #1027 (review fixes).
+describe('stream quality review follow-ups', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { streamQualityCodecLabel } = require('../../stream-quality');
+  const root = path.join(__dirname, '..', '..');
+  const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+
+  test('uncompressed AIFF (music-metadata codec "PCM") is labelled AIFF, WAV stays WAV', () => {
+    expect(streamQualityCodecLabel({ codec: 'PCM', container: 'aiff' })).toBe('AIFF');
+    expect(streamQualityCodecLabel({ codec: 'PCM', container: 'aif' })).toBe('AIFF');
+    expect(streamQualityCodecLabel({ codec: 'PCM', container: 'wav' })).toBe('WAV');
+    expect(streamQualityCodecLabel({ codec: 'PCM' })).toBe('WAV');
+  });
+
+  test('the playbar title tooltip caps its width so long titles still truncate', () => {
+    const app = read('app.js');
+    const i = app.indexOf('content: streamQualityLabel,');
+    expect(i).toBeGreaterThan(-1);
+    expect(app.slice(i, i + 200)).toMatch(/className: 'tooltip-fill'/);
+    expect(read('index.html')).toMatch(/\.tooltip-container\.tooltip-fill \{\s*max-width: 100%;/);
+  });
+
+  test('play-time stat is async (a sync stat on a network mount blocks the main process)', () => {
+    const src = read('local-files/index.js');
+    const start = src.indexOf('async getStreamInfo(filePath) {');
+    const body = src.slice(start, src.indexOf('\n  }\n', start));
+    expect(body).toMatch(/await fs\.promises\.stat\(filePath\)/);
+    expect(body).not.toMatch(/statSync/);
+  });
+
+  test('the play-time parse skips embedded covers', () => {
+    const src = read('local-files/metadata-reader.js');
+    const start = src.indexOf('static async getStreamInfo(filePath) {');
+    expect(src.slice(start, start + 400)).toMatch(/mm\.parseFile\(filePath, \{ skipCovers: true \}\)/);
+  });
+});
