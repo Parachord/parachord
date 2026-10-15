@@ -1170,6 +1170,31 @@ const amazonWebPlayer = {
     return this.haltPlayback();
   },
 
+  // Full sign-out. The partition (persist:amazon-music) is Amazon-only, so a
+  // whole-session clear is correctly scoped - no partial cookie-clear guessing
+  // like the Apple flow needs. In-flight plays are superseded by the
+  // generation bump instead of fighting the teardown.
+  async signOut() {
+    try { this.destroyView(this.playerView); } catch { /* gone */ }
+    try { this.destroyView(this.searchView); } catch { /* gone */ }
+    this.playerView = null;
+    this.searchView = null;
+    if (this.alive(this.authWindow)) {
+      try { this.authWindow.close(); } catch { /* gone */ }
+    }
+    this.authWindow = null;
+    this.currentAsin = null;
+    this.playGeneration++;
+    this.cookieWarned = false;
+    this.searchChain = Promise.resolve();
+    try {
+      await this.session().clearStorageData();
+    } catch (error) {
+      return { success: false, error: String((error && error.message) || error) };
+    }
+    return { success: true };
+  },
+
   async seek(positionMs) {
     const seconds = Math.max(0, Number(positionMs) || 0) / 1000;
     return this.withMedia(`try { m.currentTime = ${seconds}; } catch (e) {}`);

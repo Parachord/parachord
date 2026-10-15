@@ -3777,6 +3777,16 @@ ipcMain.handle('amazonmusic-open-login', async () => {
   }
 });
 
+ipcMain.handle('amazonmusic-sign-out', async () => {
+  try {
+    // The poller reads a view that signOut is about to destroy.
+    amazonMusicPoller.stop();
+    return await amazonWebPlayer.signOut();
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
   console.log(`[Amazon] IPC search ${JSON.stringify(payload)}`);
   try {

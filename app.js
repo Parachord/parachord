@@ -62015,22 +62015,40 @@ useEffect(() => {
                       ? 'Sign in with your Amazon Music account'
                       : 'This build cannot play DRM-protected Amazon streams')
               ),
-              React.createElement('button', {
-                onClick: async () => {
-                  const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in' });
-                  if (ok) {
-                    const s = await window.electron.amazonMusic.getStatus().catch(() => null);
-                    if (s && s.success) setAmazonMusicStatus(s);
-                    const q = await window.electron.amazonMusic.getQuality().catch(() => null);
-                    if (q && q.success) setAmazonMusicQuality(q);
-                  }
-                },
-                style: {
-                  padding: '6px 12px', fontSize: '12px', fontWeight: '500',
-                  color: '#ffffff', backgroundColor: 'var(--accent-primary)',
-                  borderRadius: '8px'
-                }
-              }, amazonMusicStatus?.web?.signedIn ? 'Signed in' : 'Sign in')
+              amazonMusicStatus?.web?.signedIn
+                ? React.createElement('button', {
+                    onClick: async () => {
+                      const r = await window.electron.amazonMusic.signOut();
+                      if (r && r.success) {
+                        setAmazonMusicStatus({ success: true, engine: 'web', web: { cdm: !!(amazonMusicStatus && amazonMusicStatus.web && amazonMusicStatus.web.cdm), signedIn: false } });
+                        setAmazonMusicQuality(null);
+                        showToast('Signed out of Amazon Music', 'success');
+                      } else {
+                        showToast((r && r.error) || 'Could not sign out of Amazon Music', 'error');
+                      }
+                    },
+                    style: {
+                      padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                      color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
+                      borderRadius: '8px'
+                    }
+                  }, 'Sign out')
+                : React.createElement('button', {
+                    onClick: async () => {
+                      const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in' });
+                      if (ok) {
+                        const s = await window.electron.amazonMusic.getStatus().catch(() => null);
+                        if (s && s.success) setAmazonMusicStatus(s);
+                        const q = await window.electron.amazonMusic.getQuality().catch(() => null);
+                        if (q && q.success) setAmazonMusicQuality(q);
+                      }
+                    },
+                    style: {
+                      padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                      color: '#ffffff', backgroundColor: 'var(--accent-primary)',
+                      borderRadius: '8px'
+                    }
+                  }, 'Sign in')
             ),
             React.createElement('div', {
               style: {
