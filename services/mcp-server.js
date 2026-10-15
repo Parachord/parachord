@@ -376,8 +376,19 @@ function startMcpServer(mainWindow) {
     res.status(204).end();
   });
 
-  httpServer = app.listen(MCP_PORT, '127.0.0.1', () => {
-    console.log(`MCP server running on http://127.0.0.1:${MCP_PORT}/mcp`);
+  // A parallel dev instance (PARACHORD_USER_DATA sandbox) picks its own port;
+  // without the override both instances fight over the default port and the
+  // loser crashes on EADDRINUSE (unhandled 'error' on the server).
+  const port = Number(process.env.PARACHORD_MCP_PORT) || MCP_PORT;
+  httpServer = app.listen(port, '127.0.0.1', () => {
+    console.log(`MCP server running on http://127.0.0.1:${port}/mcp`);
+  });
+  httpServer.on('error', (err) => {
+    // Don't crash the app because the MCP port is taken (e.g. a second
+    // instance without its own port). MCP control is a convenience surface;
+    // the app itself runs fine without it.
+    console.error(`MCP server failed to start on port ${port}:`, err.message);
+    httpServer = null;
   });
 
   return httpServer;

@@ -536,6 +536,34 @@
         "performance",
         "pre-resolution"
       ]
+    },
+    {
+      "id": "subsonic",
+      "name": "Subsonic",
+      "version": "0.1.0",
+      "author": "Parachord Team",
+      "description": "Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.",
+      "icon": "📡",
+      "color": "#14b8a6",
+      "homepage": "https://subsonic.org",
+      "capabilities": {
+        "resolve": true,
+        "search": true,
+        "stream": true,
+        "browse": false,
+        "urlLookup": false
+      },
+      "requiresAuth": true,
+      "builtin": true,
+      "downloadUrl": "https://raw.githubusercontent.com/Parachord/parachord-plugins/main/subsonic.axe",
+      "category": "streaming",
+      "tags": [
+        "self-hosted",
+        "subsonic",
+        "navidrome",
+        "streaming",
+        "personal-library"
+      ]
     }
   ],
   "categories": [
