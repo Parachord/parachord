@@ -959,9 +959,9 @@ describe('Custom LLM reasoning effort', () => {
     return JSON.parse(calls[calls.length - 1][1].body);
   };
 
-  test('generic endpoint (vLLM): default off disables thinking via chat_template_kwargs', async () => {
+  test('generic endpoint (vLLM): off disables thinking via chat_template_kwargs', async () => {
     respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
-    await chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3' });
+    await chat(sampleMessages, [], { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3', reasoningEffort: 'off' });
 
     expect(lastBody().chat_template_kwargs).toEqual({ enable_thinking: false });
     expect(lastBody()).not.toHaveProperty('reasoning_effort');
@@ -985,7 +985,7 @@ describe('Custom LLM reasoning effort', () => {
 
   test('OpenRouter: off maps to reasoning.effort none, levels pass through', async () => {
     respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
-    await chat(sampleMessages, [], { baseUrl: 'https://openrouter.ai/api/v1', model: 'z-ai/glm-5.3' });
+    await chat(sampleMessages, [], { baseUrl: 'https://openrouter.ai/api/v1', model: 'z-ai/glm-5.3', reasoningEffort: 'off' });
     expect(lastBody().reasoning).toEqual({ effort: 'none' });
     expect(lastBody()).not.toHaveProperty('chat_template_kwargs');
 
@@ -1008,18 +1008,48 @@ describe('Custom LLM reasoning effort', () => {
 
   test('DeepSeek: off disables thinking via the thinking param', async () => {
     respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
-    await chat(sampleMessages, [], { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' });
+    await chat(sampleMessages, [], { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', reasoningEffort: 'off' });
     expect(lastBody().thinking).toEqual({ type: 'disabled' });
   });
 
   test('Z.ai (GLM): off disables thinking, a level enables it with clear_thinking kept', async () => {
     respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
-    await chat(sampleMessages, [], { baseUrl: 'https://api.z.ai/v1', model: 'glm-5.3' });
+    await chat(sampleMessages, [], { baseUrl: 'https://api.z.ai/v1', model: 'glm-5.3', reasoningEffort: 'off' });
     expect(lastBody().thinking).toEqual({ type: 'disabled' });
 
     respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
     await chat(sampleMessages, [], { baseUrl: 'https://api.z.ai/v1', model: 'glm-5.3', reasoningEffort: 'high' });
     expect(lastBody().thinking).toEqual({ type: 'enabled', clear_thinking: false });
+  });
+
+  test('default (no setting) is auto: no reasoning params on any endpoint, same request as 1.0.x', async () => {
+    for (const baseUrl of ['http://localhost:8000/v1', 'https://openrouter.ai/api/v1', 'https://api.deepseek.com/v1', 'https://api.z.ai/v1', 'https://api.together.xyz/v1']) {
+      respondWith({ choices: [{ message: { content: 'Hi', tool_calls: null } }] });
+      await chat(sampleMessages, [], { baseUrl, model: 'm' });
+      const body = lastBody();
+      expect(body).not.toHaveProperty('reasoning');
+      expect(body).not.toHaveProperty('reasoning_effort');
+      expect(body).not.toHaveProperty('thinking');
+      expect(body).not.toHaveProperty('chat_template_kwargs');
+    }
+  });
+
+  test('anthropic dialect: no thinking on chat turns that can call tools (thinking blocks would have to round-trip)', async () => {
+    const tools = [{ name: 'play', description: 'Play a track', parameters: { type: 'object', properties: {} } }];
+    respondWith({ content: [{ type: 'text', text: 'Hi' }] });
+    await chat(sampleMessages, tools, {
+      baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', api: 'anthropic', reasoningEffort: 'high'
+    });
+    expect(lastBody()).not.toHaveProperty('thinking');
+    expect(lastBody().tools).toHaveLength(1);
+  });
+
+  test('anthropic dialect: generate (no tools) still gets the thinking budget', async () => {
+    respondWith({ content: [{ type: 'text', text: '[{"title":"A","artist":"B"}]' }] });
+    await generate('rock songs', {
+      baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', api: 'anthropic', reasoningEffort: 'low'
+    });
+    expect(lastBody().thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });
   });
 
   test('x.ai: no reasoning params are ever sent (Grok rejects reasoning_effort)', async () => {
@@ -1124,6 +1154,10 @@ describe('Custom LLM reasoning effort', () => {
   test('generate: maps the effort and detects reasoning-only responses', async () => {
     respondWith({ choices: [{ message: { content: '[{"title":"Creep","artist":"Radiohead"}]' } }] });
     await generate('rock songs', { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3' });
+    expect(lastBody()).not.toHaveProperty('chat_template_kwargs'); // default is auto
+
+    respondWith({ choices: [{ message: { content: '[{"title":"Creep","artist":"Radiohead"}]' } }] });
+    await generate('rock songs', { baseUrl: 'http://localhost:8000/v1', model: 'glm-5.3', reasoningEffort: 'off' });
     expect(lastBody().chat_template_kwargs).toEqual({ enable_thinking: false });
 
     mockFetch.mockResolvedValue({
