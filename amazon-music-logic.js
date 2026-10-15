@@ -80,6 +80,442 @@ function shouldPollFaster(durationMs, positionMs) {
   return durationMs - positionMs <= FAST_POLL_REMAINING_MS && durationMs - positionMs >= 0;
 }
 
+// ── Measured stream bitrate ──────────────────────────────────────────────────
+// The poller pairs consecutive PLAYING reads of the media element's audio
+// decode counter (webkitAudioDecodedByteCount — demuxed compressed stream
+// bytes, so this measures the delivered stream, not PCM) and takes the median
+// of the per-pair rates. A whole-file average (bytes / position) is wrong
+// twice over: the decoder runs ahead of the playhead while its buffers fill,
+// and a seek never resets the counter. Steady pairs — playhead advancing in
+// step with the wall clock, no seek, no pause — converge on the true bitrate,
+// and the median window shrugs off the startup overshoot and stall dips.
+const QUALITY_PAIR_WINDOW = 8;     // pair rates kept in the median window
+const QUALITY_MIN_PAIRS = 6;       // steady pairs before a measurement reports
+const QUALITY_MIN_PAIR_MS = 250;   // a shorter pair (jittery/duplicate read) means nothing
+const QUALITY_MAX_PAIR_MS = 4000;  // a longer pair spans a dropped poll — skip it
+const QUALITY_MAX_DRIFT_MS = 400;  // |playheadΔ − wallΔ| beyond this is a seek or pause
+const QUALITY_MIN_KBPS = 16;       // sanity bounds — outside is a transient, not the stream
+const QUALITY_MAX_KBPS = 10000;
+
+// samples: [{ wallMs, positionMs, bytes }] as recorded by the poller (bytes
+// may be null on reads where the element exposed no counter — those just never
+// form pairs). Returns kbps, or null while too few steady pairs exist.
+function measuredStreamKbps(samples) {
+  const list = Array.isArray(samples) ? samples : [];
+  const rates = [];
+  for (let i = 1; i < list.length; i++) {
+    const prev = list[i - 1];
+    const next = list[i];
+    if (!prev || !next) continue;
+    const wallMs = (next.wallMs || 0) - (prev.wallMs || 0);
+    const posMs = (next.positionMs || 0) - (prev.positionMs || 0);
+    const bytes = (next.bytes || 0) - (prev.bytes || 0);
+    if (wallMs < QUALITY_MIN_PAIR_MS || wallMs > QUALITY_MAX_PAIR_MS) continue;
+    if (Math.abs(posMs - wallMs) > QUALITY_MAX_DRIFT_MS) continue;
+    if (bytes <= 0) continue; // nothing decoded in the window (counter missing / stall)
+    const kbps = Math.round((bytes * 8) / posMs);
+    if (kbps < QUALITY_MIN_KBPS || kbps > QUALITY_MAX_KBPS) continue;
+    rates.push(kbps);
+  }
+  if (rates.length < QUALITY_MIN_PAIRS) return null;
+  const window = rates.slice(-QUALITY_PAIR_WINDOW).sort((a, b) => a - b);
+  const mid = window.length >> 1;
+  return window.length % 2 ? window[mid] : Math.round((window[mid - 1] + window[mid]) / 2);
+}
+
+// ── DASH manifest → stream parameters ────────────────────────────────────────
+// The preload's net hook (installAmazonStreamCapture) captures the MPD the
+// page itself fetched, plus the (small) init segment responses. Everything
+// below is pure parsing of what was captured — no fetching, no DOM. DASH
+// attributes are packager output rather than hornet UI, so this surface is
+// stable across hornet redeploys; the tolerant scan trades precision for
+// rot-resistance (an unrecognized shape yields an empty list, not garbage).
+
+function decodeXmlEntities(value) {
+  return String(value)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => {
+      try { return String.fromCodePoint(parseInt(h, 16)); } catch (e) { return ''; }
+    })
+    .replace(/&#(\d+);/g, (m, d) => {
+      try { return String.fromCodePoint(parseInt(d, 10)); } catch (e) { return ''; }
+    })
+    .replace(/&amp;/g, '&'); // amp last: &amp;lt; stays as literal &lt; per XML
+}
+
+// attribute pairs of one opening tag ("id="x" codecs="fLaC"").
+function xmlAttrMap(tagSource) {
+  const attrs = {};
+  const re = /([A-Za-z_][-\w:.]*)\s*=\s*"([^"]*)"/g;
+  let m;
+  while ((m = re.exec(tagSource))) attrs[m[1]] = decodeXmlEntities(m[2]);
+  return attrs;
+}
+
+// Bit depth is not a standard DASH attribute, so accept it from the places a
+// packager might put it, and only for the depths Amazon actually delivers.
+function mpdBitDepthHint(attrs, repText) {
+  for (const key of ['bitDepth', 'bitsPerSample', 'bit_depth']) {
+    const v = attrs && attrs[key];
+    if (v && ['16', '24', '32'].includes(String(v))) return Number(v);
+  }
+  const attrScan = String(repText || '').match(/\b(?:bitDepth|bitsPerSample|bit_depth)["':=\s]+(\d{1,2})\b/i);
+  if (attrScan && ['16', '24', '32'].includes(attrScan[1])) return Number(attrScan[1]);
+  const idScan = String((attrs && attrs.id) || '').match(/\b(16|24|32)[-_ ]?bit\b/i);
+  if (idScan) return Number(idScan[1]);
+  return null;
+}
+
+// MPD text → audio representations: [{ id, codec, mimeType, container,
+// bandwidth, sampleRate, channels, bitDepth, initializationUrl }]. Video sets
+// are excluded; audio attributes inherit from the AdaptationSet when the
+// Representation omits them (per DASH). The initialization URL is the
+// SegmentTemplate/SegmentList entry with $RepresentationID$/$Bandwidth$
+// substituted, resolved against BaseURL — it is how the captured init
+// segments pair back to representations.
+function mpdAudioRepresentations(xml, mpdUrl) {
+  const text = String(xml || '');
+  if (!text || !/<Representation/i.test(text)) return [];
+  let base = String(mpdUrl || '');
+  const baseMatch = text.match(/<BaseURL[^>]*>([^<]*)<\/BaseURL>/i);
+  if (baseMatch) {
+    try { base = new URL(decodeXmlEntities(baseMatch[1].trim()), mpdUrl || undefined).toString(); } catch (e) { /* keep the mpd url */ }
+  }
+  const resolve = (rel, from) => {
+    try { return new URL(rel, from || undefined).toString(); } catch (e) { return null; }
+  };
+  const reps = [];
+  for (const set of text.split(/<AdaptationSet\b/i).slice(1)) {
+    const setTagEnd = set.indexOf('>');
+    if (setTagEnd === -1) continue;
+    const setAttrs = xmlAttrMap(set.slice(0, setTagEnd));
+    const firstRepAt = set.indexOf('<Representation');
+    const setScope = firstRepAt === -1 ? set : set.slice(0, firstRepAt);
+    // AdaptationSet-level SegmentTemplate initialization / SegmentList
+    // Initialization / AudioChannelConfiguration apply to every rep in the set.
+    const setInitTemplate =
+      decodeXmlEntities((setScope.match(/<SegmentTemplate[^>]*\binitialization\s*=\s*"([^"]*)"/i) || [])[1] || '') ||
+      decodeXmlEntities((setScope.match(/<Initialization[^>]*\bsourceURL\s*=\s*"([^"]*)"/i) || [])[1] || '') ||
+      null;
+    const setChannels = Number((setScope.match(/<AudioChannelConfiguration[^>]*\bvalue\s*=\s*"(\d+)"/i) || [])[1]) || null;
+    for (const part of set.split(/<Representation\b/i).slice(1)) {
+      const tagEnd = part.indexOf('>');
+      if (tagEnd === -1) continue;
+      const attrs = xmlAttrMap(part.slice(0, tagEnd));
+      const repClose = part.indexOf('</Representation>');
+      const repScope = repClose === -1 ? part : part.slice(0, repClose);
+      const mimeType = attrs.mimeType || setAttrs.mimeType || null;
+      const codec = attrs.codecs || setAttrs.codecs || null;
+      const isVideo = /^video\//i.test(String(mimeType || '')) || /^(avc|hev|hvc|av01)/i.test(String(codec || ''));
+      if (isVideo) continue;
+      if (mimeType && !/^audio\//i.test(mimeType)) continue;
+      const repBaseMatch = repScope.match(/<BaseURL[^>]*>([^<]*)<\/BaseURL>/i);
+      let repBase = base;
+      if (repBaseMatch) {
+        const resolved = resolve(decodeXmlEntities(repBaseMatch[1].trim()), base);
+        if (resolved) repBase = resolved;
+      }
+      const initTemplate =
+        decodeXmlEntities((repScope.match(/<SegmentTemplate[^>]*\binitialization\s*=\s*"([^"]*)"/i) || [])[1] || '') ||
+        decodeXmlEntities((repScope.match(/<Initialization[^>]*\bsourceURL\s*=\s*"([^"]*)"/i) || [])[1] || '') ||
+        setInitTemplate;
+      let initializationUrl = null;
+      if (initTemplate && repBase) {
+        const substituted = String(initTemplate)
+          .replace(/\$RepresentationID\$/g, String(attrs.id || ''))
+          .replace(/\$Bandwidth\$/g, String(attrs.bandwidth || ''));
+        initializationUrl = resolve(substituted, repBase);
+      }
+      const channels = Number((repScope.match(/<AudioChannelConfiguration[^>]*\bvalue\s*=\s*"(\d+)"/i) || [])[1]) || setChannels;
+      reps.push({
+        id: attrs.id || null,
+        codec: codec || null,
+        mimeType: mimeType || null,
+        container: mimeType ? String(mimeType.split('/')[1] || '').toLowerCase() || null : null,
+        bandwidth: Number(attrs.bandwidth) || null,
+        sampleRate: Number(attrs.audioSamplingRate) || Number(setAttrs.audioSamplingRate) || null,
+        channels: channels || null,
+        bitDepth: mpdBitDepthHint(attrs, repScope) || mpdBitDepthHint(setAttrs, setScope),
+        initializationUrl
+      });
+    }
+  }
+  return reps;
+}
+
+// FLAC-in-ISOBMFF init segments carry STREAMINFO in a `dfla` box — the same
+// bytes the decoder reads, so this is the authoritative sample rate / bit
+// depth / channels for the delivered stream. ISOBMFF boxes nest, so scan for
+// the `dfla` fourcc instead of walking the box tree, and let the STREAMINFO
+// sanity checks reject a coincidental byte sequence.
+function flacStreamInfo(s) {
+  const sampleRate = (s[10] << 12) | (s[11] << 4) | (s[12] >> 4);
+  const channels = ((s[12] >> 1) & 0x07) + 1;
+  const bits = (((s[12] & 0x01) << 4) | (s[13] >> 4)) + 1;
+  const info = { codec: 'fLaC' };
+  if (sampleRate >= 8000 && sampleRate <= 768000) info.sampleRate = sampleRate;
+  if (channels >= 1 && channels <= 8) info.channels = channels;
+  if (bits >= 8 && bits <= 32) info.bitDepth = bits;
+  return (info.sampleRate && info.bitDepth) ? info : null;
+}
+
+function flacStreamInfoFromInit(data) {
+  try {
+    const b = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    if (!b || b.length < 42 || b.length > 262144) return null;
+    // The FLAC specific box is 'dfla' per the FLAC-in-ISOBMFF spec, but
+    // Amazon's muxer writes 'dfLa' (observed live, 2026-10-15: an enca entry
+    // whose frma is 'fLaC' carrying the box as 64 66 4C 61). Scan both
+    // spellings — the box nests inside stsd/enca, so scan for the fourcc
+    // rather than walking the box tree, and let the STREAMINFO sanity checks
+    // reject a coincidental byte sequence.
+    for (const fourcc of ['dfla', 'dfLa']) {
+      let pos = 0;
+      while (pos < b.length) {
+        const at = b.indexOf(fourcc, pos, 'utf8');
+        if (at === -1) break;
+        pos = at + 1;
+        const info = flacStreamInfoAt(b, at);
+        if (info) return info;
+      }
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// dfla is a FullBox: 4 version/flags bytes, then the FLAC metadata block
+// (4-byte block header + 34-byte STREAMINFO). Tolerate a muxer that omits the
+// FullBox bytes.
+function flacStreamInfoAt(b, at) {
+  for (const blockHeaderAt of [at + 8, at + 4]) {
+    // With the metadata block header…
+    if (blockHeaderAt + 38 <= b.length) {
+      const blockType = b[blockHeaderAt] & 0x7f;
+      const blockLen = (b[blockHeaderAt + 1] << 16) | (b[blockHeaderAt + 2] << 8) | b[blockHeaderAt + 3];
+      if (blockType === 0 && blockLen === 34) {
+        const info = flacStreamInfo(b.subarray(blockHeaderAt + 4, blockHeaderAt + 38));
+        if (info) return info;
+      }
+    }
+    // …or bare STREAMINFO right there.
+    if (blockHeaderAt + 34 <= b.length) {
+      const info = flacStreamInfo(b.subarray(blockHeaderAt, blockHeaderAt + 34));
+      if (info) return info;
+    }
+  }
+  return null;
+}
+
+// Pair captured init segments with representations: exact URL match first (a
+// URL-matched init read the actual init segment for that representation, so
+// its STREAMINFO is authoritative over MPD attributes); otherwise the common
+// single-representation pairing fills only missing fields.
+function attachInitStreamInfo(reps, inits) {
+  const list = (Array.isArray(reps) ? reps : []).map(r => ({ ...r }));
+  const initList = (Array.isArray(inits) ? inits : []).filter(i => i && i.sampleRate);
+  if (!initList.length) return list;
+  const used = new Set();
+  const apply = (rep, init, authoritative) => {
+    used.add(init);
+    if (authoritative) {
+      if (init.sampleRate) rep.sampleRate = init.sampleRate;
+      if (init.bitDepth) rep.bitDepth = init.bitDepth;
+      if (init.channels) rep.channels = init.channels;
+    } else {
+      rep.sampleRate = rep.sampleRate || init.sampleRate;
+      rep.bitDepth = rep.bitDepth || init.bitDepth || null;
+      rep.channels = rep.channels || init.channels || null;
+    }
+    if (!rep.codec && init.codec) rep.codec = init.codec;
+  };
+  const sameUrl = (a, b) => {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    try { return new URL(a).origin + new URL(a).pathname === new URL(b).origin + new URL(b).pathname; } catch (e) { return false; }
+  };
+  for (const rep of list) {
+    if (!rep.initializationUrl) continue;
+    const hit = initList.find(i => !used.has(i) && i.url && sameUrl(i.url, rep.initializationUrl));
+    if (hit) apply(rep, hit, true);
+  }
+  const unused = initList.filter(i => !used.has(i));
+  if (unused.length === 1) {
+    const flacReps = list.filter(r => !r.bitDepth && /flac/i.test(String(r.codec || '')));
+    if (flacReps.length === 1) apply(flacReps[0], unused[0], false);
+    else if (list.length === 1) apply(list[0], unused[0], false);
+  }
+  return list;
+}
+
+// Which representation is playing? The one whose bandwidth best matches the
+// measured bitrate when there is a ladder to choose from; otherwise the
+// single/richest one.
+function pickMpdRepresentation(reps, kbps) {
+  const list = (Array.isArray(reps) ? reps : []).filter(r => r && (r.codec || r.sampleRate || r.bitDepth));
+  if (!list.length) return null;
+  const withBw = (kbps > 0) ? list.filter(r => typeof r.bandwidth === 'number' && r.bandwidth > 0) : [];
+  if (withBw.length) {
+    // @bandwidth is bits per second; the measured kbps is kilobits.
+    let best = withBw[0];
+    let bestDist = Infinity;
+    for (const r of withBw) {
+      const d = Math.abs(Math.log((r.bandwidth / 1000) / kbps));
+      if (d < bestDist) { bestDist = d; best = r; }
+    }
+    return best;
+  }
+  const score = (r) => (r.bitDepth ? 2 : 0) + (r.sampleRate ? 1 : 0);
+  return list.reduce((a, b) => (score(b) > score(a) ? b : a));
+}
+
+// Amazon's tier vocabulary, derived from the stream's measured facts: lossy →
+// SD, FLAC (or ALAC) up to 16-bit/48 kHz → HD, anything above → Ultra HD.
+function amazonStreamTier({ codec, sampleRate, bitDepth } = {}) {
+  const c = String(codec || '').toLowerCase();
+  if (!c) return null;
+  const lossless = c.includes('flac') || c.includes('alac');
+  if (!lossless) return 'SD';
+  if ((bitDepth && bitDepth >= 24) || (sampleRate && sampleRate > 48000)) return 'Ultra HD';
+  return 'HD';
+}
+
+// The final stream-quality record (stream-quality.js contract): the measured
+// bitrate plus whatever the captured manifest/init segment could prove. Fields
+// are attached only when present — no fabricated FLAC/HD labels.
+function amazonStreamQualityRecord(kbps, info) {
+  const bitrate = Math.round(Number(kbps)) || null;
+  if (!bitrate) return null;
+  const rec = { bitrate, origin: 'measured' };
+  const i = info || {};
+  if (i.codec) rec.codec = i.codec;
+  if (i.container) rec.container = i.container;
+  if (i.sampleRate) rec.sampleRate = i.sampleRate;
+  if (i.bitDepth) rec.bitDepth = i.bitDepth;
+  if (i.channels) rec.channels = i.channels;
+  const tier = amazonStreamTier(i);
+  if (tier) rec.tier = tier;
+  return rec;
+}
+
+// Passive network capture for the DASH manifest and the init segments,
+// installed in the page world at document-start (before hornet's scripts),
+// covering both the fetch and XHR paths whichever loader the player uses. It
+// must never alter request behavior: wrappers call straight through, all
+// observation is wrapped in try/catch, and responses are only ever cloned.
+// The captured caps are read by the main process after playback confirms —
+// no webRequest listeners (they are single-slot per method and would clobber
+// the playlist gql capture), no refetch of signed CDN URLs.
+//
+// Self-contained by design: serialized with .toString() and evaluated inside
+// the Amazon page (world 0), so it must not close over anything in this
+// module. A literal copy lives in amazon-player-preload.js; the preload test
+// enforces behavioral parity between the copies.
+function installAmazonStreamCapture(scope) {
+  if (!scope || scope.__parachordStreamCapture) return;
+  scope.__parachordStreamCapture = true;
+  const caps = { manifests: [], inits: [] };
+  scope.__parachordStreamCaps = caps;
+  const MAX_MANIFESTS = 4;
+  const MAX_MANIFEST_CHARS = 524288;
+  const MAX_INITS = 8;
+  const MAX_INIT_BYTES = 65536;
+  const isManifest = (url) => /\.mpd(?:[?#]|$)/i.test(String(url || ''));
+  const isInitCandidate = (url) => /\.(?:mp4|m4s|cmfv|cmfa|cmf|dash)(?:[?#]|$)/i.test(String(url || ''));
+  const recordManifest = (url, text) => {
+    try {
+      if (!text || caps.manifests.length >= MAX_MANIFESTS) return;
+      caps.manifests.push({ url: String(url), text: String(text).slice(0, MAX_MANIFEST_CHARS) });
+    } catch (e) {}
+  };
+  const recordInit = (url, buf) => {
+    try {
+      const n = (buf && (buf.byteLength || buf.size)) || 0;
+      if (!n || n > MAX_INIT_BYTES || caps.inits.length >= MAX_INITS) return;
+      caps.inits.push({ url: String(url), bytes: buf });
+    } catch (e) {}
+  };
+  const observeResponse = (url, res) => {
+    try {
+      if (!res || typeof res.clone !== 'function') return;
+      if (isManifest(url)) {
+        res.clone().text().then((t) => recordManifest(url, t), () => {});
+      } else if (isInitCandidate(url)) {
+        const len = Number(res.headers && res.headers.get && res.headers.get('content-length')) || 0;
+        if (!len || len <= MAX_INIT_BYTES) res.clone().arrayBuffer().then((b) => recordInit(url, b), () => {});
+      }
+    } catch (e) {}
+  };
+  const urlOf = (input) => {
+    try {
+      if (typeof input === 'string') return input;
+      if (input && typeof input.url === 'string') return input.url;
+    } catch (e) {}
+    return '';
+  };
+  try {
+    const origFetch = scope.fetch;
+    if (typeof origFetch === 'function' && !origFetch.__parachordWrapped) {
+      const wrappedFetch = function () {
+        const url = urlOf(arguments[0]);
+        const p = origFetch.apply(this, arguments);
+        try {
+          if (p && typeof p.then === 'function' && (isManifest(url) || isInitCandidate(url))) {
+            p.then((res) => { observeResponse(url, res); return res; }, () => {});
+          }
+        } catch (e) {}
+        return p;
+      };
+      try { Object.setPrototypeOf(wrappedFetch, origFetch); } catch (e) {}
+      try { Object.defineProperty(wrappedFetch, '__parachordWrapped', { value: true }); } catch (e) {}
+      scope.fetch = wrappedFetch;
+    }
+  } catch (e) {}
+  try {
+    const OrigXHR = scope.XMLHttpRequest;
+    if (typeof OrigXHR === 'function' && !OrigXHR.__parachordWrapped) {
+      const WrappedXHR = function () {
+        const xhr = new OrigXHR();
+        let reqUrl = '';
+        try {
+          const openOrig = xhr.open;
+          if (typeof openOrig === 'function') {
+            xhr.open = function () {
+              try { reqUrl = String(arguments[1] || ''); } catch (e) {}
+              return openOrig.apply(this, arguments);
+            };
+          }
+        } catch (e) {}
+        try {
+          xhr.addEventListener('load', function () {
+            try {
+              const rt = xhr.responseType;
+              if (rt === '' || rt === 'text') {
+                if (isManifest(reqUrl)) recordManifest(reqUrl, xhr.responseText);
+              } else if (rt === 'arraybuffer' || rt === 'blob') {
+                if (isInitCandidate(reqUrl)) recordInit(reqUrl, xhr.response);
+              }
+            } catch (e) {}
+          });
+        } catch (e) {}
+        return xhr;
+      };
+      try { WrappedXHR.prototype = OrigXHR.prototype; } catch (e) {}
+      try {
+        Object.keys(OrigXHR).forEach((k) => {
+          try { if (!(k in WrappedXHR)) WrappedXHR[k] = OrigXHR[k]; } catch (e) {}
+        });
+      } catch (e) {}
+      try { Object.defineProperty(WrappedXHR, '__parachordWrapped', { value: true }); } catch (e) {}
+      scope.XMLHttpRequest = WrappedXHR;
+    }
+  } catch (e) {}
+}
+
 // castlabs components.status() shape is not a documented contract. Read only
 // the status fields instead of substring-matching the whole JSON blob - an
 // unrelated "failed" elsewhere in the payload (a URL, a component name) used
@@ -473,6 +909,14 @@ module.exports = {
   playerDurationMs,
   decidePollAdvance,
   shouldPollFaster,
+  measuredStreamKbps,
+  mpdAudioRepresentations,
+  flacStreamInfoFromInit,
+  attachInitStreamInfo,
+  pickMpdRepresentation,
+  amazonStreamTier,
+  amazonStreamQualityRecord,
+  installAmazonStreamCapture,
   cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
@@ -497,5 +941,7 @@ module.exports = {
   NEAR_END_MS,
   WRAP_POSITION_MS,
   FAST_POLL_REMAINING_MS,
-  EMPTY_WHILE_PAUSED_POLL_LIMIT
+  EMPTY_WHILE_PAUSED_POLL_LIMIT,
+  QUALITY_PAIR_WINDOW,
+  QUALITY_MIN_PAIRS
 };

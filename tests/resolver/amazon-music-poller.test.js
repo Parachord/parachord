@@ -33,6 +33,16 @@ function makePlayer(states, { haltImpl } = {}) {
 
 const playing = (positionMs, durationMs = 180000) => ({ state: 'PLAYING', asin: 'B1', positionMs, durationMs });
 
+// A PLAYING read that carries the media element's audio decode counter
+// (bytes = positionMs × kbps / 8 — the steady pair the measurement pairs up).
+const playingWithBytes = (positionMs, kbps = 850, asin = 'B1') => ({
+  state: 'PLAYING',
+  asin,
+  positionMs,
+  durationMs: 180000,
+  audioDecodedBytes: Math.round((positionMs * kbps) / 8)
+});
+
 describe('Amazon Music poller', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -174,5 +184,106 @@ describe('Amazon Music poller', () => {
     poller.stop();
     poller.stop();
     expect(poller.interval).toBeNull();
+  });
+
+  test('progress events carry the measured stream quality once steady pairs converge', async () => {
+    const states = [];
+    for (let i = 0; i < 7; i++) states.push(playingWithBytes(2000 + i * 2000));
+    const { poller, sends } = makePlayer(states);
+    const started = poller.start({ asin: 'B1', duration: 180 });
+    await jest.advanceTimersByTimeAsync(1200 + 6 * 2000); // 7 polls at the 2s cadence
+    await started;
+
+    const progress = sends.filter(s => s.channel === 'amazonmusic-polling-progress');
+    expect(progress.length).toBeGreaterThanOrEqual(7);
+    // Not a measurement before enough steady pairs exist...
+    expect(progress[5].data.streamQuality).toBeUndefined();
+    // ...then the converged median, claiming nothing beyond the bitrate
+    // (the element exposes no codec or sample rate to claim).
+    expect(progress[6].data.streamQuality).toEqual({ bitrate: 850, origin: 'measured' });
+    expect(progress[6].data.asin).toBe('B1');
+  });
+
+  test('progress events carry no stream quality when the element exposes no decode counter', async () => {
+    const states = [];
+    for (let i = 0; i < 7; i++) states.push(playing(2000 + i * 2000));
+    const { poller, sends } = makePlayer(states);
+    const started = poller.start({ asin: 'B1', duration: 180 });
+    await jest.advanceTimersByTimeAsync(1200 + 6 * 2000);
+    await started;
+
+    const progress = sends.filter(s => s.channel === 'amazonmusic-polling-progress');
+    expect(progress.length).toBeGreaterThanOrEqual(7);
+    for (const p of progress) expect(p.data.streamQuality).toBeUndefined();
+  });
+
+  test('the record upgrades with the captured manifest params and the Amazon tier', async () => {
+    const states = [];
+    for (let i = 0; i < 7; i++) states.push(playingWithBytes(2000 + i * 2000, 1478));
+    const sends = [];
+    const player = {
+      haltPlayback: jest.fn(async () => {}),
+      async getPlaybackState() { const next = states.length > 1 ? states.shift() : states[0]; return next; },
+      streamInfo: () => ({ codec: 'fLaC', container: 'mp4', sampleRate: 48000, bitDepth: 24, channels: 2 })
+    };
+    const poller = createAmazonMusicPoller({ player, send: (c, d) => sends.push({ channel: c, data: d }) });
+    const started = poller.start({ asin: 'B1', duration: 180 });
+    await jest.advanceTimersByTimeAsync(1200 + 6 * 2000);
+    await started;
+
+    const progress = sends.filter(s => s.channel === 'amazonmusic-polling-progress');
+    expect(progress[6].data.streamQuality).toEqual({
+      tier: 'Ultra HD',
+      codec: 'fLaC',
+      container: 'mp4',
+      bitrate: 1478,
+      sampleRate: 48000,
+      bitDepth: 24,
+      channels: 2,
+      origin: 'measured'
+    });
+  });
+
+  test('a streamInfo that throws degrades to the bitrate-only record', async () => {
+    const states = [];
+    for (let i = 0; i < 7; i++) states.push(playingWithBytes(2000 + i * 2000, 850));
+    const sends = [];
+    const player = {
+      haltPlayback: jest.fn(async () => {}),
+      async getPlaybackState() { const next = states.length > 1 ? states.shift() : states[0]; return next; },
+      streamInfo: () => { throw new Error('boom'); }
+    };
+    const poller = createAmazonMusicPoller({ player, send: (c, d) => sends.push({ channel: c, data: d }) });
+    const started = poller.start({ asin: 'B1', duration: 180 });
+    await jest.advanceTimersByTimeAsync(1200 + 6 * 2000);
+    await started;
+
+    const progress = sends.filter(s => s.channel === 'amazonmusic-polling-progress');
+    expect(progress[6].data.streamQuality).toEqual({ bitrate: 850, origin: 'measured' });
+  });
+
+  test('a new track starts a fresh measurement — the previous track\'s converged bitrate does not carry over', async () => {
+    const states = [];
+    for (let i = 0; i < 7; i++) states.push(playingWithBytes(2000 + i * 2000)); // track A converges at 850
+    states.push(playingWithBytes(2000, 320, 'B2'));                              // track B restarts the playhead
+    states.push(playingWithBytes(4000, 320, 'B2'));
+    const { poller, sends } = makePlayer(states);
+
+    const a = poller.start({ asin: 'B1', duration: 180 });
+    await jest.advanceTimersByTimeAsync(1200 + 6 * 2000); // A's 7 polls
+    await a;
+    const progressA = sends.filter(s => s.channel === 'amazonmusic-polling-progress');
+    expect(progressA[6].data.streamQuality).toEqual({ bitrate: 850, origin: 'measured' });
+
+    poller.stop();
+    const b = poller.start({ asin: 'B2', duration: 180 });
+    await jest.advanceTimersByTimeAsync(1200 + 2000); // B's first two polls
+    await b;
+    const progressB = sends.filter(s => s.channel === 'amazonmusic-polling-progress').slice(7);
+    expect(progressB.length).toBeGreaterThanOrEqual(2);
+    // Two reads of track B are not a measurement — and A's samples must not
+    // hand B a ready-made 850 kbps record on its first poll.
+    expect(progressB[0].data.streamQuality).toBeUndefined();
+    expect(progressB[1].data.streamQuality).toBeUndefined();
   });
 });

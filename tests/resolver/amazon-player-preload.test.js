@@ -15,13 +15,23 @@
 
 const fs = require('fs');
 const path = require('path');
-const { installAmazonRequireTrap } = require('../../amazon-music-logic');
+const { installAmazonRequireTrap, installAmazonStreamCapture } = require('../../amazon-music-logic');
 
 const src = fs.readFileSync(path.join(__dirname, '../../amazon-player-preload.js'), 'utf8');
 
 function inlinedTrapSource() {
   const m = src.match(/function installAmazonRequireTrap\(scope\) \{[\s\S]*?\n\}/);
   return m ? m[0] : null;
+}
+
+function inlinedCaptureSource() {
+  const m = src.match(/function installAmazonStreamCapture\(scope\) \{[\s\S]*?\n\}/);
+  return m ? m[0] : null;
+}
+
+function inlinedCapture() {
+  const text = inlinedCaptureSource();
+  return text ? new Function(`return (${text})`)() : null;
 }
 
 function inlinedTrap() {
@@ -105,6 +115,87 @@ function runTrapScenarios(trap) {
   return out;
 }
 
+// Scenario battery for installAmazonStreamCapture, same pattern as the trap
+// battery above: each scenario returns observable state so the two copies can
+// be diffed. Runs against the module's copy in amazon-music-logic.test.js too.
+async function runCaptureScenarios(capture) {
+  const out = [];
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  // 1. a fetch-loaded manifest is captured via the cloned response text
+  {
+    const scope = {};
+    scope.fetch = async () => ({ clone: () => ({ text: () => Promise.resolve('<MPD/>') }), headers: { get: () => null } });
+    capture(scope);
+    await scope.fetch('https://cdn.example.com/a.mpd?sig=1');
+    await flush();
+    out.push(['fetch-manifest', scope.__parachordStreamCapture === true, JSON.stringify(scope.__parachordStreamCaps.manifests)]);
+  }
+
+  // 2. fetch passthrough hands back the original response object
+  {
+    const res = { clone: () => ({ text: () => Promise.resolve('') }), headers: { get: () => null } };
+    const scope = {};
+    scope.fetch = async () => res;
+    capture(scope);
+    const got = await scope.fetch('https://cdn.example.com/a.mpd');
+    out.push(['fetch-passthrough', got === res]);
+  }
+
+  // 3. a small init is captured; a media-sized response is not
+  {
+    const small = new ArrayBuffer(10);
+    const scope = {};
+    scope.fetch = async (input) => (String(input).endsWith('init.mp4')
+      ? { clone: () => ({ arrayBuffer: () => Promise.resolve(small) }), headers: { get: () => '10' } }
+      : { clone: () => ({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(9)) }), headers: { get: () => '900000' } });
+    capture(scope);
+    await scope.fetch('https://cdn.example.com/init.mp4');
+    await scope.fetch('https://cdn.example.com/seg.m4s');
+    await flush();
+    out.push(['fetch-init', scope.__parachordStreamCaps.inits.length, scope.__parachordStreamCaps.inits[0].bytes === small]);
+  }
+
+  // 4. XHR-loaded manifest + arraybuffer init; statics and instanceof survive
+  {
+    class FakeXHR {
+      constructor() { this.responseType = ''; this._l = {}; }
+      open(m, u) { this._u = u; }
+      addEventListener(t, fn) { (this._l[t] = this._l[t] || []).push(fn); }
+      fire() { (this._l.load || []).forEach((fn) => fn()); }
+    }
+    FakeXHR.UNSENT = 7;
+    const scope = { XMLHttpRequest: FakeXHR };
+    capture(scope);
+    const X = scope.XMLHttpRequest;
+    const x1 = new X();
+    x1.open('GET', 'https://cdn.example.com/b.mpd');
+    x1.responseText = '<MPD>xhr</MPD>';
+    x1.fire();
+    const x2 = new X();
+    x2.open('GET', 'https://cdn.example.com/i.m4s');
+    x2.responseType = 'arraybuffer';
+    const bytes = new ArrayBuffer(12);
+    x2.response = bytes;
+    x2.fire();
+    out.push(['xhr', X.UNSENT, x1 instanceof X, JSON.stringify(scope.__parachordStreamCaps.manifests), scope.__parachordStreamCaps.inits.length, scope.__parachordStreamCaps.inits[0].bytes === bytes]);
+  }
+
+  // 5. install is idempotent and a bare/absent scope is tolerated
+  {
+    const scope = {};
+    scope.fetch = async () => ({ clone: () => ({ text: () => Promise.resolve('') }), headers: { get: () => null } });
+    capture(scope);
+    const first = scope.fetch;
+    capture(scope);
+    capture({});
+    capture(null);
+    out.push(['idempotent', scope.fetch === first]);
+  }
+
+  return out;
+}
+
 describe('amazon-player-preload', () => {
   test('requires no local modules — sandboxed preloads cannot load them', () => {
     const localRequires = src.match(/require\(\s*['"]\./g) || [];
@@ -137,25 +228,48 @@ describe('amazon-player-preload', () => {
     expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
   });
 
+  test('the inlined stream capture is behaviorally identical to amazon-music-logic.js', async () => {
+    // Same rationale as the trap: Function.prototype.toString normalizes under
+    // the test transform, so parity is enforced behaviorally — the module's
+    // function and the inlined copy run the same scenario battery and must
+    // leave identical observable state.
+    const inlined = inlinedCapture();
+    expect(inlined).toBeInstanceOf(Function);
+    expect(await runCaptureScenarios(inlined)).toEqual(await runCaptureScenarios(installAmazonStreamCapture));
+  });
+
+  test('the inlined stream capture still records on its own', async () => {
+    const scope = {};
+    scope.fetch = async () => ({ clone: () => ({ text: () => Promise.resolve('<MPD/>') }), headers: { get: () => null } });
+    inlinedCapture()(scope);
+    await scope.fetch('https://cdn.example.com/manifest.mpd');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scope.__parachordStreamCaps.manifests).toEqual([
+      { url: 'https://cdn.example.com/manifest.mpd', text: '<MPD/>' }
+    ]);
+  });
+
   test('the page stub runs standalone and logs the canary', () => {
     const m = src.match(/const PAGE_STUB = `([\s\S]*?)`;$/m);
     expect(m).toBeTruthy();
     // The stub runs in the page world where window/document exist; give it
     // bare equivalents so a closure reference into the preload's scope (or a
     // typo) fails here instead of inside Amazon's page. The stored template
-    // references the trap via ${installAmazonRequireTrap.toString()} — splice
-    // the real source in the way the template literal itself does at runtime.
-    const stubBody = m[1].replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString());
+    // references the trap and capture via ${...toString()} — splice the real
+    // sources in the way the template literal itself does at runtime.
+    const stubBody = m[1]
+      .replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString())
+      .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString());
     const logs = [];
     const fakeWindow = { addEventListener: () => {} };
     const fakeDocument = { addEventListener: () => {} };
     const Document = function Document() {};
     const run = new Function(
       'window', 'document', 'Document', 'console',
-      `${stubBody}\nreturn [window.__parachordRequireTrap, typeof window.__r, typeof document.hidden === 'boolean'];`
+      `${stubBody}\nreturn [window.__parachordRequireTrap, typeof window.__r, typeof document.hidden === 'boolean', window.__parachordStreamCapture === true, !!window.__parachordStreamCaps];`
     );
     const result = run(fakeWindow, fakeDocument, Document, { log: logs.push.bind(logs) });
-    expect(result).toEqual([true, 'object', true]);
+    expect(result).toEqual([true, 'object', true, true, true]);
     expect(logs).toEqual(['[Amazon] Parachord preload stub active']);
   });
 });

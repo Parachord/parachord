@@ -25,7 +25,17 @@ const {
   playlistTrackFromGqlEdge,
   playlistFromGql,
   NEAR_END_MS,
-  EMPTY_WHILE_PAUSED_POLL_LIMIT
+  EMPTY_WHILE_PAUSED_POLL_LIMIT,
+  measuredStreamKbps,
+  QUALITY_MIN_PAIRS,
+  QUALITY_PAIR_WINDOW,
+  installAmazonStreamCapture,
+  mpdAudioRepresentations,
+  flacStreamInfoFromInit,
+  attachInitStreamInfo,
+  pickMpdRepresentation,
+  amazonStreamTier,
+  amazonStreamQualityRecord
 } = require('../../amazon-music-logic');
 
 describe('reportedPlaybackAsin', () => {
@@ -284,6 +294,423 @@ describe('pickTrackAsinFromIds', () => {
   });
 });
 
+// Samples as the poller records them: consecutive PLAYING reads of the
+// media element's decode counter. kbps over stepMs: 850 kbps at 2s pairs is
+// 212500 bytes per pair.
+const qualitySample = (wallMs, positionMs, bytes) => ({ wallMs, positionMs, bytes });
+const steadySamples = (count, { startWallMs = 0, startPositionMs = 0, startBytes = 0, stepMs = 2000, kbps = 850 } = {}) => {
+  const out = [];
+  for (let i = 0; i <= count; i++) {
+    out.push(qualitySample(
+      startWallMs + i * stepMs,
+      startPositionMs + i * stepMs,
+      startBytes + Math.round((kbps * stepMs / 8) * i)
+    ));
+  }
+  return out;
+};
+
+describe('measuredStreamKbps', () => {
+  test('steady 2s pairs measure the stream bitrate exactly', () => {
+    expect(measuredStreamKbps(steadySamples(QUALITY_MIN_PAIRS))).toBe(850);
+  });
+
+  test('fast-cadence 400ms pairs (the near-end interval) measure too', () => {
+    expect(measuredStreamKbps(steadySamples(QUALITY_MIN_PAIRS, { stepMs: 400, kbps: 320 }))).toBe(320);
+  });
+
+  test('needs several steady pairs before reporting — a couple of reads are not a measurement', () => {
+    expect(measuredStreamKbps(steadySamples(QUALITY_MIN_PAIRS - 1))).toBeNull();
+    expect(measuredStreamKbps(steadySamples(1))).toBeNull();
+    expect(measuredStreamKbps([])).toBeNull();
+    expect(measuredStreamKbps(null)).toBeNull();
+  });
+
+  test('the startup buffer-fill overshoot does not drag the median', () => {
+    // While the decoder's buffers fill, the first pairs read ~3-5x the true
+    // rate. The median window must land on the steady pairs.
+    const spiked = [
+      qualitySample(0, 0, 0),
+      qualitySample(2000, 2000, 1282500), // 5130 kbps
+      ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 2000, startPositionMs: 2000, startBytes: 1282500 })
+    ];
+    expect(measuredStreamKbps(spiked)).toBe(850);
+  });
+
+  test('a pair spanning a seek is not a measurement', () => {
+    const seeked = [
+      ...steadySamples(2),
+      qualitySample(8000, 90000, 425000), // forward seek: playhead jumped far past the wall clock
+      ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 8000, startPositionMs: 90000, startBytes: 425000 })
+    ];
+    expect(measuredStreamKbps(seeked)).toBe(850);
+  });
+
+  test('a pair spanning a pause or a stalled counter is not a measurement', () => {
+    // Pause: playhead frozen while the wall clock ran on.
+    const paused = [...steadySamples(2), qualitySample(8000, 4000, 425000), qualitySample(10000, 4000, 425000)];
+    expect(measuredStreamKbps(paused)).toBeNull();
+    // Stalled counter: nothing decoded in the window (bytes frozen).
+    const stalled = [...steadySamples(2), qualitySample(8000, 8000, 425000), qualitySample(10000, 10000, 425000)];
+    expect(measuredStreamKbps(stalled)).toBeNull();
+  });
+
+  test('absurd pair rates are transients, not the stream', () => {
+    // 24000 kbps is beyond anything Amazon delivers; under 16 kbps is not
+    // audio. Either way the pair is dropped, and without enough steady pairs
+    // there is no measurement at all.
+    const absurd = [
+      qualitySample(0, 0, 0),
+      qualitySample(2000, 2000, 6000000), // 24000 kbps
+      ...steadySamples(QUALITY_MIN_PAIRS - 2, { startWallMs: 2000, startPositionMs: 2000, startBytes: 6000000 })
+    ];
+    expect(measuredStreamKbps(absurd)).toBeNull();
+  });
+
+  test('the median window is bounded, so a quality change mid-track is tracked', () => {
+    // An ABR step mid-track: the early 320 kbps pairs age out of the window
+    // and the measurement follows the new rate once it dominates.
+    const shifted = [
+      ...steadySamples(2, { kbps: 320 }),
+      ...steadySamples(QUALITY_PAIR_WINDOW + 1, { startWallMs: 4000, startPositionMs: 4000, startBytes: 80000, kbps: 850 })
+    ];
+    expect(measuredStreamKbps(shifted)).toBe(850);
+  });
+
+  test('a dropped poll does not pair across the gap', () => {
+    // Wall delta 6000ms exceeds the pair window — skip rather than average
+    // across whatever happened in between.
+    const gapped = [
+      ...steadySamples(2),
+      qualitySample(10000, 10000, 1062500),
+      ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 10000, startPositionMs: 10000, startBytes: 1062500 })
+    ];
+    expect(measuredStreamKbps(gapped)).toBe(850);
+  });
+
+  test('reads without a decode counter never form pairs', () => {
+    const counterless = [
+      qualitySample(0, 0, null),
+      qualitySample(2000, 2000, null),
+      ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 4000, startPositionMs: 4000 })
+    ];
+    expect(measuredStreamKbps(counterless)).toBe(850);
+  });
+});
+
+describe('installAmazonStreamCapture', () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  const fakeResponse = ({ text = '', contentLength = null, arrayBuffer = null }) => ({
+    clone: () => ({
+      text: () => Promise.resolve(text),
+      arrayBuffer: () => Promise.resolve(arrayBuffer)
+    }),
+    headers: { get: (name) => (String(name).toLowerCase() === 'content-length' ? (contentLength == null ? null : String(contentLength)) : null) }
+  });
+
+  const fetchScope = (responseFor) => {
+    const scope = {};
+    scope.fetch = async (input) => {
+      const url = typeof input === 'string' ? input : (input && input.url);
+      const res = responseFor(url);
+      scope.__lastResponse = res;
+      return res;
+    };
+    return scope;
+  };
+
+  test('captures a fetch-loaded manifest via the cloned response text', async () => {
+    const scope = fetchScope(() => fakeResponse({ text: '<MPD>flac</MPD>' }));
+    installAmazonStreamCapture(scope);
+    await scope.fetch('https://cdn.example.com/a.mpd?sig=1');
+    await flush();
+    expect(scope.__parachordStreamCaps.manifests).toEqual([
+      { url: 'https://cdn.example.com/a.mpd?sig=1', text: '<MPD>flac</MPD>' }
+    ]);
+  });
+
+  test('fetch passthrough is untouched: the caller gets the original response object', async () => {
+    const res = fakeResponse({ text: '<MPD>x</MPD>' });
+    const scope = fetchScope(() => res);
+    installAmazonStreamCapture(scope);
+    const out = await scope.fetch('https://cdn.example.com/a.mpd');
+    expect(out).toBe(res);
+  });
+
+  test('captures small init segments and drops media-sized responses', async () => {
+    const small = new ArrayBuffer(1200);
+    const scope = fetchScope((url) => (
+      url === 'https://cdn.example.com/init.mp4' ? fakeResponse({ contentLength: 1200, arrayBuffer: small })
+        : url === 'https://cdn.example.com/seg1.m4s' ? fakeResponse({ contentLength: 812344 })
+          : fakeResponse({ arrayBuffer: small }) // no content-length: decided after the read
+    ));
+    installAmazonStreamCapture(scope);
+    await scope.fetch('https://cdn.example.com/init.mp4');
+    await scope.fetch('https://cdn.example.com/seg1.m4s'); // media segment: skipped by content-length
+    await scope.fetch('https://cdn.example.com/unknown.bin'); // not a manifest/init URL: ignored
+    await flush();
+    expect(scope.__parachordStreamCaps.inits).toEqual([
+      { url: 'https://cdn.example.com/init.mp4', bytes: small }
+    ]);
+  });
+
+  test('an XHR-loaded manifest and init segment are captured on load', () => {
+    class FakeXHR {
+      constructor() { this.responseType = ''; this._listeners = {}; }
+      open(method, url) { this._url = url; }
+      addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); }
+      fire() { (this._listeners.load || []).forEach((fn) => fn()); }
+    }
+    FakeXHR.UNSENT = 0;
+    FakeXHR.OPENED = 1;
+    const scope = { XMLHttpRequest: FakeXHR };
+    installAmazonStreamCapture(scope);
+    const XHR = scope.XMLHttpRequest;
+    expect(XHR.UNSENT).toBe(0); // statics survive the wrap
+    const manifestXhr = new XHR();
+    expect(manifestXhr).toBeInstanceOf(XHR);
+    manifestXhr.open('GET', 'https://cdn.example.com/b.mpd');
+    manifestXhr.responseText = '<MPD>xhr</MPD>';
+    manifestXhr.fire();
+    const initXhr = new XHR();
+    initXhr.open('GET', 'https://cdn.example.com/i.m4s');
+    initXhr.responseType = 'arraybuffer';
+    const bytes = new ArrayBuffer(800);
+    initXhr.response = bytes;
+    initXhr.fire();
+    expect(scope.__parachordStreamCaps.manifests).toEqual([
+      { url: 'https://cdn.example.com/b.mpd', text: '<MPD>xhr</MPD>' }
+    ]);
+    expect(scope.__parachordStreamCaps.inits).toEqual([
+      { url: 'https://cdn.example.com/i.m4s', bytes }
+    ]);
+  });
+
+  test('install is idempotent and a bare scope is tolerated', () => {
+    const scope = fetchScope(() => fakeResponse({ text: '<MPD/>' }));
+    installAmazonStreamCapture(scope);
+    const wrapped = scope.fetch;
+    installAmazonStreamCapture(scope);
+    expect(scope.fetch).toBe(wrapped);
+    // A scope with no fetch/XHR at all (the preload stub's test stub) must not throw.
+    expect(() => installAmazonStreamCapture({})).not.toThrow();
+    expect(() => installAmazonStreamCapture(null)).not.toThrow();
+  });
+});
+
+const ladderMpd = `<?xml version="1.0" encoding="utf-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+  <BaseURL>https://cdn.example.com/dash/</BaseURL>
+  <Period>
+    <AdaptationSet contentType="audio" mimeType="audio/mp4">
+      <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>
+      <SegmentTemplate timescale="44100" initialization="$RepresentationID$/init.mp4?token=a&amp;b" media="$RepresentationID$/$Number$.m4s"/>
+      <Representation id="B0HD441" codecs="fLaC" bandwidth="850000" audioSamplingRate="44100"/>
+      <Representation id="B0UHD48-24bit" codecs="fLaC" bandwidth="1478000" audioSamplingRate="48000"/>
+    </AdaptationSet>
+    <AdaptationSet contentType="video" mimeType="video/mp4">
+      <Representation id="v1" codecs="avc1.640028" bandwidth="2000000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+
+describe('mpdAudioRepresentations', () => {
+  test('parses the audio ladder and excludes video sets', () => {
+    const reps = mpdAudioRepresentations(ladderMpd, 'https://cdn.example.com/manifest.mpd');
+    expect(reps).toHaveLength(2);
+    expect(reps[0]).toMatchObject({
+      id: 'B0HD441',
+      codec: 'fLaC',
+      container: 'mp4',
+      bandwidth: 850000,
+      sampleRate: 44100,
+      channels: 2,
+      initializationUrl: 'https://cdn.example.com/dash/B0HD441/init.mp4?token=a&b'
+    });
+    expect(reps.some(r => r.id === 'v1')).toBe(false);
+  });
+
+  test('a representation id naming the depth is picked up as a bit-depth hint', () => {
+    const reps = mpdAudioRepresentations(ladderMpd, 'https://cdn.example.com/manifest.mpd');
+    expect(reps.find(r => r.id === 'B0HD441').bitDepth).toBeNull();
+    expect(reps.find(r => r.id === 'B0UHD48-24bit').bitDepth).toBe(24);
+  });
+
+  test('audio attributes inherit from the AdaptationSet when the representation omits them', () => {
+    const xml = `<MPD><Period>
+      <AdaptationSet mimeType="audio/mp4" codecs="fLaC" audioSamplingRate="44100" bitDepth="16">
+        <Representation id="r1" bandwidth="900000"/>
+      </AdaptationSet>
+    </Period></MPD>`;
+    const reps = mpdAudioRepresentations(xml, 'https://x/m.mpd');
+    expect(reps[0]).toMatchObject({ codec: 'fLaC', container: 'mp4', sampleRate: 44100, bitDepth: 16, bandwidth: 900000 });
+  });
+
+  test('SegmentList Initialization sourceURL is an init URL too', () => {
+    const xml = `<MPD><Period>
+      <AdaptationSet mimeType="audio/mp4">
+        <Representation id="a1" codecs="mp4a.40.2" bandwidth="256000" audioSamplingRate="44100">
+          <SegmentList timescale="44100" duration="196608">
+            <Initialization sourceURL="https://cdn2.example.com/init.mp4"/>
+          </SegmentList>
+        </Representation>
+      </AdaptationSet>
+    </Period></MPD>`;
+    const reps = mpdAudioRepresentations(xml, 'https://x/m.mpd');
+    expect(reps[0].initializationUrl).toBe('https://cdn2.example.com/init.mp4');
+  });
+
+  test('garbage in, empty list out', () => {
+    expect(mpdAudioRepresentations('', 'https://x/m.mpd')).toEqual([]);
+    expect(mpdAudioRepresentations('not xml at all', 'https://x/m.mpd')).toEqual([]);
+    expect(mpdAudioRepresentations(null, null)).toEqual([]);
+  });
+});
+
+describe('flacStreamInfoFromInit', () => {
+  const isoBox = (type, payload) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(payload.length + 8, 0);
+    head.write(type, 4, 'ascii');
+    return Buffer.concat([head, payload]);
+  };
+  const streaminfo = ({ sampleRate, bitDepth, channels }) => {
+    const s = Buffer.alloc(34);
+    s[10] = (sampleRate >> 12) & 0xff;
+    s[11] = (sampleRate >> 4) & 0xff;
+    s[12] = ((sampleRate & 0x0f) << 4) | (((channels - 1) & 0x07) << 1) | (((bitDepth - 1) >> 4) & 0x01);
+    s[13] = ((bitDepth - 1) & 0x0f) << 4;
+    return s;
+  };
+  // A dfla box: FullBox version/flags, FLAC block header (type 0, length 34),
+  // then STREAMINFO — nested the way a real init segment carries it.
+  const dflaBox = (fourcc, opts) => isoBox(fourcc, Buffer.concat([
+    Buffer.alloc(4),
+    Buffer.from([0x00, 0x00, 0x00, 34]),
+    streaminfo(opts)
+  ]));
+
+  test('reads STREAMINFO from the nested dfla box (spec spelling)', () => {
+    const init = isoBox('moov', isoBox('trak', dflaBox('dfla', { sampleRate: 48000, bitDepth: 24, channels: 2 })));
+    expect(flacStreamInfoFromInit(init))
+      .toEqual({ codec: 'fLaC', sampleRate: 48000, channels: 2, bitDepth: 24 });
+    const hd = isoBox('moov', isoBox('trak', dflaBox('dfla', { sampleRate: 44100, bitDepth: 16, channels: 2 })));
+    expect(flacStreamInfoFromInit(hd))
+      .toEqual({ codec: 'fLaC', sampleRate: 44100, channels: 2, bitDepth: 16 });
+  });
+
+  test("reads STREAMINFO from Amazon's muxer spelling 'dfLa' inside an encrypted audio entry", () => {
+    // Observed live (2026-10-15): the init segment carries stsd → enca →
+    // [dfLa + sinf → (frma 'fLaC', schi → tenc)], with the FLAC box spelled
+    // 'dfLa' — not the spec's 'dfla'.
+    const dfLa = dflaBox('dfLa', { sampleRate: 44100, bitDepth: 16, channels: 2 });
+    const sinf = isoBox('sinf', Buffer.concat([
+      isoBox('frma', Buffer.from('fLaC', 'ascii')),
+      isoBox('schi', Buffer.concat([Buffer.alloc(4), isoBox('tenc', Buffer.alloc(20))]))
+    ]));
+    const enca = isoBox('enca', Buffer.concat([
+      Buffer.alloc(28), // sample-entry + AudioSampleEntry reserved fields
+      dfLa,
+      sinf
+    ]));
+    const stsd = isoBox('stsd', Buffer.concat([Buffer.alloc(8), enca]));
+    const init = isoBox('moov', isoBox('trak', isoBox('mdia', isoBox('minf', isoBox('stbl', stsd)))));
+    expect(flacStreamInfoFromInit(init))
+      .toEqual({ codec: 'fLaC', sampleRate: 44100, channels: 2, bitDepth: 16 });
+  });
+
+  test('a media segment or garbage is null, not a false positive', () => {
+    expect(flacStreamInfoFromInit(isoBox('moof', Buffer.alloc(64)))).toBeNull();
+    expect(flacStreamInfoFromInit(Buffer.alloc(0))).toBeNull();
+    expect(flacStreamInfoFromInit(Buffer.from('dfla but far too short'))).toBeNull();
+    // 'dfLa' appearing with no plausible STREAMINFO behind it does not parse.
+    const decoy = Buffer.concat([Buffer.from('dfLa'), Buffer.alloc(80, 0xff)]);
+    expect(flacStreamInfoFromInit(decoy)).toBeNull();
+  });
+});
+
+describe('attachInitStreamInfo', () => {
+  const rep = (initializationUrl) => ({ codec: 'fLaC', bandwidth: 900000, sampleRate: 44100, channels: null, bitDepth: null, initializationUrl });
+
+  test('a URL-matched init is authoritative over the MPD attributes', () => {
+    const inits = [{ url: 'https://cdn/i.mp4', codec: 'fLaC', sampleRate: 48000, bitDepth: 24, channels: 2 }];
+    const out = attachInitStreamInfo([rep('https://cdn/i.mp4')], inits);
+    expect(out[0]).toMatchObject({ sampleRate: 48000, bitDepth: 24, channels: 2 });
+  });
+
+  test('the single-representation pairing fills only missing fields', () => {
+    const inits = [{ url: 'https://other/i.mp4', codec: 'fLaC', sampleRate: 44100, bitDepth: 16, channels: 2 }];
+    const out = attachInitStreamInfo([rep(null)], inits);
+    expect(out[0]).toMatchObject({ sampleRate: 44100, bitDepth: 16, channels: 2 });
+  });
+
+  test('ambiguous multi-rep, multi-init input pairs nothing', () => {
+    const inits = [
+      { url: 'https://a/i.mp4', codec: 'fLaC', sampleRate: 44100, bitDepth: 16, channels: 2 },
+      { url: 'https://b/i.mp4', codec: 'fLaC', sampleRate: 48000, bitDepth: 24, channels: 2 }
+    ];
+    const out = attachInitStreamInfo([rep(null), rep(null)], inits);
+    expect(out.every(r => r.bitDepth === null)).toBe(true);
+  });
+});
+
+describe('pickMpdRepresentation', () => {
+  const ladder = [
+    { id: 'a', codec: 'fLaC', bandwidth: 850000, sampleRate: 44100, bitDepth: 16 },
+    { id: 'b', codec: 'fLaC', bandwidth: 1478000, sampleRate: 48000, bitDepth: 24 }
+  ];
+
+  test('the measured bitrate picks the rung of the ladder actually playing', () => {
+    expect(pickMpdRepresentation(ladder, 840).id).toBe('a');
+    expect(pickMpdRepresentation(ladder, 1500).id).toBe('b');
+  });
+
+  test('a single representation is it, and no bandwidths means the richest wins', () => {
+    expect(pickMpdRepresentation([{ codec: 'fLaC' }], 900).codec).toBe('fLaC');
+    const noBw = [
+      { codec: 'fLaC', sampleRate: 44100 },
+      { codec: 'fLaC', sampleRate: 48000, bitDepth: 24 }
+    ];
+    expect(pickMpdRepresentation(noBw, 900).bitDepth).toBe(24);
+  });
+
+  test('empty input is null', () => {
+    expect(pickMpdRepresentation([], 900)).toBeNull();
+    expect(pickMpdRepresentation(null, 900)).toBeNull();
+  });
+});
+
+describe('amazonStreamTier / amazonStreamQualityRecord', () => {
+  test('the tier follows Amazon\'s vocabulary from the measured facts', () => {
+    expect(amazonStreamTier({ codec: 'mp4a.40.2', sampleRate: 44100 })).toBe('SD');
+    expect(amazonStreamTier({ codec: 'fLaC', sampleRate: 44100, bitDepth: 16 })).toBe('HD');
+    expect(amazonStreamTier({ codec: 'fLaC', sampleRate: 48000, bitDepth: 24 })).toBe('Ultra HD');
+    expect(amazonStreamTier({ codec: 'fLaC', sampleRate: 96000, bitDepth: 16 })).toBe('Ultra HD');
+    expect(amazonStreamTier({ codec: 'alac', sampleRate: 44100, bitDepth: 16 })).toBe('HD');
+    expect(amazonStreamTier({ codec: null })).toBeNull();
+  });
+
+  test('the record merges the measured bitrate with the captured params', () => {
+    expect(amazonStreamQualityRecord(1478, { codec: 'fLaC', container: 'mp4', sampleRate: 48000, bitDepth: 24, channels: 2 }))
+      .toEqual({
+        bitrate: 1478,
+        origin: 'measured',
+        codec: 'fLaC',
+        container: 'mp4',
+        sampleRate: 48000,
+        bitDepth: 24,
+        channels: 2,
+        tier: 'Ultra HD'
+      });
+  });
+
+  test('without captured params the record is the honest bitrate-only one', () => {
+    expect(amazonStreamQualityRecord(850, null)).toEqual({ bitrate: 850, origin: 'measured' });
+    expect(amazonStreamQualityRecord(0, { codec: 'fLaC' })).toBeNull();
+  });
+});
+
 describe('parseRowDurationSec', () => {
   test('parses the shapes search rows render', () => {
     expect(parseRowDurationSec('Around the World Daft Punk 7 MIN 8 SEC Explicit')).toBe(428);
@@ -299,7 +726,6 @@ describe('parseRowDurationSec', () => {
     expect(parseRowDurationSec(null)).toBe(0);
   });
 });
-
 describe('normalizeStreamingQuality', () => {
   test('maps the modal radios and the legacy HD value', () => {
     expect(normalizeStreamingQuality('BEST_AVAILABLE')).toBe('BEST_AVAILABLE');

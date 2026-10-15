@@ -22,7 +22,10 @@
 //                   page is ground truth (see isSignedIn)
 //   Media element   the Widevine <video>; the page also has an empty <audio>
 //                   decoy — HOOK_SCRIPT scores elements by paused/currentSrc/
-//                   tagName so last-wins cannot latch onto it
+//                   tagName so last-wins cannot latch onto it. The element's
+//                   webkitAudioDecodedByteCount (demuxed compressed stream
+//                   bytes — a Blink API, not a hornet surface) is what the
+//                   poller pairs to measure the delivered bitrate
 //   Search rows     <button data-testid="HorizontalItem,…"> with a descendant
 //                   /artists/ link for the artist; a title link's own text is
 //                   title only (artist/album are sibling links); row
@@ -37,6 +40,10 @@
 //                   captured by the window.__r trap in the preload; persisted
 //                   fallback under a localStorage key containing
 //                   'playback-controller'
+//   Stream manifest the DASH MPD + init segments the page itself fetches,
+//                   captured by the preload's passive fetch/XHR hook
+//                   (installAmazonStreamCapture) and parsed by pure helpers
+//                   in amazon-music-logic — packager output, not hornet DOM
 //   License refusal  POST /*/api/dmls/ answering 400 = this build's VMP
 //                   signature refused (development certificate)
 
@@ -64,7 +71,11 @@ const {
   amazonPlaylistDetailRequest,
   amazonGqlFetchHeaders,
   capturedOperationNames,
-  playlistFromGql
+  playlistFromGql,
+  mpdAudioRepresentations,
+  flacStreamInfoFromInit,
+  attachInitStreamInfo,
+  pickMpdRepresentation
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -122,7 +133,14 @@ const HOOK_SCRIPT = `(() => {
       ended: !!m.ended,
       state: m.ended ? 'FINISHED' : (m.paused ? 'PAUSED' : 'PLAYING'),
       href: location.href,
-      playingAsin
+      playingAsin,
+      // Demuxed compressed audio bytes (webkitAudioDecodedByteCount) — the
+      // poller pairs consecutive reads of this counter to measure the actual
+      // stream bitrate (stream-quality.js contract). Null when the element
+      // exposes no counter, so those reads just never form pairs.
+      audioDecodedBytes: (typeof m.webkitAudioDecodedByteCount === 'number' && m.webkitAudioDecodedByteCount >= 0)
+        ? m.webkitAudioDecodedByteCount
+        : null
     };
   };
   window.__parachordAmazonClickPlay = () => {
@@ -300,6 +318,27 @@ const PLAYLIST_GQL_SCRIPT = (url, headers, body) => `(async () => {
   }
 })()`;
 
+// Read the preload net hook's captured manifests + init segments from the
+// player page. Init bytes are base64'd in the page world (executeJavaScript
+// results must be JSON-serializable); manifests come back as text.
+const READ_STREAM_CAPS_SCRIPT = `(() => {
+  const caps = window.__parachordStreamCaps;
+  if (!caps) return null;
+  const b64 = (buf) => {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  };
+  return {
+    manifests: (caps.manifests || []).map((m) => ({ url: m.url, text: m.text })),
+    inits: (caps.inits || []).map((i) => ({ url: i.url, b64: b64(i.bytes) }))
+  };
+})()`;
+
 function electron() {
   return require('electron');
 }
@@ -369,6 +408,12 @@ const amazonWebPlayer = {
   playGeneration: 0,
   cookieWarned: false,
   _onHostClosed: null,
+  // Audio representations parsed from the captured DASH manifest (+ init
+  // segment STREAMINFO), scoped to the current play: nulled when a play
+  // claims the player, filled asynchronously by readStreamRepresentations,
+  // keyed to that play's generation + ASIN so a late capture from a superseded
+  // play cannot land on the new track.
+  streamRepresentations: null,
 
   // castlabs Electron exposes electron.components. Stock Electron does not,
   // and the old --widevine-cdm-path switch does nothing there. EME probe is
@@ -735,7 +780,10 @@ const amazonWebPlayer = {
     try {
       return await this.evalOn(view, `(() => ({
         stub: window.__parachordRequireTrap === true,
-        storeCaptured: !!window.__parachordAmazonPlayback
+        storeCaptured: !!window.__parachordAmazonPlayback,
+        streamCapture: window.__parachordStreamCapture === true,
+        streamManifests: (window.__parachordStreamCaps && window.__parachordStreamCaps.manifests || []).length,
+        streamInits: (window.__parachordStreamCaps && window.__parachordStreamCaps.inits || []).length
       }))()`);
     } catch {
       return { stub: null, storeCaptured: null };
@@ -1034,6 +1082,7 @@ const amazonWebPlayer = {
     if (this.playGeneration !== generation) return { success: false, reason: 'superseded' };
     this.collapse(this.playerView);
     this.currentAsin = asin;
+    this.streamRepresentations = null;
     // Everything from here on is post-claim: if a newer playByAsin started
     // (our loadURL aborted by its loadURL, our confirm loop reading its media
     // element), that is supersession, not failure — report it instead of
@@ -1098,6 +1147,11 @@ const amazonWebPlayer = {
       if (advancing) {
         if (!playingSince) playingSince = Date.now();
         if (Date.now() - playingSince >= 1500 && ownsPlay()) {
+          // Kick (never await) the manifest/init capture that upgrades the
+          // measured-bitrate streamQuality record with codec / sample rate /
+          // bit depth / channels / tier. Playback is already confirmed; a
+          // capture miss just leaves the bitrate-only record.
+          void this.readStreamRepresentations({ generation, asin }).catch(() => {});
           return { success: true, confirmed: true, asin, engine: 'web' };
         }
       } else {
@@ -1136,13 +1190,13 @@ const amazonWebPlayer = {
   async readState() {
     const win = this.playerView;
     if (!this.alive(win)) {
-      return { state: 'EMPTY', asin: null, title: null, artist: null, positionMs: 0, durationMs: 0 };
+      return { state: 'EMPTY', asin: null, title: null, artist: null, positionMs: 0, durationMs: 0, audioDecodedBytes: null };
     }
     let state = null;
     try { state = await this.evalOn(win, 'window.__parachordAmazonRead ? window.__parachordAmazonRead() : null'); }
     catch { state = null; }
     if (!state) {
-      return { state: 'EMPTY', asin: null, title: null, artist: null, positionMs: 0, durationMs: 0 };
+      return { state: 'EMPTY', asin: null, title: null, artist: null, positionMs: 0, durationMs: 0, audioDecodedBytes: null };
     }
     return {
       state: state.state,
@@ -1150,7 +1204,10 @@ const amazonWebPlayer = {
       title: null,
       artist: null,
       positionMs: state.positionMs || 0,
-      durationMs: state.durationMs || 0
+      durationMs: state.durationMs || 0,
+      audioDecodedBytes: (typeof state.audioDecodedBytes === 'number' && Number.isFinite(state.audioDecodedBytes))
+        ? state.audioDecodedBytes
+        : null
     };
   },
 
@@ -1214,6 +1271,93 @@ const amazonWebPlayer = {
 
   async getPlaybackState() {
     return this.readState();
+  },
+
+  // Parse what the preload's net hook captured during playback startup — the
+  // DASH manifest text and the small init segment responses — into audio
+  // representations (codec / sample rate / bit depth / channels / bandwidth).
+  // Fire-and-forget from playByAsin once playback is confirmed; generation-
+  // and ASIN-guarded so a late read from a superseded play cannot land on the
+  // new track. Every failure degrades to the bitrate-only quality record.
+  async readStreamRepresentations({ generation, asin } = {}) {
+    const view = this.playerView;
+    if (!this.alive(view)) return;
+    let caps = null;
+    // The manifest is fetched before playback can advance, so it is already
+    // captured by now; one short retry covers a clone().text() still settling.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { caps = await this.evalOn(view, READ_STREAM_CAPS_SCRIPT); } catch { caps = null; }
+      if (caps && ((caps.manifests && caps.manifests.length) || (caps.inits && caps.inits.length))) break;
+      if (attempt === 0) await new Promise(r => setTimeout(r, 1000));
+    }
+    if (!caps || !((caps.manifests && caps.manifests.length) || (caps.inits && caps.inits.length))) {
+      console.log('[Amazon] stream quality: no manifest or init captured (no stream traffic, or the net hook did not run)');
+      return;
+    }
+    const inits = [];
+    for (const init of (caps.inits || [])) {
+      let info = null;
+      try { info = flacStreamInfoFromInit(Buffer.from(init.b64 || '', 'base64')); } catch { info = null; }
+      if (info) inits.push({ url: init.url, ...info });
+    }
+    let reps = [];
+    for (const m of (caps.manifests || [])) {
+      try { reps = reps.concat(mpdAudioRepresentations(m.text, m.url)); } catch { /* keep what parsed */ }
+    }
+    // The same manifest can be captured more than once (Amazon's own autoplay
+    // refetches it) — dedupe before pairing so one representation stays one.
+    const seenRep = new Set();
+    reps = reps.filter((r) => {
+      const key = [r.id, r.bandwidth, r.sampleRate, r.bitDepth, r.codec].join('|');
+      if (seenRep.has(key)) return false;
+      seenRep.add(key);
+      return true;
+    });
+    if (!reps.length && inits.length) {
+      // No manifest (or an unrecognized one) but the init segments still carry
+      // the FLAC facts — a dfla box is proof of codec and parameters on its own.
+      reps = inits.map(i => ({
+        id: null,
+        codec: i.codec || null,
+        mimeType: null,
+        container: 'mp4',
+        bandwidth: null,
+        sampleRate: i.sampleRate || null,
+        channels: i.channels || null,
+        bitDepth: i.bitDepth || null,
+        initializationUrl: i.url
+      }));
+    }
+    // A manifest that yields no audio representations is a hornet/packager
+    // change worth noticing in the field log — the first 160 chars say which.
+    if (reps.length === 0 && caps.manifests && caps.manifests.length) {
+      const sample = String(caps.manifests[caps.manifests.length - 1].text || '').slice(0, 160);
+      console.warn(`[Amazon] stream quality: ${caps.manifests.length} manifest(s) captured but no audio representation parsed — head: ${sample}`);
+      return;
+    }
+    const merged = attachInitStreamInfo(reps, inits);
+    if (this.playGeneration === generation && this.currentAsin === asin) {
+      this.streamRepresentations = merged;
+      const summary = merged.map(r => `${r.codec || '?'}${r.sampleRate ? ' ' + r.sampleRate + 'Hz' : ''}${r.bitDepth ? ' ' + r.bitDepth + '-bit' : ''}${r.bandwidth ? ' ' + Math.round(r.bandwidth / 1000) + 'kbps' : ''}`);
+      console.log(`[Amazon] stream quality: ${merged.length} representation(s) [${summary.join(' | ')}]`);
+    }
+  },
+
+  // Stream parameters for the representation actually playing, keyed to the
+  // measured bitrate (the poller passes its converged median). Read by the
+  // poller when it builds the streamQuality record for progress events.
+  streamInfo(kbps) {
+    const reps = this.streamRepresentations;
+    if (!reps || !reps.length) return null;
+    const chosen = pickMpdRepresentation(reps, Number(kbps) || 0);
+    if (!chosen) return null;
+    const out = {};
+    if (chosen.codec) out.codec = chosen.codec;
+    if (chosen.container) out.container = chosen.container;
+    if (chosen.sampleRate) out.sampleRate = chosen.sampleRate;
+    if (chosen.bitDepth) out.bitDepth = chosen.bitDepth;
+    if (chosen.channels) out.channels = chosen.channels;
+    return out;
   },
 
   // Hornet keeps Audio Quality on playbackController (metro module, not a
@@ -1341,6 +1485,6 @@ const amazonWebPlayer = {
 // .toString(), and a helper that gains a closure (or a stray backtick in the
 // template) breaks only inside the Amazon page. The smoke test evaluates them
 // against a bare DOM stub so serialization breakage fails CI instead.
-amazonWebPlayer._scripts = { HOOK_SCRIPT, SCRAPE_SCRIPT };
+amazonWebPlayer._scripts = { HOOK_SCRIPT, SCRAPE_SCRIPT, READ_STREAM_CAPS_SCRIPT };
 
 module.exports = amazonWebPlayer;

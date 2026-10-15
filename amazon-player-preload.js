@@ -12,11 +12,11 @@
 // — never local files. An earlier revision required ./amazon-music-logic here,
 // which throws "module not found" and silently killed the ENTIRE preload: no
 // trap, no visibility stub, with the localStorage quality fallback masking the
-// damage (verified live on Electron 39 +wvcus). So installAmazonRequireTrap is
-// inlined below as a literal copy of the one in amazon-music-logic.js, and
-// tests/resolver/amazon-player-preload.test.js fails the build if the copies
-// drift or if a local require ever comes back. Do not require local modules
-// from this file.
+// damage (verified live on Electron 39 +wvcus). So installAmazonRequireTrap and
+// installAmazonStreamCapture are inlined below as literal copies of the ones
+// in amazon-music-logic.js, and tests/resolver/amazon-player-preload.test.js
+// fails the build if the copies drift or if a local require ever comes back.
+// Do not require local modules from this file.
 //
 // contextIsolation puts this file in a different world from the page. Patching
 // document here would not affect Amazon's scripts, so the stub is evaluated in
@@ -61,9 +61,112 @@ function installAmazonRequireTrap(scope) {
   } catch (e) {}
 }
 
+function installAmazonStreamCapture(scope) {
+  if (!scope || scope.__parachordStreamCapture) return;
+  scope.__parachordStreamCapture = true;
+  const caps = { manifests: [], inits: [] };
+  scope.__parachordStreamCaps = caps;
+  const MAX_MANIFESTS = 4;
+  const MAX_MANIFEST_CHARS = 524288;
+  const MAX_INITS = 8;
+  const MAX_INIT_BYTES = 65536;
+  const isManifest = (url) => /\.mpd(?:[?#]|$)/i.test(String(url || ''));
+  const isInitCandidate = (url) => /\.(?:mp4|m4s|cmfv|cmfa|cmf|dash)(?:[?#]|$)/i.test(String(url || ''));
+  const recordManifest = (url, text) => {
+    try {
+      if (!text || caps.manifests.length >= MAX_MANIFESTS) return;
+      caps.manifests.push({ url: String(url), text: String(text).slice(0, MAX_MANIFEST_CHARS) });
+    } catch (e) {}
+  };
+  const recordInit = (url, buf) => {
+    try {
+      const n = (buf && (buf.byteLength || buf.size)) || 0;
+      if (!n || n > MAX_INIT_BYTES || caps.inits.length >= MAX_INITS) return;
+      caps.inits.push({ url: String(url), bytes: buf });
+    } catch (e) {}
+  };
+  const observeResponse = (url, res) => {
+    try {
+      if (!res || typeof res.clone !== 'function') return;
+      if (isManifest(url)) {
+        res.clone().text().then((t) => recordManifest(url, t), () => {});
+      } else if (isInitCandidate(url)) {
+        const len = Number(res.headers && res.headers.get && res.headers.get('content-length')) || 0;
+        if (!len || len <= MAX_INIT_BYTES) res.clone().arrayBuffer().then((b) => recordInit(url, b), () => {});
+      }
+    } catch (e) {}
+  };
+  const urlOf = (input) => {
+    try {
+      if (typeof input === 'string') return input;
+      if (input && typeof input.url === 'string') return input.url;
+    } catch (e) {}
+    return '';
+  };
+  try {
+    const origFetch = scope.fetch;
+    if (typeof origFetch === 'function' && !origFetch.__parachordWrapped) {
+      const wrappedFetch = function () {
+        const url = urlOf(arguments[0]);
+        const p = origFetch.apply(this, arguments);
+        try {
+          if (p && typeof p.then === 'function' && (isManifest(url) || isInitCandidate(url))) {
+            p.then((res) => { observeResponse(url, res); return res; }, () => {});
+          }
+        } catch (e) {}
+        return p;
+      };
+      try { Object.setPrototypeOf(wrappedFetch, origFetch); } catch (e) {}
+      try { Object.defineProperty(wrappedFetch, '__parachordWrapped', { value: true }); } catch (e) {}
+      scope.fetch = wrappedFetch;
+    }
+  } catch (e) {}
+  try {
+    const OrigXHR = scope.XMLHttpRequest;
+    if (typeof OrigXHR === 'function' && !OrigXHR.__parachordWrapped) {
+      const WrappedXHR = function () {
+        const xhr = new OrigXHR();
+        let reqUrl = '';
+        try {
+          const openOrig = xhr.open;
+          if (typeof openOrig === 'function') {
+            xhr.open = function () {
+              try { reqUrl = String(arguments[1] || ''); } catch (e) {}
+              return openOrig.apply(this, arguments);
+            };
+          }
+        } catch (e) {}
+        try {
+          xhr.addEventListener('load', function () {
+            try {
+              const rt = xhr.responseType;
+              if (rt === '' || rt === 'text') {
+                if (isManifest(reqUrl)) recordManifest(reqUrl, xhr.responseText);
+              } else if (rt === 'arraybuffer' || rt === 'blob') {
+                if (isInitCandidate(reqUrl)) recordInit(reqUrl, xhr.response);
+              }
+            } catch (e) {}
+          });
+        } catch (e) {}
+        return xhr;
+      };
+      try { WrappedXHR.prototype = OrigXHR.prototype; } catch (e) {}
+      try {
+        Object.keys(OrigXHR).forEach((k) => {
+          try { if (!(k in WrappedXHR)) WrappedXHR[k] = OrigXHR[k]; } catch (e) {}
+        });
+      } catch (e) {}
+      try { Object.defineProperty(WrappedXHR, '__parachordWrapped', { value: true }); } catch (e) {}
+      scope.XMLHttpRequest = WrappedXHR;
+    }
+  } catch (e) {}
+}
+
 const PAGE_STUB = `(function () {
   const installAmazonRequireTrap = ${installAmazonRequireTrap.toString()};
   installAmazonRequireTrap(window);
+  const installAmazonStreamCapture = ${installAmazonStreamCapture.toString()};
+  installAmazonStreamCapture(window);
   const stop = (event) => { event.stopImmediatePropagation(); };
   window.addEventListener('blur', stop, true);
   window.addEventListener('pagehide', stop, true);

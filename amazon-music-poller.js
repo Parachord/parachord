@@ -26,7 +26,13 @@
 // through the renderer (hardware media keys hitting the page, Amazon pausing
 // itself, then the page idling the element away).
 
-const { playerDurationMs, decidePollAdvance, shouldPollFaster } = require('./amazon-music-logic');
+const {
+  playerDurationMs,
+  decidePollAdvance,
+  shouldPollFaster,
+  measuredStreamKbps,
+  amazonStreamQualityRecord
+} = require('./amazon-music-logic');
 
 const POLL_INTERVAL = 2000;
 const FAST_POLL_INTERVAL = 400;
@@ -55,6 +61,11 @@ function createAmazonMusicPoller({ player, send }) {
     seekSuppressUntil: 0,
     emptyWhilePausedPolls: 0,
     diedWhilePaused: false,
+    // [{ wallMs, positionMs, bytes }] — consecutive PLAYING reads of the
+    // media element's audio decode counter, paired into a measured bitrate by
+    // measuredStreamKbps. Reset per track in start(); a stale pair across a
+    // track boundary would be a garbage measurement.
+    qualitySamples: [],
 
     async start({ asin, trackTitle, trackArtist, duration }) {
       console.log('🎵 [Main] Starting Amazon Music polling...');
@@ -71,6 +82,7 @@ function createAmazonMusicPoller({ player, send }) {
       this.seekSuppressUntil = 0;
       this.emptyWhilePausedPolls = 0;
       this.diedWhilePaused = false;
+      this.qualitySamples = [];
       void trackTitle; void trackArtist; // accepted for IPC symmetry; the advance signal carries the reason only
 
       // Cancellable delay so a quick skip doesn't start a second interval
@@ -146,12 +158,34 @@ function createAmazonMusicPoller({ player, send }) {
         const durationMs = playerDurationMs(s.durationMs) || this.trackDurationMs;
         const state = s.state;
 
-        emit('amazonmusic-polling-progress', {
+        // Measured stream quality (stream-quality.js contract): record the
+        // decode counter on every PLAYING read; measuredStreamKbps pairs
+        // consecutive samples (steady playhead-vs-wallclock deltas only, so
+        // seeks and pauses never form a pair) and reports the median once
+        // enough steady pairs exist. The player's captured manifest/init params
+        // (codec / sample rate / bit depth / channels, from which the SD/HD/
+        // Ultra HD tier derives) upgrade the record when available — never
+        // fabricated, only what the captured manifest and init segment prove.
+        if (state === 'PLAYING' && typeof s.audioDecodedBytes === 'number' && s.audioDecodedBytes > 0) {
+          this.qualitySamples.push({ wallMs: Date.now(), positionMs, bytes: s.audioDecodedBytes });
+          if (this.qualitySamples.length > 17) this.qualitySamples.shift(); // 8-pair window + slack
+        }
+        const progress = {
           state,
           positionMs,
           durationMs,
-          percentComplete: durationMs > 0 ? (positionMs / durationMs) * 100 : 0
-        });
+          percentComplete: durationMs > 0 ? (positionMs / durationMs) * 100 : 0,
+          asin: s.asin || null
+        };
+        const kbps = measuredStreamKbps(this.qualitySamples);
+        if (kbps) {
+          let params = null;
+          try {
+            params = (typeof player.streamInfo === 'function') ? player.streamInfo(kbps) : null;
+          } catch { params = null; }
+          progress.streamQuality = amazonStreamQualityRecord(kbps, params) || { bitrate: kbps, origin: 'measured' };
+        }
+        emit('amazonmusic-polling-progress', progress);
 
         if (state === 'PLAYING') {
           const wantFast = shouldPollFaster(durationMs, positionMs);

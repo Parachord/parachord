@@ -14597,6 +14597,35 @@ ${trackListXml}
           // Always update interpolation baseline for smooth progress between polls
           const isPlayingState = data.state === 'PLAYING';
           amazonMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: isPlayingState };
+          // Measured stream quality (stream-quality.js contract): the main-
+          // process poller pairs consecutive reads of the media element's
+          // audio decode counter and reports the converged median bitrate —
+          // in-memory only, never persisted (it can be re-measured every
+          // play). ASIN-gated so an in-flight stale poll (the previous track's
+          // emit landing after this track started — poll() has no generation
+          // re-check between the read and this emit) cannot attach the
+          // previous track's measurement.
+          const measuredQuality = data.streamQuality;
+          if (measuredQuality && measuredQuality.bitrate) {
+            const playingAsin = track.sources?.amazonmusic?.amazonAsin || track.amazonAsin || track.asin;
+            if (!data.asin || !playingAsin || data.asin === playingAsin) {
+              setCurrentTrack(prev => {
+                if (!prev || prev.id !== track.id) return prev;
+                const existing = prev.sources?.amazonmusic?.streamQuality;
+                if (existing && JSON.stringify(existing) === JSON.stringify(measuredQuality)) return prev;
+                return {
+                  ...prev,
+                  sources: {
+                    ...(prev.sources || {}),
+                    amazonmusic: {
+                      ...(prev.sources?.amazonmusic || {}),
+                      streamQuality: measuredQuality
+                    }
+                  }
+                };
+              });
+            }
+          }
           // Notify scrobble manager of progress for scrobble threshold checking
           if (window.scrobbleManager && isPlayingState) {
             window.scrobbleManager.onProgressUpdate(positionSec);
@@ -35579,14 +35608,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   }, [currentTrack?.artist, currentTrack?.album, currentTrack?.albumArt]);
 
   // Stream-quality backfill for the PLAYING track (stream-quality.js contract).
-  // The one resolver today whose engine can report exact stream parameters is
-  // localfiles: the file is on disk, so we parse it at play time (via the
-  // localFiles:stream-info IPC — main process caches by path+mtime, so replays
-  // are free) instead of persisting codec/bit-depth columns in the scan DB.
-  // The result is attached to the playing track's localfiles source record —
-  // in-memory only (never written to the sources cache) — and the now-playing
-  // title hover renders it via pickStreamQuality/formatStreamQuality. Any
-  // other resolver just has no record and the title renders exactly as before.
+  // This effect is the localfiles path: the file is on disk, so we parse it at
+  // play time (via the localFiles:stream-info IPC — main process caches by
+  // path+mtime, so replays are free) instead of persisting codec/bit-depth
+  // columns in the scan DB. The Amazon Music path attaches its measured
+  // bitrate in the amazonmusic onProgress handler instead (the data arrives
+  // as poll events, not an IPC the renderer can call); every other resolver
+  // just has no record and the title renders exactly as before.
   //
   // No "already attached" early-return: the playing-track clone is serialized
   // into the saved queue, so a restored session can carry a record from a
