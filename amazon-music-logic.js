@@ -61,9 +61,13 @@ function decidePollAdvance({
   }
 
   // A page torn down while paused: EMPTY with lastState PAUSED is dead and
-  // cannot be resumed. Wait out the grace window (the user did pause), then
-  // advance like any other dead player instead of polling forever.
-  if (lastState === 'PAUSED' && (state === 'EMPTY' || state === 'STOPPED' || state === 'FINISHED') &&
+  // cannot be resumed. The caller latches the pause-death (the 'track' action
+  // overwrites lastState with the dead value on the first such poll, so
+  // gating on lastState === 'PAUSED' here used to make the grace window
+  // unreachable — the counter could never be spent). The count is only ever
+  // nonzero when the caller saw PAUSED before the death, so it is the
+  // authority here. A never-alive player sends 0 and never advances.
+  if ((state === 'EMPTY' || state === 'STOPPED' || state === 'FINISHED') &&
       emptyWhilePausedPolls >= EMPTY_WHILE_PAUSED_POLL_LIMIT) {
     return { action: 'advance', reason: 'stopped' };
   }
@@ -84,6 +88,27 @@ function pageBlocksPlayback(url) {
   if (/\/identity\/who-is-listening/i.test(value)) return 'not-signed-in';
   if (/\/ap\/signin/i.test(value)) return 'not-signed-in';
   return null;
+}
+
+// openLogin's completion gate. "The URL is not a known wall" alone fails
+// open: music.amazon.com/ itself is not a wall, and a logged-out first paint
+// can sit there (or redirect slowly) for a second or more — the old timer
+// closed the sign-in window and reported success before the user touched the
+// password field. Require a positive signal: a non-wall music.amazon.com URL
+// that has been stable for two consecutive ticks AND at least one of (an
+// auth cookie is present, the page has moved off the bare home path, or three
+// stable ticks — the fallback for Amazon rotating its cookie names, at the
+// cost of a ~3s wait when a signed-in landing page really is /).
+function signInLanded({ url, lastUrl = null, stableTicks = 0, hasCookie = false } = {}) {
+  const okUrl = !!url && /music\.amazon\.com/i.test(url) && !pageBlocksPlayback(url);
+  const ticks = okUrl ? (lastUrl === url ? stableTicks + 1 : 1) : 0;
+  let landed = false;
+  if (ticks >= 2) {
+    let path = '';
+    try { path = new URL(url).pathname; } catch (e) { /* not a URL */ }
+    landed = !!hasCookie || path !== '/' || ticks >= 3;
+  }
+  return { landed, stableTicks: ticks };
 }
 
 // Hornet's Audio Quality modal. HD and BEST_AVAILABLE both mean the
@@ -361,6 +386,7 @@ module.exports = {
   decidePollAdvance,
   shouldPollFaster,
   pageBlocksPlayback,
+  signInLanded,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   installAmazonRequireTrap,

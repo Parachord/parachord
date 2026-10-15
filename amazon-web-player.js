@@ -46,6 +46,7 @@ const PARTITION = 'persist:amazon-music';
 const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
 const {
   pageBlocksPlayback,
+  signInLanded,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   readPersistedQuality,
@@ -720,21 +721,27 @@ const amazonWebPlayer = {
 
     return new Promise((resolve) => {
       let settled = false;
+      let lastUrl = null;
+      let stableTicks = 0;
       const finish = (signedIn) => {
         if (settled) return;
         settled = true;
         clearInterval(timer);
         resolve({ success: !!signedIn, signedIn: !!signedIn });
       };
-      const timer = setInterval(() => {
+      const timer = setInterval(async () => {
         if (win.isDestroyed()) return;
         const url = win.webContents.getURL();
-        if (pageBlocksPlayback(url)) return;
-        if (!/music\.amazon\.com/i.test(url)) return;
-        // The window IS the user's signed-in browser context: a
-        // music.amazon.com page past sign-in and profile-pick means the session
-        // is live. Deliberately not also gated on hasAuthCookie — Amazon
-        // rotating cookie names would leave this timer waiting forever.
+        // Positive signal only (signInLanded): "not on a known wall" used to
+        // close this window on a logged-out first paint of music.amazon.com/.
+        // The cookie is one accepted signal, not a requirement — Amazon
+        // rotating the cookie names must not leave this timer waiting forever;
+        // a path off / or a third stable tick stands in for it.
+        const hasCookie = await this.hasAuthCookie().catch(() => false);
+        const verdict = signInLanded({ url, lastUrl, stableTicks, hasCookie });
+        lastUrl = url;
+        stableTicks = verdict.stableTicks;
+        if (!verdict.landed) return;
         clearInterval(timer);
         setTimeout(() => {
           if (win && !win.isDestroyed()) win.close();

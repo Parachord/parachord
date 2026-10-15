@@ -5,6 +5,7 @@ const {
   decidePollAdvance,
   shouldPollFaster,
   pageBlocksPlayback,
+  signInLanded,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   amazonSongSearchUrl,
@@ -148,6 +149,51 @@ describe('pageBlocksPlayback', () => {
   test('the player home is usable', () => {
     expect(pageBlocksPlayback('https://music.amazon.com/')).toBeNull();
     expect(pageBlocksPlayback('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
+  });
+});
+
+describe('signInLanded', () => {
+  const home = 'https://music.amazon.com/';
+  const track = 'https://music.amazon.com/tracks/B000SNWG5Q';
+
+  test('a stable non-wall page with an auth cookie lands', () => {
+    let v = signInLanded({ url: home, hasCookie: true });
+    expect(v).toEqual({ landed: false, stableTicks: 1 });
+    v = signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: true });
+    expect(v).toEqual({ landed: true, stableTicks: 2 });
+  });
+
+  test('the bare home path without a cookie waits a third tick', () => {
+    // A logged-out first paint at / (or a slow redirect to /ap/signin) must
+    // not close the sign-in window and report success.
+    let v = signInLanded({ url: home, hasCookie: false });
+    v = signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: false });
+    expect(v.landed).toBe(false);
+    v = signInLanded({ url: home, lastUrl: home, stableTicks: v.stableTicks, hasCookie: false });
+    expect(v.landed).toBe(true); // rotation fallback: nothing but stability
+  });
+
+  test('a page off the home path lands after two stable ticks without a cookie', () => {
+    let v = signInLanded({ url: track, hasCookie: false });
+    v = signInLanded({ url: track, lastUrl: track, stableTicks: v.stableTicks, hasCookie: false });
+    expect(v.landed).toBe(true);
+  });
+
+  test('walls, foreign URLs and navigation churn reset the stability count', () => {
+    // A wall URL never lands, cookies or not — the profile is not chosen yet.
+    expect(signInLanded({
+      url: 'https://music.amazon.com/identity/who-is-listening',
+      lastUrl: 'https://music.amazon.com/identity/who-is-listening',
+      stableTicks: 5, hasCookie: true
+    })).toEqual({ landed: false, stableTicks: 0 });
+    // Off amazon.com (password step) resets too.
+    expect(signInLanded({
+      url: 'https://www.amazon.com/ap/signin', lastUrl: 'https://www.amazon.com/ap/signin',
+      stableTicks: 5, hasCookie: true
+    })).toEqual({ landed: false, stableTicks: 0 });
+    // A URL that changed this tick is not stable yet.
+    expect(signInLanded({ url: track, lastUrl: home, stableTicks: 3, hasCookie: true }))
+      .toEqual({ landed: false, stableTicks: 1 });
   });
 });
 
