@@ -436,6 +436,18 @@ const unsupportedAudioMessage = (ext) => {
   return `This ${e ? e.toUpperCase() : 'audio'} file uses an unsupported format. Try converting to MP3 or 16-bit FLAC.`;
 };
 
+// Subsonic auth is a token+salt in the query string, replayable until the
+// password changes. Search must not return those URLs. This drops any an
+// older resolve already wrote onto a track or source record so a play does
+// not copy them onto the saved queue.
+function dropSubsonicSecrets(record) {
+  if (!record || typeof record !== 'object') return;
+  delete record.subsonicStreamUrl;
+  if (typeof record.albumArt === 'string' && record.albumArt.includes('/rest/getCoverArt')) {
+    delete record.albumArt;
+  }
+}
+
 // Exact ISRC → recording-MBID lookup via MusicBrainz core (/ws/2/isrc/{isrc}).
 // Mobile parity (parachord-mobile@51c6cc1, design doc
 // `docs/plans/2026-06-16-isrc-mbid-fallback.md` in that repo) — added after
@@ -1977,7 +1989,7 @@ const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"soundcloud","name":"SoundCloud","version":"1.1.0","author":"Parachord Team","description":"Search and stream music from SoundCloud. Requires OAuth login for full access.","icon":"\u2601","color":"#FF5500","homepage":"https://soundcloud.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["soundcloud.com/*","*.soundcloud.com/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{"clientId":{"type":"text","label":"Client ID","advanced":true},"clientSecret":{"type":"text","label":"Client Secret","advanced":true}}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('SoundCloud: No token, skipping search'); return []; } try { console.log('Searching SoundCloud for:', query); const response = await fetch(`https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!response.ok) { console.error('SoundCloud search failed:', response.status); if (response.status === 401) { console.log('SoundCloud token expired or invalid'); } return []; } const tracks = await response.json(); if (!Array.isArray(tracks)) { console.log('No SoundCloud results found'); return []; } const results = tracks.map(track => ({ id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url, streamable: track.streamable && track.access !== 'blocked', waveformUrl: track.waveform_url })); console.log(`Found ${results.length} SoundCloud results`); return results; } catch (error) { console.error('SoundCloud search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) return null; const data = await resolveResponse.json(); if (data.location) { const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!trackResponse.ok) return null; const track = await trackResponse.json(); return { id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500'), streamable: track.streamable && track.access !== 'blocked' }; } return null; } catch (error) { console.error('SoundCloud URL lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { if (!config.token) { console.log('SoundCloud: No token, skipping playlist lookup'); return null; } try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) { console.error('SoundCloud playlist resolve failed:', resolveResponse.status); return null; } const data = await resolveResponse.json(); if (!data || !Array.isArray(data.tracks)) { console.log('SoundCloud resolve did not return a playlist'); return null; } const tracks = data.tracks.map(t => ({ artist: t.user?.username || 'Unknown Artist', title: t.title, album: t.label_name || 'SoundCloud', duration: Math.floor((t.duration || 0) / 1000), soundcloudId: t.id, soundcloudUrl: t.permalink_url })).filter(t => t.title); if (!tracks.length) { console.log('SoundCloud playlist had no playable tracks'); return null; } console.log(`SoundCloud playlist '${data.title}' -> ${tracks.length} tracks`); return { name: data.title || 'SoundCloud Playlist', creator: data.user?.username, tracks, albumArt: data.artwork_url?.replace('-large', '-t500x500') || data.user?.avatar_url }; } catch (error) { console.error('SoundCloud playlist lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.soundcloudUrl) { console.error('No SoundCloud URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.soundcloudUrl); return result && result.success; } else { const newWindow = window.open(track.soundcloudUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open SoundCloud link:', error); return false; } }","init":"async function(config) { console.log('SoundCloud resolver initialized'); }","cleanup":"async function() { console.log('SoundCloud resolver cleanup'); }"}},
   {"manifest":{"id":"applemusic","name":"Apple Music","version":"1.0.2","author":"Parachord Team","description":"Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.","icon":"\ud83c\udf4e","color":"#FA243C","homepage":"https://music.apple.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["music.apple.com/*/album/*/*","music.apple.com/*/song/*/*","music.apple.com/*/playlist/*/*","itunes.apple.com/*"],"settings":{"requiresAuth":true,"authType":"musickit","configurable":{"developerToken":{"type":"text","label":"MusicKit Developer Token","default":"","description":"Optional: JWT from Apple Developer account for enhanced features"},"storefront":{"type":"text","label":"Storefront (Country)","default":"us","description":"Apple Music storefront code (e.g., us, gb, jp)"}}},"implementation":{"search":"async function(query, config) { try { if (query.trim().length < 2) { console.log('Query too short (min 2 chars)'); return []; } const storefront = config.storefront || 'us'; if (window.appleMusicSearchWithMusicKit) { return await window.appleMusicSearchWithMusicKit(query, storefront, 20); } console.log('Searching Apple Music/iTunes for:', query); const response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(query) + '&media=music&entity=song&limit=20&country=' + storefront); if (!response.ok) { console.error('iTunes search failed:', response.status); return []; } const data = await response.json(); if (!data.results || data.results.length === 0) { console.log('No iTunes results found'); return []; } const results = data.results.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName, releaseDate: track.releaseDate, artistId: track.artistId, collectionId: track.collectionId, appleMusicAlbumUrl: track.collectionViewUrl || null, isStreamable: track.isStreamable }; }); console.log('Found ' + results.length + ' Apple Music results'); return results; } catch (error) { console.error('Apple Music search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { var normalizeStr = function(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }; var targetArtist = normalizeStr(artist); var targetTrack = normalizeStr(track); var matchFromResults = function(results) { for (var i = 0; i < results.length; i++) { var r = results[i]; if (normalizeStr(r.artist).includes(targetArtist) && normalizeStr(r.title).includes(targetTrack)) { return r; } } return null; }; if (album) { if (!window._amAlbumCache) { window._amAlbumCache = {}; } if (!window._amAlbumPending) { window._amAlbumPending = {}; } var albumKey = normalizeStr(artist + '|' + album); var cached = window._amAlbumCache[albumKey]; if (cached) { var match = matchFromResults(cached); if (match) { return match; } } if (!cached) { if (window._amAlbumPending[albumKey]) { var albumResults = await window._amAlbumPending[albumKey]; } else { var self = this; var searchPromise = self.search(artist + ' ' + album, config); window._amAlbumPending[albumKey] = searchPromise; var albumResults = await searchPromise; window._amAlbumCache[albumKey] = albumResults; delete window._amAlbumPending[albumKey]; setTimeout(function() { delete window._amAlbumCache[albumKey]; }, 60000); } var match = matchFromResults(albumResults); if (match) { return match; } } } var query = artist + ' ' + track; var results = await this.search(query, config); if (results.length === 0) return null; var match = matchFromResults(results); return match || results[0]; }","lookupUrl":"async function(url, config) { try { console.log('Apple Music URL lookup:', url); var trackId = null; var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); var trackIdMatch = url.match(/[?&]i=(\\d+)/); var songIdMatch = url.match(/\\/song\\/[^/]+\\/(\\d+)/); if (trackIdMatch) { trackId = trackIdMatch[1]; } else if (songIdMatch) { trackId = songIdMatch[1]; } else if (albumIdMatch && !trackIdMatch) { console.log('URL is for album, not track. Use lookupAlbum instead.'); return null; } if (!trackId) { console.log('Could not extract track ID from URL'); return null; } var storefront = config.storefront || 'us'; if (window.appleMusicLookupSong) { return await window.appleMusicLookupSong(trackId, storefront); } var response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/lookup?id=' + trackId + '&entity=song'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var track = data.results.find(function(r) { return r.wrapperType === 'track'; }) || data.results[0]; return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl || url, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName }; } catch (error) { console.error('Apple Music URL lookup error:', error); return null; } }","lookupAlbum":"async function(url, config) { try { console.log('Apple Music album lookup:', url); var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); if (!albumIdMatch) { console.log('Could not extract album ID from URL'); return null; } var albumId = albumIdMatch[1]; var storefront = config.storefront || 'us'; if (window.appleMusicLookupAlbum) { var result = await window.appleMusicLookupAlbum(albumId, storefront); if (result) { result.url = url; return result; } } var response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/lookup?id=' + albumId + '&entity=song&limit=200'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var albumInfo = data.results.find(function(r) { return r.wrapperType === 'collection'; }); var trackResults = data.results.filter(function(r) { return r.wrapperType === 'track'; }); var tracks = trackResults.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName, duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, trackNumber: track.trackNumber, discNumber: track.discNumber }; }); tracks.sort(function(a, b) { if (a.discNumber !== b.discNumber) return a.discNumber - b.discNumber; return a.trackNumber - b.trackNumber; }); return { id: 'applemusic-album-' + albumId, name: albumInfo ? albumInfo.collectionName : 'Unknown Album', artist: albumInfo ? albumInfo.artistName : (tracks[0] ? tracks[0].artist : 'Unknown Artist'), albumArt: albumInfo && albumInfo.artworkUrl100 ? albumInfo.artworkUrl100.replace('100x100', '500x500') : null, releaseDate: albumInfo ? albumInfo.releaseDate : null, trackCount: albumInfo ? albumInfo.trackCount : tracks.length, tracks: tracks, url: url }; } catch (error) { console.error('Apple Music album lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { console.log('Apple Music playlist lookup:', url); var playlistIdMatch = url.match(/\\/playlist\\/[^/]+\\/(pl\\.[a-zA-Z0-9-]+)/); if (!playlistIdMatch) { console.log('Could not extract playlist ID from URL'); return null; } var playlistId = playlistIdMatch[1]; var storefront = config.storefront || 'us'; if (window.appleMusicLookupPlaylist) { var result = await window.appleMusicLookupPlaylist(playlistId, storefront); if (result) { result.url = url; return result; } } console.log('MusicKit not available for playlist lookup'); return null; } catch (error) { console.error('Apple Music playlist lookup error:', error); return null; } }","play":"async function(track, config) { console.log('[AppleMusic] Play called, track:', { id: track.id, appleMusicId: track.appleMusicId, hasUrl: !!track.appleMusicUrl, hasPreview: !!track.previewUrl }); var nativePlaySucceeded = false; if (window.electron && window.electron.musicKit && track.appleMusicId) { try { var authStatus = await window.electron.musicKit.checkAuth(); console.log('[AppleMusic] Native auth status:', authStatus); if (authStatus.success && authStatus.authorized) { console.log('[AppleMusic] Playing via native MusicKit:', track.appleMusicId); var playResult = await window.electron.musicKit.play(track.appleMusicId); console.log('[AppleMusic] Native play result:', JSON.stringify(playResult)); if (playResult.success) { return true; } var errMsg = playResult.error || ''; if (errMsg.indexOf('error 6') !== -1) { console.log('[AppleMusic] Native MusicKit error 6 (system media session not ready). Open Music.app once to fix, or playback will use next available source.'); if (!window._appleMusicError6Notified) { window._appleMusicError6Notified = true; window.dispatchEvent(new CustomEvent('applemusic-session-error')); } } else { console.log('[AppleMusic] Native MusicKit play failed:', errMsg); } console.log('[AppleMusic] Native MusicKit play failed, falling back to MusicKit JS'); } } catch (e) { console.log('[AppleMusic] Native MusicKit error:', e); } } if (!nativePlaySucceeded) { var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null; if (musicKitWeb && track.appleMusicId) { var authCooldownMs = 300000; var lastAuthFailAt = window._appleMusicWebAuthFailedAt || 0; var inAuthCooldown = lastAuthFailAt && (Date.now() - lastAuthFailAt) < authCooldownMs; if (inAuthCooldown) { console.log('[AppleMusic] Skipping MusicKit JS \u2014 auth failed ' + Math.round((Date.now() - lastAuthFailAt) / 1000) + 's ago, cooling down'); } else { var status = musicKitWeb.getAuthStatus(); if (!status.configured && window.electron && window.electron.config) { try { var devToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN'); if (devToken) { console.log('[AppleMusic] Auto-configuring MusicKit JS with developer token'); await musicKitWeb.configure(devToken, 'Parachord', '1.0.0'); status = musicKitWeb.getAuthStatus(); } } catch (cfgErr) { console.log('[AppleMusic] MusicKit JS auto-configure failed:', cfgErr.message); } } console.log('[AppleMusic] MusicKit JS status:', status); if (status.configured && !status.authorized && window.electron && window.electron.platform === 'darwin') { try { console.log('[AppleMusic] MusicKit JS not authorized, requesting authorization...'); await musicKitWeb.authorize(); status = musicKitWeb.getAuthStatus(); console.log('[AppleMusic] MusicKit JS auth result:', status); } catch (authErr) { console.log('[AppleMusic] MusicKit JS authorization failed:', authErr.message); window._appleMusicWebAuthFailedAt = Date.now(); } } else if (status.configured && !status.authorized) { console.log('[AppleMusic] MusicKit JS not authorized; skipping popup on non-macOS (use Settings \u2192 Apple Music \u2192 Connect to sign in via the auth window). Falling back to 30s preview.'); } if (status.configured && status.authorized) { window._appleMusicWebAuthFailedAt = 0; try { console.log('[AppleMusic] Playing via MusicKit JS:', track.appleMusicId); await musicKitWeb.play(track.appleMusicId); console.log('[AppleMusic] MusicKit JS playback started'); return true; } catch (mkError) { console.log('[AppleMusic] MusicKit JS play failed:', mkError.message); } } } } } if (track.previewUrl) { console.log('[AppleMusic] Trying 30-second preview in-app playback'); try { if (!window._appleMusicPreviewAudio) { window._appleMusicPreviewAudio = new Audio(); window._appleMusicPreviewAudio.addEventListener('ended', function() { console.log('[AppleMusic] Preview ended'); if (window.dispatchEvent) { window.dispatchEvent(new CustomEvent('applemusic-preview-ended')); } }); } window._appleMusicPreviewAudio.src = track.previewUrl; window._appleMusicPreviewAudio.volume = 1.0; await window._appleMusicPreviewAudio.play(); console.log('[AppleMusic] Playing 30-second preview in-app'); return true; } catch (audioError) { console.log('[AppleMusic] Preview playback failed:', audioError); } } console.log('[AppleMusic] All playback methods failed, returning false to try next source'); return false; }","init":"async function(config) { console.log('Apple Music resolver initialized'); if (config.developerToken && window.getMusicKitWeb) { console.log('[AppleMusic] Configuring MusicKit JS with developer token'); try { var musicKitWeb = window.getMusicKitWeb(); await musicKitWeb.configure(config.developerToken, 'Parachord', '1.0.0'); console.log('[AppleMusic] MusicKit JS configured successfully'); var status = musicKitWeb.getAuthStatus(); if (!status.authorized) { console.log('[AppleMusic] MusicKit JS not authorized yet - will prompt on first play'); } } catch (configError) { console.error('[AppleMusic] Failed to configure MusicKit JS:', configError); } } if (window.electron && window.electron.musicKit) { window.electron.musicKit.isAvailable().then(function(avail) { if (avail) { console.log('Native MusicKit available for Apple Music playback'); } }); } }","cleanup":"async function() { console.log('Apple Music resolver cleanup'); var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null; if (musicKitWeb) { try { await musicKitWeb.stop(); } catch (e) {} } }"}},
   {"manifest":{"id":"youtube","name":"YouTube","version":"1.0.1","author":"Parachord Team","description":"Search and play music videos from YouTube. Free with ads. Opens videos in your browser.","icon":"\ud83c\udfa5","color":"#FF0000","homepage":"https://youtube.com","email":"support@parachord.com"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true,"mobile":false},"urlPatterns":["youtube.com/watch?v=*","www.youtube.com/watch?v=*","youtu.be/*","music.youtube.com/watch?v=*","m.youtube.com/watch?v=*","youtube.com/playlist?list=*","www.youtube.com/playlist?list=*","music.youtube.com/playlist?list=*"],"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching YouTube for:', query); const response = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' music')}&sp=EgIQAQ%253D%253D`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('YouTube search failed:', response.status); return []; } const html = await response.text(); const results = []; const videoDataMatches = html.matchAll(/\"videoId\":\"([^\"]+)\",\"thumbnail\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"ownerText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoDataMatches) { if (count >= 20) break; const [, videoId, title, channel] = match; if (videoId && title && channel) { results.push({ id: `youtube-${videoId}`, title: title, artist: channel, album: 'YouTube', duration: 180, sources: ['youtube'], youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/default.jpg`, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` }); count++; } } console.log(`Found ${results.length} YouTube results`); return results; } catch (error) { console.error('YouTube search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.youtubeUrl) { console.error('No YouTube URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.youtubeUrl); return result && result.success; } else { const newWindow = window.open(track.youtubeUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open YouTube link:', error); return false; } }","init":"async function(config) { console.log('YouTube resolver initialized'); }","cleanup":"async function() { console.log('YouTube resolver cleanup'); }","lookupUrl":"async function(url, config) { try { let videoId = null; if (url.includes('youtu.be/')) { const match = url.match(/youtu\\.be\\/([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } else { const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } if (!videoId) return null; const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`; const response = await fetch(oembedUrl); if (!response.ok) return null; const data = await response.json(); let title = data.title || ''; let artist = data.author_name || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-\u2013\u2014]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); title = dashMatch[2].trim(); } return { title: title || 'Unknown Title', artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, sourceUrl: url, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }; } catch (error) { console.error('YouTube URL lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/); if (!listMatch) return null; const playlistId = listMatch[1]; const response = await fetch(`https://www.youtube.com/playlist?list=${playlistId}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const tracks = []; let playlistName = 'YouTube Playlist'; const titleMatch = html.match(/\"title\":\\s*\"([^\"]+)\",\\s*\"playlistId\":/); if (titleMatch) { playlistName = titleMatch[1]; } const videoMatches = html.matchAll(/\"videoId\":\"([^\"]+)\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"shortBylineText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoMatches) { if (count >= 100) break; const [, videoId, title, channel] = match; if (videoId && title) { let trackTitle = title; let artist = channel || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-\u2013\u2014]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); trackTitle = dashMatch[2].trim(); } tracks.push({ title: trackTitle, artist: artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }); count++; } } if (tracks.length === 0) return null; return { type: 'playlist', name: playlistName, albumArt: tracks[0]?.albumArt, tracks: tracks }; } catch (error) { console.error('YouTube playlist lookup error:', error); return null; } }"}},
-  {"manifest":{"id":"subsonic","name":"Subsonic","version":"0.1.0","author":"Parachord Team","description":"Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.","icon":"📡","color":"#14b8a6","homepage":"https://subsonic.org","email":""},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"urlPatterns":[],"settings":{"requiresAuth":true,"authType":"userpass","configurable":{"serverUrl":{"type":"text","label":"Server URL","description":"Base URL of your Subsonic-compatible server. A trailing /rest is tolerated (e.g. http://192.168.0.13:4533 or http://navidrome.local:4533/rest).","placeholder":"http://navidrome.local:4533"},"username":{"type":"text","label":"Username","description":"Your Subsonic account username.","placeholder":"admin"},"password":{"type":"password","label":"Password","description":"Your Subsonic account password. Sent as an MD5 token (salt + hash), never in plain text."}}},"implementation":{"search":"async function(query, config) {\n  try {\n    if (typeof query !== 'string' || !query.trim() || query.trim().length < 2) return [];\n\n  var ensureHelpers = function() {\n    if (window.__subsonicHelpers) return window.__subsonicHelpers;\n    var md5cycle = function(x, k) {\n      var a = x[0], b = x[1], c = x[2], d = x[3];\n      a = ff(a, b, c, d, k[0], 7, -680876936);\n      d = ff(d, a, b, c, k[1], 12, -389564586);\n      c = ff(c, d, a, b, k[2], 17, 606105819);\n      b = ff(b, c, d, a, k[3], 22, -1044525330);\n      a = ff(a, b, c, d, k[4], 7, -176418897);\n      d = ff(d, a, b, c, k[5], 12, 1200080426);\n      c = ff(c, d, a, b, k[6], 17, -1473231341);\n      b = ff(b, c, d, a, k[7], 22, -45705983);\n      a = ff(a, b, c, d, k[8], 7, 1770035416);\n      d = ff(d, a, b, c, k[9], 12, -1958414417);\n      c = ff(c, d, a, b, k[10], 17, -42063);\n      b = ff(b, c, d, a, k[11], 22, -1990404162);\n      a = ff(a, b, c, d, k[12], 7, 1804603682);\n      d = ff(d, a, b, c, k[13], 12, -40341101);\n      c = ff(c, d, a, b, k[14], 17, -1502002290);\n      b = ff(b, c, d, a, k[15], 22, 1236535329);\n      a = gg(a, b, c, d, k[1], 5, -165796510);\n      d = gg(d, a, b, c, k[6], 9, -1069501632);\n      c = gg(c, d, a, b, k[11], 14, 643717713);\n      b = gg(b, c, d, a, k[0], 20, -373897302);\n      a = gg(a, b, c, d, k[5], 5, -701558691);\n      d = gg(d, a, b, c, k[10], 9, 38016083);\n      c = gg(c, d, a, b, k[15], 14, -660478335);\n      b = gg(b, c, d, a, k[4], 20, -405537848);\n      a = gg(a, b, c, d, k[9], 5, 568446438);\n      d = gg(d, a, b, c, k[14], 9, -1019803690);\n      c = gg(c, d, a, b, k[3], 14, -187363961);\n      b = gg(b, c, d, a, k[8], 20, 1163531501);\n      a = gg(a, b, c, d, k[13], 5, -1444681467);\n      d = gg(d, a, b, c, k[2], 9, -51403784);\n      c = gg(c, d, a, b, k[7], 14, 1735328473);\n      b = gg(b, c, d, a, k[12], 20, -1926607734);\n      a = hh(a, b, c, d, k[5], 4, -378558);\n      d = hh(d, a, b, c, k[8], 11, -2022574463);\n      c = hh(c, d, a, b, k[11], 16, 1839030562);\n      b = hh(b, c, d, a, k[14], 23, -35309556);\n      a = hh(a, b, c, d, k[1], 4, -1530992060);\n      d = hh(d, a, b, c, k[4], 11, 1272893353);\n      c = hh(c, d, a, b, k[7], 16, -155497632);\n      b = hh(b, c, d, a, k[10], 23, -1094730640);\n      a = hh(a, b, c, d, k[13], 4, 681279174);\n      d = hh(d, a, b, c, k[0], 11, -358537222);\n      c = hh(c, d, a, b, k[3], 16, -722521979);\n      b = hh(b, c, d, a, k[6], 23, 76029189);\n      a = hh(a, b, c, d, k[9], 4, -640364487);\n      d = hh(d, a, b, c, k[12], 11, -421815835);\n      c = hh(c, d, a, b, k[15], 16, 530742520);\n      b = hh(b, c, d, a, k[2], 23, -995338651);\n      a = ii(a, b, c, d, k[0], 6, -198630844);\n      d = ii(d, a, b, c, k[7], 10, 1126891415);\n      c = ii(c, d, a, b, k[14], 15, -1416354905);\n      b = ii(b, c, d, a, k[5], 21, -57434055);\n      a = ii(a, b, c, d, k[12], 6, 1700485571);\n      d = ii(d, a, b, c, k[3], 10, -1894986606);\n      c = ii(c, d, a, b, k[10], 15, -1051523);\n      b = ii(b, c, d, a, k[1], 21, -2054922799);\n      a = ii(a, b, c, d, k[8], 6, 1873313359);\n      d = ii(d, a, b, c, k[15], 10, -30611744);\n      c = ii(c, d, a, b, k[6], 15, -1560198380);\n      b = ii(b, c, d, a, k[13], 21, 1309151649);\n      a = ii(a, b, c, d, k[4], 6, -145523070);\n      d = ii(d, a, b, c, k[11], 10, -1120210379);\n      c = ii(c, d, a, b, k[2], 15, 718787259);\n      b = ii(b, c, d, a, k[9], 21, -343485551);\n      x[0] = add32(a, x[0]);\n      x[1] = add32(b, x[1]);\n      x[2] = add32(c, x[2]);\n      x[3] = add32(d, x[3]);\n    };\n    var cmn = function(q, a, b, x, s, t) {\n      a = add32(add32(a, q), add32(x, t));\n      return add32((a << s) | (a >>> (32 - s)), b);\n    };\n    var ff = function(a, b, c, d, x, s, t) { return cmn((b & c) | ((~b) & d), a, b, x, s, t); };\n    var gg = function(a, b, c, d, x, s, t) { return cmn((b & d) | (c & (~d)), a, b, x, s, t); };\n    var hh = function(a, b, c, d, x, s, t) { return cmn(b ^ c ^ d, a, b, x, s, t); };\n    var ii = function(a, b, c, d, x, s, t) { return cmn(c ^ (b | (~d)), a, b, x, s, t); };\n    var md51 = function(s) {\n      var n = s.length, state = [1732584193, -271733879, -1732584194, 271733878], i;\n      for (i = 64; i <= s.length; i += 64) {\n        md5cycle(state, md5blk(s.substring(i - 64, i)));\n      }\n      s = s.substring(i - 64);\n      var tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];\n      for (i = 0; i < s.length; i++)\n        tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3);\n      tail[i >> 2] |= 0x80 << ((i % 4) << 3);\n      if (i > 55) {\n        md5cycle(state, tail);\n        for (i = 0; i < 16; i++) tail[i] = 0;\n      }\n      tail[14] = n * 8;\n      md5cycle(state, tail);\n      return state;\n    };\n    var md5blk = function(s) {\n      var md5blks = [], i;\n      for (i = 0; i < 64; i += 4) {\n        md5blks[i >> 2] = s.charCodeAt(i) + (s.charCodeAt(i + 1) << 8) + (s.charCodeAt(i + 2) << 16) + (s.charCodeAt(i + 3) << 24);\n      }\n      return md5blks;\n    };\n    var hex_chr = '0123456789abcdef'.split('');\n    var rhex = function(n) {\n      var s = '', j = 0;\n      for (; j < 4; j++)\n        s += hex_chr[(n >> (j * 8 + 4)) & 0x0f] + hex_chr[(n >> (j * 8)) & 0x0f];\n      return s;\n    };\n    var hex = function(x) {\n      for (var i = 0; i < x.length; i++) x[i] = rhex(x[i]);\n      return x.join('');\n    };\n    var hexmd5 = function(s) { return hex(md51(unescape(encodeURIComponent(s)))); };\n    var add32 = function(a, b) { return (a + b) & 0xffffffff; };\n    // ---- Subsonic URL builders ----\n    // Tolerate \"http://host:4533\", \"http://host:4533/\", \"http://host:4533/rest\"\n    // and \"http://host:4533/rest/\" — every one of those gets pasted by users.\n    var normalizeBase = function(raw) {\n      var u = (raw || '').toString().trim();\n      if (!u) return null;\n      if (!/^https?:\\/\\//i.test(u)) u = 'http://' + u;\n      u = u.replace(/\\/+$/, '');\n      u = u.replace(/\\/rest$/i, '');\n      return u;\n    };\n    var makeSalt = function() {\n      try {\n        if (window.crypto && window.crypto.getRandomValues) {\n          var bytes = new Uint8Array(6);\n          window.crypto.getRandomValues(bytes);\n          var s = '';\n          for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);\n          return s;\n        }\n      } catch (e) {}\n      return ('' + Math.random()).slice(2, 14);\n    };\n    // Token auth (Subsonic API >= 1.13): t = md5(password + salt). The\n    // plaintext password never appears in a URL.\n    var authParams = function(config) {\n      var salt = makeSalt();\n      var token = hexmd5(((config && config.password) || '') + salt);\n      return 'u=' + encodeURIComponent((config && config.username) || '') + '&t=' + token + '&s=' + salt + '&v=1.16.1&c=parachord';\n    };\n    var apiUrl = function(config, endpoint, extra) {\n      var base = normalizeBase(config && config.serverUrl);\n      if (!base) return null;\n      var url = base + '/rest/' + endpoint + '.view?' + authParams(config);\n      if (extra) url += '&' + extra;\n      return url;\n    };\n    window.__subsonicHelpers = { hexmd5: hexmd5, normalizeBase: normalizeBase, authParams: authParams, apiUrl: apiUrl };\n    return window.__subsonicHelpers;\n  };\n\n    var h = ensureHelpers();\n    var url = h.apiUrl(config, 'search3', 'f=json&query=' + encodeURIComponent(query.trim()) + '&songCount=20&artistCount=0&albumCount=0');\n    if (!url) {\n      console.log('Subsonic: no server URL configured, skipping search');\n      return [];\n    }\n    var resp = await fetch(url);\n    if (!resp.ok) {\n      console.warn('Subsonic: search failed, HTTP ' + resp.status);\n      return [];\n    }\n    var data = await resp.json();\n    var sub = data && data['subsonic-response'];\n    if (!sub || sub.status !== 'ok') {\n      var apiErr = sub && sub.error ? (sub.error.code + ' ' + sub.error.message) : 'bad response';\n      console.warn('Subsonic: API error:', apiErr);\n      return [];\n    }\n    var songs = (sub.searchResult3 && sub.searchResult3.song) || [];\n    var results = [];\n    for (var i = 0; i < songs.length; i++) {\n      var s = songs[i];\n      if (!s || !s.id || !s.title) continue;\n      var track = {\n        id: 'subsonic-' + s.id,\n        title: s.title,\n        artist: s.artist || 'Unknown Artist',\n        album: s.album || '',\n        duration: s.duration || 0,\n        sources: ['subsonic'],\n        subsonicId: s.id,\n        subsonicServer: h.normalizeBase(config && config.serverUrl),\n        subsonicStreamUrl: h.apiUrl(config, 'stream', 'id=' + encodeURIComponent(s.id) + '&maxBitRate=0'),\n        genre: s.genre || null,\n        year: s.year || null,\n        trackNumber: s.track || null\n      };\n      if (s.coverArt) {\n        track.albumArt = h.apiUrl(config, 'getCoverArt', 'id=' + encodeURIComponent(s.coverArt) + '&size=300');\n      }\n      // ISRC per the cross-cutting resolver result shape: upper-case,\n      // trimmed, format-validated. OpenSubsonic servers return a string or\n      // an array (Navidrome: array, usually empty).\n      var isrcRaw = '';\n      if (typeof s.isrc === 'string') isrcRaw = s.isrc;\n      else if (s.isrc && s.isrc.length) isrcRaw = String(s.isrc[0] || '');\n      var isrc = (isrcRaw || '').toUpperCase().trim();\n      if (/^[A-Z]{2}[A-Z0-9]{3}\\d{7}$/.test(isrc)) track.isrc = isrc;\n      // streamQuality per the stream-quality.js contract. These are the\n      // server's tagged file properties ('claimed' — the server may still\n      // transcode on stream.view, so they are not measured).\n      var suffix = s.suffix ? String(s.suffix).toLowerCase() : '';\n      if (suffix || s.bitRate || s.samplingRate) {\n        var sq = { origin: 'claimed' };\n        if (suffix) { sq.codec = suffix; sq.container = suffix; }\n        if (s.bitRate) sq.bitrate = s.bitRate;\n        if (s.samplingRate) sq.sampleRate = s.samplingRate;\n        if (s.bitDepth) sq.bitDepth = s.bitDepth;\n        if (s.channelCount) sq.channels = s.channelCount;\n        track.streamQuality = sq;\n      }\n      results.push(track);\n    }\n    console.log('Subsonic: found ' + results.length + ' song(s) for \"' + query + '\"');\n    return results;\n  } catch (error) {\n    console.error('Subsonic search error:', error);\n    return [];\n  }\n}","resolve":"async function(artist, track, album, config) {\n  // Containment-match on both axes (same shape as the platform's\n  // validateResolvedTrack gate). No fallback to a fuzzy top hit: the 0.6\n  // confidence floor drops a single-axis match anyway, so returning one only\n  // pollutes the source cache.\n  var norm = function(s) { s = (s || '').toString().toLowerCase(); return s.replace(/[^a-z0-9]/g, ''); };\n  var contains = function(a, b) { return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1); };\n  var targetArtist = norm(artist);\n  var targetTitle = norm(track);\n  var query = ((artist || '') + ' ' + (track || '')).trim();\n  if (!query) return null;\n  var results = await this.search(query, config);\n  if (!results || results.length === 0) return null;\n  for (var i = 0; i < results.length; i++) {\n    if (contains(norm(results[i].artist), targetArtist) && contains(norm(results[i].title), targetTitle)) return results[i];\n  }\n  return null;\n}","getStreamUrl":"async function(track, config) {\n\n  var ensureHelpers = function() {\n    if (window.__subsonicHelpers) return window.__subsonicHelpers;\n    var md5cycle = function(x, k) {\n      var a = x[0], b = x[1], c = x[2], d = x[3];\n      a = ff(a, b, c, d, k[0], 7, -680876936);\n      d = ff(d, a, b, c, k[1], 12, -389564586);\n      c = ff(c, d, a, b, k[2], 17, 606105819);\n      b = ff(b, c, d, a, k[3], 22, -1044525330);\n      a = ff(a, b, c, d, k[4], 7, -176418897);\n      d = ff(d, a, b, c, k[5], 12, 1200080426);\n      c = ff(c, d, a, b, k[6], 17, -1473231341);\n      b = ff(b, c, d, a, k[7], 22, -45705983);\n      a = ff(a, b, c, d, k[8], 7, 1770035416);\n      d = ff(d, a, b, c, k[9], 12, -1958414417);\n      c = ff(c, d, a, b, k[10], 17, -42063);\n      b = ff(b, c, d, a, k[11], 22, -1990404162);\n      a = ff(a, b, c, d, k[12], 7, 1804603682);\n      d = ff(d, a, b, c, k[13], 12, -40341101);\n      c = ff(c, d, a, b, k[14], 17, -1502002290);\n      b = ff(b, c, d, a, k[15], 22, 1236535329);\n      a = gg(a, b, c, d, k[1], 5, -165796510);\n      d = gg(d, a, b, c, k[6], 9, -1069501632);\n      c = gg(c, d, a, b, k[11], 14, 643717713);\n      b = gg(b, c, d, a, k[0], 20, -373897302);\n      a = gg(a, b, c, d, k[5], 5, -701558691);\n      d = gg(d, a, b, c, k[10], 9, 38016083);\n      c = gg(c, d, a, b, k[15], 14, -660478335);\n      b = gg(b, c, d, a, k[4], 20, -405537848);\n      a = gg(a, b, c, d, k[9], 5, 568446438);\n      d = gg(d, a, b, c, k[14], 9, -1019803690);\n      c = gg(c, d, a, b, k[3], 14, -187363961);\n      b = gg(b, c, d, a, k[8], 20, 1163531501);\n      a = gg(a, b, c, d, k[13], 5, -1444681467);\n      d = gg(d, a, b, c, k[2], 9, -51403784);\n      c = gg(c, d, a, b, k[7], 14, 1735328473);\n      b = gg(b, c, d, a, k[12], 20, -1926607734);\n      a = hh(a, b, c, d, k[5], 4, -378558);\n      d = hh(d, a, b, c, k[8], 11, -2022574463);\n      c = hh(c, d, a, b, k[11], 16, 1839030562);\n      b = hh(b, c, d, a, k[14], 23, -35309556);\n      a = hh(a, b, c, d, k[1], 4, -1530992060);\n      d = hh(d, a, b, c, k[4], 11, 1272893353);\n      c = hh(c, d, a, b, k[7], 16, -155497632);\n      b = hh(b, c, d, a, k[10], 23, -1094730640);\n      a = hh(a, b, c, d, k[13], 4, 681279174);\n      d = hh(d, a, b, c, k[0], 11, -358537222);\n      c = hh(c, d, a, b, k[3], 16, -722521979);\n      b = hh(b, c, d, a, k[6], 23, 76029189);\n      a = hh(a, b, c, d, k[9], 4, -640364487);\n      d = hh(d, a, b, c, k[12], 11, -421815835);\n      c = hh(c, d, a, b, k[15], 16, 530742520);\n      b = hh(b, c, d, a, k[2], 23, -995338651);\n      a = ii(a, b, c, d, k[0], 6, -198630844);\n      d = ii(d, a, b, c, k[7], 10, 1126891415);\n      c = ii(c, d, a, b, k[14], 15, -1416354905);\n      b = ii(b, c, d, a, k[5], 21, -57434055);\n      a = ii(a, b, c, d, k[12], 6, 1700485571);\n      d = ii(d, a, b, c, k[3], 10, -1894986606);\n      c = ii(c, d, a, b, k[10], 15, -1051523);\n      b = ii(b, c, d, a, k[1], 21, -2054922799);\n      a = ii(a, b, c, d, k[8], 6, 1873313359);\n      d = ii(d, a, b, c, k[15], 10, -30611744);\n      c = ii(c, d, a, b, k[6], 15, -1560198380);\n      b = ii(b, c, d, a, k[13], 21, 1309151649);\n      a = ii(a, b, c, d, k[4], 6, -145523070);\n      d = ii(d, a, b, c, k[11], 10, -1120210379);\n      c = ii(c, d, a, b, k[2], 15, 718787259);\n      b = ii(b, c, d, a, k[9], 21, -343485551);\n      x[0] = add32(a, x[0]);\n      x[1] = add32(b, x[1]);\n      x[2] = add32(c, x[2]);\n      x[3] = add32(d, x[3]);\n    };\n    var cmn = function(q, a, b, x, s, t) {\n      a = add32(add32(a, q), add32(x, t));\n      return add32((a << s) | (a >>> (32 - s)), b);\n    };\n    var ff = function(a, b, c, d, x, s, t) { return cmn((b & c) | ((~b) & d), a, b, x, s, t); };\n    var gg = function(a, b, c, d, x, s, t) { return cmn((b & d) | (c & (~d)), a, b, x, s, t); };\n    var hh = function(a, b, c, d, x, s, t) { return cmn(b ^ c ^ d, a, b, x, s, t); };\n    var ii = function(a, b, c, d, x, s, t) { return cmn(c ^ (b | (~d)), a, b, x, s, t); };\n    var md51 = function(s) {\n      var n = s.length, state = [1732584193, -271733879, -1732584194, 271733878], i;\n      for (i = 64; i <= s.length; i += 64) {\n        md5cycle(state, md5blk(s.substring(i - 64, i)));\n      }\n      s = s.substring(i - 64);\n      var tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];\n      for (i = 0; i < s.length; i++)\n        tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3);\n      tail[i >> 2] |= 0x80 << ((i % 4) << 3);\n      if (i > 55) {\n        md5cycle(state, tail);\n        for (i = 0; i < 16; i++) tail[i] = 0;\n      }\n      tail[14] = n * 8;\n      md5cycle(state, tail);\n      return state;\n    };\n    var md5blk = function(s) {\n      var md5blks = [], i;\n      for (i = 0; i < 64; i += 4) {\n        md5blks[i >> 2] = s.charCodeAt(i) + (s.charCodeAt(i + 1) << 8) + (s.charCodeAt(i + 2) << 16) + (s.charCodeAt(i + 3) << 24);\n      }\n      return md5blks;\n    };\n    var hex_chr = '0123456789abcdef'.split('');\n    var rhex = function(n) {\n      var s = '', j = 0;\n      for (; j < 4; j++)\n        s += hex_chr[(n >> (j * 8 + 4)) & 0x0f] + hex_chr[(n >> (j * 8)) & 0x0f];\n      return s;\n    };\n    var hex = function(x) {\n      for (var i = 0; i < x.length; i++) x[i] = rhex(x[i]);\n      return x.join('');\n    };\n    var hexmd5 = function(s) { return hex(md51(unescape(encodeURIComponent(s)))); };\n    var add32 = function(a, b) { return (a + b) & 0xffffffff; };\n    // ---- Subsonic URL builders ----\n    // Tolerate \"http://host:4533\", \"http://host:4533/\", \"http://host:4533/rest\"\n    // and \"http://host:4533/rest/\" — every one of those gets pasted by users.\n    var normalizeBase = function(raw) {\n      var u = (raw || '').toString().trim();\n      if (!u) return null;\n      if (!/^https?:\\/\\//i.test(u)) u = 'http://' + u;\n      u = u.replace(/\\/+$/, '');\n      u = u.replace(/\\/rest$/i, '');\n      return u;\n    };\n    var makeSalt = function() {\n      try {\n        if (window.crypto && window.crypto.getRandomValues) {\n          var bytes = new Uint8Array(6);\n          window.crypto.getRandomValues(bytes);\n          var s = '';\n          for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);\n          return s;\n        }\n      } catch (e) {}\n      return ('' + Math.random()).slice(2, 14);\n    };\n    // Token auth (Subsonic API >= 1.13): t = md5(password + salt). The\n    // plaintext password never appears in a URL.\n    var authParams = function(config) {\n      var salt = makeSalt();\n      var token = hexmd5(((config && config.password) || '') + salt);\n      return 'u=' + encodeURIComponent((config && config.username) || '') + '&t=' + token + '&s=' + salt + '&v=1.16.1&c=parachord';\n    };\n    var apiUrl = function(config, endpoint, extra) {\n      var base = normalizeBase(config && config.serverUrl);\n      if (!base) return null;\n      var url = base + '/rest/' + endpoint + '.view?' + authParams(config);\n      if (extra) url += '&' + extra;\n      return url;\n    };\n    window.__subsonicHelpers = { hexmd5: hexmd5, normalizeBase: normalizeBase, authParams: authParams, apiUrl: apiUrl };\n    return window.__subsonicHelpers;\n  };\n\n  try {\n    var t = track || {};\n    var subsonicId = t.subsonicId || (t.sources && t.sources.subsonic && t.sources.subsonic.subsonicId) || null;\n    if (!subsonicId) return null;\n    var h = ensureHelpers();\n    // Fresh credentials win: a changed password invalidates any URL baked\n    // at search time, so rebuild from config whenever all three fields are\n    // present.\n    var cfg = config || {};\n    if (cfg.serverUrl && cfg.username && typeof cfg.password === 'string') {\n      var fresh = h.apiUrl(cfg, 'stream', 'id=' + encodeURIComponent(subsonicId) + '&maxBitRate=0');\n      if (fresh) return fresh;\n    }\n    // Fall back to the URL baked onto the source at search/resolve time.\n    return t.subsonicStreamUrl || (t.sources && t.sources.subsonic && t.sources.subsonic.subsonicStreamUrl) || null;\n  } catch (error) {\n    console.error('Subsonic getStreamUrl error:', error);\n    return null;\n  }\n}","play":"async function(track, config) {\n  // In-app streaming playback is host-owned: handlePlay's subsonic branch\n  // streams via the shared HTML5 audio element and never reaches this.\n  // Hosts without that branch get an honest failure instead of ghost audio.\n  console.log('Subsonic: play() is host-owned (HTML5 audio branch in handlePlay); not handled here');\n  return false;\n}","init":"async function(config) {\n  console.log('Subsonic resolver initialized');\n  return true;\n}","cleanup":"async function() {\n  console.log('Subsonic resolver cleanup');\n}"}},
+  {"manifest":{"id":"subsonic","name":"Subsonic","version":"0.1.0","author":"Parachord Team","description":"Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.","icon":"📡","color":"#14b8a6","homepage":"https://subsonic.org","email":""},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false,"mobile":false},"urlPatterns":[],"settings":{"requiresAuth":true,"authType":"userpass","configurable":{"serverUrl":{"type":"text","label":"Server URL","description":"Base URL of your Subsonic-compatible server. A trailing /rest is tolerated (e.g. http://192.168.0.13:4533 or http://navidrome.local:4533/rest).","placeholder":"http://navidrome.local:4533"},"username":{"type":"text","label":"Username","description":"Your Subsonic account username.","placeholder":"admin"},"password":{"type":"password","label":"Password","description":"Your Subsonic account password. Sent as an MD5 token (salt + hash), never in plain text."}}},"implementation":{"search":"async function(query, config) {\n  try {\n    if (typeof query !== 'string' || !query.trim() || query.trim().length < 2) return [];\n\n  var ensureHelpers = function() {\n    if (window.__subsonicHelpers) return window.__subsonicHelpers;\n    var md5cycle = function(x, k) {\n      var a = x[0], b = x[1], c = x[2], d = x[3];\n      a = ff(a, b, c, d, k[0], 7, -680876936);\n      d = ff(d, a, b, c, k[1], 12, -389564586);\n      c = ff(c, d, a, b, k[2], 17, 606105819);\n      b = ff(b, c, d, a, k[3], 22, -1044525330);\n      a = ff(a, b, c, d, k[4], 7, -176418897);\n      d = ff(d, a, b, c, k[5], 12, 1200080426);\n      c = ff(c, d, a, b, k[6], 17, -1473231341);\n      b = ff(b, c, d, a, k[7], 22, -45705983);\n      a = ff(a, b, c, d, k[8], 7, 1770035416);\n      d = ff(d, a, b, c, k[9], 12, -1958414417);\n      c = ff(c, d, a, b, k[10], 17, -42063);\n      b = ff(b, c, d, a, k[11], 22, -1990404162);\n      a = ff(a, b, c, d, k[12], 7, 1804603682);\n      d = ff(d, a, b, c, k[13], 12, -40341101);\n      c = ff(c, d, a, b, k[14], 17, -1502002290);\n      b = ff(b, c, d, a, k[15], 22, 1236535329);\n      a = gg(a, b, c, d, k[1], 5, -165796510);\n      d = gg(d, a, b, c, k[6], 9, -1069501632);\n      c = gg(c, d, a, b, k[11], 14, 643717713);\n      b = gg(b, c, d, a, k[0], 20, -373897302);\n      a = gg(a, b, c, d, k[5], 5, -701558691);\n      d = gg(d, a, b, c, k[10], 9, 38016083);\n      c = gg(c, d, a, b, k[15], 14, -660478335);\n      b = gg(b, c, d, a, k[4], 20, -405537848);\n      a = gg(a, b, c, d, k[9], 5, 568446438);\n      d = gg(d, a, b, c, k[14], 9, -1019803690);\n      c = gg(c, d, a, b, k[3], 14, -187363961);\n      b = gg(b, c, d, a, k[8], 20, 1163531501);\n      a = gg(a, b, c, d, k[13], 5, -1444681467);\n      d = gg(d, a, b, c, k[2], 9, -51403784);\n      c = gg(c, d, a, b, k[7], 14, 1735328473);\n      b = gg(b, c, d, a, k[12], 20, -1926607734);\n      a = hh(a, b, c, d, k[5], 4, -378558);\n      d = hh(d, a, b, c, k[8], 11, -2022574463);\n      c = hh(c, d, a, b, k[11], 16, 1839030562);\n      b = hh(b, c, d, a, k[14], 23, -35309556);\n      a = hh(a, b, c, d, k[1], 4, -1530992060);\n      d = hh(d, a, b, c, k[4], 11, 1272893353);\n      c = hh(c, d, a, b, k[7], 16, -155497632);\n      b = hh(b, c, d, a, k[10], 23, -1094730640);\n      a = hh(a, b, c, d, k[13], 4, 681279174);\n      d = hh(d, a, b, c, k[0], 11, -358537222);\n      c = hh(c, d, a, b, k[3], 16, -722521979);\n      b = hh(b, c, d, a, k[6], 23, 76029189);\n      a = hh(a, b, c, d, k[9], 4, -640364487);\n      d = hh(d, a, b, c, k[12], 11, -421815835);\n      c = hh(c, d, a, b, k[15], 16, 530742520);\n      b = hh(b, c, d, a, k[2], 23, -995338651);\n      a = ii(a, b, c, d, k[0], 6, -198630844);\n      d = ii(d, a, b, c, k[7], 10, 1126891415);\n      c = ii(c, d, a, b, k[14], 15, -1416354905);\n      b = ii(b, c, d, a, k[5], 21, -57434055);\n      a = ii(a, b, c, d, k[12], 6, 1700485571);\n      d = ii(d, a, b, c, k[3], 10, -1894986606);\n      c = ii(c, d, a, b, k[10], 15, -1051523);\n      b = ii(b, c, d, a, k[1], 21, -2054922799);\n      a = ii(a, b, c, d, k[8], 6, 1873313359);\n      d = ii(d, a, b, c, k[15], 10, -30611744);\n      c = ii(c, d, a, b, k[6], 15, -1560198380);\n      b = ii(b, c, d, a, k[13], 21, 1309151649);\n      a = ii(a, b, c, d, k[4], 6, -145523070);\n      d = ii(d, a, b, c, k[11], 10, -1120210379);\n      c = ii(c, d, a, b, k[2], 15, 718787259);\n      b = ii(b, c, d, a, k[9], 21, -343485551);\n      x[0] = add32(a, x[0]);\n      x[1] = add32(b, x[1]);\n      x[2] = add32(c, x[2]);\n      x[3] = add32(d, x[3]);\n    };\n    var cmn = function(q, a, b, x, s, t) {\n      a = add32(add32(a, q), add32(x, t));\n      return add32((a << s) | (a >>> (32 - s)), b);\n    };\n    var ff = function(a, b, c, d, x, s, t) { return cmn((b & c) | ((~b) & d), a, b, x, s, t); };\n    var gg = function(a, b, c, d, x, s, t) { return cmn((b & d) | (c & (~d)), a, b, x, s, t); };\n    var hh = function(a, b, c, d, x, s, t) { return cmn(b ^ c ^ d, a, b, x, s, t); };\n    var ii = function(a, b, c, d, x, s, t) { return cmn(c ^ (b | (~d)), a, b, x, s, t); };\n    var md51 = function(s) {\n      var n = s.length, state = [1732584193, -271733879, -1732584194, 271733878], i;\n      for (i = 64; i <= s.length; i += 64) {\n        md5cycle(state, md5blk(s.substring(i - 64, i)));\n      }\n      s = s.substring(i - 64);\n      var tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];\n      for (i = 0; i < s.length; i++)\n        tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3);\n      tail[i >> 2] |= 0x80 << ((i % 4) << 3);\n      if (i > 55) {\n        md5cycle(state, tail);\n        for (i = 0; i < 16; i++) tail[i] = 0;\n      }\n      tail[14] = n * 8;\n      md5cycle(state, tail);\n      return state;\n    };\n    var md5blk = function(s) {\n      var md5blks = [], i;\n      for (i = 0; i < 64; i += 4) {\n        md5blks[i >> 2] = s.charCodeAt(i) + (s.charCodeAt(i + 1) << 8) + (s.charCodeAt(i + 2) << 16) + (s.charCodeAt(i + 3) << 24);\n      }\n      return md5blks;\n    };\n    var hex_chr = '0123456789abcdef'.split('');\n    var rhex = function(n) {\n      var s = '', j = 0;\n      for (; j < 4; j++)\n        s += hex_chr[(n >> (j * 8 + 4)) & 0x0f] + hex_chr[(n >> (j * 8)) & 0x0f];\n      return s;\n    };\n    var hex = function(x) {\n      for (var i = 0; i < x.length; i++) x[i] = rhex(x[i]);\n      return x.join('');\n    };\n    var hexmd5 = function(s) { return hex(md51(unescape(encodeURIComponent(s)))); };\n    var add32 = function(a, b) { return (a + b) & 0xffffffff; };\n    // ---- Subsonic URL builders ----\n    // Tolerate \"http://host:4533\", \"http://host:4533/\", \"http://host:4533/rest\"\n    // and \"http://host:4533/rest/\" — every one of those gets pasted by users.\n    var normalizeBase = function(raw) {\n      var u = (raw || '').toString().trim();\n      if (!u) return null;\n      if (!/^https?:\\/\\//i.test(u)) u = 'http://' + u;\n      u = u.replace(/\\/+$/, '');\n      u = u.replace(/\\/rest$/i, '');\n      return u;\n    };\n    var makeSalt = function() {\n      try {\n        if (window.crypto && window.crypto.getRandomValues) {\n          var bytes = new Uint8Array(6);\n          window.crypto.getRandomValues(bytes);\n          var s = '';\n          for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);\n          return s;\n        }\n      } catch (e) {}\n      return ('' + Math.random()).slice(2, 14);\n    };\n    // Token auth (Subsonic API >= 1.13): t = md5(password + salt). The\n    // plaintext password never appears in a URL.\n    var authParams = function(config) {\n      var salt = makeSalt();\n      var token = hexmd5(((config && config.password) || '') + salt);\n      return 'u=' + encodeURIComponent((config && config.username) || '') + '&t=' + token + '&s=' + salt + '&v=1.16.1&c=parachord';\n    };\n    var apiUrl = function(config, endpoint, extra) {\n      var base = normalizeBase(config && config.serverUrl);\n      if (!base) return null;\n      var url = base + '/rest/' + endpoint + '.view?' + authParams(config);\n      if (extra) url += '&' + extra;\n      return url;\n    };\n    window.__subsonicHelpers = { hexmd5: hexmd5, normalizeBase: normalizeBase, authParams: authParams, apiUrl: apiUrl };\n    return window.__subsonicHelpers;\n  };\n\n    var h = ensureHelpers();\n    var url = h.apiUrl(config, 'search3', 'f=json&query=' + encodeURIComponent(query.trim()) + '&songCount=20&artistCount=0&albumCount=0');\n    if (!url) {\n      console.log('Subsonic: no server URL configured, skipping search');\n      return [];\n    }\n    var resp = await fetch(url);\n    if (!resp.ok) {\n      console.warn('Subsonic: search failed, HTTP ' + resp.status);\n      return [];\n    }\n    var data = await resp.json();\n    var sub = data && data['subsonic-response'];\n    if (!sub || sub.status !== 'ok') {\n      var apiErr = sub && sub.error ? (sub.error.code + ' ' + sub.error.message) : 'bad response';\n      console.warn('Subsonic: API error:', apiErr);\n      return [];\n    }\n    var songs = (sub.searchResult3 && sub.searchResult3.song) || [];\n    var results = [];\n    for (var i = 0; i < songs.length; i++) {\n      var s = songs[i];\n      if (!s || !s.id || !s.title) continue;\n      // No stream URL and no cover URL. Both bake u=/t=/s= into the result,\n      // and that result is spread into track.sources (track-sources cache,\n      // saved queue, embed broadcast). A token+salt pair replays until the\n      // password changes. getStreamUrl builds a fresh stream URL at play\n      // time. Covers come from the shared album-art pipeline.\n      // streamQuality is held back too: these are the server's tagged file\n      // properties, and stream.view may transcode, so a 'claimed' record\n      // would render in the hover as if it had been measured.\n      var track = {\n        id: 'subsonic-' + s.id,\n        title: s.title,\n        artist: s.artist || 'Unknown Artist',\n        album: s.album || '',\n        duration: s.duration || 0,\n        sources: ['subsonic'],\n        subsonicId: s.id,\n        subsonicServer: h.normalizeBase(config && config.serverUrl),\n        genre: s.genre || null,\n        year: s.year || null,\n        trackNumber: s.track || null\n      };\n      // ISRC per the cross-cutting resolver result shape: upper-case,\n      // trimmed, format-validated. OpenSubsonic servers return a string or\n      // an array (Navidrome: array, usually empty).\n      var isrcRaw = '';\n      if (typeof s.isrc === 'string') isrcRaw = s.isrc;\n      else if (s.isrc && s.isrc.length) isrcRaw = String(s.isrc[0] || '');\n      var isrc = (isrcRaw || '').toUpperCase().trim();\n      if (/^[A-Z]{2}[A-Z0-9]{3}\\d{7}$/.test(isrc)) track.isrc = isrc;\n      results.push(track);\n    }\n    console.log('Subsonic: found ' + results.length + ' song(s) for \"' + query + '\"');\n    return results;\n  } catch (error) {\n    console.error('Subsonic search error:', error);\n    return [];\n  }\n}","resolve":"async function(artist, track, album, config) {\n  // Containment-match on both axes (same shape as the platform's\n  // validateResolvedTrack gate). No fallback to a fuzzy top hit: the 0.6\n  // confidence floor drops a single-axis match anyway, so returning one only\n  // pollutes the source cache.\n  var norm = function(s) { s = (s || '').toString().toLowerCase(); return s.replace(/[^a-z0-9]/g, ''); };\n  var contains = function(a, b) { return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1); };\n  var targetArtist = norm(artist);\n  var targetTitle = norm(track);\n  var query = ((artist || '') + ' ' + (track || '')).trim();\n  if (!query) return null;\n  var results = await this.search(query, config);\n  if (!results || results.length === 0) return null;\n  for (var i = 0; i < results.length; i++) {\n    if (contains(norm(results[i].artist), targetArtist) && contains(norm(results[i].title), targetTitle)) return results[i];\n  }\n  return null;\n}","getStreamUrl":"async function(track, config) {\n\n  var ensureHelpers = function() {\n    if (window.__subsonicHelpers) return window.__subsonicHelpers;\n    var md5cycle = function(x, k) {\n      var a = x[0], b = x[1], c = x[2], d = x[3];\n      a = ff(a, b, c, d, k[0], 7, -680876936);\n      d = ff(d, a, b, c, k[1], 12, -389564586);\n      c = ff(c, d, a, b, k[2], 17, 606105819);\n      b = ff(b, c, d, a, k[3], 22, -1044525330);\n      a = ff(a, b, c, d, k[4], 7, -176418897);\n      d = ff(d, a, b, c, k[5], 12, 1200080426);\n      c = ff(c, d, a, b, k[6], 17, -1473231341);\n      b = ff(b, c, d, a, k[7], 22, -45705983);\n      a = ff(a, b, c, d, k[8], 7, 1770035416);\n      d = ff(d, a, b, c, k[9], 12, -1958414417);\n      c = ff(c, d, a, b, k[10], 17, -42063);\n      b = ff(b, c, d, a, k[11], 22, -1990404162);\n      a = ff(a, b, c, d, k[12], 7, 1804603682);\n      d = ff(d, a, b, c, k[13], 12, -40341101);\n      c = ff(c, d, a, b, k[14], 17, -1502002290);\n      b = ff(b, c, d, a, k[15], 22, 1236535329);\n      a = gg(a, b, c, d, k[1], 5, -165796510);\n      d = gg(d, a, b, c, k[6], 9, -1069501632);\n      c = gg(c, d, a, b, k[11], 14, 643717713);\n      b = gg(b, c, d, a, k[0], 20, -373897302);\n      a = gg(a, b, c, d, k[5], 5, -701558691);\n      d = gg(d, a, b, c, k[10], 9, 38016083);\n      c = gg(c, d, a, b, k[15], 14, -660478335);\n      b = gg(b, c, d, a, k[4], 20, -405537848);\n      a = gg(a, b, c, d, k[9], 5, 568446438);\n      d = gg(d, a, b, c, k[14], 9, -1019803690);\n      c = gg(c, d, a, b, k[3], 14, -187363961);\n      b = gg(b, c, d, a, k[8], 20, 1163531501);\n      a = gg(a, b, c, d, k[13], 5, -1444681467);\n      d = gg(d, a, b, c, k[2], 9, -51403784);\n      c = gg(c, d, a, b, k[7], 14, 1735328473);\n      b = gg(b, c, d, a, k[12], 20, -1926607734);\n      a = hh(a, b, c, d, k[5], 4, -378558);\n      d = hh(d, a, b, c, k[8], 11, -2022574463);\n      c = hh(c, d, a, b, k[11], 16, 1839030562);\n      b = hh(b, c, d, a, k[14], 23, -35309556);\n      a = hh(a, b, c, d, k[1], 4, -1530992060);\n      d = hh(d, a, b, c, k[4], 11, 1272893353);\n      c = hh(c, d, a, b, k[7], 16, -155497632);\n      b = hh(b, c, d, a, k[10], 23, -1094730640);\n      a = hh(a, b, c, d, k[13], 4, 681279174);\n      d = hh(d, a, b, c, k[0], 11, -358537222);\n      c = hh(c, d, a, b, k[3], 16, -722521979);\n      b = hh(b, c, d, a, k[6], 23, 76029189);\n      a = hh(a, b, c, d, k[9], 4, -640364487);\n      d = hh(d, a, b, c, k[12], 11, -421815835);\n      c = hh(c, d, a, b, k[15], 16, 530742520);\n      b = hh(b, c, d, a, k[2], 23, -995338651);\n      a = ii(a, b, c, d, k[0], 6, -198630844);\n      d = ii(d, a, b, c, k[7], 10, 1126891415);\n      c = ii(c, d, a, b, k[14], 15, -1416354905);\n      b = ii(b, c, d, a, k[5], 21, -57434055);\n      a = ii(a, b, c, d, k[12], 6, 1700485571);\n      d = ii(d, a, b, c, k[3], 10, -1894986606);\n      c = ii(c, d, a, b, k[10], 15, -1051523);\n      b = ii(b, c, d, a, k[1], 21, -2054922799);\n      a = ii(a, b, c, d, k[8], 6, 1873313359);\n      d = ii(d, a, b, c, k[15], 10, -30611744);\n      c = ii(c, d, a, b, k[6], 15, -1560198380);\n      b = ii(b, c, d, a, k[13], 21, 1309151649);\n      a = ii(a, b, c, d, k[4], 6, -145523070);\n      d = ii(d, a, b, c, k[11], 10, -1120210379);\n      c = ii(c, d, a, b, k[2], 15, 718787259);\n      b = ii(b, c, d, a, k[9], 21, -343485551);\n      x[0] = add32(a, x[0]);\n      x[1] = add32(b, x[1]);\n      x[2] = add32(c, x[2]);\n      x[3] = add32(d, x[3]);\n    };\n    var cmn = function(q, a, b, x, s, t) {\n      a = add32(add32(a, q), add32(x, t));\n      return add32((a << s) | (a >>> (32 - s)), b);\n    };\n    var ff = function(a, b, c, d, x, s, t) { return cmn((b & c) | ((~b) & d), a, b, x, s, t); };\n    var gg = function(a, b, c, d, x, s, t) { return cmn((b & d) | (c & (~d)), a, b, x, s, t); };\n    var hh = function(a, b, c, d, x, s, t) { return cmn(b ^ c ^ d, a, b, x, s, t); };\n    var ii = function(a, b, c, d, x, s, t) { return cmn(c ^ (b | (~d)), a, b, x, s, t); };\n    var md51 = function(s) {\n      var n = s.length, state = [1732584193, -271733879, -1732584194, 271733878], i;\n      for (i = 64; i <= s.length; i += 64) {\n        md5cycle(state, md5blk(s.substring(i - 64, i)));\n      }\n      s = s.substring(i - 64);\n      var tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];\n      for (i = 0; i < s.length; i++)\n        tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3);\n      tail[i >> 2] |= 0x80 << ((i % 4) << 3);\n      if (i > 55) {\n        md5cycle(state, tail);\n        for (i = 0; i < 16; i++) tail[i] = 0;\n      }\n      tail[14] = n * 8;\n      md5cycle(state, tail);\n      return state;\n    };\n    var md5blk = function(s) {\n      var md5blks = [], i;\n      for (i = 0; i < 64; i += 4) {\n        md5blks[i >> 2] = s.charCodeAt(i) + (s.charCodeAt(i + 1) << 8) + (s.charCodeAt(i + 2) << 16) + (s.charCodeAt(i + 3) << 24);\n      }\n      return md5blks;\n    };\n    var hex_chr = '0123456789abcdef'.split('');\n    var rhex = function(n) {\n      var s = '', j = 0;\n      for (; j < 4; j++)\n        s += hex_chr[(n >> (j * 8 + 4)) & 0x0f] + hex_chr[(n >> (j * 8)) & 0x0f];\n      return s;\n    };\n    var hex = function(x) {\n      for (var i = 0; i < x.length; i++) x[i] = rhex(x[i]);\n      return x.join('');\n    };\n    var hexmd5 = function(s) { return hex(md51(unescape(encodeURIComponent(s)))); };\n    var add32 = function(a, b) { return (a + b) & 0xffffffff; };\n    // ---- Subsonic URL builders ----\n    // Tolerate \"http://host:4533\", \"http://host:4533/\", \"http://host:4533/rest\"\n    // and \"http://host:4533/rest/\" — every one of those gets pasted by users.\n    var normalizeBase = function(raw) {\n      var u = (raw || '').toString().trim();\n      if (!u) return null;\n      if (!/^https?:\\/\\//i.test(u)) u = 'http://' + u;\n      u = u.replace(/\\/+$/, '');\n      u = u.replace(/\\/rest$/i, '');\n      return u;\n    };\n    var makeSalt = function() {\n      try {\n        if (window.crypto && window.crypto.getRandomValues) {\n          var bytes = new Uint8Array(6);\n          window.crypto.getRandomValues(bytes);\n          var s = '';\n          for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);\n          return s;\n        }\n      } catch (e) {}\n      return ('' + Math.random()).slice(2, 14);\n    };\n    // Token auth (Subsonic API >= 1.13): t = md5(password + salt). The\n    // plaintext password never appears in a URL.\n    var authParams = function(config) {\n      var salt = makeSalt();\n      var token = hexmd5(((config && config.password) || '') + salt);\n      return 'u=' + encodeURIComponent((config && config.username) || '') + '&t=' + token + '&s=' + salt + '&v=1.16.1&c=parachord';\n    };\n    var apiUrl = function(config, endpoint, extra) {\n      var base = normalizeBase(config && config.serverUrl);\n      if (!base) return null;\n      var url = base + '/rest/' + endpoint + '.view?' + authParams(config);\n      if (extra) url += '&' + extra;\n      return url;\n    };\n    window.__subsonicHelpers = { hexmd5: hexmd5, normalizeBase: normalizeBase, authParams: authParams, apiUrl: apiUrl };\n    return window.__subsonicHelpers;\n  };\n\n  try {\n    var t = track || {};\n    var subsonicId = t.subsonicId || (t.sources && t.sources.subsonic && t.sources.subsonic.subsonicId) || null;\n    if (!subsonicId) return null;\n    var h = ensureHelpers();\n    // Always a fresh salt. Never fall back to a URL stored on the track —\n    // that URL would carry a replayable token.\n    var cfg = config || {};\n    if (!(cfg.serverUrl && cfg.username && typeof cfg.password === 'string')) return null;\n    return h.apiUrl(cfg, 'stream', 'id=' + encodeURIComponent(subsonicId) + '&maxBitRate=0');\n  } catch (error) {\n    console.error('Subsonic getStreamUrl error:', error);\n    return null;\n  }\n}","play":"async function(track, config) {\n  // In-app streaming playback is host-owned: handlePlay's subsonic branch\n  // streams via the shared HTML5 audio element and never reaches this.\n  // Hosts without that branch get an honest failure instead of ghost audio.\n  console.log('Subsonic: play() is host-owned (HTML5 audio branch in handlePlay); not handled here');\n  return false;\n}","init":"async function(config) {\n  console.log('Subsonic resolver initialized');\n  return true;\n}","cleanup":"async function() {\n  console.log('Subsonic resolver cleanup');\n}"}},
   {"manifest":{"id":"localfiles","name":"Local Files","version":"1.0.0","author":"Parachord Team","description":"Play music from your local library. Configure watch folders in settings.","icon":"\ud83d\udcc1","color":"#6366f1","homepage":"","email":""},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"urlPatterns":[],"settings":{"requiresAuth":false,"configurable":{}},"implementation":{"search":"async function(query, config) { if (!window.electron?.localFiles) { console.error('Local Files API not available'); return []; } try { const results = await window.electron.localFiles.search(query); return results || []; } catch (error) { console.error('Local Files search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { if (!window.electron?.localFiles) { console.error('Local Files API not available'); return null; } try { console.log('LocalFiles resolver querying:', artist, track, album); const results = await window.electron.localFiles.resolve({ artist, track, album }); console.log('LocalFiles resolver results:', results?.length || 0); if (!results || results.length === 0) return null; const best = results[0]; return { title: best.title, artist: best.artist, album: best.album, filePath: best.filePath, fileUrl: best.sources?.localfiles?.fileUrl || `file://${best.filePath}`, confidence: best.confidence || 0.95, duration: best.duration, albumArt: best.albumArt }; } catch (error) { console.error('Local Files resolve error:', error); return null; } }","play":"async function(track, config) { console.log('Local Files play:', track); return { type: 'local', url: track.fileUrl || track.filePath }; }","init":"async function(config) { console.log('Local Files resolver initialized'); return true; }","cleanup":"async function() { console.log('Local Files resolver cleanup'); }"}},
 ];
 
@@ -8669,7 +8681,8 @@ const Parachord = () => {
   const activateListenAlongRef = useRef(null);
   const deactivateListenAlongRef = useRef(null);
   const artistPageScrollRef = useRef(null); // Ref for artist page scroll container
-  const audioRef = useRef(null); // HTML5 Audio element for local file playback
+  const audioRef = useRef(null); // Shared HTML5 element: local files, SoundCloud, Subsonic
+  const html5AudioTrackRef = useRef(null); // Track that element is actually playing
   const audioBlobUrlRef = useRef(null); // Current blob URL for audio (for cleanup)
   const localFilePlaybackTrackRef = useRef(null); // Track being played for fallback handling
   const localFileFallbackInProgressRef = useRef(false); // Prevent duplicate error dialogs during fallback
@@ -17682,6 +17695,215 @@ ${trackListXml}
     setStartTime(audioContext.currentTime);
   };
 
+  // Listeners attach once, whichever path creates the element. Each one
+  // keys off the element's src (what's loaded), not track.sources — a track
+  // can carry a Subsonic source while a local file is playing. If Subsonic
+  // created the element, local errors used to surface as "Subsonic Playback
+  // Error" and the network-share seek retry never ran.
+  const ensureSharedAudioElement = (track) => {
+    if (track) html5AudioTrackRef.current = track;
+    if (audioRef.current) return audioRef.current;
+
+    const ownerOf = (el) => {
+      const src = el?.src || '';
+      if (src.startsWith('local-audio:')) return 'localfiles';
+      if (src.startsWith('blob:')) return 'soundcloud';
+      if (/^https?:/i.test(src)) return 'subsonic';
+      return null;
+    };
+
+    // Same shape as handlePlay's autoSkipIfAdvancing, but the track is the
+    // one this element is playing (html5AudioTrackRef), not the closure of
+    // whichever play created the element.
+    const skipIfAdvancing = (reason) => {
+      if (!(isAdvancingTrackRef.current || spinoffModeRef.current)) return false;
+      const playing = html5AudioTrackRef.current;
+      console.log(`⏭️ Auto-skip "${playing?.title || 'track'}" — ${reason}`);
+      setTrackLoading(false);
+      if (playing?.id) {
+        setCurrentQueue(prev => prev.map(t => t.id === playing.id ? { ...t, status: 'error' } : t));
+      }
+      setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
+      return true;
+    };
+
+    console.log('🎵 Creating shared HTML5 audio element');
+    const audio = new Audio();
+    audioRef.current = audio;
+
+    audio.addEventListener('timeupdate', () => {
+      if (!ownerOf(audioRef.current)) return;
+      if (audioRef.current && !seekingRef.current) {
+        const currentTime = audioRef.current.currentTime;
+        setProgress(currentTime);
+        if (window.scrobbleManager) {
+          window.scrobbleManager.onProgressUpdate(currentTime);
+        }
+      }
+    });
+    audio.addEventListener('loadedmetadata', () => {
+      if (!ownerOf(audioRef.current)) return;
+      const audioDuration = audioRef.current?.duration;
+      if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
+        setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+      }
+    });
+    audio.addEventListener('durationchange', () => {
+      if (!ownerOf(audioRef.current)) return;
+      const audioDuration = audioRef.current?.duration;
+      if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
+        setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+      }
+    });
+    audio.addEventListener('ended', () => {
+      const owner = ownerOf(audioRef.current);
+      if (!owner) return;
+      const label = owner === 'localfiles' ? 'Local file' : owner === 'soundcloud' ? 'SoundCloud' : 'Subsonic';
+      console.log(`🎵 ${label} playback ended`);
+      handleNextRef.current?.();
+    });
+    audio.addEventListener('playing', () => {
+      // Reset the network-retry budget only after local-file playback has
+      // held. Clearing it on this event itself loops: a seek retry sets
+      // currentTime from loadedmetadata, 'playing' fires, the budget drops
+      // to 0, and the seek error immediately retries again.
+      if (ownerOf(audioRef.current) !== 'localfiles') return;
+      const generation = playbackGenerationRef.current;
+      setTimeout(() => {
+        const el = audioRef.current;
+        if (!el || playbackGenerationRef.current !== generation) return;
+        if (!el.error && !el.paused && el.src.startsWith('local-audio:')) {
+          localFileNetworkRetryRef.current = 0;
+          localFileSeekTargetRef.current = null;
+        }
+      }, 1500);
+    });
+    audio.addEventListener('error', (e) => {
+      const owner = ownerOf(e.target);
+      const mediaError = e.target.error;
+      if (owner === 'localfiles') {
+        console.error('🎵 Audio error:', mediaError);
+        if (localFileFallbackInProgressRef.current) {
+          console.log('🔄 Audio error during fallback attempt, skipping dialog');
+          return;
+        }
+        let errorMessage = 'Could not play this file. It may have been moved or deleted.';
+        if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+          const failed = localFilePlaybackTrackRef.current;
+          const filePath = failed?.filePath || failed?.sources?.localfiles?.filePath || '';
+          const ext = filePath.split('.').pop()?.toLowerCase();
+          errorMessage = unsupportedAudioMessage(ext);
+        } else if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
+          const el = audioRef.current;
+          const src = el?.src || '';
+          // A seek (or a stalled read) on a network mount surfaces as
+          // MEDIA_ERR_NETWORK even when the file is still there. Retry once
+          // from the position the user asked for before telling them the
+          // file was deleted.
+          if (src.startsWith('local-audio:')) {
+            if (localFileNetworkRetryRef.current < 1) {
+              localFileNetworkRetryRef.current += 1;
+              const fromElement = el.currentTime;
+              const resumeAt = (fromElement > 0.25 ? fromElement : null)
+                ?? localFileSeekTargetRef.current
+                ?? progressRef.current
+                ?? 0;
+              const generation = playbackGenerationRef.current;
+              const wasPlaying = !!localFileRetryCommitRef.current || isPlayingRef.current || !el.paused;
+              console.warn(`🎵 Local file network error — retrying at ${Number(resumeAt).toFixed(2)}s${wasPlaying ? '' : ' (paused)'}`);
+              setTimeout(() => {
+                const retryEl = audioRef.current;
+                if (!retryEl || playbackGenerationRef.current !== generation) return;
+                if (!retryEl.src.startsWith('local-audio:')) return;
+                const base = src.split('?')[0];
+                const onReady = () => {
+                  retryEl.removeEventListener('loadedmetadata', onReady);
+                  if (playbackGenerationRef.current !== generation) return;
+                  try {
+                    if (resumeAt > 0) retryEl.currentTime = resumeAt;
+                  } catch (err) {
+                    console.warn('🎵 Local file retry seek failed:', err);
+                  }
+                  if (!wasPlaying) return;
+                  retryEl.play().then(() => {
+                    const commit = localFileRetryCommitRef.current;
+                    localFileRetryCommitRef.current = null;
+                    if (commit && playbackGenerationRef.current === generation) commit();
+                  }).catch(err => console.warn('🎵 Local file retry play failed:', err));
+                };
+                retryEl.addEventListener('loadedmetadata', onReady);
+                retryEl.src = base + '?r=' + Date.now();
+                retryEl.load();
+              }, 400);
+              return;
+            }
+            localFileRetryCommitRef.current = null;
+            const failedTrack = localFilePlaybackTrackRef.current;
+            const otherSources = failedTrack?.sources
+              ? Object.keys(failedTrack.sources).filter(id => id !== 'localfiles' && !failedTrack.sources[id]?.noMatch)
+              : [];
+            if (otherSources.length > 0 && !localFileFallbackInProgressRef.current && handlePlayRef.current) {
+              console.log('🔄 Local file still failing after retry — falling back to next available source...');
+              localFileFallbackInProgressRef.current = true;
+              handlePlayRef.current({
+                ...failedTrack,
+                sources: Object.fromEntries(Object.entries(failedTrack.sources).filter(([id]) => id !== 'localfiles'))
+              });
+              return;
+            }
+            errorMessage = 'Network error while reading the file. If it is on a network drive, the connection may have stalled — try again. Otherwise the file may have been moved or deleted.';
+          } else {
+            errorMessage = 'Network error while loading the file. The file may have been moved or deleted.';
+          }
+        } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
+          errorMessage = 'Error decoding the audio file. The file may be corrupted or use an unsupported format.';
+        }
+        if (skipIfAdvancing(`local file playback: ${errorMessage}`)) return;
+        showConfirmDialog({
+          type: 'error',
+          title: 'Playback Error',
+          message: errorMessage
+        });
+        return;
+      }
+      if (owner === 'soundcloud') {
+        console.error('🎵 SoundCloud audio error:', mediaError);
+        let errorMessage = 'Could not play this SoundCloud track.';
+        if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
+          errorMessage = 'Network error while streaming. Please try again.';
+        } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
+          errorMessage = 'Error decoding the audio stream.';
+        }
+        if (skipIfAdvancing(`SoundCloud playback: ${errorMessage}`)) return;
+        showConfirmDialog({
+          type: 'error',
+          title: 'SoundCloud Playback Error',
+          message: errorMessage
+        });
+        return;
+      }
+      if (owner === 'subsonic') {
+        console.error('📡 Subsonic audio error:', mediaError);
+        let errorMessage = 'Could not play this Subsonic track. Check that the server is reachable and your credentials are current.';
+        if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
+          errorMessage = 'Network error while streaming from your Subsonic server. It may be unreachable.';
+        } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
+          errorMessage = 'Error decoding the audio stream from your Subsonic server.';
+        } else if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+          errorMessage = 'The Subsonic server returned an audio format this app cannot decode.';
+        }
+        if (skipIfAdvancing(`Subsonic playback: ${errorMessage}`)) return;
+        setTrackLoading(false);
+        showConfirmDialog({
+          type: 'error',
+          title: 'Subsonic Playback Error',
+          message: errorMessage
+        });
+      }
+    });
+    return audio;
+  };
+
   const handlePlay = async (trackOrSource) => {
     // If user manually plays something while listening along, end the listen-along session
     // Listen-along tracks are tagged with _playbackContext.type === 'listenAlong'
@@ -18240,151 +18462,7 @@ ${trackListXml}
         streamingPlaybackActiveRef.current = false;
       }
 
-      // Create audio element if needed
-      if (!audioRef.current) {
-        console.log('🎵 Creating new Audio element');
-        audioRef.current = new Audio();
-        audioRef.current.addEventListener('timeupdate', () => {
-          if (audioRef.current && !seekingRef.current) {
-            const currentTime = audioRef.current.currentTime;
-            setProgress(currentTime);
-            // Notify scrobble manager of progress for scrobble threshold checking
-            if (window.scrobbleManager) {
-              window.scrobbleManager.onProgressUpdate(currentTime);
-            }
-          }
-        });
-        audioRef.current.addEventListener('loadedmetadata', () => {
-          // Update current track duration from audio element once metadata loads
-          const audioDuration = audioRef.current?.duration;
-          if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
-            console.log('🎵 Audio metadata loaded, duration:', audioDuration);
-            setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
-          }
-        });
-        audioRef.current.addEventListener('durationchange', () => {
-          // Also listen for duration changes (some formats report duration later)
-          const audioDuration = audioRef.current?.duration;
-          if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
-            console.log('🎵 Audio duration changed:', audioDuration);
-            setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
-          }
-        });
-        audioRef.current.addEventListener('ended', () => {
-          console.log('🎵 Local file playback ended');
-          handleNextRef.current?.();
-        });
-        audioRef.current.addEventListener('playing', () => {
-          // Reset the network-retry budget only after playback has held.
-          // Clearing it on this event itself loops: a seek retry sets
-          // currentTime from loadedmetadata, 'playing' fires, the budget
-          // drops to 0, and the seek error immediately retries again.
-          if (!audioRef.current?.src?.startsWith('local-audio:')) return;
-          const generation = playbackGenerationRef.current;
-          setTimeout(() => {
-            const el = audioRef.current;
-            if (!el || playbackGenerationRef.current !== generation) return;
-            if (!el.error && !el.paused && el.src.startsWith('local-audio:')) {
-              localFileNetworkRetryRef.current = 0;
-              localFileSeekTargetRef.current = null;
-            }
-          }, 1500);
-        });
-        audioRef.current.addEventListener('error', (e) => {
-          const mediaError = e.target.error;
-          console.error('🎵 Audio error:', mediaError);
-          // Don't show error dialog if fallback is in progress (it will be handled by the catch block)
-          if (localFileFallbackInProgressRef.current) {
-            console.log('🔄 Audio error during fallback attempt, skipping dialog');
-            return;
-          }
-
-          // Provide helpful error message based on error code
-          let errorMessage = 'Could not play this file. It may have been moved or deleted.';
-          if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-            const track = localFilePlaybackTrackRef.current;
-            const filePath = track?.filePath || track?.sources?.localfiles?.filePath || '';
-            const ext = filePath.split('.').pop()?.toLowerCase();
-            errorMessage = unsupportedAudioMessage(ext);
-          } else if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
-            const audio = audioRef.current;
-            const src = audio?.src || '';
-            // A seek (or a stalled read) on a network mount surfaces as
-            // MEDIA_ERR_NETWORK even when the file is still there. Retry once
-            // from the position the user asked for before telling them the
-            // file was deleted.
-            if (src.startsWith('local-audio:')) {
-              if (localFileNetworkRetryRef.current < 1) {
-                localFileNetworkRetryRef.current += 1;
-                const fromElement = audio.currentTime;
-                const resumeAt = (fromElement > 0.25 ? fromElement : null)
-                  ?? localFileSeekTargetRef.current
-                  ?? progressRef.current
-                  ?? 0;
-                const generation = playbackGenerationRef.current;
-                // A failed seek on a paused track must come back paused; an
-                // initial play that is waiting on its commit must play.
-                const wasPlaying = !!localFileRetryCommitRef.current || isPlayingRef.current || !audio.paused;
-                console.warn(`🎵 Local file network error — retrying at ${Number(resumeAt).toFixed(2)}s${wasPlaying ? '' : ' (paused)'}`);
-                setTimeout(() => {
-                  const el = audioRef.current;
-                  if (!el || playbackGenerationRef.current !== generation) return;
-                  if (!el.src.startsWith('local-audio:')) return;
-                  const base = src.split('?')[0];
-                  const onReady = () => {
-                    el.removeEventListener('loadedmetadata', onReady);
-                    if (playbackGenerationRef.current !== generation) return;
-                    try {
-                      if (resumeAt > 0) el.currentTime = resumeAt;
-                    } catch (err) {
-                      console.warn('🎵 Local file retry seek failed:', err);
-                    }
-                    if (!wasPlaying) return;
-                    el.play().then(() => {
-                      const commit = localFileRetryCommitRef.current;
-                      localFileRetryCommitRef.current = null;
-                      if (commit && playbackGenerationRef.current === generation) commit();
-                    }).catch(err => console.warn('🎵 Local file retry play failed:', err));
-                  };
-                  el.addEventListener('loadedmetadata', onReady);
-                  el.src = base + '?r=' + Date.now();
-                  el.load();
-                }, 400);
-                return;
-              }
-              // Retry spent. Prefer another source over a dialog, as the
-              // initial-play path did before network errors were routed here.
-              localFileRetryCommitRef.current = null;
-              const failedTrack = localFilePlaybackTrackRef.current;
-              const otherSources = failedTrack?.sources
-                ? Object.keys(failedTrack.sources).filter(id => id !== 'localfiles' && !failedTrack.sources[id]?.noMatch)
-                : [];
-              if (otherSources.length > 0 && !localFileFallbackInProgressRef.current) {
-                console.log('🔄 Local file still failing after retry — falling back to next available source...');
-                localFileFallbackInProgressRef.current = true;
-                handlePlay({
-                  ...failedTrack,
-                  sources: Object.fromEntries(Object.entries(failedTrack.sources).filter(([id]) => id !== 'localfiles'))
-                });
-                return;
-              }
-              errorMessage = 'Network error while reading the file. If it is on a network drive, the connection may have stalled — try again. Otherwise the file may have been moved or deleted.';
-            } else {
-              errorMessage = 'Network error while loading the file. The file may have been moved or deleted.';
-            }
-          } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
-            errorMessage = 'Error decoding the audio file. The file may be corrupted or use an unsupported format.';
-          }
-
-          if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`)) return;
-          showConfirmDialog({
-            type: 'error',
-            title: 'Playback Error',
-            message: errorMessage
-          });
-        });
-      }
-
+      ensureSharedAudioElement(trackOrSource);
       // Store the track for potential fallback handling
       localFilePlaybackTrackRef.current = trackOrSource;
       localFileFallbackInProgressRef.current = false;
@@ -18755,55 +18833,7 @@ ${trackListXml}
           return;
         }
 
-        // Create audio element if needed (same setup as local files)
-        if (!audioRef.current) {
-          console.log('🎵 Creating new Audio element for SoundCloud');
-          audioRef.current = new Audio();
-          audioRef.current.addEventListener('timeupdate', () => {
-            if (audioRef.current && !seekingRef.current) {
-              const currentTime = audioRef.current.currentTime;
-              setProgress(currentTime);
-              if (window.scrobbleManager) {
-                window.scrobbleManager.onProgressUpdate(currentTime);
-              }
-            }
-          });
-          audioRef.current.addEventListener('loadedmetadata', () => {
-            const audioDuration = audioRef.current?.duration;
-            if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
-              console.log('🎵 SoundCloud audio metadata loaded, duration:', audioDuration);
-              setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
-            }
-          });
-          audioRef.current.addEventListener('durationchange', () => {
-            const audioDuration = audioRef.current?.duration;
-            if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
-              console.log('🎵 SoundCloud audio duration changed:', audioDuration);
-              setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
-            }
-          });
-          audioRef.current.addEventListener('ended', () => {
-            console.log('🎵 SoundCloud playback ended');
-            handleNextRef.current?.();
-          });
-          audioRef.current.addEventListener('error', (e) => {
-            const mediaError = e.target.error;
-            console.error('🎵 SoundCloud audio error:', mediaError);
-            let errorMessage = 'Could not play this SoundCloud track.';
-            if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
-              errorMessage = 'Network error while streaming. Please try again.';
-            } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
-              errorMessage = 'Error decoding the audio stream.';
-            }
-            if (autoSkipIfAdvancing(`SoundCloud playback: ${errorMessage}`)) return;
-            showConfirmDialog({
-              type: 'error',
-              title: 'SoundCloud Playback Error',
-              message: errorMessage
-            });
-          });
-        }
-
+        ensureSharedAudioElement(trackOrSource);
         // Use HTML5 Audio to play the blob URL (pre-fetched with auth headers)
         audioRef.current.src = blobUrl;
         const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
@@ -18914,7 +18944,11 @@ ${trackListXml}
       } catch (e) {
         console.warn('📡 Subsonic getStreamUrl failed:', e?.message || e);
       }
-      if (!streamUrl) streamUrl = sourceToPlay.subsonicStreamUrl || null;
+      // A baked stream URL is a replayable token. Never use one, and drop any
+      // an older resolve already stored on this track before it is saved again.
+      dropSubsonicSecrets(sourceToPlay);
+      dropSubsonicSecrets(trackOrSource);
+      if (trackOrSource.sources) dropSubsonicSecrets(trackOrSource.sources.subsonic);
 
       // Check if another play request superseded this one while building the URL
       if (playbackGenerationRef.current !== thisGeneration) {
@@ -18935,58 +18969,7 @@ ${trackListXml}
       }
 
       try {
-        // Create audio element if needed (same setup as local files / SoundCloud —
-        // timeupdate drives progress + scrobbling, ended drives auto-advance)
-        if (!audioRef.current) {
-          console.log('📡 Creating new Audio element for Subsonic');
-          audioRef.current = new Audio();
-          audioRef.current.addEventListener('timeupdate', () => {
-            if (audioRef.current && !seekingRef.current) {
-              const currentTime = audioRef.current.currentTime;
-              setProgress(currentTime);
-              if (window.scrobbleManager) {
-                window.scrobbleManager.onProgressUpdate(currentTime);
-              }
-            }
-          });
-          audioRef.current.addEventListener('loadedmetadata', () => {
-            const audioDuration = audioRef.current?.duration;
-            if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
-              console.log('📡 Subsonic audio metadata loaded, duration:', audioDuration);
-              setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
-            }
-          });
-          audioRef.current.addEventListener('durationchange', () => {
-            const audioDuration = audioRef.current?.duration;
-            if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
-              setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
-            }
-          });
-          audioRef.current.addEventListener('ended', () => {
-            console.log('📡 Subsonic playback ended');
-            handleNextRef.current?.();
-          });
-          audioRef.current.addEventListener('error', (e) => {
-            const mediaError = e.target.error;
-            console.error('📡 Subsonic audio error:', mediaError);
-            let errorMessage = 'Could not play this Subsonic track. Check that the server is reachable and your credentials are current.';
-            if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
-              errorMessage = 'Network error while streaming from your Subsonic server. It may be unreachable.';
-            } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
-              errorMessage = 'Error decoding the audio stream from your Subsonic server.';
-            } else if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-              errorMessage = 'The Subsonic server returned an audio format this app cannot decode.';
-            }
-            if (autoSkipIfAdvancing(`Subsonic playback: ${errorMessage}`)) return;
-            setTrackLoading(false);
-            showConfirmDialog({
-              type: 'error',
-              title: 'Subsonic Playback Error',
-              message: errorMessage
-            });
-          });
-        }
-
+        ensureSharedAudioElement(trackOrSource);
         audioRef.current.src = streamUrl;
         const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
         const effectiveVolume = getEffectiveVolume(volumeToApply, 'subsonic', sourceToPlay.id || trackOrSource.id);
@@ -39612,8 +39595,10 @@ useEffect(() => {
     if (activeResolver === 'spotify') return; // seeking not supported for Spotify
     seekingRef.current = true;
     setProgress(newPosition);
-    // Local files + SoundCloud use HTML5 Audio
-    if ((currentTrack?.sources?.localfiles || currentTrack?.sources?.soundcloud || currentTrack?.sources?.subsonic || activeResolver === 'soundcloud' || activeResolver === 'subsonic') && audioRef.current) {
+    // HTML5 audio engines. Key off the resolver actually playing, not
+    // track.sources — a Subsonic source can be attached while local files
+    // are what's playing.
+    if ((activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic') && audioRef.current) {
       if (audioRef.current.src?.startsWith('local-audio:')) {
         localFileSeekTargetRef.current = newPosition;
       }
@@ -61347,14 +61332,7 @@ useEffect(() => {
                   outline: 'none'
                 }
               }),
-              // Only when there is an actual key URL. Falling back to homepage
-              // invented a "Get your API key" link for services that have no
-              // key (Subsonic's homepage is subsonic.org).
-              (authFieldSettings.helpUrl || {
-                chatgpt: 'https://platform.openai.com/api-keys',
-                gemini: 'https://aistudio.google.com/app/apikey',
-                claude: 'https://console.anthropic.com/settings/keys'
-              }[selectedResolver.id]) && React.createElement('a', {
+              selectedResolver.homepage && React.createElement('a', {
                 href: '#',
                 onClick: (e) => {
                   e.preventDefault();
@@ -61363,7 +61341,7 @@ useEffect(() => {
                     gemini: 'https://aistudio.google.com/app/apikey',
                     claude: 'https://console.anthropic.com/settings/keys'
                   };
-                  window.electron?.shell?.openExternal?.(authFieldSettings.helpUrl || urls[selectedResolver.id]);
+                  window.electron?.shell?.openExternal?.(urls[selectedResolver.id] || selectedResolver.homepage);
                 },
                 style: {
                   display: 'inline-block',

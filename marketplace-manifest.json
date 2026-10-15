@@ -551,7 +551,8 @@
         "search": true,
         "stream": true,
         "browse": false,
-        "urlLookup": false
+        "urlLookup": false,
+        "mobile": false
       },
       "requiresAuth": true,
       "builtin": true,

@@ -4,9 +4,9 @@
  * Covers the .axe resolver surface against a mocked Subsonic/Navidrome API:
  *   - structural validity (manifest/capabilities/implementation compile)
  *   - search3 result mapping (song -> resolver track shape, incl. ISRC
- *     validation and the streamQuality contract from stream-quality.js)
+ *     validation; no credentialed stream/cover URLs, no claimed streamQuality)
  *   - resolve() containment matching (both axes, no fuzzy fallback)
- *   - getStreamUrl() fresh-credentials-wins vs baked-URL fallback
+ *   - getStreamUrl() builds a fresh URL and ignores any baked one
  *   - auth (token = md5(password + salt)) against the real algorithm
  *   - server URL normalization (user-pasted variants: trailing slash, /rest)
  *   - play() is host-owned (returns false — handlePlay owns playback)
@@ -104,6 +104,7 @@ describe('subsonic .axe structure', () => {
     expect(axe.settings.requiresAuth).toBe(true);
     // No API key. Username and password are a credential pair the settings
     // panel groups together — they must stay adjacent.
+    expect(axe.capabilities.mobile).toBe(false);
     expect(axe.settings.authType).toBe('userpass');
     expect(axe.settings.configurable.username.type).toBe('text');
     expect(axe.settings.configurable.password.type).toBe('password');
@@ -138,10 +139,15 @@ describe('subsonic search', () => {
     expect(t.sources).toEqual(['subsonic']);
     expect(t.subsonicId).toBe(SONG.id);
     expect(t.subsonicServer).toBe('http://navidrome.local:4533');
-    expect(t.subsonicStreamUrl).toContain('/rest/stream.view');
-    expect(t.subsonicStreamUrl).toContain('id=' + encodeURIComponent(SONG.id));
-    expect(t.albumArt).toContain('/rest/getCoverArt.view');
-    expect(t.albumArt).toContain('id=' + encodeURIComponent(SONG.coverArt));
+    // Token+salt URLs are replayable credentials. Search must not return them.
+    expect(t.subsonicStreamUrl).toBeUndefined();
+    expect(t.albumArt).toBeUndefined();
+    expect(t.streamQuality).toBeUndefined();
+    const blob = JSON.stringify(t);
+    expect(blob).not.toContain('stream.view');
+    expect(blob).not.toContain('getCoverArt');
+    expect(blob).not.toMatch(/[?&]t=/);
+    expect(blob).not.toContain('sekret');
 
     // search3 endpoint + params
     expect(calls[0]).toContain('/rest/search3.view');
@@ -179,41 +185,9 @@ describe('subsonic search', () => {
     expect(noHit.isrc).toBeUndefined();
   });
 
-  test('streamQuality: claimed record per the stream-quality.js contract', async () => {
+  test('does not attach claimed streamQuality (server may transcode)', async () => {
     const resolver = instantiate(axe);
     mockFetch(() => okResponse([SONG]));
-    const [t] = await resolver.search('pyramid song', CONFIG);
-    expect(t.streamQuality).toEqual({
-      origin: 'claimed',
-      codec: 'mp3',
-      container: 'mp3',
-      bitrate: 192,
-      sampleRate: 44100,
-      channels: 2
-    });
-
-    // pickStreamQuality keys off the playing resolver's source record.
-    // stream-quality.js ships with the stream-quality HUD PR — tolerate its
-    // absence on older bases so this suite passes before that lands.
-    const track = { sources: { subsonic: t } };
-    let pickStreamQuality = null;
-    try {
-      const mod = require('../../stream-quality.js');
-      pickStreamQuality = mod.pickStreamQuality || mod;
-    } catch (e) {
-      console.log('stream-quality.js not present on this base — skipping pickStreamQuality assertion');
-    }
-    if (pickStreamQuality) {
-      const q = pickStreamQuality(track, 'subsonic');
-      expect(q.origin).toBe('claimed');
-    }
-  });
-
-  test('no streamQuality when the server reports no technical fields', async () => {
-    const resolver = instantiate(axe);
-    const bare = { ...SONG, bitRate: 0, suffix: undefined, samplingRate: 0 };
-    delete bare.suffix;
-    mockFetch(() => okResponse([bare]));
     const [t] = await resolver.search('pyramid song', CONFIG);
     expect(t.streamQuality).toBeUndefined();
   });
@@ -322,11 +296,12 @@ describe('subsonic getStreamUrl', () => {
     expect(s1).not.toBe(s2);
   });
 
-  test('falls back to the baked URL when config is incomplete', async () => {
+  test('incomplete config returns null and ignores a baked URL', async () => {
     const resolver = instantiate(axe);
-    const track = { subsonicId: SONG.id, subsonicStreamUrl: 'http://old.example/baked' };
-    expect(await resolver.getStreamUrl(track, {})).toBe('http://old.example/baked');
-    expect(await resolver.getStreamUrl(track, null)).toBe('http://old.example/baked');
+    const track = { subsonicId: SONG.id, subsonicStreamUrl: 'http://old.example/baked?u=alice&t=deadbeef&s=salt' };
+    expect(await resolver.getStreamUrl(track, {})).toBeNull();
+    expect(await resolver.getStreamUrl(track, null)).toBeNull();
+    expect(await resolver.getStreamUrl(track, { serverUrl: CONFIG.serverUrl, username: CONFIG.username })).toBeNull();
   });
 
   test('reads subsonicId from the sources record (spread-source shape)', async () => {
@@ -379,8 +354,9 @@ describe('app.js integration', () => {
   test('transport routing treats subsonic as an HTML5 audio resolver', () => {
     // play/pause toggle
     expect(appSrc).toContain("_activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud' || currentTrack?._activeResolver === 'subsonic'");
-    // seek
-    expect(appSrc).toContain("currentTrack?.sources?.subsonic || activeResolver === 'soundcloud' || activeResolver === 'subsonic'");
+    // seek keys off the resolver actually playing, not "has a subsonic source"
+    expect(appSrc).toContain("activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic') && audioRef.current");
+    expect(appSrc).not.toContain('currentTrack?.sources?.subsonic');
     // volume slider support
     expect(appSrc).toContain("currentResolverId === 'soundcloud' || currentResolverId === 'subsonic'");
   });
@@ -400,6 +376,23 @@ describe('app.js integration', () => {
     const m = appSrc.match(/const \[resolverVolumeOffsets, setResolverVolumeOffsets\] = useState\(\{([\s\S]*?)\}\)/);
     expect(m).toBeTruthy();
     expect(m[1]).toContain('subsonic');
+  });
+
+  test('shared HTML5 element is created once and every path uses it', () => {
+    expect(appSrc.match(/ensureSharedAudioElement\(trackOrSource\)/g)).toHaveLength(3);
+    expect(appSrc).toContain('const audio = new Audio()');
+    expect(appSrc).not.toContain('audioRef.current = new Audio()');
+    expect(appSrc).not.toContain('sourceToPlay.subsonicStreamUrl');
+  });
+
+  test('sync-subsonic-axe.js --check matches the shipped plugin', () => {
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(process.execPath, [path.join(__dirname, '../../scripts/sync-subsonic-axe.js'), '--check'], {
+      encoding: 'utf8'
+    });
+    if (result.status !== 0) {
+      throw new Error((result.stdout || '') + (result.stderr || ''));
+    }
   });
 
   test('_fetchResolverConfig reads subsonic credentials from meta_service_configs', () => {

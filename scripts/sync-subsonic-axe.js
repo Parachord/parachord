@@ -5,8 +5,11 @@
 //   app.js FALLBACK_RESOLVERS       (compact single-line copy, byte-identical)
 //   marketplace-manifest.json       (version + entry)
 //
-// Keeping the three in step is enforced by tests/plugins/bundled-plugin-consistency.test.js.
-// Rerun this script after editing anything below (and bump VERSION).
+// `node scripts/sync-subsonic-axe.js --check` compares those three to what
+// this file would write and exits non-zero on drift. Tests run that mode.
+// Reverse-sync writes community edits into the .axe; a writer run would
+// overwrite them, so do not regenerate over an edit you have not reviewed.
+// Rerun without --check after editing anything below (and bump VERSION).
 //
 // Implementation notes (why this looks the way it does):
 //  - Every .axe implementation function is materialized with `new Function()`
@@ -221,6 +224,14 @@ ${HELPERS}
     for (var i = 0; i < songs.length; i++) {
       var s = songs[i];
       if (!s || !s.id || !s.title) continue;
+      // No stream URL and no cover URL. Both bake u=/t=/s= into the result,
+      // and that result is spread into track.sources (track-sources cache,
+      // saved queue, embed broadcast). A token+salt pair replays until the
+      // password changes. getStreamUrl builds a fresh stream URL at play
+      // time. Covers come from the shared album-art pipeline.
+      // streamQuality is held back too: these are the server's tagged file
+      // properties, and stream.view may transcode, so a 'claimed' record
+      // would render in the hover as if it had been measured.
       var track = {
         id: 'subsonic-' + s.id,
         title: s.title,
@@ -230,14 +241,10 @@ ${HELPERS}
         sources: ['subsonic'],
         subsonicId: s.id,
         subsonicServer: h.normalizeBase(config && config.serverUrl),
-        subsonicStreamUrl: h.apiUrl(config, 'stream', 'id=' + encodeURIComponent(s.id) + '&maxBitRate=0'),
         genre: s.genre || null,
         year: s.year || null,
         trackNumber: s.track || null
       };
-      if (s.coverArt) {
-        track.albumArt = h.apiUrl(config, 'getCoverArt', 'id=' + encodeURIComponent(s.coverArt) + '&size=300');
-      }
       // ISRC per the cross-cutting resolver result shape: upper-case,
       // trimmed, format-validated. OpenSubsonic servers return a string or
       // an array (Navidrome: array, usually empty).
@@ -246,19 +253,6 @@ ${HELPERS}
       else if (s.isrc && s.isrc.length) isrcRaw = String(s.isrc[0] || '');
       var isrc = (isrcRaw || '').toUpperCase().trim();
       if (/^[A-Z]{2}[A-Z0-9]{3}\\d{7}$/.test(isrc)) track.isrc = isrc;
-      // streamQuality per the stream-quality.js contract. These are the
-      // server's tagged file properties ('claimed' — the server may still
-      // transcode on stream.view, so they are not measured).
-      var suffix = s.suffix ? String(s.suffix).toLowerCase() : '';
-      if (suffix || s.bitRate || s.samplingRate) {
-        var sq = { origin: 'claimed' };
-        if (suffix) { sq.codec = suffix; sq.container = suffix; }
-        if (s.bitRate) sq.bitrate = s.bitRate;
-        if (s.samplingRate) sq.sampleRate = s.samplingRate;
-        if (s.bitDepth) sq.bitDepth = s.bitDepth;
-        if (s.channelCount) sq.channels = s.channelCount;
-        track.streamQuality = sq;
-      }
       results.push(track);
     }
     console.log('Subsonic: found ' + results.length + ' song(s) for "' + query + '"');
@@ -295,16 +289,11 @@ ${HELPERS}
     var subsonicId = t.subsonicId || (t.sources && t.sources.subsonic && t.sources.subsonic.subsonicId) || null;
     if (!subsonicId) return null;
     var h = ensureHelpers();
-    // Fresh credentials win: a changed password invalidates any URL baked
-    // at search time, so rebuild from config whenever all three fields are
-    // present.
+    // Always a fresh salt. Never fall back to a URL stored on the track —
+    // that URL would carry a replayable token.
     var cfg = config || {};
-    if (cfg.serverUrl && cfg.username && typeof cfg.password === 'string') {
-      var fresh = h.apiUrl(cfg, 'stream', 'id=' + encodeURIComponent(subsonicId) + '&maxBitRate=0');
-      if (fresh) return fresh;
-    }
-    // Fall back to the URL baked onto the source at search/resolve time.
-    return t.subsonicStreamUrl || (t.sources && t.sources.subsonic && t.sources.subsonic.subsonicStreamUrl) || null;
+    if (!(cfg.serverUrl && cfg.username && typeof cfg.password === 'string')) return null;
+    return h.apiUrl(cfg, 'stream', 'id=' + encodeURIComponent(subsonicId) + '&maxBitRate=0');
   } catch (error) {
     console.error('Subsonic getStreamUrl error:', error);
     return null;
@@ -345,7 +334,11 @@ const axe = {
     search: true,
     stream: true,
     browse: false,
-    urlLookup: false
+    urlLookup: false,
+    // Playback is host-owned (handlePlay's HTML5 branch). Mobile has no
+    // equivalent, so the plugin would list and then fail to play. Same flag
+    // Custom LLM ships with until mobile can handle it.
+    mobile: false
   },
   urlPatterns: [],
   settings: {
@@ -383,17 +376,77 @@ const axe = {
   }
 };
 
+const axePath = path.join(ROOT, 'plugins', 'subsonic.axe');
+const appPath = path.join(ROOT, 'app.js');
+const manifestPath = path.join(ROOT, 'marketplace-manifest.json');
+
+const manifestEntry = {
+  id: 'subsonic',
+  name: 'Subsonic',
+  version: VERSION,
+  author: 'Parachord Team',
+  description: axe.manifest.description,
+  icon: axe.manifest.icon,
+  color: axe.manifest.color,
+  homepage: axe.manifest.homepage,
+  capabilities: { ...axe.capabilities },
+  requiresAuth: true,
+  builtin: true,
+  downloadUrl: 'https://raw.githubusercontent.com/Parachord/parachord-plugins/main/subsonic.axe',
+  category: 'streaming',
+  tags: ['self-hosted', 'subsonic', 'navidrome', 'streaming', 'personal-library']
+};
+
+function readFallbackEntry(appSource) {
+  const lines = appSource.split('\n');
+  const start = lines.findIndex(l => l.startsWith('const FALLBACK_RESOLVERS = ['));
+  if (start === -1) return null;
+  const entry = lines.find((l, i) => i > start && l.includes('"id":"subsonic"'));
+  if (!entry) return null;
+  return JSON.parse(entry.trim().replace(/,$/, ''));
+}
+
+// --check: fail if the shipped plugin drifted from this script. Tests run
+// this. The writer is opt-in so a reverse-sync edit of the .axe is not
+// silently overwritten the next time someone regenerates.
+if (process.argv.includes('--check')) {
+  const assert = require('assert');
+  const failures = [];
+  try {
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(axePath, 'utf8')), axe);
+  } catch (e) {
+    failures.push('plugins/subsonic.axe does not match scripts/sync-subsonic-axe.js');
+  }
+  try {
+    assert.deepStrictEqual(readFallbackEntry(fs.readFileSync(appPath, 'utf8')), axe);
+  } catch (e) {
+    failures.push('app.js FALLBACK_RESOLVERS subsonic entry does not match the script');
+  }
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const onDisk = (manifest.plugins || []).find(p => p.id === 'subsonic');
+    assert.deepStrictEqual(onDisk, manifestEntry);
+  } catch (e) {
+    failures.push('marketplace-manifest.json subsonic entry does not match the script');
+  }
+  if (failures.length) {
+    console.error('Subsonic plugin drift:\n- ' + failures.join('\n- '));
+    console.error('The .axe is what reverse-sync writes back. Update this script to match a reviewed edit, then rerun without --check.');
+    process.exit(1);
+  }
+  console.log('✅ subsonic plugin matches scripts/sync-subsonic-axe.js');
+  process.exit(0);
+}
+
 // ---------------------------------------------------------------------------
 // Write plugins/subsonic.axe
 // ---------------------------------------------------------------------------
-const axePath = path.join(ROOT, 'plugins', 'subsonic.axe');
 fs.writeFileSync(axePath, JSON.stringify(axe, null, 2) + '\n');
 console.log('✅ Wrote plugins/subsonic.axe v' + VERSION);
 
 // ---------------------------------------------------------------------------
 // Update app.js FALLBACK_RESOLVERS
 // ---------------------------------------------------------------------------
-const appPath = path.join(ROOT, 'app.js');
 const lines = fs.readFileSync(appPath, 'utf8').split('\n');
 const start = lines.findIndex(l => l.startsWith('const FALLBACK_RESOLVERS = ['));
 if (start === -1) throw new Error('FALLBACK_RESOLVERS not found in app.js');
@@ -426,24 +479,7 @@ console.log('✅ Updated FALLBACK_RESOLVERS in app.js');
 // ---------------------------------------------------------------------------
 // Update marketplace-manifest.json
 // ---------------------------------------------------------------------------
-const manifestPath = path.join(ROOT, 'marketplace-manifest.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-const manifestEntry = {
-  id: 'subsonic',
-  name: 'Subsonic',
-  version: VERSION,
-  author: 'Parachord Team',
-  description: axe.manifest.description,
-  icon: axe.manifest.icon,
-  color: axe.manifest.color,
-  homepage: axe.manifest.homepage,
-  capabilities: { ...axe.capabilities },
-  requiresAuth: true,
-  builtin: true,
-  downloadUrl: 'https://raw.githubusercontent.com/Parachord/parachord-plugins/main/subsonic.axe',
-  category: 'streaming',
-  tags: ['self-hosted', 'subsonic', 'navidrome', 'streaming', 'personal-library']
-};
 const existing = manifest.plugins.findIndex(p => p.id === 'subsonic');
 if (existing !== -1) {
   manifest.plugins[existing] = manifestEntry;
