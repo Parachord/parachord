@@ -97,15 +97,18 @@ describe('subsonic .axe structure', () => {
     expect(axe.manifest.version).toBe('0.1.0');
   });
 
-  test('declares streaming capabilities with apikey auth', () => {
+  test('declares streaming capabilities with userpass auth', () => {
     expect(axe.capabilities).toEqual(
       expect.objectContaining({ resolve: true, search: true, stream: true, browse: false, urlLookup: false })
     );
     expect(axe.settings.requiresAuth).toBe(true);
-    expect(axe.settings.authType).toBe('apikey');
-    // `password` must stay the FIRST configurable field: the settings panel
-    // renders the first non-model field as the masked auth input.
-    expect(Object.keys(axe.settings.configurable)[0]).toBe('password');
+    // No API key. Username and password are a credential pair the settings
+    // panel groups together — they must stay adjacent.
+    expect(axe.settings.authType).toBe('userpass');
+    expect(axe.settings.configurable.username.type).toBe('text');
+    expect(axe.settings.configurable.password.type).toBe('password');
+    const keys = Object.keys(axe.settings.configurable);
+    expect(Math.abs(keys.indexOf('username') - keys.indexOf('password'))).toBe(1);
   });
 
   test('implementation functions compile', () => {

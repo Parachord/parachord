@@ -350,16 +350,10 @@ const axe = {
   urlPatterns: [],
   settings: {
     requiresAuth: true,
-    authType: 'apikey',
-    // `password` must stay FIRST: the settings panel's API Configuration
-    // block renders the first configurable field as the (masked) auth field,
-    // and the generic extra-field renderer has no password input type.
+    // userpass, not apikey: there is no API key. The settings panel groups
+    // username + password and must not render a "get your API key" link.
+    authType: 'userpass',
     configurable: {
-      password: {
-        type: 'password',
-        label: 'Password',
-        description: 'Your Subsonic account password. Sent as an MD5 token (salt + hash), never in plain text.'
-      },
       serverUrl: {
         type: 'text',
         label: 'Server URL',
@@ -371,6 +365,11 @@ const axe = {
         label: 'Username',
         description: 'Your Subsonic account username.',
         placeholder: 'admin'
+      },
+      password: {
+        type: 'password',
+        label: 'Password',
+        description: 'Your Subsonic account password. Sent as an MD5 token (salt + hash), never in plain text.'
       }
     }
   },

@@ -20,13 +20,8 @@
   "urlPatterns": [],
   "settings": {
     "requiresAuth": true,
-    "authType": "apikey",
+    "authType": "userpass",
     "configurable": {
-      "password": {
-        "type": "password",
-        "label": "Password",
-        "description": "Your Subsonic account password. Sent as an MD5 token (salt + hash), never in plain text."
-      },
       "serverUrl": {
         "type": "text",
         "label": "Server URL",
@@ -38,6 +33,11 @@
         "label": "Username",
         "description": "Your Subsonic account username.",
         "placeholder": "admin"
+      },
+      "password": {
+        "type": "password",
+        "label": "Password",
+        "description": "Your Subsonic account password. Sent as an MD5 token (salt + hash), never in plain text."
       }
     }
   },
