@@ -187,6 +187,40 @@ class MetadataReader {
     }
     return null;
   }
+
+  /**
+   * Stream info for the playing file (stream-quality.js contract).
+   *
+   * This is the playback-engine side of the stream-quality feature: the
+   * now-playing HUD shows technical stream parameters on hover, and for local
+   * files the file itself is the source of truth — so we parse it HERE, at
+   * play time, rather than persisting codec/bit_depth/channels columns in the
+   * scan DB. Play-time parsing means every file works day one (no backfill
+   * window for rows indexed before the feature existed) and the DB schema
+   * stays untouched.
+   *
+   * Returns the streamQuality record (minus origin, which the caller attaches)
+   * or null when nothing could be read. `bitrate` is normalized to kbps here
+   * (music-metadata reports bits/sec) — normalize once at capture, same as ISRC.
+   */
+  static async getStreamInfo(filePath) {
+    try {
+      const metadata = await mm.parseFile(filePath);
+      const format = metadata.format || {};
+      const ext = path.extname(filePath).slice(1).toLowerCase();
+      const info = {};
+      if (format.codec) info.codec = format.codec;
+      if (format.bitrate) info.bitrate = Math.round(format.bitrate / 1000);
+      if (format.sampleRate) info.sampleRate = format.sampleRate;
+      if (format.bitsPerSample) info.bitDepth = format.bitsPerSample;
+      if (format.numberOfChannels) info.channels = format.numberOfChannels;
+      if (ext) info.container = ext;
+      return Object.keys(info).length > 0 ? info : null;
+    } catch (error) {
+      console.warn(`[MetadataReader] getStreamInfo failed for ${filePath}:`, error && error.message ? error.message : error);
+      return null;
+    }
+  }
 }
 
 module.exports = MetadataReader;
