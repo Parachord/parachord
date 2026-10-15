@@ -844,6 +844,14 @@
     }
 
 
+    /* Tooltip around text that must still truncate (playbar title). The
+       container is inline-flex, which sizes to its content, so without a
+       width cap a `truncate` child never ellipsizes and overflows instead. */
+    .tooltip-container.tooltip-fill {
+      max-width: 100%;
+      min-width: 0;
+    }
+
     /* Bio tooltip - allows text wrapping for longer content */
     .tooltip-bio .tooltip-content {
       white-space: normal;

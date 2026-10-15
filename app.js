@@ -56944,10 +56944,13 @@ useEffect(() => {
                   : null;
                 const streamQualityLabel = streamQuality ? window.formatStreamQuality(streamQuality) : '';
                 if (!streamQualityLabel) return titleDiv;
+                // tooltip-fill caps the inline-flex wrapper at the column width
+                // so the title still truncates (without it long titles overflow).
                 return React.createElement(Tooltip, {
                   content: streamQualityLabel,
                   position: 'top',
-                  variant: 'dark'
+                  variant: 'dark',
+                  className: 'tooltip-fill'
                 }, titleDiv);
               })(),
               // Line 2: Artist name with bio tooltip + on tour badge
