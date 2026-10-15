@@ -139,7 +139,7 @@
     {
       "id": "amazonmusic",
       "name": "Amazon Music",
-      "version": "1.4.1",
+      "version": "1.4.2",
       "author": "Parachord Team",
       "description": "Uses Amazon's web player and this app's Widevine CDM. Does not use the Amazon Music desktop app.",
       "icon": "🎵",

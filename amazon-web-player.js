@@ -62,6 +62,7 @@ const {
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
   amazonGqlFetchHeaders,
+  capturedOperationNames,
   playlistFromGql
 } = require('./amazon-music-logic');
 
@@ -880,7 +881,9 @@ const amazonWebPlayer = {
         try {
           if (details.uploadData && details.uploadData.length) {
             const body = details.uploadData.map(d => (d.bytes ? d.bytes.toString('utf8') : '')).join('');
-            captured.push({ id: details.id, body });
+            // Keep the URL the page itself used — replaying a hardcoded endpoint
+            // rots the day Amazon puts a path or region segment on it.
+            captured.push({ id: details.id, body, url: details.url });
           }
         } catch (e) { /* keep other requests flowing */ }
         callback({});
@@ -912,8 +915,11 @@ const amazonWebPlayer = {
           if (entry) break;
         }
         if (!entry) {
-          // The page loaded but never asked for this playlist: deleted,
-          // private, or not available in the user's territory.
+          // The page loaded but never asked for this playlist: deleted, private,
+          // not available in the user's territory — or hornet renamed the
+          // operation. Log what the page did fire so a rename reads as a rename
+          // instead of "every playlist is deleted".
+          console.warn(`[Amazon] playlist lookup: page never requested playlistDetail for ${playlistId}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
           return null;
         }
         const request = amazonPlaylistDetailRequest([entry.body], playlistId);
@@ -921,29 +927,40 @@ const amazonWebPlayer = {
           throw notReady('lookup-failed', 'Unexpected Amazon playlist query shape');
         }
 
-        // Replay the page's request with the whole playlist in one go. The
-        // page asks for 100 tracks per request; firstLimit 500 matches the
-        // import cap (bigger playlists are truncated there too).
+        // Replay the page's own request, to the URL the page itself used, with
+        // the whole playlist in one go — the page asks for 100 tracks per
+        // request; firstLimit 500 matches the import cap. If the server refuses
+        // the raised limit, retry with the page's own body unchanged: a
+        // page-size slice beats a failed import.
+        const replayUrl = entry.url || 'https://gql.music.amazon.com/';
         const headers = amazonGqlFetchHeaders(entry.headers);
-        const body = {
+        const sendPlaylistQuery = async (body) => {
+          const replay = await this.evalOn(win, PLAYLIST_GQL_SCRIPT(replayUrl, headers, JSON.stringify(body)));
+          if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon playlist query failed' };
+          if (replay.status !== 200) return { error: `Amazon playlist query failed (${replay.status})` };
+          let parsed = null;
+          try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
+          if (parsed && Array.isArray(parsed.errors) && parsed.errors.length && !(parsed.data && parsed.data.playlist)) {
+            return { error: String((parsed.errors[0] || {}).message || 'Amazon playlist query error') };
+          }
+          return { parsed };
+        };
+        const bigBody = {
           operationName: 'playlistDetail',
           variables: { ...request.variables, id: playlistId, firstLimit: 500 },
           extensions: request.extensions || {}
         };
         console.log(`[Amazon] playlist replaying playlistDetail via gql (${Object.keys(headers).length} headers)`);
-        const replay = await this.evalOn(win, PLAYLIST_GQL_SCRIPT('https://gql.music.amazon.com/', headers, JSON.stringify(body)));
-        if (!replay || replay.error) {
-          throw notReady('lookup-failed', (replay && replay.error) || 'Amazon playlist query failed');
+        let outcome = await sendPlaylistQuery(bigBody);
+        if (outcome.error) {
+          console.warn(`[Amazon] playlist replay failed (${outcome.error}); retrying with the page's own request`);
+          outcome = await sendPlaylistQuery(request);
+          if (outcome.error) throw notReady('lookup-failed', outcome.error);
         }
-        if (replay.status !== 200) {
-          throw notReady('lookup-failed', `Amazon playlist query failed (${replay.status})`);
+        const playlist = playlistFromGql(outcome.parsed && outcome.parsed.data);
+        if (playlist && playlist.trackCount > playlist.tracks.length) {
+          console.warn(`[Amazon] playlist lookup truncated: got ${playlist.tracks.length} of ${playlist.trackCount} tracks (import cap 500, or the server capped the page size)`);
         }
-        let parsed = null;
-        try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
-        if (parsed && Array.isArray(parsed.errors) && parsed.errors.length && !(parsed.data && parsed.data.playlist)) {
-          throw notReady('lookup-failed', String((parsed.errors[0] || {}).message || 'Amazon playlist query error'));
-        }
-        const playlist = playlistFromGql(parsed && parsed.data);
         console.log(`[Amazon] playlist lookup returning ${playlist ? playlist.tracks.length : 0} tracks "${playlist ? playlist.name : ''}"`);
         return playlist;
       } finally {

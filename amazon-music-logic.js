@@ -329,6 +329,22 @@ function amazonPlaylistIdFromUrl(url) {
   return m ? m[1] : null;
 }
 
+// Diagnostic for the lookup miss: the gql operations the page actually fired.
+// When hornet renames playlistDetail, every import looks like "playlist
+// deleted" — this turns that into a one-line diagnosis.
+function capturedOperationNames(bodies) {
+  const names = new Set();
+  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { continue; }
+    const batch = Array.isArray(parsed) ? parsed : [parsed];
+    for (const req of batch) {
+      if (req && req.operationName) names.add(String(req.operationName));
+    }
+  }
+  return [...names];
+}
+
 // The page fetches its playlist via a persisted GraphQL query (APQ) against
 // gql.music.amazon.com: {operationName: 'playlistDetail', variables: {id,
 // firstLimit: 100, ...}, extensions: {persistedQuery: {sha256Hash}}}. The hash
@@ -447,6 +463,7 @@ module.exports = {
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
   amazonGqlFetchHeaders,
+  capturedOperationNames,
   playlistTrackFromGqlEdge,
   playlistFromGql,
   NEAR_END_MS,

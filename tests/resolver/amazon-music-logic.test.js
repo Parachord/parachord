@@ -20,6 +20,7 @@ const {
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
   amazonGqlFetchHeaders,
+  capturedOperationNames,
   playlistTrackFromGqlEdge,
   playlistFromGql,
   NEAR_END_MS,
@@ -492,6 +493,20 @@ describe('amazonPlaylistDetailRequest', () => {
     expect(amazonPlaylistDetailRequest([detail('pp6417a00a9c99470bbc8834ff3bf6009a')], 'PP6417A00A9C99470BBC8834FF3BF6009A')).not.toBeNull();
     expect(amazonPlaylistDetailRequest([], 'PP6417A00A9C99470BBC8834FF3BF6009A')).toBeNull();
     expect(amazonPlaylistDetailRequest(null, 'x')).toBeNull();
+  });
+});
+
+describe('capturedOperationNames', () => {
+  test('lists the distinct gql operations the page fired, for the miss log', () => {
+    const bodies = [
+      JSON.stringify({ operationName: 'playlistDetail', variables: { id: 'PP1' } }),
+      JSON.stringify([{ operationName: 'bootstrap' }, { operationName: 'playlistDetail', variables: { id: 'PP2' } }]),
+      'not json',
+      JSON.stringify({ noOperationName: true })
+    ];
+    expect(capturedOperationNames(bodies)).toEqual(['playlistDetail', 'bootstrap']);
+    expect(capturedOperationNames([])).toEqual([]);
+    expect(capturedOperationNames(null)).toEqual([]);
   });
 });
 

@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.4.1');
+    expect(axe.manifest.version).toBe('1.4.2');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -370,9 +370,31 @@ describe('amazonmusic lookupPlaylist', () => {
     await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toThrow(/403/);
   });
 
+  test('a server-truncated import keeps the playlist\'s own trackCount instead of looking complete', async () => {
+    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
+      success: true,
+      engine: 'web',
+      playlist: {
+        id: 'PP6417A00A9C99470BBC8834FF3BF6009A',
+        name: 'Alexa Chill',
+        owner: null,
+        albumArt: null,
+        trackCount: 7,
+        tracks: bridgePlaylist.playlist.tracks
+      }
+    });
+    const resolver = instantiate(axe);
+    const playlist = await resolver.lookupPlaylist(playlistUrl, {});
+    expect(playlist.trackCount).toBe(7);
+    expect(playlist.tracks).toHaveLength(2);
+  });
+
   test('a page that never loaded is not reported as a missing playlist', async () => {
     // load-failed means the import never got to ask Amazon (offline, captive
-    // portal, stalled load) — 'Playlist not found' would be a lie.
+    // portal, stalled load) — 'Playlist not found' would be a lie. The manage
+    // function is installed to prove it is also NOT offered a sign-in prompt.
+    const managePrompt = jest.fn().mockResolvedValue(true);
+    global.window.__parachordManageAmazonMusic = managePrompt;
     global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
       success: false, reason: 'load-failed', error: 'Amazon Music page did not finish loading within 30000ms'
     });
@@ -381,6 +403,23 @@ describe('amazonmusic lookupPlaylist', () => {
       notReady: true,
       code: 'load-failed'
     });
+    expect(managePrompt).not.toHaveBeenCalled();
+    expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledTimes(1);
+  });
+
+  test('a missing CDM never offers the sign-in prompt — importing needs no CDM', async () => {
+    const managePrompt = jest.fn().mockResolvedValue(true);
+    global.window.__parachordManageAmazonMusic = managePrompt;
+    global.window.electron.amazonMusic.lookupPlaylist.mockResolvedValue({
+      success: false, reason: 'no-cdm', error: 'This Parachord build has no Widevine CDM'
+    });
+    const resolver = instantiate(axe);
+    await expect(resolver.lookupPlaylist(playlistUrl, {})).rejects.toMatchObject({
+      notReady: true,
+      code: 'no-cdm'
+    });
+    expect(managePrompt).not.toHaveBeenCalled();
+    expect(global.window.electron.amazonMusic.lookupPlaylist).toHaveBeenCalledTimes(1);
   });
 
   test('a bridge rejection surfaces as null, not a throw', async () => {
