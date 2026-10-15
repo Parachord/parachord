@@ -47,6 +47,7 @@ const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
 const {
   pageBlocksPlayback,
   signInLanded,
+  cdmStatusHealthy,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   readPersistedQuality,
@@ -377,11 +378,11 @@ const amazonWebPlayer = {
       const { components } = electron();
       if (!components) return false;
       if (typeof components.status !== 'function') return true;
-      const status = components.status() || {};
-      const blob = JSON.stringify(status).toLowerCase();
-      if (!blob || blob === '{}') return false;
-      if (blob.includes('"status":"failed"') || blob.includes('component_update_error')) return false;
-      return true;
+      // Read the status fields only (cdmStatusHealthy) - substring-matching the
+      // whole status JSON used to disable Amazon when an unrelated value
+      // mentioned "failed". Unrecognized shapes are optimistic; probeEme is
+      // the gate that actually matters.
+      return cdmStatusHealthy(components.status() || {});
     } catch {
       return false;
     }

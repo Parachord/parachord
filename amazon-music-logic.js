@@ -80,6 +80,33 @@ function shouldPollFaster(durationMs, positionMs) {
   return durationMs - positionMs <= FAST_POLL_REMAINING_MS && durationMs - positionMs >= 0;
 }
 
+// castlabs components.status() shape is not a documented contract. Read only
+// the status fields instead of substring-matching the whole JSON blob - an
+// unrelated "failed" elsewhere in the payload (a URL, a component name) used
+// to disable Amazon playback entirely. Optimistic when the shape is not
+// recognized: the EME probe is the real playback gate, and a spurious
+// "no CDM" disables the resolver outright. Cycle-safe.
+function cdmStatusHealthy(status) {
+  if (!status || typeof status !== 'object') return true;
+  if (Object.keys(status).length === 0) return false; // {} = nothing installed
+  const seen = new Set();
+  const stack = [status];
+  while (stack.length) {
+    const value = stack.pop();
+    if (!value || typeof value !== 'object' || seen.has(value)) continue;
+    seen.add(value);
+    for (const [key, entry] of Object.entries(value)) {
+      if (key === 'status') {
+        const s = String(entry).toLowerCase();
+        if (s === 'failed' || s.includes('component_update_error')) return false;
+      } else if (entry && typeof entry === 'object') {
+        stack.push(entry);
+      }
+    }
+  }
+  return true; // no status field found: assume present; the EME probe is the gate
+}
+
 // Amazon's web player is not usable for search or play while it is still
 // on the account sign-in page or the post-login profile picker. Cookies can
 // already exist at that point; the URL is the signal that selection finished.
@@ -446,6 +473,7 @@ module.exports = {
   playerDurationMs,
   decidePollAdvance,
   shouldPollFaster,
+  cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
   AMAZON_QUALITY_OPTIONS,

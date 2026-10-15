@@ -4,6 +4,7 @@ const {
   playerDurationMs,
   decidePollAdvance,
   shouldPollFaster,
+  cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
   AMAZON_QUALITY_OPTIONS,
@@ -158,6 +159,39 @@ describe('pageBlocksPlayback', () => {
   test('the player home is usable', () => {
     expect(pageBlocksPlayback('https://music.amazon.com/')).toBeNull();
     expect(pageBlocksPlayback('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
+  });
+});
+
+describe('cdmStatusHealthy', () => {
+  test('a healthy component status is healthy', () => {
+    expect(cdmStatusHealthy({ widevine: { status: 'ok', version: '4.1' } })).toBe(true);
+  });
+
+  test('a failed component status is not', () => {
+    expect(cdmStatusHealthy({ widevine: { status: 'failed' } })).toBe(false);
+    expect(cdmStatusHealthy({ components: [{ name: 'widevine', status: 'component_update_error' }] })).toBe(false);
+  });
+
+  test('an unrelated "failed" string does not disable the CDM', () => {
+    // The old check substring-matched the whole JSON blob.
+    expect(cdmStatusHealthy({
+      widevine: { status: 'ok' },
+      notes: 'update-check-url https://example.com/failed-check'
+    })).toBe(true);
+  });
+
+  test('empty status means nothing installed; unknown shapes are optimistic', () => {
+    expect(cdmStatusHealthy({})).toBe(false);
+    expect(cdmStatusHealthy({ something: { else: true } })).toBe(true);
+    expect(cdmStatusHealthy(null)).toBe(true);
+  });
+
+  test('survives deep nesting and cycles', () => {
+    const deep = { a: { b: { c: { d: { e: { f: { g: { status: 'failed' } } } } } } } };
+    expect(cdmStatusHealthy(deep)).toBe(false);
+    const cyclic = { widevine: { status: 'ok' } };
+    cyclic.self = cyclic;
+    expect(cdmStatusHealthy(cyclic)).toBe(true);
   });
 });
 
