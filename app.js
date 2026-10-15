@@ -25233,12 +25233,16 @@ ${trackListXml}
     // Cache is valid if data exists, not expired, and the cached artist name is
     // a reasonable match for what was searched (prevents serving stale data from
     // a previous bad MusicBrainz match, e.g. wrong "John Smith" cached under "john smith")
+    // The releases array is REQUIRED: the MBID warmup path (Fresh Drops /
+    // enqueue) writes partial entries {artist:{name,mbid}, timestamp} with no
+    // releases — treating those as valid crashed on cachedData.releases.map.
     const normCache = s => s?.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .toLowerCase().replace(/[^a-z0-9]/g, '') || '';
     const cachedNorm = normCache(cachedData?.artist?.name);
     const searchNorm = normCache(artistName);
     const cacheNameMatch = cachedNorm === searchNorm;
     const cacheValid = cachedData &&
+                      Array.isArray(cachedData.releases) &&
                       (now - cachedData.timestamp) < CACHE_TTL.artistData &&
                       cacheNameMatch;
 
@@ -35384,6 +35388,58 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   }, [currentTrack?.artist, currentTrack?.album, currentTrack?.albumArt]);
 
+  // Stream-quality backfill for the PLAYING track (stream-quality.js contract).
+  // The one resolver today whose engine can report exact stream parameters is
+  // localfiles: the file is on disk, so we parse it at play time (via the
+  // localFiles:stream-info IPC — main process caches by path+mtime, so replays
+  // are free) instead of persisting codec/bit-depth columns in the scan DB.
+  // The result is attached to the playing track's localfiles source record —
+  // in-memory only (never written to the sources cache) — and the now-playing
+  // title hover renders it via pickStreamQuality/formatStreamQuality. Any
+  // other resolver just has no record and the title renders exactly as before.
+  //
+  // No "already attached" early-return: the playing-track clone is serialized
+  // into the saved queue, so a restored session can carry a record from a
+  // previous session — re-reading (a cached stat+map hit) and comparing keeps
+  // the record self-healing when the file changed while we were closed.
+  //
+  // Keyed to the resolver ACTUALLY playing (track._activeResolver via
+  // determineResolverIdFromTrack), not a preferred source: a Spotify-played
+  // track with a localfiles source attached streams through Spotify.
+  useEffect(() => {
+    if (!currentTrack || !window.electron?.localFiles?.getStreamInfo) return;
+    const playingResolverId = determineResolverIdFromTrack(currentTrack);
+    if (playingResolverId !== 'localfiles') return;
+    const filePath = currentTrack.sources?.localfiles?.filePath || currentTrack.filePath;
+    if (!filePath) return;
+    let cancelled = false;
+    window.electron.localFiles.getStreamInfo(filePath).then(info => {
+      if (cancelled || !info) return;
+      const next = { ...info, origin: 'measured' };
+      setCurrentTrack(prev => {
+        // Only touch the same track; skip when the attached record is already
+        // identical (deep-compare — the IPC caches object identity, but a
+        // restored-from-queue record is a different object with the same data).
+        if (!prev
+          || prev.id !== currentTrack.id
+          || (prev.artist !== currentTrack.artist || prev.title !== currentTrack.title)) return prev;
+        const existing = prev.sources?.localfiles?.streamQuality;
+        if (existing && JSON.stringify(existing) === JSON.stringify(next)) return prev;
+        return {
+          ...prev,
+          sources: {
+            ...(prev.sources || {}),
+            localfiles: {
+              ...(prev.sources?.localfiles || {}),
+              streamQuality: next
+            }
+          }
+        };
+      });
+    });
+    return () => { cancelled = true; };
+  }, [currentTrack?.id, currentTrack?.artist, currentTrack?.title, currentTrack?._activeResolver, currentTrack?.sources?.localfiles?.streamQuality]);
+
   // Fetch artist bio for playbar tooltip when track changes
   useEffect(() => {
     if (!currentTrack?.artist) {
@@ -37255,8 +37311,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const cachedImage = artistImageCache.current[normalizedName];
         const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
 
-        // Cache is valid if data exists and not expired
+        // Cache is valid if data exists and not expired. The releases array is
+        // REQUIRED — the MBID warmup path writes partial entries
+        // ({artist:{name,mbid}, timestamp}) with no releases, and treating
+        // those as valid crashed on cachedData.releases.map (same guard as
+        // fetchArtistData).
         const cacheValid = cachedData &&
+                          Array.isArray(cachedData.releases) &&
                           (now - cachedData.timestamp) < CACHE_TTL.artistData;
 
         if (cacheValid) {
@@ -57105,8 +57166,27 @@ useEffect(() => {
                 }
               }
             },
-              // Line 1: Track title
-              React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title),
+              // Line 1: Track title. Resolvers that provide stream info
+              // (stream-quality.js contract — localfiles today) surface it as a
+              // hover tooltip on the title; resolvers that don't render exactly
+              // as before.
+              (() => {
+                const titleDiv = React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title);
+                const playingResolverId = determineResolverIdFromTrack(currentTrack);
+                const streamQuality = (playingResolverId && window.pickStreamQuality)
+                  ? window.pickStreamQuality(currentTrack, playingResolverId)
+                  : null;
+                const streamQualityLabel = streamQuality ? window.formatStreamQuality(streamQuality) : '';
+                if (!streamQualityLabel) return titleDiv;
+                // tooltip-fill caps the inline-flex wrapper at the column width
+                // so the title still truncates (without it long titles overflow).
+                return React.createElement(Tooltip, {
+                  content: streamQualityLabel,
+                  position: 'top',
+                  variant: 'dark',
+                  className: 'tooltip-fill'
+                }, titleDiv);
+              })(),
               // Line 2: Artist name with bio tooltip + on tour badge
               React.createElement('div', { className: 'flex items-center text-xs text-gray-400 min-w-0' },
                 (() => {

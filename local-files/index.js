@@ -5,6 +5,7 @@ const LocalFilesDatabase = require('./database');
 const FileScanner = require('./scanner');
 const FileWatcher = require('./watcher');
 const AlbumArtResolver = require('./album-art');
+const MetadataReader = require('./metadata-reader');
 
 class LocalFilesService {
   constructor(userDataPath) {
@@ -247,6 +248,32 @@ class LocalFilesService {
       return await this.albumArt.resolveArt(track);
     } catch (err) {
       console.warn('[LocalFiles] resolveArtForTrack failed:', err && err.message ? err.message : err);
+      return null;
+    }
+  }
+
+  // Stream info for the playing file (stream-quality.js contract) — parsed at
+  // play time, not scan time, so no DB columns and no backfill window for
+  // files indexed before the feature existed. Cached per (path, mtime):
+  // replays and scrubbing are free, a changed file re-parses.
+  // See MetadataReader.getStreamInfo for the shape/normalization notes.
+  async getStreamInfo(filePath) {
+    if (!filePath || typeof filePath !== 'string') return null;
+    try {
+      // Async stat: this runs in the main process on every track start, and a
+      // sync stat on an SMB/NFS mount blocks the whole main process.
+      const stats = await fs.promises.stat(filePath);
+      const cached = this._streamInfoCache && this._streamInfoCache.get(filePath);
+      if (cached && cached.mtimeMs === stats.mtimeMs) return cached.info;
+      const info = await MetadataReader.getStreamInfo(filePath);
+      if (!this._streamInfoCache) this._streamInfoCache = new Map();
+      if (this._streamInfoCache.size > 500) this._streamInfoCache.clear();
+      this._streamInfoCache.set(filePath, { mtimeMs: stats.mtimeMs, info });
+      return info;
+    } catch (err) {
+      // Missing/unreadable file — the resolver's play path surfaces the
+      // playback error; the HUD just renders nothing.
+      console.warn('[LocalFiles] getStreamInfo failed:', err && err.message ? err.message : err);
       return null;
     }
   }

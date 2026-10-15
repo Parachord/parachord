@@ -6780,6 +6780,21 @@ ipcMain.handle('localFiles:resolveArt', async (_event, track) => {
   return service.resolveArtForTrack(dbShaped);
 });
 
+// Stream info for the playing file (stream-quality.js contract) — parsed at
+// play time so the now-playing HUD has exact codec/bitrate/sample-rate data
+// without persisting it in the scan DB. Renderer passes the file path from
+// the playing track's localfiles source (or top-level filePath).
+ipcMain.handle('localFiles:stream-info', async (_event, filePath) => {
+  const service = await waitForLocalFilesService();
+  if (!service || !filePath) return null;
+  try {
+    return await service.getStreamInfo(filePath);
+  } catch (err) {
+    console.warn('[LocalFiles] stream-info IPC failed:', err && err.message ? err.message : err);
+    return null;
+  }
+});
+
 ipcMain.handle('localFiles:rescanAll', async () => {
   console.log('=== Rescan All Folders ===');
 
