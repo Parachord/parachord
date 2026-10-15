@@ -410,10 +410,16 @@ const amazonWebPlayer = {
   // from an earlier step is already set.
   async isSignedIn() {
     if (await this.hasAuthCookie()) {
-      for (const target of [this.authWindow, this.playerView, this.searchView]) {
-        if (!this.alive(target)) continue;
-        if (pageBlocksPlayback(target.webContents.getURL())) return false;
-      }
+      // Only the sign-in window's URL is authoritative here. The player and
+      // search views keep whatever URL their last navigation left behind — a
+      // view that redirected to /ap/signin during an earlier failed search
+      // stays there (nothing navigates it until a search/play runs, and those
+      // refuse to while this returns false), so consulting them locked the
+      // account out right after a successful sign-in. A genuinely dead
+      // session is still caught mid-flight: search, lookup and play re-check
+      // the URL after every load and throw not-signed-in on a redirect.
+      const auth = this.authWindow;
+      if (this.alive(auth) && pageBlocksPlayback(auth.webContents.getURL())) return false;
       return true;
     }
     // The auth-cookie names are an implementation detail Amazon can rotate;
@@ -557,6 +563,21 @@ const amazonWebPlayer = {
       view.setBounds({ x: -1200, y: 0, width: 1100, height: 800 });
     } catch { /* gone */ }
     return 'offscreen';
+  },
+
+  // Blank the search view when a search is done. The SPA would otherwise
+  // keep running at full speed (backgroundThrottling is off), and a view
+  // left parked on a sign-in wall poisons sign-in detection for the rest of
+  // the session. Awaits the blank so the next queued page load (search or
+  // playlist) cannot race it.
+  async parkSearchView() {
+    const view = this.searchView;
+    if (!this.alive(view)) return;
+    this.collapse(view);
+    try {
+      const url = view.webContents.getURL();
+      if (url && url !== 'about:blank') await view.webContents.loadURL('about:blank');
+    } catch { /* gone */ }
   },
 
   ensureView(which) {
@@ -741,42 +762,42 @@ const amazonWebPlayer = {
       const win = await this.ensureWindow('search');
       const mode = await this.layoutSearch(this.searchView);
       console.log(`[Amazon] search mode=${mode} ${url}`);
-      await loadURLBudgeted(win, url);
-      let last = { tracks: [] };
-      for (let i = 0; i < 16; i++) {
-        await new Promise(r => setTimeout(r, 400));
-        const href = win.isDestroyed() ? '' : win.webContents.getURL();
-        if (pageBlocksPlayback(href)) {
-          console.warn(`[Amazon] search blocked: ${href}`);
-          throw notReady('not-signed-in', 'Choose an Amazon Music profile');
-        }
-        try { last = await this.evalOn(win, SCRAPE_SCRIPT) || last; } catch (e) {
-          if (i === 0 || i === 8) console.warn('[Amazon] scrape failed:', e && e.message);
-        }
-        const n = last && Array.isArray(last.tracks) ? last.tracks.length : 0;
-        if (i === 0 || i === 4 || i === 8 || n > 0) {
-          const sample = (last.tracks || []).slice(0, 3).map(t => `${t.artist || '?'} — ${t.title || '?'}`).join(' | ');
-          const dbg = last.debug ? ` asinLinks=${last.debug.withAsin} rejected=${last.debug.rejected} anchors=${last.debug.anchors} items=${last.debug.items || 0}` : '';
-          console.log(`[Amazon] search poll ${i} href=${href} tracks=${n}${sample ? ' ' + sample : ''}${dbg}`);
-          if (n === 0 && last.debug && last.debug.error) {
-            console.warn('[Amazon] scrape error', last.debug.error.split('\n')[0]);
-          }
-          if (n === 0 && last.debug && last.debug.samples && last.debug.samples.length) {
-            console.log('[Amazon] rejected samples', JSON.stringify(last.debug.samples));
-          }
-        }
-        if (n > 0) {
-          // Title links render before the artist link. Returning early used
-          // to attach title-only hits that the artist+title gate then dropped.
-          if (last.tracks.some(t => t.artist) || i >= 12) {
-            console.log(`[Amazon] search returning ${n} tracks`);
-            this.collapse(this.searchView);
-            return last.tracks;
-          }
-        }
-      }
       try {
-        const diag = await this.evalOn(win, `(() => {
+        await loadURLBudgeted(win, url);
+        let last = { tracks: [] };
+        for (let i = 0; i < 16; i++) {
+          await new Promise(r => setTimeout(r, 400));
+          const href = win.isDestroyed() ? '' : win.webContents.getURL();
+          if (pageBlocksPlayback(href)) {
+            console.warn(`[Amazon] search blocked: ${href}`);
+            throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+          }
+          try { last = await this.evalOn(win, SCRAPE_SCRIPT) || last; } catch (e) {
+            if (i === 0 || i === 8) console.warn('[Amazon] scrape failed:', e && e.message);
+          }
+          const n = last && Array.isArray(last.tracks) ? last.tracks.length : 0;
+          if (i === 0 || i === 4 || i === 8 || n > 0) {
+            const sample = (last.tracks || []).slice(0, 3).map(t => `${t.artist || '?'} — ${t.title || '?'}`).join(' | ');
+            const dbg = last.debug ? ` asinLinks=${last.debug.withAsin} rejected=${last.debug.rejected} anchors=${last.debug.anchors} items=${last.debug.items || 0}` : '';
+            console.log(`[Amazon] search poll ${i} href=${href} tracks=${n}${sample ? ' ' + sample : ''}${dbg}`);
+            if (n === 0 && last.debug && last.debug.error) {
+              console.warn('[Amazon] scrape error', last.debug.error.split('\n')[0]);
+            }
+            if (n === 0 && last.debug && last.debug.samples && last.debug.samples.length) {
+              console.log('[Amazon] rejected samples', JSON.stringify(last.debug.samples));
+            }
+          }
+          if (n > 0) {
+            // Title links render before the artist link. Returning early used
+            // to attach title-only hits that the artist+title gate then dropped.
+            if (last.tracks.some(t => t.artist) || i >= 12) {
+              console.log(`[Amazon] search returning ${n} tracks`);
+              return last.tracks;
+            }
+          }
+        }
+        try {
+          const diag = await this.evalOn(win, `(() => {
           const item = document.querySelector('[data-testid="HorizontalItem,SearchResultsWidget_TopResults_TrackItem"]')
             || document.querySelector('[data-testid="HorizontalItem,SearchResultsWidget_Item"]');
           if (!item) return { missing: true };
@@ -795,12 +816,14 @@ const amazonWebPlayer = {
           walk(item, 0);
           return { testid: item.getAttribute('data-testid'), text: (item.innerText || '').slice(0, 180), attrs, html: (item.outerHTML || '').slice(0, 700) };
         })()`);
-        console.log('[Amazon] search row markup', JSON.stringify(diag));
-      } catch (e) {
-        console.warn('[Amazon] search diag failed:', e && e.message);
+          console.log('[Amazon] search row markup', JSON.stringify(diag));
+        } catch (e) {
+          console.warn('[Amazon] search diag failed:', e && e.message);
+        }
+        return (last && Array.isArray(last.tracks)) ? last.tracks : [];
+      } finally {
+        await this.parkSearchView();
       }
-      this.collapse(this.searchView);
-      return (last && Array.isArray(last.tracks)) ? last.tracks : [];
     });
   },
 
@@ -907,7 +930,7 @@ const amazonWebPlayer = {
       } finally {
         try { ses.webRequest.onBeforeRequest(gqlFilter, null); } catch { /* none */ }
         try { ses.webRequest.onBeforeSendHeaders(gqlFilter, null); } catch { /* none */ }
-        this.collapse(this.searchView);
+        await this.parkSearchView();
       }
     });
   },
