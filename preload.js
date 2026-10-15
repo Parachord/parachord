@@ -583,8 +583,9 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
-  // Amazon Music — in-app web player. A BrowserWindow loads music.amazon.com
-  // and castlabs Electron's Widevine CDM decrypts. The desktop app is not used.
+  // Amazon Music — in-app web player. Hidden WebContentsViews (player 0×0,
+  // search parked offscreen) load music.amazon.com on the main window and
+  // castlabs Electron's Widevine CDM decrypts. The desktop app is not used.
   amazonMusic: {
     getStatus: () => ipcRenderer.invoke('amazonmusic-get-status'),
     openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
