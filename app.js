@@ -25010,12 +25010,16 @@ ${trackListXml}
     // Cache is valid if data exists, not expired, and the cached artist name is
     // a reasonable match for what was searched (prevents serving stale data from
     // a previous bad MusicBrainz match, e.g. wrong "John Smith" cached under "john smith")
+    // The releases array is REQUIRED: the MBID warmup path (Fresh Drops /
+    // enqueue) writes partial entries {artist:{name,mbid}, timestamp} with no
+    // releases — treating those as valid crashed on cachedData.releases.map.
     const normCache = s => s?.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .toLowerCase().replace(/[^a-z0-9]/g, '') || '';
     const cachedNorm = normCache(cachedData?.artist?.name);
     const searchNorm = normCache(artistName);
     const cacheNameMatch = cachedNorm === searchNorm;
     const cacheValid = cachedData &&
+                      Array.isArray(cachedData.releases) &&
                       (now - cachedData.timestamp) < CACHE_TTL.artistData &&
                       cacheNameMatch;
 
@@ -37032,8 +37036,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         const cachedImage = artistImageCache.current[normalizedName];
         const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
 
-        // Cache is valid if data exists and not expired
+        // Cache is valid if data exists and not expired. The releases array is
+        // REQUIRED — the MBID warmup path writes partial entries
+        // ({artist:{name,mbid}, timestamp}) with no releases, and treating
+        // those as valid crashed on cachedData.releases.map (same guard as
+        // fetchArtistData).
         const cacheValid = cachedData &&
+                          Array.isArray(cachedData.releases) &&
                           (now - cachedData.timestamp) < CACHE_TTL.artistData;
 
         if (cacheValid) {
