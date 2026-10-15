@@ -90,6 +90,19 @@ class ScrobbleManager {
     this.nowPlayingSent = true;
   }
 
+  // The player pollers learn the real duration from the media element after
+  // onTrackStart already ran (search results carry duration 0). Patch the
+  // stored track so the scrobble threshold can fire — without this, a track
+  // whose duration was unknown at start never scrobbles: onProgressUpdate
+  // returns immediately on a falsy duration.
+  updateTrackDuration(seconds) {
+    if (!this.currentTrack || typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return;
+    if (!this.currentTrack.duration || this.currentTrack.duration <= 0 ||
+        Math.abs(this.currentTrack.duration - seconds) > 2) {
+      this.currentTrack.duration = seconds;
+    }
+  }
+
   // Called periodically with current playback progress (in seconds)
   async onProgressUpdate(progressSeconds) {
     if (!this.currentTrack || this.scrobbleSubmitted) {

@@ -308,6 +308,25 @@ window.classifyPlaylistUrl = (urlString) => {
   return { kind: 'standard' };
 };
 
+// A provider playlist URL — a playlist PAGE owned by a resolver (Spotify,
+// Apple Music, Amazon, a SoundCloud set, …), not a hosted tracklist document.
+// Provider imports are snapshots: the hosted-XSPF machinery (the startup
+// reload list, the 5-minute poller) must not touch them. Fetching the page
+// HTML to "compare content" never matches the stored XSPF (so every poll
+// re-runs a full resolver import), and when resolvers have not finished
+// loading the dispatch falls into the XSPF branch and reports "Failed to
+// parse XSPF" for a playlist that imported fine. SYNC MIRROR: keep the
+// function body byte-identical with tests/helpers/playlist-url-classify.js.
+window.isProviderPlaylistUrl = (url, loader) => {
+  if (!url || !loader) return false;
+  try {
+    const id = loader.findResolverForUrl(url);
+    return !!(id && loader.getUrlType(url) === 'playlist');
+  } catch {
+    return false;
+  }
+};
+
 // Resolver match validation + minimum confidence threshold.
 //
 // SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
@@ -1976,13 +1995,14 @@ const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"bandcamp","name":"Bandcamp","version":"1.1.0","author":"Parachord Team","description":"Find and purchase music on Bandcamp. Opens tracks in browser for streaming.","icon":"\ud83c\udfb8","color":"#629AA9","homepage":"https://bandcamp.com","email":"support@harmonix.app"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true,"purchase":true},"urlPatterns":["*.bandcamp.com/track/*","*.bandcamp.com/album/*"],"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) {\n  // parachord#977: Bandcamp's HTML search page (bandcamp.com/search) now serves a\n  // bot \"Client Challenge\" page, so scraping it returns nothing. Use the JSON API\n  // that bandcamp.com's own search box calls (tracks only), falling back to the\n  // mobile-app autocomplete endpoint if it errors or comes back empty.\n  var normalizeUrl = function(u) {\n    if (typeof u !== 'string' || !u) return null;\n    // app_autocomplete returns a doubled url (\"https://x.bandcamp.comhttps://x.bandcamp.com/track/y\"); keep the last absolute URL.\n    var i = u.lastIndexOf('https://');\n    return i > 0 ? u.slice(i) : u;\n  };\n  var toResult = function(r) {\n    if (!r || !r.name) return null;\n    var url = normalizeUrl(r.item_url_path || r.url);\n    if (!url) return null;\n    return {\n      id: 'bandcamp-' + (r.id || url),\n      title: r.name,\n      artist: r.band_name || 'Unknown Artist',\n      album: r.album_name || 'Single',\n      duration: 210,\n      sources: ['bandcamp'],\n      bandcampUrl: url,\n      purchaseUrl: url,\n      bandcampTrackId: r.id || null,\n      bandcampAlbumId: r.album_id || null,\n      albumArt: r.img ? r.img.replace('_3.jpg', '_10.jpg') : null\n    };\n  };\n  try {\n    console.log('Searching Bandcamp for:', query);\n    var items = [];\n    try {\n      var resp = await fetch('https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ search_text: query, search_filter: 't', full_page: false, fan_id: null })\n      });\n      if (resp.ok) {\n        var data = await resp.json();\n        items = (data && data.auto && data.auto.results) || [];\n      } else {\n        console.warn('Bandcamp search API returned', resp.status);\n      }\n    } catch (e) {\n      console.warn('Bandcamp search API error:', e && e.message);\n    }\n    if (items.length === 0) {\n      try {\n        var resp2 = await fetch('https://bandcamp.com/api/fuzzysearch/1/app_autocomplete?q=' + encodeURIComponent(query));\n        if (resp2.ok) {\n          var data2 = await resp2.json();\n          items = ((data2 && data2.results) || []).filter(function(x) { return x && x.type === 't'; });\n        }\n      } catch (e2) {\n        console.warn('Bandcamp autocomplete fallback error:', e2 && e2.message);\n      }\n    }\n    var results = [];\n    for (var i = 0; i < items.length && results.length < 20; i++) {\n      var t = toResult(items[i]);\n      if (t) results.push(t);\n    }\n    console.log('Found ' + results.length + ' Bandcamp results');\n    return results;\n  } catch (error) {\n    console.error('Bandcamp search error:', error);\n    return [];\n  }\n}","resolve":"async function(artist, track, album, config) {\n  // Prefer the first result that passes an artist+title containment check (the\n  // same shape as validateResolvedTrack in confidence-scoring.js), so the\n  // downstream 0.6 confidence floor doesn't drop a correct match that isn't\n  // ranked first. This is only a ranking hint - the platform-native confidence\n  // gate is still authoritative - so it uses engine-portable ASCII normalization\n  // (no Unicode property-escape regex, guarded String.normalize) because this .axe also runs in the\n  // mobile JS runtime. Non-Latin names normalize to '' and just fall through to\n  // the top result.\n  var norm = function(s) {\n    s = (s || '').toString().toLowerCase();\n    if (typeof s.normalize === 'function') s = s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');\n    return s.replace(/[^a-z0-9]/g, '');\n  };\n  var contains = function(a, b) { return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1); };\n  var targetArtist = norm(artist);\n  var targetTitle = norm(track);\n  var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config);\n  if (results.length === 0) return null;\n  for (var i = 0; i < results.length; i++) {\n    if (contains(norm(results[i].artist), targetArtist) && contains(norm(results[i].title), targetTitle)) return results[i];\n  }\n  return results[0];\n}","lookupUrl":"async function(url, config) { try { console.log('Bandcamp URL lookup:', url); const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const ldScripts = doc.querySelectorAll('script[type=\"application/ld+json\"]'); for (const ldEl of ldScripts) { try { const ld = JSON.parse(ldEl.textContent); if (ld['@type'] === 'MusicRecording') { let duration = 0; if (ld.duration) { const m = ld.duration.match(/P(?:\\d+H)?(\\d+)M(\\d+)S/); if (m) duration = parseInt(m[1]) * 60 + parseInt(m[2]); } const artist = ld.byArtist?.name || doc.querySelector('meta[property=\"og:site_name\"]')?.content || ''; const album = ld.inAlbum?.name || ''; const albumArt = doc.querySelector('meta[property=\"og:image\"]')?.content || ld.image || ''; return { id: `bandcamp-${Date.now()}`, title: ld.name, artist: artist, album: album, duration: duration, sources: ['bandcamp'], bandcampUrl: url, purchaseUrl: url, albumArt: albumArt }; } } catch (e) {} } const title = doc.querySelector('meta[property=\"og:title\"]')?.content; const artist = doc.querySelector('meta[property=\"og:site_name\"]')?.content; const albumArt = doc.querySelector('meta[property=\"og:image\"]')?.content; if (!title || !artist) return null; return { id: `bandcamp-${Date.now()}`, title: title, artist: artist, album: '', duration: 0, sources: ['bandcamp'], bandcampUrl: url, purchaseUrl: url, albumArt: albumArt }; } catch (error) { console.error('Bandcamp URL lookup error:', error); return null; } }","lookupAlbum":"async function(url, config) { try { console.log('Bandcamp album lookup:', url); const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const parser = new DOMParser(); const doc = parser.parseFromString(html, 'text/html'); const albumArt = doc.querySelector('meta[property=\"og:image\"]')?.content || ''; let albumName = ''; let artist = ''; let tracks = []; const ldScripts = doc.querySelectorAll('script[type=\"application/ld+json\"]'); for (const ldEl of ldScripts) { try { const ld = JSON.parse(ldEl.textContent); if (ld['@type'] === 'MusicAlbum' && ld.track) { albumName = ld.name || ''; artist = ld.byArtist?.name || ''; const items = ld.track.itemListElement || []; tracks = items.map((item, i) => { const t = item.item || item; let duration = 0; if (t.duration) { const m = t.duration.match(/P(?:\\d+H)?(\\d+)M(\\d+)S/); if (m) duration = parseInt(m[1]) * 60 + parseInt(m[2]); } const trackUrl = t['@id'] || t.mainEntityOfPage || url; return { id: `bandcamp-${Date.now()}-${i}`, title: t.name, artist: artist, album: albumName, duration: duration, sources: ['bandcamp'], bandcampUrl: trackUrl, purchaseUrl: trackUrl, trackNumber: item.position || i + 1 }; }); break; } } catch (e) {} } if (!albumName) albumName = doc.querySelector('meta[property=\"og:title\"]')?.content || ''; if (!artist) artist = doc.querySelector('meta[property=\"og:site_name\"]')?.content || ''; if (tracks.length === 0) return null; return { id: `bandcamp-album-${Date.now()}`, name: albumName, artist: artist, albumArt: albumArt, trackCount: tracks.length, tracks: tracks, url: url }; } catch (error) { console.error('Bandcamp album lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.bandcampUrl) { console.error('No Bandcamp URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.bandcampUrl); return result && result.success; } else { const newWindow = window.open(track.bandcampUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open Bandcamp link:', error); return false; } }","init":"async function(config) { console.log('Bandcamp resolver initialized'); }","cleanup":"async function() { console.log('Bandcamp resolver cleanup'); }"}},
   {"manifest":{"id":"soundcloud","name":"SoundCloud","version":"1.1.0","author":"Parachord Team","description":"Search and stream music from SoundCloud. Requires OAuth login for full access.","icon":"\u2601","color":"#FF5500","homepage":"https://soundcloud.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["soundcloud.com/*","*.soundcloud.com/*"],"settings":{"requiresAuth":true,"authType":"oauth","configurable":{"clientId":{"type":"text","label":"Client ID","advanced":true},"clientSecret":{"type":"text","label":"Client Secret","advanced":true}}},"implementation":{"search":"async function(query, config) { if (!config.token) { console.log('SoundCloud: No token, skipping search'); return []; } try { console.log('Searching SoundCloud for:', query); const response = await fetch(`https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!response.ok) { console.error('SoundCloud search failed:', response.status); if (response.status === 401) { console.log('SoundCloud token expired or invalid'); } return []; } const tracks = await response.json(); if (!Array.isArray(tracks)) { console.log('No SoundCloud results found'); return []; } const results = tracks.map(track => ({ id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url, streamable: track.streamable && track.access !== 'blocked', waveformUrl: track.waveform_url })); console.log(`Found ${results.length} SoundCloud results`); return results; } catch (error) { console.error('SoundCloud search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","lookupUrl":"async function(url, config) { if (!config.token) return null; try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) return null; const data = await resolveResponse.json(); if (data.location) { const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!trackResponse.ok) return null; const track = await trackResponse.json(); return { id: `soundcloud-${track.id}`, title: track.title, artist: track.user?.username || 'Unknown Artist', album: track.label_name || 'SoundCloud', duration: Math.floor((track.duration || 0) / 1000), sources: ['soundcloud'], soundcloudId: track.id, soundcloudUrl: track.permalink_url, albumArt: track.artwork_url?.replace('-large', '-t500x500'), streamable: track.streamable && track.access !== 'blocked' }; } return null; } catch (error) { console.error('SoundCloud URL lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { if (!config.token) { console.log('SoundCloud: No token, skipping playlist lookup'); return null; } try { const resolveResponse = await fetch(`https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `OAuth ${config.token}` } }); if (!resolveResponse.ok) { console.error('SoundCloud playlist resolve failed:', resolveResponse.status); return null; } const data = await resolveResponse.json(); if (!data || !Array.isArray(data.tracks)) { console.log('SoundCloud resolve did not return a playlist'); return null; } const tracks = data.tracks.map(t => ({ artist: t.user?.username || 'Unknown Artist', title: t.title, album: t.label_name || 'SoundCloud', duration: Math.floor((t.duration || 0) / 1000), soundcloudId: t.id, soundcloudUrl: t.permalink_url })).filter(t => t.title); if (!tracks.length) { console.log('SoundCloud playlist had no playable tracks'); return null; } console.log(`SoundCloud playlist '${data.title}' -> ${tracks.length} tracks`); return { name: data.title || 'SoundCloud Playlist', creator: data.user?.username, tracks, albumArt: data.artwork_url?.replace('-large', '-t500x500') || data.user?.avatar_url }; } catch (error) { console.error('SoundCloud playlist lookup error:', error); return null; } }","play":"async function(track, config) { if (!track.soundcloudUrl) { console.error('No SoundCloud URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.soundcloudUrl); return result && result.success; } else { const newWindow = window.open(track.soundcloudUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open SoundCloud link:', error); return false; } }","init":"async function(config) { console.log('SoundCloud resolver initialized'); }","cleanup":"async function() { console.log('SoundCloud resolver cleanup'); }"}},
   {"manifest":{"id":"applemusic","name":"Apple Music","version":"1.0.2","author":"Parachord Team","description":"Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.","icon":"\ud83c\udf4e","color":"#FA243C","homepage":"https://music.apple.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true},"urlPatterns":["music.apple.com/*/album/*/*","music.apple.com/*/song/*/*","music.apple.com/*/playlist/*/*","itunes.apple.com/*"],"settings":{"requiresAuth":true,"authType":"musickit","configurable":{"developerToken":{"type":"text","label":"MusicKit Developer Token","default":"","description":"Optional: JWT from Apple Developer account for enhanced features"},"storefront":{"type":"text","label":"Storefront (Country)","default":"us","description":"Apple Music storefront code (e.g., us, gb, jp)"}}},"implementation":{"search":"async function(query, config) { try { if (query.trim().length < 2) { console.log('Query too short (min 2 chars)'); return []; } const storefront = config.storefront || 'us'; if (window.appleMusicSearchWithMusicKit) { return await window.appleMusicSearchWithMusicKit(query, storefront, 20); } console.log('Searching Apple Music/iTunes for:', query); const response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(query) + '&media=music&entity=song&limit=20&country=' + storefront); if (!response.ok) { console.error('iTunes search failed:', response.status); return []; } const data = await response.json(); if (!data.results || data.results.length === 0) { console.log('No iTunes results found'); return []; } const results = data.results.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName, releaseDate: track.releaseDate, artistId: track.artistId, collectionId: track.collectionId, appleMusicAlbumUrl: track.collectionViewUrl || null, isStreamable: track.isStreamable }; }); console.log('Found ' + results.length + ' Apple Music results'); return results; } catch (error) { console.error('Apple Music search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { var normalizeStr = function(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, ''); }; var targetArtist = normalizeStr(artist); var targetTrack = normalizeStr(track); var matchFromResults = function(results) { for (var i = 0; i < results.length; i++) { var r = results[i]; if (normalizeStr(r.artist).includes(targetArtist) && normalizeStr(r.title).includes(targetTrack)) { return r; } } return null; }; if (album) { if (!window._amAlbumCache) { window._amAlbumCache = {}; } if (!window._amAlbumPending) { window._amAlbumPending = {}; } var albumKey = normalizeStr(artist + '|' + album); var cached = window._amAlbumCache[albumKey]; if (cached) { var match = matchFromResults(cached); if (match) { return match; } } if (!cached) { if (window._amAlbumPending[albumKey]) { var albumResults = await window._amAlbumPending[albumKey]; } else { var self = this; var searchPromise = self.search(artist + ' ' + album, config); window._amAlbumPending[albumKey] = searchPromise; var albumResults = await searchPromise; window._amAlbumCache[albumKey] = albumResults; delete window._amAlbumPending[albumKey]; setTimeout(function() { delete window._amAlbumCache[albumKey]; }, 60000); } var match = matchFromResults(albumResults); if (match) { return match; } } } var query = artist + ' ' + track; var results = await this.search(query, config); if (results.length === 0) return null; var match = matchFromResults(results); return match || results[0]; }","lookupUrl":"async function(url, config) { try { console.log('Apple Music URL lookup:', url); var trackId = null; var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); var trackIdMatch = url.match(/[?&]i=(\\d+)/); var songIdMatch = url.match(/\\/song\\/[^/]+\\/(\\d+)/); if (trackIdMatch) { trackId = trackIdMatch[1]; } else if (songIdMatch) { trackId = songIdMatch[1]; } else if (albumIdMatch && !trackIdMatch) { console.log('URL is for album, not track. Use lookupAlbum instead.'); return null; } if (!trackId) { console.log('Could not extract track ID from URL'); return null; } var storefront = config.storefront || 'us'; if (window.appleMusicLookupSong) { return await window.appleMusicLookupSong(trackId, storefront); } var response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/lookup?id=' + trackId + '&entity=song'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var track = data.results.find(function(r) { return r.wrapperType === 'track'; }) || data.results[0]; return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName || 'Single', duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl || url, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, genre: track.primaryGenreName }; } catch (error) { console.error('Apple Music URL lookup error:', error); return null; } }","lookupAlbum":"async function(url, config) { try { console.log('Apple Music album lookup:', url); var albumIdMatch = url.match(/\\/album\\/[^/]+\\/(\\d+)/); if (!albumIdMatch) { console.log('Could not extract album ID from URL'); return null; } var albumId = albumIdMatch[1]; var storefront = config.storefront || 'us'; if (window.appleMusicLookupAlbum) { var result = await window.appleMusicLookupAlbum(albumId, storefront); if (result) { result.url = url; return result; } } var response = await window.iTunesRateLimiter.fetch('https://itunes.apple.com/lookup?id=' + albumId + '&entity=song&limit=200'); if (!response.ok) return null; var data = await response.json(); if (!data.results || data.results.length === 0) return null; var albumInfo = data.results.find(function(r) { return r.wrapperType === 'collection'; }); var trackResults = data.results.filter(function(r) { return r.wrapperType === 'track'; }); var tracks = trackResults.map(function(track) { return { id: 'applemusic-' + track.trackId, title: track.trackName, artist: track.artistName, album: track.collectionName, duration: Math.floor((track.trackTimeMillis || 0) / 1000), sources: ['applemusic'], appleMusicId: String(track.trackId), appleMusicUrl: track.trackViewUrl, albumArt: track.artworkUrl100 ? track.artworkUrl100.replace('100x100', '500x500') : null, previewUrl: track.previewUrl, trackNumber: track.trackNumber, discNumber: track.discNumber }; }); tracks.sort(function(a, b) { if (a.discNumber !== b.discNumber) return a.discNumber - b.discNumber; return a.trackNumber - b.trackNumber; }); return { id: 'applemusic-album-' + albumId, name: albumInfo ? albumInfo.collectionName : 'Unknown Album', artist: albumInfo ? albumInfo.artistName : (tracks[0] ? tracks[0].artist : 'Unknown Artist'), albumArt: albumInfo && albumInfo.artworkUrl100 ? albumInfo.artworkUrl100.replace('100x100', '500x500') : null, releaseDate: albumInfo ? albumInfo.releaseDate : null, trackCount: albumInfo ? albumInfo.trackCount : tracks.length, tracks: tracks, url: url }; } catch (error) { console.error('Apple Music album lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { console.log('Apple Music playlist lookup:', url); var playlistIdMatch = url.match(/\\/playlist\\/[^/]+\\/(pl\\.[a-zA-Z0-9-]+)/); if (!playlistIdMatch) { console.log('Could not extract playlist ID from URL'); return null; } var playlistId = playlistIdMatch[1]; var storefront = config.storefront || 'us'; if (window.appleMusicLookupPlaylist) { var result = await window.appleMusicLookupPlaylist(playlistId, storefront); if (result) { result.url = url; return result; } } console.log('MusicKit not available for playlist lookup'); return null; } catch (error) { console.error('Apple Music playlist lookup error:', error); return null; } }","play":"async function(track, config) { console.log('[AppleMusic] Play called, track:', { id: track.id, appleMusicId: track.appleMusicId, hasUrl: !!track.appleMusicUrl, hasPreview: !!track.previewUrl }); var nativePlaySucceeded = false; if (window.electron && window.electron.musicKit && track.appleMusicId) { try { var authStatus = await window.electron.musicKit.checkAuth(); console.log('[AppleMusic] Native auth status:', authStatus); if (authStatus.success && authStatus.authorized) { console.log('[AppleMusic] Playing via native MusicKit:', track.appleMusicId); var playResult = await window.electron.musicKit.play(track.appleMusicId); console.log('[AppleMusic] Native play result:', JSON.stringify(playResult)); if (playResult.success) { return true; } var errMsg = playResult.error || ''; if (errMsg.indexOf('error 6') !== -1) { console.log('[AppleMusic] Native MusicKit error 6 (system media session not ready). Open Music.app once to fix, or playback will use next available source.'); if (!window._appleMusicError6Notified) { window._appleMusicError6Notified = true; window.dispatchEvent(new CustomEvent('applemusic-session-error')); } } else { console.log('[AppleMusic] Native MusicKit play failed:', errMsg); } console.log('[AppleMusic] Native MusicKit play failed, falling back to MusicKit JS'); } } catch (e) { console.log('[AppleMusic] Native MusicKit error:', e); } } if (!nativePlaySucceeded) { var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null; if (musicKitWeb && track.appleMusicId) { var authCooldownMs = 300000; var lastAuthFailAt = window._appleMusicWebAuthFailedAt || 0; var inAuthCooldown = lastAuthFailAt && (Date.now() - lastAuthFailAt) < authCooldownMs; if (inAuthCooldown) { console.log('[AppleMusic] Skipping MusicKit JS \u2014 auth failed ' + Math.round((Date.now() - lastAuthFailAt) / 1000) + 's ago, cooling down'); } else { var status = musicKitWeb.getAuthStatus(); if (!status.configured && window.electron && window.electron.config) { try { var devToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN'); if (devToken) { console.log('[AppleMusic] Auto-configuring MusicKit JS with developer token'); await musicKitWeb.configure(devToken, 'Parachord', '1.0.0'); status = musicKitWeb.getAuthStatus(); } } catch (cfgErr) { console.log('[AppleMusic] MusicKit JS auto-configure failed:', cfgErr.message); } } console.log('[AppleMusic] MusicKit JS status:', status); if (status.configured && !status.authorized && window.electron && window.electron.platform === 'darwin') { try { console.log('[AppleMusic] MusicKit JS not authorized, requesting authorization...'); await musicKitWeb.authorize(); status = musicKitWeb.getAuthStatus(); console.log('[AppleMusic] MusicKit JS auth result:', status); } catch (authErr) { console.log('[AppleMusic] MusicKit JS authorization failed:', authErr.message); window._appleMusicWebAuthFailedAt = Date.now(); } } else if (status.configured && !status.authorized) { console.log('[AppleMusic] MusicKit JS not authorized; skipping popup on non-macOS (use Settings \u2192 Apple Music \u2192 Connect to sign in via the auth window). Falling back to 30s preview.'); } if (status.configured && status.authorized) { window._appleMusicWebAuthFailedAt = 0; try { console.log('[AppleMusic] Playing via MusicKit JS:', track.appleMusicId); await musicKitWeb.play(track.appleMusicId); console.log('[AppleMusic] MusicKit JS playback started'); return true; } catch (mkError) { console.log('[AppleMusic] MusicKit JS play failed:', mkError.message); } } } } } if (track.previewUrl) { console.log('[AppleMusic] Trying 30-second preview in-app playback'); try { if (!window._appleMusicPreviewAudio) { window._appleMusicPreviewAudio = new Audio(); window._appleMusicPreviewAudio.addEventListener('ended', function() { console.log('[AppleMusic] Preview ended'); if (window.dispatchEvent) { window.dispatchEvent(new CustomEvent('applemusic-preview-ended')); } }); } window._appleMusicPreviewAudio.src = track.previewUrl; window._appleMusicPreviewAudio.volume = 1.0; await window._appleMusicPreviewAudio.play(); console.log('[AppleMusic] Playing 30-second preview in-app'); return true; } catch (audioError) { console.log('[AppleMusic] Preview playback failed:', audioError); } } console.log('[AppleMusic] All playback methods failed, returning false to try next source'); return false; }","init":"async function(config) { console.log('Apple Music resolver initialized'); if (config.developerToken && window.getMusicKitWeb) { console.log('[AppleMusic] Configuring MusicKit JS with developer token'); try { var musicKitWeb = window.getMusicKitWeb(); await musicKitWeb.configure(config.developerToken, 'Parachord', '1.0.0'); console.log('[AppleMusic] MusicKit JS configured successfully'); var status = musicKitWeb.getAuthStatus(); if (!status.authorized) { console.log('[AppleMusic] MusicKit JS not authorized yet - will prompt on first play'); } } catch (configError) { console.error('[AppleMusic] Failed to configure MusicKit JS:', configError); } } if (window.electron && window.electron.musicKit) { window.electron.musicKit.isAvailable().then(function(avail) { if (avail) { console.log('Native MusicKit available for Apple Music playback'); } }); } }","cleanup":"async function() { console.log('Apple Music resolver cleanup'); var musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null; if (musicKitWeb) { try { await musicKitWeb.stop(); } catch (e) {} } }"}},
+  {"manifest":{"id":"amazonmusic","name":"Amazon Music","version":"1.4.2","author":"Parachord Team","description":"Uses Amazon's web player and this app's Widevine CDM. Does not use the Amazon Music desktop app.","icon":"🎵","color":"#25D1DA","homepage":"https://music.amazon.com","email":"support@parachord.dev"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true,"mobile":false},"urlPatterns":["music.amazon.com/playlists/*","music.amazon.com/my/playlists/*"],"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) {\n  try {\n    if (!window.electron || !window.electron.amazonMusic) {\n      console.warn('Amazon Music: bridge not available');\n      return [];\n    }\n    var payload = query;\n    if (typeof query === 'string') {\n      if (!query.trim() || query.trim().length < 2) return [];\n      payload = query.trim();\n    } else if (!query || (!(query.title && String(query.title).trim()) && !(query.artist && String(query.artist).trim()))) {\n      return [];\n    }\n    const result = await window.electron.amazonMusic.searchTracks(payload);\n    console.log('[Amazon] resolver search', typeof payload === 'string' ? payload : payload, result && result.success, result && result.reason, result && result.tracks && result.tracks.length);\n    if (!result || !result.success) {\n      var reason = result && result.reason;\n      if (reason === 'not-ready' || reason === 'not-signed-in' || reason === 'no-cdm' || reason === 'load-failed') {\n        var err = new Error('Amazon Music not ready');\n        err.notReady = true;\n        err.code = reason;\n        throw err;\n      }\n      return [];\n    }\n    var tracks = result.tracks || [];\n    return tracks.map(function(t) {\n      return {\n        id: 'amazonmusic-' + t.asin,\n        title: t.title,\n        artist: t.artist,\n        album: t.album,\n        duration: t.duration || 0,\n        sources: ['amazonmusic'],\n        amazonAsin: t.asin,\n        amazonUniqueId: t.uniqueId,\n        genre: t.genre || null,\n        explicit: !!t.explicit\n      };\n    });\n  } catch (error) {\n    if (error && error.notReady) throw error;\n    console.error('Amazon Music search error:', error);\n    return [];\n  }\n}","resolve":"async function(artist, track, album, config) { var norm = function(s) { s = (s || '').toString().toLowerCase(); try { s = s.normalize('NFKD'); } catch (e) {} return s.replace(/\\p{M}/gu, '').replace(/[^\\p{L}\\p{N}]/gu, ''); }; var contains = function(a, b) { return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1); }; var targetArtist = norm(artist); var targetTitle = norm(track); console.log('[Amazon] resolver resolve', artist, track, 'norm', targetArtist, targetTitle); var results = await this.search({ title: track, artist: artist }, config); console.log('[Amazon] resolver hits', results.length, results.slice(0, 3).map(function(r) { return (r.artist || '') + ' — ' + (r.title || ''); })); if (results.length === 0) return null; for (var i = 0; i < results.length; i++) { if (contains(norm(results[i].artist), targetArtist) && contains(norm(results[i].title), targetTitle)) return results[i]; } return null; }","play":"async function(track, config) {\n  try {\n    if (!window.electron || !window.electron.amazonMusic) {\n      console.error('Amazon Music: bridge not available');\n      return false;\n    }\n    var asin = track.amazonAsin || track.asin;\n    if (!asin) {\n      console.error('Amazon Music: no ASIN on track');\n      return false;\n    }\n    var attempt = function() {\n      return window.electron.amazonMusic.playTrack({ asin: asin, title: track.title, artist: track.artist });\n    };\n    var result = await attempt();\n    if (result && result.success) return true;\n    var reason = result && result.reason;\n    if (reason === 'not-ready' || reason === 'not-signed-in' || reason === 'no-cdm') {\n      console.log('Amazon Music: not connected (' + reason + '), asking you to sign in...');\n      var managed = false;\n      if (typeof window.__parachordManageAmazonMusic === 'function') {\n        managed = await window.__parachordManageAmazonMusic({ explicit: true, reason: reason });\n      }\n      if (!managed) return false;\n      result = await attempt();\n      return !!(result && result.success);\n    }\n    console.error('Amazon Music play failed:', result && result.error);\n    return false;\n  } catch (error) {\n    console.error('Amazon Music play error:', error);\n    return false;\n  }\n}","init":"async function(config) { console.log('Amazon Music resolver initialized'); return true; }","cleanup":"async function() { console.log('Amazon Music resolver cleanup'); try { if (window.electron && window.electron.amazonMusic && window.electron.amazonMusic.polling) { window.electron.amazonMusic.polling.stop(); } } catch (e) {} }","lookupPlaylist":"async function(url, config) {\n  var mapResult = function(p) {\n    return {\n      id: 'amazonmusic-playlist-' + (p.id || ''),\n      name: p.name || 'Amazon Music Playlist',\n      owner: p.owner || null,\n      albumArt: p.albumArt || null,\n      // The bridge reports the playlist's own trackCount; keep it so a\n      // server-truncated import is visible instead of silently complete.\n      trackCount: p.trackCount || p.tracks.length,\n      url: url,\n      tracks: p.tracks.map(function(t) {\n        return {\n          id: 'amazonmusic-' + t.asin,\n          title: t.title,\n          artist: t.artist,\n          album: t.album,\n          duration: t.duration || 0,\n          sources: ['amazonmusic'],\n          amazonAsin: t.asin,\n          albumAsin: t.albumAsin || null\n        };\n      })\n    };\n  };\n  var loaded = function(result) {\n    return !!(result && result.success && result.playlist && result.playlist.tracks && result.playlist.tracks.length > 0);\n  };\n  var result = null;\n  try {\n    if (!window.electron || !window.electron.amazonMusic) {\n      console.warn('Amazon Music: bridge not available');\n      return null;\n    }\n    result = await window.electron.amazonMusic.lookupPlaylist(url);\n    console.log('[Amazon] resolver playlist lookup', url, result && result.success, result && result.reason, result && result.playlist && result.playlist.tracks && result.playlist.tracks.length);\n    if (loaded(result)) return mapResult(result.playlist);\n    // Only a sign-in problem is fixed by sign-in. load-failed is a network\n    // condition and no-cdm is a playback problem - importing needs neither -\n    // and prompting for sign-in on either points the user at the wrong fix.\n    if (result && result.reason === 'not-signed-in') {\n      console.log('Amazon Music: not signed in, asking you to sign in...');\n      var managed = false;\n      if (typeof window.__parachordManageAmazonMusic === 'function') {\n        managed = await window.__parachordManageAmazonMusic({ explicit: true, reason: 'not-signed-in' });\n      }\n      if (managed) {\n        result = await window.electron.amazonMusic.lookupPlaylist(url);\n        if (loaded(result)) return mapResult(result.playlist);\n      }\n      var err = new Error('Amazon Music is not signed in - sign in from Settings to import playlists');\n      err.notReady = true;\n      err.code = 'not-signed-in';\n      throw err;\n    }\n  } catch (error) {\n    if (error && error.notReady) throw error;\n    console.error('Amazon Music playlist lookup error:', error);\n    return null;\n  }\n  // Outside the try so the catch does not swallow these.\n  // Transient/wiring failures first: a stalled load must not be reported as a\n  // missing playlist (or offered a sign-in prompt) - it is a network condition.\n  var reason = result && result.reason;\n  if (reason === 'load-failed' || reason === 'no-cdm' || reason === 'not-ready') {\n    var transientErr = new Error('Amazon Music is not reachable right now - check your connection and try again');\n    transientErr.notReady = true;\n    transientErr.code = reason;\n    throw transientErr;\n  }\n  if (result && result.success && result.playlist === null) {\n    throw new Error('Playlist not found on Amazon Music. It may have been deleted or made private.');\n  }\n  if (result && result.error) {\n    throw new Error('Amazon Music playlist import failed: ' + result.error);\n  }\n  if (result && result.success) {\n    throw new Error('Playlist not found on Amazon Music. It may have been deleted or made private.');\n  }\n  return null;\n}"}},
   {"manifest":{"id":"youtube","name":"YouTube","version":"1.0.1","author":"Parachord Team","description":"Search and play music videos from YouTube. Free with ads. Opens videos in your browser.","icon":"\ud83c\udfa5","color":"#FF0000","homepage":"https://youtube.com","email":"support@parachord.com"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true,"mobile":false},"urlPatterns":["youtube.com/watch?v=*","www.youtube.com/watch?v=*","youtu.be/*","music.youtube.com/watch?v=*","m.youtube.com/watch?v=*","youtube.com/playlist?list=*","www.youtube.com/playlist?list=*","music.youtube.com/playlist?list=*"],"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function(query, config) { try { console.log('Searching YouTube for:', query); const response = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' music')}&sp=EgIQAQ%253D%253D`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) { console.error('YouTube search failed:', response.status); return []; } const html = await response.text(); const results = []; const videoDataMatches = html.matchAll(/\"videoId\":\"([^\"]+)\",\"thumbnail\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"ownerText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoDataMatches) { if (count >= 20) break; const [, videoId, title, channel] = match; if (videoId && title && channel) { results.push({ id: `youtube-${videoId}`, title: title, artist: channel, album: 'YouTube', duration: 180, sources: ['youtube'], youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/default.jpg`, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` }); count++; } } console.log(`Found ${results.length} YouTube results`); return results; } catch (error) { console.error('YouTube search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { const query = `${artist} ${track}`; const results = await this.search(query, config); return results[0] || null; }","play":"async function(track, config) { if (!track.youtubeUrl) { console.error('No YouTube URL found'); return false; } try { if (window.electron?.shell?.openExternal) { const result = await window.electron.shell.openExternal(track.youtubeUrl); return result && result.success; } else { const newWindow = window.open(track.youtubeUrl, '_blank'); return !!newWindow; } } catch (error) { console.error('Failed to open YouTube link:', error); return false; } }","init":"async function(config) { console.log('YouTube resolver initialized'); }","cleanup":"async function() { console.log('YouTube resolver cleanup'); }","lookupUrl":"async function(url, config) { try { let videoId = null; if (url.includes('youtu.be/')) { const match = url.match(/youtu\\.be\\/([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } else { const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/); if (match) videoId = match[1]; } if (!videoId) return null; const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`; const response = await fetch(oembedUrl); if (!response.ok) return null; const data = await response.json(); let title = data.title || ''; let artist = data.author_name || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-\u2013\u2014]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); title = dashMatch[2].trim(); } return { title: title || 'Unknown Title', artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, sourceUrl: url, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }; } catch (error) { console.error('YouTube URL lookup error:', error); return null; } }","lookupPlaylist":"async function(url, config) { try { const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/); if (!listMatch) return null; const playlistId = listMatch[1]; const response = await fetch(`https://www.youtube.com/playlist?list=${playlistId}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' } }); if (!response.ok) return null; const html = await response.text(); const tracks = []; let playlistName = 'YouTube Playlist'; const titleMatch = html.match(/\"title\":\\s*\"([^\"]+)\",\\s*\"playlistId\":/); if (titleMatch) { playlistName = titleMatch[1]; } const videoMatches = html.matchAll(/\"videoId\":\"([^\"]+)\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"shortBylineText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g); let count = 0; for (const match of videoMatches) { if (count >= 100) break; const [, videoId, title, channel] = match; if (videoId && title) { let trackTitle = title; let artist = channel || 'Unknown Artist'; const dashMatch = title.match(/^(.+?)\\s*[-\u2013\u2014]\\s*(.+)$/); if (dashMatch) { artist = dashMatch[1].trim(); trackTitle = dashMatch[2].trim(); } tracks.push({ title: trackTitle, artist: artist, album: 'YouTube', duration: 180, albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, youtubeId: videoId, youtubeUrl: `https://www.youtube.com/watch?v=${videoId}` }); count++; } } if (tracks.length === 0) return null; return { type: 'playlist', name: playlistName, albumArt: tracks[0]?.albumArt, tracks: tracks }; } catch (error) { console.error('YouTube playlist lookup error:', error); return null; } }"}},
   {"manifest":{"id":"localfiles","name":"Local Files","version":"1.0.0","author":"Parachord Team","description":"Play music from your local library. Configure watch folders in settings.","icon":"\ud83d\udcc1","color":"#6366f1","homepage":"","email":""},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"urlPatterns":[],"settings":{"requiresAuth":false,"configurable":{}},"implementation":{"search":"async function(query, config) { if (!window.electron?.localFiles) { console.error('Local Files API not available'); return []; } try { const results = await window.electron.localFiles.search(query); return results || []; } catch (error) { console.error('Local Files search error:', error); return []; } }","resolve":"async function(artist, track, album, config) { if (!window.electron?.localFiles) { console.error('Local Files API not available'); return null; } try { console.log('LocalFiles resolver querying:', artist, track, album); const results = await window.electron.localFiles.resolve({ artist, track, album }); console.log('LocalFiles resolver results:', results?.length || 0); if (!results || results.length === 0) return null; const best = results[0]; return { title: best.title, artist: best.artist, album: best.album, filePath: best.filePath, fileUrl: best.sources?.localfiles?.fileUrl || `file://${best.filePath}`, confidence: best.confidence || 0.95, duration: best.duration, albumArt: best.albumArt }; } catch (error) { console.error('Local Files resolve error:', error); return null; } }","play":"async function(track, config) { console.log('Local Files play:', track); return { type: 'local', url: track.fileUrl || track.filePath }; }","init":"async function(config) { console.log('Local Files resolver initialized'); return true; }","cleanup":"async function() { console.log('Local Files resolver cleanup'); }"}},
 ];
 
 
 // Canonical priority order for content resolvers (determines insertion position when enabling)
-const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'bandcamp', 'soundcloud', 'localfiles', 'youtube'];
+const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'youtube'];
 
 // Insert a resolver ID into an order array at its canonical position
 function insertInCanonicalOrder(order, newId) {
@@ -6246,6 +6266,16 @@ const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) =>
 // End AI Chat Service
 // =============================================================================
 
+// Album rows from MusicBrainz carry `length` in milliseconds and no
+// `duration`. The playbar and the Amazon poller both want seconds. A resolver
+// duration of 0 must not wipe that length.
+function playbackDurationSeconds(source, track) {
+  const direct = Number(source && source.duration) || Number(track && track.duration) || 0;
+  if (direct > 0) return direct;
+  const length = Number(track && track.length) || Number(source && source.length) || 0;
+  return length > 0 ? Math.max(1, Math.round(length / 1000)) : 0;
+}
+
 const Parachord = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [currentQueue, setCurrentQueue] = useState([]); // Current playing queue
@@ -6301,6 +6331,7 @@ const Parachord = () => {
   const preMuteVolumeRef = useRef(30); // Remember volume before muting
   const isMutedRef = useRef(false); // Ref for mute state to avoid stale closures
   const spotifyVolumeTimeoutRef = useRef(null); // Debounce Spotify volume API calls
+  const amazonMusicVolumeTimeoutRef = useRef(null); // Debounce Amazon Music setVolume calls
 
   // Spotify device picker state
   const [devicePickerDialog, setDevicePickerDialog] = useState({
@@ -6308,6 +6339,16 @@ const Parachord = () => {
     devices: [],
     onSelect: null // callback(device) or null to cancel
   });
+
+  // Amazon Music sign-in dialog (promise-based, mirrors devicePickerDialog).
+  // { show, onResolve: callback(true|false), relaunching: boolean }
+  const [amazonManageDialog, setAmazonManageDialog] = useState({
+    show: false,
+    onResolve: null,
+    relaunching: false
+  });
+  const amazonManageInFlightRef = useRef(null);
+  const amazonManageDeclinedUntilRef = useRef(0);
   const [preferredSpotifyDeviceId, setPreferredSpotifyDeviceId] = useState(null);
   const preferredSpotifyDeviceIdRef = useRef(null);
 
@@ -6319,6 +6360,7 @@ const Parachord = () => {
   const [resolverVolumeOffsets, setResolverVolumeOffsets] = useState({
     spotify: 0,      // Spotify is already normalized
     applemusic: 0,   // Apple Music is already normalized
+    amazonmusic: 0,  // Amazon Music app has its own volume pipeline
     localfiles: 0,   // Local files vary, start neutral
     soundcloud: 0,   // SoundCloud varies, start neutral
     bandcamp: -3,    // Bandcamp tends to be slightly louder
@@ -8632,6 +8674,10 @@ const Parachord = () => {
   const [queueAnimating, setQueueAnimating] = useState(false);
   const queueContentRef = useRef(null); // Ref for queue content scrolling
   const resolverLoaderRef = useRef(null);
+  // Resolves when initResolvers finishes (mount-effect). Hosted-playlist
+  // reload must wait on it: dispatching an import depends on
+  // findResolverForUrl, which returns null until resolvers are loaded.
+  const resolversInitRef = useRef(null);
 
   // Browser extension state (null = unknown/checking, false = not connected, true = connected)
   const [extensionConnected, setExtensionConnected] = useState(null);
@@ -8808,6 +8854,32 @@ const Parachord = () => {
   const flushPlaylistSourcesRef = useRef(null); // Ref to access flush function from beforeunload
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
+  // Amazon Music sign-in status from the in-app player:
+  // { success, engine: 'web', web: { cdm, signedIn } }
+  const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
+  const [amazonMusicQuality, setAmazonMusicQuality] = useState(null);
+  // Re-fetch Amazon Music status and audio quality when its detail modal opens.
+  useEffect(() => {
+    if (selectedResolver?.id !== 'amazonmusic') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await window.electron.amazonMusic.getStatus();
+        if (cancelled) return;
+        const status = s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } };
+        setAmazonMusicStatus(status);
+        if (!status.web?.signedIn) {
+          setAmazonMusicQuality(null);
+          return;
+        }
+        const q = await window.electron.amazonMusic.getQuality();
+        if (!cancelled && q && q.success) setAmazonMusicQuality(q);
+      } catch (e) {
+        if (!cancelled) setAmazonMusicStatus({ success: true, engine: 'web', web: { cdm: false, signedIn: false } });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedResolver]);
   const [dynamicModelOptions, setDynamicModelOptions] = useState({}); // { [resolverId]: { loading, options: [{value,label}], error } }
 
   // Close add-to-playlist sort dropdown when clicking outside
@@ -9953,6 +10025,7 @@ const Parachord = () => {
 
     // Fall back to checking top-level properties (for older track formats)
     if ((track.spotifyUri || track.spotifyId) && active.includes('spotify')) return 'spotify';
+    if (track.amazonAsin && active.includes('amazonmusic')) return 'amazonmusic';
     if (track.bandcampUrl && active.includes('bandcamp')) return 'bandcamp';
     if ((track.youtubeUrl || track.youtubeId) && active.includes('youtube')) return 'youtube';
     if (track.qobuzId && active.includes('qobuz')) return 'qobuz';
@@ -9964,6 +10037,7 @@ const Parachord = () => {
       if (allSources.length > 0) return allSources[0];
     }
     if (track.spotifyUri || track.spotifyId || track.sources?.spotify) return 'spotify';
+    if (track.amazonAsin || track.sources?.amazonmusic) return 'amazonmusic';
     if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
     if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
@@ -10019,6 +10093,99 @@ const Parachord = () => {
     spotifyVolumeTimeoutRef.current = setTimeout(() => {
       setSpotifyVolume(volumePercent, applyNormalization);
     }, 150); // 150ms debounce
+  };
+
+  // Sign in to Amazon Music inside Parachord. Playback uses the web player
+  // and the Widevine CDM built into this Electron build. The desktop app is
+  // not launched. explicit:true always shows the dialog (play button, settings).
+  // explicit:false is the background-resolve prompt: one at a time, skipped
+  // during radio/auto-advance, and not repeated for 10 minutes after a decline.
+  // A second caller shares the in-flight promise so it cannot overwrite onResolve.
+  const manageAmazonMusic = async (opts = {}) => {
+    if (!window.electron?.amazonMusic) return false;
+    const explicit = opts.explicit !== false;
+    if (!explicit && Date.now() < amazonManageDeclinedUntilRef.current) return false;
+    // Settings → Sign in passes explicit:true. Radio must not swallow that.
+    if (!explicit && (isAdvancingTrackRef.current || spinoffModeRef.current)) {
+      console.log('Skipping Amazon connect prompt during auto-advance');
+      return false;
+    }
+    if (!explicit && typeof document !== 'undefined' && document.hidden) return false;
+    if (amazonManageInFlightRef.current) return amazonManageInFlightRef.current;
+
+    let finishInFlight;
+    const inFlight = new Promise((resolve) => { finishInFlight = resolve; });
+    amazonManageInFlightRef.current = inFlight;
+
+    const run = (async () => {
+      const status = await window.electron.amazonMusic.getStatus().catch(() => null);
+      if (status && status.web && !status.web.cdm) {
+        showToast('This Parachord build has no Widevine CDM, so Amazon Music cannot play.', 'error');
+        return false;
+      }
+      const granted = await new Promise((resolve) => {
+        setAmazonManageDialog({ show: true, onResolve: resolve, relaunching: false });
+      });
+      if (!granted) {
+        amazonManageDeclinedUntilRef.current = Date.now() + 10 * 60 * 1000;
+        return false;
+      }
+      setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
+      const login = await window.electron.amazonMusic.openLogin();
+      setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+      if (login && login.signedIn) {
+        showToast('Signed in to Amazon Music', 'success');
+        if (typeof window.__parachordClearAmazonNoMatch === 'function') window.__parachordClearAmazonNoMatch();
+        return true;
+      }
+      if (login && login.reason === 'no-cdm') {
+        showToast(login.error || 'Widevine CDM not available', 'error');
+      }
+      return false;
+    })().catch((error) => {
+      setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+      console.error('Amazon Music sign-in failed:', error);
+      return false;
+    });
+
+    try {
+      const ok = await run;
+      finishInFlight(ok);
+      return ok;
+    } finally {
+      amazonManageInFlightRef.current = null;
+    }
+  };
+  window.__parachordManageAmazonMusic = manageAmazonMusic;
+
+  // Leaving an Amazon track must blank the player view, not just pause it -
+  // the module's own invariant ("pause is not enough": Amazon can start the
+  // element a few hundred ms later, and the visibility stub keeps the page
+  // convinced it is shown, so its transport may resume). stop() is the halt
+  // (pause + about:blank). It is generation-guarded inside amazon-web-player,
+  // so calling it while a NEWER Amazon play has already claimed the view is a
+  // no-op and cannot blank the replacement track.
+  const stopAmazonIfActive = (reason) => {
+    if (!window.electron?.amazonMusic) return Promise.resolve();
+    try { window.electron.amazonMusic.polling.stop(); } catch (e) {}
+    if (!(activeResolversRef.current || []).includes('amazonmusic')) return Promise.resolve();
+    if (reason) console.log(reason);
+    return window.electron.amazonMusic.stop().catch(() => {});
+  };
+
+  // Background resolution calls this when search throws notReady. One prompt,
+  // and a decline is not cached as a 30-day noMatch (the throw already skipped that).
+  window.__parachordNoteAmazonNotReady = (error) => {
+    const code = error && (error.code || error.reason);
+    const notReady = !!(error && (error.notReady || code === 'not-ready' || code === 'not-signed-in' || code === 'no-cdm' || code === 'load-failed' || /Amazon Music not ready/.test(error.message || '')));
+    if (!notReady) return false;
+    // A page that did not load (offline, captive portal, a stalled network) is
+    // transient: skip the noMatch cache like other notReady results, but do
+    // not offer a sign-in prompt — the account is not the problem.
+    if (code !== 'load-failed') {
+      manageAmazonMusic({ explicit: false, reason: code }).catch(() => {});
+    }
+    return true;
   };
 
   // Apply normalized volume for HTML5 audio playback (local files and SoundCloud)
@@ -10108,6 +10275,56 @@ const Parachord = () => {
   // Cache for track sources (trackKey -> { sources, timestamp })
   // trackKey format: "artist|title|album"
   const trackSourcesCache = useRef({});
+
+  // After sign-in, tracks resolved while Amazon was not ready have no
+  // amazonmusic key (notReady skips the noMatch marker) but a fresh timestamp.
+  // cacheValid then treats every enabled resolver as already queried for 7 days.
+  // Zero those timestamps too, not only entries that carry the marker.
+  window.__parachordClearAmazonNoMatch = () => {
+    const cache = trackSourcesCache.current || {};
+    for (const key of Object.keys(cache)) {
+      const entry = cache[key];
+      if (!entry?.sources) continue;
+      const am = entry.sources.amazonmusic;
+      if (am && !am.noMatch) continue;
+      if (am?.noMatch) {
+        const sources = { ...entry.sources };
+        delete sources.amazonmusic;
+        entry.sources = sources;
+      }
+      entry.timestamp = 0;
+    }
+    try { resolutionSchedulerRef.current?.clearResolved(); } catch (e) {}
+    try { window.electron?.store?.set('cache_track_sources', trackSourcesCache.current); } catch (e) {}
+    setTrackSources(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        if (!next[key]?.amazonmusic?.noMatch) continue;
+        const copy = { ...next[key] };
+        delete copy.amazonmusic;
+        if (copy.__noMatchAll) delete copy.__noMatchAll;
+        next[key] = copy;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setCollectionData(prev => {
+      if (!prev?.tracks?.length) return prev;
+      let changed = false;
+      const tracks = prev.tracks.map(t => {
+        if (!t?.sources?.amazonmusic?.noMatch) return t;
+        changed = true;
+        const sources = { ...t.sources };
+        delete sources.amazonmusic;
+        return { ...t, sources };
+      });
+      if (!changed) return prev;
+      const newData = { ...prev, tracks };
+      saveCollection(newData);
+      return newData;
+    });
+  };
 
   // Cache for artist images from Last.fm (artistName -> { url, timestamp })
   const artistImageCache = useRef({});
@@ -10761,7 +10978,10 @@ const Parachord = () => {
       }
     };
     
-    initResolvers();
+    // Run init and store the in-flight promise so startup hosted-playlist
+    // loading can await it (see loadHostedPlaylists) — dispatching imports
+    // before resolvers load races provider URLs into the hosted-XSPF branch.
+    resolversInitRef.current = initResolvers().catch(() => {});
   }, []);
 
   // Hot-reload meta services when marketplace sync downloads updated plugins
@@ -13277,6 +13497,7 @@ const Parachord = () => {
             if (t.album) out.album = t.album;
             if (t.spotifyId) out.spotifyId = t.spotifyId;
             if (t.appleMusicId) out.appleMusicId = t.appleMusicId;
+            if (t.amazonAsin) out.amazonAsin = t.amazonAsin;
             if (t.isrc) out.isrc = t.isrc;
             return out;
           })
@@ -14342,6 +14563,77 @@ ${trackListXml}
     }
   }, []);
 
+  // Main process Amazon Music polling event handlers
+  // This polling runs in main process and is not affected by OS timer throttling
+  useEffect(() => {
+    if (window.electron?.amazonMusic?.polling) {
+      // Handle advance signal from main process polling
+      window.electron.amazonMusic.polling.onAdvance((data) => {
+        console.log('🎵 [Main→Renderer] Amazon Music advance signal received:', data.reason);
+        if (handleNextRef.current) {
+          handleNextRef.current();
+        }
+      });
+
+      // Handle progress updates from the Amazon Music app (2s polls)
+      window.electron.amazonMusic.polling.onProgress((data) => {
+        const track = currentTrackRef.current;
+        // Only apply progress when Amazon Music is the active resolver and the
+        // user isn't dragging the progress bar
+        if (track?._activeResolver === 'amazonmusic' && data && typeof data.positionMs === 'number') {
+          const positionSec = data.positionMs / 1000;
+          if (data.durationMs > 1000 && (!track.duration || Math.abs(track.duration - data.durationMs / 1000) > 2)) {
+            const secs = data.durationMs / 1000;
+            setCurrentTrack(prev => (prev && prev.id === track.id) ? { ...prev, duration: secs } : prev);
+            // The scrobble manager holds its own reference to the track object
+            // (the setState above does not reach it). Without this, a search-
+            // resolved Amazon track (duration 0 from the row scrape) never
+            // scrobbles — onProgressUpdate bails on a falsy duration.
+            if (window.scrobbleManager) window.scrobbleManager.updateTrackDuration(secs);
+          }
+          if (!seekingRef.current) {
+            setProgress(positionSec);
+          }
+          // Always update interpolation baseline for smooth progress between polls
+          const isPlayingState = data.state === 'PLAYING';
+          amazonMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: isPlayingState };
+          // Notify scrobble manager of progress for scrobble threshold checking
+          if (window.scrobbleManager && isPlayingState) {
+            window.scrobbleManager.onProgressUpdate(positionSec);
+          }
+        }
+      });
+    }
+  }, []);
+
+  // Amazon Music smooth progress interpolation
+  // The Amazon Music poller reports position every 2 seconds from the main
+  // process. This effect interpolates between polls for smooth 1-second
+  // progress bar updates (same pattern as Spotify/Apple Music).
+  useEffect(() => {
+    const isAmazonMusicActive = currentTrack?._activeResolver === 'amazonmusic';
+    const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
+
+    if (isPlaying && isAmazonMusicActive && hasValidDuration) {
+      const interval = setInterval(() => {
+        const baseline = amazonMusicProgressBaselineRef.current;
+        if (baseline.timestamp > 0 && baseline.isPlaying && !seekingRef.current) {
+          const elapsed = (Date.now() - baseline.timestamp) / 1000;
+          const interpolatedProgress = baseline.progress + elapsed;
+
+          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
+            setProgress(interpolatedProgress);
+            if (window.scrobbleManager) {
+              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
+            }
+          }
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, currentTrack]);
+
   // Listen for MusicKit JS time updates (web-based Apple Music playback)
   // MusicKit JS fires playbackTimeDidChange events which we need to capture for progress updates
   useEffect(() => {
@@ -15019,7 +15311,7 @@ ${trackListXml}
   }, []);
 
   useEffect(() => {
-    // Skip progress tracking for streaming tracks (Spotify, Apple Music) - they have their own polling
+    // Skip progress tracking for streaming tracks (Spotify, Apple Music, Amazon Music) - they have their own polling
     // Skip for local files - they use HTML5 Audio with timeupdate event
     // Skip for SoundCloud - they use HTML5 Audio with timeupdate event
     // Skip for browser-based tracks (YouTube, Bandcamp) - they use extension events
@@ -15027,7 +15319,7 @@ ${trackListXml}
     //
     // Use _activeResolver to determine the actual playback source, not just what sources exist
     const activeResolver = currentTrack?._activeResolver;
-    const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic';
+    const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic' || activeResolver === 'amazonmusic';
     const isLocalFile = activeResolver === 'localfiles';
     const isSoundCloud = activeResolver === 'soundcloud';
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
@@ -15060,6 +15352,11 @@ ${trackListXml}
   // Native MusicKit polls every 5 seconds from the main process. This baseline allows
   // smooth 1-second interpolation between polls (same pattern as Spotify).
   const appleMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
+
+  // Amazon Music polling interpolation baseline
+  // The Amazon Music poller (main process) reports position every 2s; interpolate
+  // between polls for a smooth progress bar (same pattern as Spotify/Apple Music).
+  const amazonMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
 
   useEffect(() => {
     // Only run interpolation if we're actually playing via Spotify
@@ -17766,6 +18063,8 @@ ${trackListXml}
       window._appleMusicPreviewAudio.currentTime = 0;
     }
 
+    pausePromises.push(stopAmazonIfActive('⏹️ Stopping the Amazon Music player before playing new track'));
+
     // Always stop main process polling for both Spotify and Apple Music
     stopMainProcessPolling();
 
@@ -18391,7 +18690,7 @@ ${trackListXml}
 
         // Set current track state
         // Duration from local files is already in seconds
-        const duration = sourceToPlay.duration || trackOrSource.duration || 0;
+        const duration = playbackDurationSeconds(sourceToPlay, trackOrSource);
         console.log('🎵 Track duration from source:', duration, 'sourceToPlay.duration:', sourceToPlay.duration, 'trackOrSource.duration:', trackOrSource.duration);
         const trackToSet = trackOrSource.sources ? {
           ...sourceToPlay,
@@ -18788,7 +19087,7 @@ ${trackListXml}
         await audioRef.current.play();
 
         // Set current track state
-        const duration = sourceToPlay.duration || trackOrSource.duration || 0;
+        const duration = playbackDurationSeconds(sourceToPlay, trackOrSource);
         const trackToSet = trackOrSource.sources ? {
           ...sourceToPlay,
           id: trackOrSource.id,
@@ -18877,13 +19176,13 @@ ${trackListXml}
           artist: trackOrSource.artist,
           title: trackOrSource.title,
           album: trackOrSource.album,
-          duration: sourceToPlay.duration || trackOrSource.duration,
+          duration: playbackDurationSeconds(sourceToPlay, trackOrSource),
           albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
           sources: trackOrSource.sources,
           _playbackContext: trackOrSource._playbackContext, // Preserve playback context
           _activeResolver: resolverId // Track which resolver is actually playing
         } :
-        { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
+        { ...sourceToPlay, duration: playbackDurationSeconds(sourceToPlay, trackOrSource), _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
       console.log(`🔍 trackToSet.id="${trackToSet.id}", trackOrSource.id="${trackOrSource.id}", sourceToPlay.id="${sourceToPlay.id}"`);
       setCurrentTrack(trackToSet);
       setTrackLoading(false); // Clear loading state when showing prompt
@@ -18935,6 +19234,8 @@ ${trackListXml}
             }).catch(() => {});
           } else if (resolverId === 'applemusic' && window.electron?.musicKit) {
             window.electron.musicKit.pause().catch(() => {});
+          } else if (resolverId === 'amazonmusic') {
+            stopAmazonIfActive('⏹️ Stopping Amazon Music after superseded play');
           }
         }
         return;
@@ -18962,6 +19263,16 @@ ${trackListXml}
           }
         }
 
+        // Apply volume for Amazon Music (the app owns its own volume pipeline;
+        // drive it to Parachord's effective volume like the Spotify volume API)
+        if (resolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+          const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
+          const trackId = sourceToPlay.id || trackOrSource.id;
+          const effectiveVolume = getEffectiveVolume(volumeToApply, 'amazonmusic', trackId);
+          console.log(`🔊 Applied Amazon Music volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
+          window.electron.amazonMusic.setVolume(effectiveVolume / 100).catch(() => {});
+        }
+
         // Reset browser playback state when playing via streaming resolver (Spotify, etc.)
         // This ensures we don't show "Playing in browser" for Spotify Connect playback
         if (resolver.capabilities.stream) {
@@ -18978,13 +19289,13 @@ ${trackListXml}
             artist: trackOrSource.artist,
             title: trackOrSource.title,
             album: trackOrSource.album,
-            duration: sourceToPlay.duration || trackOrSource.duration,
+            duration: playbackDurationSeconds(sourceToPlay, trackOrSource),
             albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
             sources: trackOrSource.sources,
             _playbackContext: trackOrSource._playbackContext, // Preserve playback context
             _activeResolver: resolverId // Track which resolver is actually playing
           } :
-          { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
+          { ...sourceToPlay, duration: playbackDurationSeconds(sourceToPlay, trackOrSource), _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
         setProgress(0);
@@ -18993,6 +19304,8 @@ ${trackListXml}
         trackNeedsExplicitStart.current = false;
         // Reset baseline for smooth progress interpolation
         spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
+        // Reset Amazon Music interpolation baseline as well (resolverId !== 'spotify'
+        // never reaches this line — spotify branch only; kept for symmetry below)
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
@@ -19002,11 +19315,16 @@ ${trackListXml}
         if (audioContext) {
           setStartTime(audioContext.currentTime);
         }
+
+        // Reset the Amazon Music progress baseline when we started that track
+        if (resolverId === 'amazonmusic') {
+          amazonMusicProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
+        }
       }
 
       // Start auto-advance polling for streaming tracks
       if (resolver.capabilities.stream && success) {
-        startAutoAdvancePolling(resolverId, sourceToPlay, config);
+        startAutoAdvancePolling(resolverId, { ...sourceToPlay, duration: playbackDurationSeconds(sourceToPlay, trackOrSource) }, config);
       }
 
       if (!success) {
@@ -19061,11 +19379,11 @@ ${trackListXml}
               artist: trackOrSource.artist,
               title: trackOrSource.title,
               album: trackOrSource.album,
-              duration: sourceToPlay.duration || trackOrSource.duration,
+              duration: playbackDurationSeconds(sourceToPlay, trackOrSource),
               sources: trackOrSource.sources,
               _playbackContext: trackOrSource._playbackContext, // Preserve playback context
               _activeResolver: resolverId // Track which resolver is actually playing
-            } : { ...sourceToPlay, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
+            } : { ...sourceToPlay, duration: playbackDurationSeconds(sourceToPlay, trackOrSource), _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
             setCurrentTrack(trackToSet);
             setIsPlaying(true);
             setProgress(0);
@@ -19080,7 +19398,7 @@ ${trackListXml}
             if (audioContext) {
               setStartTime(audioContext.currentTime);
             }
-            startAutoAdvancePolling(resolverId, sourceToPlay, config);
+            startAutoAdvancePolling(resolverId, { ...sourceToPlay, duration: playbackDurationSeconds(sourceToPlay, trackOrSource) }, config);
             return; // Success on retry, don't fall through to re-resolve
           }
           console.error('❌ Spotify retry also failed');
@@ -19291,6 +19609,27 @@ ${trackListXml}
       } else {
         console.warn('⚠️ Apple Music main process polling not available');
       }
+    } else if (resolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+      // Amazon Music app control — poll playerModel via main process for
+      // auto-advance + progress (renderer intervals throttle when backgrounded)
+      console.log(`🔄 Starting Amazon Music playback polling via main process...`);
+      console.log(`   Track: ${track.title} by ${track.artist}`);
+      console.log(`   ASIN: ${track.amazonAsin || (track.sources && track.sources.amazonmusic && track.sources.amazonmusic.amazonAsin)}`);
+      const asin = track.amazonAsin || (track.sources && track.sources.amazonmusic && track.sources.amazonmusic.amazonAsin) || track.asin;
+      if (asin) {
+        window.electron.amazonMusic.polling.start({
+          asin,
+          trackTitle: track.title,
+          trackArtist: track.artist,
+          duration: track.duration || 0
+        }).then(() => {
+          console.log('✅ Amazon Music main process polling started');
+        }).catch((err) => {
+          console.error('❌ Failed to start Amazon Music polling:', err);
+        });
+      } else {
+        console.warn('⚠️ No ASIN on Amazon Music track, auto-advance may not work');
+      }
     }
     // For future HTML5 audio resolvers, add event listener logic here
   };
@@ -19308,6 +19647,12 @@ ${trackListXml}
       window.electron.musicKit.polling.stop().catch((err) => {
         console.error('Error stopping Apple Music main process polling:', err);
       });
+    }
+    // Stop Amazon Music polling
+    if (window.electron?.amazonMusic?.polling) {
+      try { window.electron.amazonMusic.polling.stop(); } catch (err) {
+        console.error('Error stopping Amazon Music main process polling:', err);
+      }
     }
   };
 
@@ -19802,6 +20147,68 @@ ${trackListXml}
     const isSpotifyTrack = currentTrack._activeResolver === 'spotify' ||
       (!currentTrack._activeResolver && !isAppleMusicActive && (currentTrack.sources?.spotify || currentTrack.spotifyUri));
 
+    // Amazon Music in-app web player (Widevine WebContentsView)
+    const isAmazonMusicActive = currentTrack._activeResolver === 'amazonmusic' ||
+      (!currentTrack._activeResolver && !isAppleMusicActive && !isSpotifyTrack && (currentTrack.sources?.amazonmusic || currentTrack.amazonAsin));
+
+    if (isAmazonMusicActive && window.electron?.amazonMusic) {
+      try {
+        if (isPlaying) {
+          const r = await window.electron.amazonMusic.pause();
+          if (r && r.success) {
+            console.log('Paused Amazon Music playback');
+          }
+          setIsPlaying(false);
+          // Stop polling so stale state checks don't trigger auto-advance
+          window.electron.amazonMusic.polling.stop();
+        } else {
+          let r = await window.electron.amazonMusic.resume();
+          if (r && r.success === false) {
+            // No media element: the view was blanked (haltPlayback after an
+            // advance with nothing to advance to). Nothing to resume — replay
+            // the current track from its ASIN instead of showing a playing UI
+            // over silence with a poller reading EMPTY forever.
+            const asin = currentTrack.amazonAsin || currentTrack.sources?.amazonmusic?.amazonAsin;
+            if (asin) {
+              console.log('Amazon Music view is blank — replaying current track');
+              r = await window.electron.amazonMusic.playTrack({ asin, title: currentTrack.title, artist: currentTrack.artist });
+              if (r && r.success) {
+                // A fresh page starts its element at full volume; drive it to
+                // Parachord's effective volume like handlePlay does.
+                const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
+                const effectiveVolume = getEffectiveVolume(volumeToApply, 'amazonmusic', currentTrack.id);
+                window.electron.amazonMusic.setVolume(effectiveVolume / 100).catch(() => {});
+                amazonMusicProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
+              }
+            }
+          }
+          if (r && r.success) {
+            console.log('Resumed Amazon Music playback');
+            setIsPlaying(true);
+            // Restart polling for progress updates and auto-advance
+            const asin = currentTrack.amazonAsin || currentTrack.sources?.amazonmusic?.amazonAsin;
+            if (asin) {
+              window.electron.amazonMusic.polling.start({
+                asin,
+                trackTitle: currentTrack.title,
+                trackArtist: currentTrack.artist,
+                duration: currentTrack.duration || 0
+              }).catch(err => console.warn('Could not restart Amazon Music polling:', err.message));
+            }
+          } else {
+            // Nothing to resume and nothing to replay — leave the play button
+            // alone rather than faking a playing state.
+            console.warn('Amazon Music resume failed:', (r && r.error) || 'no media element');
+          }
+        }
+      } catch (error) {
+        console.error('Amazon Music play/pause error:', error);
+        // Update UI state even on error to avoid stuck state
+        setIsPlaying(!isPlaying);
+      }
+      return;
+    }
+
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
       const attemptSpotifyControl = async (token, isRetry = false) => {
@@ -19944,6 +20351,7 @@ ${trackListXml}
       if (window.electron?.musicKit?.polling) {
         window.electron.musicKit.polling.stop().catch(() => {});
       }
+      stopAmazonIfActive('⏹️ Stopping Amazon Music before next track');
 
       // Stop all local audio sources (HTML5 Audio for local files/SoundCloud, Qobuz audio)
       // Always stop regardless of paused state to handle edge cases and prevent overlap
@@ -20248,6 +20656,8 @@ ${trackListXml}
       window._appleMusicPreviewAudio.pause();
       window._appleMusicPreviewAudio.currentTime = 0;
     }
+
+    stopAmazonIfActive('⏹️ Stopping Amazon Music before previous track');
 
     // CRITICAL: Reset streaming playback flag when changing tracks
     streamingPlaybackActiveRef.current = false;
@@ -26643,6 +27053,7 @@ ${trackListXml}
           }
         } catch (error) {
           if (error.name === 'AbortError') return;
+          if (typeof window.__parachordNoteAmazonNotReady === 'function' && window.__parachordNoteAmazonNotReady(error)) return;
           console.error(`  ❌ ${resolver.name} resolve error:`, error);
         }
       });
@@ -26740,6 +27151,7 @@ ${trackListXml}
         } catch (error) {
           // Silently ignore abort errors
           if (error.name === 'AbortError') return;
+          if (typeof window.__parachordNoteAmazonNotReady === 'function' && window.__parachordNoteAmazonNotReady(error)) return;
           console.error(`  ❌ ${resolver.name} resolve error:`, error);
         }
       });
@@ -26941,6 +27353,7 @@ ${trackListXml}
       } catch (error) {
         // Silently ignore abort errors
         if (error.name === 'AbortError') return;
+        if (typeof window.__parachordNoteAmazonNotReady === 'function' && window.__parachordNoteAmazonNotReady(error)) return;
         console.error(`  ❌ ${resolver.name} resolve error:`, error);
         // Preserve existing source on error (don't let transient failures wipe valid sources)
         if (existingRealSources[resolver.id]) {
@@ -37381,6 +37794,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
   // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
   // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
+  // Import playlist from URL (hosted XSPF, Spotify, or Apple Music)
+  // skipStorageUpdate: true when loading from storage on app start (to avoid duplicates)
+  // metadataOverrides: { title, creator } - stored local edits to apply instead of fetched values
   // Fetch a hosted playlist document with the public-URL guard and body cap
   // (parachord#1011). Shared by the URL import below and the 5-minute poller
   // so neither can fetch a private address or parse an unbounded body.
@@ -37397,7 +37813,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return text;
   };
 
-  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null) => {
+  // background: true from the startup reload list and the 5-minute poller —
+  // a zero-track parse throws (logged by the caller) instead of showing a
+  // modal dialog. Background work must never modal-error.
+  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null, { background = false } = {}) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
 
@@ -37444,6 +37863,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       if (!parsed || !parsed.tracks?.length) {
+        // Background reloads (the startup hosted list, the 5-minute poller)
+        // must never modal-error: a provider page that parses to zero tracks
+        // here is not something the user asked for. Throw so the background
+        // caller's catch logs it; user-initiated imports keep the dialog.
+        if (background) {
+          throw new Error(resolverId
+            ? `No tracks found for ${resolverId} playlist`
+            : 'Failed to parse XSPF file from URL');
+        }
         showConfirmDialog({
           type: 'error',
           title: 'Import Failed',
@@ -37577,9 +38005,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Fetch covers for the 2x2 grid display immediately
       fetchPlaylistCovers(id, parsed.tracks || []);
 
-      // Save URL to persistent storage for reload on app start
-      // Skip this when loading from storage to avoid duplicates
-      if (!skipStorageUpdate) {
+      // Save URL to persistent storage for reload on app start — hosted
+      // tracklist DOCUMENTS only. A resolver import is a snapshot: it keeps its
+      // sourceUrl for provenance and on-demand refresh, but enrolling it here
+      // would put a provider playlist PAGE into the hosted machinery — the
+      // startup reload would re-run a full resolver import every launch (and
+      // race resolver init into "Failed to parse XSPF"), and the 5-minute
+      // poller would fetch the page HTML forever.
+      if (!skipStorageUpdate && !resolverId) {
         const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
         hostedPlaylists.push({ url, id, addedAt: Date.now() });
         await window.electron?.store?.set('hosted_playlists', hostedPlaylists);
@@ -37659,7 +38092,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   useEffect(() => {
     // Start polling for hosted playlist updates (every 5 minutes)
     const pollHostedPlaylists = async () => {
-      const hostedPlaylists = playlists.filter(p => p.sourceUrl);
+      // Hosted tracklist documents only. A provider playlist page (Spotify,
+      // Apple Music, Amazon — kept via sourceUrl for provenance/refresh) is
+      // not an XSPF: its fetched HTML never matches the stored XSPF, so every
+      // poll would re-run a full resolver import.
+      const hostedPlaylists = playlists.filter(p => p.sourceUrl && !window.isProviderPlaylistUrl(p.sourceUrl, resolverLoaderRef.current));
       if (hostedPlaylists.length === 0) return;
 
       console.log(`🔄 Checking ${hostedPlaylists.length} hosted playlist(s) for updates...`);
@@ -37674,7 +38111,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           // Check if content changed
           if (content !== playlist.xspf) {
             console.log(`📝 Hosted playlist changed: ${playlist.title}`);
-            await handleImportPlaylistFromUrl(playlist.sourceUrl);
+            await handleImportPlaylistFromUrl(playlist.sourceUrl, false, null, null, { background: true });
           }
         } catch (error) {
           console.error(`Failed to check playlist ${playlist.title}:`, error);
@@ -37729,10 +38166,43 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       console.log(`📦 Loading ${hostedPlaylistUrls.length} hosted playlist(s)...`);
 
+      // Wait for resolver init (bounded) before dispatching: the import below
+      // depends on findResolverForUrl, which returns null until resolvers load.
+      // A provider playlist URL dispatched before that races into the
+      // hosted-XSPF branch: the provider page's HTML parses to zero tracks
+      // and startup showed "Failed to parse XSPF" for a playlist that
+      // imported fine (observed with an Amazon playlist import).
+      if (resolversInitRef.current) {
+        await Promise.race([
+          resolversInitRef.current,
+          new Promise(resolve => setTimeout(resolve, 15000))
+        ]);
+      }
+
+      // Self-heal: provider playlist URLs enrolled by the pre-fix import path
+      // are snapshots, not hosted documents — drop them from the reload list.
+      // The playlist object keeps its sourceUrl (provenance + the refresh
+      // button, which re-runs the resolver import on demand), and the poller
+      // skips provider URLs too, so nothing re-imports them automatically.
+      const kept = [];
+      const dropped = [];
+      for (const item of hostedPlaylistUrls) {
+        (window.isProviderPlaylistUrl(item.url, resolverLoaderRef.current) ? dropped : kept).push(item);
+      }
+      if (dropped.length > 0) {
+        console.log(`🧹 Dropped ${dropped.length} provider playlist URL(s) from the hosted reload list (resolver imports are snapshots, not hosted XSPF):`, dropped.map(d => d.url).join(', '));
+        hostedPlaylistUrls = kept;
+        await window.electron?.store?.set('hosted_playlists', kept);
+      }
+      if (hostedPlaylistUrls.length === 0) {
+        setPlaylistsLoading(false);
+        return;
+      }
+
       for (const { url, addedAt, title, creator } of hostedPlaylistUrls) {
         try {
           // Pass true to skip storage update (already in storage), and stored metadata to preserve overrides
-          await handleImportPlaylistFromUrl(url, true, addedAt, { title, creator });
+          await handleImportPlaylistFromUrl(url, true, addedAt, { title, creator }, { background: true });
         } catch (error) {
           console.error(`Failed to load hosted playlist from ${url}:`, error);
         }
@@ -39409,6 +39879,11 @@ useEffect(() => {
       if (window.getMusicKitWeb) {
         try { const musicKitWeb = window.getMusicKitWeb(); if (musicKitWeb?.seek) { await musicKitWeb.seek(newPosition); } } catch (err) { /* not the active method */ }
       }
+    }
+    // Amazon Music (remote-controlled app; seek position is in seconds)
+    if (activeResolver === 'amazonmusic' && window.electron?.amazonMusic) {
+      amazonMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
+      try { await window.electron.amazonMusic.seek(newPosition * 1000); } catch (err) { console.warn('[Seek] Amazon Music seek failed:', err); }
     }
     if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
     seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
@@ -57465,7 +57940,7 @@ useEffect(() => {
               initialProgress: progressRef.current,
               hasTrack: !!currentTrack,
               browserPlaybackActive,
-              duration: currentTrack?.duration,
+              duration: currentTrack?.duration || (currentTrack?.length ? Math.round(currentTrack.length / 1000) : 0),
               seekDisabled: isSeekDisabled,
               seekTooltip,
               onSeek: handleSeek,
@@ -57516,7 +57991,7 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || currentResolverId === 'amazonmusic' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -57541,6 +58016,10 @@ useEffect(() => {
                   const effectiveVol = getEffectiveVolume(restoredVolume, 'applemusic', currentTrackRef.current?.id);
                   window._appleMusicPreviewAudio.volume = effectiveVol / 100;
                 }
+                if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+                  const effectiveVol = getEffectiveVolume(restoredVolume, 'amazonmusic', currentTrackRef.current?.id);
+                  window.electron.amazonMusic.setVolume(effectiveVol / 100).catch(() => {});
+                }
               } else {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
@@ -57553,6 +58032,9 @@ useEffect(() => {
                 }
                 if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
                   window._appleMusicPreviewAudio.volume = 0;
+                }
+                if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+                  window.electron.amazonMusic.setVolume(0).catch(() => {});
                 }
               }
             };
@@ -57634,6 +58116,14 @@ useEffect(() => {
                     if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
                       const effectiveVol = getEffectiveVolume(newVolume, 'applemusic', currentTrackRef.current?.id);
                       window._appleMusicPreviewAudio.volume = effectiveVol / 100;
+                    }
+                    // Amazon Music: debounced setVolume through the CDP bridge
+                    if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
+                      if (amazonMusicVolumeTimeoutRef.current) clearTimeout(amazonMusicVolumeTimeoutRef.current);
+                      amazonMusicVolumeTimeoutRef.current = setTimeout(() => {
+                        const effectiveVol = getEffectiveVolume(newVolume, 'amazonmusic', currentTrackRef.current?.id);
+                        window.electron.amazonMusic.setVolume(effectiveVol / 100).catch(() => {});
+                      }, 150);
                     }
                   },
                 className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
@@ -58729,7 +59219,7 @@ useEffect(() => {
                 }, 'Import from URL'),
                 React.createElement('p', {
                   style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.4' }
-                }, 'Spotify, Apple Music, or hosted .xspf')
+                }, 'Spotify, Apple Music, Amazon Music, or hosted .xspf')
               )
             ),
             // Input with inline button
@@ -61555,6 +62045,188 @@ useEffect(() => {
               })
           ),
 
+          // Amazon Music settings section (in-app sign-in)
+          selectedResolver.id === 'amazonmusic' && React.createElement('div', {
+            style: {
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-subtle)'
+            }
+          },
+            React.createElement('h3', {
+              style: {
+                fontSize: '13px',
+                fontWeight: '500',
+                color: 'var(--text-primary)',
+                marginBottom: '8px'
+              }
+            }, 'Amazon Music'),
+            React.createElement('p', {
+              style: {
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginBottom: '12px',
+                lineHeight: '1.5'
+              }
+            },
+              'Sign in once, and choose a profile if Amazon asks. Uses Amazon\'s web player and this app\'s Widevine CDM. The Amazon Music desktop app is not used.'
+            ),
+            React.createElement('div', {
+              className: 'flex items-center justify-between',
+              style: {
+                padding: '12px',
+                backgroundColor: 'var(--hover-bg-default)',
+                borderRadius: '8px',
+                marginBottom: '8px'
+              }
+            },
+              React.createElement('div', null,
+                React.createElement('p', {
+                  style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                }, !amazonMusicStatus ? 'Checking Amazon Music…' :
+                  amazonMusicStatus.web?.signedIn ? 'Signed in' :
+                  amazonMusicStatus.web?.cdm ? 'Widevine ready — sign in to play' :
+                  'Widevine CDM not available'),
+                React.createElement('p', {
+                  style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                }, !amazonMusicStatus ? '' :
+                  amazonMusicStatus.web?.signedIn
+                    ? ''
+                    : amazonMusicStatus.web?.cdm
+                      ? 'Sign in with your Amazon Music account'
+                      : 'This build cannot play DRM-protected Amazon streams')
+              ),
+              amazonMusicStatus?.web?.signedIn
+                ? React.createElement('button', {
+                    onClick: async () => {
+                      const r = await window.electron.amazonMusic.signOut();
+                      if (r && r.success) {
+                        setAmazonMusicStatus({ success: true, engine: 'web', web: { cdm: !!(amazonMusicStatus && amazonMusicStatus.web && amazonMusicStatus.web.cdm), signedIn: false } });
+                        setAmazonMusicQuality(null);
+                        showToast('Signed out of Amazon Music', 'success');
+                      } else {
+                        showToast((r && r.error) || 'Could not sign out of Amazon Music', 'error');
+                      }
+                    },
+                    style: {
+                      padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                      color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
+                      borderRadius: '8px'
+                    }
+                  }, 'Sign out')
+                : React.createElement('button', {
+                    onClick: async () => {
+                      const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in' });
+                      if (ok) {
+                        const s = await window.electron.amazonMusic.getStatus().catch(() => null);
+                        if (s && s.success) setAmazonMusicStatus(s);
+                        const q = await window.electron.amazonMusic.getQuality().catch(() => null);
+                        if (q && q.success) setAmazonMusicQuality(q);
+                      }
+                    },
+                    style: {
+                      padding: '6px 12px', fontSize: '12px', fontWeight: '500',
+                      color: '#ffffff', backgroundColor: 'var(--accent-primary)',
+                      borderRadius: '8px'
+                    }
+                  }, 'Sign in')
+            ),
+            React.createElement('div', {
+              style: {
+                padding: '12px',
+                backgroundColor: 'var(--hover-bg-default)',
+                borderRadius: '8px'
+              }
+            },
+              React.createElement('div', {
+                className: 'flex items-center justify-between',
+                style: { marginBottom: '10px', gap: '12px' }
+              },
+                React.createElement('div', null,
+                  React.createElement('p', {
+                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Audio quality'),
+                  React.createElement('p', {
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                  }, amazonMusicStatus?.web?.signedIn
+                    ? 'Same choices as Amazon\'s Audio Quality menu. Applies on the next track.'
+                    : 'Sign in to change audio quality')
+                ),
+                React.createElement('select', {
+                  value: amazonMusicQuality?.streamingQuality || 'STANDARD',
+                  disabled: !amazonMusicStatus?.web?.signedIn || !amazonMusicQuality,
+                  onChange: async (e) => {
+                    const result = await window.electron.amazonMusic.setQuality({
+                      streamingQuality: e.target.value,
+                      abrEnabled: amazonMusicQuality?.abrEnabled !== false
+                    });
+                    if (result && result.success) setAmazonMusicQuality(result);
+                    else showToast(result?.error || 'Could not change Amazon Music audio quality', 'error');
+                  },
+                  style: {
+                    backgroundColor: 'var(--card-bg)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '8px',
+                    padding: '6px 8px',
+                    fontSize: '12px'
+                  }
+                },
+                  (() => {
+                    const known = amazonMusicQuality?.options || [
+                      { value: 'BEST_AVAILABLE', label: 'HD/Ultra HD' },
+                      { value: 'STANDARD', label: 'Standard' },
+                      { value: 'DATA_SAVER', label: 'Data Saver' }
+                    ];
+                    const current = amazonMusicQuality?.streamingQuality;
+                    const options = current && !known.some(o => o.value === current)
+                      ? [{ value: current, label: current }, ...known]
+                      : known;
+                    return options;
+                  })().map(option => React.createElement('option', {
+                    key: option.value,
+                    value: option.value
+                  }, option.label))
+                )
+              ),
+              React.createElement('div', {
+                className: 'flex items-center justify-between',
+                style: { gap: '12px' }
+              },
+                React.createElement('div', null,
+                  React.createElement('p', {
+                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Auto adjust quality'),
+                  React.createElement('p', {
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                  }, 'Choose the best audio quality for the current network speed.')
+                ),
+                React.createElement('select', {
+                  value: amazonMusicQuality?.abrEnabled === false ? 'off' : 'on',
+                  disabled: !amazonMusicStatus?.web?.signedIn || !amazonMusicQuality,
+                  onChange: async (e) => {
+                    const result = await window.electron.amazonMusic.setQuality({
+                      streamingQuality: amazonMusicQuality?.streamingQuality,
+                      abrEnabled: e.target.value === 'on'
+                    });
+                    if (result && result.success) setAmazonMusicQuality(result);
+                    else showToast(result?.error || 'Could not change Amazon Music audio quality', 'error');
+                  },
+                  style: {
+                    backgroundColor: 'var(--card-bg)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '8px',
+                    padding: '6px 8px',
+                    fontSize: '12px'
+                  }
+                },
+                  React.createElement('option', { value: 'on' }, 'On'),
+                  React.createElement('option', { value: 'off' }, 'Off')
+                )
+              )
+            )
+          ),
+
           // Local Files settings section
           selectedResolver.id === 'localfiles' && React.createElement('div', {
             style: {
@@ -64249,6 +64921,76 @@ useEffect(() => {
               cursor: 'pointer'
             }
           }, 'OK')
+        )
+      )
+    ),
+
+    // Amazon Music sign-in dialog. Opens music.amazon.com inside Parachord.
+    amazonManageDialog.show && React.createElement('div', {
+      className: 'fixed inset-0 flex items-center justify-center z-[60]',
+      style: {
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        backdropFilter: 'blur(4px)'
+      },
+      onClick: (e) => {
+        if (e.target === e.currentTarget && !amazonManageDialog.relaunching && amazonManageDialog.onResolve) {
+          amazonManageDialog.onResolve(false);
+          setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+        }
+      }
+    },
+      React.createElement('div', {
+        style: {
+          backgroundColor: 'var(--card-bg)',
+          borderRadius: '16px',
+          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15), 0 12px 48px rgba(0, 0, 0, 0.1)',
+          maxWidth: '420px',
+          width: '100%',
+          margin: '0 16px',
+          overflow: 'hidden'
+        },
+        onClick: (e) => e.stopPropagation()
+      },
+        React.createElement('div', { style: { padding: '20px 24px' } },
+          React.createElement('h3', {
+            style: { fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }
+          }, 'Play Amazon Music in Parachord?'),
+          React.createElement('p', {
+            style: { fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '8px' }
+          },
+            'Sign in, and if Amazon asks, choose a profile. The Amazon Music desktop app is not used.'
+          ),
+          React.createElement('p', {
+            style: { fontSize: '12px', color: 'var(--text-tertiary)', lineHeight: '1.5', marginBottom: '16px' }
+          },
+            'You can close the sign-in window to cancel. If the account has more than one profile, pick one before closing — search and play wait for that selection.'
+          ),
+          React.createElement('div', { className: 'flex gap-2 justify-end' },
+            !amazonManageDialog.relaunching && React.createElement('button', {
+              onClick: () => {
+                if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(false);
+                setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+              },
+              style: {
+                padding: '8px 16px', fontSize: '13px', fontWeight: '500',
+                color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
+                borderRadius: '8px', border: '1px solid var(--border-subtle)'
+              }
+            }, 'Not now'),
+            React.createElement('button', {
+              onClick: () => {
+                if (amazonManageDialog.relaunching) return;
+                if (amazonManageDialog.onResolve) amazonManageDialog.onResolve(true);
+                else setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
+              },
+              disabled: amazonManageDialog.relaunching,
+              style: {
+                padding: '8px 16px', fontSize: '13px', fontWeight: '500',
+                color: '#ffffff', backgroundColor: 'var(--accent-primary)',
+                borderRadius: '8px', opacity: amazonManageDialog.relaunching ? 0.7 : 1
+              }
+            }, amazonManageDialog.relaunching ? 'Opening Amazon Music…' : 'Sign in')
+          )
         )
       )
     ),

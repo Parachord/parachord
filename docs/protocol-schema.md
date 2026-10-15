@@ -246,6 +246,7 @@ parachord://play/playlist?tracks={base64_json}&title={display_name}
 | `open.spotify.com/playlist/<id>` | Spotify playlist import |
 | `music.apple.com/<region>/playlist/<slug>/<id>` | Apple Music playlist import |
 | `soundcloud.com/<user>/sets/<slug>` | SoundCloud playlist import |
+| `music.amazon.com/playlists/<id>`, `music.amazon.com/my/playlists/<id>` | Amazon Music playlist import (requires being signed in to Amazon Music in the app — the page only renders authenticated) |
 | `on.soundcloud.com/<short-id>` | Short-link — app follows the 302 to `soundcloud.com/<user>/sets/...` itself, then re-validates the final host before importing. The website does NOT pre-resolve the short link. |
 | `achordion.xyz/playlist/<mbid>` | Fetched from `https://achordion.xyz/api/playlist/<mbid>/xspf` (public, returns XSPF) — the page itself is bot-challenged by Vercel; only the `/api/` route is reachable from the app's IP. |
 | anything else | Falls back to the original behavior: fetch the URL and parse as XSPF / JSPF / JSON tracklist. |
