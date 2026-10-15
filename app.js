@@ -14578,6 +14578,11 @@ ${trackListXml}
           if (data.durationMs > 1000 && (!track.duration || Math.abs(track.duration - data.durationMs / 1000) > 2)) {
             const secs = data.durationMs / 1000;
             setCurrentTrack(prev => (prev && prev.id === track.id) ? { ...prev, duration: secs } : prev);
+            // The scrobble manager holds its own reference to the track object
+            // (the setState above does not reach it). Without this, a search-
+            // resolved Amazon track (duration 0 from the row scrape) never
+            // scrobbles — onProgressUpdate bails on a falsy duration.
+            if (window.scrobbleManager) window.scrobbleManager.updateTrackDuration(secs);
           }
           if (!seekingRef.current) {
             setProgress(positionSec);
