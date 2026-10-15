@@ -584,11 +584,21 @@ const amazonWebPlayer = {
   // Pause is not enough on a confirm timeout: the <video> may not exist yet,
   // then Amazon starts a few hundred ms later on top of the next resolver.
   // Blanking the document kills that late start.
+  //
+  // Generation-guarded: a newer playByAsin may have started while this halt
+  // was in flight (user skip during a poller advance, or a superseded play's
+  // failure path). Its loadURL owns the view by now — pausing or blanking it
+  // would kill the new track, so the halt becomes a no-op instead.
   async haltPlayback() {
-    this.currentAsin = null;
+    const genAtStart = this.playGeneration;
+    // Only clear the claim if no newer play took the player between capture
+    // and here; nulling a newer play's currentAsin would make it report
+    // itself superseded.
+    if (this.playGeneration === genAtStart) this.currentAsin = null;
     await this.pause().catch(() => {});
     const view = this.playerView;
     if (!this.alive(view)) return { ok: false };
+    if (this.playGeneration !== genAtStart) return { ok: false, superseded: true };
     this.collapse(view);
     try {
       const url = view.webContents.getURL();

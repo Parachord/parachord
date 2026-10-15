@@ -125,10 +125,17 @@ describe('decidePollAdvance', () => {
       .toEqual({ action: 'advance', reason: 'stopped' });
   });
 
-  test('an empty player while nothing ever played does not advance', () => {
+  test('an empty player while nothing ever played does not advance', async () => {
     // lastState null (never PLAYING): the page is still loading — a fresh
-    // poller must not advance on its first EMPTY reads.
-    expect(decidePollAdvance({ state: 'EMPTY', lastState: null, emptyWhilePausedPolls: 99 })).toEqual({ action: 'track' });
+    // poller never latches a pause-death, so the count it sends is 0 and a
+    // fresh poller must not advance on its first EMPTY reads.
+    const decision = decidePollAdvance({ state: 'EMPTY', lastState: null, emptyWhilePausedPolls: 0 });
+    expect(decision).toEqual({ action: 'track' });
+    // The latched counter is only nonzero after a PAUSED poller saw death —
+    // a count at the limit advances regardless of the (churned) lastState.
+    expect(decidePollAdvance({
+      state: 'EMPTY', lastState: 'EMPTY', emptyWhilePausedPolls: EMPTY_WHILE_PAUSED_POLL_LIMIT
+    })).toEqual({ action: 'advance', reason: 'stopped' });
   });
 });
 

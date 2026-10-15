@@ -645,186 +645,22 @@ const appleMusicPoller = {
   }
 };
 
-const {
-  playerDurationMs,
-  decidePollAdvance,
-  shouldPollFaster
-} = require('./amazon-music-logic');
 const amazonWebPlayer = require('./amazon-web-player');
+const { createAmazonMusicPoller } = require('./amazon-music-poller');
 
 // Amazon Music playback poller — signals track-finished and streams progress to
 // the renderer (same pattern as the Spotify / Apple Music main-process pollers;
-// renderer intervals throttle when the app is backgrounded).
-const amazonMusicPoller = {
-  interval: null,
-  expectedAsin: null,
-  trackTitle: null,
-  trackArtist: null,
-  trackDurationMs: 0,
-  lastPositionMs: 0,
-  lastState: null,
-  pollCount: 0,
-  errorCount: 0,
-
-  POLL_INTERVAL: 2000,
-  FAST_POLL_INTERVAL: 400,
-  MAX_ERRORS: 5,
-  generation: 0,
-  startTimer: null,
-  startResolve: null,
-  seekSuppressUntil: 0,
-  pollIntervalMs: 2000,
-  emptyWhilePausedPolls: 0,
-
-  async start({ asin, trackTitle, trackArtist, duration }) {
-    console.log('🎵 [Main] Starting Amazon Music polling...');
-    this.stop();
-    const generation = ++this.generation;
-    this.expectedAsin = asin;
-    this.trackTitle = trackTitle;
-    this.trackArtist = trackArtist;
-    // Resolver duration is seconds (search `t.duration`). Player duration is ms.
-    this.trackDurationMs = (duration || 0) * 1000;
-    this.lastPositionMs = 0;
-    this.lastState = null;
-    this.pollCount = 0;
-    this.errorCount = 0;
-    this.seekSuppressUntil = 0;
-    this.emptyWhilePausedPolls = 0;
-
-    // Cancellable delay so a quick skip doesn't start a second interval
-    // after this sleep returns.
-    await new Promise(resolve => {
-      this.startResolve = resolve;
-      this.startTimer = setTimeout(() => {
-        this.startTimer = null;
-        this.startResolve = null;
-        resolve();
-      }, 1200);
-    });
-    if (generation !== this.generation || !this.expectedAsin) return;
-    await this.poll();
-    if (generation !== this.generation || !this.expectedAsin) return;
-    this.schedule(this.POLL_INTERVAL);
-  },
-
-  stop() {
-    this.generation++;
-    if (this.startTimer) {
-      clearTimeout(this.startTimer);
-      this.startTimer = null;
-    }
-    if (this.startResolve) {
-      const resolve = this.startResolve;
-      this.startResolve = null;
-      resolve();
-    }
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
-    }
-    this.expectedAsin = null;
-    console.log('⏹️ [Main] Amazon Music polling stopped');
-  },
-
-  schedule(ms) {
-    if (this.interval) clearInterval(this.interval);
-    this.pollIntervalMs = ms;
-    this.interval = setInterval(() => this.poll(), ms);
-  },
-
-  noteUserSeek(positionMs) {
-    this.seekSuppressUntil = Date.now() + 4000;
-    if (typeof positionMs === 'number' && Number.isFinite(positionMs)) {
-      this.lastPositionMs = positionMs;
-    }
-  },
-
-  async poll() {
-    if (!this.expectedAsin) return;
-    this.pollCount++;
-    let s;
-    try {
-      s = await amazonWebPlayer.getPlaybackState();
-      this.errorCount = 0;
-    } catch (err) {
-      this.errorCount++;
-      if (this.errorCount >= this.MAX_ERRORS) {
-        console.error('[Main] Amazon Music polling errors:', err.message);
-        this.sendToRenderer('amazonmusic-polling-advance', { reason: 'connection-lost' });
-        this.stop();
-      }
-      return;
-    }
-
-    const positionMs = s.positionMs || 0;
-    const durationMs = playerDurationMs(s.durationMs) || this.trackDurationMs;
-    const state = s.state;
-
-    this.sendToRenderer('amazonmusic-polling-progress', {
-      state,
-      positionMs,
-      durationMs,
-      percentComplete: durationMs > 0 ? (positionMs / durationMs) * 100 : 0
-    });
-
-    if (state === 'PLAYING') {
-      const wantFast = shouldPollFaster(durationMs, positionMs);
-      if (wantFast && this.pollIntervalMs !== this.FAST_POLL_INTERVAL) {
-        this.schedule(this.FAST_POLL_INTERVAL);
-      } else if (!wantFast && this.pollIntervalMs !== this.POLL_INTERVAL) {
-        this.schedule(this.POLL_INTERVAL);
-      }
-    }
-
-    // EMPTY while paused means the page tore the element down under a pause
-    // (external pause + idle teardown): dead and unresumable. Count those
-    // polls so decidePollAdvance can stop waiting after the grace window.
-    if ((state === 'EMPTY' || state === 'STOPPED' || state === 'FINISHED') && this.lastState === 'PAUSED') {
-      this.emptyWhilePausedPolls++;
-    } else {
-      this.emptyWhilePausedPolls = 0;
-    }
-
-    const decision = decidePollAdvance({
-      state,
-      positionMs,
-      durationMs,
-      lastPositionMs: this.lastPositionMs,
-      lastState: this.lastState,
-      expectedAsin: this.expectedAsin,
-      actualAsin: s.asin,
-      pollCount: this.pollCount,
-      seekSuppress: Date.now() < this.seekSuppressUntil,
-      emptyWhilePausedPolls: this.emptyWhilePausedPolls
-    });
-    if (decision.action === 'advance') {
-      console.log(`🎵 [Main] Amazon Music advance (${decision.reason})`);
-      // Blank before signaling so Amazon's own autoplay cannot overlap the
-      // next resolver. Awaited so it cannot race the next playByAsin loadURL.
-      await amazonWebPlayer.haltPlayback().catch(() => {});
-      if (!this.expectedAsin) return;
-      this.sendToRenderer('amazonmusic-polling-advance', { reason: decision.reason });
-      this.stop();
-      return;
-    }
-    if (decision.action === 'continue' || decision.updateLast) {
-      this.lastPositionMs = positionMs;
-      this.lastState = state;
-      return;
-    }
-    if (decision.action === 'wait') return;
-
-    // PAUSED mid-track: user pause (renderer handles it) — just track it
-    this.lastState = state;
-  },
-
-  sendToRenderer(channel, data = {}) {
+// renderer intervals throttle when the app is backgrounded). The state machine
+// (single-flight polls, generation-bound advance halt, pause-death latch) lives
+// in amazon-music-poller.js where it is unit-tested.
+const amazonMusicPoller = createAmazonMusicPoller({
+  player: amazonWebPlayer,
+  send: (channel, data) => {
     if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send(channel, data);
     }
   }
-};
+});
 
 // macOS System Volume Monitor
 // Polls system output volume and mute state, sends changes to renderer
