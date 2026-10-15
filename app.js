@@ -10158,12 +10158,19 @@ const Parachord = () => {
   };
   window.__parachordManageAmazonMusic = manageAmazonMusic;
 
-  const pauseAmazonIfActive = (reason) => {
+  // Leaving an Amazon track must blank the player view, not just pause it -
+  // the module's own invariant ("pause is not enough": Amazon can start the
+  // element a few hundred ms later, and the visibility stub keeps the page
+  // convinced it is shown, so its transport may resume). stop() is the halt
+  // (pause + about:blank). It is generation-guarded inside amazon-web-player,
+  // so calling it while a NEWER Amazon play has already claimed the view is a
+  // no-op and cannot blank the replacement track.
+  const stopAmazonIfActive = (reason) => {
     if (!window.electron?.amazonMusic) return Promise.resolve();
     try { window.electron.amazonMusic.polling.stop(); } catch (e) {}
     if (!(activeResolversRef.current || []).includes('amazonmusic')) return Promise.resolve();
     if (reason) console.log(reason);
-    return window.electron.amazonMusic.pause().catch(() => {});
+    return window.electron.amazonMusic.stop().catch(() => {});
   };
 
   // Background resolution calls this when search throws notReady. One prompt,
@@ -18056,7 +18063,7 @@ ${trackListXml}
       window._appleMusicPreviewAudio.currentTime = 0;
     }
 
-    pausePromises.push(pauseAmazonIfActive('⏹️ Pausing Amazon Music before playing new track'));
+    pausePromises.push(stopAmazonIfActive('⏹️ Stopping the Amazon Music player before playing new track'));
 
     // Always stop main process polling for both Spotify and Apple Music
     stopMainProcessPolling();
@@ -19228,7 +19235,7 @@ ${trackListXml}
           } else if (resolverId === 'applemusic' && window.electron?.musicKit) {
             window.electron.musicKit.pause().catch(() => {});
           } else if (resolverId === 'amazonmusic') {
-            pauseAmazonIfActive('⏹️ Stopping Amazon Music after superseded play');
+            stopAmazonIfActive('⏹️ Stopping Amazon Music after superseded play');
           }
         }
         return;
@@ -20344,7 +20351,7 @@ ${trackListXml}
       if (window.electron?.musicKit?.polling) {
         window.electron.musicKit.polling.stop().catch(() => {});
       }
-      pauseAmazonIfActive('⏹️ Pausing Amazon Music before next track');
+      stopAmazonIfActive('⏹️ Stopping Amazon Music before next track');
 
       // Stop all local audio sources (HTML5 Audio for local files/SoundCloud, Qobuz audio)
       // Always stop regardless of paused state to handle edge cases and prevent overlap
@@ -20650,7 +20657,7 @@ ${trackListXml}
       window._appleMusicPreviewAudio.currentTime = 0;
     }
 
-    pauseAmazonIfActive('⏹️ Pausing Amazon Music before previous track');
+    stopAmazonIfActive('⏹️ Stopping Amazon Music before previous track');
 
     // CRITICAL: Reset streaming playback flag when changing tracks
     streamingPlaybackActiveRef.current = false;
