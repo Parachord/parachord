@@ -53,6 +53,8 @@ const {
   writePersistedQuality,
   acceptAmazonSearchAnchor,
   isAmazonPlayerChrome,
+  pickTrackAsinFromIds,
+  parseRowDurationSec,
   reportedPlaybackAsin,
   shouldRevealPlayerOnFailure,
   amazonSongSearchUrl,
@@ -152,6 +154,8 @@ const SCRAPE_SCRIPT = `(() => {
   const isAmazonPlayerChrome = ${isAmazonPlayerChrome.toString()};
   const acceptAmazonSearchAnchor = ${acceptAmazonSearchAnchor.toString()};
   const isAmazonSongResultItem = ${isAmazonSongResultItem.toString()};
+  const parseRowDurationSec = ${parseRowDurationSec.toString()};
+  const pickTrackAsinFromIds = ${pickTrackAsinFromIds.toString()};
   const out = [];
   const seen = new Set();
   const links = [];
@@ -207,8 +211,7 @@ const SCRAPE_SCRIPT = `(() => {
     const by = title.match(/^(.+?)\\s+by\\s+(.+)$/i);
     if (by && !artist) { title = by[1].trim(); artist = by[2].trim(); }
     const rowText = (row && row.innerText) || '';
-    const dur = rowText.match(/(\\d+)\\s*MIN(?:\\s*(\\d+)\\s*SEC)?/i);
-    const duration = dur ? (parseInt(dur[1], 10) * 60 + (dur[2] ? parseInt(dur[2], 10) : 0)) : 0;
+    const duration = parseRowDurationSec(rowText);
     out.push({
       asin: asin.toUpperCase(),
       title: title.slice(0, 200),
@@ -239,8 +242,21 @@ const SCRAPE_SCRIPT = `(() => {
     const artistLink = item.querySelector('a[href*="/artists/"]');
     const title = ((titleEl && titleEl.textContent) || (by && by[1]) || '').trim();
     const artist = ((artistLink && artistLink.textContent) || (by && by[2]) || '').trim();
-    const artistAsin = (((artistLink && (artistLink.href || artistLink.getAttribute('href'))) || '').match(/\\/artists\\/([A-Z0-9]{10})/i) || [])[1];
-    let asin = null;
+    // Every ASIN the row links to (artists, albums) is an exclusion set for
+    // the track ASIN: the track id is a button id (the like button), never a
+    // link href — the album ASIN used to win whenever it sorted earlier in
+    // the row, and the matching title/artist carried it through the gate.
+    const linkedAsins = [];
+    const hrefAsin = (href, kind) => {
+      const m = String(href || '').match(new RegExp('/' + kind + '/([A-Z0-9]{10})', 'i'));
+      return m ? m[1].toUpperCase() : null;
+    };
+    item.querySelectorAll('a[href*="/artists/"], a[href*="/albums/"]').forEach((a) => {
+      const href = a.href || a.getAttribute('href') || '';
+      const kind = href.indexOf('/albums/') !== -1 ? 'albums' : 'artists';
+      const linked = hrefAsin(href, kind);
+      if (linked) linkedAsins.push(linked);
+    });
     const ids = [];
     const walkIds = (el) => {
       if (!el) return;
@@ -249,15 +265,11 @@ const SCRAPE_SCRIPT = `(() => {
       if (el.shadowRoot) walkIds(el.shadowRoot);
     };
     walkIds(item);
-    for (const id of ids) {
-      if (!/^B[A-Z0-9]{9}$/i.test(id)) continue;
-      if (artistAsin && id.toUpperCase() === artistAsin.toUpperCase()) continue;
-      asin = id.toUpperCase();
-      break;
-    }
+    const asin = pickTrackAsinFromIds(ids, linkedAsins);
     if (!asin || seen.has(asin) || !title) continue;
     seen.add(asin);
-    out.push({ asin, title: title.slice(0, 200), artist: artist.slice(0, 200), album: '', duration: 0, albumAsin: null });
+    const duration = parseRowDurationSec(label) || parseRowDurationSec((item.innerText || ''));
+    out.push({ asin, title: title.slice(0, 200), artist: artist.slice(0, 200), album: '', duration, albumAsin: null });
   }
   debug.items = items.length;
   return { href: location.href, tracks: out, debug };
@@ -1220,5 +1232,11 @@ const amazonWebPlayer = {
     };
   }
 };
+
+// Exposed for tests: the page scripts serialize logic-module helpers with
+// .toString(), and a helper that gains a closure (or a stray backtick in the
+// template) breaks only inside the Amazon page. The smoke test evaluates them
+// against a bare DOM stub so serialization breakage fails CI instead.
+amazonWebPlayer._scripts = { HOOK_SCRIPT, SCRAPE_SCRIPT };
 
 module.exports = amazonWebPlayer;

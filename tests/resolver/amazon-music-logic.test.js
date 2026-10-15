@@ -9,6 +9,8 @@ const {
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   amazonSongSearchUrl,
+  pickTrackAsinFromIds,
+  parseRowDurationSec,
   installAmazonRequireTrap,
   readPersistedQuality,
   writePersistedQuality,
@@ -25,14 +27,20 @@ const {
 } = require('../../amazon-music-logic');
 
 describe('reportedPlaybackAsin', () => {
-  test('uses the mini player ASIN ahead of the page URL', () => {
+  test('the page URL wins over a disagreeing mini player', () => {
+    // A stale or "up next" mini-player row used to outrank the document we
+    // actually loaded, and the track-changed branch skipped the track.
     expect(reportedPlaybackAsin({
-      playingAsin: 'B0NEWTRACK',
-      href: 'https://music.amazon.com/tracks/B0OLDTRACK?do=play'
-    })).toBe('B0NEWTRACK');
+      playingAsin: 'B0NEXTUP01',
+      href: 'https://music.amazon.com/tracks/B0PLAYING1?do=play'
+    })).toBe('B0PLAYING1');
   });
 
-  test('reads a track ASIN from the player URL when the mini player has none', () => {
+  test('the mini player is the fallback when the URL carries no ASIN', () => {
+    expect(reportedPlaybackAsin({
+      playingAsin: 'B0MINIROW1',
+      href: 'https://music.amazon.com/queue'
+    })).toBe('B0MINIROW1');
     expect(reportedPlaybackAsin({
       href: 'https://music.amazon.com/tracks/B0URLTRACK?do=play'
     })).toBe('B0URLTRACK');
@@ -215,6 +223,45 @@ describe('isAmazonSongResultItem', () => {
     expect(isAmazonSongResultItem('HorizontalItem,SearchResultsWidget_Item')).toBe(true);
     expect(isAmazonSongResultItem('TrackItem_Title')).toBe(false);
     expect(isAmazonSongResultItem('HorizontalItem,MiniPlayer_Title')).toBe(false);
+  });
+});
+
+describe('pickTrackAsinFromIds', () => {
+  test('picks the first track id that is not an ASIN the row links to', () => {
+    // The album ASIN sorts first in the row (its link renders before the like
+    // button); the artist ASIN sorts after. Only the track id survives.
+    expect(pickTrackAsinFromIds(
+      ['B0ALBUM000', 'B0TRACK001', 'B0ARTIST00'],
+      ['B0ALBUM000', 'B0ARTIST00']
+    )).toBe('B0TRACK001');
+  });
+
+  test('skips ids that are not 10-char B-prefixed ASINs', () => {
+    expect(pickTrackAsinFromIds(['reaction-button', '0', 'B0TRACK001'], [])).toBe('B0TRACK001');
+    expect(pickTrackAsinFromIds(['B0SHORT', 'B0TOOLONG00000'], [])).toBeNull();
+    expect(pickTrackAsinFromIds(['b0lowerca1'], [])).toBe('B0LOWERCA1'); // case-insensitive
+  });
+
+  test('returns null when every candidate is a linked ASIN or nothing qualifies', () => {
+    expect(pickTrackAsinFromIds(['B0ALBUM000'], ['B0ALBUM000'])).toBeNull();
+    expect(pickTrackAsinFromIds([], [])).toBeNull();
+    expect(pickTrackAsinFromIds(null, null)).toBeNull();
+  });
+});
+
+describe('parseRowDurationSec', () => {
+  test('parses the shapes search rows render', () => {
+    expect(parseRowDurationSec('Around the World Daft Punk 7 MIN 8 SEC Explicit')).toBe(428);
+    expect(parseRowDurationSec('3 MIN')).toBe(180);
+    expect(parseRowDurationSec('3:45')).toBe(225);
+    expect(parseRowDurationSec('1:02:03')).toBe(3723);
+    expect(parseRowDurationSec('45 SEC')).toBe(45);
+  });
+
+  test('returns 0 for localized or missing durations', () => {
+    expect(parseRowDurationSec('Around the World Daft Punk')).toBe(0);
+    expect(parseRowDurationSec('')).toBe(0);
+    expect(parseRowDurationSec(null)).toBe(0);
   });
 });
 

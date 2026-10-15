@@ -228,7 +228,15 @@ function asinFromPlayerUrl(url) {
 // the track we loaded. Never fill a missing read with the expected ASIN.
 function reportedPlaybackAsin(state) {
   if (!state) return null;
-  return state.playingAsin || asinFromPlayerUrl(state.href) || null;
+  // URL first: it is the document we loaded, and the only ASIN the poller can
+  // trust when the mini player disagrees. The mini player read is a scrape of
+  // whatever /tracks/ link sorts first inside its chrome — a stale row or an
+  // "up next" entry made actualAsin disagree with the page we are actually
+  // on, and the track-changed branch skipped the track two polls in. The mini
+  // player remains the fallback for surfaces with no /tracks/ URL (a queue or
+  // home page) while something keeps playing; a genuine Amazon auto-advance
+  // is still caught there, and near-end/wrap advance regardless.
+  return asinFromPlayerUrl(state.href) || state.playingAsin || null;
 }
 
 // Playback failure must not reveal the player. Sign-in is the only window.
@@ -239,6 +247,43 @@ function shouldRevealPlayerOnFailure() {
 
 function isAmazonPlayerChrome(testIds) {
   return /miniplayer|nowplaying|playbacktransport/i.test((testIds || []).join(' '));
+}
+
+// Songs-tab rows put the track ASIN on a descendant element id (the like
+// button); the artist and album ASINs arrive on /artists/ and /albums/ hrefs.
+// The first B-prefixed 10-char id used to win, which matched the album ASIN
+// whenever it sorted earlier in the row — and the row's title and artist still
+// matched, so the wrong id sailed through the confidence gate and playback
+// targeted the album. Prefer an id that is not any ASIN the row links to.
+function pickTrackAsinFromIds(ids, linkedAsins = []) {
+  const exclude = new Set((Array.isArray(linkedAsins) ? linkedAsins : [])
+    .filter(Boolean).map(a => String(a).toUpperCase()));
+  for (const raw of (Array.isArray(ids) ? ids : [])) {
+    if (typeof raw !== 'string') continue;
+    const id = raw.toUpperCase();
+    if (!/^B[A-Z0-9]{9}$/.test(id)) continue;
+    if (exclude.has(id)) continue;
+    return id;
+  }
+  return null;
+}
+
+// Search rows render durations as "N MIN M SEC" (en). Also accept "M:SS",
+// "H:MM:SS" and a bare "N SEC" so the common shapes parse; anything else
+// (localized, missing) is 0 — same as the old English-only parse, which
+// button-scraped rows never got at all.
+function parseRowDurationSec(text) {
+  const s = String(text || '');
+  let m = s.match(/(\d+)\s*MIN(?:\s*(\d+)\s*SEC)?/i);
+  if (m) return parseInt(m[1], 10) * 60 + (m[2] ? parseInt(m[2], 10) : 0);
+  m = s.match(/(\d+):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    if (m[3]) return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  }
+  m = s.match(/(\d+)\s*SEC/i);
+  if (m) return parseInt(m[1], 10);
+  return 0;
 }
 
 // A loose "Stations Warning" search misses the song. Amazon's songs tab
@@ -393,6 +438,8 @@ module.exports = {
   readPersistedQuality,
   writePersistedQuality,
   isAmazonPlayerChrome,
+  pickTrackAsinFromIds,
+  parseRowDurationSec,
   amazonSongSearchUrl,
   isAmazonSongResultItem,
   acceptAmazonSearchAnchor,
