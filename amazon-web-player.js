@@ -573,6 +573,10 @@ const amazonWebPlayer = {
     };
     harden();
     try { wc.setBackgroundThrottling(false); } catch { /* destroyed */ }
+    // A hidden page on the Amazon session must not spawn a visible window.
+    // Electron's default is to create one, and that window would carry the
+    // session cookies without the preload or the UA mask.
+    try { wc.setWindowOpenHandler(() => ({ action: 'deny' })); } catch { /* destroyed */ }
     wc.on('did-start-navigation', harden);
     if (hook) {
       wc.on('dom-ready', () => {
