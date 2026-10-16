@@ -7,6 +7,9 @@
  * (see the Resolver Result Shape section in CLAUDE.md):
  *
  *   track.sources[resolverId].streamQuality = {
+ *     tier: 'Ultra HD',                     // resolver's quality tier label
+ *                                          // (Amazon: SD/HD/Ultra HD; Tidal:
+ *                                          // HiFi/Master; ...) — optional
  *     codec: 'flac' | 'MPEG 1 Layer III' | 'AAC' | ...  // raw, as captured
  *     container: 'flac' | 'm4a' | ...   // container / extension fallback
  *     bitrate: 902,                      // kbps (average for VBR, nominal for CBR)
@@ -27,8 +30,13 @@
  * source attached is streaming through Spotify, and a localfiles-played
  * track with a Spotify id is streaming from disk.
  *
- * Currently populated by: localfiles (exact, parsed from the file at play
- * time; see LocalFilesService.getStreamInfo).
+ * Currently populated by:
+ *   - localfiles (exact, parsed from the file at play time; see
+ *     LocalFilesService.getStreamInfo)
+ *   - amazonmusic (measured average bitrate plus the captured DASH manifest's
+ *     codec/sample rate and the init segment's FLAC STREAMINFO bit depth /
+ *     channels, from which the SD/HD/Ultra HD tier is derived — the record
+ *     attaches only what the captured manifest and init segment prove)
  * Loaded by index.html for the renderer and require()d by the tests.
  */
 (function () {
@@ -60,7 +68,7 @@
       }
       // music-metadata emits 'MPEG 1 Layer 3' (older versions 'Layer III')
       if (raw.includes('layer 3') || raw.includes('layer iii') || raw === 'mp3') return 'MP3';
-      if (raw === 'aac' || raw === 'mp4a' || raw.includes('aac')) return 'AAC';
+      if (raw === 'aac' || raw === 'mp4a' || raw.startsWith('mp4a') || raw.includes('aac')) return 'AAC';
     }
     // No recognised codec label (music-metadata didn't report one, or it's a
     // codec not mapped above such as Vorbis or Opus) — fall back to the
@@ -71,10 +79,11 @@
     return container.toUpperCase();
   }
 
-  /** One-line display form, e.g. 'FLAC · 44.1 kHz · 16-bit · 847 kbps'. */
+  /** One-line display form, e.g. 'Ultra HD · FLAC · 44.1 kHz · 16-bit · 847 kbps'. */
   function formatStreamQuality(streamQuality) {
     if (!streamQuality || typeof streamQuality !== 'object') return '';
     const parts = [];
+    if (streamQuality.tier) parts.push(String(streamQuality.tier));
     const codec = streamQualityCodecLabel(streamQuality);
     if (codec) parts.push(codec);
     if (streamQuality.sampleRate && streamQuality.sampleRate > 0) {

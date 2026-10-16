@@ -5,7 +5,7 @@
  * fetching/resolver-sniffing; this verifies the pure routing DECISION only.
  */
 
-const { classifyPlaylistUrl } = require('../helpers/playlist-url-classify');
+const { classifyPlaylistUrl, isProviderPlaylistUrl, isProviderImportedPlaylist } = require('../helpers/playlist-url-classify');
 
 describe('classifyPlaylistUrl', () => {
   describe('Achordion → public XSPF endpoint', () => {
@@ -83,5 +83,97 @@ describe('classifyPlaylistUrl', () => {
       expect(classifyPlaylistUrl('')).toEqual({ kind: 'standard' });
       expect(classifyPlaylistUrl(undefined)).toEqual({ kind: 'standard' });
     });
+  });
+});
+
+describe('isProviderPlaylistUrl', () => {
+  // The loader stub answers dispatch for a fixed URL set — resolver-loader's
+  // own tests cover pattern matching; these pin the reload/poller decision.
+  const providerPlaylistUrls = [
+    'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
+    'https://music.apple.com/us/playlist/discovery-mix/pl.u-abc123',
+    'https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A',
+    'https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A',
+    'https://soundcloud.com/jherskowitz/sets/frozen-in-time-2026'
+  ];
+  const loader = {
+    findResolverForUrl: (url) => (providerPlaylistUrls.includes(url) ? 'someResolver' : null),
+    getUrlType: (url) => (providerPlaylistUrls.includes(url) ? 'playlist' : 'unknown')
+  };
+
+  test('provider playlist pages are provider URLs, not hosted documents', () => {
+    for (const url of providerPlaylistUrls) {
+      expect(isProviderPlaylistUrl(url, loader)).toBe(true);
+    }
+  });
+
+  test('hosted tracklist documents are not provider URLs (stay reloadable/pollable)', () => {
+    expect(isProviderPlaylistUrl('https://achordion.xyz/api/playlist/c2accebd-ccd1-42c6-8ce7-ec0e8cf6cd13/xspf', loader)).toBe(false);
+    expect(isProviderPlaylistUrl('https://example.com/my-playlist.xspf', loader)).toBe(false);
+    expect(isProviderPlaylistUrl('https://cdn.example.com/weekly.json', loader)).toBe(false);
+  });
+
+  test('a resolver URL that is not a playlist page is not a provider playlist', () => {
+    const trackLoader = {
+      findResolverForUrl: () => 'spotify',
+      getUrlType: () => 'track'
+    };
+    expect(isProviderPlaylistUrl('https://open.spotify.com/track/xyz', trackLoader)).toBe(false);
+  });
+
+  test('no loader (resolvers still loading) or no url is not a provider URL', () => {
+    expect(isProviderPlaylistUrl('https://music.amazon.com/playlists/PP1', null)).toBe(false);
+    expect(isProviderPlaylistUrl(null, loader)).toBe(false);
+    expect(isProviderPlaylistUrl('', loader)).toBe(false);
+  });
+
+  test('a throwing loader reads as not-a-provider-URL, never a crash', () => {
+    const hostile = {
+      findResolverForUrl: () => { throw new Error('boom'); },
+      getUrlType: () => 'playlist'
+    };
+    expect(isProviderPlaylistUrl('https://x.example/p', hostile)).toBe(false);
+    const hostileType = {
+      findResolverForUrl: () => 'spotify',
+      getUrlType: () => { throw new Error('boom'); }
+    };
+    expect(isProviderPlaylistUrl('https://open.spotify.com/playlist/x', hostileType)).toBe(false);
+  });
+});
+
+describe('isProviderImportedPlaylist', () => {
+  const loader = {
+    findResolverForUrl: () => 'amazonmusic',
+    getUrlType: () => 'playlist'
+  };
+
+  test('the source suffix marks a provider import even when resolvers are not loaded', () => {
+    expect(isProviderImportedPlaylist({
+      sourceUrl: 'https://music.amazon.com/playlists/PP1',
+      source: 'amazonmusic-import'
+    }, null)).toBe(true);
+  });
+
+  test('a hosted XSPF is not a provider import', () => {
+    const hostedLoader = {
+      findResolverForUrl: () => null,
+      getUrlType: () => 'unknown'
+    };
+    expect(isProviderImportedPlaylist({
+      sourceUrl: 'https://example.com/weekly.xspf',
+      source: 'hosted-xspf'
+    }, hostedLoader)).toBe(false);
+  });
+
+  test('loader classification covers a provider URL whose source suffix was lost', () => {
+    expect(isProviderImportedPlaylist({
+      sourceUrl: 'https://music.amazon.com/playlists/PP1',
+      source: ''
+    }, loader)).toBe(true);
+  });
+
+  test('no url is not a provider import', () => {
+    expect(isProviderImportedPlaylist({ source: 'amazonmusic-import' }, loader)).toBe(false);
+    expect(isProviderImportedPlaylist(null, loader)).toBe(false);
   });
 });
