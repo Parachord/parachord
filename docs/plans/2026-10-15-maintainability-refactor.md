@@ -228,18 +228,23 @@ today. If yes, A is strictly better long-term.
 
 ## Track 3 — main.js decomposition (no new tooling at all)
 
+> **Status: first slice shipped** — `main-process/ipc/store.js` (`ALLOWED_STORE_KEYS` +
+> the five `store-*` handlers, dependency-injected, unit-tested in
+> `tests/store/store-ipc.test.js`; `tests/store/allowed-store-keys.test.js` now
+> parses the module). The remaining handler groups below are follow-up slices.
+
 The main process is CommonJS — plain `require()` works; the extraction
 precedent already shipped (`amazon-music-poller.js`, `amazon-music-logic.js`,
 `amazon-web-player.js` at 68 KB live outside main.js). Group the IPC handlers
-into modules under `main/`:
+into modules under `main-process/`:
 
-- `main/ipc/sync.js` — the `sync:*` surface; the three-layer dedup
+- `main-process/ipc/sync.js` — the `sync:*` surface; the three-layer dedup
   (`sync:create-playlist`) and staggered/cancel logic (all documented in
   CLAUDE.md, all unit-testable once extracted).
-- `main/ipc/store.js` — `ALLOWED_STORE_KEYS` + the batch get/set handlers
+- `main-process/ipc/store.js` — `ALLOWED_STORE_KEYS` + the batch get/set handlers
   (the allowlist trap becomes visible and diffable; the
   `tests/store/allowed-store-keys.test.js` contract stays).
-- `main/ipc/amazon-music.js`, `main/ipc/local-files.js`, … — thin handlers
+- `main-process/ipc/amazon-music.js`, `main-process/ipc/local-files.js`, … — thin handlers
   delegating to the already-extracted service modules.
 - Keep main.js as the composition root: window creation, lifecycle, handler
   registration.

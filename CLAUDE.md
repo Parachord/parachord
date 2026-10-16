@@ -197,7 +197,7 @@ sync_playlist_links = {
 
 ### Three-Layer Duplicate Prevention
 
-All remote-playlist writes flow through the `sync:create-playlist` IPC handler (main.js L5689+). Before calling `provider.createPlaylist`, the handler checks for an existing remote in this order:
+All remote-playlist writes flow through the `sync:create-playlist` IPC handler (main.js L8158+). Before calling `provider.createPlaylist`, the handler checks for an existing remote in this order:
 
 1. **ID link via `sync_playlist_links[localPlaylistId][providerId]`.** If present, fetch the user's owned remote playlists and verify the stored `externalId` still exists. Match → reuse (pushes tracks, returns the existing ID). Gone → remove the stale link, fall through.
 2. **ID link via `syncedTo[providerId].externalId` on the playlist.** Same validation logic. (In practice the renderer already short-circuits this case before calling the IPC, but the handler re-checks for robustness.)
@@ -293,7 +293,7 @@ Only the name-match fallback protects you. Don't rely on it.
 
 ### Cleanup: Relink Orphans, Then Dedup
 
-`sync:cleanup-duplicate-playlists` (main.js L6025+) runs two phases:
+`sync:cleanup-duplicate-playlists` (main.js L8503+) runs two phases:
 
 **Phase 1 — Relink orphans** (via shared helper `relinkOrphansFor`). A local playlist is "orphaned" for a provider if it has tracks, isn't `localOnly`, and has no `syncedTo[providerId]`, `syncedFrom` for that provider, nor `sync_playlist_links` entry. For each orphan with an unambiguous 1:1 name match against a user-owned remote, write both `syncedTo[providerId]` and the link map entry. Ambiguous cases (multiple locals same name, OR multiple remotes same name) are surfaced in the response as `ambiguous` — never automatically resolved.
 
@@ -432,7 +432,7 @@ if (relevantMirrors.length === 0) {
 }
 ```
 
-**Main.js `sync:start` also flags on refill** (main.js L5680+). When the backend refills an empty playlist from a pulled provider and the playlist has other `syncedTo` mirrors, main.js writes `locallyModified: true` alongside the fresh tracks. Same rationale as Fix 1 but from the sync-start path that bypasses `handlePull`. Note this only fires for `isEmpty` playlists — non-empty playlists stay untouched on `sync:start` (user must click the pull banner via `handlePull`, which is the only path that replaces non-empty tracks).
+**Main.js `sync:start` also flags on refill** (main.js L7813+). When the backend refills an empty playlist from a pulled provider and the playlist has other `syncedTo` mirrors, main.js writes `locallyModified: true` alongside the fresh tracks. Same rationale as Fix 1 but from the sync-start path that bypasses `handlePull`. Note this only fires for `isEmpty` playlists — non-empty playlists stay untouched on `sync:start` (user must click the pull banner via `handlePull`, which is the only path that replaces non-empty tracks).
 
 End-to-end flow that all four enable: Android edit → Spotify remote → desktop pull (handlePull or sync:start refill) sets `locallyModified: true` → next AM sync's push loop passes the provider-scoped `syncedFrom` guard → issues PUT to AM → on success, `syncedTo.applemusic.syncedAt` advances past `lastModified` → clear logic's `relevantMirrors` (excluding spotify source) sees `allSynced`, resets the flag.
 
@@ -829,7 +829,7 @@ Big libraries (50k–150k tracks) used to freeze the app for tens of seconds dur
 
 **In practice only the 5-minute timer persists the big caches between launches.** Quit goes through main's `before-quit` → `app.exit(0)`, which never unmounts the renderer, so the unmount save doesn't run. A cache populated in a session shorter than five minutes is lost. (Known gap, not fixed; flushing several multi-MB `store.set` calls from `beforeunload` isn't reliable.)
 
-### Allowlist trap: every persisted key must be in `ALLOWED_STORE_KEYS` (main.js)
+### Allowlist trap: every persisted key must be in `ALLOWED_STORE_KEYS` (main-process/ipc/store.js)
 The `store-get` / `store-set` / `store-delete` / `store-get-batch` IPC handlers refuse keys that aren't in `ALLOWED_STORE_KEYS`. **The refusal is silent from the renderer's side**: `store.set` resolves `false` (nobody checks it) and main logs `⚠️ Blocked store-set for non-whitelisted key: <key>`. Until 2026-10-12 `cache_critics_picks`, `hosted_playlists`, `sync_engine_mode`, `sync_playlist_channels`, `discovery_seen_concerts` and `discovery_seen_newReleases` were all missing, so Critical Darlings never persisted, the sync-engine mode toggle never stuck across restarts, and the renderer always read `{}` for channel overrides. `tests/store/allowed-store-keys.test.js` parses the allowlist and every literal key the renderer passes to `store.*` (plus the `discovery_seen_${feature}` and `scrobbler-config-${id}` families) and fails on any key that isn't allowlisted. When adding a persisted key: add it to `ALLOWED_STORE_KEYS` first, then use it. If a value "mysteriously" doesn't persist, grep the main-process log for `Blocked store-`.
 
 ## Dialog Patterns
@@ -1107,7 +1107,7 @@ if (id && resolverLoaderRef.current.getUrlType(url) === 'playlist') {
 - **Manifest**: `marketplace-manifest.json` in this repo — the central catalog of all plugins with version numbers (entry `version` is generator-synced; category/tags/downloadUrl/capabilities in the entry are editorial, hand-maintained)
 - **Client sync**: `main.js` fetches manifest + `.axe` files from `https://raw.githubusercontent.com/Parachord/parachord-plugins/main/`
 
-### Plugin Loading Order (main.js L3545–3634)
+### Plugin Loading Order (main.js L4270–4545)
 1. Shipped plugins from app `plugins/` directory (bundled in ASAR for packaged builds)
 2. Cached marketplace plugins from `~/.parachord/plugins/`
 3. Version comparison: newer version always wins; same version prefers shipped over cached
