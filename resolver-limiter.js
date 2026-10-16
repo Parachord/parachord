@@ -102,6 +102,8 @@
   //   - applemusic: has its own dedicated limiter (different rate-limit profile)
   //   - spotify:    has its own per-token budget; not a burst issue
   //   - localfiles: in-process, no network
+  // amazonmusic is intentionally NOT skipped. A playlist resolve fans out one
+  // in-app web-player page load per track. Keep it under the shared limiter.
   const RESOLVER_LIMITER_SKIP_IDS = new Set(['applemusic', 'spotify', 'localfiles']);
 
   /**

@@ -584,6 +584,46 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Amazon Music — in-app web player. Hidden WebContentsViews (player 0×0,
+  // search parked offscreen) load music.amazon.com on the main window and
+  // castlabs Electron's Widevine CDM decrypts. The desktop app is not used.
+  amazonMusic: {
+    getStatus: () => ipcRenderer.invoke('amazonmusic-get-status'),
+    openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
+    signOut: () => ipcRenderer.invoke('amazonmusic-sign-out'),
+    searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks',
+      query && typeof query === 'object' ? query : { query }),
+    lookupPlaylist: (url) => ipcRenderer.invoke('amazonmusic-lookup-playlist', { url }),
+    playTrack: (params) => ipcRenderer.invoke('amazonmusic-play-track', params),
+    pause: () => ipcRenderer.invoke('amazonmusic-pause'),
+    resume: () => ipcRenderer.invoke('amazonmusic-resume'),
+    stop: () => ipcRenderer.invoke('amazonmusic-stop'),
+    seek: (positionMs) => ipcRenderer.invoke('amazonmusic-seek', { positionMs }),
+    setVolume: (volume) => ipcRenderer.invoke('amazonmusic-set-volume', { volume }),
+    getPlaybackState: () => ipcRenderer.invoke('amazonmusic-get-playback-state'),
+    getQuality: () => ipcRenderer.invoke('amazonmusic-get-quality'),
+    setQuality: (settings) => ipcRenderer.invoke('amazonmusic-set-quality', settings),
+
+    // Main process polling controls (background-safe, for auto-advance)
+    polling: {
+      start: (params) => ipcRenderer.invoke('amazonmusic-polling-start', params),
+      stop: () => ipcRenderer.invoke('amazonmusic-polling-stop'),
+      getStatus: () => ipcRenderer.invoke('amazonmusic-polling-status'),
+
+      // Listen for polling events from main process
+      onAdvance: (callback) => {
+        ipcRenderer.on('amazonmusic-polling-advance', (event, data) => {
+          callback(data);
+        });
+      },
+      onProgress: (callback) => {
+        ipcRenderer.on('amazonmusic-polling-progress', (event, data) => {
+          callback(data);
+        });
+      }
+    }
+  },
+
   // Ollama operations (local AI)
   ollama: {
     start: () => ipcRenderer.invoke('ollama:start'),

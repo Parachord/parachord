@@ -395,6 +395,12 @@ class ResolverLoader {
       if (url.includes('/playlist?list=') || url.includes('&list=')) return 'playlist';
       return 'track';
     }
+    // Amazon Music
+    if (url.includes('music.amazon.com')) {
+      if (url.includes('/playlists/')) return 'playlist';
+      if (url.includes('/albums/')) return 'album';
+      if (url.includes('/tracks/')) return 'track';
+    }
     // Bandcamp
     if (url.includes('bandcamp.com')) {
       if (url.includes('/album/')) return 'album';
