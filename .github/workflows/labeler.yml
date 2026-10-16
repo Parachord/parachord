@@ -1,7 +1,16 @@
 name: Label PRs
 
+# pull_request_target, not pull_request: runs on fork PRs get a read-only
+# token under pull_request no matter what `permissions:` asks for, so the
+# labeler failed with "Resource not accessible by integration" on every
+# contributor PR. pull_request_target runs with the base repo's token.
+#
+# That is only safe because nothing here checks out or runs the PR's code:
+# actions/labeler reads its config from the base branch and the changed-file
+# list from the API. Never add a checkout of the PR head (or any step that
+# executes PR content) to this workflow.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 permissions:
