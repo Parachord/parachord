@@ -59,6 +59,7 @@ const {
   normalizeStreamingQuality,
   readPersistedQuality,
   writePersistedQuality,
+  amazonQualityFromStore,
   acceptAmazonSearchAnchor,
   isAmazonPlayerChrome,
   pickTrackAsinFromIds,
@@ -1413,19 +1414,17 @@ const amazonWebPlayer = {
       const script = `(() => {
       const readPersistedQuality = ${readPersistedQuality.toString()};
       const writePersistedQuality = ${writePersistedQuality.toString()};
+      const amazonQualityFromStore = ${amazonQualityFromStore.toString()};
       const apply = ${apply ? JSON.stringify(apply) : 'null'};
       const store = window.__parachordAmazonPlayback;
       const s = store && store.audioQualitySettings;
       if (s) {
-        if (apply) {
-          if (apply.streamingQuality) s.streamingQuality = apply.streamingQuality;
-          if (apply.abrEnabled != null) s.abrEnabled = !!apply.abrEnabled;
-        }
-        const current = { streamingQuality: s.streamingQuality || null, abrEnabled: !!s.abrEnabled };
-        // Mirror the store into the persisted entry: hornet's persistence
-        // reaction does not notice a nested change while nothing is playing.
-        writePersistedQuality(localStorage, current);
-        return current;
+        const step = amazonQualityFromStore(s, apply);
+        // Persist only on a write, and only fields that are actually set.
+        // A read used to mirror !!abrEnabled, which is false when the field
+        // has not materialized, and that false was rehydrated at next boot.
+        if (step && step.persist) writePersistedQuality(localStorage, step.persist);
+        return step && step.report;
       }
       const persisted = readPersistedQuality(localStorage);
       if (apply) {

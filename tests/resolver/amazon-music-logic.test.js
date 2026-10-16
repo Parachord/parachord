@@ -15,6 +15,7 @@ const {
   installAmazonRequireTrap,
   readPersistedQuality,
   writePersistedQuality,
+  amazonQualityFromStore,
   isAmazonSongResultItem,
   acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
@@ -857,6 +858,29 @@ describe('readPersistedQuality', () => {
       'playback-controller': playbackControllerEntry({ streamingQuality: 'STANDARD', abrEnabled: true })
     });
     expect(embedded(storage)).toEqual({ streamingQuality: 'STANDARD', abrEnabled: true });
+  });
+});
+
+describe('amazonQualityFromStore', () => {
+  test('a read does not produce a persist patch', () => {
+    const store = { streamingQuality: 'BEST_AVAILABLE' };
+    const step = amazonQualityFromStore(store, null);
+    expect(step.persist).toBeNull();
+    expect(step.report).toEqual({ streamingQuality: 'BEST_AVAILABLE', abrEnabled: true });
+    expect(store.abrEnabled).toBeUndefined();
+  });
+
+  test('a write persists only fields that are actually set', () => {
+    const store = { streamingQuality: 'STANDARD' };
+    const step = amazonQualityFromStore(store, { streamingQuality: 'BEST_AVAILABLE' });
+    expect(step.persist).toEqual({ streamingQuality: 'BEST_AVAILABLE' });
+    expect(step.persist.abrEnabled).toBeUndefined();
+  });
+
+  test('a write can turn Auto-adjust off when the caller set it', () => {
+    const store = { streamingQuality: 'HD', abrEnabled: true };
+    const step = amazonQualityFromStore(store, { abrEnabled: false });
+    expect(step.persist).toEqual({ streamingQuality: 'HD', abrEnabled: false });
   });
 });
 

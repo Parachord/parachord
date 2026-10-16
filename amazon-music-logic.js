@@ -657,6 +657,29 @@ function readPersistedQuality(storage) {
   } catch (e) { return null; }
 }
 
+// A settings read must not persist. The live store can exist before abrEnabled
+// is materialized; !!undefined is false, and writePersistedQuality treats
+// false as a real patch. Opening the quality panel used to write that into
+// the entry hornet rehydrates at boot, turning Auto-adjust off.
+// persist is null on a read, and when a write has no concrete fields yet.
+function amazonQualityFromStore(storeSettings, apply) {
+  if (!storeSettings || typeof storeSettings !== 'object') return null;
+  if (apply) {
+    if (apply.streamingQuality) storeSettings.streamingQuality = apply.streamingQuality;
+    if (apply.abrEnabled != null) storeSettings.abrEnabled = !!apply.abrEnabled;
+  }
+  const report = {
+    streamingQuality: storeSettings.streamingQuality || null,
+    abrEnabled: storeSettings.abrEnabled != null ? !!storeSettings.abrEnabled : true
+  };
+  if (!apply) return { report, persist: null };
+  const persist = {};
+  if (storeSettings.streamingQuality != null) persist.streamingQuality = storeSettings.streamingQuality;
+  if (storeSettings.abrEnabled != null) persist.abrEnabled = !!storeSettings.abrEnabled;
+  if (persist.streamingQuality == null && persist.abrEnabled == null) return { report, persist: null };
+  return { report, persist };
+}
+
 function writePersistedQuality(storage, settings) {
   try {
     const key = Object.keys(storage).find(k => k.indexOf('playback-controller') !== -1);
@@ -942,6 +965,7 @@ module.exports = {
   installAmazonRequireTrap,
   readPersistedQuality,
   writePersistedQuality,
+  amazonQualityFromStore,
   isAmazonPlayerChrome,
   pickTrackAsinFromIds,
   parseRowDurationSec,
