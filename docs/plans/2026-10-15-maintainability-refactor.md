@@ -1,0 +1,292 @@
+# Parachord maintainability refactor — plan
+
+Two structural problems dominate the maintenance cost of this repo:
+
+1. **`app.js` is a 3.2 MB / 67,457-line file whose center of mass is a single
+   61,130-line React component** (`const Parachord` at L6325 → close brace at
+   L67455). 384 `useState`, 248 `useEffect`, 258 `useRef`, 125 `handle*`
+   functions in one closure. Jest excludes it from coverage as a "bundled
+   file". CLAUDE.md's architecture map is line-number archaeology that rots on
+   every PR — 164 commits touched app.js in the last 6 months.
+2. **`.axe` plugins are JSON with implementation functions stored as string
+   literals** — e.g. `plugins/spotify.axe`'s `search` is a single 4,349-char
+   JSON string on one line. No syntax highlighting, no lint, no diff
+   readability, and only testable by eval'ing the string the same way
+   `resolver-loader.js` does at runtime.
+
+Both problems already have **proven in-repo solutions that were never
+generalized**:
+
+- The dual-load pure-module pattern (`stream-quality.js`, `mbid-lookup.js`,
+  `recommendation-blocklist.js`, `sync-providers/confidence-scoring.js`):
+  an IIFE that assigns `window.*` AND `module.exports`, loaded by index.html
+  before app.js, `require`-able from jest and the main process.
+- The `.axe` generator pattern (`scripts/sync-subsonic-axe.js`,
+  `scripts/sync-amazon-axe.js`): readable implementation functions in a .js
+  file as source of truth; the script writes the pretty `.axe`, the
+  byte-identical compact `FALLBACK_RESOLVERS` copy in app.js, and the
+  marketplace-manifest entry; `--check` mode + a jest test fail on drift.
+
+This plan generalizes both, plus decomposes `main.js` (396 KB / 9,928 lines)
+along the same seams.
+
+## Constraints — what must not change
+
+- **The `.axe` wire format is frozen.** The Android client materializes these
+  same strings with its own runtime (`parachord-plugins/<service>.axe`); some
+  plugins must stay ES5-level ("engine-portable" — see the note in
+  `scripts/sync-subsonic-axe.js`). `plugins/*.axe` stay committed (they're the
+  marketplace source via sync-repos.yml) and community edits still land in them
+  via reverse-sync.yml.
+- **Marketplace hot-push keeps working**: a plugin can update without an app
+  release. Nothing here changes that.
+- **No behavior change.** Every step is extract-and-rewire; tests stay green
+  throughout; each step is independently shippable.
+- **The renderer stays a classic-script world.** No ESM-over-file:// (Chromium
+  blocks `file://` module imports from the `null` origin — a sharp edge not
+  worth fighting). Cross-file references remain globals or, under Track 2b,
+  real imports bundled back into one classic script.
+- **The window.\* public surface stays.** The ~23 module-scope `window.*`
+  assignments in app.js (and the loaders' globals: `resolverLoader`,
+  `scrobbleManager`, …) are the seam the main process, protocol handlers,
+  mobile notes, and tests all rely on. They are load-bearing; extraction moves
+  code behind them, it does not remove them.
+
+---
+
+## Track 1 — `.axe` authoring pipeline: `plugins-src/` + one generator
+
+> **Status: SHIPPED (2026-10-15).** `scripts/build-axes.js` + `plugins-src/` for
+> all 23 bundled plugins; the two per-plugin generators
+> (`sync-subsonic-axe.js`, `sync-amazon-axe.js`) were absorbed and deleted;
+> drift guard in `tests/plugins/axes-drift.test.js`. The migration was proven
+> semantics-preserving by an AST-level old-vs-new comparison of all 131 changed
+> functions (only difference: prettier's quoted-property-key unquoting) and the
+> full jest suite (1712 tests green). app.js changed exactly its 8 FALLBACK
+> lines (line count identical, so CLAUDE.md line refs stay valid);
+> marketplace-manifest.json byte-unchanged (no version bumps — the .axe churn is
+> whitespace/quote-level only, so clients keeping the cached old version are
+> running identical code).
+
+**Highest value-to-risk ratio. Self-contained. Do it first.**
+
+### Problem detail
+
+- 23 bundled `.axe` files are hand-edited JSON. Reviews of plugin changes are
+  reviews of giant escaped strings.
+- Every bundled plugin lives in **three hand-synced places**: `plugins/<id>.axe`
+  (pretty), `app.js` `FALLBACK_RESOLVERS` (compact, byte-identical), and
+  `marketplace-manifest.json` (version). CLAUDE.md documents the footgun
+  ("Critical: Both Files Must Be Updated"). Two plugins already escape this via
+  per-plugin generator scripts; the other 21 don't.
+- Testing an implementation means `JSON.parse` + `new Function('return ' + src)`
+  harnesses (`tests/resolver/subsonic-resolver.test.js#instantiate`).
+
+### Design
+
+```
+plugins-src/
+  <id>/
+    manifest.json        # manifest + capabilities + settings + urlPatterns
+    implementation.js     # real module: module.exports = { search, resolve, play, ... }
+scripts/
+  build-axes.js          # THE generator (replaces sync-subsonic-axe.js +
+                         # sync-amazon-axe.js; absorbs their behavior)
+```
+
+`node scripts/build-axes.js`:
+
+1. For each `plugins-src/<id>/`, emits `plugins/<id>.axe` — manifest
+   pretty-printed exactly as today, each implementation function
+   `String(fn)`-serialized, same conventions as the current generator output
+   (this is byte-compatible with the wire format; the loader is untouched).
+2. Rewrites the `FALLBACK_RESOLVERS` block in app.js's owning source file from
+   the generated `.axe` (single flow: source → `.axe` → manifest + fallback —
+   the three-way hand-sync becomes one artifact chain).
+3. Syncs `marketplace-manifest.json` (version + entry) from the source
+   manifest — the "bump both files" footgun disappears.
+4. `--check` mode writes nothing, exits non-zero on any drift. Wired into jest
+   (extend `tests/plugins/bundled-plugin-consistency.test.js` or add
+   `tests/plugins/axes-drift.test.js`) so CI enforces it on every PR.
+5. `--import` mode: one-shot reverse direction — parse an existing `.axe`
+   (community edit landed via reverse-sync) back into `plugins-src/<id>/` so
+   the source of truth absorbs it before the next writer run (the subsonic
+   script documents exactly this hazard in its header comment).
+6. Per-plugin `es5: true` flag in `manifest.json` → generator runs esbuild
+   `--target=es5` over the implementation before serializing, so
+   engine-portable plugins stay engine-portable even if authored in modern JS.
+
+Migration of the existing 23 plugins is mechanical: a small importer script
+reads each `.axe` (valid JSON — `JSON.parse` is what main.js uses), writes
+`plugins-src/<id>/implementation.js` with the function text pretty-printed,
+then `build-axes.js` regenerates and the `--check` test proves the round-trip
+is byte-stable. Review the initial migration PR per plugin (or in a couple of
+batches).
+
+### What this buys
+
+- **Plugin diffs become normal code diffs.** Review happens on
+  `plugins-src/*.js`; the `.axe` diff is a generated artifact you verify with
+  `--check` instead of reading 4 KB escaped lines.
+- **The implementation is a real module** → jest imports and tests the
+  functions directly (still passing the same mocked `config`/`window` the
+  eval-harness passes today — no test-semantics change).
+- **ESLint covers plugin code** (it currently can't lint a JSON string).
+- **Drift class eliminated** for manifest/fallback/marketplace copies.
+- **Mobile needs nothing** — the wire format is unchanged. No parity ticket.
+
+---
+
+## Track 2 — app.js decomposition
+
+### 2a. Pure logic out of app.js → dual-load modules (no tooling change)
+
+Continue the established pattern aggressively. CLAUDE.md already names the
+hand-maintained "SYNCed with tests/helpers/X" byte-copy pairs — each is a
+drift bug waiting to happen, and `tests/helpers/confidence-scoring.js` shows
+the fix: make the test helper a thin `require()` re-export of the production
+module.
+
+Extraction candidates (already pure, already documented, most already have a
+test-side mirror):
+
+| Helper (app.js) | Mirror today | Notes |
+|---|---|---|
+| `parseProtocolTracklist` (~L36978) | `tests/helpers/tracklist-parser.js` | biggest one |
+| `classifyPlaylistUrl` (~L219) | `tests/helpers/playlist-url-classify.js` | |
+| `window.isPublicHttpUrl` SSRF guard (~L188) | `tests/helpers/url-safety.js` | security-critical — deserves direct tests |
+| `hostedPlaylistFetchProblem` (~L220) | same file | |
+| `buildPlaylistSavePayload` (module scope) | `tests/sync/playlist-save-payload.test.js` | the "don't drop syncedTo" invariant |
+| `decodeBase64Utf8Json` | inline in tests | |
+| `getBestSourceConfidence` + the confidence floor trio | inline copy + Kotlin + sync-providers module | make app.js consume the canonical module instead of its inline copy (dual-load pattern) — one less byte-identical copy to hand-maintain; Android's Kotlin stays the other copy |
+| `handleImportPlaylistFromUrl`'s URL-type classification, XSPF/JSPF parsing internals | — | after the above |
+
+Method per extraction (the amazon-music-logic precedent):
+
+1. Move the pure code into a root module with the dual `window.*` +
+   `module.exports` export.
+2. Convert the tests/helpers mirror to a re-export; move/keep tests against
+   the module.
+3. Rewire app.js call sites to the module (delete the inline copy).
+4. Update CLAUDE.md's map (line refs die; module paths replace them).
+5. PR is shippable alone; app.js shrinks monotonically; jest coverage starts
+   covering code that was excluded while inline.
+
+### 2b. Split the Parachord component (needs a module system — decide bundler first)
+
+The component is 90% of the file. Two things make the split tractable:
+
+1. **Presentational subtrees first (mechanical, low risk).** The tree already
+   has large identifiable view blocks — `ReleasePage` alone is ~1,940 lines
+   (L4387–6325); each tab view, settings section, and dialog cluster follows.
+   These move out as files with explicit props; no state changes.
+2. **State domains second, one at a time (higher risk — the stale-closure
+   invariants documented across CLAUDE.md live here).** Extract per-domain
+   custom hooks (`usePlaybackQueue`, `useSpinoffRadio`, `useSyncPushLoops`,
+   `useProtocolCommands`, …), keeping the ref-sync patterns intact. Do NOT
+   introduce Context or a state library in the same pass — one axis of change
+   at a time.
+
+The open decision is **how files reference each other**:
+
+**Option A — esbuild bundler (recommended).**
+
+- Plain-JS, no JSX required — `React.createElement` code passes through
+  untouched; zero code-style change.
+- One entry → one output file; index.html still loads exactly one `app.js`;
+  the 14 existing script tags before it (vendor React, loaders, …) are
+  untouched classic globals the bundle simply references.
+- ~100 ms cold builds; `--watch` + sourcemaps for dev; fits the existing
+  prebuild chain (`build:css`, `build-native` — the project is already
+  build-scripted, this is not a new tax).
+- Real `import`/`export` — no window-global choreography at scale, jest imports
+  the same source files directly, tree-shaking available later.
+- Unlocks the shelved TS plan (`docs/plans/2026-03-04-javascript-to-typescript-migration.md`)
+  and kills the remaining hand-synced byte-copy pairs (e.g. the confidence
+  floor's app.js inline copy) by importing the canonical module.
+- Mechanics: `src/renderer/` tree; `app.js` becomes generated output,
+  gitignored (like `collection.json` is today), built by `prebuild` (CI) and
+  `prestart` (dev). `build-axes.js` rewrites the `FALLBACK_RESOLVERS` slice in
+  its owning src file. `npm run dev:watch` wraps esbuild --watch + electron.
+- Costs: dev now has a build step (imperceptible at ~100 ms; prestart makes it
+  invisible); anyone grepping the repo sees a generated app.js (built locally,
+  so present).
+
+**Option B — no bundler, window-scoped component files.**
+
+- Each extracted component file does `window.ReleasePage = …`, index.html
+  gains one script tag per file before app.js (the resolver-loader precedent).
+- Preserves the zero-build property entirely; jest needs `@jest-environment
+  jsdom` per-component test files.
+- Costs: definition-order coupling, `window.*` namespacing everywhere, no
+  import graph, and the TS plan stays blocked.
+
+Both are viable; the deciding factor is whether a build step is acceptable
+today. If yes, A is strictly better long-term.
+
+---
+
+## Track 3 — main.js decomposition (no new tooling at all)
+
+The main process is CommonJS — plain `require()` works; the extraction
+precedent already shipped (`amazon-music-poller.js`, `amazon-music-logic.js`,
+`amazon-web-player.js` at 68 KB live outside main.js). Group the IPC handlers
+into modules under `main/`:
+
+- `main/ipc/sync.js` — the `sync:*` surface; the three-layer dedup
+  (`sync:create-playlist`) and staggered/cancel logic (all documented in
+  CLAUDE.md, all unit-testable once extracted).
+- `main/ipc/store.js` — `ALLOWED_STORE_KEYS` + the batch get/set handlers
+  (the allowlist trap becomes visible and diffable; the
+  `tests/store/allowed-store-keys.test.js` contract stays).
+- `main/ipc/amazon-music.js`, `main/ipc/local-files.js`, … — thin handlers
+  delegating to the already-extracted service modules.
+- Keep main.js as the composition root: window creation, lifecycle, handler
+  registration.
+
+Same method as 2a: extract module → tests → rewire. No bundler, no renderer
+changes.
+
+---
+
+## Track 4 — guardrails (cheap, compounding)
+
+- **ESLint** (flat config), adopted per-directory: strict on `plugins-src/`,
+  `main/`, and extracted root modules from day one; lenient (or off) on app.js
+  until it shrinks — avoid a 67k-line reformat diff. Turn on `--fix`-safe
+  style rules only for new/extracted code.
+- **`// @ts-check` + jsconfig.json** on extracted pure modules, typing via
+  JSDoc — the incremental-typing half of the shelved TS plan without any
+  migration. `sync-providers/types.js` shows the convention.
+- **CI drift gates**: `build-axes --check` (jest), the existing
+  bundled-plugin-consistency and allowed-store-keys tests, and the
+  byte-identical parity tests stay load-bearing — they now guard generated
+  artifacts instead of hand-synced ones.
+- **CLAUDE.md upkeep rule**: every extraction PR updates the map (module paths
+  replace line numbers). The doc is the architecture map for every agent
+  session; keep it truthful or the map rots.
+
+## Suggested order
+
+| Step | What | Why this order |
+|---|---|---|
+| 1 | Track 1 (`.axe` pipeline) | Self-contained, immediately improves every plugin PR, removes a documented footgun class |
+| 2 | Track 3 (main.js) | No tooling decision needed; pure win; can interleave with 2a |
+| 3 | Track 2a (pure modules out of app.js) | Steady grind; each step shippable; builds the test seam 2b relies on |
+| 4 | Track 2b (bundler decision + component split) | Big one; do after the logic has tests around it and the file has shrunk |
+
+## Explicitly rejected / deferred
+
+- **TypeScript everywhere now** — the shelved plan is good but premature before
+  modularization; JSDoc + @ts-check captures most of the win incrementally.
+- **JSX conversion** — massive diff noise with no behavioral value; esbuild
+  makes it *possible* later, per-file, if ever wanted.
+- **State-management rewrite (Context/Redux/zustand) as part of the split** —
+  one axis of change at a time; the ref-sync invariants are too subtle to
+  mix with a paradigm change.
+- **ESM in the renderer without a bundler** — `file://` module CORS in
+  Chromium; not worth the sharp edges.
+- **Changing the `.axe` format** (e.g. real .js plugins with a manifest sidecar
+  shipped directly) — breaks the mobile runtime and the marketplace
+  ecosystem's expectations; authoring-side fixes deliver the reviewability
+  without touching the wire format.

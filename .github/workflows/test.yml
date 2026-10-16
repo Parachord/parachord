@@ -1,0 +1,26 @@
+name: Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  jest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run test suite
+        run: npm test
+        env:
+          # Pure-JS suite (jest testEnvironment: node). Includes the plugin
+          # pipeline drift guard (tests/plugins/axes-drift.test.js) — a PR that
+          # edits plugins/*.axe or app.js FALLBACK_RESOLVERS without updating
+          # plugins-src (or vice versa) fails here.
+          CI: true

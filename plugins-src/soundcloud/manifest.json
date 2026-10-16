@@ -1,0 +1,40 @@
+{
+  "manifest": {
+    "id": "soundcloud",
+    "name": "SoundCloud",
+    "version": "1.1.0",
+    "author": "Parachord Team",
+    "description": "Search and stream music from SoundCloud. Requires OAuth login for full access.",
+    "icon": "☁",
+    "color": "#FF5500",
+    "homepage": "https://soundcloud.com",
+    "email": "support@parachord.dev"
+  },
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": true,
+    "browse": false,
+    "urlLookup": true
+  },
+  "urlPatterns": [
+    "soundcloud.com/*",
+    "*.soundcloud.com/*"
+  ],
+  "settings": {
+    "requiresAuth": true,
+    "authType": "oauth",
+    "configurable": {
+      "clientId": {
+        "type": "text",
+        "label": "Client ID",
+        "advanced": true
+      },
+      "clientSecret": {
+        "type": "text",
+        "label": "Client Secret",
+        "advanced": true
+      }
+    }
+  }
+}

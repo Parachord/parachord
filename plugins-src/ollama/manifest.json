@@ -1,0 +1,50 @@
+{
+  "manifest": {
+    "id": "ollama",
+    "name": "Ollama (Local)",
+    "type": "meta-service",
+    "version": "1.1.1",
+    "icon": "🦙",
+    "color": "#000000",
+    "author": "Parachord Team",
+    "description": "Run AI locally with Ollama. Free, private, works offline.",
+    "homepage": "https://ollama.ai"
+  },
+  "capabilities": {
+    "chat": true,
+    "mobile": false
+  },
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {
+      "model": {
+        "type": "dynamic-select",
+        "label": "Model",
+        "description": "The Ollama model to use for chat",
+        "default": "llama3.1",
+        "fallbackOptions": [
+          {
+            "value": "llama3.1",
+            "label": "Llama 3.1 (8B)"
+          },
+          {
+            "value": "qwen3",
+            "label": "Qwen 3"
+          },
+          {
+            "value": "gemma3",
+            "label": "Gemma 3"
+          }
+        ]
+      },
+      "endpoint": {
+        "type": "text",
+        "label": "Ollama URL",
+        "description": "URL where Ollama is running",
+        "default": "http://localhost:11434",
+        "placeholder": "http://localhost:11434"
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "manifest": {
+    "id": "claude",
+    "name": "Claude",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "icon": "🧡",
+    "color": "#D97757",
+    "author": "Parachord Team",
+    "description": "Anthropic's Claude - thoughtful and capable AI assistant.",
+    "homepage": "https://anthropic.com"
+  },
+  "capabilities": {
+    "chat": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "apiKey": {
+        "type": "password",
+        "label": "API Key",
+        "description": "Your Anthropic API key",
+        "placeholder": "sk-ant-..."
+      },
+      "model": {
+        "type": "select",
+        "label": "Model",
+        "description": "The Claude model to use",
+        "options": [
+          {
+            "value": "claude-sonnet-4-20250514",
+            "label": "Claude Sonnet 4 (Recommended)"
+          },
+          {
+            "value": "claude-3-5-sonnet-20241022",
+            "label": "Claude 3.5 Sonnet"
+          },
+          {
+            "value": "claude-3-5-haiku-20241022",
+            "label": "Claude 3.5 Haiku (Fast)"
+          }
+        ],
+        "default": "claude-sonnet-4-20250514"
+      }
+    }
+  }
+}

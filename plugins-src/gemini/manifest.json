@@ -1,0 +1,43 @@
+{
+  "manifest": {
+    "id": "gemini",
+    "name": "Google Gemini",
+    "type": "meta-service",
+    "version": "2.3.0",
+    "author": "Parachord Team",
+    "description": "Generate playlists and chat with AI DJ using Google Gemini. Requires Google AI Studio API key.",
+    "icon": "✦",
+    "color": "#4285f4",
+    "homepage": "https://ai.google.dev"
+  },
+  "capabilities": {
+    "generate": true,
+    "chat": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "apiKey": {
+        "type": "password",
+        "label": "API Key",
+        "description": "Your API key from Google AI Studio. Get one at https://aistudio.google.com/app/apikey — click 'Create API Key' and Gemini is auto-enabled on the backing project."
+      },
+      "model": {
+        "type": "dynamic-select",
+        "label": "Model",
+        "default": "gemini-2.5-flash",
+        "fallbackOptions": [
+          {
+            "value": "gemini-2.5-flash",
+            "label": "Gemini 2.5 Flash"
+          },
+          {
+            "value": "gemini-2.5-pro",
+            "label": "Gemini 2.5 Pro"
+          }
+        ]
+      }
+    }
+  }
+}

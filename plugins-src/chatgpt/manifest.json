@@ -1,0 +1,43 @@
+{
+  "manifest": {
+    "id": "chatgpt",
+    "name": "ChatGPT",
+    "type": "meta-service",
+    "version": "2.2.0",
+    "author": "Parachord Team",
+    "description": "Generate playlists and chat with AI DJ using ChatGPT. Requires OpenAI API key.",
+    "icon": "🤖",
+    "color": "#10a37f",
+    "homepage": "https://platform.openai.com"
+  },
+  "capabilities": {
+    "generate": true,
+    "chat": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "apiKey": {
+        "type": "password",
+        "label": "API Key",
+        "description": "Your OpenAI API key from platform.openai.com"
+      },
+      "model": {
+        "type": "dynamic-select",
+        "label": "Model",
+        "default": "gpt-4o-mini",
+        "fallbackOptions": [
+          {
+            "value": "gpt-4o-mini",
+            "label": "GPT-4o Mini"
+          },
+          {
+            "value": "gpt-4o",
+            "label": "GPT-4o"
+          }
+        ]
+      }
+    }
+  }
+}

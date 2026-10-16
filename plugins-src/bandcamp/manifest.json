@@ -1,0 +1,30 @@
+{
+  "manifest": {
+    "id": "bandcamp",
+    "name": "Bandcamp",
+    "version": "1.1.0",
+    "author": "Parachord Team",
+    "description": "Find and purchase music on Bandcamp. Opens tracks in browser for streaming.",
+    "icon": "🎸",
+    "color": "#629AA9",
+    "homepage": "https://bandcamp.com",
+    "email": "support@harmonix.app"
+  },
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": false,
+    "browse": false,
+    "urlLookup": true,
+    "purchase": true
+  },
+  "urlPatterns": [
+    "*.bandcamp.com/track/*",
+    "*.bandcamp.com/album/*"
+  ],
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {}
+  }
+}
