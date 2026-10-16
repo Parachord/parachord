@@ -954,6 +954,10 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    // setHost destroys the views but does not own the poller. Without this
+    // the interval keeps reading EMPTY for the rest of the run (macOS keeps
+    // the app alive with no window).
+    try { amazonMusicPoller.stop(); } catch { /* not started */ }
     amazonWebPlayer.setHost(null);
     mainWindow = null;
   });
