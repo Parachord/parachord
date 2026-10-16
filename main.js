@@ -41,7 +41,12 @@ function isMetaBrainzHost(urlStr) {
 // Preserve the userData path before changing app.name, since Electron
 // derives the userData directory from app.name. Without this, changing
 // the name would move the data directory and lose all user settings.
-app.setPath('userData', path.join(app.getPath('appData'), 'parachord-desktop'));
+// PARACHORD_USER_DATA (optional): run a parallel, fully-isolated instance
+// (own settings, own singleton lock, own MCP port via PARACHORD_MCP_PORT).
+// On macOS app.getPath('appData') ignores the HOME env override — it reads
+// the OS user record — so a HOME redirect cannot isolate an instance; this
+// flag is the supported way (dev/testing sandboxes).
+app.setPath('userData', process.env.PARACHORD_USER_DATA || path.join(app.getPath('appData'), 'parachord-desktop'));
 app.name = 'Parachord';
 
 // Amazon's web player runs in an opacity-0 window behind Parachord. Chromium
