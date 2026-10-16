@@ -450,7 +450,7 @@ End-to-end flow that all four enable: Android edit → Spotify remote → deskto
 
 ### Invariants & Traps
 
-- **Don't drop `syncedTo` on save.** The most common regression. Any place that builds a save payload must copy `syncedTo`, `syncedFrom`, `syncSources`, `hasUpdates`, `locallyModified`, `sourceUrl`, `source` from the input. See `savePlaylistToStore` (app.js L24946) as the reference shape.
+- **Don't drop `syncedTo` on save.** The most common regression. The main-process `playlists-save` handler replaces the stored record outright, so any field missing from a save payload is deleted on disk. Build payloads by spreading the whole playlist and overriding only what you compute, never by listing fields to keep: `savePlaylistToStore` does this through `window.buildPlaylistSavePayload` (module scope in app.js, tests in `tests/sync/playlist-save-payload.test.js`). Its old hand-written list omitted `localOnly` and `description`, so editing a "Local only" playlist's tracks re-enabled sync for it. UI-only flags (`isEphemeral`, `isExternal`, `tracksLoaded`) are stripped there; add any new UI-only playlist flag to that list.
 - **Always pass `localPlaylistId` to `sync:create-playlist`.**
 - **Never create a remote playlist outside `sync:create-playlist`.** That's the only gateway with dedup.
 - **Imported playlist ID convention:** `${providerId}-${externalId}`. The creation loop has a guard `if (playlist.id?.startsWith(\`${providerId}-\`)) continue;` — so imported playlists never get re-pushed even if `syncedFrom` was cleared.

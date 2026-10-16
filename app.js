@@ -337,6 +337,28 @@ window.isProviderImportedPlaylist = (playlist, loader) => {
   return window.isProviderPlaylistUrl(playlist.sourceUrl, loader);
 };
 
+// The record savePlaylistToStore writes. Start from the WHOLE playlist and
+// override only the computed fields, instead of listing fields to keep: the
+// main-process `playlists-save` handler replaces the stored record outright,
+// so any field missing here is deleted on disk. The old hand-written list
+// omitted `localOnly` and `description`, so adding or removing a track on a
+// "Local only" playlist cleared the flag and the next sync pushed it to the
+// user's services. CLAUDE.md lists the fields every save must carry.
+// UI-only flags that ride on selectedPlaylist (Weekly Jams, external views)
+// are stripped so they never reach disk.
+const PLAYLIST_UI_ONLY_FIELDS = ['isEphemeral', 'isExternal', 'tracksLoaded'];
+window.buildPlaylistSavePayload = (playlist, xspfContent, now) => {
+  const payload = { ...playlist };
+  for (const key of PLAYLIST_UI_ONLY_FIELDS) delete payload[key];
+  payload.filename = playlist.filename || `${playlist.id}.xspf`;
+  payload.xspf = xspfContent;
+  payload.createdAt = playlist.createdAt || now;
+  payload.addedAt = playlist.addedAt || now;
+  payload.lastModified = now;
+  payload.isAiPlaylist = playlist.isAiPlaylist || false;
+  return payload;
+};
+
 // Resolver match validation + minimum confidence threshold.
 //
 // SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
@@ -29931,28 +29953,10 @@ ${tracks}
       // Generate XSPF content for the playlist
       const xspfContent = generateXSPF(playlist);
 
-      // Create playlist data object for storage
-      // Use existing filename, or generate one from ID to ensure consistent updates
-      const playlistData = {
-        id: playlist.id,
-        filename: playlist.filename || `${playlist.id}.xspf`,
-        title: playlist.title,
-        creator: playlist.creator,
-        tracks: playlist.tracks,
-        xspf: xspfContent,
-        createdAt: playlist.createdAt || Date.now(),
-        addedAt: playlist.addedAt || Date.now(),
-        lastModified: Date.now(),
-        isAiPlaylist: playlist.isAiPlaylist || false,
-        // Preserve sync-related properties
-        syncedFrom: playlist.syncedFrom,
-        syncSources: playlist.syncSources,
-        syncedTo: playlist.syncedTo,
-        hasUpdates: playlist.hasUpdates,
-        locallyModified: playlist.locallyModified,
-        sourceUrl: playlist.sourceUrl,
-        source: playlist.source
-      };
+      // Whole playlist plus the computed fields (filename, xspf, timestamps).
+      // Never a hand-picked field list: the store replaces the record, so a
+      // field left out here is deleted (that is how localOnly was lost).
+      const playlistData = window.buildPlaylistSavePayload(playlist, xspfContent, Date.now());
 
       const result = await window.electron.playlists.save(playlistData);
 
