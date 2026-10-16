@@ -75,7 +75,9 @@ const {
   mpdAudioRepresentations,
   flacStreamInfoFromInit,
   attachInitStreamInfo,
-  pickMpdRepresentation
+  pickMpdRepresentation,
+  amazonMediaPauseExpr,
+  amazonPlayGenerationStamp
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -675,14 +677,17 @@ const amazonWebPlayer = {
   // Generation-guarded: a newer playByAsin may have started while this halt
   // was in flight (user skip during a poller advance, or a superseded play's
   // failure path). Its loadURL owns the view by now — pausing or blanking it
-  // would kill the new track, so the halt becomes a no-op instead.
+  // would kill the new track, so the halt becomes a no-op instead. The blank
+  // checks playGeneration after the await. The pause cannot: executeJavaScript
+  // lands on whatever document is current, so the page token
+  // (amazonMediaPauseExpr) is what refuses to pause a newer play.
   async haltPlayback() {
     const genAtStart = this.playGeneration;
     // Only clear the claim if no newer play took the player between capture
     // and here; nulling a newer play's currentAsin would make it report
     // itself superseded.
     if (this.playGeneration === genAtStart) this.currentAsin = null;
-    await this.pause().catch(() => {});
+    await this.pause(genAtStart).catch(() => {});
     const view = this.playerView;
     if (!this.alive(view)) return { ok: false };
     if (this.playGeneration !== genAtStart) return { ok: false, superseded: true };
@@ -1114,6 +1119,11 @@ const amazonWebPlayer = {
       return { success: false, reason: 'not-signed-in', error: 'Choose an Amazon Music profile, then try again' };
     }
     await this.evalOn(win, HOOK_SCRIPT).catch(() => {});
+    // Stamp only if this play still owns the view. A newer play's document
+    // must not be tagged with our generation — that is what lets a stale
+    // halt's pause no-op instead of pausing the replacement.
+    if (!ownsPlay()) return { success: false, reason: 'superseded' };
+    await this.evalOn(win, amazonPlayGenerationStamp(generation)).catch(() => {});
     const read = async () => {
       try {
         return await this.evalOn(win, `(() => {
@@ -1222,8 +1232,10 @@ const amazonWebPlayer = {
     })()`);
   },
 
-  async pause() {
-    return this.withMedia('m.pause();');
+  // expectedGeneration scopes the pause to the play that requested it (halt).
+  // Omit it for a user pause — that should always hit the current element.
+  async pause(expectedGeneration) {
+    return this.withMedia(amazonMediaPauseExpr(expectedGeneration));
   },
 
   async resume() {

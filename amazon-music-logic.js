@@ -903,8 +903,25 @@ function playlistFromGql(data) {
   };
 }
 
+// A halt that started for play N must not pause play N+1. The page token is
+// stamped after the track document loads. A generation-scoped pause no-ops
+// unless that token matches — including when the token is missing, so a halt
+// that races the stamp cannot pause a page it does not own. User pause passes
+// no generation and always pauses the current element.
+function amazonMediaPauseExpr(expectedGeneration) {
+  if (!Number.isFinite(expectedGeneration)) return 'm.pause();';
+  const gen = expectedGeneration | 0;
+  return `if (window.__parachordPlayGen !== ${gen}) return { ok: false, superseded: true }; m.pause();`;
+}
+
+function amazonPlayGenerationStamp(generation) {
+  return `window.__parachordPlayGen = ${generation | 0};`;
+}
+
 module.exports = {
   reportedPlaybackAsin,
+  amazonMediaPauseExpr,
+  amazonPlayGenerationStamp,
   shouldRevealPlayerOnFailure,
   playerDurationMs,
   decidePollAdvance,

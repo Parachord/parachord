@@ -35,7 +35,9 @@ const {
   attachInitStreamInfo,
   pickMpdRepresentation,
   amazonStreamTier,
-  amazonStreamQualityRecord
+  amazonStreamQualityRecord,
+  amazonMediaPauseExpr,
+  amazonPlayGenerationStamp
 } = require('../../amazon-music-logic');
 
 describe('reportedPlaybackAsin', () => {
@@ -1096,5 +1098,25 @@ describe('playlistFromGql', () => {
       playlist: gqlPlaylist({ images: [{ url: 'https://x/small.jpg', width: 300, imageType: null }, { url: 'https://x/big.jpg', width: 3000, imageType: null }] })
     });
     expect(noPrimary.albumArt).toBe('https://x/big.jpg');
+  });
+});
+
+describe('amazon halt pause guard', () => {
+  test('a generation-scoped pause no-ops unless the page token matches', () => {
+    const expr = amazonMediaPauseExpr(3);
+    expect(expr).toContain('window.__parachordPlayGen !== 3');
+    expect(expr).toContain('return { ok: false, superseded: true }');
+    expect(expr).toContain('m.pause()');
+  });
+
+  test('a user pause is unguarded', () => {
+    expect(amazonMediaPauseExpr()).toBe('m.pause();');
+    expect(amazonMediaPauseExpr(undefined)).toBe('m.pause();');
+    expect(amazonMediaPauseExpr(NaN)).toBe('m.pause();');
+  });
+
+  test('the stamp is an integer assignment, not interpolated caller text', () => {
+    expect(amazonPlayGenerationStamp(4)).toBe('window.__parachordPlayGen = 4;');
+    expect(amazonPlayGenerationStamp(4.9)).toBe('window.__parachordPlayGen = 4;');
   });
 });
