@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "bandsintown",
+    "name": "Bandsintown",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Discover upcoming concerts and buy tickets for artists you love. Powered by Bandsintown.",
+    "icon": "🎤",
+    "color": "#00B4B3",
+    "homepage": "https://www.bandsintown.com"
+  },
+  "capabilities": {
+    "concerts": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "appId": {
+        "type": "text",
+        "label": "App ID",
+        "description": "Your Bandsintown app_id — see https://help.artists.bandsintown.com/en/articles/7053475-what-is-the-bandsintown-api",
+        "placeholder": "my-app-id",
+        "required": true
+      }
+    }
+  }
+}

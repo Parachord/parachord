@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "songkick",
+    "name": "Songkick",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Find live music events and concerts near you. Powered by Songkick.",
+    "icon": "🎶",
+    "color": "#F80046",
+    "homepage": "https://www.songkick.com"
+  },
+  "capabilities": {
+    "concerts": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "apiKey": {
+        "type": "text",
+        "label": "API Key",
+        "description": "Your Songkick API key from https://www.songkick.com/developer",
+        "placeholder": "your-api-key",
+        "required": true
+      }
+    }
+  }
+}

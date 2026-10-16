@@ -1,0 +1,21 @@
+{
+  "manifest": {
+    "id": "achordion",
+    "name": "Achordion",
+    "type": "meta-service",
+    "version": "1.0.9",
+    "author": "Parachord Team",
+    "description": "Speed up resolver matches across the community. After a verified playback, sends the recording's MusicBrainz ID and the high-confidence streaming URLs from every resolver that matched the track to Achordion's match cache so other Parachord users can skip the search step. Also exposes window.achordion.fetchEntityLink for share-link URL generation. No personal data is sent.",
+    "icon": "📡",
+    "color": "#7c3aed",
+    "homepage": "https://achordion.xyz",
+    "email": "support@parachord.dev"
+  },
+  "capabilities": {
+    "playbackTelemetry": true
+  },
+  "settings": {
+    "requiresAuth": false,
+    "configurable": {}
+  }
+}

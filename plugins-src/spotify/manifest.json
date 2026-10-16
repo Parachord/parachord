@@ -1,0 +1,53 @@
+{
+  "manifest": {
+    "id": "spotify",
+    "name": "Spotify",
+    "version": "1.1.4",
+    "author": "Parachord Team",
+    "description": "Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.",
+    "icon": "♫",
+    "color": "#1DB954",
+    "homepage": "https://spotify.com",
+    "email": "support@harmonix.app"
+  },
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": true,
+    "browse": false,
+    "urlLookup": true
+  },
+  "urlPatterns": [
+    "open.spotify.com/track/*",
+    "open.spotify.com/album/*",
+    "open.spotify.com/playlist/*",
+    "open.spotify.com/intl-*/track/*",
+    "open.spotify.com/intl-*/album/*",
+    "open.spotify.com/intl-*/playlist/*",
+    "spotify:track:*",
+    "spotify:album:*",
+    "spotify:playlist:*"
+  ],
+  "settings": {
+    "requiresAuth": true,
+    "authType": "oauth",
+    "scopes": [
+      "user-read-playback-state",
+      "user-modify-playback-state",
+      "user-read-currently-playing",
+      "playlist-read-private",
+      "playlist-read-collaborative",
+      "playlist-modify-private",
+      "playlist-modify-public"
+    ],
+    "configurable": {
+      "clientId": {
+        "type": "text",
+        "label": "Client ID",
+        "placeholder": "Your Spotify Client ID",
+        "required": true,
+        "helpUrl": "https://developer.spotify.com/dashboard"
+      }
+    }
+  }
+}

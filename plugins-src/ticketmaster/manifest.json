@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "ticketmaster",
+    "name": "Ticketmaster",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Find concerts and live events via the Ticketmaster Discovery API.",
+    "icon": "🎟️",
+    "color": "#026CDF",
+    "homepage": "https://www.ticketmaster.com"
+  },
+  "capabilities": {
+    "concerts": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "apikey",
+    "configurable": {
+      "apiKey": {
+        "type": "text",
+        "label": "API Key",
+        "description": "Your Ticketmaster API key from https://developer-acct.ticketmaster.com",
+        "placeholder": "your-api-key",
+        "required": true
+      }
+    }
+  }
+}

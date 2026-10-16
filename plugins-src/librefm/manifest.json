@@ -1,0 +1,27 @@
+{
+  "manifest": {
+    "id": "librefm",
+    "name": "Libre.fm",
+    "type": "meta-service",
+    "version": "1.0.0",
+    "author": "Parachord Team",
+    "description": "Open-source scrobbling service - an alternative to Last.fm",
+    "icon": "🎵",
+    "color": "#4CAF50",
+    "homepage": "https://libre.fm"
+  },
+  "capabilities": {
+    "scrobbling": true
+  },
+  "settings": {
+    "requiresAuth": true,
+    "authType": "oauth",
+    "configurable": {
+      "username": {
+        "type": "text",
+        "label": "Libre.fm Username",
+        "required": false
+      }
+    }
+  }
+}

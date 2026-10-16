@@ -1,0 +1,30 @@
+{
+  "manifest": {
+    "id": "amazonmusic",
+    "name": "Amazon Music",
+    "version": "1.4.2",
+    "author": "Parachord Team",
+    "description": "Uses Amazon's web player and this app's Widevine CDM. Does not use the Amazon Music desktop app.",
+    "icon": "🎵",
+    "color": "#25D1DA",
+    "homepage": "https://music.amazon.com",
+    "email": "support@parachord.dev"
+  },
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": true,
+    "browse": false,
+    "urlLookup": true,
+    "mobile": false
+  },
+  "urlPatterns": [
+    "music.amazon.com/playlists/*",
+    "music.amazon.com/my/playlists/*"
+  ],
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {}
+  }
+}

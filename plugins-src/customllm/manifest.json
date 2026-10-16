@@ -1,0 +1,98 @@
+{
+  "manifest": {
+    "id": "customllm",
+    "name": "Custom LLM",
+    "type": "meta-service",
+    "version": "1.1.1",
+    "icon": "🔌",
+    "color": "#8b5cf6",
+    "author": "Parachord Team",
+    "description": "Bring your own LLM endpoint - any OpenAI-compatible or Anthropic-compatible server (LM Studio, vLLM, llama.cpp, OpenRouter, ...)."
+  },
+  "capabilities": {
+    "generate": true,
+    "chat": true,
+    "mobile": false
+  },
+  "settings": {
+    "requiresAuth": false,
+    "authType": "none",
+    "configurable": {
+      "apiKey": {
+        "type": "password",
+        "label": "API Key",
+        "description": "Your endpoint's API key, if it requires one. Leave empty for local servers (LM Studio, llama.cpp, vLLM) that don't.",
+        "placeholder": "sk-... (optional)"
+      },
+      "api": {
+        "type": "select",
+        "label": "API",
+        "description": "The request dialect your endpoint speaks",
+        "options": [
+          {
+            "value": "openai",
+            "label": "OpenAI-compatible (chat/completions)"
+          },
+          {
+            "value": "anthropic",
+            "label": "Anthropic (messages)"
+          }
+        ],
+        "default": "openai"
+      },
+      "baseUrl": {
+        "type": "text",
+        "label": "Base URL",
+        "description": "Server root URL. OpenAI-compatible: include the version path, e.g. http://localhost:1234/v1 or https://openrouter.ai/api/v1. Anthropic: just the host, e.g. https://api.anthropic.com",
+        "placeholder": "http://localhost:1234/v1"
+      },
+      "model": {
+        "type": "dynamic-select",
+        "allowCustom": true,
+        "label": "Model",
+        "description": "Model id served by your endpoint",
+        "default": "",
+        "placeholder": "e.g. qwen2.5-coder:7b",
+        "fallbackOptions": []
+      },
+      "maxTokens": {
+        "type": "text",
+        "label": "Max Tokens (optional)",
+        "description": "Response token limit. Anthropic requires it - defaults to 1024. Thinking models need headroom for reasoning plus the answer.",
+        "placeholder": "1024"
+      },
+      "reasoningEffort": {
+        "type": "select",
+        "label": "Reasoning",
+        "description": "Thinking effort for reasoning models (GLM, Qwen3, DeepSeek-R1, ...). Auto (default) sends nothing and leaves it to the model; Off best-effort disables thinking, which helps when a thinking model spends its whole token budget reasoning. On the Anthropic dialect, chat turns that can call tools never use thinking.",
+        "options": [
+          {
+            "value": "off",
+            "label": "Off"
+          },
+          {
+            "value": "auto",
+            "label": "Auto (model default)"
+          },
+          {
+            "value": "minimal",
+            "label": "Minimal"
+          },
+          {
+            "value": "low",
+            "label": "Low"
+          },
+          {
+            "value": "medium",
+            "label": "Medium"
+          },
+          {
+            "value": "high",
+            "label": "High"
+          }
+        ],
+        "default": "auto"
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "manifest": {
+    "id": "applemusic",
+    "name": "Apple Music",
+    "version": "1.0.2",
+    "author": "Parachord Team",
+    "description": "Search and identify tracks via iTunes/Apple Music catalog. URL lookup for music.apple.com links. MusicKit integration available with Apple Developer account.",
+    "icon": "🍎",
+    "color": "#FA243C",
+    "homepage": "https://music.apple.com",
+    "email": "support@parachord.dev"
+  },
+  "capabilities": {
+    "resolve": true,
+    "search": true,
+    "stream": true,
+    "browse": false,
+    "urlLookup": true
+  },
+  "urlPatterns": [
+    "music.apple.com/*/album/*/*",
+    "music.apple.com/*/song/*/*",
+    "music.apple.com/*/playlist/*/*",
+    "itunes.apple.com/*"
+  ],
+  "settings": {
+    "requiresAuth": true,
+    "authType": "musickit",
+    "configurable": {
+      "developerToken": {
+        "type": "text",
+        "label": "MusicKit Developer Token",
+        "default": "",
+        "description": "Optional: JWT from Apple Developer account for enhanced features"
+      },
+      "storefront": {
+        "type": "text",
+        "label": "Storefront (Country)",
+        "default": "us",
+        "description": "Apple Music storefront code (e.g., us, gb, jp)"
+      }
+    }
+  }
+}

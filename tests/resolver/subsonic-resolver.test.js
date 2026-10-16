@@ -385,15 +385,9 @@ describe('app.js integration', () => {
     expect(appSrc).not.toContain('sourceToPlay.subsonicStreamUrl');
   });
 
-  test('sync-subsonic-axe.js --check matches the shipped plugin', () => {
-    const { spawnSync } = require('child_process');
-    const result = spawnSync(process.execPath, [path.join(__dirname, '../../scripts/sync-subsonic-axe.js'), '--check'], {
-      encoding: 'utf8'
-    });
-    if (result.status !== 0) {
-      throw new Error((result.stdout || '') + (result.stderr || ''));
-    }
-  });
+  // The per-plugin drift guard (was: a spawn of scripts/sync-subsonic-axe.js
+  // --check, absorbed into scripts/build-axes.js) now lives in
+  // tests/plugins/axes-drift.test.js and covers every bundled plugin.
 
   test('_fetchResolverConfig reads subsonic credentials from meta_service_configs', () => {
     const idx = appSrc.indexOf("if (resolverId === 'subsonic') {");
