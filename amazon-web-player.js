@@ -78,7 +78,9 @@ const {
   attachInitStreamInfo,
   pickMpdRepresentation,
   amazonMediaPauseExpr,
-  amazonPlayGenerationStamp
+  amazonPlayGenerationStamp,
+  amazonSearchDecision,
+  isAmazonMusicPage
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -903,11 +905,13 @@ const amazonWebPlayer = {
             }
           }
           if (n > 0) {
-            // Title links render before the artist link. Returning early used
-            // to attach title-only hits that the artist+title gate then dropped.
-            if (last.tracks.some(t => t.artist) || i >= 12) {
-              console.log(`[Amazon] search returning ${n} tracks`);
-              return last.tracks;
+            const decision = amazonSearchDecision(last.tracks, i);
+            if (decision.action === 'return') {
+              console.log(`[Amazon] search returning ${decision.tracks.length} tracks`);
+              return decision.tracks;
+            }
+            if (decision.action === 'not-ready') {
+              throw notReady('not-ready', 'Amazon search rows had titles but no artist yet');
             }
           }
         }
@@ -935,7 +939,11 @@ const amazonWebPlayer = {
         } catch (e) {
           console.warn('[Amazon] search diag failed:', e && e.message);
         }
-        return (last && Array.isArray(last.tracks)) ? last.tracks : [];
+        const tail = amazonSearchDecision(last && last.tracks, 16);
+        if (tail.action === 'not-ready') {
+          throw notReady('not-ready', 'Amazon search rows had titles but no artist yet');
+        }
+        return tail.action === 'return' ? tail.tracks : [];
       } finally {
         await this.parkSearchView();
       }
@@ -1045,6 +1053,10 @@ const amazonWebPlayer = {
           variables: { ...request.variables, id: playlistId, firstLimit: 500 },
           extensions: request.extensions || {}
         };
+        const pageUrl = win.isDestroyed() ? '' : win.webContents.getURL();
+        if (!isAmazonMusicPage(pageUrl)) {
+          throw notReady('not-ready', 'Amazon playlist page left music.amazon.com before replay');
+        }
         console.log(`[Amazon] playlist replaying playlistDetail via gql (${Object.keys(headers).length} headers)`);
         let outcome = await sendPlaylistQuery(bigBody);
         if (outcome.error) {

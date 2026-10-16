@@ -289,8 +289,9 @@ function flacStreamInfoFromInit(data) {
 }
 
 // dfla is a FullBox: 4 version/flags bytes, then the FLAC metadata block
-// (4-byte block header + 34-byte STREAMINFO). Tolerate a muxer that omits the
-// FullBox bytes.
+// (4-byte block header + 34-byte STREAMINFO). A bare 34-byte read after the
+// fourcc is not accepted: those checks only bound sample rate and bit depth,
+// so random bytes after a coincidental dfla/dfLa parsed as FLAC.
 function flacStreamInfoAt(b, at) {
   for (const blockHeaderAt of [at + 8, at + 4]) {
     // With the metadata block header…
@@ -301,11 +302,6 @@ function flacStreamInfoAt(b, at) {
         const info = flacStreamInfo(b.subarray(blockHeaderAt + 4, blockHeaderAt + 38));
         if (info) return info;
       }
-    }
-    // …or bare STREAMINFO right there.
-    if (blockHeaderAt + 34 <= b.length) {
-      const info = flacStreamInfo(b.subarray(blockHeaderAt, blockHeaderAt + 34));
-      if (info) return info;
     }
   }
   return null;
@@ -937,6 +933,26 @@ function amazonMediaPauseExpr(expectedGeneration) {
   return `if (window.__parachordPlayGen !== ${gen}) return { ok: false, superseded: true }; m.pause();`;
 }
 
+// Title links render before the artist link. Returning those rows makes
+// resolve fail the artist gate and the miss is cached for 30 days. Wait, and
+// if the artist never arrives, the caller must throw not-ready — not return
+// the title-only rows, and not return [] (that is a real miss).
+function amazonSearchDecision(tracks, pollIndex) {
+  const list = Array.isArray(tracks) ? tracks : [];
+  const ready = list.filter(t => t && String(t.artist || '').trim());
+  if (ready.length) return { action: 'return', tracks: ready };
+  if (list.length && pollIndex >= 12) return { action: 'not-ready' };
+  return { action: 'wait' };
+}
+
+function isAmazonMusicPage(url) {
+  try {
+    return new URL(url).origin === 'https://music.amazon.com';
+  } catch {
+    return false;
+  }
+}
+
 function amazonPlayGenerationStamp(generation) {
   return `window.__parachordPlayGen = ${generation | 0};`;
 }
@@ -945,6 +961,8 @@ module.exports = {
   reportedPlaybackAsin,
   amazonMediaPauseExpr,
   amazonPlayGenerationStamp,
+  amazonSearchDecision,
+  isAmazonMusicPage,
   shouldRevealPlayerOnFailure,
   playerDurationMs,
   decidePollAdvance,

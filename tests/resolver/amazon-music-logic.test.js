@@ -38,7 +38,9 @@ const {
   amazonStreamTier,
   amazonStreamQualityRecord,
   amazonMediaPauseExpr,
-  amazonPlayGenerationStamp
+  amazonPlayGenerationStamp,
+  amazonSearchDecision,
+  isAmazonMusicPage
 } = require('../../amazon-music-logic');
 
 describe('reportedPlaybackAsin', () => {
@@ -630,6 +632,19 @@ describe('flacStreamInfoFromInit', () => {
     // 'dfLa' appearing with no plausible STREAMINFO behind it does not parse.
     const decoy = Buffer.concat([Buffer.from('dfLa'), Buffer.alloc(80, 0xff)]);
     expect(flacStreamInfoFromInit(decoy)).toBeNull();
+    // A planted fourcc plus a bare STREAMINFO used to parse. The block header
+    // is required; sample-rate and bit-depth range checks are not enough.
+    const bare = Buffer.concat([
+      Buffer.from('dfLa'),
+      streaminfo({ sampleRate: 48000, bitDepth: 24, channels: 2 }),
+      Buffer.alloc(8)
+    ]);
+    expect(flacStreamInfoFromInit(bare)).toBeNull();
+    expect(flacStreamInfoFromInit(Buffer.concat([
+      Buffer.from('dfla'),
+      streaminfo({ sampleRate: 44100, bitDepth: 16, channels: 2 }),
+      Buffer.alloc(8)
+    ]))).toBeNull();
   });
 });
 
@@ -1122,6 +1137,36 @@ describe('playlistFromGql', () => {
       playlist: gqlPlaylist({ images: [{ url: 'https://x/small.jpg', width: 300, imageType: null }, { url: 'https://x/big.jpg', width: 3000, imageType: null }] })
     });
     expect(noPrimary.albumArt).toBe('https://x/big.jpg');
+  });
+});
+
+describe('amazonSearchDecision', () => {
+  test('rows with an artist are returned and title-only siblings are dropped', () => {
+    const decision = amazonSearchDecision([
+      { title: 'Early', artist: '' },
+      { title: 'Ready', artist: 'Someone' }
+    ], 2);
+    expect(decision).toEqual({ action: 'return', tracks: [{ title: 'Ready', artist: 'Someone' }] });
+  });
+
+  test('title-only rows after the wait are not a miss', () => {
+    expect(amazonSearchDecision([{ title: 'No Artist', artist: '' }], 12)).toEqual({ action: 'not-ready' });
+    expect(amazonSearchDecision([{ title: 'No Artist', artist: '  ' }], 15)).toEqual({ action: 'not-ready' });
+  });
+
+  test('title-only rows before the wait keep polling, and no rows is a wait not a miss', () => {
+    expect(amazonSearchDecision([{ title: 'No Artist' }], 11)).toEqual({ action: 'wait' });
+    expect(amazonSearchDecision([], 16)).toEqual({ action: 'wait' });
+  });
+});
+
+describe('isAmazonMusicPage', () => {
+  test('only the music.amazon.com origin is the playlist page', () => {
+    expect(isAmazonMusicPage('https://music.amazon.com/playlists/PP1')).toBe(true);
+    expect(isAmazonMusicPage('https://music.amazon.com/ap/signin')).toBe(true);
+    expect(isAmazonMusicPage('https://evil.example/playlists/PP1')).toBe(false);
+    expect(isAmazonMusicPage('https://music.amazon.com.evil.example/')).toBe(false);
+    expect(isAmazonMusicPage('not a url')).toBe(false);
   });
 });
 
