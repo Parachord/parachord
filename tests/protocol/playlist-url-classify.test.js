@@ -5,7 +5,7 @@
  * fetching/resolver-sniffing; this verifies the pure routing DECISION only.
  */
 
-const { classifyPlaylistUrl, isProviderPlaylistUrl } = require('../helpers/playlist-url-classify');
+const { classifyPlaylistUrl, isProviderPlaylistUrl, isProviderImportedPlaylist } = require('../helpers/playlist-url-classify');
 
 describe('classifyPlaylistUrl', () => {
   describe('Achordion → public XSPF endpoint', () => {
@@ -138,5 +138,42 @@ describe('isProviderPlaylistUrl', () => {
       getUrlType: () => { throw new Error('boom'); }
     };
     expect(isProviderPlaylistUrl('https://open.spotify.com/playlist/x', hostileType)).toBe(false);
+  });
+});
+
+describe('isProviderImportedPlaylist', () => {
+  const loader = {
+    findResolverForUrl: () => 'amazonmusic',
+    getUrlType: () => 'playlist'
+  };
+
+  test('the source suffix marks a provider import even when resolvers are not loaded', () => {
+    expect(isProviderImportedPlaylist({
+      sourceUrl: 'https://music.amazon.com/playlists/PP1',
+      source: 'amazonmusic-import'
+    }, null)).toBe(true);
+  });
+
+  test('a hosted XSPF is not a provider import', () => {
+    const hostedLoader = {
+      findResolverForUrl: () => null,
+      getUrlType: () => 'unknown'
+    };
+    expect(isProviderImportedPlaylist({
+      sourceUrl: 'https://example.com/weekly.xspf',
+      source: 'hosted-xspf'
+    }, hostedLoader)).toBe(false);
+  });
+
+  test('loader classification covers a provider URL whose source suffix was lost', () => {
+    expect(isProviderImportedPlaylist({
+      sourceUrl: 'https://music.amazon.com/playlists/PP1',
+      source: ''
+    }, loader)).toBe(true);
+  });
+
+  test('no url is not a provider import', () => {
+    expect(isProviderImportedPlaylist({ source: 'amazonmusic-import' }, loader)).toBe(false);
+    expect(isProviderImportedPlaylist(null, loader)).toBe(false);
   });
 });

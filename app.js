@@ -327,6 +327,16 @@ window.isProviderPlaylistUrl = (url, loader) => {
   }
 };
 
+// A saved playlist that came from a provider URL import (snapshot), as opposed
+// to a hosted XSPF document. The source suffix is the signal that works before
+// resolvers have loaded; the loader is the fallback when the suffix was lost.
+// Same predicate as tests/helpers/playlist-url-classify.js isProviderImportedPlaylist.
+window.isProviderImportedPlaylist = (playlist, loader) => {
+  if (!playlist || !playlist.sourceUrl) return false;
+  if (typeof playlist.source === 'string' && playlist.source.endsWith('-import')) return true;
+  return window.isProviderPlaylistUrl(playlist.sourceUrl, loader);
+};
+
 // Resolver match validation + minimum confidence threshold.
 //
 // SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
@@ -29883,8 +29893,13 @@ ${tracks}
   const savePlaylistToStore = async (playlist) => {
     if (!playlist || !playlist.id) return;
 
-    // For hosted playlists, save metadata overrides to hosted_playlists store
-    if (playlist.sourceUrl) {
+    // Hosted XSPF only: the poller is canonical, so track edits are not the
+    // saved copy — title and creator overrides live on the reload list.
+    // A provider URL import is a snapshot. It also has sourceUrl, but its
+    // edits must persist through playlists.save, and it must not be written
+    // back into hosted_playlists (that list is what re-imported the Amazon
+    // page at launch and showed "Failed to parse XSPF").
+    if (playlist.sourceUrl && !window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) {
       try {
         const hostedPlaylists = await window.electron?.store?.get('hosted_playlists') || [];
         const updatedHosted = hostedPlaylists.map(item =>
@@ -37844,7 +37859,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // background: true from the startup reload list and the 5-minute poller —
   // a zero-track parse throws (logged by the caller) instead of showing a
   // modal dialog. Background work must never modal-error.
-  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null, { background = false } = {}) => {
+  const handleImportPlaylistFromUrl = async (url, skipStorageUpdate = false, storedAddedAt = null, metadataOverrides = null, { background = false, quiet = false, provider = false } = {}) => {
     try {
       console.log('🌐 Importing playlist from URL:', url);
 
@@ -37884,6 +37899,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Generate XSPF for storage so the playlist can be reloaded without the service
         content = generateXSPF({ ...parsed, createdAt: Date.now() });
+      } else if (provider || window.isProviderPlaylistUrl(url, resolverLoaderRef.current)) {
+        // Never fetch a provider playlist page and parse it as XSPF. That is
+        // the launch dialog: Electron's file:// renderer does not enforce CORS,
+        // the HTML comes back 200, and parseXSPF yields zero tracks. A refresh
+        // that raced resolver init, or a plugin that is no longer loaded,
+        // fails here instead of touching the page.
+        throw new Error('Could not refresh this playlist — music services are still loading, or the service that imported it is not available');
       } else {
         // Hosted XSPF — fetch (guarded + capped) and parse directly
         content = await fetchHostedPlaylistText(url);
@@ -37892,10 +37914,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       if (!parsed || !parsed.tracks?.length) {
         // Background reloads (the startup hosted list, the 5-minute poller)
-        // must never modal-error: a provider page that parses to zero tracks
-        // here is not something the user asked for. Throw so the background
-        // caller's catch logs it; user-initiated imports keep the dialog.
-        if (background) {
+        // and the manual Refresh button must never modal-error. Throw so the
+        // caller can log or toast; a user-initiated import keeps the dialog.
+        if (background || quiet) {
           throw new Error(resolverId
             ? `No tracks found for ${resolverId} playlist`
             : 'Failed to parse XSPF file from URL');
@@ -38082,34 +38103,44 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Refresh a hosted playlist
+  // Refresh a hosted XSPF or a provider-imported snapshot. Provider imports
+  // are not on the startup reload list — this button is the only update path.
+  // It goes through lookupPlaylist (never parseXSPF of the provider page) and
+  // toasts on failure instead of opening the import dialog.
   const refreshHostedPlaylist = async (playlistId) => {
-    const playlist = playlists.find(p => p.id === playlistId);
+    const playlist = (playlistsRef.current || []).find(p => p.id === playlistId);
     if (!playlist?.sourceUrl) {
       console.log('Not a hosted playlist, cannot refresh');
       return false;
     }
+    const provider = window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current);
 
     try {
-      console.log(`🔄 Refreshing hosted playlist: ${playlist.title}`);
-      const result = await handleImportPlaylistFromUrl(playlist.sourceUrl);
+      if (provider && resolversInitRef.current) {
+        await Promise.race([
+          resolversInitRef.current,
+          new Promise(resolve => setTimeout(resolve, 15000))
+        ]);
+      }
+      console.log(`🔄 Refreshing playlist: ${playlist.title}`);
+      const result = await handleImportPlaylistFromUrl(playlist.sourceUrl, false, null, null, { quiet: true, provider });
 
-      // If currently viewing this playlist, reload the tracks
-      if (selectedPlaylist?.id === playlistId) {
-        const parsed = parseXSPF(result?.playlist ? playlists.find(p => p.id === playlistId)?.xspf : playlist.xspf);
-        if (parsed) {
-          const tracksWithIds = parsed.tracks.map(track => {
-            const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
-            return { ...track, id: trackId, sources: {} };
-          });
-          // Resolution handled by scheduler via IntersectionObserver
-          setPlaylistTracks(tracksWithIds);
-        }
+      if (selectedPlaylistRef.current?.id === playlistId && result?.playlist?.tracks) {
+        const tracksWithIds = result.playlist.tracks.map(track => {
+          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          return { ...track, id: trackId, sources: {} };
+        });
+        setPlaylistTracks(tracksWithIds);
+        setSelectedPlaylist(prev => prev && prev.id === playlistId
+          ? { ...prev, title: result.playlist.title, creator: result.playlist.creator, tracks: tracksWithIds }
+          : prev);
       }
 
+      showToast(`Updated ${result?.playlist?.title || playlist.title}`);
       return true;
     } catch (error) {
       console.error('Refresh error:', error);
+      showToast(error?.message || 'Could not refresh playlist', 'error');
       return false;
     }
   };
@@ -45335,6 +45366,25 @@ useEffect(() => {
                 ),
                 'SAVE'
               ),
+              // Manual refresh. Provider URL imports are snapshots — they are not
+              // re-fetched at launch (that path parsed the provider page as XSPF
+              // and dialoged). Hosted XSPF still auto-updates; this is the
+              // on-demand path for both.
+              !selectedPlaylist?.isEphemeral && !playlistEditMode && selectedPlaylist?.sourceUrl
+                && (selectedPlaylist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(selectedPlaylist, resolverLoaderRef.current))
+                && React.createElement('button', {
+                  onClick: async () => {
+                    if (refreshingPlaylist === selectedPlaylist.id) return;
+                    setRefreshingPlaylist(selectedPlaylist.id);
+                    try { await refreshHostedPlaylist(selectedPlaylist.id); }
+                    finally { setRefreshingPlaylist(null); }
+                  },
+                  className: 'flex items-center gap-1 px-3 py-1 text-xs rounded transition-colors no-drag',
+                  style: { color: 'var(--text-tertiary)', border: '1px solid var(--border-default)' },
+                  title: 'Re-import from the source URL. This does not run at launch.',
+                  onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; },
+                  onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.backgroundColor = 'transparent'; }
+                }, refreshingPlaylist === selectedPlaylist.id ? 'REFRESHING' : 'REFRESH'),
               // Edit / Cancel+Done buttons (only for non-ephemeral playlists)
               !selectedPlaylist?.isEphemeral && (playlistEditMode ? React.createElement(React.Fragment, null,
                 // Cancel button
@@ -45509,7 +45559,11 @@ useEffect(() => {
             // hosted playlist is therefore a no-op (or worse — the
             // subsequent push would overwrite the remote changes anyway).
             // Suppress the pull UI entirely and treat conflict as push-only.
-            const isHosted = !!playlist.sourceUrl;
+            // Provider URL imports also carry sourceUrl, but nothing polls them.
+            // Treating them as hosted hides a real pull. Hosted means the XSPF
+            // poller is still the upstream.
+            const isProviderSnapshot = typeof playlist.source === 'string' && playlist.source.endsWith('-import');
+            const isHosted = !!playlist.sourceUrl && !isProviderSnapshot;
             if (isHosted && !hasLocalChanges) {
               // Pure pull state would be meaningless — the XSPF poller wins.
               return null;
@@ -45950,6 +46004,12 @@ useEffect(() => {
                     sourceLabel = 'Spotify';
                   } else if (source === 'applemusic-sync' || source === 'applemusic-import' || source === 'applemusic') {
                     sourceLabel = 'Apple Music';
+                  } else if (source === 'amazonmusic-import' || source === 'amazonmusic') {
+                    sourceLabel = 'Amazon Music';
+                  } else if (source === 'soundcloud-import' || source === 'soundcloud') {
+                    sourceLabel = 'SoundCloud';
+                  } else if (source === 'youtube-import' || source === 'youtube') {
+                    sourceLabel = 'YouTube';
                   } else if (source === 'hosted-xspf' || (sourceUrl && !source)) {
                     sourceLabel = 'Hosted XSPF';
                   } else if (source === 'imported-xspf') {
@@ -46815,23 +46875,26 @@ useEffect(() => {
                           )
                         ),
 
-                      // Hosted indicator (only for actual hosted XSPF, not Spotify/Apple Music imports)
-                      playlist.sourceUrl && playlist.source === 'hosted-xspf' && React.createElement('div', {
+                      // Refresh for hosted XSPF (auto-polled) and provider snapshots
+                      // (manual only — startup reload of a provider page is the
+                      // "Failed to parse XSPF" dialog). No Hosted badge on snapshots.
+                      playlist.sourceUrl && (playlist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) && React.createElement('div', {
                         className: 'absolute top-2 right-2 flex items-center gap-1'
                       },
-                        React.createElement('span', {
+                        playlist.source === 'hosted-xspf' && React.createElement('span', {
                           className: 'bg-white/90 backdrop-blur-sm text-blue-500 text-xs px-2 py-0.5 rounded-full font-medium',
                           title: 'Hosted playlist'
                         }, '🌐 Hosted'),
                         React.createElement('button', {
                           onClick: async (e) => {
                             e.stopPropagation();
+                            if (refreshingPlaylist === playlist.id) return;
                             setRefreshingPlaylist(playlist.id);
-                            await refreshHostedPlaylist(playlist.id);
-                            setRefreshingPlaylist(null);
+                            try { await refreshHostedPlaylist(playlist.id); }
+                            finally { setRefreshingPlaylist(null); }
                           },
                           className: `p-1 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
-                          title: 'Refresh playlist'
+                          title: 'Refresh from source'
                         },
                           React.createElement('svg', { className: 'w-3 h-3 text-gray-600', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                             React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
@@ -47137,6 +47200,26 @@ useEffect(() => {
                   // Track count
                   React.createElement('div', { className: 'text-sm text-gray-500 flex-shrink-0 w-20 text-right' },
                     `${trackCount} song${trackCount !== 1 ? 's' : ''}`
+                  ),
+                  // Refresh — provider snapshots are not reloaded at launch
+                  playlist.sourceUrl && (playlist.source === 'hosted-xspf' || window.isProviderImportedPlaylist(playlist, resolverLoaderRef.current)) && React.createElement('button', {
+                    onClick: async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (refreshingPlaylist === playlist.id) return;
+                      setRefreshingPlaylist(playlist.id);
+                      try { await refreshHostedPlaylist(playlist.id); }
+                      finally { setRefreshingPlaylist(null); }
+                    },
+                    className: 'w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0',
+                    title: 'Refresh from source',
+                  },
+                    React.createElement('svg', {
+                      className: `w-4 h-4 text-gray-500 ${refreshingPlaylist === playlist.id ? 'animate-spin' : ''}`,
+                      fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor'
+                    },
+                      React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20 4v5h-.582m-15.356 2A8.001 8.001 0 0119.418 9m0 0H15m-11 11v-5h.581m0 0a8.003 8.003 0 0015.357-2m-15.357 2H9' })
+                    )
                   ),
                   // Play icon on hover
                   React.createElement('div', {

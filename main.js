@@ -4849,8 +4849,10 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     // sits at the bottom, locked-on for followed/hosted (inherently one-way).
     if (pl && !pl.localOnly) {
       const channels = getPlaylistSyncChannelsForMenu(pl).filter(c => c.available);
-      const isHostedXspf = !!pl.sourceUrl;
+      // A provider URL import has sourceUrl too, but it is a snapshot
+      // (source ends with -import), not a hosted document. Label it followed.
       const isFollowed = typeof pl.source === 'string' && pl.source.endsWith('-import');
+      const isHostedXspf = !!pl.sourceUrl && !isFollowed;
       const mirrorForced = isFollowed || isHostedXspf;
       const mirrorEffective = mirrorForced || getPlaylistMirrorOnly(data.playlistId);
 

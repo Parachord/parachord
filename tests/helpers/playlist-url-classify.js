@@ -42,4 +42,15 @@ function isProviderPlaylistUrl(url, loader) {
   }
 }
 
-module.exports = { classifyPlaylistUrl, isProviderPlaylistUrl };
+// A saved playlist that came from a provider URL import (snapshot), as opposed
+// to a hosted XSPF document. The source suffix is the signal that works before
+// resolvers have loaded; the loader is the fallback when the suffix was lost.
+// Same predicate as app.js window.isProviderImportedPlaylist — the inner call
+// there is window.isProviderPlaylistUrl because app.js has no local binding.
+function isProviderImportedPlaylist(playlist, loader) {
+  if (!playlist || !playlist.sourceUrl) return false;
+  if (typeof playlist.source === 'string' && playlist.source.endsWith('-import')) return true;
+  return isProviderPlaylistUrl(playlist.sourceUrl, loader);
+}
+
+module.exports = { classifyPlaylistUrl, isProviderPlaylistUrl, isProviderImportedPlaylist };
