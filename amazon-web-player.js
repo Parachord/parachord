@@ -675,19 +675,20 @@ const amazonWebPlayer = {
   // then Amazon starts a few hundred ms later on top of the next resolver.
   // Blanking the document kills that late start.
   //
-  // Generation-guarded: a newer playByAsin may have started while this halt
-  // was in flight (user skip during a poller advance, or a superseded play's
-  // failure path). Its loadURL owns the view by now — pausing or blanking it
-  // would kill the new track, so the halt becomes a no-op instead. The blank
-  // checks playGeneration after the await. The pause cannot: executeJavaScript
-  // lands on whatever document is current, so the page token
-  // (amazonMediaPauseExpr) is what refuses to pause a newer play.
-  async haltPlayback() {
+  // Generation-guarded. Pass the playGeneration you decided to stop. A halt
+  // that captures this.playGeneration itself cannot fail that check — nothing
+  // awaits between the read and the compare — so a skip that already claimed
+  // the view made the old halt null currentAsin, pause, and blank the new
+  // track. Omit expectedGeneration only for an explicit stop of whatever is
+  // playing right now. The pause script still refuses a token mismatch, in
+  // case a newer play claims during the await.
+  async haltPlayback(expectedGeneration) {
+    const scoped = Number.isFinite(expectedGeneration);
+    if (scoped && this.playGeneration !== expectedGeneration) {
+      return { ok: false, superseded: true };
+    }
     const genAtStart = this.playGeneration;
-    // Only clear the claim if no newer play took the player between capture
-    // and here; nulling a newer play's currentAsin would make it report
-    // itself superseded.
-    if (this.playGeneration === genAtStart) this.currentAsin = null;
+    this.currentAsin = null;
     await this.pause(genAtStart).catch(() => {});
     const view = this.playerView;
     if (!this.alive(view)) return { ok: false };
@@ -1116,8 +1117,8 @@ const amazonWebPlayer = {
     if (!ownsPlay()) return { success: false, reason: 'superseded' };
     const landed = win.webContents.getURL();
     if (pageBlocksPlayback(landed)) {
-      await this.haltPlayback();
-      return { success: false, reason: 'not-signed-in', error: 'Choose an Amazon Music profile, then try again' };
+      await this.haltPlayback(generation);
+      return { success: false, reason: 'not-signed-in', playGeneration: generation, error: 'Choose an Amazon Music profile, then try again' };
     }
     await this.evalOn(win, HOOK_SCRIPT).catch(() => {});
     // Stamp only if this play still owns the view. A newer play's document
@@ -1177,21 +1178,25 @@ const amazonWebPlayer = {
     if (shouldRevealPlayerOnFailure()) {
       throw new Error('Amazon playback failure must not reveal the player');
     }
-    await this.haltPlayback();
+    await this.haltPlayback(generation);
     if (licenseDenied) {
       return {
         success: false,
         reason: 'playback-failed',
+        playGeneration: generation,
         error: 'Amazon refused the Widevine license. This build needs a production VMP signature.'
       };
     }
     return {
       success: false,
       reason: 'playback-failed',
+      playGeneration: generation,
       error: `In-app playback did not start for ${title || asin}${artist ? ' by ' + artist : ''}`
     };
     } catch (error) {
       if (!ownsPlay()) return { success: false, reason: 'superseded', error: error && error.message };
+      await this.haltPlayback(generation).catch(() => {});
+      error.playGeneration = generation;
       throw error;
     } finally {
       detachLicense();

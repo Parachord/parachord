@@ -19,6 +19,7 @@ function makePlayer(states, { haltImpl } = {}) {
   const queue = [...states];
   const sends = [];
   const player = {
+    playGeneration: 1,
     haltPlayback: jest.fn(async () => {}),
     async getPlaybackState() {
       const next = queue.length > 1 ? queue.shift() : queue[0];
@@ -63,6 +64,7 @@ describe('Amazon Music poller', () => {
     // Start delay, then poll 1 decides near-end and enters haltPlayback.
     await jest.advanceTimersByTimeAsync(1200);
     expect(player.haltPlayback).toHaveBeenCalledTimes(1);
+    expect(player.haltPlayback).toHaveBeenCalledWith(1);
 
     // Interval ticks while the halt is pending — all dropped by single flight.
     await jest.advanceTimersByTimeAsync(400);

@@ -3826,18 +3826,19 @@ ipcMain.handle('amazonmusic-play-track', async (event, { asin, title, artist }) 
   try {
     const result = await amazonWebPlayer.playByAsin({ asin, title, artist });
     if (!result || !result.success) {
-      // 'superseded' means a newer play owns the player view right now.
-      // Halting here would blank its page and null its ASIN — both plays
-      // would fail. playByAsin already halts on its own genuine failure
-      // paths, so only halt for real failures.
-      if (!result || result.reason !== 'superseded') {
-        await amazonWebPlayer.haltPlayback().catch(() => {});
+      // Halt only the play that failed, by the generation it returned.
+      // An unscoped halt blanks whatever claimed the view while this call
+      // was in flight. 'superseded' already means a newer play owns it.
+      if (result && result.reason !== 'superseded' && Number.isFinite(result.playGeneration)) {
+        await amazonWebPlayer.haltPlayback(result.playGeneration).catch(() => {});
       }
       return { success: false, engine: 'web', reason: result && result.reason, error: result && result.error };
     }
     return { success: true, engine: 'web', ...result };
   } catch (error) {
-    try { await amazonWebPlayer.haltPlayback(); } catch { /* already stopped */ }
+    try {
+      if (Number.isFinite(error && error.playGeneration)) await amazonWebPlayer.haltPlayback(error.playGeneration);
+    } catch { /* already stopped */ }
     return { success: false, error: error.message, reason: error.reason };
   }
 });

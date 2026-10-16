@@ -225,13 +225,13 @@ function createAmazonMusicPoller({ player, send }) {
         if (decision.action === 'advance') {
           console.log(`🎵 [Main] Amazon Music advance (${decision.reason})`);
           const generation = this.generation;
-          // Blank before signaling so Amazon's own autoplay cannot overlap the
-          // next resolver. Awaited so it cannot race the next playByAsin
-          // loadURL. haltPlayback is generation-guarded inside amazon-web-player
-          // (a newer play skips the blank), and the generation check below
-          // drops the advance signal if this poller was stopped mid-halt — a
-          // user skip already owns the next track.
-          await player.haltPlayback().catch(() => {});
+          // Name the play we decided to stop. Capturing it here, not inside
+          // haltPlayback, is the guard: a skip that already claimed the view
+          // has a newer playGeneration, and an unscoped halt would null that
+          // play's ASIN and blank its page. The check below still drops the
+          // advance signal if this poller was stopped mid-halt.
+          const playGeneration = player.playGeneration;
+          await player.haltPlayback(playGeneration).catch(() => {});
           if (generation !== this.generation || !this.expectedAsin) return;
           emit('amazonmusic-polling-advance', { reason: decision.reason });
           this.stop();
