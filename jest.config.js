@@ -13,6 +13,9 @@ module.exports = {
   // Ignore legacy test files (they use custom framework)
   testPathIgnorePatterns: [
     '/node_modules/',
+    // Git worktrees checked out under the repo (gitignored) carry their own
+    // copy of tests/; a stale one ran 22 duplicate suites for months.
+    '/.worktrees/',
     // Legacy tests use custom framework, run with npm run test:legacy
     'tests/resolution-scheduler.test.js',
     'tests/youtube-resolver.test.js',
