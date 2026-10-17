@@ -402,6 +402,27 @@ window.applyCoalescedOps = (previous, ops) => ops.reduce(
 // `headerDelta` (otherwise collapsing clamps scrollTop under expandAt, which
 // expands, which re-collapses: a flip-flop that re-renders and re-animates on
 // every scroll event). Returns true (collapse), false (expand) or null (no change).
+// A Cover Art Archive release-group URL that was written down without ever
+// being requested. Fresh Drops used to assign
+// `coverartarchive.org/release-group/<id>/front-250` to every release and
+// persist it as a cache hit; a release with no CAA art (most brand-new ones)
+// then showed the placeholder for 90 days and the iTunes/Deezer fallbacks never
+// ran. A verified hit stores the final redirected URL (archive.org), which this
+// does not match, so the shape alone identifies the poisoned entries.
+window.isUnverifiedCoverArtUrl = (url) =>
+  typeof url === 'string' && /^https?:\/\/coverartarchive\.org\/release-group\/[0-9a-f-]{36}\/front(-\d+)?\/?$/i.test(url);
+
+// A release with art from the cache, or with no art. Never a guessed URL: a
+// guessed one on the release (persisted by older builds in cache_new_releases)
+// or in the cache is treated as missing so the art pass verifies it.
+window.hydrateReleaseArt = (release, albumArtCache) => {
+  if (release.albumArt && !window.isUnverifiedCoverArtUrl(release.albumArt)) return release;
+  const cached = albumArtCache && albumArtCache[release.id];
+  if (cached && cached.url && !window.isUnverifiedCoverArtUrl(cached.url)) return { ...release, albumArt: cached.url };
+  if (release.albumArt) return { ...release, albumArt: null };
+  return release;
+};
+
 window.headerCollapseDecision = ({ scrollTop, scrollHeight, clientHeight, collapsed, collapseAt = 100, expandAt = 50, headerDelta = 240, slack = 60 }) => {
   if (!collapsed && scrollTop > collapseAt) {
     const enough = (scrollHeight - clientHeight) > (headerDelta + slack);
@@ -24430,11 +24451,14 @@ ${trackListXml}
       // Load album art cache (keep full { url, timestamp } structure)
       if (albumArtData) {
         // Filter out expired and null entries — only keep valid URLs
-        const validEntries = Object.entries(albumArtData).filter(
+        const liveEntries = Object.entries(albumArtData).filter(
           ([_, entry]) => entry && entry.url && entry.timestamp && (now - entry.timestamp) < CACHE_TTL.albumArt
         );
+        // Heal: drop guessed Cover Art Archive URLs persisted as hits (see
+        // window.isUnverifiedCoverArtUrl). They are re-verified on demand.
+        const validEntries = liveEntries.filter(([_, entry]) => !window.isUnverifiedCoverArtUrl(entry.url));
         albumArtCache.current = Object.fromEntries(validEntries);
-        console.log(`📦 Loaded ${validEntries.length} album art entries from cache`);
+        console.log(`📦 Loaded ${validEntries.length} album art entries from cache${liveEntries.length !== validEntries.length ? ` (dropped ${liveEntries.length - validEntries.length} unverified cover-art URLs)` : ''}`);
       }
 
       // Load artist data cache
@@ -24538,15 +24562,10 @@ ${trackListXml}
           newReleasesCache.current = { releases: filteredReleases, timestamp: newReleasesData.timestamp, lastFullScan: newReleasesData.lastFullScan || 0 };
           console.log(`📦 Loaded ${filteredReleases.length} stale new releases from cache (will refresh)`);
         }
-        // Hydrate albumArt from albumArtCache for releases missing art
-        const hydratedReleases = filteredReleases.map(release => {
-          if (release.albumArt) return release;
-          const cached = albumArtCache.current[release.id];
-          if (cached?.url) return { ...release, albumArt: cached.url };
-          const coverUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
-          albumArtCache.current[release.id] = { url: coverUrl, timestamp: Date.now() };
-          return { ...release, albumArt: coverUrl };
-        });
+        // Hydrate albumArt from albumArtCache for releases missing art. A
+        // guessed CAA URL persisted with the release is treated as missing;
+        // the Fresh Drops art pass verifies or replaces it (window.hydrateReleaseArt).
+        const hydratedReleases = filteredReleases.map(release => window.hydrateReleaseArt(release, albumArtCache.current));
         // Populate state immediately so Fresh Drops preview shows on Home
         if (hydratedReleases.length > 0) {
           setNewReleases(hydratedReleases);
@@ -24558,6 +24577,13 @@ ${trackListXml}
           }
           // Update the cache ref too so it has the hydrated art
           newReleasesCache.current.releases = hydratedReleases;
+          // Verify or fetch art for whatever the cache could not supply. The
+          // resolver step of the fallback needs resolvers up (CAA and the
+          // iTunes/Deezer chain do not), so wait for init, bounded.
+          const resolversReady = resolversInitRef.current || new Promise(resolve => setTimeout(resolve, 3000));
+          Promise.race([resolversReady, new Promise(resolve => setTimeout(resolve, 15000))])
+            .then(() => fetchNewReleasesAlbumArt(newReleasesCache.current.releases || hydratedReleases))
+            .catch(() => {});
         }
       }
 
@@ -31586,16 +31612,9 @@ ${tracks}
         artistList,
         cutoffDate,
         (results) => {
-          // Assign deterministic cover art URLs during progress so art loads
-          // as releases appear, not only after the full fetch completes
-          const withArt = results.map(r => {
-            if (r.albumArt) return r;
-            const cached = albumArtCache.current[r.id];
-            if (cached?.url) return { ...r, albumArt: cached.url };
-            const coverUrl = `https://coverartarchive.org/release-group/${r.id}/front-250`;
-            albumArtCache.current[r.id] = { url: coverUrl, timestamp: Date.now() };
-            return { ...r, albumArt: coverUrl };
-          });
+          // Cached art only during progress; the art pass after the fetch
+          // verifies CAA and runs the fallbacks for the rest.
+          const withArt = results.map(r => window.hydrateReleaseArt(r, albumArtCache.current));
           // Merge in-progress results with prior cache so user sees all releases during loading
           const progressMerged = [...withArt, ...priorCachedReleases];
           const seen = new Set();
@@ -31653,35 +31672,90 @@ ${tracks}
 
   // Assign album art URLs for New Releases instantly using deterministic CAA URLs
   // No HEAD requests needed - the URL format is known, and onError in rendering handles 404s
-  const fetchNewReleasesAlbumArt = (releases) => {
-    const updates = {};
-    for (const release of releases) {
-      if (release.albumArt) continue;
-
-      // Check albumArtCache first (cross-session persistence)
-      const cached = albumArtCache.current[release.id];
-      if (cached?.url) {
-        updates[release.id] = cached.url;
-        continue;
-      }
-
-      // Assign deterministic Cover Art Archive URL (browser handles actual fetch)
-      const coverUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
-      updates[release.id] = coverUrl;
-
-      // Persist to albumArtCache for cross-session use
-      albumArtCache.current[release.id] = { url: coverUrl, timestamp: Date.now() };
-    }
-
-    if (Object.keys(updates).length > 0) {
-      const applyUpdates = (list) => list.map(r =>
-        updates[r.id] ? { ...r, albumArt: updates[r.id] } : r
-      );
+  // Fresh Drops art. Cached hits are applied at once; the rest go through the
+  // album-art pipeline's tail, release-group id first since we have it:
+  //   1. Cover Art Archive release-group front, VERIFIED with a request (the
+  //      final redirected URL is what gets cached, never the guess),
+  //   2. getAlbumArtFromResolvers: enabled resolvers, then iTunes and Deezer.
+  // Four releases in flight; results land in state in 250ms batches so a page
+  // of 300 releases is a handful of renders, not 300. Misses are remembered
+  // for the session only, so the next launch retries them.
+  const NEW_RELEASES_ART_CONCURRENCY = 4;
+  const newReleasesArtInFlightRef = useRef(new Set());
+  const newReleasesArtMissRef = useRef(new Set());
+  const newReleasesArtWriterRef = useRef(null);
+  if (!newReleasesArtWriterRef.current) {
+    newReleasesArtWriterRef.current = window.createCoalescedUpdater((batch) => {
+      const applyUpdates = (list) => list.map(r => {
+        const ops = batch.get(r.id);
+        return ops ? { ...r, albumArt: window.applyCoalescedOps(r.albumArt, ops) } : r;
+      });
       setNewReleases(prev => applyUpdates(prev));
       if (newReleasesCache.current.releases) {
         newReleasesCache.current.releases = applyUpdates(newReleasesCache.current.releases);
       }
+    }, 250);
+  }
+
+  const resolveNewReleaseArt = async (release) => {
+    const rgUrl = `https://coverartarchive.org/release-group/${release.id}/front-250`;
+    try {
+      const response = await fetch(rgUrl, { method: 'HEAD', redirect: 'follow' });
+      if (response.ok) {
+        // The final redirected URL (archive.org). Should CAA ever answer 200
+        // without redirecting, the guess itself is stored and simply gets
+        // re-verified next launch.
+        const artUrl = response.url || rgUrl;
+        albumArtCache.current[release.id] = { url: artUrl, timestamp: Date.now() };
+        return artUrl;
+      }
+    } catch (error) {
+      // CAA unreachable: fall through to the other sources, remember nothing
     }
+    const fallback = await getAlbumArtFromResolvers(release.artist, release.title);
+    if (fallback) {
+      albumArtCache.current[release.id] = { url: fallback, timestamp: Date.now() };
+      return fallback;
+    }
+    return null;
+  };
+
+  const fetchNewReleasesAlbumArt = (releases) => {
+    const cachedUpdates = [];
+    const pending = [];
+    for (const release of releases) {
+      if (release.albumArt && !window.isUnverifiedCoverArtUrl(release.albumArt)) continue;
+      const cached = albumArtCache.current[release.id];
+      if (cached?.url && !window.isUnverifiedCoverArtUrl(cached.url)) {
+        cachedUpdates.push([release.id, cached.url]);
+        continue;
+      }
+      if (newReleasesArtInFlightRef.current.has(release.id) || newReleasesArtMissRef.current.has(release.id)) continue;
+      pending.push(release);
+    }
+
+    for (const [id, url] of cachedUpdates) newReleasesArtWriterRef.current.queue(id, url);
+    if (cachedUpdates.length > 0) newReleasesArtWriterRef.current.flush();
+    if (pending.length === 0) return;
+
+    for (const release of pending) newReleasesArtInFlightRef.current.add(release.id);
+    const queue = [...pending];
+    const worker = async () => {
+      while (queue.length > 0) {
+        const release = queue.shift();
+        try {
+          const artUrl = await resolveNewReleaseArt(release);
+          if (artUrl) newReleasesArtWriterRef.current.queue(release.id, artUrl);
+          else newReleasesArtMissRef.current.add(release.id);
+        } catch (error) {
+          console.log(`✨ Art lookup failed for ${release.artist} - ${release.title}: ${error.message}`);
+        } finally {
+          newReleasesArtInFlightRef.current.delete(release.id);
+        }
+      }
+    };
+    Promise.all(Array.from({ length: Math.min(NEW_RELEASES_ART_CONCURRENCY, queue.length) }, worker))
+      .then(() => newReleasesArtWriterRef.current.flush());
   };
 
   // Handle scroll for New Releases header collapse
