@@ -189,7 +189,7 @@ sync_playlist_links = {
 ```
 
 **Rules:**
-- **Only the main process writes it** (see `setSyncLink`, `removeSyncLink`, `migrateSyncLinksFromPlaylists` in main.js). Renderer playlist saves cannot clobber it.
+- **Only the main process writes it** (see `setSyncLink`, `removeSyncLink`, `migrateSyncLinksFromPlaylists` in main-process/sync-links.js). Renderer playlist saves cannot clobber it.
 - Written on successful create or link inside `sync:create-playlist`.
 - Pruned when `cleanupDuplicatePlaylists` deletes a remote.
 - Populated on every startup from existing `syncedTo` data (idempotent migration) — ensures users upgrading never lose existing links.
@@ -197,7 +197,7 @@ sync_playlist_links = {
 
 ### Three-Layer Duplicate Prevention
 
-All remote-playlist writes flow through the `sync:create-playlist` IPC handler (main.js L8017+). Before calling `provider.createPlaylist`, the handler checks for an existing remote in this order:
+All remote-playlist writes flow through the `sync:create-playlist` IPC handler (main-process/ipc/sync-create.js). Before calling `provider.createPlaylist`, the handler checks for an existing remote in this order:
 
 1. **ID link via `sync_playlist_links[localPlaylistId][providerId]`.** If present, fetch the user's owned remote playlists and verify the stored `externalId` still exists. Match → reuse (pushes tracks, returns the existing ID). Gone → remove the stale link, fall through.
 2. **ID link via `syncedTo[providerId].externalId` on the playlist.** Same validation logic. (In practice the renderer already short-circuits this case before calling the IPC, but the handler re-checks for robustness.)
@@ -293,7 +293,7 @@ Only the name-match fallback protects you. Don't rely on it.
 
 ### Cleanup: Relink Orphans, Then Dedup
 
-`sync:cleanup-duplicate-playlists` (main.js L8362+) runs two phases:
+`sync:cleanup-duplicate-playlists` (main.js L7983+) runs two phases:
 
 **Phase 1 — Relink orphans** (via shared helper `relinkOrphansFor`). A local playlist is "orphaned" for a provider if it has tracks, isn't `localOnly`, and has no `syncedTo[providerId]`, `syncedFrom` for that provider, nor `sync_playlist_links` entry. For each orphan with an unambiguous 1:1 name match against a user-owned remote, write both `syncedTo[providerId]` and the link map entry. Ambiguous cases (multiple locals same name, OR multiple remotes same name) are surfaced in the response as `ambiguous` — never automatically resolved.
 
@@ -432,7 +432,7 @@ if (relevantMirrors.length === 0) {
 }
 ```
 
-**Main.js `sync:start` also flags on refill** (main.js L7672+). When the backend refills an empty playlist from a pulled provider and the playlist has other `syncedTo` mirrors, main.js writes `locallyModified: true` alongside the fresh tracks. Same rationale as Fix 1 but from the sync-start path that bypasses `handlePull`. Note this only fires for `isEmpty` playlists — non-empty playlists stay untouched on `sync:start` (user must click the pull banner via `handlePull`, which is the only path that replaces non-empty tracks).
+**Main.js `sync:start` also flags on refill** (main.js L7597+). When the backend refills an empty playlist from a pulled provider and the playlist has other `syncedTo` mirrors, main.js writes `locallyModified: true` alongside the fresh tracks. Same rationale as Fix 1 but from the sync-start path that bypasses `handlePull`. Note this only fires for `isEmpty` playlists — non-empty playlists stay untouched on `sync:start` (user must click the pull banner via `handlePull`, which is the only path that replaces non-empty tracks).
 
 End-to-end flow that all four enable: Android edit → Spotify remote → desktop pull (handlePull or sync:start refill) sets `locallyModified: true` → next AM sync's push loop passes the provider-scoped `syncedFrom` guard → issues PUT to AM → on success, `syncedTo.applemusic.syncedAt` advances past `lastModified` → clear logic's `relevantMirrors` (excluding spotify source) sees `allSynced`, resets the flag.
 
