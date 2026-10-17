@@ -1,4 +1,4 @@
-// main/ipc/store.js — the renderer's persisted-key allowlist + the store-* IPC
+// main-process/ipc/store.js — the renderer's persisted-key allowlist + the store-* IPC
 // handlers, extracted from main.js (maintainability plan Track 3, first slice)
 // so the allowlist is reviewable and testable on its own.
 //
