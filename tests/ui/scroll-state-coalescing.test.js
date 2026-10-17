@@ -132,3 +132,49 @@ describe('the pages use the mitigations', () => {
     expect(body).not.toMatch(/setRecommendations\(/);
   });
 });
+
+// A card click used to wait on a MusicBrainz lookup before changing views.
+// Every MB request is serialized at 1 req/s, and hover prefetches queued in
+// the same foreground lane, so the click showed nothing for seconds.
+describe('card click opens the release page before the lookup', () => {
+  const start = app.indexOf('const openChartsAlbum = async (album) => {');
+  const body = app.slice(start, app.indexOf('\n  };', start));
+
+  test('navigates and shows a partial release before the first MusicBrainz request', () => {
+    const navigate = body.indexOf("navigateTo('artist')");
+    const partial = body.indexOf('_isPartial: true');
+    const firstFetch = body.indexOf('musicbrainz.org/ws/2/');
+    expect(navigate).toBeGreaterThan(-1);
+    expect(partial).toBeGreaterThan(-1);
+    expect(firstFetch).toBeGreaterThan(-1);
+    expect(navigate).toBeLessThan(firstFetch);
+    expect(partial).toBeLessThan(firstFetch);
+    expect((body.match(/navigateTo\('artist'\)/g) || []).length).toBe(1);
+  });
+
+  test('remembers the release-group alias so a revisit needs no request', () => {
+    expect(body).toMatch(/rememberReleaseGroupAlias\(album\.releaseGroupId, release\.id\)/);
+    expect(body).toMatch(/releaseDetailsCache\.current\[album\.releaseGroupId\]/);
+  });
+
+  test('fallbacks clear the placeholder release and loading state', () => {
+    const fallbacks = body.match(/setCurrentRelease\(null\);\s*setLoadingRelease\(false\);\s*fetchArtistData\(album\.artist\);/g) || [];
+    expect(fallbacks.length).toBe(2);
+  });
+
+  test('hover prefetches use the background lane of the MusicBrainz limiter', () => {
+    for (const name of ['prefetchChartsTracks', 'prefetchCriticsPicksTracks']) {
+      const s = app.indexOf(`const ${name} = async (album) => {`);
+      const b = app.slice(s, app.indexOf('\n  };', s));
+      expect(b).toMatch(/mbBackground: true/);
+      expect(b).toMatch(/await bgFetch\(/);
+      expect(b).toMatch(/fetchReleaseDetails\(releaseId, bgFetch\)/);
+      expect(b).not.toMatch(/await fetch\(/);
+    }
+  });
+
+  test('a click cancels the pending hover prefetch on both grids', () => {
+    expect((app.match(/cancelHoverPrefetch\(\); openChartsAlbum\(item\)/g) || []).length).toBe(1);
+    expect(app).toMatch(/cancelHoverPrefetch\(\);\s*openChartsAlbum\(\{ artist: release\.artist/);
+  });
+});

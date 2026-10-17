@@ -30859,11 +30859,43 @@ ${tracks}
   const openChartsAlbum = async (album) => {
     console.log(`🎵 Opening Chart Album: ${album.artist} - ${album.title}`);
 
+    // Navigate before the lookup, not after. Every MusicBrainz request goes
+    // through the 1 req/s limiter, so the release lookup below is at least a
+    // second away (more behind queued hover prefetches). Waiting on it before
+    // changing views left the click with no visible effect for that long.
+    // Same pattern as the collection-album opener: artist + loading state +
+    // navigate, then search, then fetchReleaseData fills the page in.
+    const placeholderArtist = { id: null, name: album.artist };
+    openingReleaseRef.current = true;
+    setCurrentArtist(placeholderArtist);
+    setCurrentRelease({
+      id: album.releaseGroupId || album.id,
+      title: album.title,
+      artist: placeholderArtist,
+      date: album.date,
+      releaseType: album.releaseType || 'album',
+      albumArt: album.albumArt || null,
+      tracks: null,
+      _isPartial: true
+    });
+    setLoadingRelease(true);
+    setIsHeaderCollapsed(true);
+    navigateTo('artist');
+
     try {
       let release;
       const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' };
 
-      if (album.releaseGroupId) {
+      // A release-group opened before resolves with no requests at all: the
+      // alias cache maps it to the release, whose details (title, date,
+      // artist credit) are in the release-details cache.
+      const aliasEntry = album.releaseGroupId && releaseDetailsCache.current[album.releaseGroupId];
+      const aliasedRelease = aliasEntry?.alias && releaseDetailsCache.current[aliasEntry.alias]?.data;
+      if (aliasedRelease && (Date.now() - aliasEntry.timestamp) < CACHE_TTL.releaseDetails) {
+        release = aliasedRelease;
+      }
+
+      if (!release && album.releaseGroupId) {
         // Direct lookup by release-group ID (Fresh Drops — much more reliable than string search)
         const rgResponse = await fetch(
           `https://musicbrainz.org/ws/2/release?release-group=${album.releaseGroupId}&fmt=json&limit=1&inc=artist-credits`,
@@ -30892,12 +30924,16 @@ ${tracks}
         if (!mbData.releases || mbData.releases.length === 0) {
           // Fallback: just navigate to artist page
           console.log('Release not found in MusicBrainz, navigating to artist page');
+          setCurrentRelease(null);
+          setLoadingRelease(false);
           fetchArtistData(album.artist);
           return;
         }
 
         release = mbData.releases[0];
       }
+
+      if (album.releaseGroupId) rememberReleaseGroupAlias(album.releaseGroupId, release.id);
 
       const artistCredit = release['artist-credit']?.[0];
 
@@ -30912,20 +30948,21 @@ ${tracks}
         id: release.id,
         title: release.title,
         date: release.date,
-        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
+        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || album.releaseType || 'album',
         albumArt: album.albumArt
       };
 
-      // Set artist context and fetch release data
-      // Mark that we're opening a release so header stays collapsed
+      // The view is already open; fill in the real artist and tracks.
+      // Keep the header collapsed across the artist change.
       openingReleaseRef.current = true;
       setCurrentArtist(artist);
-      navigateTo('artist');
       fetchReleaseData(releaseObj, artist);
 
     } catch (error) {
       console.error('Error opening chart album:', error);
       // Fallback: navigate to artist page
+      setCurrentRelease(null);
+      setLoadingRelease(false);
       fetchArtistData(album.artist);
     }
   };
@@ -30962,8 +30999,11 @@ ${tracks}
     prefetchInFlightRef.current.add(album.id);
 
     try {
+      // Background lane of the MusicBrainz limiter: a prefetch must never make
+      // a click's lookup wait behind it (two requests per hovered card did).
+      const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
       const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await fetch(
+      const mbResponse = await bgFetch(
         `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
@@ -30976,7 +31016,7 @@ ${tracks}
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
-      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -35534,9 +35574,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     try {
       console.log('🔍 Prefetching Critic\'s Pick tracks for:', album.title);
 
+      // Background lane of the MusicBrainz limiter (see prefetchChartsTracks).
+      const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
       // Search MusicBrainz for the release
       const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await fetch(
+      const mbResponse = await bgFetch(
         `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
@@ -35549,7 +35591,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
-      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -51048,7 +51090,7 @@ useEffect(() => {
                   },
                   onMouseEnter: () => scheduleHoverPrefetch(item),
                   onMouseLeave: cancelHoverPrefetch,
-                  onClick: () => openChartsAlbum(item),
+                  onClick: () => { cancelHoverPrefetch(); openChartsAlbum(item); },
                   onContextMenu: (e) => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
@@ -51753,7 +51795,10 @@ useEffect(() => {
                       },
                       onMouseEnter: () => scheduleHoverPrefetch(release),
                       onMouseLeave: cancelHoverPrefetch,
-                      onClick: () => openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id }),
+                      onClick: () => {
+                        cancelHoverPrefetch();
+                        openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id, date: release.date, releaseType: release.releaseType });
+                      },
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
