@@ -359,6 +359,58 @@ window.buildPlaylistSavePayload = (playlist, xspfContent, now) => {
   return payload;
 };
 
+// Coalesce bursts of per-key state writes into one setState. The whole UI is
+// one React component, so every setState re-renders every view; while the
+// user scrolls Fresh Drops or Recommendations, per-track source writes and
+// per-artist image writes each cost a full render, which is the scroll
+// stutter. queue() records an op per key and flushes all of them in one
+// apply() after `delayMs`; ops for the same key apply in order, so a
+// whole-entry write after a merge replaces, and a merge after a write merges.
+// flush() applies pending ops synchronously (call it before a direct write
+// that must observe or supersede queued ones).
+window.createCoalescedUpdater = (apply, delayMs = 100) => {
+  let pending = new Map();
+  let timer = null;
+  const flush = () => {
+    if (timer !== null) { clearTimeout(timer); timer = null; }
+    if (pending.size === 0) return;
+    const batch = pending;
+    pending = new Map();
+    apply(batch);
+  };
+  return {
+    queue(key, value, opts) {
+      const op = { value, merge: !!(opts && opts.merge) };
+      const ops = pending.get(key);
+      if (ops) ops.push(op); else pending.set(key, [op]);
+      if (opts && opts.immediate) { flush(); return; }
+      if (timer === null) timer = setTimeout(flush, delayMs);
+    },
+    flush,
+    pendingCount: () => pending.size
+  };
+};
+// Reduce a key's queued ops onto its previous value (used by apply()).
+window.applyCoalescedOps = (previous, ops) => ops.reduce(
+  (acc, op) => (op.merge ? { ...(acc === undefined ? (previous || {}) : (acc || {})), ...op.value } : op.value),
+  undefined
+);
+
+// Hero-header collapse on scroll, with hysteresis and a content guard. Collapse
+// past `collapseAt`, expand only back at or under `expandAt`, and never collapse
+// when the content is too short to stay scrolled once the header shrinks by
+// `headerDelta` (otherwise collapsing clamps scrollTop under expandAt, which
+// expands, which re-collapses: a flip-flop that re-renders and re-animates on
+// every scroll event). Returns true (collapse), false (expand) or null (no change).
+window.headerCollapseDecision = ({ scrollTop, scrollHeight, clientHeight, collapsed, collapseAt = 100, expandAt = 50, headerDelta = 240, slack = 60 }) => {
+  if (!collapsed && scrollTop > collapseAt) {
+    const enough = (scrollHeight - clientHeight) > (headerDelta + slack);
+    return enough ? true : null;
+  }
+  if (collapsed && scrollTop <= expandAt) return false;
+  return null;
+};
+
 // Resolver match validation + minimum confidence threshold.
 //
 // SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
@@ -6613,6 +6665,36 @@ const Parachord = () => {
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
+  // Per-track source writes are coalesced (window.createCoalescedUpdater): the
+  // resolution scheduler resolves one track every ~150ms while a list scrolls,
+  // and a setState per track meant a full-app render per track. Whole-entry
+  // writes go through queueTrackSources(key, value); the missing-resolver
+  // flush merges with { merge: true }; playback-time writes pass
+  // { immediate: true } so they land in order with anything queued. Bulk
+  // rewrites (resolver removal, cache reset) call flushTrackSources() first.
+  const trackSourcesWriterRef = useRef(null);
+  if (!trackSourcesWriterRef.current) {
+    trackSourcesWriterRef.current = window.createCoalescedUpdater((batch) => {
+      setTrackSources(prev => {
+        const next = { ...prev };
+        for (const [key, ops] of batch) next[key] = window.applyCoalescedOps(prev[key], ops);
+        return next;
+      });
+    }, 100);
+  }
+  const queueTrackSources = (key, value, opts) => trackSourcesWriterRef.current.queue(key, value, opts);
+  const flushTrackSources = () => trackSourcesWriterRef.current.flush();
+  // Same for the Recommendations page's artist images: one setRecommendations
+  // per image lookup was one full render per artist.
+  const recArtistImageWriterRef = useRef(null);
+  if (!recArtistImageWriterRef.current) {
+    recArtistImageWriterRef.current = window.createCoalescedUpdater((batch) => {
+      setRecommendations(prev => ({
+        ...prev,
+        artists: prev.artists.map(a => batch.has(a.id) ? { ...a, ...window.applyCoalescedOps(a, batch.get(a.id)) } : a)
+      }));
+    }, 100);
+  }
   const [activeResolvers, setActiveResolvers] = useState(['bandcamp', 'localfiles']);
   const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
@@ -10345,6 +10427,7 @@ const Parachord = () => {
     }
     try { resolutionSchedulerRef.current?.clearResolved(); } catch (e) {}
     try { window.electron?.store?.set('cache_track_sources', trackSourcesCache.current); } catch (e) {}
+    flushTrackSources(); // apply queued per-track writes before the bulk rewrite
     setTrackSources(prev => {
       let changed = false;
       const next = { ...prev };
@@ -14973,6 +15056,7 @@ ${trackListXml}
           setResolverBlocklist(prev => [...prev, newEntry]);
 
           // Remove the blocklisted source from trackSources so UI updates immediately
+          flushTrackSources(); // queued writes first, so none re-adds the source after this
           setTrackSources(prev => {
             const updated = { ...prev };
             for (const key of Object.keys(updated)) {
@@ -18572,10 +18656,7 @@ ${trackListXml}
           trackOrSource.sources = freshSources;
           // Update trackSources state so resolver dropdown shows all options
           if (trackOrSource.id) {
-            setTrackSources(prev => ({
-              ...prev,
-              [trackOrSource.id]: freshSources
-            }));
+            queueTrackSources(trackOrSource.id, freshSources, { immediate: true });
           }
         }
 
@@ -18627,10 +18708,7 @@ ${trackListXml}
             if (Object.keys(freshSources).length > 0) {
               trackOrSource.sources = freshSources;
               if (trackOrSource.id) {
-                setTrackSources(prev => ({
-                  ...prev,
-                  [trackOrSource.id]: freshSources
-                }));
+                queueTrackSources(trackOrSource.id, freshSources, { immediate: true });
               }
             }
             availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
@@ -26448,14 +26526,16 @@ ${trackListXml}
 
     try {
       console.log('🔍 Prefetching tracks for:', release.title);
+      // Hover prefetch: background lane of the MusicBrainz limiter
+      const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
 
       // Try fetching as a direct release ID first
       let releaseId = release.id;
-      let releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      let releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
       // If that fails (404), it might be a release-group ID
       if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
-        const releaseGroupResponse = await fetch(
+        const releaseGroupResponse = await bgFetch(
           `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
@@ -26467,7 +26547,7 @@ ${trackListXml}
 
         releaseId = releaseGroupData.releases[0].id;
         rememberReleaseGroupAlias(release.id, releaseId);
-        releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+        releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
       }
 
       if (!releaseDetailsResponse.ok) return;
@@ -26525,13 +26605,14 @@ ${trackListXml}
     // Mark as in progress SYNCHRONOUSLY before any async work
     prefetchInProgress.add(album.id);
 
-    // Run the actual fetch asynchronously
+    // Run the actual fetch asynchronously, in the limiter's background lane
     (async () => {
     try {
       const artistName = album['artist-credit']?.[0]?.name || 'Unknown Artist';
+      const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
 
       // Search albums use release-group IDs, so fetch the first release from the group
-      const releaseGroupResponse = await fetch(
+      const releaseGroupResponse = await bgFetch(
         `https://musicbrainz.org/ws/2/release?release-group=${album.id}&status=official&fmt=json&limit=1`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
@@ -26544,7 +26625,7 @@ ${trackListXml}
       const releaseId = releaseGroupData.releases[0].id;
 
       // Fetch the release details with tracks
-      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -26678,6 +26759,31 @@ ${trackListXml}
     }
   };
 
+  // Put the release page on screen before a MusicBrainz lookup. Every MB
+  // request waits in the 1 req/s limiter, so an opener that looks up first
+  // and navigates after shows nothing for a second or more; the user reads
+  // that as "the click did nothing". fetchReleaseData replaces this partial
+  // release once the lookup lands. Callers that fail after showing it must
+  // clear it (setCurrentRelease(null) + setLoadingRelease(false)).
+  const showReleasePlaceholder = ({ id, artist, title, albumArt, date, releaseType }) => {
+    const placeholderArtist = { id: null, name: artist };
+    openingReleaseRef.current = true;
+    setCurrentArtist(placeholderArtist);
+    setCurrentRelease({
+      id,
+      title,
+      artist: placeholderArtist,
+      date,
+      releaseType: releaseType || 'album',
+      albumArt: albumArt || null,
+      tracks: null,
+      _isPartial: true
+    });
+    setLoadingRelease(true);
+    setIsHeaderCollapsed(true);
+    navigateTo('artist');
+  };
+
   // Handle album click from search - fetch release data by release-group ID
   // Open the album page for whatever is playing, from any playback context.
   // The playbar's album-art click used to require track.album, which is set
@@ -26705,6 +26811,28 @@ ${trackListXml}
         }
       } catch (e) { /* mapper down: carry on with what we have */ }
     }
+
+    // With a name or a release id in hand, show the release page now; the
+    // MusicBrainz lookups below wait in the limiter. Without either there is
+    // nothing to show yet, and the toast below is the whole answer.
+    const placeholderShown = !!(albumName || releaseMbid);
+    if (placeholderShown) {
+      showReleasePlaceholder({
+        id: releaseMbid || `pending-${track.artist}-${albumName}`.toLowerCase(),
+        artist: track.artist,
+        title: albumName || 'Album',
+        albumArt: track.albumArt
+      });
+    }
+    const giveUp = (message) => {
+      showToast(message);
+      if (placeholderShown) {
+        // The artist page is the next-best answer, as in the chart openers.
+        setCurrentRelease(null);
+        setLoadingRelease(false);
+        fetchArtistData(track.artist);
+      }
+    };
 
     try {
       if (albumName) {
@@ -26738,10 +26866,10 @@ ${trackListXml}
           }
         }
       }
-      showToast(albumName ? `Album "${albumName}" not found` : 'No album found for this track');
+      giveUp(albumName ? `Album "${albumName}" not found` : 'No album found for this track');
     } catch (error) {
       console.error('Error opening album for track:', error);
-      showToast('Failed to load album');
+      giveUp('Failed to load album');
     }
   };
 
@@ -26971,10 +27099,7 @@ ${trackListXml}
         };
 
         // Update UI with fresh sources
-        setTrackSources(prev => ({
-          ...prev,
-          [trackKey]: freshSources
-        }));
+        queueTrackSources(trackKey, freshSources);
 
         console.log(`✅ Cache updated with ${Object.keys(freshSources).length} fresh source(s)`);
       } else {
@@ -27171,10 +27296,7 @@ ${trackListXml}
       const finalDisplay = (Object.keys(displaySources).length === 0 && cacheHadEntries)
         ? { __noMatchAll: true }
         : displaySources;
-      setTrackSources(prev => ({
-        ...prev,
-        [trackKey]: finalDisplay
-      }));
+      queueTrackSources(trackKey, finalDisplay);
 
       // Background validation: if cache is > 24 hours old, validate in background
       if (cacheAge >= 24) {
@@ -27244,10 +27366,7 @@ ${trackListXml}
       }
 
       // Use persisted sources and cache them in memory (filter noMatch for UI)
-      setTrackSources(prev => ({
-        ...prev,
-        [trackKey]: rescoredPersisted
-      }));
+      queueTrackSources(trackKey, rescoredPersisted);
 
       trackSourcesCache.current[cacheKey] = {
         sources: persistedSources,
@@ -27330,10 +27449,7 @@ ${trackListXml}
       if (signal?.aborted) return;
 
       // Filter noMatch sentinels for UI state, keep them in cache/persistence
-      setTrackSources(prev => ({
-        ...prev,
-        [trackKey]: filterNoMatchForDisplay(sources)
-      }));
+      queueTrackSources(trackKey, filterNoMatchForDisplay(sources));
 
       trackSourcesCache.current[cacheKey] = {
         sources: sources,
@@ -27432,10 +27548,7 @@ ${trackListXml}
       }
 
       // Update state with combined sources (filter noMatch sentinels for UI)
-      setTrackSources(prev => ({
-        ...prev,
-        [trackKey]: filterNoMatchForDisplay(sources)
-      }));
+      queueTrackSources(trackKey, filterNoMatchForDisplay(sources));
 
       // Update cache with new sources
       trackSourcesCache.current[cacheKey] = {
@@ -27594,10 +27707,7 @@ ${trackListXml}
             // polluting trackSources["undefined"] which causes wrong sources
             // to be merged into other id-less tracks (e.g. listen-along)
             if (trackKey) {
-              setTrackSources(prev => ({
-                ...prev,
-                [trackKey]: { ...prev[trackKey], ...flushed }
-              }));
+              queueTrackSources(trackKey, flushed, { merge: true });
             }
             if (isQueueResolution && track.id) {
               setCurrentQueue(prev => prev.map(t =>
@@ -27659,10 +27769,7 @@ ${trackListXml}
       const finalDisplay = (realSourceCount === 0 && totalAttempted > 0)
         ? { __noMatchAll: true }
         : displaySources;
-      setTrackSources(prev => ({
-        ...prev,
-        [trackKey]: finalDisplay
-      }));
+      queueTrackSources(trackKey, finalDisplay);
 
       if (realSourceCount > 0) {
         console.log(`✅ Found ${realSourceCount} source(s) for: ${track.title} (cached)`);
@@ -29415,6 +29522,7 @@ ${trackListXml}
     console.log(`🧹 Removing sources for disabled/uninstalled resolver: ${resolverId}`);
 
     // Remove from trackSources (release/album view)
+    flushTrackSources(); // queued writes first, so none re-adds the resolver after this
     setTrackSources(prev => {
       const updated = {};
       for (const [trackKey, sources] of Object.entries(prev)) {
@@ -30801,11 +30909,35 @@ ${tracks}
   const openChartsAlbum = async (album) => {
     console.log(`🎵 Opening Chart Album: ${album.artist} - ${album.title}`);
 
+    // Navigate before the lookup, not after. Every MusicBrainz request goes
+    // through the 1 req/s limiter, so the release lookup below is at least a
+    // second away (more behind queued hover prefetches). Waiting on it before
+    // changing views left the click with no visible effect for that long.
+    // Same pattern as the collection-album opener: artist + loading state +
+    // navigate, then search, then fetchReleaseData fills the page in.
+    showReleasePlaceholder({
+      id: album.releaseGroupId || album.id,
+      artist: album.artist,
+      title: album.title,
+      albumArt: album.albumArt,
+      date: album.date,
+      releaseType: album.releaseType
+    });
+
     try {
       let release;
       const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' };
 
-      if (album.releaseGroupId) {
+      // A release-group opened before resolves with no requests at all: the
+      // alias cache maps it to the release, whose details (title, date,
+      // artist credit) are in the release-details cache.
+      const aliasEntry = album.releaseGroupId && releaseDetailsCache.current[album.releaseGroupId];
+      const aliasedRelease = aliasEntry?.alias && releaseDetailsCache.current[aliasEntry.alias]?.data;
+      if (aliasedRelease && (Date.now() - aliasEntry.timestamp) < CACHE_TTL.releaseDetails) {
+        release = aliasedRelease;
+      }
+
+      if (!release && album.releaseGroupId) {
         // Direct lookup by release-group ID (Fresh Drops — much more reliable than string search)
         const rgResponse = await fetch(
           `https://musicbrainz.org/ws/2/release?release-group=${album.releaseGroupId}&fmt=json&limit=1&inc=artist-credits`,
@@ -30818,28 +30950,26 @@ ${tracks}
       }
 
       if (!release) {
-        // Fallback: search by title + artist string (Charts, or release-group lookup failed)
-        const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-        const mbResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-          { headers: mbHeaders }
-        );
+        // Fallback: search by title + artist string (Charts, Critic's Picks,
+        // or the release-group lookup failed). The shared search retries
+        // with the first artist of a "A & B" credit.
+        const releases = await searchMusicBrainzRelease(album.title, album.artist);
 
-        if (!mbResponse.ok) {
-          throw new Error('MusicBrainz search failed');
-        }
-
-        const mbData = await mbResponse.json();
-
-        if (!mbData.releases || mbData.releases.length === 0) {
+        if (releases.length === 0) {
           // Fallback: just navigate to artist page
           console.log('Release not found in MusicBrainz, navigating to artist page');
+          setCurrentRelease(null);
+          setLoadingRelease(false);
           fetchArtistData(album.artist);
           return;
         }
 
-        release = mbData.releases[0];
+        release = releases[0];
+        // Art loaded on the album page can be reused by the chart card.
+        albumToReleaseIdCache.current[`${album.artist}-${album.title}`.toLowerCase()] = release.id;
       }
+
+      if (album.releaseGroupId) rememberReleaseGroupAlias(album.releaseGroupId, release.id);
 
       const artistCredit = release['artist-credit']?.[0];
 
@@ -30854,34 +30984,62 @@ ${tracks}
         id: release.id,
         title: release.title,
         date: release.date,
-        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
+        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || album.releaseType || 'album',
         albumArt: album.albumArt
       };
 
-      // Set artist context and fetch release data
-      // Mark that we're opening a release so header stays collapsed
+      // The view is already open; fill in the real artist and tracks.
+      // Keep the header collapsed across the artist change.
       openingReleaseRef.current = true;
       setCurrentArtist(artist);
-      navigateTo('artist');
       fetchReleaseData(releaseObj, artist);
 
     } catch (error) {
       console.error('Error opening chart album:', error);
       // Fallback: navigate to artist page
+      setCurrentRelease(null);
+      setLoadingRelease(false);
       fetchArtistData(album.artist);
     }
   };
 
   // Prefetch tracks for a Charts album on hover
+  // Hover prefetch fires only after the pointer rests on a card. Cards passing
+  // under a stationary pointer while the grid scrolls used to fire mouseenter
+  // each, queueing a MusicBrainz lookup and a state write (a full render) per
+  // card: the Fresh Drops / charts scroll stutter.
+  const HOVER_PREFETCH_DWELL_MS = 250;
+  const hoverPrefetchTimerRef = useRef(null);
+  const prefetchInFlightRef = useRef(new Set());
+  const scheduleHoverPrefetch = (album) => {
+    cancelHoverPrefetch();
+    if (!album || prefetchedReleases[album.id] || prefetchInFlightRef.current.has(album.id)) return;
+    hoverPrefetchTimerRef.current = setTimeout(() => {
+      hoverPrefetchTimerRef.current = null;
+      prefetchChartsTracks(album);
+    }, HOVER_PREFETCH_DWELL_MS);
+  };
+  const cancelHoverPrefetch = () => {
+    if (hoverPrefetchTimerRef.current !== null) {
+      clearTimeout(hoverPrefetchTimerRef.current);
+      hoverPrefetchTimerRef.current = null;
+    }
+  };
+
   const prefetchChartsTracks = async (album) => {
-    // Skip if already prefetched
-    if (prefetchedReleases[album.id]) {
+    // Skip if already prefetched, or already being fetched (the state check
+    // alone is stale until the next render, so quick re-hovers double-fetched)
+    if (prefetchedReleases[album.id] || prefetchInFlightRef.current.has(album.id)) {
       return;
     }
+    prefetchInFlightRef.current.add(album.id);
 
     try {
+      // Background lane of the MusicBrainz limiter: a prefetch must never make
+      // a click's lookup wait behind it (two requests per hovered card did).
+      const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
       const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await fetch(
+      const mbResponse = await bgFetch(
         `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
@@ -30894,7 +31052,7 @@ ${tracks}
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
-      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -30925,6 +31083,8 @@ ${tracks}
       }
     } catch (error) {
       // Silent fail for prefetch
+    } finally {
+      prefetchInFlightRef.current.delete(album.id);
     }
   };
 
@@ -31496,18 +31656,9 @@ ${tracks}
 
   // Handle scroll for New Releases header collapse
   const handleNewReleasesScroll = (e) => {
-    const scrollTop = e.target.scrollTop;
-    const container = e.target;
-    if (scrollTop > 100 && !newReleasesHeaderCollapsed) {
-      // Only collapse if there's enough scrollable content to sustain it
-      // (header shrinks by 240px, so content must exceed viewport by at least that much)
-      const hasEnoughContent = container.scrollHeight - container.clientHeight > 300;
-      if (hasEnoughContent) {
-        setNewReleasesHeaderCollapsed(true);
-      }
-    } else if (scrollTop <= 50 && newReleasesHeaderCollapsed) {
-      setNewReleasesHeaderCollapsed(false);
-    }
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    const decision = window.headerCollapseDecision({ scrollTop, scrollHeight, clientHeight, collapsed: newReleasesHeaderCollapsed });
+    if (decision !== null) setNewReleasesHeaderCollapsed(decision);
   };
 
   // ─── CONCERTS ─────────────────────────────────────────────────────────────
@@ -33282,26 +33433,19 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   const resolveRecommendationArtistImages = async (artists) => {
     console.log(`⭐ Fetching images for ${artists.length} recommended artists...`);
 
+    // Writes are coalesced (recArtistImageWriterRef): N images → a handful of
+    // renders instead of N, which matters while the user scrolls the grid.
     for (const artist of artists) {
       try {
         const result = await getArtistImage(artist.name);
-        setRecommendations(prev => ({
-          ...prev,
-          artists: prev.artists.map(a =>
-            a.id === artist.id ? { ...a, image: result?.url || null, imageLoaded: true } : a
-          )
-        }));
+        recArtistImageWriterRef.current.queue(artist.id, { image: result?.url || null, imageLoaded: true }, { merge: true });
       } catch (err) {
         console.error(`Error fetching image for ${artist.name}:`, err);
         // Mark as loaded even on error so we show fallback icon instead of spinner
-        setRecommendations(prev => ({
-          ...prev,
-          artists: prev.artists.map(a =>
-            a.id === artist.id ? { ...a, imageLoaded: true } : a
-          )
-        }));
+        recArtistImageWriterRef.current.queue(artist.id, { imageLoaded: true }, { merge: true });
       }
     }
+    recArtistImageWriterRef.current.flush();
     console.log(`⭐ Finished fetching recommended artist images`);
   };
 
@@ -35126,12 +35270,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Helper function to search MusicBrainz with fallback for multi-artist names
   // If artist contains "&" or " and " and search fails, tries with just the first artist name
-  const searchMusicBrainzRelease = async (album, artist) => {
+  // opts.background: queue in the MusicBrainz limiter's background lane
+  // (hover prefetches), so the search never delays a user-initiated lookup.
+  const searchMusicBrainzRelease = async (album, artist, opts = {}) => {
     const doSearch = async (artistQuery) => {
       const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artistQuery}"`);
       const mbResponse = await fetch(
         `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }, mbBackground: !!opts.background }
       );
 
       if (!mbResponse.ok) {
@@ -35176,14 +35322,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Mark as in progress
     topAlbumPrefetchInProgress.current.add(cacheKey);
 
-    // Fetch asynchronously
+    // Fetch asynchronously, in the limiter's background lane (a hover must
+    // never delay a click's lookup)
     (async () => {
       try {
-        const releases = await searchMusicBrainzRelease(albumName, artistName);
+        const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
+        const releases = await searchMusicBrainzRelease(albumName, artistName, { background: true });
         if (releases.length === 0) return;
 
         const releaseId = releases[0].id;
-        const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+        const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
         if (!releaseDetailsResponse.ok) return;
 
@@ -35355,106 +35503,28 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Navigate to a Critic's Picks album release page
-  const openCriticsPicksAlbum = async (album) => {
-    console.log(`🎵 Opening Critic's Pick: ${album.artist} - ${album.title}`);
-
-    try {
-      // Search MusicBrainz for the release (with fallback for multi-artist names)
-      const releases = await searchMusicBrainzRelease(album.title, album.artist);
-
-      if (releases.length === 0) {
-        // Fallback: just navigate to artist page
-        console.log('Release not found in MusicBrainz, navigating to artist page');
-        fetchArtistData(album.artist);
-        return;
-      }
-
-      const release = releases[0];
-      const artistCredit = release['artist-credit']?.[0];
-
-      // Cache the release ID mapping so art loaded on album page can be reused
-      const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
-      albumToReleaseIdCache.current[lookupKey] = release.id;
-
-      // Create artist object for the release page
-      const artist = {
-        id: artistCredit?.artist?.id,
-        name: artistCredit?.artist?.name || album.artist
-      };
-
-      // Create release object matching the expected format
-      const releaseObj = {
-        id: release.id,
-        title: release.title,
-        date: release.date,
-        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
-        albumArt: album.albumArt
-      };
-
-      // Set artist context and fetch release data
-      // Mark that we're opening a release so header stays collapsed
-      openingReleaseRef.current = true;
-      setCurrentArtist(artist);
-      navigateTo('artist');
-      fetchReleaseData(releaseObj, artist);
-
-    } catch (error) {
-      console.error('Error opening Critic\'s Pick album:', error);
-      // Fallback: navigate to artist page
-      fetchArtistData(album.artist);
-    }
-  };
+  // Critic's Picks cards: same navigate-first opener as the charts.
+  const openCriticsPicksAlbum = (album) => openChartsAlbum({
+    id: album.id,
+    artist: album.artist,
+    title: album.title,
+    albumArt: album.albumArt
+  });
 
   // Navigate to a Top Album from History page
-  const openTopAlbum = async (album) => {
-    console.log(`🎵 Opening Top Album: ${album.artist} - ${album.name}`);
-
-    try {
-      // Search MusicBrainz for the release (with fallback for multi-artist names)
-      const releases = await searchMusicBrainzRelease(album.name, album.artist);
-
-      if (releases.length === 0) {
-        // Fallback: just navigate to artist page
-        console.log('Release not found in MusicBrainz, navigating to artist page');
-        fetchArtistData(album.artist);
-        return;
-      }
-
-      const release = releases[0];
-      const artistCredit = release['artist-credit']?.[0];
-
-      // Cache the release ID mapping so art loaded on album page can be reused
-      const lookupKey = `${album.artist}-${album.name}`.toLowerCase();
-      albumToReleaseIdCache.current[lookupKey] = release.id;
-
-      // Create artist object for the release page
-      const artist = {
-        id: artistCredit?.artist?.id,
-        name: artistCredit?.artist?.name || album.artist
-      };
-
-      // Create release object matching the expected format
-      const releaseObj = {
-        id: release.id,
-        title: release.title,
-        date: release.date,
-        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
-        albumArt: album.image
-      };
-
-      // Set artist context and fetch release data
-      // Mark that we're opening a release so header stays collapsed
-      openingReleaseRef.current = true;
-      setCurrentArtist(artist);
-      navigateTo('artist');
-      fetchReleaseData(releaseObj, artist);
-
-    } catch (error) {
-      console.error('Error opening Top Album:', error);
-      // Fallback: navigate to artist page
-      fetchArtistData(album.artist);
-    }
-  };
+  // Top Albums cards and the home hero cards ({ name, image } field names):
+  // same navigate-first opener as the charts. A caller that knows the
+  // release-group id (the home Fresh Drops hero) passes releaseGroupId so
+  // the lookup is a direct one instead of a string search.
+  const openTopAlbum = (album) => openChartsAlbum({
+    id: album.id,
+    artist: album.artist,
+    title: album.name,
+    albumArt: album.image,
+    releaseGroupId: album.releaseGroupId,
+    date: album.date,
+    releaseType: album.releaseType
+  });
 
   // Prefetch Critic's Picks album tracks on hover (for Add to Queue)
   const prefetchCriticsPicksTracks = async (album) => {
@@ -35466,9 +35536,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     try {
       console.log('🔍 Prefetching Critic\'s Pick tracks for:', album.title);
 
+      // Background lane of the MusicBrainz limiter (see prefetchChartsTracks).
+      const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
       // Search MusicBrainz for the release
       const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await fetch(
+      const mbResponse = await bgFetch(
         `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
       );
@@ -35481,7 +35553,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const releaseId = mbData.releases[0].id;
 
       // Fetch release details with tracks
-      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -48702,7 +48774,7 @@ useEffect(() => {
                       className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
-                        openTopAlbum({ ...newReleases[0], name: newReleases[0].title, image: newReleases[0].albumArt });
+                        openTopAlbum({ ...newReleases[0], name: newReleases[0].title, image: newReleases[0].albumArt, releaseGroupId: newReleases[0].id });
                       }
                     },
                       React.createElement('div', {
@@ -50978,8 +51050,9 @@ useEffect(() => {
                     boxShadow: 'var(--card-shadow)',
                     animationDelay: `${Math.min(index * 30, 300)}ms`
                   },
-                  onMouseEnter: () => prefetchChartsTracks(item),
-                  onClick: () => openChartsAlbum(item),
+                  onMouseEnter: () => scheduleHoverPrefetch(item),
+                  onMouseLeave: cancelHoverPrefetch,
+                  onClick: () => { cancelHoverPrefetch(); openChartsAlbum(item); },
                   onContextMenu: (e) => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
@@ -51682,8 +51755,12 @@ useEffect(() => {
                         animationDelay: `${Math.min(index, 20) * 30}ms`,
                         cursor: 'pointer'
                       },
-                      onMouseEnter: () => prefetchChartsTracks(release),
-                      onClick: () => openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id }),
+                      onMouseEnter: () => scheduleHoverPrefetch(release),
+                      onMouseLeave: cancelHoverPrefetch,
+                      onClick: () => {
+                        cancelHoverPrefetch();
+                        openChartsAlbum({ artist: release.artist, title: release.title, albumArt: release.albumArt, releaseGroupId: release.id, date: release.date, releaseType: release.releaseType });
+                      },
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
@@ -53379,12 +53456,12 @@ useEffect(() => {
               },
               className: 'flex-1 overflow-y-auto scrollable-content',
               onScroll: (e) => {
-                const scrollTop = e.target.scrollTop;
-                if (scrollTop > 50 && !recommendationsHeaderCollapsed) {
-                  setRecommendationsHeaderCollapsed(true);
-                } else if (scrollTop <= 50 && recommendationsHeaderCollapsed) {
-                  setRecommendationsHeaderCollapsed(false);
-                }
+                // Hysteresis + content guard (same as Fresh Drops): the old
+                // single 50px threshold flip-flopped when collapsing the
+                // 240px header clamped scrollTop back under it.
+                const { scrollTop, scrollHeight, clientHeight } = e.target;
+                const decision = window.headerCollapseDecision({ scrollTop, scrollHeight, clientHeight, collapsed: recommendationsHeaderCollapsed });
+                if (decision !== null) setRecommendationsHeaderCollapsed(decision);
               }
             },
               // Sticky filter bar - show when both services are configured (even during loading)
