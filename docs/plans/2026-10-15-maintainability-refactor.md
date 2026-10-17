@@ -228,12 +228,14 @@ today. If yes, A is strictly better long-term.
 
 ## Track 3 — main.js decomposition (no new tooling at all)
 
-> **Status: slices 1–2 shipped** — `main-process/ipc/store.js` (allowlist + the
-> five `store-*` handlers; `tests/store/store-ipc.test.js`) and
+> **Status: slices 1–3 shipped** — `main-process/ipc/store.js` (allowlist + the
+> five `store-*` handlers; `tests/store/store-ipc.test.js`),
 > `main-process/ipc/musickit.js` (the 21 bridge-delegating `musickit:*`
 > handlers; `tests/main-process/musickit-ipc.test.js`; `musickit:token-status`
-> stays with the token-generation cluster it diagnoses). The remaining handler
-> groups below are follow-up slices.
+> stays with the token-generation cluster it diagnoses), and
+> `main-process/ipc/local-files.js` (the 12 `localFiles:*` handlers incl. the
+> resolveArt renderer→DB translation; `tests/main-process/local-files-ipc.test.js`).
+> The remaining handler groups below are follow-up slices.
 
 The main process is CommonJS — plain `require()` works; the extraction
 precedent already shipped (`amazon-music-poller.js`, `amazon-music-logic.js`,
