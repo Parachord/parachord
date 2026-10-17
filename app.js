@@ -26526,14 +26526,16 @@ ${trackListXml}
 
     try {
       console.log('🔍 Prefetching tracks for:', release.title);
+      // Hover prefetch: background lane of the MusicBrainz limiter
+      const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
 
       // Try fetching as a direct release ID first
       let releaseId = release.id;
-      let releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      let releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
       // If that fails (404), it might be a release-group ID
       if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
-        const releaseGroupResponse = await fetch(
+        const releaseGroupResponse = await bgFetch(
           `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
@@ -26545,7 +26547,7 @@ ${trackListXml}
 
         releaseId = releaseGroupData.releases[0].id;
         rememberReleaseGroupAlias(release.id, releaseId);
-        releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+        releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
       }
 
       if (!releaseDetailsResponse.ok) return;
@@ -26603,13 +26605,14 @@ ${trackListXml}
     // Mark as in progress SYNCHRONOUSLY before any async work
     prefetchInProgress.add(album.id);
 
-    // Run the actual fetch asynchronously
+    // Run the actual fetch asynchronously, in the limiter's background lane
     (async () => {
     try {
       const artistName = album['artist-credit']?.[0]?.name || 'Unknown Artist';
+      const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
 
       // Search albums use release-group IDs, so fetch the first release from the group
-      const releaseGroupResponse = await fetch(
+      const releaseGroupResponse = await bgFetch(
         `https://musicbrainz.org/ws/2/release?release-group=${album.id}&status=official&fmt=json&limit=1`,
         { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
       );
@@ -26622,7 +26625,7 @@ ${trackListXml}
       const releaseId = releaseGroupData.releases[0].id;
 
       // Fetch the release details with tracks
-      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
       if (!releaseDetailsResponse.ok) return;
 
@@ -26756,6 +26759,31 @@ ${trackListXml}
     }
   };
 
+  // Put the release page on screen before a MusicBrainz lookup. Every MB
+  // request waits in the 1 req/s limiter, so an opener that looks up first
+  // and navigates after shows nothing for a second or more; the user reads
+  // that as "the click did nothing". fetchReleaseData replaces this partial
+  // release once the lookup lands. Callers that fail after showing it must
+  // clear it (setCurrentRelease(null) + setLoadingRelease(false)).
+  const showReleasePlaceholder = ({ id, artist, title, albumArt, date, releaseType }) => {
+    const placeholderArtist = { id: null, name: artist };
+    openingReleaseRef.current = true;
+    setCurrentArtist(placeholderArtist);
+    setCurrentRelease({
+      id,
+      title,
+      artist: placeholderArtist,
+      date,
+      releaseType: releaseType || 'album',
+      albumArt: albumArt || null,
+      tracks: null,
+      _isPartial: true
+    });
+    setLoadingRelease(true);
+    setIsHeaderCollapsed(true);
+    navigateTo('artist');
+  };
+
   // Handle album click from search - fetch release data by release-group ID
   // Open the album page for whatever is playing, from any playback context.
   // The playbar's album-art click used to require track.album, which is set
@@ -26783,6 +26811,28 @@ ${trackListXml}
         }
       } catch (e) { /* mapper down: carry on with what we have */ }
     }
+
+    // With a name or a release id in hand, show the release page now; the
+    // MusicBrainz lookups below wait in the limiter. Without either there is
+    // nothing to show yet, and the toast below is the whole answer.
+    const placeholderShown = !!(albumName || releaseMbid);
+    if (placeholderShown) {
+      showReleasePlaceholder({
+        id: releaseMbid || `pending-${track.artist}-${albumName}`.toLowerCase(),
+        artist: track.artist,
+        title: albumName || 'Album',
+        albumArt: track.albumArt
+      });
+    }
+    const giveUp = (message) => {
+      showToast(message);
+      if (placeholderShown) {
+        // The artist page is the next-best answer, as in the chart openers.
+        setCurrentRelease(null);
+        setLoadingRelease(false);
+        fetchArtistData(track.artist);
+      }
+    };
 
     try {
       if (albumName) {
@@ -26816,10 +26866,10 @@ ${trackListXml}
           }
         }
       }
-      showToast(albumName ? `Album "${albumName}" not found` : 'No album found for this track');
+      giveUp(albumName ? `Album "${albumName}" not found` : 'No album found for this track');
     } catch (error) {
       console.error('Error opening album for track:', error);
-      showToast('Failed to load album');
+      giveUp('Failed to load album');
     }
   };
 
@@ -30865,22 +30915,14 @@ ${tracks}
     // changing views left the click with no visible effect for that long.
     // Same pattern as the collection-album opener: artist + loading state +
     // navigate, then search, then fetchReleaseData fills the page in.
-    const placeholderArtist = { id: null, name: album.artist };
-    openingReleaseRef.current = true;
-    setCurrentArtist(placeholderArtist);
-    setCurrentRelease({
+    showReleasePlaceholder({
       id: album.releaseGroupId || album.id,
+      artist: album.artist,
       title: album.title,
-      artist: placeholderArtist,
+      albumArt: album.albumArt,
       date: album.date,
-      releaseType: album.releaseType || 'album',
-      albumArt: album.albumArt || null,
-      tracks: null,
-      _isPartial: true
+      releaseType: album.releaseType
     });
-    setLoadingRelease(true);
-    setIsHeaderCollapsed(true);
-    navigateTo('artist');
 
     try {
       let release;
@@ -30908,20 +30950,12 @@ ${tracks}
       }
 
       if (!release) {
-        // Fallback: search by title + artist string (Charts, or release-group lookup failed)
-        const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-        const mbResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-          { headers: mbHeaders }
-        );
+        // Fallback: search by title + artist string (Charts, Critic's Picks,
+        // or the release-group lookup failed). The shared search retries
+        // with the first artist of a "A & B" credit.
+        const releases = await searchMusicBrainzRelease(album.title, album.artist);
 
-        if (!mbResponse.ok) {
-          throw new Error('MusicBrainz search failed');
-        }
-
-        const mbData = await mbResponse.json();
-
-        if (!mbData.releases || mbData.releases.length === 0) {
+        if (releases.length === 0) {
           // Fallback: just navigate to artist page
           console.log('Release not found in MusicBrainz, navigating to artist page');
           setCurrentRelease(null);
@@ -30930,7 +30964,9 @@ ${tracks}
           return;
         }
 
-        release = mbData.releases[0];
+        release = releases[0];
+        // Art loaded on the album page can be reused by the chart card.
+        albumToReleaseIdCache.current[`${album.artist}-${album.title}`.toLowerCase()] = release.id;
       }
 
       if (album.releaseGroupId) rememberReleaseGroupAlias(album.releaseGroupId, release.id);
@@ -35234,12 +35270,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Helper function to search MusicBrainz with fallback for multi-artist names
   // If artist contains "&" or " and " and search fails, tries with just the first artist name
-  const searchMusicBrainzRelease = async (album, artist) => {
+  // opts.background: queue in the MusicBrainz limiter's background lane
+  // (hover prefetches), so the search never delays a user-initiated lookup.
+  const searchMusicBrainzRelease = async (album, artist, opts = {}) => {
     const doSearch = async (artistQuery) => {
       const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artistQuery}"`);
       const mbResponse = await fetch(
         `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }, mbBackground: !!opts.background }
       );
 
       if (!mbResponse.ok) {
@@ -35284,14 +35322,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Mark as in progress
     topAlbumPrefetchInProgress.current.add(cacheKey);
 
-    // Fetch asynchronously
+    // Fetch asynchronously, in the limiter's background lane (a hover must
+    // never delay a click's lookup)
     (async () => {
       try {
-        const releases = await searchMusicBrainzRelease(albumName, artistName);
+        const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
+        const releases = await searchMusicBrainzRelease(albumName, artistName, { background: true });
         if (releases.length === 0) return;
 
         const releaseId = releases[0].id;
-        const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+        const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
 
         if (!releaseDetailsResponse.ok) return;
 
@@ -35463,106 +35503,28 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Navigate to a Critic's Picks album release page
-  const openCriticsPicksAlbum = async (album) => {
-    console.log(`🎵 Opening Critic's Pick: ${album.artist} - ${album.title}`);
-
-    try {
-      // Search MusicBrainz for the release (with fallback for multi-artist names)
-      const releases = await searchMusicBrainzRelease(album.title, album.artist);
-
-      if (releases.length === 0) {
-        // Fallback: just navigate to artist page
-        console.log('Release not found in MusicBrainz, navigating to artist page');
-        fetchArtistData(album.artist);
-        return;
-      }
-
-      const release = releases[0];
-      const artistCredit = release['artist-credit']?.[0];
-
-      // Cache the release ID mapping so art loaded on album page can be reused
-      const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
-      albumToReleaseIdCache.current[lookupKey] = release.id;
-
-      // Create artist object for the release page
-      const artist = {
-        id: artistCredit?.artist?.id,
-        name: artistCredit?.artist?.name || album.artist
-      };
-
-      // Create release object matching the expected format
-      const releaseObj = {
-        id: release.id,
-        title: release.title,
-        date: release.date,
-        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
-        albumArt: album.albumArt
-      };
-
-      // Set artist context and fetch release data
-      // Mark that we're opening a release so header stays collapsed
-      openingReleaseRef.current = true;
-      setCurrentArtist(artist);
-      navigateTo('artist');
-      fetchReleaseData(releaseObj, artist);
-
-    } catch (error) {
-      console.error('Error opening Critic\'s Pick album:', error);
-      // Fallback: navigate to artist page
-      fetchArtistData(album.artist);
-    }
-  };
+  // Critic's Picks cards: same navigate-first opener as the charts.
+  const openCriticsPicksAlbum = (album) => openChartsAlbum({
+    id: album.id,
+    artist: album.artist,
+    title: album.title,
+    albumArt: album.albumArt
+  });
 
   // Navigate to a Top Album from History page
-  const openTopAlbum = async (album) => {
-    console.log(`🎵 Opening Top Album: ${album.artist} - ${album.name}`);
-
-    try {
-      // Search MusicBrainz for the release (with fallback for multi-artist names)
-      const releases = await searchMusicBrainzRelease(album.name, album.artist);
-
-      if (releases.length === 0) {
-        // Fallback: just navigate to artist page
-        console.log('Release not found in MusicBrainz, navigating to artist page');
-        fetchArtistData(album.artist);
-        return;
-      }
-
-      const release = releases[0];
-      const artistCredit = release['artist-credit']?.[0];
-
-      // Cache the release ID mapping so art loaded on album page can be reused
-      const lookupKey = `${album.artist}-${album.name}`.toLowerCase();
-      albumToReleaseIdCache.current[lookupKey] = release.id;
-
-      // Create artist object for the release page
-      const artist = {
-        id: artistCredit?.artist?.id,
-        name: artistCredit?.artist?.name || album.artist
-      };
-
-      // Create release object matching the expected format
-      const releaseObj = {
-        id: release.id,
-        title: release.title,
-        date: release.date,
-        releaseType: release['release-group']?.['primary-type']?.toLowerCase() || 'album',
-        albumArt: album.image
-      };
-
-      // Set artist context and fetch release data
-      // Mark that we're opening a release so header stays collapsed
-      openingReleaseRef.current = true;
-      setCurrentArtist(artist);
-      navigateTo('artist');
-      fetchReleaseData(releaseObj, artist);
-
-    } catch (error) {
-      console.error('Error opening Top Album:', error);
-      // Fallback: navigate to artist page
-      fetchArtistData(album.artist);
-    }
-  };
+  // Top Albums cards and the home hero cards ({ name, image } field names):
+  // same navigate-first opener as the charts. A caller that knows the
+  // release-group id (the home Fresh Drops hero) passes releaseGroupId so
+  // the lookup is a direct one instead of a string search.
+  const openTopAlbum = (album) => openChartsAlbum({
+    id: album.id,
+    artist: album.artist,
+    title: album.name,
+    albumArt: album.image,
+    releaseGroupId: album.releaseGroupId,
+    date: album.date,
+    releaseType: album.releaseType
+  });
 
   // Prefetch Critic's Picks album tracks on hover (for Add to Queue)
   const prefetchCriticsPicksTracks = async (album) => {
@@ -48812,7 +48774,7 @@ useEffect(() => {
                       className: 'w-full flex-1 flex items-center gap-3 p-5 border-t border-white/20 text-left hover:bg-white/10 transition-colors',
                       onClick: (e) => {
                         e.stopPropagation();
-                        openTopAlbum({ ...newReleases[0], name: newReleases[0].title, image: newReleases[0].albumArt });
+                        openTopAlbum({ ...newReleases[0], name: newReleases[0].title, image: newReleases[0].albumArt, releaseGroupId: newReleases[0].id });
                       }
                     },
                       React.createElement('div', {

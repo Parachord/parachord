@@ -140,16 +140,48 @@ describe('card click opens the release page before the lookup', () => {
   const start = app.indexOf('const openChartsAlbum = async (album) => {');
   const body = app.slice(start, app.indexOf('\n  };', start));
 
-  test('navigates and shows a partial release before the first MusicBrainz request', () => {
-    const navigate = body.indexOf("navigateTo('artist')");
-    const partial = body.indexOf('_isPartial: true');
+  const placeholderStart = app.indexOf('const showReleasePlaceholder = (');
+  const placeholder = app.slice(placeholderStart, app.indexOf('\n  };', placeholderStart));
+
+  test('the placeholder helper sets artist, partial release, loading state and navigates', () => {
+    expect(placeholder).toMatch(/_isPartial: true/);
+    expect(placeholder).toMatch(/setLoadingRelease\(true\)/);
+    expect(placeholder).toMatch(/navigateTo\('artist'\)/);
+    expect(placeholder).toMatch(/openingReleaseRef\.current = true/);
+  });
+
+  test('shows the placeholder before the first MusicBrainz request, and never navigates again', () => {
+    const show = body.indexOf('showReleasePlaceholder({');
     const firstFetch = body.indexOf('musicbrainz.org/ws/2/');
-    expect(navigate).toBeGreaterThan(-1);
-    expect(partial).toBeGreaterThan(-1);
+    expect(show).toBeGreaterThan(-1);
     expect(firstFetch).toBeGreaterThan(-1);
-    expect(navigate).toBeLessThan(firstFetch);
-    expect(partial).toBeLessThan(firstFetch);
-    expect((body.match(/navigateTo\('artist'\)/g) || []).length).toBe(1);
+    expect(show).toBeLessThan(firstFetch);
+    expect(body).not.toMatch(/navigateTo\('artist'\)/);
+  });
+
+  test("Critic's Picks and Top Album openers delegate to the same opener", () => {
+    expect(app).toMatch(/const openCriticsPicksAlbum = \(album\) => openChartsAlbum\(\{/);
+    expect(app).toMatch(/const openTopAlbum = \(album\) => openChartsAlbum\(\{/);
+    // the string-search path keeps the multi-artist fallback the two used to have
+    expect(body).toMatch(/await searchMusicBrainzRelease\(album\.title, album\.artist\)/);
+    expect(app).not.toMatch(/Error opening (Top Album|Critic)/);
+  });
+
+  test('the home Fresh Drops hero passes the release-group id instead of a string search', () => {
+    expect(app).toMatch(/openTopAlbum\(\{ \.\.\.newReleases\[0\][^\n]*releaseGroupId: newReleases\[0\]\.id/);
+  });
+
+  test('the playbar album link shows the release page before its MusicBrainz search', () => {
+    const s = app.indexOf('const openAlbumForTrack = async (track) => {');
+    const b = app.slice(s, app.indexOf('\n  };', s));
+    const show = b.indexOf('showReleasePlaceholder({');
+    const firstFetch = b.indexOf('musicbrainz.org/ws/2/');
+    expect(show).toBeGreaterThan(-1);
+    expect(show).toBeLessThan(firstFetch);
+    // every failure path clears the placeholder it showed
+    expect(b).toMatch(/const giveUp = \(message\) => \{/);
+    expect((b.match(/giveUp\(/g) || []).length).toBe(2); // not-found and error paths
+    expect(b).toMatch(/setCurrentRelease\(null\);\s*setLoadingRelease\(false\);\s*fetchArtistData\(track\.artist\)/);
   });
 
   test('remembers the release-group alias so a revisit needs no request', () => {
@@ -162,15 +194,26 @@ describe('card click opens the release page before the lookup', () => {
     expect(fallbacks.length).toBe(2);
   });
 
-  test('hover prefetches use the background lane of the MusicBrainz limiter', () => {
-    for (const name of ['prefetchChartsTracks', 'prefetchCriticsPicksTracks']) {
-      const s = app.indexOf(`const ${name} = async (album) => {`);
+  test('every hover prefetch uses the background lane of the MusicBrainz limiter', () => {
+    const prefetchers = [
+      'const prefetchChartsTracks = async (album) => {',
+      'const prefetchCriticsPicksTracks = async (album) => {',
+      'const prefetchReleaseTracks = async (release, artist) => {',
+      'const prefetchSearchAlbumTracks = (album) => {',
+      'const prefetchTopAlbumTracks = (artistName, albumName, albumArt = null) => {'
+    ];
+    for (const marker of prefetchers) {
+      const s = app.indexOf(marker);
+      expect(s).toBeGreaterThan(-1);
       const b = app.slice(s, app.indexOf('\n  };', s));
       expect(b).toMatch(/mbBackground: true/);
-      expect(b).toMatch(/await bgFetch\(/);
       expect(b).toMatch(/fetchReleaseDetails\(releaseId, bgFetch\)/);
       expect(b).not.toMatch(/await fetch\(/);
+      expect(b).not.toMatch(/fetchReleaseDetails\(releaseId\)/);
     }
+    // the shared search helper carries the flag for the Top Albums prefetch
+    expect(app).toMatch(/searchMusicBrainzRelease\(albumName, artistName, \{ background: true \}\)/);
+    expect(app).toMatch(/mbBackground: !!opts\.background/);
   });
 
   test('a click cancels the pending hover prefetch on both grids', () => {
