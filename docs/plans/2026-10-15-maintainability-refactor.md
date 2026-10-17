@@ -237,8 +237,11 @@ today. If yes, A is strictly better long-term.
 > `sync-links:*` IPC), and `main-process/ipc/sync-create.js` (the
 > `sync:create-playlist` three-layer-dedup gateway + `sync:resolve-tracks`,
 > with the duplicated provider-token block unified into one injected
-> `resolveProviderToken`). Remaining: `sync:start` (the ~700-line inbound
-> engine) and the rest of the thin sync handlers.
+> `resolveProviderToken`), `main-process/ipc/sync-start.js` (the ~800-line
+> inbound engine: activeSyncs + sync:get-providers / sync:check-auth /
+> sync:start / sync:cancel, with the MusicKit generated-token wait unified
+> into injected getGeneratedMusicKitToken; tests caught a missing path
+> require that plain-Node 26 masked via its path global). Remaining: the rest of the thin sync handlers.
 
 The main process is CommonJS — plain `require()` works; the extraction
 precedent already shipped (`amazon-music-poller.js`, `amazon-music-logic.js`,
