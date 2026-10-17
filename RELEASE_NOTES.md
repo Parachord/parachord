@@ -1,3 +1,75 @@
+# Parachord v0.9.9
+
+**Release date:** 2026-10-17
+
+> Two new ways to play: Amazon Music, streamed inside Parachord, and your own Subsonic server (Navidrome, Airsonic, Gonic and friends). Album pages open the moment you click, Fresh Drops and Recommendations scroll smoothly, and AI-recommended tracks finally show their album art. Plus a Custom LLM option for Shuffleupagus, and a lot of fixes from a very productive week of contributions.
+
+---
+
+## Amazon Music
+
+Parachord can now play Amazon Music. Enable the Amazon Music plugin, sign in with your Amazon account, and Amazon tracks show up in search, resolution and playback like any other service. Playback runs through Amazon's own web player inside Parachord, decrypted by the Widevine module that arrived in 0.9.8, so there is no Amazon desktop app to install or keep open.
+
+- **Audio quality** is a setting in the plugin's section: Standard, Data Saver, or HD / Ultra HD (lossless, where your subscription includes it). Parachord measures what it is actually receiving and shows it when you hover the title in the now-playing bar.
+- **Playlist import** works for `music.amazon.com/playlists/…` links, from the import dialog or a `parachord://play/playlist` link.
+- You need an Amazon Music subscription for full tracks, and this needs the signed release builds (the ones from the Releases page), not a local build from source.
+- I tested this on a Mac. Reports from Windows and Linux are welcome on [#983](https://github.com/Parachord/parachord/pull/983).
+
+## Subsonic servers
+
+If you run Navidrome, Airsonic, Gonic, or anything else that speaks the Subsonic API, Parachord can search it and stream from it. Enable the Subsonic plugin, enter the server address, username and password, and your library is a source like any other. Sign-in uses Subsonic's token scheme, so your password is never sent in a URL. Hovering the title in the now-playing bar shows the file's codec, bit rate and sample rate as the server reports them.
+
+## Album pages open instantly
+
+Clicking an album used to show nothing for a second or more, sometimes much longer, before the page appeared. Parachord was waiting for MusicBrainz, which allows one request per second, before changing views, and hover previews were queued ahead of your click. Now the page appears at once with the title and cover, the tracks follow, and an album you have opened before comes straight from the cache with no request at all. This applies to Fresh Drops, Charts, Critic's Picks, the home page cards, and the album art in the now-playing bar.
+
+- **The now-playing album art always opens the album page**, whatever you are playing from. It used to work only when you had started playback from that album's page.
+- **Smooth scrolling on Fresh Drops and Recommendations.** Both pages stuttered while tracks resolved in the background. Updates are now batched, and hovering a card no longer fires a lookup until the pointer rests on it.
+
+## Album art everywhere
+
+Every surface now uses the same artwork lookup, which ends with iTunes and Deezer as fallbacks. The visible effect: tracks suggested by Shuffleupagus, which used to render without covers, now get art like everything else.
+
+## Custom LLM for Shuffleupagus
+
+Shuffleupagus can now talk to any OpenAI-compatible or Anthropic-compatible endpoint, not just the named providers: LM Studio, vLLM, llama.cpp, OpenRouter, Ollama's `/v1`, or a hosted API with its own address. Set the API style, the base URL, an optional key, and a model (typed freely, with the endpoint's model list as suggestions). A Reasoning setting controls thinking on models that support it, and a model that spends its whole budget thinking no longer comes back as a blank reply.
+
+## Local files
+
+- **Network shares.** Seeking in a file on an SMB or NFS share failed with "the file may have been moved or deleted" while the file was right there. Seeks and transient read errors are retried; a genuinely missing file still fails cleanly.
+- **Stream quality on hover.** Hover the title in the now-playing bar to see the exact parameters of what is playing (for example `FLAC · 44.1 kHz · 16-bit · 847 kbps`). Local files, Amazon Music and Subsonic provide this; other services show the title as before.
+- **Adding a library no longer stalls the app.** Library enrichment used to sit in front of search, artist pages and even pressing play for minutes after launch. It now runs behind anything you ask for directly.
+
+## Recommendations and discovery
+
+- **Blocking works.** Telling Shuffleupagus to never recommend an artist, album or track now actually keeps it out of Recommendations, Fresh Drops, the home suggestions and chat. The chat also offers the block tool, as the prompt always claimed.
+- **Fresh Drops** no longer silently skips artists when MusicBrainz is slow, and its unread badge (and the Concerts one) survives a restart.
+- **Critical Darlings** are remembered between launches instead of reloading every time.
+- **Concerts** stop tripping Ticketmaster's rate limit, which was leaving events out.
+- **Artist radio links** (`parachord://play/radio?artist=…`) work; they used to fail quietly.
+
+## Playlists and sync
+
+- **"Local only" stays local.** Editing the tracks of a playlist marked local only used to switch sync back on for it.
+- **Export as XSPF** is reachable: from the playlist's Share menu, from the playlist's right-click menu, and as "Save to file" in the queue save dialog.
+- **The Library Sync window and its "Sync Now" button** are reachable again.
+- Playlists mirrored from a web address are fetched with size and address checks, and a streaming-service playlist page is no longer mistaken for one of them (that caused an "Import Failed" message at startup for a playlist that had imported fine).
+
+## Under the hood
+
+- While ListenBrainz's MBID mapper is down (it has been since late September), Parachord falls back to the ListenBrainz labs lookup, so scrobbles keep their MusicBrainz IDs and ListenBrainz playlist sync keeps working.
+- Album tracklists from MusicBrainz are cached, so reopening an album costs no request.
+- Skipping tracks no longer pauses your Spotify session when Parachord is playing from somewhere else.
+- The "Track Re-resolved" dialog names the service that failed.
+- The MCP server's `seek`, `get_position` and `block_recommendation` tools, and its playlist tools, work; they were advertised but not wired up.
+- Plugins are now generated from source files, so a plugin update cannot drift between the bundled copy and the marketplace.
+
+## Thanks
+
+Most of this release came from @theli-ua: Amazon Music, the Subsonic resolver, Custom LLM and its reasoning support, stream quality on hover, the network-share fix, the unread-badge fix, and the plugin build pipeline. Thank you.
+
+---
+
 # Parachord v0.9.8
 
 **Release date:** 2026-10-11
