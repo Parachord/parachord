@@ -97,7 +97,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - Full Apple Music playback needs Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
 
 ### Building from Source
-- **Node.js 20 or newer** to build and run; **24.9 or newer** to run the test suite (jest loads the ESM-only packages through `require(esm)`, which it supports from Node 24.9). CI builds on 20 and tests on 24; the app itself runs on the Node 22 inside Electron 39.
+- **Node.js 22 or newer** to build and run; **24.9 or newer** to run the test suite (jest loads the ESM-only packages through `require(esm)`, which it supports from Node 24.9). CI builds on 20 and tests on 24; the app itself runs on the Node 22 inside Electron 39.
 - A C/C++ toolchain for native addon compilation (`better-sqlite3`):
   - macOS: Xcode Command Line Tools (also provides the Swift toolchain that `npm run build:mac` uses for the MusicKit helper)
   - Windows: Visual Studio Build Tools with C++ workload

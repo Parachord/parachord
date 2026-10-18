@@ -53,7 +53,7 @@
     "@eslint/js": "^10.0.1",
     "@tanstack/react-virtual": "^3.13.18",
     "chrome-webstore-upload-cli": "^4.0.2",
-    "electron": "https://github.com/castlabs/electron-releases#v39.8.10+wvcus",
+    "electron": "github:castlabs/electron-releases#v44.1.0+wvcus",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
@@ -135,9 +135,6 @@
     ],
     "afterPack": "scripts/after-pack.js",
     "afterSign": "scripts/after-sign.js",
-    "electronDownload": {
-      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
-    },
     "mac": {
       "category": "public.app-category.music",
       "icon": "assets/icons/icon.icns",
@@ -207,5 +204,12 @@
     "addons-scanner-utils": {
       "express": "^4.22.3"
     }
+  },
+  "allowScripts": {
+    "@parcel/watcher@2.6.0": true,
+    "better-sqlite3@13.0.3": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.28.2": true,
+    "unrs-resolver@1.12.2": true
   }
 }
