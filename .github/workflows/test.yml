@@ -19,7 +19,7 @@ jobs:
       - name: Lint (strict on extracted modules; legacy files parse-level)
         run: npm run lint
       - name: Type-check @ts-check modules
-        run: npx tsc --noEmit --allowJs --checkJs --target ES2022 --module commonjs --skipLibCheck protocol-url.js
+        run: npm run typecheck
       - name: Run test suite
         run: npm test
         env:
