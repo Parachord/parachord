@@ -13,20 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'app.js'), 'utf8');
-
-function extract(startMarker, endMarker) {
-  const s = app.indexOf(startMarker);
-  expect(s).toBeGreaterThan(-1);
-  const e = app.indexOf(endMarker, s);
-  expect(e).toBeGreaterThan(s);
-  return app.slice(s, e);
-}
-
-const src = extract('const PLAYLIST_UI_ONLY_FIELDS = ', '// Resolver match validation + minimum confidence threshold.');
-const win = {};
-new Function('window', src)(win);
-const build = win.buildPlaylistSavePayload;
+const { buildPlaylistSavePayload: build } = require('../../protocol-url');
 
 // CLAUDE.md "Playlist data-model fields to preserve on every save".
 const REQUIRED = [
@@ -110,7 +97,10 @@ describe('buildPlaylistSavePayload', () => {
 
 describe('savePlaylistToStore uses the builder', () => {
   test('no hand-written field list remains', () => {
-    const body = extract('const savePlaylistToStore = async (playlist) => {', '\n  };\n');
+    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'app.js'), 'utf8');
+    const s = app.indexOf('const savePlaylistToStore = async (playlist) => {');
+    expect(s).toBeGreaterThan(-1);
+    const body = app.slice(s, app.indexOf('\n  };\n', s));
     expect(body).toMatch(/window\.buildPlaylistSavePayload\(playlist, xspfContent, Date\.now\(\)\)/);
     expect(body).not.toMatch(/syncedFrom: playlist\.syncedFrom/);
   });
