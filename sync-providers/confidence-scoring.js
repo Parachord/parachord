@@ -121,10 +121,14 @@ if (typeof window !== 'undefined') {
   window.ConfidenceScoring = { normalizeStr, validateResolvedTrack, calculateConfidence, MIN_CONFIDENCE_THRESHOLD, pickConfidentMatch };
 }
 
-module.exports = {
-  normalizeStr,
-  validateResolvedTrack,
-  calculateConfidence,
-  MIN_CONFIDENCE_THRESHOLD,
-  pickConfidentMatch,
-};
+// Guarded: the renderer has no `module`, and an unguarded assignment threw
+// "module is not defined" on every launch (after the window export above).
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    normalizeStr,
+    validateResolvedTrack,
+    calculateConfidence,
+    MIN_CONFIDENCE_THRESHOLD,
+    pickConfidentMatch,
+  };
+}

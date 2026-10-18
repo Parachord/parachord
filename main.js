@@ -6468,6 +6468,11 @@ bootstrapNwayPlaylistState();
 // remote still has the track, so this only catches "user removed,
 // never re-added, stopped syncing the provider OR remote also removed"
 // — i.e. genuinely stale state.
+//
+// The require must stay above the prune: with it further down (next to
+// SyncEngine) the call hit the `const` TDZ, the catch logged "Cannot access
+// 'Tombstones' before initialization" and nothing was ever pruned.
+const Tombstones = require('./sync-engine/tombstones');
 try {
   const pruned = Tombstones.pruneExpired(store);
   if (pruned > 0) console.log(`[Tombstones] Pruned ${pruned} expired entries at startup`);
@@ -6877,7 +6882,6 @@ ipcMain.handle('sync-settings:set-provider', async (event, providerId, providerS
 // =============================================================================
 
 const SyncEngine = require('./sync-engine');
-const Tombstones = require('./sync-engine/tombstones');
 
 // Inbound sync engine — the active-syncs map and the sync:get-providers /
 // sync:check-auth / sync:start / sync:cancel IPC live in
