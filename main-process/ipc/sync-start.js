@@ -33,6 +33,7 @@ function registerSyncStartIpc({
   writeCollectionAtomic,
   getSyncLinks,
   legacyPlaylistSyncEnabled,
+  getChannelOverride,
 }) {
 // Track active sync operations
 const activeSyncs = new Map();

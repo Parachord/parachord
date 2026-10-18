@@ -6895,6 +6895,7 @@ registerSyncStartIpc({
   writeCollectionAtomic,
   getSyncLinks,
   legacyPlaylistSyncEnabled,
+  getChannelOverride,
 });
 
 ipcMain.handle('sync:fetch-playlists', async (event, providerId) => {
