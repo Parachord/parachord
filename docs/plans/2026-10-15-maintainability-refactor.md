@@ -241,7 +241,7 @@ today. If yes, A is strictly better long-term.
 > inbound engine: activeSyncs + sync:get-providers / sync:check-auth /
 > sync:start / sync:cancel, with the MusicKit generated-token wait unified
 > into injected getGeneratedMusicKitToken; tests caught a missing path
-> require that plain-Node 26 masked via its path global). Remaining: the rest of the thin sync handlers.
+> require that plain-Node 26 masked via its path global). Remaining: none — main-process/ipc/sync-playlists.js (fetch/push/cleanup/relink/save/remove/tombstones/follow + getSyncProviderToken) completes the sync surface. Track 3 is done for the sync/store/musickit/localfiles surfaces; main.js keeps the thin channel/state/nway/settings handlers whose support code (channel map, sync-state model, N-way drive) remains the composition root logic.
 
 The main process is CommonJS — plain `require()` works; the extraction
 precedent already shipped (`amazon-music-poller.js`, `amazon-music-logic.js`,

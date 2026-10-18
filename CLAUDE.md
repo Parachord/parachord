@@ -293,7 +293,7 @@ Only the name-match fallback protects you. Don't rely on it.
 
 ### Cleanup: Relink Orphans, Then Dedup
 
-`sync:cleanup-duplicate-playlists` (main.js L7194+) runs two phases:
+`sync:cleanup-duplicate-playlists` (main-process/ipc/sync-playlists.js) runs two phases:
 
 **Phase 1 — Relink orphans** (via shared helper `relinkOrphansFor`). A local playlist is "orphaned" for a provider if it has tracks, isn't `localOnly`, and has no `syncedTo[providerId]`, `syncedFrom` for that provider, nor `sync_playlist_links` entry. For each orphan with an unambiguous 1:1 name match against a user-owned remote, write both `syncedTo[providerId]` and the link map entry. Ambiguous cases (multiple locals same name, OR multiple remotes same name) are surfaced in the response as `ambiguous` — never automatically resolved.
 
