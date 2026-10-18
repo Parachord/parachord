@@ -95,6 +95,8 @@ const sharedGlobals = {
   location: 'readonly',
   React: 'readonly',
   ReactDOM: 'readonly',
+  lucideReact: 'readonly',
+  ReactVirtual: 'readonly',
 };
 
 const off = Object.fromEntries(Object.keys(js.configs.recommended.rules).map((r) => [r, 'off']));
