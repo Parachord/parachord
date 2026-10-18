@@ -114,3 +114,39 @@ describe('index lifecycle', () => {
     expect(plex._allIndexed(CONFIG)).toBe(false);
   });
 });
+
+describe('isConfigured', () => {
+  test('needs a token and at least one selected library', () => {
+    expect(plex.isConfigured(CONFIG)).toBe(true);
+    expect(plex.isConfigured({ authToken: 'ACCOUNT', libraries: [] })).toBe(false);
+    expect(plex.isConfigured({ libraries: CONFIG.libraries })).toBe(false);
+    expect(plex.isConfigured(undefined)).toBe(false);
+  });
+});
+
+// The settings panel is plugin-rendered (settings.authType 'custom'): the host
+// hands over React and config read/write, the plugin owns the markup. Static
+// render only — effects (library discovery, index polling) need a window.
+describe('renderSettings', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const render = (config) => renderToStaticMarkup(React.createElement(() => plex.renderSettings({
+    React, config, resolver: plex, isActive: false,
+    saveConfig: async () => {}, clearConfig: async () => {}, setActive: () => {},
+  })));
+
+  test('signed out: offers the sign-in button and no library list', () => {
+    const html = render({});
+    expect(html).toContain('Sign in with Plex');
+    expect(html).not.toContain('Disconnect');
+    expect(html).not.toContain('Music libraries');
+  });
+
+  test('signed in: shows the account, the disconnect button and the library section', () => {
+    const html = render({ ...CONFIG, username: 'jp' });
+    expect(html).toContain('Signed in as jp');
+    expect(html).toContain('Disconnect');
+    expect(html).toContain('Music libraries');
+    expect(html).not.toContain('Sign in with Plex');
+  });
+});

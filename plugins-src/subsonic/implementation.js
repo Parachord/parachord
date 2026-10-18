@@ -517,6 +517,11 @@ module.exports = {
     );
     return false;
   },
+  // The host asks this before flagging the resolver as "needs configuration".
+  isConfigured: function (config) {
+    return !!(config && config.serverUrl && config.username && config.password);
+  },
+
   init: async function (config) {
     console.log('Subsonic resolver initialized');
     return true;

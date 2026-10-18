@@ -1,11 +1,14 @@
 // Source of truth for plugins/plex.axe.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 //
-// Plex Media Server resolver, contributed by JP Hastings-Edrei (parachord#926).
+// Plex Media Server resolver, contributed by JP Hastings-Spital (parachord#926).
 // Sign-in is Plex's PIN OAuth; servers and libraries come from plex.tv's
 // resources API; search/resolve run against a per-library index built in the
 // background (window._plexIndex) with a live /hubs/search fallback; playback
-// is a direct HTTP(S) stream URL into the app's shared HTML5 audio element.
+// is a direct HTTP(S) stream URL into the app's shared HTML5 audio element
+// (capabilities.html5Stream + getStreamUrl: the host never names this
+// resolver). The settings panel is renderSettings below (settings.authType
+// 'custom'), and isConfigured tells the host when the card needs attention.
 //
 // Every request goes through window.electron.plex.fetch, a main-process
 // handler scoped to plex.tv, *.plex.direct and the connection hosts saved in
@@ -390,6 +393,9 @@ module.exports = {
     var libs = (config && config.libraries) || [];
     if (!libs.length) return [];
     var self = this;
+    // First use kicks off the background index (idempotent); the live search
+    // below answers until it is ready. No host-side warm-up needed.
+    try { this.buildIndex(config); } catch (e) { /* best-effort */ }
     // Fast path: serve from the local index when every library is ready.
     if (this._allIndexed(config)) {
       var idxResults = this._searchIndex(config, query);
@@ -442,6 +448,7 @@ module.exports = {
   resolve: async function (artist, track, album, config) {
     if (!config || !config.libraries || !config.libraries.length || !track) return null;
     var self = this;
+    try { this.buildIndex(config); } catch (e) { /* best-effort */ }
 
     // Plex's search matches titles/names; feeding it the full credit list plus a
     // "(feat. ...)" suffix matches nothing. Search by the cleaned title, then
@@ -683,6 +690,215 @@ module.exports = {
       console.error('Plex playlist lookup error:', e);
       return null;
     }
+  },
+
+  // The host asks this before flagging the resolver as "needs configuration".
+  isConfigured: function (config) {
+    return !!(config && config.authToken && config.libraries && config.libraries.length);
+  },
+
+  // Settings panel. The host renders this through PluginSettingsPanel when
+  // settings.authType is 'custom'. `ctx` carries React (hooks are fine: this
+  // runs inside a real component, so call them unconditionally), the saved
+  // config, and saveConfig / clearConfig / setActive so the plugin never
+  // touches host state directly. Sign in with a PIN, discover every server on
+  // the account, pick music libraries (auto-saved), watch the index build.
+  renderSettings: function (ctx) {
+    const React = ctx.React;
+    const h = React.createElement;
+    const self = this;
+    const saved = ctx.config || {};
+    const account = saved.authToken
+      ? { authToken: saved.authToken, clientId: saved.clientId, username: saved.username }
+      : null;
+    const connected = !!account;
+    const libId = function (serverId, key) { return serverId + ':' + key; };
+    const savedLibIds = (saved.libraries || []).map(function (l) { return libId(l.serverId, l.key); });
+    const savedKey = savedLibIds.slice().sort().join('|');
+
+    const s1 = React.useState(false); const connecting = s1[0], setConnecting = s1[1];
+    const s2 = React.useState(''); const status = s2[0], setStatus = s2[1];
+    const s3 = React.useState(false); const discovering = s3[0], setDiscovering = s3[1];
+    const s4 = React.useState([]); const servers = s4[0], setServers = s4[1];
+    const s5 = React.useState(function () { return new Set(savedLibIds); }); const selected = s5[0], setSelected = s5[1];
+    const s6 = React.useState(null); const error = s6[0], setError = s6[1];
+    const s7 = React.useState([]); const indexStatus = s7[0], setIndexStatus = s7[1];
+
+    // Each saved library carries its server's token and connection list: that
+    // is what getStreamUrl streams with, and what the host's plex-fetch policy
+    // allowlists (a LAN server is reachable only once it is saved here).
+    const persistSelection = async function (selectedSet, acct, serversArg) {
+      const a = acct || account || {};
+      const list = serversArg || servers;
+      const libraries = [];
+      list.forEach(function (srv) {
+        srv.libraries.forEach(function (lib) {
+          if (selectedSet.has(libId(srv.serverId, lib.key))) {
+            libraries.push({
+              serverId: srv.serverId, serverName: srv.serverName,
+              accessToken: srv.accessToken, connections: srv.connections,
+              key: lib.key, title: lib.title
+            });
+          }
+        });
+      });
+      const config = { authToken: a.authToken, clientId: a.clientId, username: a.username, libraries: libraries };
+      await ctx.saveConfig(config);
+      try { self.buildIndex(config); } catch (e) { /* best-effort */ }
+      if (libraries.length > 0 && !ctx.isActive) ctx.setActive(true);
+    };
+
+    const loadLibraries = async function (acct) {
+      setDiscovering(true);
+      setError(null);
+      try {
+        const disc = await self.discoverLibraries(acct);
+        if (disc && disc.error) setError(disc.error);
+        const found = (disc && disc.servers) || [];
+        setServers(found);
+        const next = savedLibIds.length
+          ? new Set(savedLibIds)
+          : new Set([].concat.apply([], found.map(function (srv) {
+              return srv.libraries.map(function (l) { return libId(srv.serverId, l.key); });
+            })));
+        setSelected(next);
+        // Auto-save the initial selection (all libraries on a fresh connect) so
+        // it persists without a Save button. No-op when it already matches.
+        if (Array.from(next).sort().join('|') !== savedKey) await persistSelection(next, acct, found);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setDiscovering(false);
+      }
+    };
+
+    const connect = async function () {
+      setError(null);
+      setConnecting(true);
+      setStatus('Opening Plex sign-in in your browser…');
+      try {
+        const res = await self.connect({ clientId: saved.clientId });
+        if (!res || !res.success) {
+          setError((res && res.error) || 'Plex sign-in failed.');
+          return;
+        }
+        const acct = { authToken: res.authToken, clientId: res.clientId, username: res.username };
+        // Persist the token at once so a closed window does not lose the sign-in.
+        await ctx.saveConfig(Object.assign({}, saved, acct, { libraries: saved.libraries || [] }));
+        setStatus('Finding your servers and music libraries…');
+        await loadLibraries(acct);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setConnecting(false);
+        setStatus('');
+      }
+    };
+
+    const toggleLibrary = function (serverId, key) {
+      const id = libId(serverId, key);
+      const next = new Set(selected);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      setSelected(next);
+      persistSelection(next);
+    };
+
+    const disconnect = async function () {
+      await ctx.clearConfig();
+      self.clearIndex();
+      setServers([]);
+      setSelected(new Set());
+      setError(null);
+      setIndexStatus([]);
+      if (ctx.isActive) ctx.setActive(false);
+    };
+
+    // Load libraries the moment the panel opens while signed in.
+    React.useEffect(function () {
+      if (connected && servers.length === 0 && !discovering) loadLibraries(account);
+    }, [connected]);
+
+    // Poll the background index while the panel is open. The build itself
+    // lives on `window`, so it keeps running after the panel is gone.
+    React.useEffect(function () {
+      if (!saved.libraries || !saved.libraries.length) { setIndexStatus([]); return undefined; }
+      try { self.buildIndex(saved); } catch (e) { /* best-effort */ }
+      const tick = function () { try { setIndexStatus(self.indexStatus(saved) || []); } catch (e) { /* ignore */ } };
+      tick();
+      const id = setInterval(tick, 1000);
+      return function () { clearInterval(id); };
+    }, [savedKey]);
+
+    const secondary = { fontSize: '12px', color: 'var(--text-secondary)' };
+    const button = function (label, onClick, opts) {
+      return h('button', {
+        onClick: onClick, disabled: !!opts.disabled, className: 'transition-colors',
+        style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: opts.color, backgroundColor: opts.bg, border: 'none', borderRadius: '8px', cursor: opts.disabled ? 'default' : 'pointer' }
+      }, label);
+    };
+
+    return h('div', { style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' } },
+      h('div', { className: 'flex items-center justify-between' },
+        h('div', null,
+          h('span', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Plex Account'),
+          h('p', { style: Object.assign({ marginTop: '2px' }, secondary) },
+            connected ? ('Signed in' + (account.username ? ' as ' + account.username : '')) : 'Sign in to stream from your Plex servers')
+        ),
+        connected
+          ? button('Disconnect', disconnect, { color: '#dc2626', bg: 'rgba(220, 38, 38, 0.08)' })
+          : button(connecting ? 'Signing in…' : 'Sign in with Plex', connect, { disabled: connecting, color: '#ffffff', bg: connecting ? '#9ca3af' : '#E5A00D' })
+      ),
+      connecting && status && h('p', { style: Object.assign({ marginTop: '10px' }, secondary) }, status),
+      error && h('p', { style: { marginTop: '10px', fontSize: '12px', color: '#dc2626' } }, error),
+      connected && h('div', { style: { marginTop: '16px' } },
+        h('div', { className: 'flex items-center justify-between', style: { marginBottom: '8px' } },
+          h('span', { style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Music libraries'),
+          h('button', {
+            onClick: function () { loadLibraries(account); }, disabled: discovering,
+            style: { fontSize: '11px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: discovering ? 'default' : 'pointer', textDecoration: 'underline' }
+          }, 'Refresh')
+        ),
+        discovering && servers.length === 0 && h('div', { className: 'flex items-center gap-2', style: secondary },
+          h('div', { className: 'animate-spin', style: { width: '12px', height: '12px', border: '2px solid var(--border-subtle)', borderTopColor: '#E5A00D', borderRadius: '50%', flexShrink: 0 } }),
+          h('span', null, 'Loading your libraries…')
+        ),
+        !discovering && servers.length === 0 && h('p', { style: secondary }, 'No music libraries found on your servers.'),
+        servers.map(function (srv) {
+          return h('div', { key: srv.serverId, style: { marginBottom: '12px' } },
+            h('div', { style: { fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '4px' } }, srv.serverName + (srv.owned ? '' : ' (shared)')),
+            srv.libraries.length === 0
+              ? h('div', { style: { fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic', paddingLeft: '4px' } }, 'No music libraries (or server unreachable)')
+              : srv.libraries.map(function (lib) {
+                  return h('label', { key: lib.key, className: 'flex items-center gap-2', style: { fontSize: '12px', color: 'var(--text-primary)', padding: '4px 0', cursor: 'pointer' } },
+                    h('input', { type: 'checkbox', checked: selected.has(libId(srv.serverId, lib.key)), onChange: function () { toggleLibrary(srv.serverId, lib.key); } }),
+                    h('span', null, lib.title)
+                  );
+                })
+          );
+        }),
+        indexStatus.length > 0 && h('div', { style: { marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' } },
+          h('span', { style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Search index'),
+          h('p', { style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', marginBottom: '8px', lineHeight: '1.4' } }, 'Your libraries are scanned once, for quick matching.'),
+          indexStatus.map(function (st, i) {
+            const pct = st.total > 0 ? Math.min(100, Math.round((st.scanned / st.total) * 100)) : (st.status === 'ready' ? 100 : 0);
+            const label = st.status === 'ready' ? ('Indexed ' + (st.scanned || 0).toLocaleString() + ' tracks')
+              : st.status === 'error' ? ('Failed: ' + (st.error || 'error'))
+                : st.status === 'building' ? ('Scanning… ' + (st.scanned || 0).toLocaleString() + (st.total ? ' / ' + st.total.toLocaleString() : ''))
+                  : 'Queued…';
+            return h('div', { key: (st.serverName || '') + ':' + (st.libraryTitle || '') + ':' + i, style: { marginBottom: '8px' } },
+              h('div', { className: 'flex items-center justify-between', style: { fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' } },
+                h('span', null, (st.libraryTitle || 'Library') + (st.serverName ? ' · ' + st.serverName : '')),
+                h('span', null, st.status === 'ready' ? '✓' : (pct + '%'))
+              ),
+              h('div', { style: { height: '5px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '3px', overflow: 'hidden' } },
+                h('div', { style: { height: '100%', width: pct + '%', backgroundColor: st.status === 'error' ? '#dc2626' : '#E5A00D', transition: 'width 0.3s' } })
+              ),
+              h('div', { style: { fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' } }, label)
+            );
+          })
+        )
+      )
+    );
   },
 
   init: async function (config) {

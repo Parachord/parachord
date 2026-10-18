@@ -35,6 +35,15 @@ const { Music, Pause, Play, X } = Icons;
 const getBestSourceConfidence = (_sources) => 0.95;
 
 // TrackRow component - defined outside to prevent recreation on every render
+// Badge for a resolver the static resolverMeta map does not know (a plugin
+// the host never named, e.g. Plex): label and tint from its manifest.
+const pluginBadgeMeta = (resolverId, allResolvers) => {
+  const r = Array.isArray(allResolvers) ? allResolvers.find(x => x.id === resolverId) : null;
+  if (!r) return null;
+  const color = /^#[0-9a-f]{6}$/i.test(r.color || '') ? r.color : '#A855F7';
+  return { label: r.name || resolverId, style: { backgroundColor: color + '33', color } };
+};
+
 const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onContextMenu, allResolvers, resolverOrder, activeResolvers }) => {
   // Get available sources (track.sources is an object with resolver IDs as keys)
   // Sort by priority order (left to right = highest to lowest priority)
@@ -53,8 +62,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
     bandcamp: { label: 'Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
     qobuz: { label: 'Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' },
     soundcloud: { label: 'SoundCloud', bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' },
-    subsonic: { label: 'Subsonic', bgColor: 'bg-teal-600/20', textColor: 'text-teal-400' },
-    plex: { label: 'Plex', bgColor: 'bg-amber-500/20', textColor: 'text-amber-400' }
+    subsonic: { label: 'Subsonic', bgColor: 'bg-teal-600/20', textColor: 'text-teal-400' }
   };
 
   // Determine which resolver will be used (based on priority)
@@ -126,7 +134,7 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
         }, track.artist),
         // Resolver badges - clickable for manual override
         ...availableSources.map(resolverId => {
-          const meta = resolverMeta[resolverId];
+          const meta = resolverMeta[resolverId] || pluginBadgeMeta(resolverId, allResolvers);
           if (!meta) return null;
 
           return React.createElement('button', {
@@ -136,7 +144,8 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
               // Play from this specific resolver
               handlePlay(track.sources[resolverId]);
             },
-            className: `text-xs px-2 py-0.5 ${meta.bgColor} ${meta.textColor} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
+            className: `text-xs px-2 py-0.5 ${meta.bgColor || ''} ${meta.textColor || ''} rounded-full hover:opacity-80 transition-opacity cursor-pointer`,
+            style: meta.style,
             title: `Play from ${meta.label} (manual override)`
           }, meta.label);
         }),
