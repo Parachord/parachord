@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '..', '..', p), 'utf8');
-const app = read('app.js');
+const app = read('src/renderer/app.js');
 const main = read('main.js');
 
 describe('playlist XSPF export is reachable', () => {

@@ -97,7 +97,7 @@ describe('buildPlaylistSavePayload', () => {
 
 describe('savePlaylistToStore uses the builder', () => {
   test('no hand-written field list remains', () => {
-    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'app.js'), 'utf8');
+    const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
     const s = app.indexOf('const savePlaylistToStore = async (playlist) => {');
     expect(s).toBeGreaterThan(-1);
     const body = app.slice(s, app.indexOf('\n  };\n', s));

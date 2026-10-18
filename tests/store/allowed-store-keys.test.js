@@ -14,7 +14,7 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
 // Files that run in the renderer and talk to window.electron.store.
 const RENDERER_FILES = [
-  'app.js', 'scrobbler-loader.js', 'musickit-web.js', 'resolver-loader.js',
+  'src/renderer/app.js', 'scrobbler-loader.js', 'musickit-web.js', 'resolver-loader.js',
   'resolution-scheduler.js', 'migration-plan.js', 'mbid-lookup.js', 'resolver-limiter.js',
 ].filter((f) => fs.existsSync(path.join(ROOT, f)));
 
@@ -60,7 +60,7 @@ describe('ALLOWED_STORE_KEYS covers every key the renderer uses', () => {
   });
 
   test('discovery_seen_<feature> is allowlisted for every feature that marks itself seen', () => {
-    const app = read('app.js');
+    const app = read('src/renderer/app.js');
     expect(app).toMatch(/discovery_seen_\$\{feature\}/);
     // Features mark themselves seen via <something>DiscoverySeen('<feature>', hash).
     const features = new Set([...app.matchAll(/DiscoverySeen\(\s*'([^']+)'/g)].map((m) => m[1]));

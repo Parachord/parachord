@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'app.js'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
 
 function modeBSource() {
   const start = app.indexOf('// Mode B: artist-only seed');

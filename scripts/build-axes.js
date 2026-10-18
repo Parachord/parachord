@@ -58,7 +58,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const SRC_DIR = path.join(ROOT, 'plugins-src');
 const PLUGINS_DIR = path.join(ROOT, 'plugins');
-const APP_PATH = path.join(ROOT, 'app.js');
+const APP_PATH = path.join(ROOT, 'src', 'renderer', 'app.js');
 const MARKETPLACE_PATH = path.join(ROOT, 'marketplace-manifest.json');
 
 const FALLBACK_START = 'const FALLBACK_RESOLVERS = [';
