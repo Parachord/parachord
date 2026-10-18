@@ -12,7 +12,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
+// The logo kit moved to its own module (Track 2b, presentational slice 1); the
+// source of truth is the module, not the bundle.
+const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'components', 'ui-atoms.js'), 'utf8');
 
 function block(startMarker) {
   const s = app.indexOf(startMarker);

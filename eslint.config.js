@@ -93,6 +93,8 @@ const sharedGlobals = {
   document: 'readonly',
   navigator: 'readonly',
   location: 'readonly',
+  React: 'readonly',
+  ReactDOM: 'readonly',
 };
 
 const off = Object.fromEntries(Object.keys(js.configs.recommended.rules).map((r) => [r, 'off']));
@@ -100,6 +102,7 @@ const off = Object.fromEntries(Object.keys(js.configs.recommended.rules).map((r)
 const STRICT_FILES = [
   'main-process/**/*.js',
   'plugins-src/**/*.js',
+  'src/renderer/components/**/*.js',
   'protocol-url.js',
   'stream-quality.js',
   'mbid-lookup.js',
