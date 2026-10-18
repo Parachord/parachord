@@ -20,7 +20,7 @@ function extract(startMarker, endMarker) {
 
 // normalizeStr is the module-scope helper the picker uses; take the real one.
 const normalizeStrSrc = extract('const normalizeStr = ', '\n');
-const helpersSrc = extract('window.pickAlbumNameForTrack = ', '// Classify a parachord://play/playlist?url=');
+const helpersSrc = extract('window.pickAlbumNameForTrack = ', '// Coalesce bursts of per-key state writes');
 const win = {};
 new Function('window', 'normalizeStr', helpersSrc)(win, new Function(`${normalizeStrSrc}; return normalizeStr;`)());
 const { pickAlbumNameForTrack, pickReleaseGroupForAlbum } = win;

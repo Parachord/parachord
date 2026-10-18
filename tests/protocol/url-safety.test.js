@@ -92,19 +92,20 @@ describe('hostedPlaylistFetchProblem (parachord#1011)', () => {
     expect(hostedPlaylistFetchProblem('https://example.com/p.xspf', null, HOSTED_PLAYLIST_MAX_BYTES)).toBeNull();
   });
 
-  test('tests/helpers copy matches app.js byte for byte', () => {
+  test('single source: app.js carries no inline copy, and index.html loads the module before app.js', () => {
     const fs = require('fs');
     const path = require('path');
     const read = (p) => fs.readFileSync(path.join(__dirname, '..', '..', p), 'utf8');
-    // Body = everything between the signature line and the closing brace,
-    // with `window.` prefixes dropped so the two copies can be compared.
-    const bodyAfter = (src, signature, closer) => {
-      const i = src.indexOf(signature);
-      expect(i).toBeGreaterThan(-1);
-      const open = src.indexOf('\n', i) + 1;
-      return src.slice(open, src.indexOf(closer, open)).replace(/window\./g, '');
-    };
-    expect(bodyAfter(read('app.js'), 'window.hostedPlaylistFetchProblem = (requestedUrl, finalUrl, bodyLength) => {', '\n};'))
-      .toBe(bodyAfter(read('tests/helpers/url-safety.js'), 'function hostedPlaylistFetchProblem(requestedUrl, finalUrl, bodyLength) {', '\n}'));
+    const app = read('app.js');
+    const index = read('index.html');
+    // The module is the only definition; an inline copy re-added to app.js
+    // would shadow it and silently drift.
+    for (const name of ['isPublicHttpUrl', 'hostedPlaylistFetchProblem', 'classifyPlaylistUrl', 'isProviderPlaylistUrl', 'buildPlaylistSavePayload']) {
+      expect(app).not.toMatch(new RegExp('window\\.' + name + '\\s*='));
+    }
+    // index.html must load the module BEFORE app.js so the window exposure exists
+    // before any module-scope consumer runs.
+    expect(index.indexOf('protocol-url.js')).toBeGreaterThan(-1);
+    expect(index.indexOf('protocol-url.js')).toBeLessThan(index.indexOf('src="app.js"'));
   });
 });
