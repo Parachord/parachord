@@ -21816,9 +21816,6 @@ ${trackListXml}
         const results = await searchResolvers(query, options);
         return results || [];
       },
-      playTrack: async (track) => {
-        await handlePlayRef.current(track);
-      },
       addToQueue: async (tracks, position) => {
         // Generate unique IDs for AI-added tracks that don't have them
         // This prevents the "all tracks purple" bug when clicking a track with undefined id
