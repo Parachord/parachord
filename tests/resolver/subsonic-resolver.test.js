@@ -353,12 +353,13 @@ describe('app.js integration', () => {
 
   test('transport routing treats subsonic as an HTML5 audio resolver', () => {
     // play/pause toggle
-    expect(appSrc).toContain("_activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud' || currentTrack?._activeResolver === 'subsonic'");
+    // (Plex streams through the same element and sits in every one of these lists.)
+    expect(appSrc).toContain("_activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud' || currentTrack?._activeResolver === 'subsonic' || currentTrack?._activeResolver === 'plex'");
     // seek keys off the resolver actually playing, not "has a subsonic source"
-    expect(appSrc).toContain("activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic') && audioRef.current");
+    expect(appSrc).toContain("activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic' || activeResolver === 'plex') && audioRef.current");
     expect(appSrc).not.toContain('currentTrack?.sources?.subsonic');
     // volume slider support
-    expect(appSrc).toContain("currentResolverId === 'soundcloud' || currentResolverId === 'subsonic'");
+    expect(appSrc).toContain("currentResolverId === 'soundcloud' || currentResolverId === 'subsonic' || currentResolverId === 'plex'");
   });
 
   test('the fallback wall-clock progress tracker skips subsonic (HTML5 audio owns progress)', () => {
@@ -369,7 +370,7 @@ describe('app.js integration', () => {
     // are skipped the same way.
     const m = appSrc.match(/const isSoundCloud = activeResolver === 'soundcloud';\n    const isSubsonic = activeResolver === 'subsonic';/);
     expect(m).toBeTruthy();
-    expect(appSrc).toContain('!isLocalFile && !isSoundCloud && !isSubsonic && !isBrowserTrack');
+    expect(appSrc).toContain('!isLocalFile && !isSoundCloud && !isSubsonic && !isPlex && !isBrowserTrack');
   });
 
   test('resolver volume offsets include subsonic (neutral)', () => {
@@ -379,7 +380,11 @@ describe('app.js integration', () => {
   });
 
   test('shared HTML5 element is created once and every path uses it', () => {
-    expect(appSrc.match(/ensureSharedAudioElement\(trackOrSource\)/g)).toHaveLength(3);
+    // localfiles + soundcloud hand the track over as-is; the shared
+    // subsonic/plex stream branch tags it with the owning resolver because
+    // both play http(s) URLs and the element's src can't tell them apart.
+    expect(appSrc.match(/ensureSharedAudioElement\(trackOrSource\)/g)).toHaveLength(2);
+    expect(appSrc).toContain('ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId })');
     expect(appSrc).toContain('const audio = new Audio()');
     expect(appSrc).not.toContain('audioRef.current = new Audio()');
     expect(appSrc).not.toContain('sourceToPlay.subsonicStreamUrl');

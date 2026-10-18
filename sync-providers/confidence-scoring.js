@@ -58,12 +58,48 @@ function validateResolvedTrack(result, targetArtist, targetTitle) {
   );
 }
 
+// ISRC normalisation shared by the identity tier: upper-cased, trimmed, and
+// only accepted in the standard shape (CC-XXX-NNNNNNN without separators).
+const ISRC_SHAPE = /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/;
+function normalizeIsrc(value) {
+  if (!value) return null;
+  const isrc = String(value).trim().toUpperCase();
+  return ISRC_SHAPE.test(isrc) ? isrc : null;
+}
+
+// The ISRC the caller's track carries: top-level `isrc` first, then any
+// resolver source that captured one (the same walk as window.pickTrackIsrc
+// in the renderer, duplicated here so the module stays pure).
+function pickIsrc(track) {
+  if (!track || typeof track !== 'object') return null;
+  const direct = normalizeIsrc(track.isrc);
+  if (direct) return direct;
+  const sources = track.sources;
+  if (sources && typeof sources === 'object' && !Array.isArray(sources)) {
+    for (const id of Object.keys(sources)) {
+      const found = normalizeIsrc(sources[id] && sources[id].isrc);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 // Confidence score for a resolver match. Mirrors Android's `scoreConfidence`.
-// Returns 0.95 when both title and artist containment-match, else 0.50.
-// Trusts an authoritative resolver-supplied confidence (e.g. direct ID
-// match from spotifyId/appleMusicId) only when validation passes.
+// Identity first: the same ISRC or the same MusicBrainz recording MBID on both
+// sides is the same recording whatever the artist/title strings look like
+// across services, so that scores 1.0 outright (parachord#926 — Plex, Spotify
+// and Apple Music all surface these). Otherwise returns 0.95 when both title
+// and artist containment-match, else 0.50. Trusts an authoritative
+// resolver-supplied confidence (e.g. direct ID match from spotifyId /
+// appleMusicId) only when validation passes.
 function calculateConfidence(originalTrack, foundTrack) {
   if (!foundTrack) return 0.5;
+  const targetIsrc = pickIsrc(originalTrack);
+  const foundIsrc = normalizeIsrc(foundTrack.isrc);
+  if (targetIsrc && foundIsrc && targetIsrc === foundIsrc) return 1.0;
+  const targetMbid = originalTrack && (originalTrack.mbid || originalTrack.recordingMbid);
+  const foundMbid = foundTrack.mbid || foundTrack.recordingMbid;
+  if (targetMbid && foundMbid && String(targetMbid).toLowerCase() === String(foundMbid).toLowerCase()) return 1.0;
   const targetArtist = originalTrack?.artist || '';
   const targetTitle = originalTrack?.title || '';
   if (!validateResolvedTrack(foundTrack, targetArtist, targetTitle)) {

@@ -53,7 +53,8 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
     bandcamp: { label: 'Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
     qobuz: { label: 'Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' },
     soundcloud: { label: 'SoundCloud', bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' },
-    subsonic: { label: 'Subsonic', bgColor: 'bg-teal-600/20', textColor: 'text-teal-400' }
+    subsonic: { label: 'Subsonic', bgColor: 'bg-teal-600/20', textColor: 'text-teal-400' },
+    plex: { label: 'Plex', bgColor: 'bg-amber-500/20', textColor: 'text-amber-400' }
   };
 
   // Determine which resolver will be used (based on priority)

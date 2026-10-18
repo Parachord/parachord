@@ -1762,11 +1762,12 @@ const FALLBACK_RESOLVERS = [
   {"manifest":{"id":"youtube","name":"YouTube","version":"1.0.1","author":"Parachord Team","description":"Search and play music videos from YouTube. Free with ads. Opens videos in your browser.","icon":"🎥","color":"#FF0000","homepage":"https://youtube.com","email":"support@parachord.com"},"capabilities":{"resolve":true,"search":true,"stream":false,"browse":false,"urlLookup":true,"mobile":false},"urlPatterns":["youtube.com/watch?v=*","www.youtube.com/watch?v=*","youtu.be/*","music.youtube.com/watch?v=*","m.youtube.com/watch?v=*","youtube.com/playlist?list=*","www.youtube.com/playlist?list=*","music.youtube.com/playlist?list=*"],"settings":{"requiresAuth":false,"authType":"none","configurable":{}},"implementation":{"search":"async function (query, config) {\n    try {\n      console.log('Searching YouTube for:', query);\n      const response = await fetch(\n        `https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' music')}&sp=EgIQAQ%253D%253D`,\n        {\n          headers: {\n            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',\n          },\n        },\n      );\n      if (!response.ok) {\n        console.error('YouTube search failed:', response.status);\n        return [];\n      }\n      const html = await response.text();\n      const results = [];\n      const videoDataMatches = html.matchAll(\n        /\"videoId\":\"([^\"]+)\",\"thumbnail\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"ownerText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g,\n      );\n      let count = 0;\n      for (const match of videoDataMatches) {\n        if (count >= 20) break;\n        const [, videoId, title, channel] = match;\n        if (videoId && title && channel) {\n          results.push({\n            id: `youtube-${videoId}`,\n            title: title,\n            artist: channel,\n            album: 'YouTube',\n            duration: 180,\n            sources: ['youtube'],\n            youtubeId: videoId,\n            youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,\n            thumbnail: `https://i.ytimg.com/vi/${videoId}/default.jpg`,\n            albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,\n          });\n          count++;\n        }\n      }\n      console.log(`Found ${results.length} YouTube results`);\n      return results;\n    } catch (error) {\n      console.error('YouTube search error:', error);\n      return [];\n    }\n  }","resolve":"async function (artist, track, album, config) {\n    const query = `${artist} ${track}`;\n    const results = await this.search(query, config);\n    return results[0] || null;\n  }","play":"async function (track, config) {\n    if (!track.youtubeUrl) {\n      console.error('No YouTube URL found');\n      return false;\n    }\n    try {\n      if (window.electron?.shell?.openExternal) {\n        const result = await window.electron.shell.openExternal(track.youtubeUrl);\n        return result && result.success;\n      } else {\n        const newWindow = window.open(track.youtubeUrl, '_blank');\n        return !!newWindow;\n      }\n    } catch (error) {\n      console.error('Failed to open YouTube link:', error);\n      return false;\n    }\n  }","init":"async function (config) {\n    console.log('YouTube resolver initialized');\n  }","cleanup":"async function () {\n    console.log('YouTube resolver cleanup');\n  }","lookupUrl":"async function (url, config) {\n    try {\n      let videoId = null;\n      if (url.includes('youtu.be/')) {\n        const match = url.match(/youtu\\.be\\/([a-zA-Z0-9_-]+)/);\n        if (match) videoId = match[1];\n      } else {\n        const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/);\n        if (match) videoId = match[1];\n      }\n      if (!videoId) return null;\n      const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;\n      const response = await fetch(oembedUrl);\n      if (!response.ok) return null;\n      const data = await response.json();\n      let title = data.title || '';\n      let artist = data.author_name || 'Unknown Artist';\n      const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/);\n      if (dashMatch) {\n        artist = dashMatch[1].trim();\n        title = dashMatch[2].trim();\n      }\n      return {\n        title: title || 'Unknown Title',\n        artist,\n        album: 'YouTube',\n        duration: 180,\n        albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,\n        sourceUrl: url,\n        youtubeId: videoId,\n        youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,\n      };\n    } catch (error) {\n      console.error('YouTube URL lookup error:', error);\n      return null;\n    }\n  }","lookupPlaylist":"async function (url, config) {\n    try {\n      const listMatch = url.match(/[?&]list=([a-zA-Z0-9_-]+)/);\n      if (!listMatch) return null;\n      const playlistId = listMatch[1];\n      const response = await fetch(`https://www.youtube.com/playlist?list=${playlistId}`, {\n        headers: {\n          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',\n        },\n      });\n      if (!response.ok) return null;\n      const html = await response.text();\n      const tracks = [];\n      let playlistName = 'YouTube Playlist';\n      const titleMatch = html.match(/\"title\":\\s*\"([^\"]+)\",\\s*\"playlistId\":/);\n      if (titleMatch) {\n        playlistName = titleMatch[1];\n      }\n      const videoMatches = html.matchAll(\n        /\"videoId\":\"([^\"]+)\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"\\}\\].*?\"shortBylineText\":\\{\"runs\":\\[\\{\"text\":\"([^\"]+)\"/g,\n      );\n      let count = 0;\n      for (const match of videoMatches) {\n        if (count >= 100) break;\n        const [, videoId, title, channel] = match;\n        if (videoId && title) {\n          let trackTitle = title;\n          let artist = channel || 'Unknown Artist';\n          const dashMatch = title.match(/^(.+?)\\s*[-–—]\\s*(.+)$/);\n          if (dashMatch) {\n            artist = dashMatch[1].trim();\n            trackTitle = dashMatch[2].trim();\n          }\n          tracks.push({\n            title: trackTitle,\n            artist: artist,\n            album: 'YouTube',\n            duration: 180,\n            albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,\n            youtubeId: videoId,\n            youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,\n          });\n          count++;\n        }\n      }\n      if (tracks.length === 0) return null;\n      return {\n        type: 'playlist',\n        name: playlistName,\n        albumArt: tracks[0]?.albumArt,\n        tracks: tracks,\n      };\n    } catch (error) {\n      console.error('YouTube playlist lookup error:', error);\n      return null;\n    }\n  }"}},
   {"manifest":{"id":"subsonic","name":"Subsonic","version":"0.1.0","author":"Parachord Team","description":"Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.","icon":"📡","color":"#14b8a6","homepage":"https://subsonic.org","email":""},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false,"mobile":false},"urlPatterns":[],"settings":{"requiresAuth":true,"authType":"userpass","configurable":{"serverUrl":{"type":"text","label":"Server URL","description":"Base URL of your Subsonic-compatible server. A trailing /rest is tolerated (e.g. http://192.168.0.13:4533 or http://navidrome.local:4533/rest).","placeholder":"http://navidrome.local:4533"},"username":{"type":"text","label":"Username","description":"Your Subsonic account username.","placeholder":"admin"},"password":{"type":"password","label":"Password","description":"Your Subsonic account password. Sent as an MD5 token (salt + hash), never in plain text."}}},"implementation":{"search":"async function (query, config) {\n    try {\n      if (typeof query !== 'string' || !query.trim() || query.trim().length < 2) return [];\n\n      var ensureHelpers = function () {\n        if (window.__subsonicHelpers) return window.__subsonicHelpers;\n        var md5cycle = function (x, k) {\n          var a = x[0],\n            b = x[1],\n            c = x[2],\n            d = x[3];\n          a = ff(a, b, c, d, k[0], 7, -680876936);\n          d = ff(d, a, b, c, k[1], 12, -389564586);\n          c = ff(c, d, a, b, k[2], 17, 606105819);\n          b = ff(b, c, d, a, k[3], 22, -1044525330);\n          a = ff(a, b, c, d, k[4], 7, -176418897);\n          d = ff(d, a, b, c, k[5], 12, 1200080426);\n          c = ff(c, d, a, b, k[6], 17, -1473231341);\n          b = ff(b, c, d, a, k[7], 22, -45705983);\n          a = ff(a, b, c, d, k[8], 7, 1770035416);\n          d = ff(d, a, b, c, k[9], 12, -1958414417);\n          c = ff(c, d, a, b, k[10], 17, -42063);\n          b = ff(b, c, d, a, k[11], 22, -1990404162);\n          a = ff(a, b, c, d, k[12], 7, 1804603682);\n          d = ff(d, a, b, c, k[13], 12, -40341101);\n          c = ff(c, d, a, b, k[14], 17, -1502002290);\n          b = ff(b, c, d, a, k[15], 22, 1236535329);\n          a = gg(a, b, c, d, k[1], 5, -165796510);\n          d = gg(d, a, b, c, k[6], 9, -1069501632);\n          c = gg(c, d, a, b, k[11], 14, 643717713);\n          b = gg(b, c, d, a, k[0], 20, -373897302);\n          a = gg(a, b, c, d, k[5], 5, -701558691);\n          d = gg(d, a, b, c, k[10], 9, 38016083);\n          c = gg(c, d, a, b, k[15], 14, -660478335);\n          b = gg(b, c, d, a, k[4], 20, -405537848);\n          a = gg(a, b, c, d, k[9], 5, 568446438);\n          d = gg(d, a, b, c, k[14], 9, -1019803690);\n          c = gg(c, d, a, b, k[3], 14, -187363961);\n          b = gg(b, c, d, a, k[8], 20, 1163531501);\n          a = gg(a, b, c, d, k[13], 5, -1444681467);\n          d = gg(d, a, b, c, k[2], 9, -51403784);\n          c = gg(c, d, a, b, k[7], 14, 1735328473);\n          b = gg(b, c, d, a, k[12], 20, -1926607734);\n          a = hh(a, b, c, d, k[5], 4, -378558);\n          d = hh(d, a, b, c, k[8], 11, -2022574463);\n          c = hh(c, d, a, b, k[11], 16, 1839030562);\n          b = hh(b, c, d, a, k[14], 23, -35309556);\n          a = hh(a, b, c, d, k[1], 4, -1530992060);\n          d = hh(d, a, b, c, k[4], 11, 1272893353);\n          c = hh(c, d, a, b, k[7], 16, -155497632);\n          b = hh(b, c, d, a, k[10], 23, -1094730640);\n          a = hh(a, b, c, d, k[13], 4, 681279174);\n          d = hh(d, a, b, c, k[0], 11, -358537222);\n          c = hh(c, d, a, b, k[3], 16, -722521979);\n          b = hh(b, c, d, a, k[6], 23, 76029189);\n          a = hh(a, b, c, d, k[9], 4, -640364487);\n          d = hh(d, a, b, c, k[12], 11, -421815835);\n          c = hh(c, d, a, b, k[15], 16, 530742520);\n          b = hh(b, c, d, a, k[2], 23, -995338651);\n          a = ii(a, b, c, d, k[0], 6, -198630844);\n          d = ii(d, a, b, c, k[7], 10, 1126891415);\n          c = ii(c, d, a, b, k[14], 15, -1416354905);\n          b = ii(b, c, d, a, k[5], 21, -57434055);\n          a = ii(a, b, c, d, k[12], 6, 1700485571);\n          d = ii(d, a, b, c, k[3], 10, -1894986606);\n          c = ii(c, d, a, b, k[10], 15, -1051523);\n          b = ii(b, c, d, a, k[1], 21, -2054922799);\n          a = ii(a, b, c, d, k[8], 6, 1873313359);\n          d = ii(d, a, b, c, k[15], 10, -30611744);\n          c = ii(c, d, a, b, k[6], 15, -1560198380);\n          b = ii(b, c, d, a, k[13], 21, 1309151649);\n          a = ii(a, b, c, d, k[4], 6, -145523070);\n          d = ii(d, a, b, c, k[11], 10, -1120210379);\n          c = ii(c, d, a, b, k[2], 15, 718787259);\n          b = ii(b, c, d, a, k[9], 21, -343485551);\n          x[0] = add32(a, x[0]);\n          x[1] = add32(b, x[1]);\n          x[2] = add32(c, x[2]);\n          x[3] = add32(d, x[3]);\n        };\n        var cmn = function (q, a, b, x, s, t) {\n          a = add32(add32(a, q), add32(x, t));\n          return add32((a << s) | (a >>> (32 - s)), b);\n        };\n        var ff = function (a, b, c, d, x, s, t) {\n          return cmn((b & c) | (~b & d), a, b, x, s, t);\n        };\n        var gg = function (a, b, c, d, x, s, t) {\n          return cmn((b & d) | (c & ~d), a, b, x, s, t);\n        };\n        var hh = function (a, b, c, d, x, s, t) {\n          return cmn(b ^ c ^ d, a, b, x, s, t);\n        };\n        var ii = function (a, b, c, d, x, s, t) {\n          return cmn(c ^ (b | ~d), a, b, x, s, t);\n        };\n        var md51 = function (s) {\n          var n = s.length,\n            state = [1732584193, -271733879, -1732584194, 271733878],\n            i;\n          for (i = 64; i <= s.length; i += 64) {\n            md5cycle(state, md5blk(s.substring(i - 64, i)));\n          }\n          s = s.substring(i - 64);\n          var tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];\n          for (i = 0; i < s.length; i++) tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3);\n          tail[i >> 2] |= 0x80 << ((i % 4) << 3);\n          if (i > 55) {\n            md5cycle(state, tail);\n            for (i = 0; i < 16; i++) tail[i] = 0;\n          }\n          tail[14] = n * 8;\n          md5cycle(state, tail);\n          return state;\n        };\n        var md5blk = function (s) {\n          var md5blks = [],\n            i;\n          for (i = 0; i < 64; i += 4) {\n            md5blks[i >> 2] =\n              s.charCodeAt(i) +\n              (s.charCodeAt(i + 1) << 8) +\n              (s.charCodeAt(i + 2) << 16) +\n              (s.charCodeAt(i + 3) << 24);\n          }\n          return md5blks;\n        };\n        var hex_chr = '0123456789abcdef'.split('');\n        var rhex = function (n) {\n          var s = '',\n            j = 0;\n          for (; j < 4; j++)\n            s += hex_chr[(n >> (j * 8 + 4)) & 0x0f] + hex_chr[(n >> (j * 8)) & 0x0f];\n          return s;\n        };\n        var hex = function (x) {\n          for (var i = 0; i < x.length; i++) x[i] = rhex(x[i]);\n          return x.join('');\n        };\n        var hexmd5 = function (s) {\n          return hex(md51(unescape(encodeURIComponent(s))));\n        };\n        var add32 = function (a, b) {\n          return (a + b) & 0xffffffff;\n        };\n        // ---- Subsonic URL builders ----\n        // Tolerate \"http://host:4533\", \"http://host:4533/\", \"http://host:4533/rest\"\n        // and \"http://host:4533/rest/\" — every one of those gets pasted by users.\n        var normalizeBase = function (raw) {\n          var u = (raw || '').toString().trim();\n          if (!u) return null;\n          if (!/^https?:\\/\\//i.test(u)) u = 'http://' + u;\n          u = u.replace(/\\/+$/, '');\n          u = u.replace(/\\/rest$/i, '');\n          return u;\n        };\n        var makeSalt = function () {\n          try {\n            if (window.crypto && window.crypto.getRandomValues) {\n              var bytes = new Uint8Array(6);\n              window.crypto.getRandomValues(bytes);\n              var s = '';\n              for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);\n              return s;\n            }\n          } catch (e) {}\n          return ('' + Math.random()).slice(2, 14);\n        };\n        // Token auth (Subsonic API >= 1.13): t = md5(password + salt). The\n        // plaintext password never appears in a URL.\n        var authParams = function (config) {\n          var salt = makeSalt();\n          var token = hexmd5(((config && config.password) || '') + salt);\n          return (\n            'u=' +\n            encodeURIComponent((config && config.username) || '') +\n            '&t=' +\n            token +\n            '&s=' +\n            salt +\n            '&v=1.16.1&c=parachord'\n          );\n        };\n        var apiUrl = function (config, endpoint, extra) {\n          var base = normalizeBase(config && config.serverUrl);\n          if (!base) return null;\n          var url = base + '/rest/' + endpoint + '.view?' + authParams(config);\n          if (extra) url += '&' + extra;\n          return url;\n        };\n        window.__subsonicHelpers = {\n          hexmd5: hexmd5,\n          normalizeBase: normalizeBase,\n          authParams: authParams,\n          apiUrl: apiUrl,\n        };\n        return window.__subsonicHelpers;\n      };\n\n      var h = ensureHelpers();\n      var url = h.apiUrl(\n        config,\n        'search3',\n        'f=json&query=' +\n          encodeURIComponent(query.trim()) +\n          '&songCount=20&artistCount=0&albumCount=0',\n      );\n      if (!url) {\n        console.log('Subsonic: no server URL configured, skipping search');\n        return [];\n      }\n      var resp = await fetch(url);\n      if (!resp.ok) {\n        console.warn('Subsonic: search failed, HTTP ' + resp.status);\n        return [];\n      }\n      var data = await resp.json();\n      var sub = data && data['subsonic-response'];\n      if (!sub || sub.status !== 'ok') {\n        var apiErr = sub && sub.error ? sub.error.code + ' ' + sub.error.message : 'bad response';\n        console.warn('Subsonic: API error:', apiErr);\n        return [];\n      }\n      var songs = (sub.searchResult3 && sub.searchResult3.song) || [];\n      var results = [];\n      for (var i = 0; i < songs.length; i++) {\n        var s = songs[i];\n        if (!s || !s.id || !s.title) continue;\n        // No stream URL and no cover URL. Both bake u=/t=/s= into the result,\n        // and that result is spread into track.sources (track-sources cache,\n        // saved queue, embed broadcast). A token+salt pair replays until the\n        // password changes. getStreamUrl builds a fresh stream URL at play\n        // time. Covers come from the shared album-art pipeline.\n        // streamQuality is held back too: these are the server's tagged file\n        // properties, and stream.view may transcode, so a 'claimed' record\n        // would render in the hover as if it had been measured.\n        var track = {\n          id: 'subsonic-' + s.id,\n          title: s.title,\n          artist: s.artist || 'Unknown Artist',\n          album: s.album || '',\n          duration: s.duration || 0,\n          sources: ['subsonic'],\n          subsonicId: s.id,\n          subsonicServer: h.normalizeBase(config && config.serverUrl),\n          genre: s.genre || null,\n          year: s.year || null,\n          trackNumber: s.track || null,\n        };\n        // ISRC per the cross-cutting resolver result shape: upper-case,\n        // trimmed, format-validated. OpenSubsonic servers return a string or\n        // an array (Navidrome: array, usually empty).\n        var isrcRaw = '';\n        if (typeof s.isrc === 'string') isrcRaw = s.isrc;\n        else if (s.isrc && s.isrc.length) isrcRaw = String(s.isrc[0] || '');\n        var isrc = (isrcRaw || '').toUpperCase().trim();\n        if (/^[A-Z]{2}[A-Z0-9]{3}\\d{7}$/.test(isrc)) track.isrc = isrc;\n        results.push(track);\n      }\n      console.log('Subsonic: found ' + results.length + ' song(s) for \"' + query + '\"');\n      return results;\n    } catch (error) {\n      console.error('Subsonic search error:', error);\n      return [];\n    }\n  }","resolve":"async function (artist, track, album, config) {\n    // Containment-match on both axes (same shape as the platform's\n    // validateResolvedTrack gate). No fallback to a fuzzy top hit: the 0.6\n    // confidence floor drops a single-axis match anyway, so returning one only\n    // pollutes the source cache.\n    var norm = function (s) {\n      s = (s || '').toString().toLowerCase();\n      return s.replace(/[^a-z0-9]/g, '');\n    };\n    var contains = function (a, b) {\n      return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);\n    };\n    var targetArtist = norm(artist);\n    var targetTitle = norm(track);\n    var query = ((artist || '') + ' ' + (track || '')).trim();\n    if (!query) return null;\n    var results = await this.search(query, config);\n    if (!results || results.length === 0) return null;\n    for (var i = 0; i < results.length; i++) {\n      if (\n        contains(norm(results[i].artist), targetArtist) &&\n        contains(norm(results[i].title), targetTitle)\n      )\n        return results[i];\n    }\n    return null;\n  }","getStreamUrl":"async function (track, config) {\n    var ensureHelpers = function () {\n      if (window.__subsonicHelpers) return window.__subsonicHelpers;\n      var md5cycle = function (x, k) {\n        var a = x[0],\n          b = x[1],\n          c = x[2],\n          d = x[3];\n        a = ff(a, b, c, d, k[0], 7, -680876936);\n        d = ff(d, a, b, c, k[1], 12, -389564586);\n        c = ff(c, d, a, b, k[2], 17, 606105819);\n        b = ff(b, c, d, a, k[3], 22, -1044525330);\n        a = ff(a, b, c, d, k[4], 7, -176418897);\n        d = ff(d, a, b, c, k[5], 12, 1200080426);\n        c = ff(c, d, a, b, k[6], 17, -1473231341);\n        b = ff(b, c, d, a, k[7], 22, -45705983);\n        a = ff(a, b, c, d, k[8], 7, 1770035416);\n        d = ff(d, a, b, c, k[9], 12, -1958414417);\n        c = ff(c, d, a, b, k[10], 17, -42063);\n        b = ff(b, c, d, a, k[11], 22, -1990404162);\n        a = ff(a, b, c, d, k[12], 7, 1804603682);\n        d = ff(d, a, b, c, k[13], 12, -40341101);\n        c = ff(c, d, a, b, k[14], 17, -1502002290);\n        b = ff(b, c, d, a, k[15], 22, 1236535329);\n        a = gg(a, b, c, d, k[1], 5, -165796510);\n        d = gg(d, a, b, c, k[6], 9, -1069501632);\n        c = gg(c, d, a, b, k[11], 14, 643717713);\n        b = gg(b, c, d, a, k[0], 20, -373897302);\n        a = gg(a, b, c, d, k[5], 5, -701558691);\n        d = gg(d, a, b, c, k[10], 9, 38016083);\n        c = gg(c, d, a, b, k[15], 14, -660478335);\n        b = gg(b, c, d, a, k[4], 20, -405537848);\n        a = gg(a, b, c, d, k[9], 5, 568446438);\n        d = gg(d, a, b, c, k[14], 9, -1019803690);\n        c = gg(c, d, a, b, k[3], 14, -187363961);\n        b = gg(b, c, d, a, k[8], 20, 1163531501);\n        a = gg(a, b, c, d, k[13], 5, -1444681467);\n        d = gg(d, a, b, c, k[2], 9, -51403784);\n        c = gg(c, d, a, b, k[7], 14, 1735328473);\n        b = gg(b, c, d, a, k[12], 20, -1926607734);\n        a = hh(a, b, c, d, k[5], 4, -378558);\n        d = hh(d, a, b, c, k[8], 11, -2022574463);\n        c = hh(c, d, a, b, k[11], 16, 1839030562);\n        b = hh(b, c, d, a, k[14], 23, -35309556);\n        a = hh(a, b, c, d, k[1], 4, -1530992060);\n        d = hh(d, a, b, c, k[4], 11, 1272893353);\n        c = hh(c, d, a, b, k[7], 16, -155497632);\n        b = hh(b, c, d, a, k[10], 23, -1094730640);\n        a = hh(a, b, c, d, k[13], 4, 681279174);\n        d = hh(d, a, b, c, k[0], 11, -358537222);\n        c = hh(c, d, a, b, k[3], 16, -722521979);\n        b = hh(b, c, d, a, k[6], 23, 76029189);\n        a = hh(a, b, c, d, k[9], 4, -640364487);\n        d = hh(d, a, b, c, k[12], 11, -421815835);\n        c = hh(c, d, a, b, k[15], 16, 530742520);\n        b = hh(b, c, d, a, k[2], 23, -995338651);\n        a = ii(a, b, c, d, k[0], 6, -198630844);\n        d = ii(d, a, b, c, k[7], 10, 1126891415);\n        c = ii(c, d, a, b, k[14], 15, -1416354905);\n        b = ii(b, c, d, a, k[5], 21, -57434055);\n        a = ii(a, b, c, d, k[12], 6, 1700485571);\n        d = ii(d, a, b, c, k[3], 10, -1894986606);\n        c = ii(c, d, a, b, k[10], 15, -1051523);\n        b = ii(b, c, d, a, k[1], 21, -2054922799);\n        a = ii(a, b, c, d, k[8], 6, 1873313359);\n        d = ii(d, a, b, c, k[15], 10, -30611744);\n        c = ii(c, d, a, b, k[6], 15, -1560198380);\n        b = ii(b, c, d, a, k[13], 21, 1309151649);\n        a = ii(a, b, c, d, k[4], 6, -145523070);\n        d = ii(d, a, b, c, k[11], 10, -1120210379);\n        c = ii(c, d, a, b, k[2], 15, 718787259);\n        b = ii(b, c, d, a, k[9], 21, -343485551);\n        x[0] = add32(a, x[0]);\n        x[1] = add32(b, x[1]);\n        x[2] = add32(c, x[2]);\n        x[3] = add32(d, x[3]);\n      };\n      var cmn = function (q, a, b, x, s, t) {\n        a = add32(add32(a, q), add32(x, t));\n        return add32((a << s) | (a >>> (32 - s)), b);\n      };\n      var ff = function (a, b, c, d, x, s, t) {\n        return cmn((b & c) | (~b & d), a, b, x, s, t);\n      };\n      var gg = function (a, b, c, d, x, s, t) {\n        return cmn((b & d) | (c & ~d), a, b, x, s, t);\n      };\n      var hh = function (a, b, c, d, x, s, t) {\n        return cmn(b ^ c ^ d, a, b, x, s, t);\n      };\n      var ii = function (a, b, c, d, x, s, t) {\n        return cmn(c ^ (b | ~d), a, b, x, s, t);\n      };\n      var md51 = function (s) {\n        var n = s.length,\n          state = [1732584193, -271733879, -1732584194, 271733878],\n          i;\n        for (i = 64; i <= s.length; i += 64) {\n          md5cycle(state, md5blk(s.substring(i - 64, i)));\n        }\n        s = s.substring(i - 64);\n        var tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];\n        for (i = 0; i < s.length; i++) tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3);\n        tail[i >> 2] |= 0x80 << ((i % 4) << 3);\n        if (i > 55) {\n          md5cycle(state, tail);\n          for (i = 0; i < 16; i++) tail[i] = 0;\n        }\n        tail[14] = n * 8;\n        md5cycle(state, tail);\n        return state;\n      };\n      var md5blk = function (s) {\n        var md5blks = [],\n          i;\n        for (i = 0; i < 64; i += 4) {\n          md5blks[i >> 2] =\n            s.charCodeAt(i) +\n            (s.charCodeAt(i + 1) << 8) +\n            (s.charCodeAt(i + 2) << 16) +\n            (s.charCodeAt(i + 3) << 24);\n        }\n        return md5blks;\n      };\n      var hex_chr = '0123456789abcdef'.split('');\n      var rhex = function (n) {\n        var s = '',\n          j = 0;\n        for (; j < 4; j++) s += hex_chr[(n >> (j * 8 + 4)) & 0x0f] + hex_chr[(n >> (j * 8)) & 0x0f];\n        return s;\n      };\n      var hex = function (x) {\n        for (var i = 0; i < x.length; i++) x[i] = rhex(x[i]);\n        return x.join('');\n      };\n      var hexmd5 = function (s) {\n        return hex(md51(unescape(encodeURIComponent(s))));\n      };\n      var add32 = function (a, b) {\n        return (a + b) & 0xffffffff;\n      };\n      // ---- Subsonic URL builders ----\n      // Tolerate \"http://host:4533\", \"http://host:4533/\", \"http://host:4533/rest\"\n      // and \"http://host:4533/rest/\" — every one of those gets pasted by users.\n      var normalizeBase = function (raw) {\n        var u = (raw || '').toString().trim();\n        if (!u) return null;\n        if (!/^https?:\\/\\//i.test(u)) u = 'http://' + u;\n        u = u.replace(/\\/+$/, '');\n        u = u.replace(/\\/rest$/i, '');\n        return u;\n      };\n      var makeSalt = function () {\n        try {\n          if (window.crypto && window.crypto.getRandomValues) {\n            var bytes = new Uint8Array(6);\n            window.crypto.getRandomValues(bytes);\n            var s = '';\n            for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);\n            return s;\n          }\n        } catch (e) {}\n        return ('' + Math.random()).slice(2, 14);\n      };\n      // Token auth (Subsonic API >= 1.13): t = md5(password + salt). The\n      // plaintext password never appears in a URL.\n      var authParams = function (config) {\n        var salt = makeSalt();\n        var token = hexmd5(((config && config.password) || '') + salt);\n        return (\n          'u=' +\n          encodeURIComponent((config && config.username) || '') +\n          '&t=' +\n          token +\n          '&s=' +\n          salt +\n          '&v=1.16.1&c=parachord'\n        );\n      };\n      var apiUrl = function (config, endpoint, extra) {\n        var base = normalizeBase(config && config.serverUrl);\n        if (!base) return null;\n        var url = base + '/rest/' + endpoint + '.view?' + authParams(config);\n        if (extra) url += '&' + extra;\n        return url;\n      };\n      window.__subsonicHelpers = {\n        hexmd5: hexmd5,\n        normalizeBase: normalizeBase,\n        authParams: authParams,\n        apiUrl: apiUrl,\n      };\n      return window.__subsonicHelpers;\n    };\n\n    try {\n      var t = track || {};\n      var subsonicId =\n        t.subsonicId || (t.sources && t.sources.subsonic && t.sources.subsonic.subsonicId) || null;\n      if (!subsonicId) return null;\n      var h = ensureHelpers();\n      // Always a fresh salt. Never fall back to a URL stored on the track —\n      // that URL would carry a replayable token.\n      var cfg = config || {};\n      if (!(cfg.serverUrl && cfg.username && typeof cfg.password === 'string')) return null;\n      return h.apiUrl(cfg, 'stream', 'id=' + encodeURIComponent(subsonicId) + '&maxBitRate=0');\n    } catch (error) {\n      console.error('Subsonic getStreamUrl error:', error);\n      return null;\n    }\n  }","play":"async function (track, config) {\n    // In-app streaming playback is host-owned: handlePlay's subsonic branch\n    // streams via the shared HTML5 audio element and never reaches this.\n    // Hosts without that branch get an honest failure instead of ghost audio.\n    console.log(\n      'Subsonic: play() is host-owned (HTML5 audio branch in handlePlay); not handled here',\n    );\n    return false;\n  }","init":"async function (config) {\n    console.log('Subsonic resolver initialized');\n    return true;\n  }","cleanup":"async function () {\n    console.log('Subsonic resolver cleanup');\n  }"}},
   {"manifest":{"id":"localfiles","name":"Local Files","version":"1.0.0","author":"Parachord Team","description":"Play music from your local library. Configure watch folders in settings.","icon":"📁","color":"#6366f1","homepage":"","email":""},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":false},"urlPatterns":[],"settings":{"requiresAuth":false,"configurable":{}},"implementation":{"search":"async function (query, config) {\n    if (!window.electron?.localFiles) {\n      console.error('Local Files API not available');\n      return [];\n    }\n    try {\n      const results = await window.electron.localFiles.search(query);\n      return results || [];\n    } catch (error) {\n      console.error('Local Files search error:', error);\n      return [];\n    }\n  }","resolve":"async function (artist, track, album, config) {\n    if (!window.electron?.localFiles) {\n      console.error('Local Files API not available');\n      return null;\n    }\n    try {\n      console.log('LocalFiles resolver querying:', artist, track, album);\n      const results = await window.electron.localFiles.resolve({ artist, track, album });\n      console.log('LocalFiles resolver results:', results?.length || 0);\n      if (!results || results.length === 0) return null;\n      const best = results[0];\n      return {\n        title: best.title,\n        artist: best.artist,\n        album: best.album,\n        filePath: best.filePath,\n        fileUrl: best.sources?.localfiles?.fileUrl || `file://${best.filePath}`,\n        confidence: best.confidence || 0.95,\n        duration: best.duration,\n        albumArt: best.albumArt,\n      };\n    } catch (error) {\n      console.error('Local Files resolve error:', error);\n      return null;\n    }\n  }","play":"async function (track, config) {\n    console.log('Local Files play:', track);\n    return { type: 'local', url: track.fileUrl || track.filePath };\n  }","init":"async function (config) {\n    console.log('Local Files resolver initialized');\n    return true;\n  }","cleanup":"async function () {\n    console.log('Local Files resolver cleanup');\n  }"}},
+  {"manifest":{"id":"plex","name":"Plex","version":"0.1.0","author":"JP Hastings-Spital (@jphastings)","description":"Search and stream music from your Plex Media Servers. Sign in with your Plex account, then pick which music libraries to include.","icon":"▶","color":"#E5A00D","homepage":"https://plex.tv","email":"jp@byjp.me"},"capabilities":{"resolve":true,"search":true,"stream":true,"browse":false,"urlLookup":true,"mobile":false},"urlPatterns":["app.plex.tv/desktop*","app.plex.tv/web*"],"settings":{"requiresAuth":true,"authType":"plex","configurable":{}},"implementation":{"_fetch":"async function (url, options) {\n    options = options || {};\n    if (window.electron && window.electron.plex && window.electron.plex.fetch) {\n      var res = await window.electron.plex.fetch(url, options);\n      return {\n        ok: !!res.ok,\n        status: res.status || 0,\n        error: res.error || null,\n        json: function () {\n          return new Promise(function (resolve, reject) {\n            try { resolve(JSON.parse(res.text || 'null')); } catch (e) { reject(e); }\n          });\n        },\n        text: function () { return Promise.resolve(res.text || ''); }\n      };\n    }\n    return fetch(url, options);\n  }","_baseUrl":"async function (server) {\n    if (!server) return null;\n    if (!window._plexBaseCache) window._plexBaseCache = {};\n    var cached = window._plexBaseCache[server.serverId];\n    if (cached && (Date.now() - cached.ts) < 300000) return cached.baseUrl;\n    var conns = (server.connections || []).map(function (c) { return String(c).replace(/\\/$/, ''); });\n    if (!conns.length) return null;\n    var self = this;\n    var probe = function (base) {\n      return self._fetch(base + '/identity?X-Plex-Token=' + encodeURIComponent(server.accessToken), {\n        headers: { 'Accept': 'application/json' },\n        timeoutMs: 6000\n      }).then(function (r) { return (r && r.ok) ? base : null; }).catch(function () { return null; });\n    };\n    var results = await Promise.all(conns.map(probe));\n    for (var i = 0; i < results.length; i++) {\n      if (results[i]) {\n        window._plexBaseCache[server.serverId] = { baseUrl: results[i], ts: Date.now() };\n        return results[i];\n      }\n    }\n    return null;\n  }","_mapTrack":"function (t, server, baseUrl) {\n    var partKey = null;\n    if (t.Media && t.Media[0] && t.Media[0].Part && t.Media[0].Part[0]) {\n      partKey = t.Media[0].Part[0].key;\n    }\n    var albumArt = t.thumb ? baseUrl + t.thumb + '?X-Plex-Token=' + encodeURIComponent(server.accessToken) : null;\n    // Correlation IDs. Plex's `guid` (plex://track/...) is a stable catalogue\n    // identifier; the `Guid` array (populated with includeGuids=1) carries\n    // MusicBrainz / ISRC external IDs when the library matched via the Plex\n    // Music agent. These feed the app's ISRC/MBID enrichment pipeline.\n    var mbid = null, isrc = null;\n    var guidList = t.Guid || [];\n    for (var gi = 0; gi < guidList.length; gi++) {\n      var gid = (guidList[gi] && guidList[gi].id) ? String(guidList[gi].id) : '';\n      if (gid.indexOf('mbid://') === 0) mbid = gid.slice(7);\n      else if (gid.indexOf('isrc://') === 0) isrc = gid.slice(7);\n    }\n    if (isrc) {\n      isrc = String(isrc).trim().toUpperCase();\n      if (!/^[A-Z]{2}[A-Z0-9]{3}\\d{7}$/.test(isrc)) isrc = null;\n    }\n    var out = {\n      id: 'plex-' + server.serverId + '-' + t.ratingKey,\n      title: t.title || '',\n      artist: t.grandparentTitle || t.originalTitle || 'Unknown Artist',\n      album: t.parentTitle || '',\n      duration: Math.floor((t.duration || 0) / 1000),\n      sources: ['plex'],\n      plexRatingKey: t.ratingKey,\n      plexServerId: server.serverId,\n      plexServerName: server.serverName,\n      plexPartKey: partKey,\n      trackNumber: t.index || 0,\n      albumArt: albumArt,\n      plexGuid: t.guid || null,\n      plexAlbumGuid: t.parentGuid || null,\n      plexArtistGuid: t.grandparentGuid || null\n    };\n    if (mbid) { out.mbid = mbid; out.recordingMbid = mbid; }\n    if (isrc) out.isrc = isrc;\n    return out;\n  }","_serverFor":"async function (serverId, config) {\n    if (config && config.libraries) {\n      var lib = config.libraries.find(function (l) { return l.serverId === serverId; });\n      if (lib) {\n        return { serverId: serverId, serverName: lib.serverName, accessToken: lib.accessToken, connections: lib.connections };\n      }\n    }\n    if (config && config.authToken) {\n      var disc = await this.discoverLibraries(config);\n      var srv = (disc.servers || []).find(function (s) { return s.serverId === serverId; });\n      if (srv) return srv;\n    }\n    return null;\n  }","_indexKey":"function (serverId, libKey) { return serverId + '::' + libKey; }","_allIndexed":"function (config) {\n    if (!config || !config.libraries || !config.libraries.length) return false;\n    if (!window._plexIndex) return false;\n    var self = this;\n    return config.libraries.every(function (l) {\n      var e = window._plexIndex[self._indexKey(l.serverId, l.key)];\n      return e && e.status === 'ready';\n    });\n  }","buildIndex":"function (config) {\n    if (!config || !config.libraries || !config.libraries.length) return;\n    if (!window._plexIndex) window._plexIndex = {};\n    var self = this;\n    var byServer = {};\n    config.libraries.forEach(function (l) {\n      if (!byServer[l.serverId]) byServer[l.serverId] = { serverId: l.serverId, serverName: l.serverName, accessToken: l.accessToken, connections: l.connections, libs: [] };\n      byServer[l.serverId].libs.push({ key: l.key, title: l.title });\n    });\n    Object.keys(byServer).forEach(function (sid) {\n      var server = byServer[sid];\n      server.libs.forEach(function (lib) { self._buildLibraryIndex(server, lib.key, lib.title); });\n    });\n  }","clearIndex":"function () {\n    try { delete window._plexIndex; } catch (e) { window._plexIndex = undefined; }\n    try { delete window._plexBaseCache; } catch (e) { window._plexBaseCache = undefined; }\n  }","_buildLibraryIndex":"async function (server, libKey, libTitle) {\n    if (!window._plexIndex) window._plexIndex = {};\n    var key = this._indexKey(server.serverId, libKey);\n    var existing = window._plexIndex[key];\n    if (existing && (existing.status === 'building' || (existing.status === 'ready' && (Date.now() - existing.ts) < 3600000))) {\n      return; // already building, or fresh within the last hour\n    }\n    var entry = {\n      status: 'building', scanned: 0, total: 0,\n      serverId: server.serverId, serverName: server.serverName,\n      libraryKey: libKey, libraryTitle: libTitle,\n      byMbid: {}, byIsrc: {}, byTitle: {}, ts: Date.now(), error: null\n    };\n    window._plexIndex[key] = entry;\n    var stripFeat = function (s) { return (s || '').replace(/[([]\\s*(feat|ft|featuring|with)\\b[^)\\]]*[)\\]]/ig, '').replace(/\\s{2,}/g, ' ').trim(); };\n    var norm = function (s) { return (s || '').toString().toLowerCase().normalize('NFKD').replace(/\\p{M}/gu, '').replace(/[^\\p{L}\\p{N}]/gu, ''); };\n    try {\n      var base = await this._baseUrl(server);\n      if (!base) { entry.status = 'error'; entry.error = 'Server unreachable'; return; }\n      var tok = encodeURIComponent(server.accessToken);\n      var pageSize = 1000, start = 0;\n      while (true) {\n        var url = base + '/library/sections/' + libKey + '/all?type=10&includeGuids=1&X-Plex-Container-Start=' + start + '&X-Plex-Container-Size=' + pageSize + '&X-Plex-Token=' + tok;\n        var resp = await this._fetch(url, { headers: { 'Accept': 'application/json' }, timeoutMs: 30000 });\n        if (!resp.ok) { entry.status = 'error'; entry.error = 'HTTP ' + resp.status; return; }\n        var data = await resp.json();\n        var c = data.MediaContainer || {};\n        var meta = c.Metadata || [];\n        entry.total = c.totalSize || c.size || (start + meta.length);\n        for (var i = 0; i < meta.length; i++) {\n          var trk = this._mapTrack(meta[i], server, base);\n          if (trk.mbid) entry.byMbid[trk.mbid] = trk;\n          if (trk.isrc) entry.byIsrc[trk.isrc] = trk;\n          var tk = {};\n          tk[norm(trk.title)] = 1;\n          tk[norm(stripFeat(trk.title))] = 1;\n          for (var nk in tk) { if (nk) { (entry.byTitle[nk] = entry.byTitle[nk] || []).push(trk); } }\n        }\n        entry.scanned += meta.length;\n        start += pageSize;\n        if (meta.length < pageSize || (entry.total && entry.scanned >= entry.total)) break;\n      }\n      entry.status = 'ready';\n      entry.ts = Date.now();\n      console.log('Plex index ready:', libTitle, '—', entry.scanned, 'tracks (' + Object.keys(entry.byMbid).length + ' MBID, ' + Object.keys(entry.byIsrc).length + ' ISRC)');\n    } catch (e) {\n      entry.status = 'error';\n      entry.error = e.message;\n      console.error('Plex index build failed for', libTitle, e);\n    }\n  }","indexStatus":"function (config) {\n    var self = this;\n    if (!config || !config.libraries) return [];\n    return config.libraries.map(function (l) {\n      var e = (window._plexIndex || {})[self._indexKey(l.serverId, l.key)];\n      return {\n        serverName: l.serverName,\n        libraryTitle: l.title,\n        status: e ? e.status : 'pending',\n        scanned: e ? e.scanned : 0,\n        total: e ? e.total : 0,\n        error: e ? e.error : null\n      };\n    });\n  }","_indexCandidatesByTitle":"function (config, nTitleClean, nTitleFull) {\n    var self = this;\n    var out = [], seen = {};\n    config.libraries.forEach(function (l) {\n      var e = (window._plexIndex || {})[self._indexKey(l.serverId, l.key)];\n      if (!e || e.status !== 'ready') return;\n      [nTitleClean, nTitleFull].forEach(function (k) {\n        if (!k) return;\n        var arr = e.byTitle[k];\n        if (arr) arr.forEach(function (t) { if (!seen[t.id]) { seen[t.id] = 1; out.push(t); } });\n      });\n    });\n    return out;\n  }","_searchIndex":"function (config, query) {\n    var self = this;\n    var norm = function (s) { return (s || '').toString().toLowerCase().normalize('NFKD').replace(/\\p{M}/gu, '').replace(/[^\\p{L}\\p{N}]/gu, ''); };\n    var nq = norm(query);\n    if (!nq) return [];\n    var out = [], seen = {};\n    config.libraries.forEach(function (l) {\n      var e = (window._plexIndex || {})[self._indexKey(l.serverId, l.key)];\n      if (!e || e.status !== 'ready') return;\n      for (var titleKey in e.byTitle) {\n        if (titleKey && titleKey.length >= 3 && nq.indexOf(titleKey) !== -1) {\n          e.byTitle[titleKey].forEach(function (t) { if (!seen[t.id]) { seen[t.id] = 1; out.push(t); } });\n        }\n      }\n    });\n    return out;\n  }","connect":"async function (config) {\n    try {\n      var clientId = (config && config.clientId);\n      if (!clientId) {\n        var tmpl = 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx';\n        var out = '';\n        for (var i = 0; i < tmpl.length; i++) {\n          var ch = tmpl[i];\n          if (ch === 'x') out += Math.floor(Math.random() * 16).toString(16);\n          else if (ch === 'y') out += (8 + Math.floor(Math.random() * 4)).toString(16);\n          else out += ch;\n        }\n        clientId = 'parachord-' + out;\n      }\n      var product = 'Parachord';\n      var headers = {\n        'Accept': 'application/json',\n        'X-Plex-Product': product,\n        'X-Plex-Version': '1.0.0',\n        'X-Plex-Client-Identifier': clientId,\n        'X-Plex-Device': 'Parachord',\n        'X-Plex-Platform': 'Web'\n      };\n      var pinResp = await this._fetch('https://plex.tv/api/v2/pins?strong=true', { method: 'POST', headers: headers });\n      if (!pinResp.ok) return { success: false, error: 'Could not start Plex sign-in (HTTP ' + pinResp.status + ')' };\n      var pin = await pinResp.json();\n      var authUrl = 'https://app.plex.tv/auth#?clientID=' + encodeURIComponent(clientId) +\n        '&code=' + encodeURIComponent(pin.code) +\n        '&context%5Bdevice%5D%5Bproduct%5D=' + encodeURIComponent(product);\n      if (window.electron && window.electron.shell && window.electron.shell.openExternal) {\n        window.electron.shell.openExternal(authUrl);\n      } else {\n        window.open(authUrl, '_blank');\n      }\n      var deadline = Date.now() + 120000;\n      while (Date.now() < deadline) {\n        await new Promise(function (r) { setTimeout(r, 2000); });\n        var chk = await this._fetch('https://plex.tv/api/v2/pins/' + pin.id, {\n          headers: { 'Accept': 'application/json', 'X-Plex-Client-Identifier': clientId }\n        });\n        if (!chk.ok) continue;\n        var pd = await chk.json();\n        if (pd && pd.authToken) {\n          var username = '';\n          try {\n            var uResp = await this._fetch('https://plex.tv/api/v2/user', {\n              headers: { 'Accept': 'application/json', 'X-Plex-Token': pd.authToken, 'X-Plex-Client-Identifier': clientId }\n            });\n            if (uResp.ok) {\n              var u = await uResp.json();\n              username = u.username || u.title || u.friendlyName || u.email || '';\n            }\n          } catch (e) { /* username is cosmetic */ }\n          return { success: true, authToken: pd.authToken, clientId: clientId, username: username };\n        }\n      }\n      return { success: false, error: 'Timed out waiting for Plex sign-in. Please try again.' };\n    } catch (e) {\n      return { success: false, error: e.message };\n    }\n  }","discoverLibraries":"async function (config) {\n    try {\n      if (!config || !config.authToken) return { error: 'Not signed in to Plex', servers: [] };\n      var clientId = config.clientId || 'parachord';\n      var resResp = await this._fetch('https://plex.tv/api/v2/resources?includeHttps=1&includeRelay=1', {\n        headers: { 'Accept': 'application/json', 'X-Plex-Token': config.authToken, 'X-Plex-Client-Identifier': clientId }\n      });\n      if (!resResp.ok) return { error: 'Could not list Plex servers (HTTP ' + resResp.status + ')', servers: [] };\n      var resources = await resResp.json();\n      var self = this;\n      var serverResources = (resources || []).filter(function (r) {\n        return r.provides && r.provides.indexOf('server') !== -1;\n      });\n      // Probe every server concurrently so discovery is fast even with several.\n      var servers = await Promise.all(serverResources.map(async function (r) {\n        var conns = (r.connections || []).slice().sort(function (a, b) {\n          var score = function (c) { var s = 0; if (c.local) s -= 2; if (c.protocol === 'https') s -= 1; if (c.relay) s += 3; return s; };\n          return score(a) - score(b);\n        }).map(function (c) { return c.uri; }).filter(Boolean);\n        var server = {\n          serverId: r.clientIdentifier,\n          serverName: r.name,\n          owned: !!r.owned,\n          accessToken: r.accessToken,\n          connections: conns,\n          libraries: [],\n          reachable: false\n        };\n        var base = await self._baseUrl(server);\n        if (base) {\n          server.reachable = true;\n          try {\n            var secResp = await self._fetch(base + '/library/sections?X-Plex-Token=' + encodeURIComponent(server.accessToken), {\n              headers: { 'Accept': 'application/json' }\n            });\n            if (secResp.ok) {\n              var secData = await secResp.json();\n              var dirs = (secData.MediaContainer && secData.MediaContainer.Directory) || [];\n              for (var j = 0; j < dirs.length; j++) {\n                if (dirs[j].type === 'artist') {\n                  server.libraries.push({ key: String(dirs[j].key), title: dirs[j].title });\n                }\n              }\n            }\n          } catch (e) { /* reachable but section listing failed */ }\n        }\n        return server;\n      }));\n      return { servers: servers };\n    } catch (e) {\n      return { error: e.message, servers: [] };\n    }\n  }","search":"async function (query, config) {\n    var libs = (config && config.libraries) || [];\n    if (!libs.length) return [];\n    var self = this;\n    // Fast path: serve from the local index when every library is ready.\n    if (this._allIndexed(config)) {\n      var idxResults = this._searchIndex(config, query);\n      if (idxResults.length > 0) {\n        var withId = idxResults.filter(function (r) { return r.mbid || r.isrc; }).length;\n        console.log('Found ' + idxResults.length + ' Plex result(s) [indexed] — ' + withId + ' with MusicBrainz/ISRC');\n      }\n      return idxResults;\n    }\n    var byServer = {};\n    for (var i = 0; i < libs.length; i++) {\n      var l = libs[i];\n      if (!byServer[l.serverId]) {\n        byServer[l.serverId] = { serverId: l.serverId, serverName: l.serverName, accessToken: l.accessToken, connections: l.connections, keys: {} };\n      }\n      byServer[l.serverId].keys[String(l.key)] = true;\n    }\n    var ids = Object.keys(byServer);\n    var results = [];\n    for (var s = 0; s < ids.length; s++) {\n      var server = byServer[ids[s]];\n      var base = await self._baseUrl(server);\n      if (!base) continue;\n      try {\n        var url = base + '/hubs/search?query=' + encodeURIComponent(query) + '&limit=50&includeGuids=1&X-Plex-Token=' + encodeURIComponent(server.accessToken);\n        var resp = await self._fetch(url, { headers: { 'Accept': 'application/json' } });\n        if (!resp.ok) { console.error('Plex search failed:', resp.status, 'on', server.serverName); continue; }\n        var data = await resp.json();\n        var container = data.MediaContainer;\n        if (!container || !container.Hub) continue;\n        for (var h = 0; h < container.Hub.length; h++) {\n          var hub = container.Hub[h];\n          if (hub.type !== 'track' || !hub.Metadata) continue;\n          for (var m = 0; m < hub.Metadata.length; m++) {\n            var t = hub.Metadata[m];\n            if (t.librarySectionID != null && !server.keys[String(t.librarySectionID)]) continue;\n            results.push(self._mapTrack(t, server, base));\n          }\n        }\n      } catch (e) { console.error('Plex search error on', server.serverName, e); }\n    }\n    if (results.length > 0) {\n      var withMb = results.filter(function (r) { return r.mbid || r.isrc; }).length;\n      var withGuid = results.filter(function (r) { return r.plexGuid; }).length;\n      console.log('Found ' + results.length + ' Plex result(s) — ' + withMb + ' with MusicBrainz/ISRC, ' + withGuid + ' with Plex guid');\n    }\n    return results;\n  }","resolve":"async function (artist, track, album, config) {\n    if (!config || !config.libraries || !config.libraries.length || !track) return null;\n    var self = this;\n\n    // Plex's search matches titles/names; feeding it the full credit list plus a\n    // \"(feat. ...)\" suffix matches nothing. Search by the cleaned title, then\n    // pick the result whose artist matches one of the credited artists.\n    var stripFeat = function (s) {\n      return (s || '')\n        .replace(/[([]\\s*(feat|ft|featuring|with)\\b[^)\\]]*[)\\]]/ig, '')\n        .replace(/\\s*[-–—]\\s*(feat|ft|featuring)\\b.*$/ig, '')\n        .replace(/\\s+(feat|ft|featuring)\\.?\\s.*$/ig, '')\n        .replace(/\\s{2,}/g, ' ')\n        .trim();\n    };\n    var norm = function (s) {\n      return (s || '').toString().toLowerCase().normalize('NFKD').replace(/\\p{M}/gu, '').replace(/[^\\p{L}\\p{N}]/gu, '');\n    };\n    var splitArtists = function (s) {\n      return (s || '').split(/\\s*[,;&/]\\s*|\\s+(?:feat|ft|featuring|with|x|vs)\\.?\\s+/i).map(function (a) { return a.trim(); }).filter(Boolean);\n    };\n\n    var cleanTitle = stripFeat(track);\n    var artistParts = splitArtists(artist);\n    var primaryArtist = artistParts[0] || '';\n    var targetArtists = artistParts.map(norm).filter(Boolean);\n    var nTitleClean = norm(cleanTitle);\n    var nTitleFull = norm(track);\n\n    var titleOk = function (rTitle) {\n      var a = norm(rTitle), b = norm(stripFeat(rTitle));\n      return (!!a && nTitleFull && (a.indexOf(nTitleFull) !== -1 || nTitleFull.indexOf(a) !== -1)) ||\n             (!!b && !!nTitleClean && (b.indexOf(nTitleClean) !== -1 || nTitleClean.indexOf(b) !== -1));\n    };\n    var artistOk = function (rArtist) {\n      var ra = norm(rArtist);\n      if (!ra) return false;\n      return targetArtists.some(function (ta) { return ta && (ra.indexOf(ta) !== -1 || ta.indexOf(ra) !== -1); });\n    };\n\n    // Fast path: when every selected library is fully indexed, resolve locally\n    // (no network) against the in-memory title index. The app's findBestMatch /\n    // calculateConfidence still do the final ID-first scoring on what we return.\n    if (this._allIndexed(config)) {\n      var idxCands = this._indexCandidatesByTitle(config, nTitleClean, nTitleFull);\n      var idxExact = idxCands.find(function (r) { return (norm(r.title) === nTitleFull || norm(stripFeat(r.title)) === nTitleClean) && artistOk(r.artist); });\n      if (idxExact) { console.log('Plex index match:', idxExact.artist, '-', idxExact.title); return idxExact; }\n      var idxFuzzy = idxCands.find(function (r) { return titleOk(r.title) && artistOk(r.artist); });\n      if (idxFuzzy) return idxFuzzy;\n      var idxTitleOnly = idxCands.find(function (r) { return titleOk(r.title); });\n      return idxTitleOnly || null;\n    }\n\n    var seen = {}, queries = [];\n    var addQ = function (q) { q = (q || '').trim(); var k = q.toLowerCase(); if (q && !seen[k]) { seen[k] = true; queries.push(q); } };\n    addQ(cleanTitle);\n    addQ((primaryArtist + ' ' + cleanTitle).trim());\n    addQ(track);\n\n    var fallback = null;\n    for (var qi = 0; qi < queries.length; qi++) {\n      var results = await self.search(queries[qi], config);\n      for (var i = 0; i < results.length; i++) {\n        var r = results[i];\n        if (!titleOk(r.title)) continue;\n        if (artistOk(r.artist)) {\n          console.log('Plex resolve matched:', r.artist, '-', r.title);\n          return r;\n        }\n        if (!fallback) fallback = r;\n      }\n    }\n    return fallback;\n  }","getStreamUrl":"async function (track, config) {\n    if (!track || !track.plexPartKey || !track.plexServerId) { console.error('Plex: no stream key for track'); return null; }\n    var server = await this._serverFor(track.plexServerId, config);\n    if (!server || !server.accessToken) { console.error('Plex: server', track.plexServerName || track.plexServerId, 'is not in the saved library selection'); return null; }\n    var base = await this._baseUrl(server);\n    if (!base) { console.error('Plex: no reachable connection for', track.plexServerName || track.plexServerId); return null; }\n    return base + track.plexPartKey + '?X-Plex-Token=' + encodeURIComponent(server.accessToken);\n  }","play":"async function (track, config) {\n    var streamUrl = await this.getStreamUrl(track, config);\n    if (!streamUrl) return false;\n    console.log('Plex streaming:', track.title, 'by', track.artist);\n    return { type: 'local', url: streamUrl };\n  }","lookupUrl":"async function (url, config) {\n    try {\n      var serverId = null;\n      var sm = url.match(/\\/server\\/([0-9a-f]+)/i);\n      if (sm) serverId = sm[1];\n      var keyMatch = url.match(/key=([^&]+)/);\n      if (!keyMatch) { console.log('Could not extract key from Plex URL'); return null; }\n      var metadataKey = decodeURIComponent(keyMatch[1]);\n      var server = serverId ? await this._serverFor(serverId, config) : null;\n      if (!server && config && config.libraries && config.libraries.length) {\n        var l0 = config.libraries[0];\n        server = { serverId: l0.serverId, serverName: l0.serverName, accessToken: l0.accessToken, connections: l0.connections };\n      }\n      if (!server) return null;\n      var base = await this._baseUrl(server);\n      if (!base) return null;\n      var resp = await this._fetch(base + metadataKey + '?includeGuids=1&X-Plex-Token=' + encodeURIComponent(server.accessToken), { headers: { 'Accept': 'application/json' } });\n      if (!resp.ok) { console.error('Plex metadata lookup failed:', resp.status); return null; }\n      var data = await resp.json();\n      var c = data.MediaContainer;\n      if (!c || !c.Metadata || !c.Metadata[0]) return null;\n      var t = c.Metadata[0];\n      if (t.type === 'album') return this.lookupAlbum(url, config);\n      if (t.type !== 'track') return null;\n      return this._mapTrack(t, server, base);\n    } catch (e) {\n      console.error('Plex URL lookup error:', e);\n      return null;\n    }\n  }","lookupAlbum":"async function (url, config) {\n    try {\n      var serverId = null;\n      var sm = url.match(/\\/server\\/([0-9a-f]+)/i);\n      if (sm) serverId = sm[1];\n      var keyMatch = url.match(/key=([^&]+)/);\n      if (!keyMatch) return null;\n      var metadataKey = decodeURIComponent(keyMatch[1]);\n      var server = serverId ? await this._serverFor(serverId, config) : null;\n      if (!server && config && config.libraries && config.libraries.length) {\n        var l0 = config.libraries[0];\n        server = { serverId: l0.serverId, serverName: l0.serverName, accessToken: l0.accessToken, connections: l0.connections };\n      }\n      if (!server) return null;\n      var base = await this._baseUrl(server);\n      if (!base) return null;\n      var tok = encodeURIComponent(server.accessToken);\n      var aResp = await this._fetch(base + metadataKey + '?includeGuids=1&X-Plex-Token=' + tok, { headers: { 'Accept': 'application/json' } });\n      if (!aResp.ok) return null;\n      var aData = await aResp.json();\n      var ac = aData.MediaContainer;\n      if (!ac || !ac.Metadata || !ac.Metadata[0]) return null;\n      var album = ac.Metadata[0];\n      if (album.type !== 'album') return null;\n      var cResp = await this._fetch(base + metadataKey + '/children?includeGuids=1&X-Plex-Token=' + tok, { headers: { 'Accept': 'application/json' } });\n      if (!cResp.ok) return null;\n      var cData = await cResp.json();\n      var cc = cData.MediaContainer;\n      var albumArt = album.thumb ? base + album.thumb + '?X-Plex-Token=' + tok : null;\n      var tracks = [];\n      if (cc && cc.Metadata) {\n        for (var i = 0; i < cc.Metadata.length; i++) {\n          var mt = this._mapTrack(cc.Metadata[i], server, base);\n          if (!mt.album) mt.album = album.title || '';\n          if (!mt.albumArt) mt.albumArt = albumArt;\n          mt.artist = cc.Metadata[i].grandparentTitle || album.parentTitle || mt.artist;\n          tracks.push(mt);\n        }\n      }\n      tracks.sort(function (a, b) { return (a.trackNumber || 0) - (b.trackNumber || 0); });\n      return {\n        id: 'plex-album-' + album.ratingKey,\n        name: album.title || '',\n        title: album.title || '',\n        artist: album.parentTitle || 'Unknown Artist',\n        albumArt: albumArt,\n        releaseDate: album.originallyAvailableAt || '',\n        trackCount: tracks.length,\n        tracks: tracks,\n        url: url\n      };\n    } catch (e) {\n      console.error('Plex album lookup error:', e);\n      return null;\n    }\n  }","lookupPlaylist":"async function (url, config) {\n    try {\n      var serverId = null;\n      var sm = url.match(/\\/server\\/([0-9a-f]+)/i);\n      if (sm) serverId = sm[1];\n      var playlistId = null;\n      var keyMatch = url.match(/key=([^&]+)/);\n      if (keyMatch) {\n        var mk = decodeURIComponent(keyMatch[1]);\n        var im = mk.match(/\\/playlists\\/(\\d+)/);\n        if (im) playlistId = im[1];\n      }\n      if (!playlistId) {\n        var pm = url.match(/\\/playlists\\/(\\d+)/);\n        if (pm) playlistId = pm[1];\n      }\n      if (!playlistId) return null;\n      var server = serverId ? await this._serverFor(serverId, config) : null;\n      if (!server && config && config.libraries && config.libraries.length) {\n        var l0 = config.libraries[0];\n        server = { serverId: l0.serverId, serverName: l0.serverName, accessToken: l0.accessToken, connections: l0.connections };\n      }\n      if (!server) return null;\n      var base = await this._baseUrl(server);\n      if (!base) return null;\n      var tok = encodeURIComponent(server.accessToken);\n      var pResp = await this._fetch(base + '/playlists/' + playlistId + '?X-Plex-Token=' + tok, { headers: { 'Accept': 'application/json' } });\n      if (!pResp.ok) { console.error('Plex playlist fetch failed:', pResp.status); return null; }\n      var pData = await pResp.json();\n      var pc = pData.MediaContainer;\n      if (!pc || !pc.Metadata || !pc.Metadata[0]) return null;\n      var playlist = pc.Metadata[0];\n      var iResp = await this._fetch(base + '/playlists/' + playlistId + '/items?includeGuids=1&X-Plex-Token=' + tok, { headers: { 'Accept': 'application/json' } });\n      if (!iResp.ok) { console.error('Plex playlist items fetch failed:', iResp.status); return null; }\n      var iData = await iResp.json();\n      var ic = iData.MediaContainer;\n      var tracks = [];\n      if (ic && ic.Metadata) {\n        for (var i = 0; i < ic.Metadata.length; i++) {\n          if (ic.Metadata[i].type !== 'track') continue;\n          tracks.push(this._mapTrack(ic.Metadata[i], server, base));\n        }\n      }\n      console.log('Plex playlist loaded:', playlist.title, '(' + tracks.length + ' tracks)');\n      return {\n        id: 'plex-playlist-' + playlistId,\n        name: playlist.title || '',\n        owner: '',\n        albumArt: playlist.composite ? base + playlist.composite + '?X-Plex-Token=' + tok : null,\n        trackCount: tracks.length,\n        tracks: tracks,\n        url: url\n      };\n    } catch (e) {\n      console.error('Plex playlist lookup error:', e);\n      return null;\n    }\n  }","init":"async function (config) {\n    if (!config || !config.libraries || !config.libraries.length) {\n      console.log('Plex: awaiting sign-in and library selection');\n      return;\n    }\n    var n = config.libraries.length;\n    console.log('Plex: ' + n + ' librar' + (n === 1 ? 'y' : 'ies') + ' configured; building search index in background');\n    try { this.buildIndex(config); } catch (e) { /* index build is best-effort */ }\n  }","cleanup":"async function () {\n    console.log('Plex resolver cleanup');\n    this.clearIndex();\n  }"}},
 ];
 
 
 // Canonical priority order for content resolvers (determines insertion position when enabling)
-const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'youtube'];
+const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'plex', 'youtube'];
 
 // Insert a resolver ID into an order array at its canonical position
 function insertInCanonicalOrder(order, newId) {
@@ -3239,6 +3240,7 @@ const Parachord = () => {
     localfiles: 0,   // Local files vary, start neutral
     soundcloud: 0,   // SoundCloud varies, start neutral
     subsonic: 0,     // Subsonic streams whatever the file is — start neutral
+    plex: 0,         // Plex streams the library file as-is — start neutral
     bandcamp: -3,    // Bandcamp tends to be slightly louder
     youtube: -6,     // YouTube videos are often much louder
     qobuz: 0         // Qobuz is typically well mastered
@@ -3574,6 +3576,16 @@ const Parachord = () => {
   const [listenbrainzUsernameInput, setListenbrainzUsernameInput] = useState(''); // Input field value
   const [listenbrainzTokenInput, setListenbrainzTokenInput] = useState(''); // User token input
   const [listenbrainzConnecting, setListenbrainzConnecting] = useState(false); // Loading state during connection
+
+  // Plex state (settings panel; the resolver itself lives in plugins-src/plex)
+  const [plexConnecting, setPlexConnecting] = useState(false); // PIN sign-in in progress
+  const [plexStatus, setPlexStatus] = useState(''); // Human-readable progress during connect
+  const [plexAccount, setPlexAccount] = useState(null); // { authToken, clientId, username }
+  const [plexDiscovering, setPlexDiscovering] = useState(false); // Loading libraries from servers
+  const [plexServers, setPlexServers] = useState([]); // [{ serverId, serverName, libraries: [{key,title}], ... }]
+  const [plexSelectedLibs, setPlexSelectedLibs] = useState(() => new Set()); // Set of "serverId:key"
+  const [plexError, setPlexError] = useState(null);
+  const [plexIndexStatus, setPlexIndexStatus] = useState([]); // Per-library background scan progress
 
   // Scrobbler settings state
   const [scrobblersInitialized, setScrobblersInitialized] = useState(false);
@@ -6937,6 +6949,7 @@ const Parachord = () => {
     if ((track.youtubeUrl || track.youtubeId) && active.includes('youtube')) return 'youtube';
     if (track.qobuzId && active.includes('qobuz')) return 'qobuz';
     if (track.subsonicId && active.includes('subsonic')) return 'subsonic';
+    if ((track.plexPartKey || track.plexRatingKey || track.plexServerId) && active.includes('plex')) return 'plex';
     if ((track.filePath || track.fileUrl) && active.includes('localfiles')) return 'localfiles';
 
     // Last resort: return any resolver from sources (even if disabled) for display purposes
@@ -6950,6 +6963,7 @@ const Parachord = () => {
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
     if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
     if (track.filePath || track.fileUrl || track.sources?.localfiles) return 'localfiles';
+    if (track.plexPartKey || track.plexRatingKey || track.sources?.plex) return 'plex';
 
     return null;
   };
@@ -9680,7 +9694,7 @@ const Parachord = () => {
         const resolverId = determineResolverIdFromTrack(currentTrackRef.current);
         const trackId = currentTrackRef.current?.id;
         const effectiveVolume = getEffectiveVolume(newVolume, resolverId, trackId);
-        if ((resolverId === 'localfiles' || resolverId === 'soundcloud' || resolverId === 'subsonic') && audioRef.current) {
+        if ((resolverId === 'localfiles' || resolverId === 'soundcloud' || resolverId === 'subsonic' || resolverId === 'plex') && audioRef.current) {
           audioRef.current.volume = effectiveVolume / 100;
         }
         if (resolverId === 'spotify') {
@@ -9909,7 +9923,7 @@ const Parachord = () => {
             }
             const positionSec = Math.max(0, Number(offsetMs) / 1000);
             let confirmedMs = null;
-            if (audioRef.current && (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic' || activeResolver === 'youtube' || activeResolver === 'bandcamp')) {
+            if (audioRef.current && (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic' || activeResolver === 'plex' || activeResolver === 'youtube' || activeResolver === 'bandcamp')) {
               audioRef.current.currentTime = positionSec;
               confirmedMs = Math.round(audioRef.current.currentTime * 1000);
             }
@@ -11756,7 +11770,7 @@ ${trackListXml}
           const resolverId = track ? determineResolverIdFromTrack(track) : null;
 
           // Restore HTML5 audio volume
-          if ((resolverId === 'localfiles' || resolverId === 'soundcloud' || resolverId === 'subsonic') && audioRef.current) {
+          if ((resolverId === 'localfiles' || resolverId === 'soundcloud' || resolverId === 'subsonic' || resolverId === 'plex') && audioRef.current) {
             applyLocalFileVolume(currentVol, track?.id, resolverId);
           }
           if (resolverId === 'applemusic' && window._appleMusicPreviewAudio) {
@@ -12040,6 +12054,13 @@ ${trackListXml}
       };
     }
 
+    // Plex stores its account token + selected libraries (each with its
+    // server token and connections) in meta_service_configs. Read through the
+    // ref so search/play see the latest saved selection.
+    if (resolverId === 'plex') {
+      return metaServiceConfigsRef.current?.plex || metaServiceConfigs.plex || {};
+    }
+
     // For Apple Music, load developer token with fallback chain:
     // 1. User-configured (localStorage) > 2. Environment variable (.env)
     if (resolverId === 'applemusic') {
@@ -12285,10 +12306,11 @@ ${trackListXml}
     const isLocalFile = activeResolver === 'localfiles';
     const isSoundCloud = activeResolver === 'soundcloud';
     const isSubsonic = activeResolver === 'subsonic';
+    const isPlex = activeResolver === 'plex';
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isSubsonic && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isSubsonic && !isPlex && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -14425,7 +14447,7 @@ ${trackListXml}
       const currentVol = volumeRef.current;
       const trackId = currentTrackRef.current?.id;
       const effectiveVolume = getEffectiveVolume(currentVol, resolverId, trackId);
-      if ((resolverId === 'localfiles' || resolverId === 'soundcloud' || resolverId === 'subsonic') && audioRef.current) {
+      if ((resolverId === 'localfiles' || resolverId === 'soundcloud' || resolverId === 'subsonic' || resolverId === 'plex') && audioRef.current) {
         audioRef.current.volume = effectiveVolume / 100;
       }
       if (resolverId === 'spotify') {
@@ -14927,7 +14949,9 @@ ${trackListXml}
       const src = el?.src || '';
       if (src.startsWith('local-audio:')) return 'localfiles';
       if (src.startsWith('blob:')) return 'soundcloud';
-      if (/^https?:/i.test(src)) return 'subsonic';
+      // Subsonic and Plex both stream http(s) URLs; the play path tags the
+      // track it hands this element with the owning resolver.
+      if (/^https?:/i.test(src)) return html5AudioTrackRef.current?._streamOwner || 'subsonic';
       return null;
     };
 
@@ -15101,21 +15125,24 @@ ${trackListXml}
         });
         return;
       }
-      if (owner === 'subsonic') {
-        console.error('📡 Subsonic audio error:', mediaError);
-        let errorMessage = 'Could not play this Subsonic track. Check that the server is reachable and your credentials are current.';
+      if (owner === 'subsonic' || owner === 'plex') {
+        const label = owner === 'plex' ? 'Plex' : 'Subsonic';
+        console.error(`📡 ${label} audio error:`, mediaError);
+        let errorMessage = owner === 'plex'
+          ? 'Could not play this track from your Plex server. Check that the server is online and reachable.'
+          : 'Could not play this Subsonic track. Check that the server is reachable and your credentials are current.';
         if (mediaError?.code === MediaError.MEDIA_ERR_NETWORK) {
-          errorMessage = 'Network error while streaming from your Subsonic server. It may be unreachable.';
+          errorMessage = `Network error while streaming from your ${label} server. It may be unreachable.`;
         } else if (mediaError?.code === MediaError.MEDIA_ERR_DECODE) {
-          errorMessage = 'Error decoding the audio stream from your Subsonic server.';
+          errorMessage = `Error decoding the audio stream from your ${label} server.`;
         } else if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-          errorMessage = 'The Subsonic server returned an audio format this app cannot decode.';
+          errorMessage = `The ${label} server returned an audio format this app cannot decode.`;
         }
-        if (skipIfAdvancing(`Subsonic playback: ${errorMessage}`)) return;
+        if (skipIfAdvancing(`${label} playback: ${errorMessage}`)) return;
         setTrackLoading(false);
         showConfirmDialog({
           type: 'error',
-          title: 'Subsonic Playback Error',
+          title: `${label} Playback Error`,
           message: errorMessage
         });
       }
@@ -15324,17 +15351,29 @@ ${trackListXml}
         // the old local duplicate had drifted from the canonical guard.
 
         // Helper to find best matching result from search results
-        const findBestMatch = (results, targetArtist, targetTitle) => {
+        const findBestMatch = (results, targetArtist, targetTitle, targetMbid, targetIsrc) => {
           if (!results || results.length === 0) return null;
+          // Tier 1: exact MusicBrainz recording MBID — a definitive identity
+          // match that's immune to artist/title formatting differences.
+          if (targetMbid) {
+            const m = results.find(r => (r.mbid || r.recordingMbid) && (r.mbid === targetMbid || r.recordingMbid === targetMbid));
+            if (m) return m;
+          }
+          // Tier 2: exact ISRC — also a definitive recording-identity match.
+          if (targetIsrc) {
+            const ti = String(targetIsrc).trim().toUpperCase();
+            const m = results.find(r => r.isrc && String(r.isrc).trim().toUpperCase() === ti);
+            if (m) return m;
+          }
           const normTargetArtist = normalizeStr(targetArtist);
           const normTargetTitle = normalizeStr(targetTitle);
-          // First pass: look for exact match (normalized)
+          // Tier 3: exact normalized name (artist + title)
           for (const r of results) {
             if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
               return r;
             }
           }
-          // Second pass: look for contains match
+          // Tier 4: contains match
           for (const r of results) {
             if (validateResolvedTrack(r, targetArtist, targetTitle)) {
               return r;
@@ -15363,7 +15402,7 @@ ${trackListXml}
               const query = `${trackOrSource.artist} ${trackOrSource.title}`;
               const results = await resolver.search(query, config);
               if (results && results.length > 0) {
-                bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title);
+                bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title, trackOrSource.mbid || trackOrSource.recordingMbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                 if (!bestMatch) {
                   console.warn(`  ⚠️ ${resolver.id} returned ${results.length} results but none matched "${trackOrSource.title}" by "${trackOrSource.artist}"`);
                 }
@@ -15447,7 +15486,7 @@ ${trackListXml}
                   const query = `${canonicalArtist} ${canonicalTitle}`;
                   const results = await resolver.search(query, config);
                   if (results && results.length > 0) {
-                    bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle);
+                    bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle, mbidResult.recording_mbid || trackOrSource.mbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                   }
                 } else if (resolver.resolve) {
                   const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config);
@@ -15593,6 +15632,7 @@ ${trackListXml}
       else if (trackOrSource.qobuzId) resolverId = 'qobuz';
       else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
+      else if (trackOrSource.plexPartKey || trackOrSource.plexServerId || trackOrSource.plexRatingKey) resolverId = 'plex';
       // Fallback: use the 'source' property if set (added by search tagging)
       else if (trackOrSource.source && typeof trackOrSource.source === 'string') {
         resolverId = trackOrSource.source;
@@ -16096,8 +16136,12 @@ ${trackListXml}
     // built by the resolver's getStreamUrl), so no proxy or blob hop is
     // needed — the media element fetches cross-origin without CORS and the
     // server supports Range requests, so seeking works natively.
-    if (resolverId === 'subsonic') {
-      console.log('📡 Playing Subsonic track:', sourceToPlay.title);
+    // Plex plays the same way: its resolver's getStreamUrl builds a direct
+    // stream URL (token from the saved config, never from the track) and the
+    // shared element fetches it cross-origin with Range support.
+    if (resolverId === 'subsonic' || resolverId === 'plex') {
+      const streamLabel = resolverId === 'plex' ? 'Plex' : 'Subsonic';
+      console.log(`📡 Playing ${streamLabel} track:`, sourceToPlay.title);
 
       // Stop Spotify polling when switching to Subsonic playback
       if (playbackPollerRef.current) {
@@ -16136,20 +16180,22 @@ ${trackListXml}
         }
       }
 
-      const config = await getResolverConfig('subsonic');
+      const config = await getResolverConfig(resolverId);
       let streamUrl = null;
       try {
         streamUrl = resolver.getStreamUrl
           ? await resolver.getStreamUrl(sourceToPlay, config)
           : null;
       } catch (e) {
-        console.warn('📡 Subsonic getStreamUrl failed:', e?.message || e);
+        console.warn(`📡 ${streamLabel} getStreamUrl failed:`, e?.message || e);
       }
       // A baked stream URL is a replayable token. Never use one, and drop any
       // an older resolve already stored on this track before it is saved again.
-      dropSubsonicSecrets(sourceToPlay);
-      dropSubsonicSecrets(trackOrSource);
-      if (trackOrSource.sources) dropSubsonicSecrets(trackOrSource.sources.subsonic);
+      if (resolverId === 'subsonic') {
+        dropSubsonicSecrets(sourceToPlay);
+        dropSubsonicSecrets(trackOrSource);
+        if (trackOrSource.sources) dropSubsonicSecrets(trackOrSource.sources.subsonic);
+      }
 
       // Check if another play request superseded this one while building the URL
       if (playbackGenerationRef.current !== thisGeneration) {
@@ -16158,7 +16204,17 @@ ${trackListXml}
       }
 
       if (!streamUrl) {
-        console.error('❌ No Subsonic stream URL available');
+        console.error(`❌ No ${streamLabel} stream URL available`);
+        if (resolverId === 'plex') {
+          if (autoSkipIfAdvancing('Plex: no stream URL (server unreachable or not in the saved library selection)')) return;
+          setTrackLoading(false);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Plex Server Unreachable',
+            message: 'Could not reach your Plex server to stream this track. Make sure the server is online and that its library is selected in Settings > Resolvers > Plex.'
+          });
+          return;
+        }
         if (autoSkipIfAdvancing('Subsonic: no stream URL (check server URL / credentials in Settings)')) return;
         setTrackLoading(false);
         showConfirmDialog({
@@ -16170,12 +16226,14 @@ ${trackListXml}
       }
 
       try {
-        ensureSharedAudioElement(trackOrSource);
+        // Tag which stream resolver owns the element: both play http(s) URLs,
+        // so the element's src alone cannot tell them apart for error dialogs.
+        ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId });
         audioRef.current.src = streamUrl;
         const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
-        const effectiveVolume = getEffectiveVolume(volumeToApply, 'subsonic', sourceToPlay.id || trackOrSource.id);
+        const effectiveVolume = getEffectiveVolume(volumeToApply, resolverId, sourceToPlay.id || trackOrSource.id);
         audioRef.current.volume = effectiveVolume / 100;
-        console.log(`🔊 Applied Subsonic volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
+        console.log(`🔊 Applied ${streamLabel} volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
 
         audioRef.current.load();
 
@@ -17187,7 +17245,7 @@ ${trackListXml}
     // A track may have sources.soundcloud from resolution but be playing via Apple Music.
     // Previously this checked sources.localfiles/soundcloud which caused it to hijack
     // pause for Apple Music tracks when audioRef.current lingered from a prior play.
-    if (audioRef.current && (currentTrack?._activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud' || currentTrack?._activeResolver === 'subsonic')) {
+    if (audioRef.current && (currentTrack?._activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud' || currentTrack?._activeResolver === 'subsonic' || currentTrack?._activeResolver === 'plex')) {
       if (isPlaying) {
         audioRef.current.pause();
         setIsPlaying(false);
@@ -36220,6 +36278,185 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
+  // Plex helpers — sign in via PIN OAuth, discover music libraries across all
+  // of the account's servers, and persist the user's selection. All Plex logic
+  // lives in the plex resolver (plugins-src/plex); these drive it and store the
+  // result in meta_service_configs.plex.
+  const plexLibId = (serverId, key) => serverId + ':' + key;
+
+  const loadPlexLibraries = async (account) => {
+    const resolver = resolverLoaderRef.current?.getResolver('plex');
+    if (!resolver || !resolver.discoverLibraries) return;
+    setPlexDiscovering(true);
+    setPlexError(null);
+    try {
+      const disc = await resolver.discoverLibraries(account);
+      if (disc?.error) setPlexError(disc.error);
+      const servers = disc?.servers || [];
+      setPlexServers(servers);
+      const saved = (metaServiceConfigs.plex?.libraries || []).map(l => plexLibId(l.serverId, l.key));
+      const next = saved.length
+        ? new Set(saved)
+        : new Set(servers.flatMap(s => s.libraries.map(l => plexLibId(s.serverId, l.key))));
+      setPlexSelectedLibs(next);
+      // Auto-save the initial selection (e.g. all libraries on a fresh connect)
+      // so it persists without a Save button. No-op when it already matches.
+      const savedKey = saved.slice().sort().join('|');
+      const nextKey = Array.from(next).sort().join('|');
+      if (savedKey !== nextKey) {
+        await persistPlexSelection(next, account, servers);
+      }
+    } catch (e) {
+      setPlexError(e.message);
+    } finally {
+      setPlexDiscovering(false);
+    }
+  };
+
+  const connectPlex = async () => {
+    const resolver = resolverLoaderRef.current?.getResolver('plex');
+    if (!resolver || !resolver.connect) {
+      showConfirmDialog({ type: 'error', title: 'Plex Unavailable', message: 'The Plex resolver is not loaded.' });
+      return;
+    }
+    setPlexError(null);
+    setPlexConnecting(true);
+    setPlexStatus('Opening Plex sign-in in your browser…');
+    try {
+      const existing = metaServiceConfigs.plex || {};
+      const res = await resolver.connect({ clientId: existing.clientId });
+      if (!res || !res.success) {
+        setPlexError(res?.error || 'Plex sign-in failed.');
+        setPlexConnecting(false);
+        setPlexStatus('');
+        return;
+      }
+      const account = { authToken: res.authToken, clientId: res.clientId, username: res.username };
+      setPlexAccount(account);
+      // Persist the token immediately so a closed window doesn't lose the sign-in.
+      await saveMetaServiceConfig('plex', { ...existing, ...account, libraries: existing.libraries || [] });
+      delete resolverConfigCache.current['plex'];
+      setPlexStatus('Finding your servers and music libraries…');
+      await loadPlexLibraries(account);
+    } catch (e) {
+      setPlexError(e.message);
+    } finally {
+      setPlexConnecting(false);
+      setPlexStatus('');
+    }
+  };
+
+  const togglePlexLibrary = (serverId, key) => {
+    const id = plexLibId(serverId, key);
+    const next = new Set(plexSelectedLibs);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setPlexSelectedLibs(next);
+    persistPlexSelection(next); // auto-save on every change
+  };
+
+  // Persist the current library selection (auto-save — no Save button). Pass
+  // `serversArg` on first load since setPlexServers hasn't flushed to closure yet.
+  // Each saved library carries its server's token and connection list: that is
+  // what the resolver streams with, and what main-process/ipc/plex-fetch.js
+  // allowlists (a LAN server is reachable only once it is saved here).
+  const persistPlexSelection = async (selectedSet, account, serversArg) => {
+    const acct = account || plexAccount || metaServiceConfigs.plex || {};
+    const servers = serversArg || plexServers;
+    const libraries = [];
+    for (const s of servers) {
+      for (const lib of s.libraries) {
+        if (selectedSet.has(plexLibId(s.serverId, lib.key))) {
+          libraries.push({
+            serverId: s.serverId,
+            serverName: s.serverName,
+            accessToken: s.accessToken,
+            connections: s.connections,
+            key: lib.key,
+            title: lib.title
+          });
+        }
+      }
+    }
+    const config = {
+      authToken: acct.authToken,
+      clientId: acct.clientId,
+      username: acct.username,
+      libraries
+    };
+    await saveMetaServiceConfig('plex', config);
+    delete resolverConfigCache.current['plex'];
+    // Refresh the background pick-by-id index for the new selection (idempotent).
+    try { resolverLoaderRef.current?.getResolver('plex')?.buildIndex?.(config); } catch (e) { /* best-effort */ }
+    if (libraries.length > 0 && !activeResolvers.includes('plex')) {
+      toggleResolver('plex');
+    }
+  };
+
+  const disconnectPlex = async () => {
+    await clearMetaServiceConfig('plex');
+    delete resolverConfigCache.current['plex'];
+    // Free the in-memory index and connection cache along with the sign-in.
+    try { resolverLoaderRef.current?.getResolver('plex')?.clearIndex?.(); } catch (e) { /* best-effort */ }
+    setPlexAccount(null);
+    setPlexServers([]);
+    setPlexSelectedLibs(new Set());
+    setPlexError(null);
+    setPlexIndexStatus([]);
+    if (activeResolvers.includes('plex')) {
+      removeResolverSources('plex');
+      setActiveResolvers(prev => prev.filter(id => id !== 'plex'));
+      setResolverOrder(prev => prev.filter(id => id !== 'plex'));
+    }
+  };
+
+  // Warm the Plex pick-by-id index at launch (once the saved config and the
+  // resolvers are both in) so bulk resolution is fast before Settings is ever
+  // opened — content resolvers' init() is not called at startup. buildIndex
+  // is idempotent (ready/building libraries are skipped), so a selection
+  // change re-runs it cheaply.
+  useEffect(() => {
+    if (!cacheLoaded) return;
+    const cfg = metaServiceConfigs.plex;
+    if (!cfg?.libraries?.length) return;
+    let cancelled = false;
+    const ready = resolversInitRef.current || Promise.resolve();
+    Promise.race([ready, new Promise(resolve => setTimeout(resolve, 15000))])
+      .then(() => { if (!cancelled) resolverLoaderRef.current?.getResolver('plex')?.buildIndex?.(cfg); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [cacheLoaded, metaServiceConfigs.plex]);
+
+  // Auto-load libraries the moment the Plex panel opens while signed in — no
+  // "click to load" step; the panel shows a spinner via plexDiscovering.
+  useEffect(() => {
+    if (selectedResolver?.id !== 'plex') return;
+    const cfg = metaServiceConfigs.plex;
+    if (cfg && cfg.authToken && plexServers.length === 0 && !plexDiscovering) {
+      const account = plexAccount || { authToken: cfg.authToken, clientId: cfg.clientId, username: cfg.username };
+      if (!plexAccount) setPlexAccount(account);
+      loadPlexLibraries(account);
+    }
+  }, [selectedResolver?.id]);
+
+  // Poll the background index build for progress while the Plex panel is open.
+  // The build itself lives on `window` in the resolver, so it keeps running
+  // after this effect (and the panel) is gone.
+  useEffect(() => {
+    if (selectedResolver?.id !== 'plex') return;
+    const resolver = resolverLoaderRef.current?.getResolver('plex');
+    if (!resolver || !resolver.indexStatus) return;
+    const cfg = metaServiceConfigs.plex;
+    if (!cfg || !cfg.libraries || !cfg.libraries.length) { setPlexIndexStatus([]); return; }
+    // Ensure the index is building/built for the current selection (idempotent —
+    // ready libraries are skipped). Without this, a library that was never
+    // indexed this session would sit at "Queued" forever.
+    try { resolver.buildIndex?.(cfg); } catch (e) { /* best-effort */ }
+    const tick = () => { try { setPlexIndexStatus(resolver.indexStatus(cfg) || []); } catch (e) { /* ignore */ } };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [selectedResolver?.id, metaServiceConfigs.plex]);
+
   // Fetch models dynamically for plugins with dynamic-select model setting
   const fetchDynamicModels = async (resolver, config) => {
     const modelSetting = resolver.settings?.configurable?.model || resolver.configurable?.model;
@@ -36968,7 +37205,7 @@ useEffect(() => {
 
   // Don't poll if playing via HTML5 Audio (local files or SoundCloud)
   const activeResolver = currentTrack?._activeResolver;
-  if (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic') {
+  if (activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic' || activeResolver === 'plex') {
     return;
   }
 
@@ -37003,7 +37240,7 @@ useEffect(() => {
     // HTML5 audio engines. Key off the resolver actually playing, not
     // track.sources — a Subsonic source can be attached while local files
     // are what's playing.
-    if ((activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic') && audioRef.current) {
+    if ((activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic' || activeResolver === 'plex') && audioRef.current) {
       if (audioRef.current.src?.startsWith('local-audio:')) {
         localFileSeekTargetRef.current = newPosition;
       }
@@ -52898,6 +53135,8 @@ useEffect(() => {
                             needsConfiguration = true;
                           } else if (resolver.id === 'subsonic' && !(metaServiceConfigs.subsonic?.serverUrl && metaServiceConfigs.subsonic?.username && metaServiceConfigs.subsonic?.password)) {
                             needsConfiguration = true;
+                          } else if (resolver.id === 'plex' && !(metaServiceConfigs.plex?.authToken && metaServiceConfigs.plex?.libraries?.length)) {
+                            needsConfiguration = true;
                           } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
                             needsConfiguration = true;
                           }
@@ -54711,7 +54950,8 @@ useEffect(() => {
                   bandcamp: { color: 'text-cyan-400', bg: 'bg-cyan-400' },
                   qobuz: { color: 'text-blue-400', bg: 'bg-blue-400' },
                   youtube: { color: 'text-red-400', bg: 'bg-red-400' },
-                  localfiles: { color: 'text-purple-400', bg: 'bg-purple-400' }
+                  localfiles: { color: 'text-purple-400', bg: 'bg-purple-400' },
+                  plex: { color: 'text-amber-400', bg: 'bg-amber-400' }
                 };
 
                 // Get available sources for this track
@@ -54746,7 +54986,8 @@ useEffect(() => {
                     soundcloud: '#FF5500',
                     applemusic: '#FA2D48',
                     amazonmusic: '#25D1DA',
-                    subsonic: '#14b8a6'
+                    subsonic: '#14b8a6',
+                    plex: '#E5A00D'
                   };
                   const currentIconColor = resolverIconColors[currentResolverId] || '#A855F7';
 
@@ -55195,7 +55436,7 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || currentResolverId === 'subsonic' || currentResolverId === 'amazonmusic' || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || currentResolverId === 'localfiles' || currentResolverId === 'soundcloud' || currentResolverId === 'subsonic' || currentResolverId === 'plex' || currentResolverId === 'amazonmusic' || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -55210,7 +55451,7 @@ useEffect(() => {
                 const restoredVolume = preMuteVolumeRef.current || 30;
                 setIsMuted(false);
                 setVolume(restoredVolume);
-                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'subsonic') && audioRef.current) {
+                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'subsonic' || activeResolverId === 'plex') && audioRef.current) {
                   applyLocalFileVolume(restoredVolume, currentTrackRef.current?.id, activeResolverId);
                 }
                 if (activeResolverId === 'spotify') {
@@ -55228,7 +55469,7 @@ useEffect(() => {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
                 setIsMuted(true);
-                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'subsonic') && audioRef.current) {
+                if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'subsonic' || activeResolverId === 'plex') && audioRef.current) {
                   audioRef.current.volume = 0;
                 }
                 if (activeResolverId === 'spotify') {
@@ -55309,7 +55550,7 @@ useEffect(() => {
                     // Re-determine resolver from current track ref to avoid stale closure
                     const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
                     // Local files and SoundCloud: apply normalized volume immediately
-                    if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'subsonic') && audioRef.current) {
+                    if ((activeResolverId === 'localfiles' || activeResolverId === 'soundcloud' || activeResolverId === 'subsonic' || activeResolverId === 'plex') && audioRef.current) {
                       applyLocalFileVolume(newVolume, currentTrackRef.current?.id, activeResolverId);
                     }
                     // Spotify: debounced API call to prevent rate limiting
@@ -56906,6 +57147,121 @@ useEffect(() => {
               })
             )
           ),
+
+          // Plex: sign in via PIN OAuth, then choose which music libraries
+          // (across every server on the account) to include in search/playback.
+          selectedResolver.id === 'plex' && (() => {
+            const savedCfg = metaServiceConfigs.plex || {};
+            const account = plexAccount || (savedCfg.authToken
+              ? { authToken: savedCfg.authToken, clientId: savedCfg.clientId, username: savedCfg.username }
+              : null);
+            const connected = !!(account && account.authToken);
+            return React.createElement('div', {
+              style: { padding: '16px 0', borderTop: '1px solid var(--border-subtle)' }
+            },
+              React.createElement('div', { className: 'flex items-center justify-between' },
+                React.createElement('div', null,
+                  React.createElement('span', {
+                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Plex Account'),
+                  React.createElement('p', {
+                    style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }
+                  }, connected
+                    ? ('Signed in' + (account.username ? ' as ' + account.username : ''))
+                    : 'Sign in to stream from your Plex servers')
+                ),
+                connected
+                  ? React.createElement('button', {
+                    onClick: disconnectPlex,
+                    className: 'transition-colors',
+                    style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.08)', border: 'none', borderRadius: '8px', cursor: 'pointer' }
+                  }, 'Disconnect')
+                  : React.createElement('button', {
+                    onClick: connectPlex,
+                    disabled: plexConnecting,
+                    className: 'transition-colors',
+                    style: { padding: '8px 14px', fontSize: '13px', fontWeight: '500', color: '#ffffff', backgroundColor: plexConnecting ? '#9ca3af' : '#E5A00D', border: 'none', borderRadius: '8px', cursor: plexConnecting ? 'default' : 'pointer' }
+                  }, plexConnecting ? 'Signing in…' : 'Sign in with Plex')
+              ),
+              plexConnecting && plexStatus && React.createElement('p', {
+                style: { marginTop: '10px', fontSize: '12px', color: 'var(--text-secondary)' }
+              }, plexStatus),
+              plexError && React.createElement('p', {
+                style: { marginTop: '10px', fontSize: '12px', color: '#dc2626' }
+              }, plexError),
+              connected && React.createElement('div', { style: { marginTop: '16px' } },
+                React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '8px' } },
+                  React.createElement('span', {
+                    style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Music libraries'),
+                  React.createElement('button', {
+                    onClick: () => loadPlexLibraries(account),
+                    disabled: plexDiscovering,
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: plexDiscovering ? 'default' : 'pointer', textDecoration: 'underline' }
+                  }, 'Refresh')
+                ),
+                plexDiscovering && plexServers.length === 0 && React.createElement('div', {
+                  className: 'flex items-center gap-2',
+                  style: { fontSize: '12px', color: 'var(--text-secondary)' }
+                },
+                  React.createElement('div', { className: 'animate-spin', style: { width: '12px', height: '12px', border: '2px solid var(--border-subtle)', borderTopColor: '#E5A00D', borderRadius: '50%', flexShrink: 0 } }),
+                  React.createElement('span', null, 'Loading your libraries…')
+                ),
+                !plexDiscovering && plexServers.length === 0 && React.createElement('p', {
+                  style: { fontSize: '12px', color: 'var(--text-secondary)' }
+                }, 'No music libraries found on your servers.'),
+                plexServers.map(server => React.createElement('div', { key: server.serverId, style: { marginBottom: '12px' } },
+                  React.createElement('div', {
+                    style: { fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '4px' }
+                  }, server.serverName + (server.owned ? '' : ' (shared)')),
+                  server.libraries.length === 0
+                    ? React.createElement('div', {
+                      style: { fontSize: '11px', color: 'var(--text-secondary)', fontStyle: 'italic', paddingLeft: '4px' }
+                    }, 'No music libraries (or server unreachable)')
+                    : server.libraries.map(lib => React.createElement('label', {
+                      key: lib.key,
+                      className: 'flex items-center gap-2',
+                      style: { fontSize: '12px', color: 'var(--text-primary)', padding: '4px 0', cursor: 'pointer' }
+                    },
+                      React.createElement('input', {
+                        type: 'checkbox',
+                        checked: plexSelectedLibs.has(plexLibId(server.serverId, lib.key)),
+                        onChange: () => togglePlexLibrary(server.serverId, lib.key)
+                      }),
+                      React.createElement('span', null, lib.title)
+                    ))
+                )),
+                // Background pick-by-id index progress (continues even if this panel closes)
+                plexIndexStatus.length > 0 && React.createElement('div', {
+                  style: { marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' }
+                },
+                  React.createElement('span', {
+                    style: { fontSize: '12px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, 'Search index'),
+                  React.createElement('p', {
+                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', marginBottom: '8px', lineHeight: '1.4' }
+                  }, 'Your libraries are scanned once, for quick matching.'),
+                  plexIndexStatus.map((s, i) => {
+                    const pct = s.total > 0 ? Math.min(100, Math.round((s.scanned / s.total) * 100)) : (s.status === 'ready' ? 100 : 0);
+                    const label = s.status === 'ready' ? ('Indexed ' + (s.scanned || 0).toLocaleString() + ' tracks')
+                      : s.status === 'error' ? ('Failed: ' + (s.error || 'error'))
+                        : s.status === 'building' ? ('Scanning… ' + (s.scanned || 0).toLocaleString() + (s.total ? ' / ' + s.total.toLocaleString() : ''))
+                          : 'Queued…';
+                    return React.createElement('div', { key: (s.serverName || '') + ':' + (s.libraryTitle || '') + ':' + i, style: { marginBottom: '8px' } },
+                      React.createElement('div', { className: 'flex items-center justify-between', style: { fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' } },
+                        React.createElement('span', null, (s.libraryTitle || 'Library') + (s.serverName ? ' · ' + s.serverName : '')),
+                        React.createElement('span', null, s.status === 'ready' ? '✓' : (pct + '%'))
+                      ),
+                      React.createElement('div', { style: { height: '5px', backgroundColor: 'var(--hover-bg-default)', borderRadius: '3px', overflow: 'hidden' } },
+                        React.createElement('div', { style: { height: '100%', width: pct + '%', backgroundColor: s.status === 'error' ? '#dc2626' : '#E5A00D', transition: 'width 0.3s' } })
+                      ),
+                      React.createElement('div', { style: { fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' } }, label)
+                    );
+                  })
+                )
+              )
+            );
+          })(),
 
           // Authentication section (for services that require it)
           selectedResolver.id === 'spotify' && React.createElement('div', {
