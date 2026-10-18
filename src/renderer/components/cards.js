@@ -1592,6 +1592,8 @@ const ReleasePage = ({
 
 module.exports = {
   generateArtistPattern,
+  PlayTop10Icon,
+  QueueTop10Icon,
   RelatedArtistCard,
   SearchArtistCard,
   SearchHistoryItem,

@@ -1135,7 +1135,6 @@ const generateArtistId = (name) => {
 };
 
 // Generate a unique hash from a string (for deterministic pattern generation)
-const hashString = require('./lib/hash-string');
 // ─── Cards (src/renderer/components/cards.js) ──────────────────────────────
 // The card family (search/collection/artist pages) + generateArtistPattern
 // (exported back — the in-component call sites keep the same binding) move
