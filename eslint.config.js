@@ -93,6 +93,12 @@ const sharedGlobals = {
   document: 'readonly',
   navigator: 'readonly',
   location: 'readonly',
+};
+
+// Renderer-only globals (vendor script tags + the hook-masked React namespace).
+// Scoped to the component modules, NOT sharedGlobals, so main-process/ and
+// plugins-src/ files referencing React & co. still fail no-undef.
+const RENDERER_COMPONENT_GLOBALS = {
   React: 'readonly',
   ReactDOM: 'readonly',
   lucideReact: 'readonly',
@@ -133,6 +139,13 @@ module.exports = [
   {
     files: STRICT_FILES,
     rules: strictRules,
+  },
+
+  // Renderer component modules get the vendor + React globals on top of the
+  // strict rules (scoped here — see RENDERER_COMPONENT_GLOBALS).
+  {
+    files: ['src/renderer/components/**/*.js'],
+    languageOptions: { globals: RENDERER_COMPONENT_GLOBALS },
   },
 
   // plugins-src override (after the strict group so it wins): the
