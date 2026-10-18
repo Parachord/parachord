@@ -1,9 +1,9 @@
 /**
- * Every electron-store key the renderer reads or writes must be in main.js's
- * ALLOWED_STORE_KEYS, or the store-* IPC handlers silently refuse it (store.set
- * resolves false, main logs "Blocked store-set"). Six keys had been missing for
- * months without anyone noticing (2026-10-12), so this parses both sides and
- * cross-checks them.
+ * Every electron-store key the renderer reads or writes must be in
+ * ALLOWED_STORE_KEYS (main-process/ipc/store.js), or the store-* IPC handlers silently
+ * refuse it (store.set resolves false, main logs "Blocked store-set"). Six
+ * keys had been missing for months without anyone noticing (2026-10-12), so
+ * this parses both sides and cross-checks them.
  */
 
 const fs = require('fs');
@@ -19,11 +19,11 @@ const RENDERER_FILES = [
 ].filter((f) => fs.existsSync(path.join(ROOT, f)));
 
 function parseAllowlist() {
-  const main = read('main.js');
-  const start = main.indexOf('const ALLOWED_STORE_KEYS = new Set([');
+  const moduleSrc = read('main-process/ipc/store.js');
+  const start = moduleSrc.indexOf('const ALLOWED_STORE_KEYS = new Set([');
   expect(start).toBeGreaterThan(-1);
-  const end = main.indexOf(']);', start);
-  return new Set(main.slice(start, end).match(/'([^']+)'/g).map((k) => k.slice(1, -1)));
+  const end = moduleSrc.indexOf(']);', start);
+  return new Set(moduleSrc.slice(start, end).match(/'([^']+)'/g).map((k) => k.slice(1, -1)));
 }
 
 // Literal keys passed to store.get/set/delete, store.getBatch([...]), and the
