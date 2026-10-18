@@ -7938,44 +7938,44 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
   }
 });
 
-  // Create/link gateway + track resolution — the sync:create-playlist and
-  // sync:resolve-tracks handlers live in main-process/ipc/sync-create.js
-  // (dependency-injected, unit-tested there). Token resolution stays here with
-  // the provider token clusters (spotify refresh, MusicKit dev+user, LB token).
-  const { registerSyncCreateIpc } = require('./main-process/ipc/sync-create');
-  registerSyncCreateIpc({
-    ipcMain,
-    SyncEngine,
-    legacyPlaylistSyncEnabled,
-    getChannelOverride,
-    resolveProviderToken: async (providerId) => {
-      const auth = { token: null, refreshTokenCb: null };
-      if (providerId === 'spotify') {
-        auth.token = await ensureValidSpotifyToken();
-        auth.refreshTokenCb = async () => {
-          const newToken = await ensureValidSpotifyToken(true);
-          if (newToken) auth.token = newToken;
-          return newToken;
-        };
-      } else if (providerId === 'applemusic') {
-        if (!generatedMusicKitToken) {
-          await musicKitTokenReady;
-        }
-        const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
-        const userToken = store.get('applemusic_user_token');
-        if (developerToken && userToken) {
-          auth.token = JSON.stringify({ developerToken, userToken });
-        }
-      } else if (providerId === 'listenbrainz') {
-        const cfg = store.get('scrobbler-config-listenbrainz') || {};
-        auth.token = cfg.userToken || null;
+// Create/link gateway + track resolution — the sync:create-playlist and
+// sync:resolve-tracks handlers live in main-process/ipc/sync-create.js
+// (dependency-injected, unit-tested there). Token resolution stays here with
+// the provider token clusters (spotify refresh, MusicKit dev+user, LB token).
+const { registerSyncCreateIpc } = require('./main-process/ipc/sync-create');
+registerSyncCreateIpc({
+  ipcMain,
+  SyncEngine,
+  legacyPlaylistSyncEnabled,
+  getChannelOverride,
+  resolveProviderToken: async (providerId) => {
+    const auth = { token: null, refreshTokenCb: null };
+    if (providerId === 'spotify') {
+      auth.token = await ensureValidSpotifyToken();
+      auth.refreshTokenCb = async () => {
+        const newToken = await ensureValidSpotifyToken(true);
+        if (newToken) auth.token = newToken;
+        return newToken;
+      };
+    } else if (providerId === 'applemusic') {
+      if (!generatedMusicKitToken) {
+        await musicKitTokenReady;
       }
-      return auth;
-    },
-    lbHydrationOpts,
-    achordion: { buildLocalPlaylistMirrorContext, pushPlaylistLinksToAchordion },
-    syncLinks,
-  });
+      const developerToken = generatedMusicKitToken || process.env.MUSICKIT_DEVELOPER_TOKEN || store.get('applemusic_developer_token');
+      const userToken = store.get('applemusic_user_token');
+      if (developerToken && userToken) {
+        auth.token = JSON.stringify({ developerToken, userToken });
+      }
+    } else if (providerId === 'listenbrainz') {
+      const cfg = store.get('scrobbler-config-listenbrainz') || {};
+      auth.token = cfg.userToken || null;
+    }
+    return auth;
+  },
+  lbHydrationOpts,
+  achordion: { buildLocalPlaylistMirrorContext, pushPlaylistLinksToAchordion },
+  syncLinks,
+});
 
   // Clean up duplicate playlists on a sync provider
   // Groups remote playlists by name and deletes duplicates, keeping the best one
