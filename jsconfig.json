@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "checkJs": false,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": ["main-process/**/*", "src/**/*", "plugins-src/**/*", "sync-providers/**/*", "sync-engine/**/*", "local-files/**/*", "services/**/*", "protocol-url.js", "stream-quality.js", "mbid-lookup.js", "recommendation-blocklist.js", "album-art-catalog.js"],
+  "exclude": ["node_modules", "dist", "vendor", "plugins", "app.js"]
+}
