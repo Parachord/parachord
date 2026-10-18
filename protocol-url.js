@@ -1,3 +1,4 @@
+// @ts-check
 // protocol-url.js — URL/protocol pure helpers shared by the renderer and jest.
 //
 // Contains (extracted from app.js, maintainability plan Track 2a):
@@ -186,14 +187,14 @@
   };
 
   if (typeof window !== 'undefined') {
-    window.isPublicHttpUrl = isPublicHttpUrl;
-    window.HOSTED_PLAYLIST_MAX_BYTES = HOSTED_PLAYLIST_MAX_BYTES;
-    window.hostedPlaylistFetchProblem = hostedPlaylistFetchProblem;
-    window.classifyPlaylistUrl = classifyPlaylistUrl;
-    window.isProviderPlaylistUrl = isProviderPlaylistUrl;
-    window.isProviderImportedPlaylist = isProviderImportedPlaylist;
-    window.buildPlaylistSavePayload = buildPlaylistSavePayload;
-    window.decodeBase64Utf8Json = decodeBase64Utf8Json;
+    /** @type {any} */ (window).isPublicHttpUrl = isPublicHttpUrl;
+    /** @type {any} */ (window).HOSTED_PLAYLIST_MAX_BYTES = HOSTED_PLAYLIST_MAX_BYTES;
+    /** @type {any} */ (window).hostedPlaylistFetchProblem = hostedPlaylistFetchProblem;
+    /** @type {any} */ (window).classifyPlaylistUrl = classifyPlaylistUrl;
+    /** @type {any} */ (window).isProviderPlaylistUrl = isProviderPlaylistUrl;
+    /** @type {any} */ (window).isProviderImportedPlaylist = isProviderImportedPlaylist;
+    /** @type {any} */ (window).buildPlaylistSavePayload = buildPlaylistSavePayload;
+    /** @type {any} */ (window).decodeBase64Utf8Json = decodeBase64Utf8Json;
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

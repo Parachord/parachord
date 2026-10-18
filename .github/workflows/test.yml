@@ -16,11 +16,16 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Lint (strict on extracted modules; legacy files parse-level)
+        run: npm run lint
+      - name: Type-check @ts-check modules
+        run: npx tsc --noEmit --allowJs --checkJs --target ES2022 --module commonjs --skipLibCheck protocol-url.js
       - name: Run test suite
         run: npm test
         env:
-          # Pure-JS suite (jest testEnvironment: node). Includes the plugin
-          # pipeline drift guard (tests/plugins/axes-drift.test.js) — a PR that
-          # edits plugins/*.axe or app.js FALLBACK_RESOLVERS without updating
-          # plugins-src (or vice versa) fails here.
+          # npm test's pretest hook builds the generated renderer bundle
+          # (app.js) from src/renderer/app.js. Includes the plugin pipeline
+          # drift guard (tests/plugins/axes-drift.test.js) — a PR that edits
+          # plugins/*.axe or the FALLBACK block without updating plugins-src
+          # (or vice versa) fails here.
           CI: true

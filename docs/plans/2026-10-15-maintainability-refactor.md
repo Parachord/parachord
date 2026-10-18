@@ -292,6 +292,8 @@ changes.
 | 3 | Track 2a (pure modules out of app.js) | Steady grind; each step shippable; builds the test seam 2b relies on |
 | 4 | Track 2b (bundler decision + component split) | Big one; do after the logic has tests around it and the file has shrunk |
 
+> **Status: Track 4 SHIPPED** — ESLint flat config (strict on main-process/, plugins-src/, the root dual-load modules, and the build scripts; parse-level on the big legacy files; no stylistic rules so lint can never churn a reformat through app.js), jsconfig.json, `// @ts-check` on protocol-url.js (JSDoc-cast window exposure; tsc clean) with the CI typecheck step, and lint+typecheck wired into the Test workflow. Lint found a real bug on its first run: sync-start.js was missing the getChannelOverride injection (fix applied in the sync-start PR itself so no merge window carries it); a registration smoke test (tests/main-process/registration-smoke.test.js) covers the missed-injection and duplicate-channel classes for all six IPC modules at once.
+
 ## Explicitly rejected / deferred
 
 - **TypeScript everywhere now** — the shelved plan is good but premature before
