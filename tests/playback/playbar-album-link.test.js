@@ -18,11 +18,12 @@ function extract(startMarker, endMarker) {
   return app.slice(s, e);
 }
 
-// normalizeStr is the module-scope helper the picker uses; take the real one.
-const normalizeStrSrc = extract('const normalizeStr = ', '\n');
+// normalizeStr comes from the canonical module (sync-providers/confidence-scoring.js);
+// app.js consumes it as a window.ConfidenceScoring alias.
+const { normalizeStr } = require('../../sync-providers/confidence-scoring');
 const helpersSrc = extract('window.pickAlbumNameForTrack = ', '// Coalesce bursts of per-key state writes');
 const win = {};
-new Function('window', 'normalizeStr', helpersSrc)(win, new Function(`${normalizeStrSrc}; return normalizeStr;`)());
+new Function('window', 'normalizeStr', helpersSrc)(win, normalizeStr);
 const { pickAlbumNameForTrack, pickReleaseGroupForAlbum } = win;
 
 describe('pickAlbumNameForTrack', () => {

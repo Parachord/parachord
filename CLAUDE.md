@@ -59,20 +59,20 @@ Source selection is a **two-stage gate**: validate, then sort. Without the floor
 
 **Stage 1 — Validation.** `validateResolvedTrack(result, targetArtist, targetTitle)` (module-scope helper, app.js L151) returns true only when BOTH the artist and title containment-match the target after `normalizeStr` (lowercase + strip non-alphanumeric). Single-axis matches — same title, different artist; or same artist, different title — fail.
 
-**Stage 2 — Scoring.** `calculateConfidence(track, result)` (app.js L24743, inside `Parachord`) returns:
+**Stage 2 — Scoring.** `calculateConfidence(track, result)` (app.js L24669, inside `Parachord`) returns:
 - `0.95` — both axes pass `validateResolvedTrack`
 - `0.50` — single-axis match, or no match
 - `1.0` (or whatever the resolver supplied ≥ 0.95) — direct-ID match (cached `spotifyId`/`appleMusicId`/etc), preserved as-is
 
-**Stage 3 — Selection floor.** `MIN_CONFIDENCE_THRESHOLD = 0.6` (app.js L166). The source-selection sort (app.js L15047) drops sources below this floor BEFORE the priority sort runs. A 0.50 source never reaches selection.
+**Stage 3 — Selection floor.** `MIN_CONFIDENCE_THRESHOLD = 0.6` (app.js L166). The source-selection sort (app.js L14996) drops sources below this floor BEFORE the priority sort runs. A 0.50 source never reaches selection.
 
 **Stage 4 — Priority + confidence sort.** Sources passing the floor sort by user-configured resolver priority; confidence is the within-priority tiebreaker.
 
-**All resolution paths gate on `MIN_CONFIDENCE_THRESHOLD`** and skip the attach entirely (with a warn log) when a result fails — three background paths (app.js L7890 normal, L8056 rate-limited iTunes, L8170 per-track flush) plus five `calculateConfidence`-using sites (search-page `resolveRecording` ~L19828, validation pipeline ~L23106, missing-resolver flush ~L23368, bandcamp-shortcut path ~L23464, scheduler flush ~L23634). All eight follow the same pattern: `const confidence = calculateConfidence(track, result); if (confidence < MIN_CONFIDENCE_THRESHOLD) skip-and-warn; else attach`. This prevents wrong-artist results from ever entering `track.sources` (and so from rendering pale resolver badges) and from polluting `track.album` / `track.albumArt` fallback fields.
+**All resolution paths gate on `MIN_CONFIDENCE_THRESHOLD`** and skip the attach entirely (with a warn log) when a result fails — three background paths (app.js L7839 normal, L8056 rate-limited iTunes, L8170 per-track flush) plus five `calculateConfidence`-using sites (search-page `resolveRecording` ~L19828, validation pipeline ~L23106, missing-resolver flush ~L23368, bandcamp-shortcut path ~L23464, scheduler flush ~L23634). All eight follow the same pattern: `const confidence = calculateConfidence(track, result); if (confidence < MIN_CONFIDENCE_THRESHOLD) skip-and-warn; else attach`. This prevents wrong-artist results from ever entering `track.sources` (and so from rendering pale resolver badges) and from polluting `track.album` / `track.albumArt` fallback fields.
 
 **Badge dim logic is absolute (≥ 0.95 = full opacity), not relative-to-best.** `getBestSourceConfidence(sources)` (app.js ~L127) returns the constant `0.95` regardless of input. Each badge renders dimmed (opacity 0.6) when its confidence is strictly less than 0.95, full otherwise — `(source.confidence || 0) < bestConf ? 0.6 : 1`. Since the upstream `MIN_CONFIDENCE_THRESHOLD = 0.6` floor drops sub-floor results before they reach `track.sources`, in normal operation the only values present are 0.95 (fuzzy validated) and 1.0 (direct-ID), so nothing dims unless a resolver explicitly returns a non-standard sub-0.95 value. The function signature is preserved (takes `sources`, returns a number) so the 11 badge call sites compile unchanged; the argument is ignored. **Historical note:** the prior relative-to-best model dimmed a 0.95 fuzzy match whenever a sibling resolver had 1.0, which users read as "wrong" when the match was actually correct — flipped to absolute on 2026-05-08. Applied at all 11 badge call sites (TrackRow + 10 list-view variants).
 
-**Cross-platform invariant.** `sync-providers/confidence-scoring.js` is the **canonical desktop module** (`normalizeStr` / `validateResolvedTrack` / `calculateConfidence` / `MIN_CONFIDENCE_THRESHOLD` / `pickConfidentMatch`); `tests/helpers/confidence-scoring.js` is now a thin **re-export** of it (was a parallel byte-copy — collapsed to a re-export so the two can't drift). The app.js inline copy and the Kotlin equivalents (`parachord-mobile/shared/.../resolver/ResolverModels.kt#scoreConfidence`, `ResolverScoring.kt#MIN_CONFIDENCE_THRESHOLD`) remain the other byte-identical copies of the *function bodies*. All must agree byte-for-byte on the gate semantics — drift on any platform produces inconsistent source selection between desktop and Android for the same track. Test cases at `tests/resolver/confidence-scoring.test.js` mirror Android's `ConfidenceScoringTest`.
+**Cross-platform invariant.** `sync-providers/confidence-scoring.js` is the **canonical desktop module** (`normalizeStr` / `validateResolvedTrack` / `calculateConfidence` / `MIN_CONFIDENCE_THRESHOLD` / `pickConfidentMatch`); `tests/helpers/confidence-scoring.js` is now a thin **re-export** of it (was a parallel byte-copy — collapsed to a re-export so the two can't drift). app.js now consumes the module directly (`window.ConfidenceScoring` aliases — the three inline copies, one of which had already drifted, are gone); the Kotlin equivalents (`parachord-mobile/shared/.../resolver/ResolverModels.kt#scoreConfidence`, `ResolverScoring.kt#MIN_CONFIDENCE_THRESHOLD`) remain the other byte-identical copies of the *function bodies*. All must agree byte-for-byte on the gate semantics — drift on any platform produces inconsistent source selection between desktop and Android for the same track. Test cases at `tests/resolver/confidence-scoring.test.js` mirror Android's `ConfidenceScoringTest`.
 
 **Sync hydration (`resolveTracks`) gates on the same floor (parachord#911 D-Legacy-1).** `sync-providers/spotify.js` and `sync-providers/applemusic.js` `resolveTracks` mint a provider ID for an ID-less playlist track via search. The legacy code ended candidate selection in an unguarded `|| items[0]`, minting the top hit's URI with no confidence floor when no exact match existed — writing a wrong-song URI (e.g. local "Intro" by The xx → "Intro" by Alt-J) that then stuck fleet-wide via provider-ID equality. Both now route candidates through `pickConfidentMatch(track, candidates)` (best `calculateConfidence` ≥ `MIN_CONFIDENCE_THRESHOLD`, else `null` → drop to `unresolved`). Apple Music additionally (D-Legacy-2): tries an **ISRC-exact catalog lookup first** (`GET /catalog/{storefront}/songs?filter[isrc]=`, authoritative — recording identity, matches mobile's `getCatalogSongIdByIsrc`) and is **storefront-aware** (`getUserStorefront` via `/me/storefront`, falling back to `us`) instead of hardcoding `/catalog/us/` — so desktop and mobile mint the *same* catalog id for a given (ISRC, storefront) and don't create permanent AM duplicates. Fixtures: `tests/sync/resolve-tracks-identity.test.js`.
 
@@ -87,7 +87,7 @@ Source selection is a **two-stage gate**: validate, then sort. Without the floor
 
 ### Cross-Resolver Enrichment (Eager Gate + Slow Trickle)
 
-When a track has a persisted source from one resolver but is missing slots for other enabled resolvers, `resolveTrack` (app.js ~L23672) has two complementary code paths for filling those missing slots. The split exists because of a real performance regression — a user with 376 local FLACs and Bandcamp enabled saw ~1 minute of pinwheel + constant CPU on every library navigation, because library-page navigation tagged 374 tracks at page-priority and the scheduler walked them all firing Bandcamp searches that returned 0 every time.
+When a track has a persisted source from one resolver but is missing slots for other enabled resolvers, `resolveTrack` (app.js ~L23598) has two complementary code paths for filling those missing slots. The split exists because of a real performance regression — a user with 376 local FLACs and Bandcamp enabled saw ~1 minute of pinwheel + constant CPU on every library navigation, because library-page navigation tagged 374 tracks at page-priority and the scheduler walked them all firing Bandcamp searches that returned 0 every time.
 
 **Eager gate (foreground, in-handler):** If the persisted sources include a `localfiles` source with no `noMatch` flag and confidence ≥ 1.0, the missing-resolver fill is skipped entirely. Localfiles confidence-1.0 means "this file exists on disk and plays" — cross-resolver enrichment for it is speculative (the user's obscure Japanese reggae rip is unlikely to also be on Bandcamp) and the burst pattern destroys UX. **Scoped specifically to `localfiles`**, not all confidence-1.0 sources: a confidence-1.0 Spotify match (cached spotifyId from sync) DOES carry cross-platform intent — those still fire the eager fill, because finding the matching Apple Music ID is useful.
 
@@ -271,12 +271,12 @@ The clearing pass for "remote playlist no longer exists" still runs against the 
 
 The renderer has **two independent code paths** that call `sync.createPlaylist` and `sync.pushPlaylist`:
 
-- Background sync timer (every 15 min, plus initial-run + focus-triggered, all sharing `runBackgroundSync` at app.js ~L6040)
-- Manual sync post-IIFE after the wizard completes (app.js L9363+)
+- Background sync timer (every 15 min, plus initial-run + focus-triggered, all sharing `runBackgroundSync` at app.js ~L5989)
+- Manual sync post-IIFE after the wizard completes (app.js L9312+)
 
 Both loops have the same structure: iterate `local_playlists`, for each one either create a remote (if no `syncedTo[providerId]`) or push updates (if `locallyModified`), then clear `locallyModified` when all mirrors are up to date. Keep them in sync — if you add a guard or branch to one, add it to the other. Without coordination they race: both read a playlist without `syncedTo`, both call `sync.createPlaylist`, both create remotes.
 
-**Mitigation:** `playlistSyncInProgressRef` (app.js L5563), a simple renderer-side boolean ref. Each path acquires it before the creation loop and releases in `finally`. If already held, the path skips with a log message. This is belt-and-suspenders with the IPC-level dedup above.
+**Mitigation:** `playlistSyncInProgressRef` (app.js L5512), a simple renderer-side boolean ref. Each path acquires it before the creation loop and releases in `finally`. If already held, the path skips with a log message. This is belt-and-suspenders with the IPC-level dedup above.
 
 ### Required: Pass `localPlaylistId` When Calling Create
 
@@ -306,7 +306,7 @@ Keeper selection guarantees no local ever gets silently re-pointed to a copy it 
 
 ### Hosted XSPF Semantics
 
-A playlist with `sourceUrl` is a **hosted XSPF** — it mirrors a remote URL polled every 5 minutes (`pollHostedPlaylists` effect, app.js ~L37192). The XSPF is canonical; Spotify (if linked) is a passive mirror.
+A playlist with `sourceUrl` is a **hosted XSPF** — it mirrors a remote URL polled every 5 minutes (`pollHostedPlaylists` effect, app.js ~L37104). The XSPF is canonical; Spotify (if linked) is a passive mirror.
 
 **A provider playlist page is NOT a hosted XSPF (2026-10 fix).** A `sourceUrl` owned by a resolver as a playlist page (`window.isProviderPlaylistUrl(url, resolverLoaderRef.current)` — mirrored in `tests/helpers/playlist-url-classify.js`, tested in `tests/protocol/playlist-url-classify.test.js`) means the playlist was a **resolver import** (Spotify/Apple Music/Amazon/SoundCloud) — a snapshot, not a mirror. The provider page's fetched HTML never equals the stored XSPF, so the poller's content-compare re-runs a full resolver import every 5 minutes forever; and before resolvers finish loading, `handleImportPlaylistFromUrl`'s dispatch falls into the XSPF branch and shows "Import Failed / Failed to parse XSPF file from URL" at startup for a playlist that imported fine (observed with an Amazon playlist import — Electron's `file://` renderer does NOT enforce CORS on these fetches, so the provider page HTML reaches `parseXSPF` and parses to zero tracks). Rules:
 
@@ -321,12 +321,12 @@ Flow:
 2. Next sync push loop pushes local tracks to Spotify via `updatePlaylistTracks` (full replace).
 3. Spotify's own state (if changed since last sync) is overwritten.
 
-**Sync banner behavior for hosted playlists** (app.js ~L44521): the "pull" option is suppressed. A pull would briefly replace local tracks with Spotify's, but the 5-min poller would revert it and the next sync push would overwrite Spotify again — effectively a no-op with confusing UX. For hosted playlists:
+**Sync banner behavior for hosted playlists** (app.js ~L44433): the "pull" option is suppressed. A pull would briefly replace local tracks with Spotify's, but the 5-min poller would revert it and the next sync push would overwrite Spotify again — effectively a no-op with confusing UX. For hosted playlists:
 - `hasUpdates=true, locallyModified=false` → banner hidden (pull is useless).
 - `locallyModified=true` → banner shows as push (XSPF is ready to go upstream).
 - Conflict (both flags) → rendered as push (XSPF wins anyway).
 
-**Sync banner's push-state check must discount pull-induced `locallyModified`** (app.js ~L44510). The banner is scoped to `syncedFrom.resolver` (the source provider). `locallyModified: true` has two triggers: (a) the user actually edited local content, and (b) `handlePull` on a multi-mirror playlist sets it so the next push loop propagates the pull to *other* mirrors (the multi-provider mirror-propagation fix). Treating case (b) as "push to source" shows a spurious "Push to Spotify" banner immediately after the user clicks "Pull from Spotify" — the push-to-source would be a no-op (the push loop's provider-scoped `syncedFrom` guard correctly skips it), but the banner doesn't know that. Gate `hasLocalChanges` on real divergence from the source: `playlist.locallyModified && lastModified > syncSources[sourceProvider].syncedAt`. `handlePull` sets both to the same `Date.now()` so the comparison is false right after a pull; a subsequent real edit bumps `lastModified` and flips it to true.
+**Sync banner's push-state check must discount pull-induced `locallyModified`** (app.js ~L44422). The banner is scoped to `syncedFrom.resolver` (the source provider). `locallyModified: true` has two triggers: (a) the user actually edited local content, and (b) `handlePull` on a multi-mirror playlist sets it so the next push loop propagates the pull to *other* mirrors (the multi-provider mirror-propagation fix). Treating case (b) as "push to source" shows a spurious "Push to Spotify" banner immediately after the user clicks "Pull from Spotify" — the push-to-source would be a no-op (the push loop's provider-scoped `syncedFrom` guard correctly skips it), but the banner doesn't know that. Gate `hasLocalChanges` on real divergence from the source: `playlist.locallyModified && lastModified > syncSources[sourceProvider].syncedAt`. `handlePull` sets both to the same `Date.now()` so the comparison is false right after a pull; a subsequent real edit bumps `lastModified` and flips it to true.
 
 ### Provider-Specific Push Semantics
 
@@ -376,7 +376,7 @@ Consequences:
 
 A playlist can be mirrored to multiple providers simultaneously (e.g. synced *from* Spotify and *to* both Spotify and Apple Music). When one mirror changes upstream, the update has to propagate through the local copy to the other mirrors. Four places cooperate to make this work — losing any one of them silently breaks propagation for that playlist:
 
-**1. `handlePull` must set `locallyModified: true` when other mirrors exist** (app.js ~L44597). A pull replaces local tracks with the remote's. If the playlist also has `syncedTo` entries for *other* providers, those copies are now out of date relative to what we just pulled. The pull writes `locallyModified: hasOtherMirrors` (not a hardcoded `false`) so the next push loop picks it up. Without this, an Android-edit → Spotify → desktop pull would stop at the desktop and never reach Apple Music.
+**1. `handlePull` must set `locallyModified: true` when other mirrors exist** (app.js ~L44509). A pull replaces local tracks with the remote's. If the playlist also has `syncedTo` entries for *other* providers, those copies are now out of date relative to what we just pulled. The pull writes `locallyModified: hasOtherMirrors` (not a hardcoded `false`) so the next push loop picks it up. Without this, an Android-edit → Spotify → desktop pull would stop at the desktop and never reach Apple Music.
 
 ```js
 const hasOtherMirrors = !!(playlist.syncedTo && Object.keys(playlist.syncedTo).some(
@@ -389,7 +389,7 @@ const applyPull = prev => ({
 });
 ```
 
-**2. Local-content mutators must persist `locallyModified: true` in the same save that writes the new tracks.** `addTracksToPlaylist`, `removeTrackFromPlaylist`, `moveTrackInPlaylist` (app.js L17221+) used to flag the playlist via a separate React state update that never reached the store. Inline the flag into the object that `savePlaylistToStore` receives. Guard with `p.syncedFrom || p.syncedTo` so local-only playlists don't get flagged for nothing.
+**2. Local-content mutators must persist `locallyModified: true` in the same save that writes the new tracks.** `addTracksToPlaylist`, `removeTrackFromPlaylist`, `moveTrackInPlaylist` (app.js L17170+) used to flag the playlist via a separate React state update that never reached the store. Inline the flag into the object that `savePlaylistToStore` receives. Guard with `p.syncedFrom || p.syncedTo` so local-only playlists don't get flagged for nothing.
 
 ```js
 const shouldFlag = !!(p.syncedFrom || p.syncedTo);
@@ -400,7 +400,7 @@ const updatedPlaylist = {
 savePlaylistToStore(updatedPlaylist);
 ```
 
-**3. Push-loop `syncedFrom` guard must be provider-scoped** (app.js L5680, L9483). The background push loop and the post-wizard create loop each skip playlists whose `syncedFrom` is set — the intent is "don't re-push a pulled playlist to its source." A blanket `if (playlist.syncedFrom) continue;` over-fires: a Spotify-imported playlist also has `syncedFrom: { resolver: 'spotify' }`, and the blanket guard blocks pushing it to *any* other provider too. Without this fix, an Android-edit → Spotify → desktop pull gets stuck at the desktop forever because Apple Music is never even considered in the push loop.
+**3. Push-loop `syncedFrom` guard must be provider-scoped** (app.js L5629, L9483). The background push loop and the post-wizard create loop each skip playlists whose `syncedFrom` is set — the intent is "don't re-push a pulled playlist to its source." A blanket `if (playlist.syncedFrom) continue;` over-fires: a Spotify-imported playlist also has `syncedFrom: { resolver: 'spotify' }`, and the blanket guard blocks pushing it to *any* other provider too. Without this fix, an Android-edit → Spotify → desktop pull gets stuck at the desktop forever because Apple Music is never even considered in the push loop.
 
 ```js
 // Wrong — blocks pushing a Spotify-imported playlist to Apple Music too:
@@ -412,7 +412,7 @@ if (playlist.syncedFrom?.resolver === providerId) continue;
 
 The id-based guard (`if (playlist.id?.startsWith(\`${providerId}-\`)) continue;`) is the defense-in-depth layer for the same concern and is already provider-scoped — match that pattern.
 
-**4. Post-sync clear logic must filter to `relevantMirrors`** (app.js L5779+) — enabled providers that actually have a `syncedTo[pid].externalId` entry, **excluding the `syncedFrom` source provider**. Two bugs in the old logic:
+**4. Post-sync clear logic must filter to `relevantMirrors`** (app.js L5728+) — enabled providers that actually have a `syncedTo[pid].externalId` entry, **excluding the `syncedFrom` source provider**. Two bugs in the old logic:
 
 - `enabledProviders.every(pid => syncedTo[pid]?.syncedAt >= lastModified)` silently failed when an enabled provider had no `syncedTo` entry (`undefined >= number` is `false`), leaving `locallyModified: true` forever.
 - If the source provider has a `syncedTo` entry (round-trip mirror — e.g. `syncedFrom: spotify` AND `syncedTo: { spotify, applemusic }`), its `syncedAt` never advances via the push loop because Fix 3's guard prevents pushing back to the source. Including it in `allSynced` strands the flag.
@@ -655,7 +655,7 @@ The corollary: **don't make the JS-fallback or auth-failed kill-switch session-p
 
 ### Loved Tracks → ListenBrainz / Last.fm
 
-Optional opt-in cross-service love sync. Adding a track to the Parachord collection (`addTrackToCollection`, app.js L13202) → optionally push as a love to LB and/or LFM. Design doc: [`docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md`](docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md).
+Optional opt-in cross-service love sync. Adding a track to the Parachord collection (`addTrackToCollection`, app.js L13151) → optionally push as a love to LB and/or LFM. Design doc: [`docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md`](docs/plans/2026-05-03-loved-tracks-scrobbler-push-design.md).
 
 **Two independent controls per service**, in each scrobbler's connected-state card:
 1. Toggle: "Push newly loved tracks to <service>" — gates live `addTrackToCollection` push.
@@ -708,7 +708,7 @@ Every friend carries (app.js friend shape):
 ### Sync Triggers
 
 1. **Startup:** single pull after `cacheLoaded` + 5s delay, only if Last.fm or ListenBrainz has a configured username. Guarded by `friendStartupSyncDoneRef` so it doesn't re-fire.
-2. **Periodic:** every 15th tick of the existing 2-min friend-activity poll (`refreshPinnedFriends`, app.js L29132+). Gated by `friendSyncTickCounterRef` so the graph sync runs every ~30 min while the activity poll continues every 2 min. Friend graphs change orders of magnitude less often than recent tracks — no value polling at the same cadence.
+2. **Periodic:** every 15th tick of the existing 2-min friend-activity poll (`refreshPinnedFriends`, app.js L29044+). Gated by `friendSyncTickCounterRef` so the graph sync runs every ~30 min while the activity poll continues every 2 min. Friend graphs change orders of magnitude less often than recent tracks — no value polling at the same cadence.
 3. **Inline on local action:** `addFriend` calls `followOnService` after local insert; `removeFriend` calls `unfollowOnService` before local delete. Fire-and-forget; local state is authoritative.
 
 ### Inbound Pull Algorithm
@@ -751,11 +751,11 @@ New friends are added with `savedToCollection: false` — same default as manual
 - `active` — friends with activity in the last 14 days, sorted by `cachedRecentTrack?.timestamp` descending ("Recently Active" in UI). Mirrors Android's `FriendSort.ACTIVE`.
 - `on-air` — filters to friends whose last track < 10 min old, sorted by activity
 
-Sort switch lives in the friends-tab branch of the collection view (app.js L43834+). Both `active` and `on-air` are filter-and-sort combined: an extra branch in the `displayFriends` derivation applies the inactivity cutoff alongside the on-air filter.
+Sort switch lives in the friends-tab branch of the collection view (app.js L43746+). Both `active` and `on-air` are filter-and-sort combined: an extra branch in the `displayFriends` derivation applies the inactivity cutoff alongside the on-air filter.
 
 ### Manual Sync UI
 
-Small icon button (`M4 4v5h.582m15.356 2A8...` — circular arrows) beside the Add Friend button on the Friends tab header (app.js L43291+). Calls `syncFriendsFromServices({ silent: false })` which toasts "Synced N new friends" on success or "No new friends to sync" on a zero-result manual run. Disabled when neither service is configured.
+Small icon button (`M4 4v5h.582m15.356 2A8...` — circular arrows) beside the Add Friend button on the Friends tab header (app.js L43203+). Calls `syncFriendsFromServices({ silent: false })` which toasts "Synced N new friends" on success or "No new friends to sync" on a zero-result manual run. Disabled when neither service is configured.
 
 ### Invariants for Cross-Platform Consistency
 
@@ -800,7 +800,7 @@ Big libraries (50k–150k tracks) used to freeze the app for tens of seconds dur
 
 **Sync warm-cache fast-path for album art.** `formatTrackForRenderer` (local-files/index.js) returns `file://` URLs for `folder_art_path` and the embedded-art cache file (`cache/embedded-<md5(file_path)>.{jpg,png}`) if they exist on disk — no IPC, no extraction. Tracks with already-extracted art render with art immediately on library load.
 
-**Lazy embedded-art warmup** (`enrichLocalTracksWithEmbeddedArt`, app.js ~L8963). For tracks that have embedded ID3 art or sibling `cover.jpg` but no extracted cache entry yet, an 8-way concurrency-limited background loop walks them, calls the new `localFiles:resolveArt` IPC (`resolveArtForTrack(track)` in local-files/index.js), and patches the renderer's library state in batches of 50. Runs unconditionally on every library load — costs nothing for small libraries, pays the extraction cost lazily for big ones.
+**Lazy embedded-art warmup** (`enrichLocalTracksWithEmbeddedArt`, app.js ~L8912). For tracks that have embedded ID3 art or sibling `cover.jpg` but no extracted cache entry yet, an 8-way concurrency-limited background loop walks them, calls the new `localFiles:resolveArt` IPC (`resolveArtForTrack(track)` in local-files/index.js), and patches the renderer's library state in batches of 50. Runs unconditionally on every library load — costs nothing for small libraries, pays the extraction cost lazily for big ones.
 
 **Size-gated bulk MBID + Cover Art Archive enrichment.** The existing `enrichLocalTracksWithArtwork` path (MBID mapper + CAA fetch for every track) is now gated behind a 10,000-track threshold. Above that, the loop is skipped with a warning log; per-track MBID enrichment still happens lazily on play. The full big-library fix is tracked at [parachord#784](https://github.com/Parachord/parachord/issues/784); the lazy `local-art://` custom-protocol follow-up to the embedded-art work is at [parachord#787](https://github.com/Parachord/parachord/issues/787).
 
@@ -1116,7 +1116,7 @@ if (id && resolverLoaderRef.current.getUrlType(url) === 'playlist') {
 1. **Edit `plugins-src/<id>/implementation.js`** (or `manifest.json`) — and bump `manifest.version` in `plugins-src/<id>/manifest.json`
 2. **Run `node scripts/build-axes.js`** — regenerates `plugins/<id>.axe`, the app.js `FALLBACK_RESOLVERS` line, and syncs the `marketplace-manifest.json` entry version (warns if content changed without a version bump — marketplace clients won't re-download)
 3. **Push to main** — the `sync-repos.yml` CI workflow automatically syncs `.axe` files and manifest to `Parachord/parachord-plugins`
-4. **User relaunches Parachord** — `syncPluginsWithMarketplace()` (app.js L1044) compares cached version against marketplace manifest version; if different, downloads the new `.axe` and fires `parachord-plugins-updated` event for hot-reload
+4. **User relaunches Parachord** — `syncPluginsWithMarketplace()` (app.js L993) compares cached version against marketplace manifest version; if different, downloads the new `.axe` and fires `parachord-plugins-updated` event for hot-reload
 
 ### Critical: Both Files Must Be Updated
 This footgun is now generator-owned: `node scripts/build-axes.js` writes the `.axe` version and the `marketplace-manifest.json` entry version from the same source manifest, and `tests/plugins/axes-drift.test.js` fails if they drift. The only manual rule that remains: bump `manifest.version` in `plugins-src/<id>/manifest.json` when the implementation changes — the writer warns when it detects content churn on an unchanged version.
@@ -1156,7 +1156,7 @@ Plugins the mobile runtime also evaluates (subsonic, bandcamp) must keep ES5-lev
 - `seek` / `get_position` tools (tools/dj-tools.js): MCP-exposed seek and position readback. Supported on HTML5 audio engines (localfiles, SoundCloud, YouTube, Bandcamp) and Apple Music (native MusicKit + MusicKit JS). Spotify returns `supported: false`. Position is confirmed via engine read-back, not assumed from the requested offset.
 - **Two executors, keep them in step.** `tools/dj-tools.js` holds the tool registry (what the MCP server advertises) with thin per-tool `execute()` wrappers, but the renderer never loads it: both the MCP IPC handler and `AIChatService` dispatch through `executeDjTool` in app.js, a hand-written `switch`. Adding a tool to the registry alone makes it *advertised but unimplemented* (`Unknown tool`), which is what happened to `seek`, `get_position` and `block_recommendation` from #857 until 2026-10-12. `tests/chat/dj-tools-executor-parity.test.js` fails when a registry tool has no `case` in app.js, when a registry tool (other than the MCP-only `seek` / `get_position`) is missing from the inline chat `djTools` list (that gap is how `block_recommendation` was in the prompt but never offered to the model, parachord#1007), and when the MCP tool context lacks a `context.*` method the executor calls (the MCP context used to provide only `createPlaylist` of the playlist methods, so seven MCP playlist tools failed, parachord#1008). The MCP tool context and the chat tool context are separate objects: `handleSeek` / `getCurrentPosition` live on the MCP one, `isDataSharingEnabled` / `startCollectionRadio` / `removeFromQueue` on the chat one, and the playlist methods come from the shared `buildPlaylistToolContext()` spread into both. A new tool needs its definition in both lists and its context method on whichever context will call it.
 - **Recommendation blocklist** (`recommendation_blocklist` store key, written by `addToRecommendationBlocklist`): matching lives in `recommendation-blocklist.js` (root, loaded by index.html, `window.recommendationBlocklist`, tests in `tests/recommendations/blocklist.test.js`). Applied by the Recommendations page, Fresh Drops, the Home AI suggestions and the chat system prompt (parachord#1006). Any new personalized surface should call `isBlocked` / `filterBlocked` rather than reading the store directly.
-- Share button on user messages copies `https://achordion.xyz/go?uri=parachord://chat?prompt=...` to clipboard (app.js ~L57563; switched from `parachord.com/go` in commit `367d4e5`, 2026-05-13). Achordion's `app/go/page.tsx` reads the `uri` param and renders a preview page with the `parachord://` link, for contexts that strip custom schemes (e.g., GitHub Discussions). `parachord.com/go` still exists as a plain static bounce on GitHub Pages; the HTTPS share form `https://parachord.com/<verb>` (see the Protocol Surface section) is the canonical bounce for every other command.
+- Share button on user messages copies `https://achordion.xyz/go?uri=parachord://chat?prompt=...` to clipboard (app.js ~L57475; switched from `parachord.com/go` in commit `367d4e5`, 2026-05-13). Achordion's `app/go/page.tsx` reads the `uri` param and renders a preview page with the `parachord://` link, for contexts that strip custom schemes (e.g., GitHub Discussions). `parachord.com/go` still exists as a plain static bounce on GitHub Pages; the HTTPS share form `https://parachord.com/<verb>` (see the Protocol Surface section) is the canonical bounce for every other command.
 
 ## `parachord://` Protocol Surface
 
@@ -1334,7 +1334,7 @@ If neither service returns a current track, surface "<user> is not currently lis
   - `duration: <ms>` — override the default auto-dismiss timeout. Default is 3000ms (or 6000ms when an `action` button is present). Use this when an in-flight acknowledgment toast may take longer than 3s to be replaced — e.g. protocol acknowledgments at the `parachord://` URL handler entry use `duration: 30000` so the "Loading album…" / "Loading radio…" / etc. toast holds across the resolution window (URL fetch + parse + N=2 lookahead resolve) until the success/error toast fires to replace it. Calling `showToast` again at any time replaces the current toast immediately, so a longer duration only matters when no follow-up is queued.
   - `action: { label, onClick }` — adds a button to the toast (extends default to 6000ms unless `duration` overrides).
 - **CSS variables for theming**: All colors use CSS vars, supporting light/dark themes.
-- **useEffect dep array TDZ trap**: React evaluates a `useEffect`'s deps array synchronously during render — so any variable referenced in the deps array must be declared before the `useEffect` call site in source order. The callback body itself runs after render and captures by closure, so it can freely reference later-declared `const` / function values; only the deps array is constrained. Practical implication: if you're adding a new effect that depends on, say, `cacheLoaded` (declared at app.js ~L8929), the effect must live below that line. Logical-grouping with other related effects sometimes loses to this constraint — see the Cross-Resolver Enrichment slow-trickle effect, which lives in the cacheLoaded-effects cluster (~L9818) rather than next to its sibling background-sync effect (~L6177). A leading comment at the natural placement point ("moved past the cacheLoaded declaration — see L9820") keeps future readers from being surprised.
+- **useEffect dep array TDZ trap**: React evaluates a `useEffect`'s deps array synchronously during render — so any variable referenced in the deps array must be declared before the `useEffect` call site in source order. The callback body itself runs after render and captures by closure, so it can freely reference later-declared `const` / function values; only the deps array is constrained. Practical implication: if you're adding a new effect that depends on, say, `cacheLoaded` (declared at app.js ~L8878), the effect must live below that line. Logical-grouping with other related effects sometimes loses to this constraint — see the Cross-Resolver Enrichment slow-trickle effect, which lives in the cacheLoaded-effects cluster (~L9818) rather than next to its sibling background-sync effect (~L6177). A leading comment at the natural placement point ("moved past the cacheLoaded declaration — see L9820") keeps future readers from being surprised.
 
 ## Releasing
 
