@@ -20,7 +20,7 @@
  *   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
  */
 
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');

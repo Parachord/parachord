@@ -4,6 +4,15 @@
 module.exports = {
   testEnvironment: 'node',
 
+  // music-metadata (and other ESM-only packages the main process loads
+  // through Node's require(esm)) publish their entry under the `module-sync`
+  // export condition and no `require` condition. Node's require(esm) adds
+  // that condition; jest's resolver must too or the package is "not found".
+  // Loading it then needs jest's own require(esm), which exists on Node
+  // 24.9+ with vm modules enabled — the `test` scripts pass
+  // --experimental-vm-modules for that reason.
+  testEnvironmentOptions: { customExportConditions: ['node', 'node-addons', 'module-sync'] },
+
   // Test file patterns
   testMatch: [
     '**/tests/**/*.test.js',

@@ -1,5 +1,5 @@
 // Load environment variables from .env file
-require('dotenv').config();
+require('dotenv').config({ quiet: true }); // dotenv 17+ logs an "injecting env" tip line otherwise
 
 // Handle EPIPE errors gracefully (occurs when console.log writes to closed pipe)
 process.on('uncaughtException', (error) => {
@@ -91,7 +91,10 @@ try {
 } catch (err) {
   console.log('Auto-updater not available:', err.message);
 }
-const Store = require('electron-store');
+// electron-store is ESM-only since v9; Electron 39's Node (22.22) loads it
+// through require(esm), which hands back the module namespace, so the class
+// is the default export.
+const Store = require('electron-store').default;
 const express = require('express');
 const WebSocket = require('ws');
 

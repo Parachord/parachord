@@ -97,7 +97,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - Full Apple Music playback needs Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
 
 ### Building from Source
-- **Node.js 20 or newer** (CI builds on 20 and runs the tests on 22; the app itself runs on the Node 22 inside Electron 39)
+- **Node.js 20 or newer** to build and run; **24.9 or newer** to run the test suite (jest loads the ESM-only packages through `require(esm)`, which it supports from Node 24.9). CI builds on 20 and tests on 24; the app itself runs on the Node 22 inside Electron 39.
 - A C/C++ toolchain for native addon compilation (`better-sqlite3`):
   - macOS: Xcode Command Line Tools (also provides the Swift toolchain that `npm run build:mac` uses for the MusicKit helper)
   - Windows: Visual Studio Build Tools with C++ workload
@@ -221,8 +221,10 @@ CI runs these on every push and pull request; run them locally first:
 ```bash
 npm run lint        # ESLint — strict on the extracted modules, warnings only on the legacy files
 npm run typecheck   # tsc over the modules that opted into checkJs
-npm test            # Jest (builds the renderer bundle first)
+npm test            # Jest (builds the renderer bundle first; needs Node 24.9+, see Building from Source)
 ```
+
+Several runtime dependencies are ESM-only (`chokidar`, `electron-store`, `music-metadata`). The main process is CommonJS and loads them through Node's `require(esm)`, which Electron 39's Node 22 supports; `electron-store`'s class is therefore `require('electron-store').default`. Jest resolves them through the `module-sync` export condition (see `jest.config.js`) and loads them with `--experimental-vm-modules`, which the `test` scripts pass.
 
 ### Bumping Electron
 
