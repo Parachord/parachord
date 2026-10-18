@@ -71,7 +71,7 @@ Building Parachord from source has the following additional requirements on all 
 
 | Requirement | Details |
 |---|---|
-| **Node.js** | v20 or newer (CI builds on 20, tests on 22) |
+| **Node.js** | v20 or newer to build and run; v24.9 or newer to run the test suite (CI builds on 20, tests on 24) |
 | **npm** | Bundled with Node.js |
 | **C/C++ toolchain** | Required for `better-sqlite3` native addon compilation |
 | **Electron** | Fetched by `npm install` from [castlabs' GitHub releases](https://github.com/castlabs/electron-releases) (not the npm registry); see the README for why stock Electron is not a substitute |

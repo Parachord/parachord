@@ -11,7 +11,7 @@
  * (see scripts/notarize-artifacts.js).
  */
 
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const { notarize } = require('@electron/notarize');
 const { execSync } = require('child_process');
 const path = require('path');

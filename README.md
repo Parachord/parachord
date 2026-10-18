@@ -97,7 +97,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - Full Apple Music playback needs Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
 
 ### Building from Source
-- **Node.js 20 or newer** (CI builds on 20 and runs the tests on 22; the app itself runs on the Node 22 inside Electron 39)
+- **Node.js 20 or newer** to build and run; **24.9 or newer** to run the test suite (jest loads the ESM-only packages through `require(esm)`, which it supports from Node 24.9). CI builds on 20 and tests on 24; the app itself runs on the Node 22 inside Electron 39.
 - A C/C++ toolchain for native addon compilation (`better-sqlite3`):
   - macOS: Xcode Command Line Tools (also provides the Swift toolchain that `npm run build:mac` uses for the MusicKit helper)
   - Windows: Visual Studio Build Tools with C++ workload
@@ -129,6 +129,12 @@ npm start
 ```
 
 Parachord is built on [castlabs Electron for Content Security](https://github.com/castlabs/electron-releases) (ECS), a fork of Electron with the Widevine CDM. It isn't on the npm registry, so `npm install` fetches it from castlabs' GitHub releases. Stock Electron has no Widevine, so DRM-protected services (Apple Music on Windows and Linux) can't play full tracks on it.
+
+**If `npm start` says Electron failed to install or `node_modules/electron/dist` is missing**, the package's `postinstall` (which downloads the ~100 MB binary from castlabs' releases) did not run. The usual reasons: `ignore-scripts=true` in your npm config, `ELECTRON_SKIP_BINARY_DOWNLOAD` in the environment, or an install that skipped devDependencies (`NODE_ENV=production`, `--omit=dev`). Run it by hand and it says what went wrong:
+
+```bash
+node node_modules/electron/install.js
+```
 
 Locally built apps carry castlabs' development VMP signature. That's enough for Widevine's test servers, but Apple's licence server refuses it, so Apple Music on Windows and Linux plays only 30-second previews in a local build. Release builds get a production signature through [castlabs EVS](https://github.com/castlabs/electron-releases/wiki/EVS) in CI (see [CI/CD](#cicd)). To sign a local build yourself, create a free EVS account and run `python3 -m castlabs_evs.vmp sign-pkg dist/<platform-dir>` before code signing on macOS or after it on Windows.
 
@@ -215,8 +221,10 @@ CI runs these on every push and pull request; run them locally first:
 ```bash
 npm run lint        # ESLint — strict on the extracted modules, warnings only on the legacy files
 npm run typecheck   # tsc over the modules that opted into checkJs
-npm test            # Jest (builds the renderer bundle first)
+npm test            # Jest (builds the renderer bundle first; needs Node 24.9+, see Building from Source)
 ```
+
+Several runtime dependencies are ESM-only (`chokidar`, `electron-store`, `music-metadata`). The main process is CommonJS and loads them through Node's `require(esm)`, which Electron 39's Node 22 supports; `electron-store`'s class is therefore `require('electron-store').default`. Jest resolves them through the `module-sync` export condition (see `jest.config.js`) and loads them with `--experimental-vm-modules`, which the `test` scripts pass.
 
 ### Bumping Electron
 
