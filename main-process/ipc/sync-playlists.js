@@ -578,7 +578,7 @@ ipcMain.handle('sync:cleanup-duplicate-playlists', async (event, providerId) => 
     const deletedExternalIds = new Set();
     const unsupportedManualRemoval = []; // remotes the provider couldn't delete
 
-    for (const { name, keeper, toDelete } of cleanableGroups) {
+    for (const { keeper, toDelete } of cleanableGroups) {
       for (const dup of toDelete) {
         try {
           const result = await provider.deletePlaylist(dup.externalId, token, refreshTokenCb);
