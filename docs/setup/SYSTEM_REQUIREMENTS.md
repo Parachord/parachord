@@ -71,14 +71,16 @@ Building Parachord from source has the following additional requirements on all 
 
 | Requirement | Details |
 |---|---|
-| **Node.js** | v20 (LTS) |
+| **Node.js** | v20 or newer (CI builds on 20, tests on 22) |
 | **npm** | Bundled with Node.js |
 | **C/C++ toolchain** | Required for `better-sqlite3` native addon compilation |
+| **Electron** | Fetched by `npm install` from [castlabs' GitHub releases](https://github.com/castlabs/electron-releases) (not the npm registry); see the README for why stock Electron is not a substitute |
+| **Python 3 + `castlabs-evs`** | Only to VMP-sign a local build; CI does this for releases |
 
 ### Platform-specific build tools
 
 **macOS:**
-- Xcode Command Line Tools (`xcode-select --install`)
+- Xcode Command Line Tools (`xcode-select --install`); they also provide the Swift toolchain that `npm run build:mac` uses to compile the MusicKit helper in `musickit-helper/`
 
 **Windows:**
 - Visual Studio Build Tools with the "Desktop development with C++" workload, or `npm install -g windows-build-tools`

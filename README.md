@@ -97,11 +97,12 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - Full Apple Music playback needs Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
 
 ### Building from Source
-- **Node.js 20** (LTS)
+- **Node.js 20 or newer** (CI builds on 20 and runs the tests on 22; the app itself runs on the Node 22 inside Electron 39)
 - A C/C++ toolchain for native addon compilation (`better-sqlite3`):
-  - macOS: Xcode Command Line Tools
+  - macOS: Xcode Command Line Tools (also provides the Swift toolchain that `npm run build:mac` uses for the MusicKit helper)
   - Windows: Visual Studio Build Tools with C++ workload
   - Linux: `build-essential` and `python3`
+- To VMP-sign a local build (optional, see below): Python 3 with `pip install castlabs-evs`
 
 See [docs/setup/SYSTEM_REQUIREMENTS.md](docs/setup/SYSTEM_REQUIREMENTS.md) for full details including network requirements and Linux sandbox dependencies.
 
@@ -120,10 +121,10 @@ Download the latest release for your platform from the [Releases](https://github
 git clone https://github.com/Parachord/parachord.git
 cd parachord
 
-# Install dependencies
+# Install dependencies (fetches castlabs Electron from GitHub, builds better-sqlite3)
 npm install
 
-# Start the app
+# Start the app (the renderer bundle is built first, see Development)
 npm start
 ```
 
@@ -135,17 +136,26 @@ Locally built apps carry castlabs' development VMP signature. That's enough for 
 
 ```
 parachord/
-├── app.js                 # React application (single-file)
+├── src/renderer/app.js    # React application (single file, no JSX) — the source
+├── app.js                 # Generated renderer bundle (esbuild, gitignored; never edit)
 ├── main.js                # Electron main process
+├── main-process/          # Main-process modules (IPC handlers, sync links)
 ├── preload.js             # Electron preload script (IPC bridge)
-├── index.html             # Application shell
+├── index.html             # Application shell (loads vendor/ scripts, then app.js)
+├── vendor/                # React, Tailwind CSS build, fuse.js (committed, no CDN)
 ├── resolver-loader.js     # Plug-in system loader
+├── plugins-src/<id>/      # Plug-in sources: manifest.json + implementation.js
+├── plugins/               # Generated .axe files (node scripts/build-axes.js; never edit)
+├── marketplace-manifest.json  # Plug-in catalog (versions generator-synced)
+├── sync-providers/        # Spotify / Apple Music / ListenBrainz playlist sync
 ├── local-files/           # Local music library module
 │   ├── scanner.js         # Directory scanner
 │   ├── metadata-reader.js # ID3/audio metadata extraction
 │   ├── database.js        # SQLite music database
 │   └── watcher.js         # File system watcher
-├── resolvers/             # Content resolver plug-ins (.axe)
+├── musickit-helper/       # Native MusicKit helper (Swift, macOS only)
+├── scripts/               # Build scripts (renderer bundle, .axe generator, VMP signing, notarization)
+├── tests/                 # Jest suites
 ├── parachord-extension/   # Browser extension source
 └── .github/workflows/     # CI/CD pipeline
 ```
@@ -163,13 +173,13 @@ Parachord uses a plug-in architecture with two types:
 - Implement service-specific APIs for artist info, recommendations, scrobbling
 - Examples: Last.fm, ListenBrainz, MusicBrainz
 
-Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript implementation. See `docs/architecture/AXE_FORMAT_SPEC.md` for details.
+Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript implementation. See `docs/architecture/AXE_FORMAT_SPEC.md` for details. The bundled `.axe` files are generated from `plugins-src/<id>/` (see [Development](#development)); community plug-ins live in [Parachord/parachord-plugins](https://github.com/Parachord/parachord-plugins).
 
 ## Tech Stack
 
 - **castlabs Electron for Content Security** - Electron fork with the Widevine CDM, for DRM-protected streaming
-- **React 18** - UI framework (via CDN, no build step)
-- **Tailwind CSS** - Utility-first styling (via CDN)
+- **React 18** - UI framework, `React.createElement` only (no JSX); vendored in `vendor/`, bundled by esbuild with no transforms
+- **Tailwind CSS** - Utility-first styling; the CSS is built into `vendor/tailwind.css` (`npm run build:css`), nothing loads from a CDN
 - **SQLite** - Local music library database (via better-sqlite3)
 - **Express** - OAuth callback server for Spotify
 - **WebSocket** - Real-time communication with browser extension
@@ -181,11 +191,36 @@ Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript 
 # Run in development mode with DevTools
 npm run dev
 
+# Rebuild the renderer bundle on every save (run alongside npm run dev)
+npm run dev:renderer
+
 # Build for distribution
-npm run build:mac    # macOS (.dmg, .zip)
+npm run build:mac    # macOS (.dmg, .zip) — also compiles the MusicKit helper
 npm run build:win    # Windows (.exe, portable)
 npm run build:linux  # Linux (.AppImage, .deb, .rpm)
 ```
+
+### The renderer is a generated bundle
+
+Edit `src/renderer/app.js`. The root `app.js` that `index.html` loads is an esbuild bundle of it (plain IIFE, no minify, no transforms, with a source map), gitignored and rebuilt by the `prestart`, `predev`, `pretest` and `prebuild` hooks, so a plain `npm start` or `npm test` never runs stale code. Edits to the root file are overwritten on the next build.
+
+### Plug-ins are generated too
+
+The source of a bundled plug-in is `plugins-src/<id>/manifest.json` plus `implementation.js`, a real module you can `require` in tests. `node scripts/build-axes.js` (also `npm run axes`) writes `plugins/<id>.axe`, the matching fallback entry in the renderer, and the version in `marketplace-manifest.json`. Bump `manifest.version` when the implementation changes, or installed copies won't re-download. `npm run axes:check` fails on any drift and runs in the test suite, so never hand-edit an `.axe`.
+
+### Checks
+
+CI runs these on every push and pull request; run them locally first:
+
+```bash
+npm run lint        # ESLint — strict on the extracted modules, warnings only on the legacy files
+npm run typecheck   # tsc over the modules that opted into checkJs
+npm test            # Jest (builds the renderer bundle first)
+```
+
+### Bumping Electron
+
+`package.json` pins castlabs Electron by GitHub tag (`castlabs/electron-releases#v39.8.10+wvcus`) and `build.electronDownload.mirror` points electron-builder at the same releases. Bump both together, then run `npx electron-builder install-app-deps` so `better-sqlite3` is rebuilt against the new Node ABI. castlabs supports the three latest Electron majors; an older major still inside their window can download a CDM but gets no fixes.
 
 ### CI/CD
 
