@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'app.js'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
 
 describe('Sync Now is reachable', () => {
   test('something opens syncStatusModal', () => {

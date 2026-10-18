@@ -125,7 +125,7 @@ describe('stream quality review follow-ups', () => {
   });
 
   test('the playbar title tooltip caps its width so long titles still truncate', () => {
-    const app = read('app.js');
+    const app = read('src/renderer/app.js');
     const i = app.indexOf('content: streamQualityLabel,');
     expect(i).toBeGreaterThan(-1);
     expect(app.slice(i, i + 200)).toMatch(/className: 'tooltip-fill'/);

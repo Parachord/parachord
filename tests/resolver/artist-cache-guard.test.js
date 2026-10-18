@@ -23,7 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const appSrc = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
+const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
 describe('artistDataCache partial-entry guard', () => {
   test('fetchArtistData cacheValid requires a releases array', () => {

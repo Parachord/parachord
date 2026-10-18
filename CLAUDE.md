@@ -2,7 +2,9 @@
 
 ## Architecture
 
-Single-file React app (`app.js`, ~58k lines). No JSX — uses `React.createElement()` exclusively. Styling via Tailwind CSS classes + inline styles with CSS variables (`var(--accent-primary)`, `var(--card-bg)`, etc.).
+**app.js is a GENERATED artifact** — esbuild bundles `src/renderer/app.js` (the source of truth, same content, classic IIFE script, no transforms: target esnext, no minify) into `app.js` + `app.js.map` (both gitignored). Built by `pretest`/`prestart`/`predev`/`prebuild` hooks (`node scripts/build-renderer.js`; dev watch: `npm run dev:renderer`). Never hand-edit root `app.js` — edit `src/renderer/app.js`. CLAUDE.md's `app.js L####` line refs refer to `src/renderer/app.js` (identical content). Source-marker tests read `src/renderer/app.js`; tests that read the generated `app.js` rely on `pretest` having built it.
+
+No JSX — uses `React.createElement()` exclusively. Styling via Tailwind CSS classes + inline styles with CSS variables (`var(--accent-primary)`, `var(--card-bg)`, etc.).
 
 Main component: `const Parachord = () => { ... }` (L4951), rendered via `ReactDOM.createRoot`.
 

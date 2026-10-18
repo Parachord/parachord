@@ -326,7 +326,7 @@ describe('subsonic play is host-owned', () => {
 });
 
 describe('app.js integration', () => {
-  const appSrc = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
+  const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
   test('FALLBACK_RESOLVERS copy is byte-identical to the .axe', () => {
     const lines = appSrc.split('\n');

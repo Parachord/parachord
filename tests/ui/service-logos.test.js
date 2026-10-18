@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const app = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
 
 function block(startMarker) {
   const s = app.indexOf(startMarker);

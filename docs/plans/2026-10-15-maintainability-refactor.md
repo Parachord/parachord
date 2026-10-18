@@ -281,6 +281,8 @@ changes.
   replace line numbers). The doc is the architecture map for every agent
   session; keep it truthful or the map rots.
 
+> **Status: Track 2b enabler SHIPPED** — esbuild bundles src/renderer/app.js into the generated, gitignored app.js (IIFE, no transforms; pretest/prestart/predev/prebuild hooks; build-axes owns the FALLBACK block in the source and regenerates the bundle). The component split (presentational subtrees first, then state domains one at a time) is the continuing work on this foundation.
+
 ## Suggested order
 
 | Step | What | Why this order |

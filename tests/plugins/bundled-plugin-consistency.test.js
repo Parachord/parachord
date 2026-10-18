@@ -26,7 +26,7 @@ describe('marketplace-manifest.json', () => {
 });
 
 describe('FALLBACK_RESOLVERS in app.js', () => {
-  const lines = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8').split('\n');
+  const lines = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8').split('\n');
   const start = lines.findIndex((l) => l.startsWith('const FALLBACK_RESOLVERS = ['));
   const entries = [];
   for (let i = start + 1; lines[i].startsWith('  {"manifest"'); i++) {

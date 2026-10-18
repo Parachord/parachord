@@ -431,7 +431,7 @@ describe('amazonmusic lookupPlaylist', () => {
 
 describe('app.js FALLBACK_RESOLVERS parity', () => {
   test('the inline amazonmusic fallback is byte-identical to plugins/amazonmusic.axe', () => {
-    const appSrc = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
     const m = appSrc.match(/\{"manifest":\{"id":"amazonmusic"[\s\S]*?\}\},\n/);
     expect(m).toBeTruthy();
     const fallback = JSON.parse(m[0].replace(/,\n$/, ''));
@@ -439,7 +439,7 @@ describe('app.js FALLBACK_RESOLVERS parity', () => {
   });
 
   test('amazonmusic is in the canonical resolver order', () => {
-    const appSrc = fs.readFileSync(path.join(__dirname, '../../app.js'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
     const m = appSrc.match(/const CANONICAL_RESOLVER_ORDER = \[([^\]]+)\]/);
     expect(m).toBeTruthy();
     const order = m[1].split(',').map(s => s.trim().replace(/['"]/g, ''));

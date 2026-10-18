@@ -59,3 +59,7 @@ resources/bin/
 
 # MusicKit private keys (injected from CI secrets for builds)
 resources/keys/*.p8
+
+# Generated renderer bundle (source of truth: src/renderer/app.js)
+/app.js
+/app.js.map
