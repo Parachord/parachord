@@ -135,6 +135,9 @@
     ],
     "afterPack": "scripts/after-pack.js",
     "afterSign": "scripts/after-sign.js",
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
+    },
     "mac": {
       "category": "public.app-category.music",
       "icon": "assets/icons/icon.icns",
