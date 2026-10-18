@@ -102,6 +102,7 @@ const RENDERER_COMPONENT_GLOBALS = {
   React: 'readonly',
   ReactDOM: 'readonly',
   lucideReact: 'readonly',
+  ResizeObserver: 'readonly',
   ReactVirtual: 'readonly',
 };
 
