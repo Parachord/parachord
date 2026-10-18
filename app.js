@@ -297,53 +297,14 @@ window.headerCollapseDecision = ({ scrollTop, scrollHeight, clientHeight, collap
 
 // Resolver match validation + minimum confidence threshold.
 //
-// SYNC: tests/helpers/confidence-scoring.js — keep these helpers byte-identical
-// with that file. Cross-platform invariant: must match
-// parachord-mobile/shared/.../resolver/ResolverModels.kt and
-// ResolverScoring.kt#MIN_CONFIDENCE_THRESHOLD so desktop and Android pick the
-// same source for the same track.
-//
-// Bug history: prior to this gate, calculateConfidence ignored artist —
-// "Yesterday" by The Beatles could resolve to a same-titled different-artist
-// recording at 0.85 confidence. Combined with a missing source-selection
-// floor, the wrong-artist source could outrank a correct local file. The fix
-// requires BOTH axes to substring-match (else 0.50) and gates selection on
-// MIN_CONFIDENCE_THRESHOLD = 0.6.
-// Case-fold + strip non-alphanumeric. Unicode-aware: decomposes accented
-// Latin characters via NFKD then drops combining marks (ö → o, café → cafe),
-// preserves non-Latin letters and digits via Unicode property classes
-// (動物寓意譚 stays as-is instead of normalizing to ""). The previous regex
-// `/[^a-z0-9]/g` stripped ALL non-ASCII, which (a) silently broke validation
-// for Japanese/Cyrillic/etc. titles by collapsing them to empty strings, and
-// (b) lost umlauts/accents instead of folding them, causing false rejections
-// when a resolver returned the canonical accented form. Cross-platform
-// mirror: keep byte-aligned with tests/helpers/confidence-scoring.js#normalizeStr
-// and the Kotlin equivalents on Android (ResolverModels.kt#normalizeStr,
-// ResolverScoring.kt). Drift here breaks listen-along and source matching
-// for any track with non-Latin script in artist or title.
-const normalizeStr = (s) => (s || '')
-  .toString()
-  .toLowerCase()
-  .normalize('NFKD')
-  .replace(/\p{M}/gu, '')
-  .replace(/[^\p{L}\p{N}]/gu, '');
-
-const validateResolvedTrack = (result, targetArtist, targetTitle) => {
-  if (!result || !result.artist || !result.title) return false;
-  const resultArtist = normalizeStr(result.artist);
-  const resultTitle = normalizeStr(result.title);
-  const normTargetArtist = normalizeStr(targetArtist);
-  const normTargetTitle = normalizeStr(targetTitle);
-  if (!resultArtist || !resultTitle || !normTargetArtist || !normTargetTitle) return false;
-  const artistMatches = resultArtist.includes(normTargetArtist) || normTargetArtist.includes(resultArtist);
-  const titleMatches = resultTitle.includes(normTargetTitle) || normTargetTitle.includes(resultTitle);
-  return artistMatches && titleMatches;
-};
-
-// Sources scoring below this floor are filtered out before the
-// resolver-priority sort runs. 0.50 (single-axis match) gets dropped;
-// 0.95 (both-axis match) passes.
-const MIN_CONFIDENCE_THRESHOLD = 0.6;
+// Canonical source: sync-providers/confidence-scoring.js (loaded by index.html
+// before app.js; exposed as window.ConfidenceScoring). The old inline trio —
+// plus a third drifted copy inside the resolver pipeline — is gone; one
+// source now serves the renderer, jest (tests/helpers re-exports the module),
+// and the main process. Cross-platform invariant: the function bodies must
+// still match parachord-mobile ResolverModels.kt / ResolverScoring.kt so
+// desktop and Android pick the same source for the same track.
+const { normalizeStr, validateResolvedTrack, MIN_CONFIDENCE_THRESHOLD } = window.ConfidenceScoring;
 
 // Yield the renderer thread to the browser's idle scheduler. Used by the
 // sync push loops (parachord#798) to interleave per-playlist IPCs with user
@@ -638,13 +599,6 @@ window.resolveAlbumMbidViaMapper = async (artist, anyRecordingTitle) => {
 // three Latin-1 chars `â€™` — visible as mangled titles in the queue.
 // Routes the bytes through TextDecoder('utf-8') first to round-trip
 // non-ASCII text correctly. Throws on invalid base64 or invalid JSON.
-window.decodeBase64Utf8Json = (b64) => {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const text = new TextDecoder('utf-8').decode(bytes);
-  return JSON.parse(text);
-};
 
 // `createLimiter` and `wrapResolverSearchesWithLimiter` live in
 // resolver-limiter.js (loaded via <script> ahead of app.js in index.html)
@@ -18457,22 +18411,8 @@ ${trackListXml}
           .filter(r => r && r.capabilities?.resolve);
 
         // Helper to validate resolved track matches requested metadata
-        // Inline duplicate of the module-scope normalizeStr (app.js L234).
-        // Same Unicode-aware shape: NFKD + strip combining marks + keep only
-        // \p{L}/\p{N}. Must stay in lockstep with the module-scope helper
-        // and the test/Android mirrors.
-        const normalizeStr = s => (s || '').toString().toLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]/gu, '');
-        const validateResolvedTrack = (result, targetArtist, targetTitle) => {
-          if (!result || !result.artist || !result.title) return false;
-          const resultArtist = normalizeStr(result.artist);
-          const resultTitle = normalizeStr(result.title);
-          const normTargetArtist = normalizeStr(targetArtist);
-          const normTargetTitle = normalizeStr(targetTitle);
-          // Check for reasonable match - either contains the other
-          const artistMatches = resultArtist.includes(normTargetArtist) || normTargetArtist.includes(resultArtist);
-          const titleMatches = resultTitle.includes(normTargetTitle) || normTargetTitle.includes(resultTitle);
-          return artistMatches && titleMatches;
-        };
+        // Module-scope aliases (window.ConfidenceScoring) serve the pipeline;
+        // the old local duplicate had drifted from the canonical guard.
 
         // Helper to find best matching result from search results
         const findBestMatch = (results, targetArtist, targetTitle) => {
@@ -28966,21 +28906,8 @@ ${trackListXml}
   // score collapses to 0.50 and the source-selection floor (0.6) drops it.
   // Title-only or artist-only matches are wrong-song candidates and must not
   // be allowed to outrank correct matches from lower-priority resolvers.
-  const calculateConfidence = (originalTrack, foundTrack) => {
-    if (!foundTrack) return 0.5;
-    const targetArtist = originalTrack?.artist || '';
-    const targetTitle = originalTrack?.title || '';
-    if (!validateResolvedTrack(foundTrack, targetArtist, targetTitle)) {
-      return 0.5;
-    }
-    // Both axes match. If the resolver provided its own confidence and it's
-    // already at or above the validated tier (e.g. direct-ID match at 1.0),
-    // trust it. Otherwise return the canonical validated score.
-    if (typeof foundTrack.confidence === 'number' && foundTrack.confidence >= 0.95) {
-      return foundTrack.confidence;
-    }
-    return 0.95;
-  };
+  // Canonical copy: sync-providers/confidence-scoring.js (window.ConfidenceScoring).
+  const calculateConfidence = window.ConfidenceScoring.calculateConfidence;
 
   // Library localfiles rows identify the recording by path and often omit
   // artist/title. calculateConfidence then returns 0.5, and the selection

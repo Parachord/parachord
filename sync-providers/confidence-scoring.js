@@ -112,6 +112,15 @@ function pickConfidentMatch(originalTrack, candidates) {
   return { index: bestIndex, score: bestScore };
 }
 
+// Dual-load: the renderer loads this file via index.html (before app.js) and
+// consumes it as window.ConfidenceScoring; jest and the main process require()
+// it. tests/helpers/confidence-scoring.js re-exports this module — the
+// canonical desktop source. The old app.js inline copies are gone (they were
+// hand-synced byte-copies; one had already drifted).
+if (typeof window !== 'undefined') {
+  window.ConfidenceScoring = { normalizeStr, validateResolvedTrack, calculateConfidence, MIN_CONFIDENCE_THRESHOLD, pickConfidentMatch };
+}
+
 module.exports = {
   normalizeStr,
   validateResolvedTrack,

@@ -162,6 +162,18 @@
     return payload;
   }
 
+  // Base64 -> UTF-8 JSON for parachord:// inline track payloads. The naive
+  // atob() + JSON.parse treats decoded bytes as Latin-1 and silently mangles
+  // every multi-byte character (U+2019 becomes a tilde-accented mess, non-Latin
+  // scripts become unreadable) — round-trip the bytes through TextDecoder.
+  function decodeBase64Utf8Json(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const text = new TextDecoder('utf-8').decode(bytes);
+    return JSON.parse(text);
+  }
+
   const api = {
     isPublicHttpUrl,
     HOSTED_PLAYLIST_MAX_BYTES,
@@ -170,6 +182,7 @@
     isProviderPlaylistUrl,
     isProviderImportedPlaylist,
     buildPlaylistSavePayload,
+    decodeBase64Utf8Json,
   };
 
   if (typeof window !== 'undefined') {
@@ -180,6 +193,7 @@
     window.isProviderPlaylistUrl = isProviderPlaylistUrl;
     window.isProviderImportedPlaylist = isProviderImportedPlaylist;
     window.buildPlaylistSavePayload = buildPlaylistSavePayload;
+    window.decodeBase64Utf8Json = decodeBase64Utf8Json;
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();
