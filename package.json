@@ -53,7 +53,7 @@
     "@eslint/js": "^10.0.1",
     "@tanstack/react-virtual": "^3.13.18",
     "chrome-webstore-upload-cli": "^4.0.2",
-    "electron": "https://github.com/castlabs/electron-releases#v39.8.10+wvcus",
+    "electron": "github:castlabs/electron-releases#v44.5.1+wvcus",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
@@ -207,5 +207,13 @@
     "addons-scanner-utils": {
       "express": "^4.22.3"
     }
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "esbuild": true,
+    "@parcel/watcher@2.6.0": true,
+    "electron-winstaller@5.4.0": true,
+    "unrs-resolver@1.12.2": true,
+    "fsevents@2.3.3": true
   }
 }

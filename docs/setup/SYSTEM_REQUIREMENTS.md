@@ -1,12 +1,12 @@
 # System Requirements
 
-Parachord is built on Electron 39 (Chromium 142, Node.js 22). The following are the OS-level requirements for running the app on each platform.
+Parachord is built on Electron 44 (Chromium 152, Node.js 24). The following are the OS-level requirements for running the app on each platform.
 
 ## macOS
 
 | Requirement | Details |
 |---|---|
-| **Minimum version** | macOS 12 (Monterey) |
+| **Minimum version** | macOS 13 (Ventura) — Electron 44 (Chromium 152) no longer supports macOS 12 |
 | **Architecture** | 64-bit Intel or Apple Silicon (universal binary) |
 | **Disk space** | ~250 MB for application, plus space for local music database |
 | **Distribution formats** | `.dmg`, `.zip` |
@@ -71,10 +71,10 @@ Building Parachord from source has the following additional requirements on all 
 
 | Requirement | Details |
 |---|---|
-| **Node.js** | v20 or newer to build and run; v24.9 or newer to run the test suite (CI builds on 20, tests on 24) |
+| **Node.js** | v22 or newer to build and run; v24.9 or newer to run the test suite (CI builds on 22, tests on 24) |
 | **npm** | Bundled with Node.js |
 | **C/C++ toolchain** | Required for `better-sqlite3` native addon compilation |
-| **Electron** | Fetched by `npm install` from [castlabs' GitHub releases](https://github.com/castlabs/electron-releases) (not the npm registry); see the README for why stock Electron is not a substitute |
+| **Electron** | Package fetched by `npm install` from [castlabs' GitHub releases](https://github.com/castlabs/electron-releases) (not the npm registry); the ~100 MB binary downloads on the first `npm start`. See the README for why stock Electron is not a substitute |
 | **Python 3 + `castlabs-evs`** | Only to VMP-sign a local build; CI does this for releases |
 
 ### Platform-specific build tools
