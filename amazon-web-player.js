@@ -70,6 +70,9 @@ const {
   isAmazonSongResultItem,
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
+  playlistPageInfoFromGql,
+  playlistEdgesFromGql,
+  playlistTrackFromGqlEdge,
   amazonGqlFetchHeaders,
   capturedOperationNames,
   playlistFromGql,
@@ -950,15 +953,17 @@ const amazonWebPlayer = {
     });
   },
 
-  // Import a playlist page (music.amazon.com/playlists/<id>) via the page's
-  // own GraphQL. Hornet fetches the playlist with a persisted query (APQ)
-  // whose hash renumbers on every redeploy, so nothing is hardcoded: the
-  // playlist page is loaded in the (offscreen) search view, the gql request
-  // the page itself makes is captured (URL, headers, APQ hash), and that exact
-  // request is replayed from the page world with a bigger firstLimit — one
-  // request returns the whole playlist, so no DOM scraping and no pagination.
-  // Runs on the search chain: lookupPlaylist and searchTracks share the search
-  // view, so they must not interleave page loads.
+  // Import a playlist page (music.amazon.com/playlists/<id>, /my/playlists/<id>
+  // or /user-playlists/<id>) via the page's own GraphQL. Hornet fetches the
+  // playlist with a persisted query (APQ) whose hash renumbers on every
+  // redeploy, so nothing is hardcoded: the playlist page is loaded in the
+  // (offscreen) search view, the gql request the page itself makes is captured
+  // (URL, headers, APQ hash), and that exact request is replayed from the page
+  // world verbatim. The server serves one page per request, so a longer
+  // playlist continues via the playlist's own continuation: each response's
+  // pageInfo.token (a composite continuation state) passed as the afterCursor
+  // variable. Runs on the search chain: lookupPlaylist and searchTracks share
+  // the search view, so they must not interleave page loads.
   async lookupPlaylist(rawUrl) {
     if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
       throw notReady('not-ready', 'Not an Amazon Music playlist URL');
@@ -1030,15 +1035,16 @@ const amazonWebPlayer = {
           throw notReady('lookup-failed', 'Unexpected Amazon playlist query shape');
         }
 
-        // Replay the page's own request, to the URL the page itself used, with
-        // the whole playlist in one go — the page asks for 100 tracks per
-        // request; firstLimit 500 matches the import cap. If the server refuses
-        // the raised limit, retry with the page's own body unchanged: a
-        // page-size slice beats a failed import.
+        // Replay the page's own request, to the URL the page itself used,
+        // VERBATIM — the page's own firstLimit (100). Raising firstLimit is
+        // useless: the server serves one page per request however high the
+        // limit (100 rows observed at firstLimit 500), and the pagination
+        // block below follows the playlist's own continuation instead.
         const replayUrl = entry.url || 'https://gql.music.amazon.com/';
         const headers = amazonGqlFetchHeaders(entry.headers);
         const sendPlaylistQuery = async (body) => {
-          const replay = await this.evalOn(win, PLAYLIST_GQL_SCRIPT(replayUrl, headers, JSON.stringify(body)));
+          const raw = JSON.stringify(body);
+          const replay = await this.evalOn(win, PLAYLIST_GQL_SCRIPT(replayUrl, headers, raw));
           if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon playlist query failed' };
           if (replay.status !== 200) return { error: `Amazon playlist query failed (${replay.status})` };
           let parsed = null;
@@ -1048,25 +1054,89 @@ const amazonWebPlayer = {
           }
           return { parsed };
         };
-        const bigBody = {
-          operationName: 'playlistDetail',
-          variables: { ...request.variables, id: playlistId, firstLimit: 500 },
-          extensions: request.extensions || {}
-        };
         const pageUrl = win.isDestroyed() ? '' : win.webContents.getURL();
         if (!isAmazonMusicPage(pageUrl)) {
           throw notReady('not-ready', 'Amazon playlist page left music.amazon.com before replay');
         }
         console.log(`[Amazon] playlist replaying playlistDetail via gql (${Object.keys(headers).length} headers)`);
-        let outcome = await sendPlaylistQuery(bigBody);
-        if (outcome.error) {
-          console.warn(`[Amazon] playlist replay failed (${outcome.error}); retrying with the page's own request`);
-          outcome = await sendPlaylistQuery(request);
-          if (outcome.error) throw notReady('lookup-failed', outcome.error);
-        }
+        const outcome = await sendPlaylistQuery(request);
+        if (outcome.error) throw notReady('lookup-failed', outcome.error);
         const playlist = playlistFromGql(outcome.parsed && outcome.parsed.data);
+        let pageInfo = playlistPageInfoFromGql(outcome.parsed && outcome.parsed.data);
+
+        // Follow the playlist's own pagination. The server serves one page per
+        // request (100 rows observed however high firstLimit is raised), so a
+        // long playlist arrives in pages. The page's own continuation is the
+        // response's pageInfo.token — a composite base64 blob (offset, page
+        // size, playlistVersion, and a dependent-service continuation marker
+        // keyed by the last row's entity) — passed VERBATIM as the afterCursor
+        // variable on the next request. Live-verified 2026-10 against a
+        // 977-track playlist: the Relay-style endCursor is a decoy (the server
+        // ignores it and answers with page 1 again — so does the page's own
+        // endCursor-shaped request), the dependent blob alone errors
+        // "Invalid sequence token", and every other variable name is dropped;
+        // the composite token advances page over page. Each response's own
+        // token drives the next request, so playlistVersion consistency is the
+        // server's problem, not ours.
+        if (playlist && playlist.trackCount > playlist.tracks.length && !win.isDestroyed()) {
+          const MAX_PAGES = 40;      // 40 × 100-track pages = 4000 tracks
+          const MAX_MS = 120000;     // a long import must not wedge the search chain forever
+          const startedAt = Date.now();
+          let pages = 0;
+          let lastPageFirstAsin = playlist.tracks.length ? playlist.tracks[0].asin : null;
+          const pageTracks = (parsed) =>
+            (playlistEdgesFromGql(parsed && parsed.data) || [])
+              .map(playlistTrackFromGqlEdge)
+              .filter(Boolean);
+          while (
+            playlist.tracks.length < playlist.trackCount &&
+            pageInfo && pageInfo.token &&
+            pageInfo.hasNextPage !== false &&
+            pages < MAX_PAGES &&
+            Date.now() - startedAt < MAX_MS &&
+            !win.isDestroyed()
+          ) {
+            pages += 1;
+            const page = await sendPlaylistQuery({
+              ...request,
+              variables: { ...request.variables, afterCursor: pageInfo.token }
+            });
+            if (page.error) {
+              console.warn(`[Amazon] playlist page ${pages} failed (${page.error}); keeping ${playlist.tracks.length} tracks`);
+              break;
+            }
+            const mapped = pageTracks(page.parsed);
+            const firstAsin = mapped.length ? mapped[0].asin : null;
+            // No-advance: the page mapped to nothing, or it starts at the same
+            // row the previous page started at (the server ignored the token
+            // and answered with the same window). Duplicate tracks WITHIN the
+            // list are legitimate playlist content — a likes list can hold the
+            // same track twice — so rows are appended, never deduped.
+            if (!mapped.length || (firstAsin && firstAsin === lastPageFirstAsin)) {
+              console.warn(`[Amazon] playlist page ${pages} did not advance (token stopped moving) — stopping`);
+              break;
+            }
+            lastPageFirstAsin = firstAsin;
+            playlist.tracks = playlist.tracks.concat(mapped);
+            const info = playlistPageInfoFromGql(page.parsed && page.parsed.data);
+            if (info) pageInfo = info;
+            const respCount = page.parsed && page.parsed.data && page.parsed.data.playlist && page.parsed.data.playlist.trackCount;
+            if (typeof respCount === 'number' && respCount > playlist.trackCount) playlist.trackCount = respCount;
+            console.log(`[Amazon] playlist page ${pages}: +${mapped.length} (${playlist.tracks.length}/${playlist.trackCount})`);
+          }
+        }
         if (playlist && playlist.trackCount > playlist.tracks.length) {
-          console.warn(`[Amazon] playlist lookup truncated: got ${playlist.tracks.length} of ${playlist.trackCount} tracks (import cap 500, or the server capped the page size)`);
+          // A shortfall is only a truncation when pages were left unfetched.
+          // When the server is out of pages (no token / hasNextPage false),
+          // the missing rows are edges with node:null — delisted tracks the
+          // response carries no data for at all (position and itemId only);
+          // there is nothing to import, and the natural end is not a failure.
+          const exhausted = !pageInfo || !pageInfo.token || pageInfo.hasNextPage === false;
+          if (exhausted) {
+            console.log(`[Amazon] playlist complete: ${playlist.tracks.length} of ${playlist.trackCount} rows are importable (${playlist.trackCount - playlist.tracks.length} unavailable on Amazon)`);
+          } else {
+            console.warn(`[Amazon] playlist lookup truncated: got ${playlist.tracks.length} of ${playlist.trackCount} tracks (pagination ended early)`);
+          }
         }
         console.log(`[Amazon] playlist lookup returning ${playlist ? playlist.tracks.length : 0} tracks "${playlist ? playlist.name : ''}"`);
         return playlist;

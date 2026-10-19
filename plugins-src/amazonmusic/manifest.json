@@ -2,7 +2,7 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.4.2",
+    "version": "1.4.3",
     "author": "Parachord Team",
     "description": "Uses Amazon's web player and this app's Widevine CDM. Does not use the Amazon Music desktop app.",
     "icon": "🎵",
@@ -20,7 +20,8 @@
   },
   "urlPatterns": [
     "music.amazon.com/playlists/*",
-    "music.amazon.com/my/playlists/*"
+    "music.amazon.com/my/playlists/*",
+    "music.amazon.com/user-playlists/*"
   ],
   "settings": {
     "requiresAuth": false,

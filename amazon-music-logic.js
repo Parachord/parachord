@@ -803,11 +803,13 @@ function acceptAmazonSearchAnchor(testIds, onSearchPage) {
   return !!onSearchPage;
 }
 
-// A playlist page lives at /playlists/<id> (shared/brand playlists) or
-// /my/playlists/<id> (the user's own). The id is a long alphanumeric token
-// (PP…), not the 10-char ASIN a track uses — brand playlists use those too.
+// A playlist page lives at /playlists/<id> (shared/brand playlists),
+// /my/playlists/<id> (the user's own) or /user-playlists/<id> (the share-link
+// shape for user-created playlists). The id is a long alphanumeric token
+// (PP… or a bare hex uuid), not the 10-char ASIN a track uses — brand
+// playlists use those too.
 function amazonPlaylistIdFromUrl(url) {
-  const m = String(url || '').match(/music\.amazon\.com\/(?:my\/)?playlists\/([A-Za-z0-9]+)/i);
+  const m = String(url || '').match(/music\.amazon\.com\/(?:my\/)?(?:user-)?playlists\/([A-Za-z0-9]+)/i);
   return m ? m[1] : null;
 }
 
@@ -922,6 +924,50 @@ function playlistFromGql(data) {
   };
 }
 
+// --- Playlist pagination (a >page-size playlist arrives in pages) ---
+// The server clamps the page size (a 977-track playlist answered 100 rows
+// however high firstLimit was raised), so the import has to follow the
+// playlist's own pagination. Everything below is learned from the page or the
+// response — no param name or cursor format is hardcoded against hornet.
+
+// The connection's pageInfo, when the response carries one. hasNextPage null =
+// absent; endCursor null = absent. Returns null when there is no pageInfo at
+// all (the caller falls back to scroll-driven pagination).
+function playlistPageInfoFromGql(data) {
+  const tracks = data && data.playlist && data.playlist.tracks;
+  const pageInfo = tracks && tracks.pageInfo;
+  if (!pageInfo || typeof pageInfo !== 'object') return null;
+  const endCursor = pageInfo.endCursor == null ? null : String(pageInfo.endCursor);
+  const hasNextPage = typeof pageInfo.hasNextPage === 'boolean' ? pageInfo.hasNextPage : null;
+  // token is the page's OWN continuation state (a composite base64 blob) —
+  // the value the next request passes as afterCursor. Live-verified 2026-10:
+  // the token advances the pages; the Relay-style endCursor is ignored by the
+  // server (page 1 repeats) and the dependent blob alone errors.
+  const token = typeof pageInfo.token === 'string' && pageInfo.token ? pageInfo.token : null;
+  return { hasNextPage, endCursor, token };
+}
+
+// The response's track edges. The playlistDetail envelope is
+// data.playlist.tracks.edges; a continuation operation may answer with a
+// different envelope, so fall back to a bounded scan for any edges[] whose
+// nodes look like playlist rows (id + title).
+function playlistEdgesFromGql(data) {
+  const tracks = data && data.playlist && data.playlist.tracks;
+  if (tracks && Array.isArray(tracks.edges)) return tracks.edges;
+  const looksLikeRow = (edges) =>
+    Array.isArray(edges) && edges.some(e => e && e.node && e.node.id && e.node.title);
+  const scan = (value, depth) => {
+    if (depth > 4 || !value || typeof value !== 'object') return null;
+    if (looksLikeRow(value.edges)) return value.edges;
+    for (const key of Object.keys(value)) {
+      const found = scan(value[key], depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return scan(data, 0);
+}
+
 // A halt that started for play N must not pause play N+1. The page token is
 // stamped after the track document loads. A generation-scoped pause no-ops
 // unless that token matches — including when the token is missing, so a halt
@@ -997,6 +1043,8 @@ module.exports = {
   capturedOperationNames,
   playlistTrackFromGqlEdge,
   playlistFromGql,
+  playlistPageInfoFromGql,
+  playlistEdgesFromGql,
   NEAR_END_MS,
   WRAP_POSITION_MS,
   FAST_POLL_REMAINING_MS,

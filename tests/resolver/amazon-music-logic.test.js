@@ -21,6 +21,8 @@ const {
   asinFromPlayerUrl,
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
+  playlistPageInfoFromGql,
+  playlistEdgesFromGql,
   amazonGqlFetchHeaders,
   capturedOperationNames,
   playlistTrackFromGqlEdge,
@@ -954,11 +956,15 @@ describe('acceptAmazonSearchAnchor', () => {
 });
 
 describe('amazonPlaylistIdFromUrl', () => {
-  test('reads the id off shared/brand and my-music playlist pages', () => {
+  test('reads the id off shared/brand, my-music and user-playlist pages', () => {
     expect(amazonPlaylistIdFromUrl('https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A'))
       .toBe('PP6417A00A9C99470BBC8834FF3BF6009A');
     expect(amazonPlaylistIdFromUrl('https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh'))
       .toBe('PP6417A00A9C99470BBC8834FF3BF6009A');
+    // /user-playlists/<hex-uuid> is the share-link shape for user-created
+    // playlists (observed 2026-10); its id has no PP prefix.
+    expect(amazonPlaylistIdFromUrl('https://music.amazon.com/user-playlists/e518f7064d964396a9dc211c4a705a80'))
+      .toBe('e518f7064d964396a9dc211c4a705a80');
   });
 
   test('track, album and non-Amazon URLs are not playlists', () => {
@@ -1139,6 +1145,57 @@ describe('playlistFromGql', () => {
     expect(noPrimary.albumArt).toBe('https://x/big.jpg');
   });
 });
+
+describe('playlistPageInfoFromGql', () => {
+  test('reads the connection pageInfo when present', () => {
+    const data = { playlist: { tracks: { pageInfo: { hasNextPage: true, endCursor: 'CUR_100', token: 'TOKEN_100' } } } };
+    expect(playlistPageInfoFromGql(data)).toEqual({ hasNextPage: true, endCursor: 'CUR_100', token: 'TOKEN_100' });
+  });
+
+  test('last page: hasNextPage false still carries the cursor', () => {
+    const data = { playlist: { tracks: { pageInfo: { hasNextPage: false, endCursor: 'CUR_977', token: 'TOKEN_977' } } } };
+    expect(playlistPageInfoFromGql(data)).toEqual({ hasNextPage: false, endCursor: 'CUR_977', token: 'TOKEN_977' });
+  });
+
+  test('absent pageInfo (or absent playlist) maps to null — caller falls back to scroll', () => {
+    expect(playlistPageInfoFromGql({ playlist: { tracks: {} } })).toBeNull();
+    expect(playlistPageInfoFromGql({ playlist: null })).toBeNull();
+    expect(playlistPageInfoFromGql(null)).toBeNull();
+  });
+
+  test('partial pageInfo: missing fields are null, not undefined', () => {
+    expect(playlistPageInfoFromGql({ playlist: { tracks: { pageInfo: { hasNextPage: true } } } }))
+      .toEqual({ hasNextPage: true, endCursor: null, token: null });
+  });
+});
+
+describe('playlistEdgesFromGql', () => {
+  const edge = (asin, title) => ({ node: { id: asin, title } });
+
+  test('the playlistDetail envelope: data.playlist.tracks.edges', () => {
+    const data = { playlist: { tracks: { edges: [edge('B1', 'One'), edge('B2', 'Two')] } } };
+    expect(playlistEdgesFromGql(data)).toHaveLength(2);
+  });
+
+  test('a different envelope is found by the shape scan (continuation operations can rename it)', () => {
+    const data = { playlistTracks: { edges: [edge('B1', 'One')] } };
+    expect(playlistEdgesFromGql(data)).toHaveLength(1);
+  });
+
+  test('nothing edge-shaped maps to null, not an empty array', () => {
+    expect(playlistEdgesFromGql({ playlist: { tracks: {} } })).toBeNull();
+    expect(playlistEdgesFromGql(null)).toBeNull();
+    expect(playlistEdgesFromGql({ other: { edges: [{}] } })).toBeNull();
+  });
+});
+
+
+
+
+
+
+
+
 
 describe('amazonSearchDecision', () => {
   test('rows with an artist are returned and title-only siblings are dropped', () => {

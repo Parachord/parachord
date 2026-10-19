@@ -94,6 +94,7 @@ describe('isProviderPlaylistUrl', () => {
     'https://music.apple.com/us/playlist/discovery-mix/pl.u-abc123',
     'https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A',
     'https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A',
+    'https://music.amazon.com/user-playlists/e518f7064d964396a9dc211c4a705a80',
     'https://soundcloud.com/jherskowitz/sets/frozen-in-time-2026'
   ];
   const loader = {
