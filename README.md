@@ -81,7 +81,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ## System Requirements
 
 ### macOS
-- **macOS 12 (Monterey)** or later
+- **macOS 13 (Ventura)** or later (Electron 44 no longer supports macOS 12)
 - 64-bit Intel or Apple Silicon
 - Apple Music integration via the native MusicKit helper requires **macOS 14 (Sonoma)** and Xcode Command Line Tools; without it, Parachord falls back to web-based APIs
 
