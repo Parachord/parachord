@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.4.2');
+    expect(axe.manifest.version).toBe('1.4.3');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -44,7 +44,7 @@ describe('amazonmusic .axe structure', () => {
       expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, mobile: false })
     );
     expect(axe.settings.requiresAuth).toBe(false);
-    expect(axe.urlPatterns).toEqual(['music.amazon.com/playlists/*', 'music.amazon.com/my/playlists/*']);
+    expect(axe.urlPatterns).toEqual(['music.amazon.com/playlists/*', 'music.amazon.com/my/playlists/*', 'music.amazon.com/user-playlists/*']);
   });
 
   test('implementation functions compile', () => {
@@ -474,6 +474,13 @@ describe('playlist URL routing', () => {
     expect(l.findResolverForUrl('https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh'))
       .toBe('amazonmusic');
     expect(l.getUrlType('https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh'))
+      .toBe('playlist');
+    // /user-playlists/<hex-uuid> — the share-link shape for user-created
+    // playlists. getUrlType's '/playlists/' substring check misses it, so it
+    // has its own arm; findResolverForUrl needs its own manifest pattern too.
+    expect(l.findResolverForUrl('https://music.amazon.com/user-playlists/e518f7064d964396a9dc211c4a705a80'))
+      .toBe('amazonmusic');
+    expect(l.getUrlType('https://music.amazon.com/user-playlists/e518f7064d964396a9dc211c4a705a80'))
       .toBe('playlist');
   });
 

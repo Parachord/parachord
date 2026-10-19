@@ -397,7 +397,9 @@ class ResolverLoader {
     }
     // Amazon Music
     if (url.includes('music.amazon.com')) {
-      if (url.includes('/playlists/')) return 'playlist';
+      // /user-playlists/<id> is the share-link shape for user-created playlists;
+      // it does not contain the literal '/playlists/' substring.
+      if (url.includes('/playlists/') || url.includes('/user-playlists/')) return 'playlist';
       if (url.includes('/albums/')) return 'album';
       if (url.includes('/tracks/')) return 'track';
     }
