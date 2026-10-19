@@ -91,7 +91,7 @@ try {
 } catch (err) {
   console.log('Auto-updater not available:', err.message);
 }
-// electron-store is ESM-only since v9; Electron 39's Node (22.22) loads it
+// electron-store is ESM-only since v9; Electron 44's Node (24.21) loads it
 // through require(esm), which hands back the module namespace, so the class
 // is the default export.
 const Store = require('electron-store').default;
