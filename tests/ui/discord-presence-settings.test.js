@@ -88,9 +88,22 @@ describe('Settings → General Discord presence control', () => {
     expect(feed).toMatch(/positionSeconds: progressRef\.current \|\| 0/);
   });
 
-  test('a seek re-anchors Discord\u2019s elapsed clock', () => {
-    const seek = section('const handleSeek = useCallback', '// Apple Music (native MusicKit, MusicKit JS, or preview audio)');
+  test('a seek re-anchors Discord\u2019s elapsed clock, once per drag gesture', () => {
+    const seek = section('const handleSeek = useCallback', '}, [currentTrack, browserPlaybackActive, discordPresenceEnabled]);');
+    // The re-anchor lives in the 1s-after-drag settle callback, not in the
+    // per-tick path: the range input fires onChange continuously during a
+    // drag, every position computes a different activity start, and the
+    // payload dedupe never suppresses — so a per-tick push is a burst of
+    // SET_ACTIVITYs. It also only fires while the seeked track is still the
+    // one playing (a track change inside the window carries its own position).
     expect(seek).toMatch(/discordPresenceEnabled && window\.electron\?\.discordPresence\?\.updatePosition/);
     expect(seek).toMatch(/updatePosition\(newPosition\)/);
+    expect(seek).toMatch(/currentTrackRef\.current === currentTrack/);
+    const settle = seek.slice(seek.indexOf('seekTimeoutRef.current = setTimeout'));
+    expect(settle).toMatch(/seekingRef\.current = false;/);
+    // No per-tick push outside the settle callback: the only updatePosition in
+    // handleSeek's body sits inside the setTimeout callback.
+    const beforeSettle = seek.slice(0, seek.indexOf('seekTimeoutRef.current = setTimeout'));
+    expect(beforeSettle).not.toMatch(/updatePosition/);
   });
 });

@@ -323,6 +323,18 @@ function createDiscordPresence(options = {}) {
       return;
     }
 
+    // The toggle can flip (or dispose() run) while the handshake was in
+    // flight: teardown() saw client === null and could not reach this
+    // candidate, so connect() re-checks before promoting it. Nothing was ever
+    // SET on the socket, so discarding it is clean — no presence to clear —
+    // and without this check the candidate would come back connected and
+    // publish the track the user had just turned off.
+    if (disposed || !state.enabled) {
+      state.connecting = false;
+      await discard(candidate);
+      return;
+    }
+
     client = candidate;
     state.connected = true;
     state.connecting = false;
@@ -378,6 +390,9 @@ function createDiscordPresence(options = {}) {
     // retry: mixing the raw request with the library's helper would silently
     // drop the nested assets/timestamps on the retry.
     const sendTo = (target, activity) => {
+      // The connection can drop between publish()'s guard and the send; there
+      // is nothing to send on, and the reconnect re-publishes from our state.
+      if (!target) return Promise.resolve();
       if (typeof target.request === 'function') return requestActivity(target, activity);
       // A client that only exposes the high-level helper (a different
       // transport, or a test double) still gets the state.

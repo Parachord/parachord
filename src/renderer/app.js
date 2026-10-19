@@ -37100,12 +37100,6 @@ useEffect(() => {
     if (activeResolver === 'spotify') return; // seeking not supported for Spotify
     seekingRef.current = true;
     setProgress(newPosition);
-    // Discord derives its elapsed clock from the activity start, so a seek has
-    // to re-anchor it — otherwise "listening for 4:10" keeps counting from
-    // where the playhead was before the drag.
-    if (discordPresenceEnabled && window.electron?.discordPresence?.updatePosition) {
-      window.electron.discordPresence.updatePosition(newPosition).catch(() => {});
-    }
     // HTML5 audio engines. Key off the resolver actually playing, not
     // track.sources — a Subsonic source can be attached while local files
     // are what's playing.
@@ -37135,7 +37129,20 @@ useEffect(() => {
       try { await window.electron.amazonMusic.seek(newPosition * 1000); } catch (err) { console.warn('[Seek] Amazon Music seek failed:', err); }
     }
     if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
-    seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
+    seekTimeoutRef.current = setTimeout(() => {
+      seekingRef.current = false;
+      // Re-anchor Discord's elapsed clock once per drag gesture, not per slider
+      // tick: the range input fires onChange continuously, and every position
+      // computes a different activity start, so the payload dedupe never
+      // suppresses — a whole drag would be a burst of SET_ACTIVITYs. This runs
+      // 1s after the last drag movement. Only while this track is still the
+      // one playing — a track change inside the window already carried its own
+      // position in the combined snapshot.
+      if (discordPresenceEnabled && window.electron?.discordPresence?.updatePosition
+          && currentTrackRef.current === currentTrack) {
+        window.electron.discordPresence.updatePosition(newPosition).catch(() => {});
+      }
+    }, 1000);
   }, [currentTrack, browserPlaybackActive, discordPresenceEnabled]);
 
   const formatTimeAgo = (timestamp) => {

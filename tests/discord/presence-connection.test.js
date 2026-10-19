@@ -455,6 +455,37 @@ describe('the handshake is not the connection', () => {
     expect(timers.runPending()).toEqual([5000]);
   });
 
+  test('disabling during the handshake never promotes the candidate', async () => {
+    // The toggle can flip while the handshake is in flight (up to 8s when
+    // Discord is slow to READY). teardown() only knows the *connected*
+    // client — this candidate is still local to connect() — so without a
+    // re-check after the await, the READY that lands afterwards would promote
+    // a connection the user just turned off and publish the current track on
+    // it: the row reads "Off" while the profile keeps showing the track until
+    // the app quits. Nothing was ever SET on the candidate, so discarding it
+    // is clean — no presence to clear.
+    const { presence, Client, timers } = makePresence({ onConnect: () => undefined });
+    presence.setEnabled(true);
+    presence.setTrack(TRACK);
+    presence.setPlaybackStatus('playing');
+    await flush();
+    expect(presence.getStatus().status).toBe('connecting');
+
+    presence.setEnabled(false);
+    Client.instances[0].emitReady();
+    await flush();
+    await flush();
+
+    const candidate = Client.instances[0];
+    expect(candidate.activityRequests.length).toBe(0); // nothing was published
+    expect(candidate.closedTransport || candidate.destroyed).toBe(true); // discarded, not promoted
+    expect(presence.getStatus().connected).toBe(false);
+    expect(presence.getStatus().status).toBe('off');
+    // And no zombie reconnect either: nothing scheduled, no second attempt.
+    expect(Client.instances.length).toBe(1);
+    expect(timers.runPending()).toEqual([]);
+  });
+
   test('a 4000 CLOSE frame mid-session blocks instead of retrying forever', async () => {
     const { presence, Client, timers } = makePresence();
     presence.setEnabled(true);
