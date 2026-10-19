@@ -51,7 +51,6 @@
 
 ### Advanced Features
 - [ ] **Backend server** - Optional server for advanced features
-- [ ] **Discord Rich Presence** - Show now playing
 - [ ] **Community features** - matrix.org
 
 ### Developer
@@ -106,6 +105,7 @@
 - Improved Apple Music end-of-track detection with auto-advance
 - Resolver fallback when primary resolver playback fails
 - Collection Radio via AI and protocol URL
+- Discord Rich Presence (opt-in now playing on the user's Discord profile)
 
 ### AI DJ (Shuffleupagus)
 - Conversational AI assistant for music control and discovery

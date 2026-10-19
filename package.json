@@ -69,6 +69,7 @@
   },
   "dependencies": {
     "@jellybrick/mpris-service": "^2.1.5",
+    "@xmcl/discord-rpc": "^1.1.2",
     "better-sqlite3": "^13.0.3",
     "chokidar": "^5.0.0",
     "dotenv": "^18.0.8",
