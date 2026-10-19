@@ -204,7 +204,7 @@ describe('publishing now playing', () => {
     expect(client.setActivityCalls.length).toBe(1);
     const activity = client.setActivityCalls[0];
     expect(activity.details).toBe('Clearwater');
-    expect(activity.state).toBe('Sigur R\u00f3s \u2014 ( )');
+    expect(activity.state).toBe('Sigur R\u00f3s');
     expect(activity.assets.large_image).toBe('https://example.com/cover.jpg');
     expect(activity.type).toBe(2);
     // Unix seconds, not ms: start = now - position.

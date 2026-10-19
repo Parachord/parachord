@@ -72,9 +72,6 @@ const ACTIVITY_TYPES = {
 const PRESENCE_TEXT_MIN = 2;
 const PRESENCE_TEXT_MAX = 128;
 
-/** Separator between artist and album on the `state` line. */
-const LINE_SEPARATOR = ' \u2014 '; // " — "
-
 // ── Application id resolution ─────────────────────────────────────
 
 /**
@@ -189,11 +186,14 @@ function pickPresenceArtUrl(track) {
 }
 
 /**
- * The two lines under "Listening to Parachord":
- *   details = title            (the thing you are listening to)
- *   state   = artist — album   (who/where)
- * Falls back rather than sending a near-empty activity, and never repeats
- * the same text on both lines.
+ * The two text lines under "Listening to Parachord":
+ *   details = title    (the thing you are listening to)
+ *   state   = artist   (who)
+ * The album is deliberately NOT joined onto `state`: it goes in
+ * `assets.large_text`, which the client renders as its own line under the
+ * image. Joining it here printed the album twice ("Clearwater / Sigur Rós — ( )
+ * / ( )"). Falls back rather than sending a near-empty activity, and never puts
+ * the same text on two lines.
  */
 function formatPresenceLines(track) {
   if (!track) return null;
@@ -201,13 +201,13 @@ function formatPresenceLines(track) {
   const artist = clampPresenceText(track.artist);
   const album = clampPresenceText(track.album);
 
-  const artistAlbum = artist && album
-    ? clampPresenceText(`${artist}${LINE_SEPARATOR}${album}`)
-    : (artist || album);
-
   const details = title || artist;
-  let state = artistAlbum;
-  if (state && state === details) state = album && album !== details ? album : null;
+  // An empty artist slot shows the album there rather than leaving the second
+  // line blank; the hover text is a separate slot, so that only repeats when
+  // the album really is the same string (guarded again at the assets step).
+  const state = (artist && artist !== details)
+    ? artist
+    : (album && album !== details ? album : null);
   if (!details && !state) return null;
   return { details: details || null, state: state || null };
 }
@@ -223,8 +223,8 @@ function formatPresenceLines(track) {
  *                     clock, no paused badge.
  *   positionSeconds   current position, used to back-compute start.
  *   nowSeconds        unix seconds; injected so the test is deterministic.
- *   includeAlbumArt   false → never send an image; Discord shows the
- *                     application artwork instead.
+ *   includeAlbumArt   false → no image and no album line at all; Discord shows
+ *                     the application artwork.
  *   type              'listening' (default) | 'playing' | ... ; null omits
  *                     the field entirely (the retry path for clients that
  *                     reject type 2).
@@ -259,24 +259,24 @@ function buildDiscordActivity(track, options = {}) {
   const position = Number.isFinite(positionSeconds) && positionSeconds > 0 ? positionSeconds : 0;
   activity.timestamps = { start: Math.max(0, Math.floor(nowSeconds - position)) };
 
-  const assets = {};
   if (includeAlbumArt) {
+    const assets = {};
     const art = pickPresenceArtUrl(track);
-    if (art) {
-      assets.large_image = art;
-      const hover = clampPresenceText(track.album || track.artist);
-      if (hover) assets.large_text = hover;
-    } else {
-      // No cover Discord may fetch (local file, credentialed music server,
-      // custom protocol): show the registered logo instead of leaving the
-      // image to Discord's discretion.
-      assets.large_image = PRESENCE_ART_ASSET_KEY;
+    // No cover Discord may fetch (local file, credentialed music server, custom
+    // protocol): show the registered logo instead of leaving the image to
+    // Discord's discretion.
+    assets.large_image = art || PRESENCE_ART_ASSET_KEY;
+    // One fact per slot: the album is the image's hover text, and it is dropped
+    // if it would only repeat the title or artist line.
+    const hover = clampPresenceText(track.album);
+    if (hover && hover !== lines.details && hover !== lines.state) {
+      assets.large_text = hover;
     }
+    // No small_image: assets.small_image must name an art asset uploaded to the
+    // application, and Parachord's application registers exactly one (the large
+    // logo). There is nothing to overlay, and no paused state to mark.
+    activity.assets = assets;
   }
-  // No small_image: assets.small_image must name an art asset uploaded to the
-  // application, and Parachord's application registers exactly one (the large
-  // logo). There is nothing to overlay, and no paused state to mark.
-  if (Object.keys(assets).length > 0) activity.assets = assets;
 
   return activity;
 }
@@ -342,7 +342,6 @@ module.exports = {
   ACTIVITY_TYPES,
   PRESENCE_TEXT_MAX,
   PRESENCE_ART_ASSET_KEY,
-  LINE_SEPARATOR,
   isValidDiscordClientId,
   resolveDiscordClientId,
   clampPresenceText,

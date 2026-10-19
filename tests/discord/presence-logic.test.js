@@ -147,11 +147,14 @@ describe('album art gate', () => {
 });
 
 describe('the two presence lines', () => {
-  test('title on details, artist — album on state', () => {
+  test('title on details, artist on state — never the album', () => {
+    // Three slots, one fact each: details = title, state = artist, and the
+    // album lives in assets.large_text. Joining it onto state printed it twice
+    // ("Clearwater / Sigur Rós — ( ) / ( )") in the profile card.
     const track = { title: ' stations warning', artist: 'The Soft Moon', album: 'Criminal' };
     expect(formatPresenceLines(track)).toEqual({
       details: 'stations warning',
-      state: 'The Soft Moon \u2014 Criminal',
+      state: 'The Soft Moon',
     });
   });
 
@@ -159,6 +162,13 @@ describe('the two presence lines', () => {
     expect(formatPresenceLines({ title: 'One', artist: 'Two' })).toEqual({
       details: 'One',
       state: 'Two',
+    });
+  });
+
+  test('an empty artist slot takes the album rather than a blank line', () => {
+    expect(formatPresenceLines({ title: 'Track', artist: '', album: 'Album' })).toEqual({
+      details: 'Track',
+      state: 'Album',
     });
   });
 
@@ -184,7 +194,7 @@ describe('SET_ACTIVITY payload', () => {
     });
     expect(activity.type).toBe(ACTIVITY_TYPES.listening);
     expect(activity.details).toBe('Clearwater');
-    expect(activity.state).toBe('Sigur Rós \u2014 ( )');
+    expect(activity.state).toBe('Sigur Rós');
     expect(activity.timestamps).toEqual({ start: NOW - 42 });
     expect(activity.instance).toBe(false);
   });
@@ -211,14 +221,27 @@ describe('SET_ACTIVITY payload', () => {
     expect(activity.assets.large_text).toBe('( )');
 
     // Local/off-server art is not a URL Discord can fetch; the registered
-    // Parachord asset is the fallback rather than nothing.
+    // Parachord asset is the fallback, and the album still rides as its hover
+    // text.
     const localOnly = { ...track, albumArt: 'file:///cache/cover.jpg' };
     const localActivity = buildDiscordActivity(localOnly, { isPlaying: true, nowSeconds: NOW });
     expect(localActivity.assets.large_image).toBe(PRESENCE_ART_ASSET_KEY);
-    expect(localActivity.assets.large_text).toBeUndefined();
+    expect(localActivity.assets.large_text).toBe('( )');
 
     const optedOut = buildDiscordActivity(withArt, { isPlaying: true, nowSeconds: NOW, includeAlbumArt: false });
     expect('assets' in optedOut).toBe(false);
+  });
+
+  test('the album hover text is dropped when it would only repeat a line', () => {
+    const selfTitled = { title: 'Nothing', artist: 'Someone', album: 'Nothing' };
+    expect(buildDiscordActivity(selfTitled, { isPlaying: true, nowSeconds: NOW }).assets.large_text).toBeUndefined();
+
+    // The fallback that puts the album on the state line when the artist is
+    // missing must not then repeat it under the image.
+    const noArtist = { title: 'Someone', artist: '', album: 'Same' };
+    const payload = buildDiscordActivity(noArtist, { isPlaying: true, nowSeconds: NOW });
+    expect(payload.state).toBe('Same');
+    expect(payload.assets.large_text).toBeUndefined();
   });
 
   test('no small image is ever sent: the application registers none', () => {
