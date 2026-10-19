@@ -10320,8 +10320,8 @@ const Parachord = () => {
       discordBridge.updateState({ track: null, status: 'stopped' }).catch(() => {});
       return;
     }
-    // Paused still shows (with the elapsed clock frozen main-side); only a
-    // cleared track clears the presence.
+    // Only a playing track has a presence: main clears it when the status is
+    // not 'playing', and the same snapshot rebuilds it on resume.
     discordPresenceTrackRef.current = {
       title: currentTrack.title,
       artist: currentTrack.artist,
@@ -53940,7 +53940,7 @@ useEffect(() => {
                       marginTop: '14px',
                       lineHeight: '1.6'
                     }
-                  }, 'Discord shows the track under "Listening to Parachord". The cover travels when it is an https image; local-only art falls back to the Parachord artwork. A paused track stays visible and its elapsed clock stops with it — clearing the queue or closing Parachord removes the presence. Discord itself must allow it: Settings → Activity Privacy → "Share your detected activities with others".'),
+                  }, 'Discord shows the track under "Listening to Parachord". The cover travels when it is an https image; local-only art falls back to the Parachord artwork. The presence is only up while something is actually playing: pausing clears it, resuming puts it back, and it is gone when the queue is cleared or Parachord closes. Discord itself must allow it: Settings → Activity Privacy → "Share your detected activities with others".'),
                                   ),
 
                 // Dialogs Section - Reset "Don't show again" preferences

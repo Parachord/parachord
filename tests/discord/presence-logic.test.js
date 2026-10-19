@@ -23,7 +23,6 @@ const {
   nextReconnectDelay,
   ACTIVITY_TYPES,
   PRESENCE_ART_ASSET_KEY,
-  PAUSED_BADGE_ASSET_KEY,
 } = require('../../discord-presence-logic');
 
 const NOW = 1_780_000_000;
@@ -190,16 +189,14 @@ describe('SET_ACTIVITY payload', () => {
     expect(activity.instance).toBe(false);
   });
 
-  test('a paused track still shows, and clears the elapsed clock explicitly', () => {
-    // Discord computes elapsed from `timestamps.start`. The previous payload
-    // put one there, so a paused payload has to say "no timestamps" (`{}`) —
-    // leaving the key out relies on Discord forgetting a value it already has,
-    // and a clock that keeps counting reads as "actively playing".
-    const activity = buildDiscordActivity(track, { isPlaying: false, positionSeconds: 42, nowSeconds: NOW });
-    expect(activity.timestamps).toEqual({});
-    expect('start' in activity.timestamps).toBe(false);
-    expect('end' in activity.timestamps).toBe(false);
-    expect(activity.details).toBe('Clearwater');
+  test('a paused track has no presence at all', () => {
+    // The simple rule: the presence is up while something is playing, and gone
+    // otherwise. Freezing the clock instead (timestamps: {} replaces a stored
+    // start - confirmed against a live client) was more moving parts than the
+    // feature is worth, and a paused card with a stopped counter was ambiguous
+    // to read anyway. null means "caller, clear it".
+    expect(buildDiscordActivity(track, { isPlaying: false, positionSeconds: 42, nowSeconds: NOW })).toBeNull();
+    expect(buildDiscordActivity({ ...track }, { nowSeconds: NOW })).toBeNull();
   });
 
   test('no track means no activity, so the caller clears', () => {
@@ -227,12 +224,10 @@ describe('SET_ACTIVITY payload', () => {
   test('no small image is ever sent: the application registers none', () => {
     // assets.small_image must name an art asset uploaded to the application,
     // and the shipped Parachord application has exactly one asset (the large
-    // logo). Referencing a key that does not exist is dead config, so the badge
-    // stays off until an asset is actually uploaded.
-    expect(PAUSED_BADGE_ASSET_KEY).toBeNull();
-    const paused = buildDiscordActivity(track, { isPlaying: false, nowSeconds: NOW });
-    expect('small_image' in (paused.assets || {})).toBe(false);
-    expect('small_text' in (paused.assets || {})).toBe(false);
+    // logo). Nothing to overlay - and no paused state left to mark.
+    const playing = buildDiscordActivity(track, { isPlaying: true, nowSeconds: NOW });
+    expect('small_image' in (playing.assets || {})).toBe(false);
+    expect('small_text' in (playing.assets || {})).toBe(false);
   });
 
   test('type:null omits the field (the retry for clients that reject Listening)', () => {

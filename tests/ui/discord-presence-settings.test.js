@@ -4,8 +4,9 @@
  * Marker tests (the project's idiom for renderer behaviour with no DOM
  * harness) for the four things a user actually depends on: the toggle exists
  * in the general tab, flipping it is what opens the connection, the
- * now-playing feed is gated behind it, and a paused track is reported as
- * paused rather than stopped (the presence stays visible with a frozen clock).
+ * now-playing feed is gated behind it, and the renderer reports pause as
+ * 'paused' rather than 'stopped' — main turns that into a cleared presence,
+ * which resume puts back.
  */
 
 const fs = require('fs');

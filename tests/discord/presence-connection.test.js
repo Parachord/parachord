@@ -212,28 +212,45 @@ describe('publishing now playing', () => {
     expect(activity.timestamps.start).toBeGreaterThan(Math.floor(Date.now() / 1000) - 3600);
   });
 
-  test('pause clears the timestamps so the clock stops, and keeps the track', async () => {
+  test('pause clears the presence, resume puts it back', async () => {
     const { presence, Client } = makePresence();
     presence.setEnabled(true);
     presence.setTrack(TRACK);
     presence.setPlaybackStatus('playing');
     await flush();
+    const client = Client.instances[0];
+    expect(client.setActivityCalls[0].timestamps.start).toBeGreaterThan(0);
+    expect(client.clearActivityCalls).toBe(0);
+
     presence.setPlaybackStatus('paused');
     await flush();
-    const client = Client.instances[0];
-    const playing = client.setActivityCalls[0];
-    const last = client.setActivityCalls[client.setActivityCalls.length - 1];
-    expect(playing.timestamps.start).toBeGreaterThan(0);
-    expect(last.details).toBe('Clearwater');
-    // An empty `timestamps` is the instruction to drop the start the playing
-    // payload set. Omitting the key is not enough — Discord keeps the clock of
-    // the activity it already has, and a ticking clock reads as "actively
-    // playing". It is also why the raw SET_ACTIVITY request is used: the
-    // library's helper deletes empty objects, so `{}` cannot reach the wire
-    // through it.
-    expect(last.timestamps).toEqual({});
-    expect('start' in last.timestamps).toBe(false);
-    expect('end' in last.timestamps).toBe(false);
+    expect(client.clearActivityCalls).toBe(1);
+    expect(client.setActivityCalls.length).toBe(1);
+
+    // Resume rebuilds the activity from the position we are holding, so the
+    // elapsed clock comes back consistent with the scrubbed position.
+    presence.setPosition(40);
+    await flush();
+    presence.setPlaybackStatus('playing');
+    await flush();
+    expect(client.setActivityCalls.length).toBe(2);
+    expect(client.clearActivityCalls).toBe(1);
+    const resumed = client.setActivityCalls[1];
+    expect(resumed.timestamps.start).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) - 40 + 1);
+  });
+
+  test('connecting while paused sends nothing, not a clear of nothing', async () => {
+    // A fresh connection has no activity to remove; a paused track has no
+    // payload. Spending a round trip on "remove what is not there" on every
+    // reconnect is waste, and it is what makes a clear-only burst on Discord
+    // restarts look like flapping.
+    const { presence, Client } = makePresence();
+    presence.setEnabled(true);
+    presence.setTrack(TRACK);
+    presence.setPlaybackStatus('paused');
+    await flush();
+    expect(Client.instances[0].activityRequests.length).toBe(0);
+    expect(presence.getStatus().connected).toBe(true);
   });
 
   test('a track with no Discord-fetchable cover shows the Parachord asset', async () => {
@@ -250,10 +267,11 @@ describe('publishing now playing', () => {
     presence.setEnabled(true);
     presence.setTrack(TRACK);
     presence.setPlaybackStatus('playing');
+    await flush();
+    expect(Client.instances[0].setActivityCalls.length).toBe(1);
     presence.setPlaybackStatus('stopped');
     await flush();
-    const client = Client.instances[0];
-    expect(client.clearActivityCalls).toBe(1);
+    expect(Client.instances[0].clearActivityCalls).toBe(1);
   });
 
   test('an identical payload is not re-sent', async () => {

@@ -198,12 +198,13 @@ function createDiscordPresence(options = {}) {
 
   /**
    * SET_ACTIVITY over the raw request, not the library's `setActivity` helper.
-   * The helper cannot express a paused presence: it builds `timestamps` from
-   * `startTimestamp`/`endTimestamp` and then *deletes* the empty object, so the
-   * explicit "no timestamps" clear never reaches Discord. It also feeds
-   * `Date` timestamps through `getTime()`, which is milliseconds where the
-   * protocol wants seconds. Passing our own RPC-shaped activity through
-   * `request` keeps the frame exactly as built.
+   * Two things the helper cannot do: send our own RPC-shaped activity (it
+   * rebuilds `timestamps`/`assets` from flat `startTimestamp`/`largeImageKey`
+   * inputs and feeds a `Date` through `getTime()`, which is milliseconds where
+   * the protocol wants seconds), and send the explicit clear — a paused or
+   * stopped track must take the presence away, and the helper has no way to
+   * say "no activity". Passing the frame through `request` keeps it exactly as
+   * built.
    */
   function requestActivity(c, activity) {
     const pid = typeof process.pid === 'number' ? process.pid : 0;
@@ -356,11 +357,15 @@ function createDiscordPresence(options = {}) {
     // publishes it. `state.connected` means READY landed, so the socket is
     // usable for requests.
     if (!state.connected || !client) return;
-    const user = client.user;
 
     const payload = activityForCurrentState(state.activityTypeMode);
 
     if (!force && sameActivityPayload(payload, lastPayload)) return;
+    // Never send a clear that has nothing to clear: a fresh connection has no
+    // activity, and a paused/stopped state has no payload. Without this, every
+    // reconnect (and every connect while paused) spends a round trip telling
+    // Discord to remove an activity it is not showing.
+    if (!payload && !lastPayload) return;
 
     if (pushInFlight) {
       // Last write wins; the in-flight push will loop and send the newest.
@@ -369,16 +374,21 @@ function createDiscordPresence(options = {}) {
     }
     pushInFlight = true;
 
-    const send = () => {
-      if (typeof client.request === 'function') return requestActivity(client, payload);
+    // One send path, used for the first attempt and for the type-fallback
+    // retry: mixing the raw request with the library's helper would silently
+    // drop the nested assets/timestamps on the retry.
+    const sendTo = (target, activity) => {
+      if (typeof target.request === 'function') return requestActivity(target, activity);
       // A client that only exposes the high-level helper (a different
       // transport, or a test double) still gets the state.
-      const user = client.user;
-      if (!user) return Promise.resolve();
-      return payload && typeof user.setActivity === 'function'
-        ? user.setActivity(payload)
-        : (typeof user.clearActivity === 'function' ? user.clearActivity() : Promise.resolve());
+      const u = target.user;
+      if (!u) return Promise.resolve();
+      return activity && typeof u.setActivity === 'function'
+        ? u.setActivity(activity)
+        : (typeof u.clearActivity === 'function' ? u.clearActivity() : Promise.resolve());
     };
+
+    const send = () => sendTo(client, payload);
 
     const run = async () => {
       try {
@@ -392,7 +402,7 @@ function createDiscordPresence(options = {}) {
           state.activityTypeMode = 'fallback';
           const fallbackPayload = activityForCurrentState('fallback');
           try {
-            if (typeof user.setActivity === 'function') await user.setActivity(fallbackPayload);
+            await sendTo(client, fallbackPayload);
             lastPayload = fallbackPayload;
           } catch (fallbackErr) {
             lastPayload = payload;

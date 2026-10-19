@@ -23,8 +23,12 @@
  *     everyone who can see the user's profile.
  *   - `timestamps.start` is a unix timestamp in seconds (the documented IPC
  *     example uses `time(nullptr)`); elapsed = now - start, computed by
- *     Discord's client. `timestamps: {}` is the explicit "no timestamps"
- *     instruction — what a paused track must send so the counter stops.
+ *     Discord's client, which echoes it back in milliseconds. A paused track
+ *     shows nothing at all: the builder returns null and the caller clears.
+ *     Freezing the clock instead (sending `timestamps: {}`, which a live client
+ *     confirmed does replace a stored start) turns out to be more moving parts
+ *     than the feature is worth, so "playing" is the only state with a
+ *     presence.
  */
 
 'use strict';
@@ -67,18 +71,6 @@ const ACTIVITY_TYPES = {
 /** Discord's own limits on the two text lines. */
 const PRESENCE_TEXT_MIN = 2;
 const PRESENCE_TEXT_MAX = 128;
-
-/**
- * The paused badge overlay. `assets.small_image` must be an art-asset **key**
- * uploaded to the application (unlike `large_image`, which also takes an https
- * URL), and the shipped Parachord application registers **no small images** —
- * so this is null and no badge is sent. A paused presence is then marked only
- * by the stopped clock. If a `paused` asset is ever uploaded, set this to
- * 'paused' and the overlay comes on for free (key + hover text are sent
- * together, and only while paused).
- */
-const PAUSED_BADGE_ASSET_KEY = null;
-const PAUSED_BADGE_TEXT = 'Paused';
 
 /** Separator between artist and album on the `state` line. */
 const LINE_SEPARATOR = ' \u2014 '; // " — "
@@ -226,20 +218,13 @@ function formatPresenceLines(track) {
  * Build the `setActivity` payload for the current now-playing state.
  *
  * Options:
- *   isPlaying         playing → `timestamps.start` is sent. Paused → the
- *                     payload carries `timestamps: {}`, an explicit *clear*.
- *                     Omitting the key is not enough: the previous SET_ACTIVITY
- *                     put a start on the activity, and an omitted field is not
- *                     a reliable instruction to drop it, so the "listening for"
- *                     counter keeps ticking and reads as actively playing.
- *                     A paused track still produces an activity — stopping is
- *                     the caller's business (it passes no track).
- *   positionSeconds   current position, used only to back-compute start.
+ *   isPlaying         the only state with a presence. False (paused or
+ *                     stopped) returns null and the caller clears — no frozen
+ *                     clock, no paused badge.
+ *   positionSeconds   current position, used to back-compute start.
  *   nowSeconds        unix seconds; injected so the test is deterministic.
- *   includeAlbumArt   false → never send a large image; Discord falls back to
- *                     the application artwork.
- *   includePausedBadge false → never send the small "paused" overlay (the
- *                     default is to send it while paused).
+ *   includeAlbumArt   false → never send an image; Discord shows the
+ *                     application artwork instead.
  *   type              'listening' (default) | 'playing' | ... ; null omits
  *                     the field entirely (the retry path for clients that
  *                     reject type 2).
@@ -250,7 +235,7 @@ function formatPresenceLines(track) {
  * form is what high-level SDKs take, and handing it to the IPC frame gets the
  * images and timestamps silently ignored.
  *
- * Returns null only when there is nothing worth showing: no track, or no
+ * Returns null when there is nothing to show: no track, not playing, or no
  * text that survives sanitising. Callers then clear the presence.
  */
 function buildDiscordActivity(track, options = {}) {
@@ -260,9 +245,10 @@ function buildDiscordActivity(track, options = {}) {
     positionSeconds = 0,
     nowSeconds = Math.floor(Date.now() / 1000),
     includeAlbumArt = true,
-    includePausedBadge = true,
     type = 'listening',
   } = options;
+
+  if (!isPlaying) return null;
 
   const lines = formatPresenceLines(track);
   if (!lines) return null;
@@ -270,14 +256,8 @@ function buildDiscordActivity(track, options = {}) {
   const activity = { ...lines, instance: false };
   if (type && ACTIVITY_TYPES[type] !== undefined) activity.type = ACTIVITY_TYPES[type];
 
-  // Discord computes elapsed client-side from `timestamps.start`, so a paused
-  // presence must actively clear it: `{}` is the "no timestamps" instruction.
-  if (isPlaying) {
-    const position = Number.isFinite(positionSeconds) && positionSeconds > 0 ? positionSeconds : 0;
-    activity.timestamps = { start: Math.max(0, Math.floor(nowSeconds - position)) };
-  } else {
-    activity.timestamps = {};
-  }
+  const position = Number.isFinite(positionSeconds) && positionSeconds > 0 ? positionSeconds : 0;
+  activity.timestamps = { start: Math.max(0, Math.floor(nowSeconds - position)) };
 
   const assets = {};
   if (includeAlbumArt) {
@@ -293,13 +273,9 @@ function buildDiscordActivity(track, options = {}) {
       assets.large_image = PRESENCE_ART_ASSET_KEY;
     }
   }
-  // The badge is what tells a viewer "paused" once the clock stops, and it
-  // rides along whether or not the cover was fetchable (it overlays the
-  // application fallback artwork the same way).
-  if (includePausedBadge && PAUSED_BADGE_ASSET_KEY && !isPlaying) {
-    assets.small_image = PAUSED_BADGE_ASSET_KEY;
-    assets.small_text = PAUSED_BADGE_TEXT;
-  }
+  // No small_image: assets.small_image must name an art asset uploaded to the
+  // application, and Parachord's application registers exactly one (the large
+  // logo). There is nothing to overlay, and no paused state to mark.
   if (Object.keys(assets).length > 0) activity.assets = assets;
 
   return activity;
@@ -366,8 +342,6 @@ module.exports = {
   ACTIVITY_TYPES,
   PRESENCE_TEXT_MAX,
   PRESENCE_ART_ASSET_KEY,
-  PAUSED_BADGE_ASSET_KEY,
-  PAUSED_BADGE_TEXT,
   LINE_SEPARATOR,
   isValidDiscordClientId,
   resolveDiscordClientId,
