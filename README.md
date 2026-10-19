@@ -121,7 +121,7 @@ Download the latest release for your platform from the [Releases](https://github
 git clone https://github.com/Parachord/parachord.git
 cd parachord
 
-# Install dependencies (fetches castlabs Electron from GitHub, builds better-sqlite3)
+# Install dependencies (Electron's ~100 MB binary downloads on the first npm start — see below)
 npm install
 
 # Start the app (the renderer bundle is built first, see Development)
