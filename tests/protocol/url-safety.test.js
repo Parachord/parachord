@@ -92,13 +92,17 @@ describe('hostedPlaylistFetchProblem (parachord#1011)', () => {
     expect(hostedPlaylistFetchProblem('https://example.com/p.xspf', null, HOSTED_PLAYLIST_MAX_BYTES)).toBeNull();
   });
 
-  test('single source: app.js carries no inline copy, and index.html loads the module before app.js', () => {
+  test('single source: src/renderer/app.js carries no inline copy, and index.html loads the module before the bundle', () => {
     const fs = require('fs');
     const path = require('path');
     const read = (p) => fs.readFileSync(path.join(__dirname, '..', '..', p), 'utf8');
-    const app = read('app.js');
+    // The SOURCE is the single-source guarantee — the root app.js is a
+    // generated bundle (gitignored; exists only after scripts/build-renderer
+    // runs), so reading it here made the test depend on a build artifact and
+    // fail on any direct `npx jest` from a fresh checkout.
+    const app = read(path.join('src', 'renderer', 'app.js'));
     const index = read('index.html');
-    // The module is the only definition; an inline copy re-added to app.js
+    // The module is the only definition; an inline copy re-added to the source
     // would shadow it and silently drift.
     for (const name of ['isPublicHttpUrl', 'hostedPlaylistFetchProblem', 'classifyPlaylistUrl', 'isProviderPlaylistUrl', 'buildPlaylistSavePayload']) {
       expect(app).not.toMatch(new RegExp('window\\.' + name + '\\s*='));
