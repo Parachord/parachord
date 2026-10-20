@@ -339,34 +339,31 @@ const DEBUG_RESOLUTION = false;
 
 
 // Extension-aware "this file's format isn't supported" message used by both
-// HTML5-audio error handlers (loadlocal-file playback + post-play catch
-// blocks). Chromium's built-in audio decoders cover MP3, AAC, OGG/Vorbis,
-// Opus, and PCM (16-bit) reliably; high-bit-depth and high-sample-rate
-// FLAC and WAV files frequently fail with MEDIA_ERR_SRC_NOT_SUPPORTED.
+// HTML5-audio error handlers (local-file playback + post-play catch blocks).
 //
-// Previously this code path emitted `Try converting to MP3 or FLAC` for
-// every unknown extension — including .flac files — producing the
-// nonsensical "your FLAC file is unsupported; convert it to FLAC"
-// message users were seeing on Japanese audiophile rips (typically
-// 24-bit/96kHz FLAC, which Chromium can't decode).
+// Chromium decodes FLAC and PCM WAV at every common bit depth and sample
+// rate: 16- and 24-bit FLAC from 44.1 to 192 kHz, 32-bit FLAC, multichannel
+// FLAC, and 16-bit, 24-bit and 32-bit float WAV all play through the
+// local-audio: handler (verified on Electron 39 and 44, parachord#792). An
+// earlier version of this message blamed bit depth and told users to
+// downsample with ffmpeg, which was wrong advice: a FLAC or WAV that fails
+// here is damaged, truncated, or an unusual variant, not "too hi-res".
+// AIFF, WMA, ALAC, APE and DSD genuinely have no decoder.
 const unsupportedAudioMessage = (ext) => {
   const e = (ext || '').toLowerCase();
-  if (e === 'wav') {
-    return 'This WAV file uses an unsupported audio format (likely 32-bit float or 24-bit). Convert to 16-bit PCM WAV, MP3, or 16-bit FLAC for playback.';
-  }
-  if (e === 'flac') {
-    return 'This FLAC file is likely 24-bit or high sample rate (≥88.2kHz). The built-in player only supports 16-bit FLAC at 44.1/48kHz. Convert with `ffmpeg -i input.flac -sample_fmt s16 -ar 48000 output.flac` (or use MP3 / AAC).';
+  if (e === 'flac' || e === 'wav') {
+    return `This ${e.toUpperCase()} file could not be decoded. It may be damaged, incompletely downloaded, or an unusual variant of the format. Hi-res files (24-bit, up to 192 kHz) are supported, so there is no need to downsample; try re-ripping or re-downloading it.`;
   }
   if (e === 'mp3') {
     return 'This MP3 file appears corrupted or uses an unsupported variant. Try re-encoding it with a standard MP3 encoder.';
   }
   if (e === 'ogg' || e === 'oga' || e === 'opus' || e === 'aac' || e === 'm4a') {
-    return `This ${e.toUpperCase()} file is corrupted or uses an unsupported variant. Try converting to MP3 or 16-bit FLAC.`;
+    return `This ${e.toUpperCase()} file is corrupted or uses an unsupported variant. Try converting it to FLAC or MP3.`;
   }
-  if (e === 'wma' || e === 'aiff' || e === 'alac' || e === 'ape' || e === 'dsf' || e === 'dff') {
-    return `${e.toUpperCase()} is not supported by the built-in player. Convert to MP3 or 16-bit FLAC at 44.1/48kHz.`;
+  if (e === 'wma' || e === 'aiff' || e === 'aif' || e === 'alac' || e === 'ape' || e === 'dsf' || e === 'dff') {
+    return `${e.toUpperCase()} is not supported by the built-in player. Convert it to FLAC (lossless) or MP3.`;
   }
-  return `This ${e ? e.toUpperCase() : 'audio'} file uses an unsupported format. Try converting to MP3 or 16-bit FLAC.`;
+  return `This ${e ? e.toUpperCase() : 'audio'} file uses an unsupported format. Try converting it to FLAC or MP3.`;
 };
 
 // Subsonic auth is a token+salt in the query string, replayable until the
