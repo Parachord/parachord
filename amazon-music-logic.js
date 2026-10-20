@@ -805,11 +805,14 @@ function acceptAmazonSearchAnchor(testIds, onSearchPage) {
 
 // A playlist page lives at /playlists/<id> (shared/brand playlists),
 // /my/playlists/<id> (the user's own) or /user-playlists/<id> (the share-link
-// shape for user-created playlists). The id is a long alphanumeric token
-// (PP… or a bare hex uuid), not the 10-char ASIN a track uses — brand
-// playlists use those too.
+// shape for user-created playlists). The id is a long token — PP… (brand), a
+// bare hex uuid, or a dashed uuid (live-observed 2026-10) — not the 10-char
+// ASIN a track uses (brand playlists use those too). The id class must accept
+// dashes: a dashed-uuid id truncated at its first dash never matches the
+// page's own playlistDetail request (variables.id), and the import times out
+// into "Playlist not found".
 function amazonPlaylistIdFromUrl(url) {
-  const m = String(url || '').match(/music\.amazon\.com\/(?:my\/)?(?:user-)?playlists\/([A-Za-z0-9]+)/i);
+  const m = String(url || '').match(/music\.amazon\.com\/(?:my\/)?(?:user-)?playlists\/([A-Za-z0-9-]+)/i);
   return m ? m[1] : null;
 }
 
@@ -968,6 +971,75 @@ function playlistEdgesFromGql(data) {
   return scan(data, 0);
 }
 
+// Follow a playlist's own pagination to the end of the list. The gql server
+// serves one page per request however high firstLimit is raised, and the ONLY
+// continuation it accepts is the response's pageInfo.token passed as the
+// afterCursor variable (live-verified 2026-10 — the Relay-style endCursor is
+// a decoy the server answers with page 1 for, other variable names are
+// dropped, the dependent blob alone errors "Invalid sequence token"). Each
+// response's own token drives the next page.
+//
+// Pure except the injected fetchPage (one gql page by token: { error } or
+// { data }) and now() (the time cap) — the same pattern as the Amazon poller,
+// so every stop condition is unit-testable.
+//
+// Progress is judged on RAW edges, never mapped tracks (review feedback on
+// #1072): a page that is entirely delisted rows (node:null) maps to zero
+// tracks but still advances — later pages can exist after a label pulls its
+// catalog — and a duplicate track that happens to be first on two consecutive
+// pages is not a repeated window. The per-edge cursor (position-encoded:
+// "128:dfeab136-…128") distinguishes a genuine advance from the same window
+// served again.
+//
+// Returns { playlist, pages, stop }:
+//   'complete'    — every row merged (tracks >= trackCount)
+//   'exhausted'   — the server is out of pages (no token / hasNextPage false)
+//   'page-error'  — fetchPage answered an error (a later page may exist)
+//   'empty-page'  — a page with zero raw edges
+//   'no-advance'  — a page starting at the same cursor as the previous one
+//   'page-limit'  / 'time-limit' — the caps
+//   'no-playlist' — the first page has no playlist (deleted/private/region)
+async function paginatePlaylistTracks({ firstPageData, fetchPage, maxPages = 40, maxMs = 120000, now = Date.now, log = () => {} }) {
+  const playlist = playlistFromGql(firstPageData);
+  if (!playlist) return { playlist: null, pages: 0, stop: 'no-playlist' };
+  const firstEdges = playlistEdgesFromGql(firstPageData) || [];
+  let lastFirstCursor = firstEdges.length && firstEdges[0] && firstEdges[0].cursor != null
+    ? String(firstEdges[0].cursor) : null;
+  let pageInfo = playlistPageInfoFromGql(firstPageData);
+  const startedAt = now();
+  let pages = 0;
+  let stop = null;
+  while (!stop) {
+    if (playlist.tracks.length >= playlist.trackCount) { stop = 'complete'; break; }
+    if (!pageInfo || !pageInfo.token || pageInfo.hasNextPage === false) { stop = 'exhausted'; break; }
+    if (pages >= maxPages) { stop = 'page-limit'; break; }
+    if (now() - startedAt >= maxMs) { stop = 'time-limit'; break; }
+    pages += 1;
+    const page = await fetchPage(pageInfo.token);
+    if (!page || page.error) { stop = 'page-error'; break; }
+    const data = page.data;
+    const edges = (data && playlistEdgesFromGql(data)) || [];
+    if (!edges.length) { stop = 'empty-page'; break; }
+    const firstCursor = edges[0] && edges[0].cursor != null ? String(edges[0].cursor) : null;
+    if (firstCursor != null && firstCursor === lastFirstCursor) { stop = 'no-advance'; break; }
+    lastFirstCursor = firstCursor;
+    let mappedAdded = 0;
+    for (const edge of edges) {
+      const track = playlistTrackFromGqlEdge(edge);
+      if (track) {
+        playlist.tracks.push(track);
+        mappedAdded++;
+      }
+    }
+    const info = data ? playlistPageInfoFromGql(data) : null;
+    if (info) pageInfo = info;
+    const respCount = data && data.playlist && data.playlist.trackCount;
+    if (typeof respCount === 'number' && respCount > playlist.trackCount) playlist.trackCount = respCount;
+    log(`page ${pages}: +${edges.length} rows (+${mappedAdded} tracks, ${playlist.tracks.length}/${playlist.trackCount})`);
+  }
+  return { playlist, pages, stop };
+}
+
 // A halt that started for play N must not pause play N+1. The page token is
 // stamped after the track document loads. A generation-scoped pause no-ops
 // unless that token matches — including when the token is missing, so a halt
@@ -1044,6 +1116,7 @@ module.exports = {
   playlistTrackFromGqlEdge,
   playlistFromGql,
   playlistPageInfoFromGql,
+  paginatePlaylistTracks,
   playlistEdgesFromGql,
   NEAR_END_MS,
   WRAP_POSITION_MS,
