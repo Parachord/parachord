@@ -27,22 +27,23 @@
 //      metadata, action handlers and position pushes never reach Chromium's
 //      OS integration.
 //
-// onAction is NULL on Linux (the preload decides — see the platform policy
-// below); pass null wherever the OS surface is owned natively and an extra
-// Chromium session would only be a duplicate.
+// onAction is NULL only when a caller wants suppression without claiming
+// the OS key path (an API option; the Amazon preload always registers — see
+// the platform policy below).
 //
-// PLATFORM POLICY (live-verified on Linux, 2026-10): Chromium publishes its
-// MPRIS entry for a session that is CONTROLLABLE — one with registered
-// action handlers — or carrying metadata. Registering our handlers to catch
-// keys also keeps the `chromium` entry alive (title-less, but with the
-// element's progress and play state), which duplicates the native
-// org.mpris.MediaPlayer2.parachord player. So on Linux the kit suppresses
-// the page's session WITHOUT registering handlers: no metadata, no actions →
-// no entry at all (same state as the main renderer's audio, which has never
-// published one — parachord#848) — and the DE routes media keys to the native
-// player. On macOS/Windows there is no native player, so the handlers ARE
-// the key path and must stay: SMTC/Control Center deliver keys through the
-// active session's action handlers.
+// PLATFORM POLICY (live-verified on Linux, 2026-10, two rounds): Chromium
+// publishes its MPRIS entry whenever the view's session is ACTIVE (audio
+// playing) — regardless of registered actions and metadata. With handlers
+// registered the entry appeared title-less with progress; with NO handlers
+// and NO metadata it still appears, titled by the DOCUMENT TITLE fallback
+// ("Amazon Music" — the page's <title>). So there is no page-level way to
+// remove it, and the handlers MUST be registered on every platform: without
+// them, a DE that routes media keys to the chromium entry falls through to
+// Chromium's default behavior — pausing the element directly, the desync
+// bug this kit exists to prevent. With handlers, keys on EITHER entry (the
+// chromium one or the native org.mpris.MediaPlayer2.parachord player) land
+// in Parachord's transport; the renderer's isDuplicateTransport guard
+// absorbs a double delivery.
 //
 // The handlers are registered on the real object BEFORE shadowing, from the
 // same world the page would use, so whatever Chromium does with the page's

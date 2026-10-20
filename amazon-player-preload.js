@@ -11,10 +11,12 @@
 // page is the only audio playing in the app during Amazon playback, so
 // Chromium hands the OS media surface (MPRIS/SMTC/Control Center) and OS
 // media keys to the page's own media session. Our handlers on the real
-// session receive the keys and postMessage them here, the page's own
-// metadata/handlers hit an inert facade and never reach the OS, and main's
-// now-playing mirror (embedded-player-mirror, relayed below) writes
-// Parachord's track into the real session so the OS card shows it.
+// session receive the keys and postMessage them here (registered on every
+// platform — without them a DE can fall through to Chromium's default
+// element control), the page's own metadata/handlers hit an inert facade and
+// never reach the OS, and main's now-playing mirror (embedded-player-mirror,
+// relayed below) writes Parachord's track into the real session so the OS
+// card shows it.
 //
 // SANDBOX CONSTRAINT (load-bearing): the Amazon views run with sandbox: true,
 // and a sandboxed preload can only require 'electron'/'events'/'timers'/'url'
@@ -264,14 +266,7 @@ const PAGE_STUB = `(function () {
   const installAmazonStreamCapture = ${installAmazonStreamCapture.toString()};
   installAmazonStreamCapture(window);
   const installMediaSessionHijack = ${installMediaSessionHijack.toString()};
-  // Linux: the native org.mpris.MediaPlayer2.parachord player owns the OS
-  // surface. Registering handlers here would keep Chromium's own MPRIS entry
-  // alive (title-less, element progress — a duplicate next to the native
-  // player), so the shim suppresses the page's session without claiming it.
-  // Everywhere else the handlers ARE the key path (SMTC / Control Center
-  // deliver keys through the active session's action handlers).
-  const nativePlayerOwnsKeys = ${typeof process !== 'undefined' && process.platform === 'linux'};
-  installMediaSessionHijack(window, nativePlayerOwnsKeys ? null : (action) => {
+  installMediaSessionHijack(window, (action) => {
     try {
       window.postMessage({ __parachordEmbeddedPlayer: { resolverId: 'amazonmusic', type: 'action', action: String(action) } }, '*');
     } catch (e) {}
