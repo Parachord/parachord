@@ -94,7 +94,15 @@ describe('Settings → General Discord presence control', () => {
     // Discord renders as a progress bar.
     expect(feed).toMatch(/const discordNowPlayingKey = currentTrack/);
     expect(feed).toMatch(/\}, \[discordNowPlayingKey, discordPresenceEnabled\]\)/);
-    expect(feed).toMatch(/durationSeconds: \(currentTrack\.duration \|\| 0\) \/ 1000 \|\| 0/);
+    // currentTrack.duration is SECONDS (same units as progressRef — the
+    // progress interpolation and the scrobbler's <30s floor compare them
+    // directly). Dividing by 1000 here made a 251s track arrive as 0.251s:
+    // end landed at the start and was dropped, so the bar never showed.
+    expect(feed).toMatch(/durationSeconds: currentTrack\.duration \|\| 0/);
+    expect(feed).not.toMatch(/durationSeconds: \/ 1000/);
+    // The duration is part of the effect key: a duration arriving late
+    // (Amazon's play-time repair) must update the bar.
+    expect(feed).toMatch(/\$\{currentTrack\.duration \|\| 0\}/);
     // currentTrack identity must NOT be in the dep array.
     expect(feed).not.toMatch(/\}, \[currentTrack,/);
   });

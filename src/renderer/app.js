@@ -10316,9 +10316,11 @@ const Parachord = () => {
   // track object churns several times per play (art and stream-quality
   // backfills clone it), and each identity churn re-fires an effect whose
   // computed start may round to a different second — re-sends the dedupe in
-  // main cannot see.
+  // main cannot see. The duration is in the key too: a duration that arrives
+  // late (Amazon's play-time repair patches the track) updates the progress
+  // bar.
   const discordNowPlayingKey = currentTrack
-    ? `${currentTrack.title}|${currentTrack.artist}|${currentTrack.album}|${currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt || currentTrack.sources?.applemusic?.albumArt || ''}|${isPlaying}`
+    ? `${currentTrack.title}|${currentTrack.artist}|${currentTrack.album}|${currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt || currentTrack.sources?.applemusic?.albumArt || ''}|${currentTrack.duration || 0}|${isPlaying}`
     : '';
   useEffect(() => {
     const discordBridge = window.electron?.discordPresence;
@@ -10341,7 +10343,12 @@ const Parachord = () => {
       },
       status: isPlaying ? 'playing' : 'paused',
       positionSeconds: progressRef.current || 0,
-      durationSeconds: (currentTrack.duration || 0) / 1000 || 0,
+      // currentTrack.duration is SECONDS — same units as progressRef (the
+      // progress interpolation and the scrobbler's <30s floor compare them
+      // directly). Dividing here made a 251s track arrive as 0.251s, so
+      // timestamps.end landed at/below the start and was dropped — the progress
+      // bar never showed.
+      durationSeconds: currentTrack.duration || 0,
     }).catch(() => {});
   }, [discordNowPlayingKey, discordPresenceEnabled]);
 
