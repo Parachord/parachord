@@ -211,6 +211,21 @@ function runHijackScenarios(hijack) {
     out.push(['throwing-callback', threw]);
   }
 
+  // 7. a null onAction suppresses without claiming (the Linux policy: no
+  //    registered actions, no metadata → Chromium publishes no MPRIS entry
+  //    next to the native player)
+  {
+    const real = { handlers: {}, metadata: undefined, playbackState: 'none' };
+    real.setActionHandler = (a, fn) => { real.handlers[a] = fn; };
+    const scope = { navigator: { mediaSession: real } };
+    hijack(scope, null);
+    scope.navigator.mediaSession.metadata = { title: 'T' };
+    scope.navigator.mediaSession.playbackState = 'playing';
+    out.push(['null-onaction', Object.keys(real.handlers).length, scope.navigator.mediaSession !== real,
+      real.metadata === undefined, real.playbackState === 'none',
+      JSON.stringify(scope.navigator.mediaSession.metadata), scope.navigator.mediaSession.playbackState]);
+  }
+
   return out;
 }
 
@@ -385,7 +400,10 @@ describe('amazon-player-preload', () => {
     const stubBody = m[1]
       .replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString())
       .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString())
-      .replace('${installMediaSessionHijack.toString()}', installMediaSessionHijack.toString());
+      .replace('${installMediaSessionHijack.toString()}', installMediaSessionHijack.toString())
+      // The platform splice is evaluated at preload load time; force both
+      // branches here so the test is deterministic on every platform.
+      .replace(/\$\{typeof process[^}]*\}/, 'false');
     const logs = [];
     const posted = [];
     const realHandlers = {};
@@ -413,5 +431,41 @@ describe('amazon-player-preload', () => {
     expect(posted).toEqual([
       { __parachordEmbeddedPlayer: { resolverId: 'amazonmusic', type: 'action', action: 'pause' } }
     ]);
+  });
+
+  test('the page stub on Linux (native-player branch) suppresses without registering handlers', () => {
+    const m = src.match(/const PAGE_STUB = `([\s\S]*?)`;$/m);
+    expect(m).toBeTruthy();
+    // The Linux branch: the native MPRIS player owns the OS surface, so the
+    // shim must NOT register action handlers — Chromium publishes its MPRIS
+    // entry for a controllable session (registered actions), and a
+    // title-less `chromium` entry next to the native one is the duplicate
+    // the policy exists to prevent (live-verified 2026-10).
+    const stubBody = m[1]
+      .replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString())
+      .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString())
+      .replace('${installMediaSessionHijack.toString()}', installMediaSessionHijack.toString())
+      .replace(/\$\{typeof process[^}]*\}/, 'true');
+    const posted = [];
+    const realHandlers = {};
+    const realSession = {
+      setActionHandler(action, fn) { realHandlers[action] = fn; }
+    };
+    const fakeWindow = {
+      addEventListener: () => {},
+      postMessage: (payload) => posted.push(payload),
+      navigator: { mediaSession: realSession }
+    };
+    const run = new Function(
+      'window', 'document', 'Document', 'console', 'realSession',
+      `${stubBody}\nreturn [window.__parachordMediaSessionHijack === true, window.navigator.mediaSession !== realSession, Object.keys(realSession).length === 1];`
+    );
+    const fakeDocument = { addEventListener: () => {} };
+    const Document = function Document() {};
+    const result = run(fakeWindow, fakeDocument, Document, { log: () => {} }, realSession);
+    expect(result).toEqual([true, true, true]); // shim + facade, zero handlers
+    // Nothing can post a key event — no handlers were ever registered
+    try { realSession.setActionHandler('play', () => posted.push('forged')); } catch (e) {}
+    expect(posted).toEqual([]);
   });
 });

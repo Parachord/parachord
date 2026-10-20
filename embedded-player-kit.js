@@ -16,19 +16,33 @@
 //
 // installMediaSessionHijack is the fix. Run at document-start in the page
 // world, BEFORE the page's own scripts:
-//   1. register OUR action handlers on the REAL navigator.mediaSession, so
-//      OS keys routed to that session land in Parachord's transport instead:
-//      onAction → the owning preload (postMessage bridge) → the
-//      `embedded-player-media-key` IPC (main-process/ipc/embedded-player.js,
-//      which validates the sender against its view registry) → the existing
-//      `mpris-control` renderer channel, idempotent and
-//      isDuplicateTransport-deduped there;
+//   1. unless onAction is null, register OUR action handlers on the REAL
+//      navigator.mediaSession, so OS keys routed to that session land in
+//      Parachord's transport instead: onAction → the owning preload
+//      (postMessage bridge) → the `embedded-player-media-key` IPC
+//      (main-process/ipc/embedded-player.js, which validates the sender
+//      against its view registry) → the existing `mpris-control` renderer
+//      channel, idempotent and isDuplicateTransport-deduped there;
 //   2. shadow navigator.mediaSession with an inert facade, so the page's own
 //      metadata, action handlers and position pushes never reach Chromium's
-//      OS integration. With no metadata, the session stops surfacing as a
-//      competing OS player — same evidence as parachord#848: the main
-//      renderer's audio never published a duplicate MPRIS entry until it set
-//      mediaSession metadata.
+//      OS integration.
+//
+// onAction is NULL on Linux (the preload decides — see the platform policy
+// below); pass null wherever the OS surface is owned natively and an extra
+// Chromium session would only be a duplicate.
+//
+// PLATFORM POLICY (live-verified on Linux, 2026-10): Chromium publishes its
+// MPRIS entry for a session that is CONTROLLABLE — one with registered
+// action handlers — or carrying metadata. Registering our handlers to catch
+// keys also keeps the `chromium` entry alive (title-less, but with the
+// element's progress and play state), which duplicates the native
+// org.mpris.MediaPlayer2.parachord player. So on Linux the kit suppresses
+// the page's session WITHOUT registering handlers: no metadata, no actions →
+// no entry at all (same state as the main renderer's audio, which has never
+// published one — parachord#848) — and the DE routes media keys to the native
+// player. On macOS/Windows there is no native player, so the handlers ARE
+// the key path and must stay: SMTC/Control Center deliver keys through the
+// active session's action handlers.
 //
 // The handlers are registered on the real object BEFORE shadowing, from the
 // same world the page would use, so whatever Chromium does with the page's
@@ -67,15 +81,17 @@ function installMediaSessionHijack(scope, onAction) {
   const real = scope.navigator.mediaSession;
   if (!real) return;
   scope.__parachordMediaSessionHijack = true;
-  const report = (action) => {
-    try {
-      if (typeof onAction === 'function') onAction(action);
-    } catch {}
-  };
-  for (const action of ['play', 'pause', 'previoustrack', 'nexttrack', 'stop']) {
-    try {
-      real.setActionHandler(action, () => report(action));
-    } catch {}
+  if (typeof onAction === 'function') {
+    const report = (action) => {
+      try {
+        onAction(action);
+      } catch {}
+    };
+    for (const action of ['play', 'pause', 'previoustrack', 'nexttrack', 'stop']) {
+      try {
+        real.setActionHandler(action, () => report(action));
+      } catch {}
+    }
   }
   // Inert facade. Every page-world write becomes a silent no-op that never
   // reaches Chromium; reads return inert defaults (or the page's own last

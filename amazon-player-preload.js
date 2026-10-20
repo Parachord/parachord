@@ -176,15 +176,17 @@ function installMediaSessionHijack(scope, onAction) {
   const real = scope.navigator.mediaSession;
   if (!real) return;
   scope.__parachordMediaSessionHijack = true;
-  const report = (action) => {
-    try {
-      if (typeof onAction === 'function') onAction(action);
-    } catch {}
-  };
-  for (const action of ['play', 'pause', 'previoustrack', 'nexttrack', 'stop']) {
-    try {
-      real.setActionHandler(action, () => report(action));
-    } catch {}
+  if (typeof onAction === 'function') {
+    const report = (action) => {
+      try {
+        onAction(action);
+      } catch {}
+    };
+    for (const action of ['play', 'pause', 'previoustrack', 'nexttrack', 'stop']) {
+      try {
+        real.setActionHandler(action, () => report(action));
+      } catch {}
+    }
   }
   // Inert facade. Every page-world write becomes a silent no-op that never
   // reaches Chromium; reads return inert defaults (or the page's own last
@@ -214,7 +216,14 @@ const PAGE_STUB = `(function () {
   const installAmazonStreamCapture = ${installAmazonStreamCapture.toString()};
   installAmazonStreamCapture(window);
   const installMediaSessionHijack = ${installMediaSessionHijack.toString()};
-  installMediaSessionHijack(window, (action) => {
+  // Linux: the native org.mpris.MediaPlayer2.parachord player owns the OS
+  // surface. Registering handlers here would keep Chromium's own MPRIS entry
+  // alive (title-less, element progress — a duplicate next to the native
+  // player), so the shim suppresses the page's session without claiming it.
+  // Everywhere else the handlers ARE the key path (SMTC / Control Center
+  // deliver keys through the active session's action handlers).
+  const nativePlayerOwnsKeys = ${typeof process !== 'undefined' && process.platform === 'linux'};
+  installMediaSessionHijack(window, nativePlayerOwnsKeys ? null : (action) => {
     try {
       window.postMessage({ __parachordEmbeddedPlayer: { resolverId: 'amazonmusic', type: 'action', action: String(action) } }, '*');
     } catch (e) {}

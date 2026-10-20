@@ -82,6 +82,28 @@ describe('installMediaSessionHijack', () => {
     expect(page.realHandlers.play).toBe(firstHandler);
   });
 
+  test('a null onAction suppresses the session without claiming it (the Linux policy)', () => {
+    // On Linux the native MPRIS player owns the OS surface. Chromium
+    // publishes its own MPRIS entry for a CONTROLLABLE session (registered
+    // actions) or one with metadata, so the kit must suppress the page's
+    // session WITHOUT registering handlers there — no metadata, no actions,
+    // no entry (same state as the main renderer's audio, #848).
+    const page = makePage();
+    installMediaSessionHijack({ navigator: page.navigator }, null);
+    expect(Object.keys(page.realHandlers)).toEqual([]); // nothing registered
+    // The facade still installed — the page's writes still never land
+    page.navigator.mediaSession.metadata = { title: 'T' };
+    page.navigator.mediaSession.playbackState = 'playing';
+    expect(page.real.metadata).toBeUndefined();
+    expect(page.real.playbackState).toBe('none');
+    expect(page.navigator.mediaSession.metadata).toEqual({ title: 'T' });
+    // A non-function non-null onAction is treated the same way
+    const page2 = makePage();
+    expect(() => installMediaSessionHijack({ navigator: page2.navigator }, 'bogus')).not.toThrow();
+    expect(Object.keys(page2.realHandlers)).toEqual([]);
+    expect(page2.navigator.mediaSession).not.toBe(page2.real);
+  });
+
   test('a throwing onAction never propagates into Chromium key dispatch', () => {
     const page = makePage();
     installMediaSessionHijack({ navigator: page.navigator }, () => { throw new Error('bridge down'); });
@@ -129,5 +151,13 @@ describe('installMediaSessionHijack', () => {
     expect(pageA.navigator.mediaSession.metadata).toEqual(pageB.navigator.mediaSession.metadata);
     expect(pageA.real.metadata).toBeUndefined();
     expect(pageB.real.metadata).toBeUndefined();
+    // The null-onAction branch survives serialization too
+    const pageC = makePage();
+    const pageD = makePage();
+    installMediaSessionHijack({ navigator: pageC.navigator }, null);
+    restored({ navigator: pageD.navigator }, null);
+    expect(Object.keys(pageC.realHandlers)).toEqual([]);
+    expect(Object.keys(pageD.realHandlers)).toEqual([]);
+    expect(pageD.navigator.mediaSession).not.toBe(pageD.real);
   });
 });
