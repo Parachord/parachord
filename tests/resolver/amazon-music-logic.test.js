@@ -10,14 +10,10 @@ const {
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   amazonSongSearchUrl,
-  pickTrackAsinFromIds,
-  parseRowDurationSec,
   installAmazonRequireTrap,
   readPersistedQuality,
   writePersistedQuality,
   amazonQualityFromStore,
-  isAmazonSongResultItem,
-  acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
@@ -42,7 +38,8 @@ const {
   amazonStreamQualityRecord,
   amazonMediaPauseExpr,
   amazonPlayGenerationStamp,
-  amazonSearchDecision,
+  amazonSpecSearchRequest,
+  searchTracksFromGql,
   isAmazonMusicPage
 } = require('../../amazon-music-logic');
 
@@ -259,46 +256,28 @@ describe('signInLanded', () => {
 });
 
 describe('amazonSongSearchUrl', () => {
-  test('quotes title then artist and stays on the songs tab', () => {
-    expect(amazonSongSearchUrl({ title: 'stations', artist: 'Warning' }))
-      .toBe('https://music.amazon.com/search/%22stations%22%20%22Warning%22/songs');
+  test('quotes title then artist, stays on the songs tab, and echoes the searchText the page will search', () => {
+    expect(amazonSongSearchUrl({ title: 'stations', artist: 'Warning' })).toEqual({
+      url: 'https://music.amazon.com/search/%22stations%22%20%22Warning%22/songs',
+      searchText: '"stations" "Warning"'
+    });
   });
 
   test('still uses the songs tab when only one field is present', () => {
-    expect(amazonSongSearchUrl({ title: 'stations' })).toMatch(/\/songs$/);
-    expect(amazonSongSearchUrl({ artist: 'Warning' })).toMatch(/\/songs$/);
-  });
-});
-
-describe('isAmazonSongResultItem', () => {
-  test('accepts the songs tab row and the general search row', () => {
-    expect(isAmazonSongResultItem('HorizontalItem,undefined')).toBe(true);
-    expect(isAmazonSongResultItem('HorizontalItem,SearchResultsWidget_Item')).toBe(true);
-    expect(isAmazonSongResultItem('TrackItem_Title')).toBe(false);
-    expect(isAmazonSongResultItem('HorizontalItem,MiniPlayer_Title')).toBe(false);
-  });
-});
-
-describe('pickTrackAsinFromIds', () => {
-  test('picks the first track id that is not an ASIN the row links to', () => {
-    // The album ASIN sorts first in the row (its link renders before the like
-    // button); the artist ASIN sorts after. Only the track id survives.
-    expect(pickTrackAsinFromIds(
-      ['B0ALBUM000', 'B0TRACK001', 'B0ARTIST00'],
-      ['B0ALBUM000', 'B0ARTIST00']
-    )).toBe('B0TRACK001');
+    expect(amazonSongSearchUrl({ title: 'stations' }).url).toMatch(/\/songs$/);
+    expect(amazonSongSearchUrl({ artist: 'Warning' }).url).toMatch(/\/songs$/);
   });
 
-  test('skips ids that are not 10-char B-prefixed ASINs', () => {
-    expect(pickTrackAsinFromIds(['reaction-button', '0', 'B0TRACK001'], [])).toBe('B0TRACK001');
-    expect(pickTrackAsinFromIds(['B0SHORT', 'B0TOOLONG00000'], [])).toBeNull();
-    expect(pickTrackAsinFromIds(['b0lowerca1'], [])).toBe('B0LOWERCA1'); // case-insensitive
+  test('a bare query goes to the songs tab too — that is the page which fires the track search', () => {
+    expect(amazonSongSearchUrl({ query: 'eisenherz' })).toEqual({
+      url: 'https://music.amazon.com/search/eisenherz/songs',
+      searchText: 'eisenherz'
+    });
   });
 
-  test('returns null when every candidate is a linked ASIN or nothing qualifies', () => {
-    expect(pickTrackAsinFromIds(['B0ALBUM000'], ['B0ALBUM000'])).toBeNull();
-    expect(pickTrackAsinFromIds([], [])).toBeNull();
-    expect(pickTrackAsinFromIds(null, null)).toBeNull();
+  test('returns null when there is nothing to search', () => {
+    expect(amazonSongSearchUrl({ query: '   ' })).toBeNull();
+    expect(amazonSongSearchUrl({})).toBeNull();
   });
 });
 
@@ -732,21 +711,6 @@ describe('amazonStreamTier / amazonStreamQualityRecord', () => {
   });
 });
 
-describe('parseRowDurationSec', () => {
-  test('parses the shapes search rows render', () => {
-    expect(parseRowDurationSec('Around the World Daft Punk 7 MIN 8 SEC Explicit')).toBe(428);
-    expect(parseRowDurationSec('3 MIN')).toBe(180);
-    expect(parseRowDurationSec('3:45')).toBe(225);
-    expect(parseRowDurationSec('1:02:03')).toBe(3723);
-    expect(parseRowDurationSec('45 SEC')).toBe(45);
-  });
-
-  test('returns 0 for localized or missing durations', () => {
-    expect(parseRowDurationSec('Around the World Daft Punk')).toBe(0);
-    expect(parseRowDurationSec('')).toBe(0);
-    expect(parseRowDurationSec(null)).toBe(0);
-  });
-});
 describe('normalizeStreamingQuality', () => {
   test('maps the modal radios and the legacy HD value', () => {
     expect(normalizeStreamingQuality('BEST_AVAILABLE')).toBe('BEST_AVAILABLE');
@@ -947,15 +911,6 @@ describe('asinFromPlayerUrl', () => {
   });
 });
 
-describe('acceptAmazonSearchAnchor', () => {
-  test('search page keeps rows that are not player chrome', () => {
-    expect(acceptAmazonSearchAnchor(['SearchResultsWidget_Item'], true)).toBe(true);
-    expect(acceptAmazonSearchAnchor([], true)).toBe(true);
-    expect(acceptAmazonSearchAnchor(['MiniPlayer_Title'], true)).toBe(false);
-    expect(acceptAmazonSearchAnchor([], false)).toBe(false);
-  });
-});
-
 describe('amazonPlaylistIdFromUrl', () => {
   test('reads the id off shared/brand, my-music and user-playlist pages', () => {
     expect(amazonPlaylistIdFromUrl('https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A'))
@@ -1004,6 +959,174 @@ describe('amazonPlaylistDetailRequest', () => {
     expect(amazonPlaylistDetailRequest([detail('pp6417a00a9c99470bbc8834ff3bf6009a')], 'PP6417A00A9C99470BBC8834FF3BF6009A')).not.toBeNull();
     expect(amazonPlaylistDetailRequest([], 'PP6417A00A9C99470BBC8834FF3BF6009A')).toBeNull();
     expect(amazonPlaylistDetailRequest(null, 'x')).toBeNull();
+  });
+});
+
+// The search request the songs page fires (live-captured 2026-10, hornet
+// 1.18x): SpecSearchSeeMorePage, specType track, our exact searchText, an APQ
+// hash that renumbers per hornet redeploy. The parser matches on
+// variables.searchText, never the operationName.
+describe('amazonSpecSearchRequest', () => {
+  const search = (searchText, specType) => JSON.stringify({
+    operationName: 'SpecSearchSeeMorePage',
+    variables: {
+      searchText, specType, firstLimit: 30, isAuthenticated: true,
+      audiobooksEnabled: true, merchEnabled: true, categoryInEntityUnionEnabled: false
+    },
+    extensions: {
+      clientLibrary: { name: '@apollo/client', version: '4.1.6' },
+      persistedQuery: { version: 1, sha256Hash: '56f888fd039c581a348e8057e0d61b9495ce835870a2d1ab7b6f2c900e54e15c' }
+    }
+  });
+
+  test('finds the search request for our text among everything the page fires', () => {
+    const bodies = [
+      JSON.stringify({ operationName: 'IdentityStoreSeed', variables: {} }),
+      search('"Eisenherz" "Juli"', 'track'),
+      JSON.stringify({ operationName: 'Transport', variables: { id: 'mrn:x' } }),
+      '{not json'
+    ];
+    const req = amazonSpecSearchRequest(bodies, '"Eisenherz" "Juli"');
+    expect(req.operationName).toBe('SpecSearchSeeMorePage');
+    expect(req.variables.searchText).toBe('"Eisenherz" "Juli"');
+    expect(req.variables.specType).toBe('track');
+    expect(req.extensions.persistedQuery.sha256Hash).toBe('56f888fd039c581a348e8057e0d61b9495ce835870a2d1ab7b6f2c900e54e15c');
+  });
+
+  test('matching is case-insensitive and trim-tolerant, and batch arrays are tolerated', () => {
+    const batch = JSON.stringify([
+      { operationName: 'AppChromeHeaderLeft', variables: {} },
+      { operationName: 'SpecSearchSeeMorePage', variables: { searchText: '  EiSenHerz ', specType: 'track' } }
+    ]);
+    expect(amazonSpecSearchRequest([batch], 'eisenherz')).not.toBeNull();
+  });
+
+  test('prefers the track spec when several specs searched the same text', () => {
+    const bodies = [
+      search('eisenherz', 'artist'),
+      search('eisenherz', 'track')
+    ];
+    expect(amazonSpecSearchRequest(bodies, 'eisenherz').variables.specType).toBe('track');
+  });
+
+  test('falls back to any spec carrying the text when none is the track spec', () => {
+    expect(amazonSpecSearchRequest([search('eisenherz', 'album')], 'eisenherz').variables.specType).toBe('album');
+  });
+
+  test('another query\'s search, a missing text, and empty captures are not ours', () => {
+    expect(amazonSpecSearchRequest([search('something else', 'track')], 'eisenherz')).toBeNull();
+    expect(amazonSpecSearchRequest([JSON.stringify({ operationName: 'Transport', variables: { id: 1 } })], 'eisenherz')).toBeNull();
+    expect(amazonSpecSearchRequest([], 'eisenherz')).toBeNull();
+    expect(amazonSpecSearchRequest([search('eisenherz', 'track')], '  ')).toBeNull();
+    expect(amazonSpecSearchRequest(null, 'eisenherz')).toBeNull();
+  });
+});
+
+// The SpecSearchSeeMorePage response (live-captured 2026-10): edges under
+// data.specificationSearch.result[], each node the same Track entity the
+// playlist detail returns (id/title/contributingArtists/album/duration) plus
+// images the search flow surfaces as cover art.
+describe('searchTracksFromGql', () => {
+  // Real shape, first rows of the "eisenherz" search (trimmed).
+  const trackNode = (id, title, artists, album, duration, art) => ({
+    __typename: 'Track',
+    id,
+    uri: 'mrn:1.0:catalog:track:asin:' + id + '?territory=US',
+    mediaType: 'AUDIO',
+    title,
+    images: [
+      { url: 'https://m.media-amazon.com/images/I/' + id + '_500.jpg', width: 500, height: 500, imageType: 'PRIMARY' },
+      { url: 'https://m.media-amazon.com/images/I/' + id + '_1400.jpg', width: 1400, height: 1400, imageType: 'PRIMARY' }
+    ],
+    contributingArtists: {
+      edges: artists.map(a => ({ role: a[1], node: { name: a[0], __typename: 'Artist' } })),
+      __typename: 'ArtistConnection'
+    },
+    album: { id: album[1], __typename: 'Album', shortTitle: album[0] },
+    duration
+  });
+  // parsed.data — what the web player passes the parser after the replay.
+  const response = (edges, extra = {}) => ({
+    specificationSearch: {
+      id: 'search_368547b5e7',
+      searchText: 'eisenherz',
+      result: [
+        {
+          __typename: 'SpecificationSearchResult',
+          pageInfo: { hasNextPage: !!edges.length, endCursor: null, token: edges.length ? 'tztok-v2_iosm' : null },
+          label: 'requiredButUnused',
+          edges: edges.map(node => ({ __typename: 'EntityEdge', node })),
+          ...extra
+        }
+      ]
+    }
+  });
+
+  test('maps the spec search edges to the searchTracks shape with cover art', () => {
+    const data = response([
+      trackNode('B073N3R1KZ', 'Eisenherz', [['Juli', 'PRIMARY']], ['In Love', 'B073HX454H'], 276),
+      trackNode('B0D7W4QWZ7', 'Eisenherz', [['Stahlhammer', 'PRIMARY']], ['Eisenherz', 'B0D7W3YZJW'], 267),
+      trackNode('B0G6FM547C', 'Eisenherz (Live im Nikolaisaal Potsdam)',
+        [['Juli', 'PRIMARY'], ['Deutsches Filmorchester Babelsberg', 'PRIMARY']],
+        ['IN LOVE EP - Live im Nikolaisaal Potsdam', 'B0G6F5SV4J'], 289)
+    ]);
+    const out = searchTracksFromGql(data);
+    expect(out.envelope).toBe(true);
+    expect(out.tracks).toEqual([
+      {
+        asin: 'B073N3R1KZ',
+        title: 'Eisenherz',
+        artist: 'Juli',
+        album: 'In Love',
+        albumAsin: 'B073HX454H',
+        albumArt: 'https://m.media-amazon.com/images/I/B073N3R1KZ_1400.jpg',
+        duration: 276
+      },
+      {
+        asin: 'B0D7W4QWZ7',
+        title: 'Eisenherz',
+        artist: 'Stahlhammer',
+        album: 'Eisenherz',
+        albumAsin: 'B0D7W3YZJW',
+        albumArt: 'https://m.media-amazon.com/images/I/B0D7W4QWZ7_1400.jpg',
+        duration: 267
+      },
+      {
+        asin: 'B0G6FM547C',
+        title: 'Eisenherz (Live im Nikolaisaal Potsdam)',
+        artist: 'Juli, Deutsches Filmorchester Babelsberg',
+        album: 'IN LOVE EP - Live im Nikolaisaal Potsdam',
+        albumAsin: 'B0G6F5SV4J',
+        albumArt: 'https://m.media-amazon.com/images/I/B0G6FM547C_1400.jpg',
+        duration: 289
+      }
+    ]);
+  });
+
+  test('an empty edges list is a present envelope — a real miss, not a structural failure', () => {
+    // Live-observed: a no-results search answers result[0] with edges: [] and
+    // hasNextPage false. The caller returns [] (cached as a 30-day noMatch).
+    const out = searchTracksFromGql(response([]));
+    expect(out).toEqual({ tracks: [], envelope: true });
+  });
+
+  test('a row without artists is dropped, not fatal', () => {
+    const data = response([
+      trackNode('B0NOARTIST', 'Artless', [], ['X', 'B0ALBUMX'], 100),
+      trackNode('B073N3R1KZ', 'Eisenherz', [['Juli', 'PRIMARY']], ['In Love', 'B073HX454H'], 276)
+    ]);
+    const out = searchTracksFromGql(data);
+    expect(out.envelope).toBe(true);
+    expect(out.tracks).toHaveLength(1);
+    expect(out.tracks[0].asin).toBe('B073N3R1KZ');
+  });
+
+  test('no specificationSearch envelope is a structural failure — the caller must not cache a miss', () => {
+    // A hornet rename of the response field. envelope false tells the caller
+    // to throw not-ready instead of returning [].
+    expect(searchTracksFromGql({ data: { renamedSearch: {} } })).toEqual({ tracks: [], envelope: false });
+    expect(searchTracksFromGql({ data: null })).toEqual({ tracks: [], envelope: false });
+    expect(searchTracksFromGql(null)).toEqual({ tracks: [], envelope: false });
   });
 });
 
@@ -1068,7 +1191,8 @@ describe('playlistTrackFromGqlEdge', () => {
           { role: 'FEATURED', node: { name: 'Someone Else' } }
         ]
       },
-      album: { id: 'B00136JQEQ', shortTitle: 'Metal Health' }
+      album: { id: 'B00136JQEQ', shortTitle: 'Metal Health' },
+      images: [{ url: 'https://m.media-amazon.com/images/I/500.jpg', width: 500, height: 500, imageType: 'PRIMARY' }, { url: 'https://m.media-amazon.com/images/I/1400.jpg', width: 1400, height: 1400, imageType: 'PRIMARY' }]
     }));
     expect(track).toEqual({
       asin: 'B00136J8K8',
@@ -1076,6 +1200,10 @@ describe('playlistTrackFromGqlEdge', () => {
       artist: 'Quiet Riot',
       album: 'Metal Health',
       albumAsin: 'B00136JQEQ',
+      // Widest imageType=PRIMARY image — the search flow surfaces it as art;
+      // the playlist detail response carries no track images, so it is null
+      // there.
+      albumArt: 'https://m.media-amazon.com/images/I/1400.jpg',
       duration: 317
     });
   });
@@ -1089,6 +1217,7 @@ describe('playlistTrackFromGqlEdge', () => {
     }));
     expect(track.artist).toBe('A, B');
     expect(track.album).toBe('Full Album Title');
+    expect(track.albumArt).toBeNull();
   });
 
   test('drops rows without asin, title, or artist', () => {
@@ -1131,6 +1260,7 @@ describe('playlistFromGql', () => {
       artist: 'Quiet Riot',
       album: 'Metal Health',
       albumAsin: 'B00136JQEQ',
+      albumArt: null,
       duration: 317
     });
   });
@@ -1365,26 +1495,6 @@ describe('paginatePlaylistTracks', () => {
     expect(r.stop).toBe('complete');
     expect(r.playlist.trackCount).toBe(3);
     expect(r.playlist.tracks).toHaveLength(3);
-  });
-});
-
-describe('amazonSearchDecision', () => {
-  test('rows with an artist are returned and title-only siblings are dropped', () => {
-    const decision = amazonSearchDecision([
-      { title: 'Early', artist: '' },
-      { title: 'Ready', artist: 'Someone' }
-    ], 2);
-    expect(decision).toEqual({ action: 'return', tracks: [{ title: 'Ready', artist: 'Someone' }] });
-  });
-
-  test('title-only rows after the wait are not a miss', () => {
-    expect(amazonSearchDecision([{ title: 'No Artist', artist: '' }], 12)).toEqual({ action: 'not-ready' });
-    expect(amazonSearchDecision([{ title: 'No Artist', artist: '  ' }], 15)).toEqual({ action: 'not-ready' });
-  });
-
-  test('title-only rows before the wait keep polling, and no rows is a wait not a miss', () => {
-    expect(amazonSearchDecision([{ title: 'No Artist' }], 11)).toEqual({ action: 'wait' });
-    expect(amazonSearchDecision([], 16)).toEqual({ action: 'wait' });
   });
 });
 

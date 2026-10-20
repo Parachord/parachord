@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.4.3');
+    expect(axe.manifest.version).toBe('1.4.4');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -65,7 +65,7 @@ describe('amazonmusic search', () => {
     bridgeResults = {
       success: true,
       tracks: [
-        { asin: 'B000SNWG5Q', uniqueId: 'ML-abc', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430, genre: 'Electronic', explicit: false },
+        { asin: 'B000SNWG5Q', uniqueId: 'ML-abc', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430, genre: 'Electronic', explicit: false, albumArt: 'https://m.media-amazon.com/images/I/B000SNWG5Q.jpg' },
         { asin: 'B07XLSKGGK', uniqueId: 'ML-def', title: 'Master of Puppets (Remastered)', artist: 'Metallica', album: 'Master of Puppets', duration: 515, genre: 'Metal', explicit: false }
       ]
     };
@@ -96,8 +96,12 @@ describe('amazonmusic search', () => {
       sources: ['amazonmusic'],
       amazonAsin: 'B000SNWG5Q',
       amazonUniqueId: 'ML-abc',
-      explicit: false
+      explicit: false,
+      // The gql search response carries track cover art — the resolver passes
+      // it through so getAlbumArtFromResolvers can hit it.
+      albumArt: 'https://m.media-amazon.com/images/I/B000SNWG5Q.jpg'
     }));
+    expect(results[1].albumArt).toBeNull();
   });
 
   test('throws notReady when the player is not signed in so resolve does not cache noMatch', async () => {
