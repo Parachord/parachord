@@ -93,4 +93,28 @@ describe('track-slug drift guard', () => {
     expect(app).toContain("require('./lib/track-slug')");
     expect(cards).toContain("require('../lib/track-slug')");
   });
+
+  // Born from a real CI failure (PR #1079): the artist-id pass added slug(...)
+  // calls while the import destructure still said { trackSlug } — a no-undef
+  // eslint caught in cards.js, but app.js is legacy-tier (parse-level lint)
+  // and would have thrown ReferenceError at runtime. Assert every helper name
+  // the files actually call is in the import destructure.
+  test('every helper name called is in the import destructure (no runtime ReferenceError)', () => {
+    const files = [
+      path.join(__dirname, '../../src/renderer/app.js'),
+      path.join(__dirname, '../../src/renderer/components/cards.js'),
+    ];
+    const callSite = (name) => new RegExp(`(?<![\\w.$'"/])${name}\\(`);
+    for (const file of files) {
+      const src = fs.readFileSync(file, 'utf8');
+      const m = src.match(/const \{([^}]*)\} = require\('\.{1,2}\/lib\/track-slug'\)/);
+      expect(m).toBeTruthy();
+      const imported = new Set(m[1].split(',').map(s => s.trim()).filter(Boolean));
+      for (const name of ['trackSlug', 'slug']) {
+        if (callSite(name).test(src)) {
+          expect(imported.has(name)).toBe(true);
+        }
+      }
+    }
+  });
 });

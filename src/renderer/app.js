@@ -1134,7 +1134,7 @@ const generateArtistId = (name) => {
 // Generate a unique hash from a string (for deterministic pattern generation)
 // Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
 // that collapsed every non-Latin track to the same id (lib/track-slug.js).
-const { trackSlug } = require('./lib/track-slug');
+const { trackSlug, slug } = require('./lib/track-slug');
 // ─── Cards (src/renderer/components/cards.js) ──────────────────────────────
 // The card family (search/collection/artist pages) + generateArtistPattern
 // (exported back — the in-component call sites keep the same binding) move

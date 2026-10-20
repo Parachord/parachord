@@ -15,7 +15,7 @@ const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
 // exported back so app.js's own call sites keep the same binding.
 const hashString = require('../lib/hash-string');
-const { trackSlug } = require('../lib/track-slug');
+const { trackSlug, slug } = require('../lib/track-slug');
 
 // Generate a unique pattern/gradient for an artist based on their name
 // Returns an object with CSS gradient and optional SVG pattern
