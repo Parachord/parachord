@@ -93,6 +93,7 @@ describe('Amazon page scripts evaluate after serialization', () => {
     // No capture global (hook never ran): null, not a throw.
     expect(run({}, (s) => s)).toBeNull();
   });
+
 });
 
 describe('setQuality validates before writing hornet\'s store', () => {

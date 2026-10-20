@@ -34,6 +34,11 @@ function inlinedCapture() {
   return text ? new Function(`return (${text})`)() : null;
 }
 
+function inlinedGqlCapture() {
+  const text = inlinedGqlCaptureSource();
+  return text ? new Function(`return (${text})`)() : null;
+}
+
 function inlinedTrap() {
   const text = inlinedTrapSource();
   return text ? new Function(`return (${text})`)() : null;
@@ -161,6 +166,7 @@ async function runCaptureScenarios(capture) {
     class FakeXHR {
       constructor() { this.responseType = ''; this._l = {}; }
       open(m, u) { this._u = u; }
+      send(body) { this._b = body; }
       addEventListener(t, fn) { (this._l[t] = this._l[t] || []).push(fn); }
       fire() { (this._l.load || []).forEach((fn) => fn()); }
     }
@@ -237,6 +243,8 @@ describe('amazon-player-preload', () => {
     expect(inlined).toBeInstanceOf(Function);
     expect(await runCaptureScenarios(inlined)).toEqual(await runCaptureScenarios(installAmazonStreamCapture));
   });
+
+
 
   test('the inlined stream capture still records on its own', async () => {
     const scope = {};

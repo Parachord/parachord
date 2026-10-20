@@ -40,6 +40,7 @@ const {
   amazonPlayGenerationStamp,
   amazonSpecSearchRequest,
   searchTracksFromGql,
+  createSearchBreaker,
   isAmazonMusicPage
 } = require('../../amazon-music-logic');
 
@@ -1001,16 +1002,27 @@ describe('amazonSpecSearchRequest', () => {
     expect(amazonSpecSearchRequest([batch], 'eisenherz')).not.toBeNull();
   });
 
-  test('prefers the track spec when several specs searched the same text', () => {
+  test('only the track spec is ever accepted — even alone, an album/artist spec never matches', () => {
+    // The album-spec request carries the SAME searchText and an ASIN-shaped
+    // node that maps to a track — first-arrival must not win it the replay.
+    // This is the album-ASIN failure the DOM-era exclusion dance existed to
+    // prevent, on its gql successor.
+    expect(amazonSpecSearchRequest([search('eisenherz', 'album')], 'eisenherz')).toBeNull();
+    expect(amazonSpecSearchRequest([search('eisenherz', 'artist')], 'eisenherz')).toBeNull();
     const bodies = [
-      search('eisenherz', 'artist'),
+      search('eisenherz', 'album'),
       search('eisenherz', 'track')
     ];
     expect(amazonSpecSearchRequest(bodies, 'eisenherz').variables.specType).toBe('track');
   });
 
-  test('falls back to any spec carrying the text when none is the track spec', () => {
-    expect(amazonSpecSearchRequest([search('eisenherz', 'album')], 'eisenherz').variables.specType).toBe('album');
+  test('a body with no specType at all is accepted (older deploys)', () => {
+    expect(amazonSpecSearchRequest([search('eisenherz', undefined)], 'eisenherz').variables.specType).toBeUndefined();
+  });
+
+  test('the anySpec mode matches any spec — used only to detect the grace condition, never for replay', () => {
+    expect(amazonSpecSearchRequest([search('eisenherz', 'album')], 'eisenherz', { anySpec: true }).variables.specType).toBe('album');
+    expect(amazonSpecSearchRequest([search('eisenherz', 'album')], 'eisenherz', { anySpec: false })).toBeNull();
   });
 
   test('another query\'s search, a missing text, and empty captures are not ours', () => {
@@ -1110,6 +1122,25 @@ describe('searchTracksFromGql', () => {
     expect(out).toEqual({ tracks: [], envelope: true });
   });
 
+  test('a non-Track node (an album-spec edge) is rejected, not imported as a track', () => {
+    // The album spec searches the same text; its edges are Album nodes with
+    // ASIN + title + artists — everything the mapper wants. The __typename
+    // (present when the response asks for it, as the search response does) is
+    // the discriminator: an album ASIN in the track slot passes the
+    // confidence gate on a self-titled release and playback loads
+    // /tracks/<albumAsin>.
+    const data = response([
+      { __typename: 'Album', id: 'B0ALBUM123', title: 'Kid A',
+        contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Radiohead' } }] },
+        album: { id: 'B0ALBUM123', shortTitle: 'Kid A' }, duration: 2900 },
+      trackNode('B073N3R1KZ', 'Eisenherz', [['Juli', 'PRIMARY']], ['In Love', 'B073HX454H'], 276)
+    ]);
+    const out = searchTracksFromGql(data);
+    expect(out.envelope).toBe(true);
+    expect(out.tracks).toHaveLength(1);
+    expect(out.tracks[0].asin).toBe('B073N3R1KZ');
+  });
+
   test('a row without artists is dropped, not fatal', () => {
     const data = response([
       trackNode('B0NOARTIST', 'Artless', [], ['X', 'B0ALBUMX'], 100),
@@ -1127,6 +1158,55 @@ describe('searchTracksFromGql', () => {
     expect(searchTracksFromGql({ data: { renamedSearch: {} } })).toEqual({ tracks: [], envelope: false });
     expect(searchTracksFromGql({ data: null })).toEqual({ tracks: [], envelope: false });
     expect(searchTracksFromGql(null)).toEqual({ tracks: [], envelope: false });
+  });
+});
+
+// The breaker bounds the damage of a hornet rename: without it every search
+// burns the full capture window and fails not-ready, serially on the search
+// chain — a resolution run of 100 tracks spends ~25 minutes there and starves
+// playlist imports too.
+describe('createSearchBreaker', () => {
+  const ms = (t) => () => t;
+  const step = () => { t += 1; return t; };
+  let t;
+
+  beforeEach(() => { t = 0; });
+
+  test('stays closed under the threshold and opens at it', () => {
+    const b = createSearchBreaker({ threshold: 3, cooldownMs: 600000, now: step });
+    expect(b.allows()).toBe(true);
+    b.recordFailure();
+    b.recordFailure();
+    expect(b.allows()).toBe(true);
+    b.recordFailure();
+    expect(b.allows()).toBe(false);
+    expect(b.state()).toEqual({ failures: 3, openUntil: 600001, open: true });
+  });
+
+  test('a success closes it; a probe after the cooldown re-opens on failure', () => {
+    const b = createSearchBreaker({ threshold: 2, cooldownMs: 100, now: step });
+    b.recordFailure();
+    b.recordFailure();
+    expect(b.allows()).toBe(false);
+    t = 200; // cooldown elapsed — this search is a probe
+    expect(b.allows()).toBe(true);
+    expect(b.isProbe()).toBe(true);
+    b.recordFailure();
+    expect(b.allows()).toBe(false);
+    b.recordSuccess();
+    expect(b.allows()).toBe(true);
+    expect(b.isProbe()).toBe(false);
+    expect(b.state()).toEqual({ failures: 0, openUntil: 0, open: false });
+  });
+
+  test('a success mid-count resets the run of failures', () => {
+    const b = createSearchBreaker({ threshold: 3, cooldownMs: 100, now: step });
+    b.recordFailure();
+    b.recordFailure();
+    b.recordSuccess();
+    b.recordFailure();
+    b.recordFailure();
+    expect(b.allows()).toBe(true);
   });
 });
 
@@ -1224,6 +1304,20 @@ describe('playlistTrackFromGqlEdge', () => {
     expect(playlistTrackFromGqlEdge(edge({ id: 'B1', title: 'No artists', contributingArtists: { edges: [] } }))).toBeNull();
     expect(playlistTrackFromGqlEdge(edge({ title: 'No asin', contributingArtists: { edges: [{ node: { name: 'A' } }] } }))).toBeNull();
     expect(playlistTrackFromGqlEdge(null)).toBeNull();
+  });
+
+  test('drops non-Track nodes when __typename says so, and allows its absence', () => {
+    // The search response asks for __typename; the playlist detail response
+    // does not. An Album node must never import as a track (its ASIN in the
+    // track slot plays the wrong thing), but an absent __typename is normal
+    // playlist data.
+    expect(playlistTrackFromGqlEdge(edge({
+      __typename: 'Album', id: 'B0ALBUM123', title: 'Kid A',
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Radiohead' } }] }
+    }))).toBeNull();
+    expect(playlistTrackFromGqlEdge(edge({
+      id: 'B1', title: 'Song', contributingArtists: { edges: [{ node: { name: 'A' } }] }
+    }))).not.toBeNull();
   });
 });
 

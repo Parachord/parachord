@@ -398,6 +398,34 @@ function amazonStreamQualityRecord(kbps, info) {
   return rec;
 }
 
+// Circuit breaker for search's structural failures. A hornet rename of the
+// search operation makes every search wait the full capture window and then
+// throw not-ready — serially on the search chain, a 100-track resolution run
+// burns ~25 minutes there and starves playlist imports too. After `threshold`
+// consecutive structural failures the breaker opens for `cooldownMs`; while
+// open, searchTracks fails fast instead of burning the window. When the
+// cooldown elapses the next search is a probe (one window); a failure re-opens
+// the breaker, any success closes it. Pure with an injected now() — the poller
+// pattern.
+function createSearchBreaker({ threshold = 3, cooldownMs = 10 * 60 * 1000, now = Date.now } = {}) {
+  let failures = 0;
+  let openUntil = 0;
+  const open = () => failures >= threshold && now() < openUntil;
+  return {
+    allows: () => !open(),
+    isProbe: () => failures >= threshold && now() >= openUntil,
+    recordFailure() {
+      failures += 1;
+      if (failures >= threshold) openUntil = now() + cooldownMs;
+    },
+    recordSuccess() {
+      failures = 0;
+      openUntil = 0;
+    },
+    state: () => ({ failures, openUntil, open: open() })
+  };
+}
+
 // Passive network capture for the DASH manifest and the init segments,
 // installed in the page world at document-start (before hornet's scripts),
 // covering both the fetch and XHR paths whichever loader the player uses. It
@@ -809,12 +837,20 @@ function amazonPlaylistDetailRequest(bodies, playlistId) {
 // variables.searchText (case-insensitive equality), NOT the operationName:
 // the songs tab fires SpecSearchSeeMorePage today, but matching the text
 // survives an operation rename, and the text is unique among the page's
-// requests (only the spec search carries it). When several entries match
-// (e.g. one per specType), prefer specType 'track'.
-function amazonSpecSearchRequest(bodies, searchText) {
+// requests (only the spec search carries it).
+//
+// Only the TRACK spec is ever accepted: an album/artist/playlist spec for
+// the same text is a different entity whose ASIN must never reach playback —
+// an album-shaped edge maps to { asin: <albumAsin>, title, artist } and a
+// self-titled release passes the confidence gate, which is exactly the
+// album-ASIN failure the DOM-era exclusion dance existed to prevent. A body
+// with no specType at all is accepted (older deploys). With { anySpec: true }
+// the first searchText match of ANY spec is returned — used only to detect
+// "the page searched our text, but the track spec never came" (the grace
+// decision in searchTracks), never for replay.
+function amazonSpecSearchRequest(bodies, searchText, { anySpec = false } = {}) {
   const wanted = String(searchText || '').trim().toLowerCase();
   if (!wanted) return null;
-  let fallback = null;
   for (const raw of (Array.isArray(bodies) ? bodies : [])) {
     let parsed;
     try { parsed = JSON.parse(raw); } catch (e) { continue; }
@@ -823,11 +859,10 @@ function amazonSpecSearchRequest(bodies, searchText) {
       const vars = req && req.variables;
       if (!vars || typeof vars.searchText !== 'string') continue;
       if (String(vars.searchText).trim().toLowerCase() !== wanted) continue;
-      if (vars.specType === 'track') return req;
-      if (!fallback) fallback = req;
+      if (anySpec || vars.specType == null || vars.specType === 'track') return req;
     }
   }
-  return fallback;
+  return null;
 }
 
 // Headers to copy onto the replayed gql fetch. The request the page made is
@@ -864,9 +899,15 @@ function gqlPrimaryImageUrl(images) {
 // serves the search response — its edges carry the same Track entity
 // (live-verified 2026-10: id/title/contributingArtists/album/duration/images
 // are identical shapes), and the search flow additionally uses the art.
+// Only Track entities import: the search response asks for __typename, and an
+// album/artist-spec edge (an Album node) must never become a track — an album
+// ASIN in the track slot passes the confidence gate on self-titled releases
+// and playback loads /tracks/<albumAsin>. Absent __typename (the playlist
+// detail response does not request it) is allowed.
 function playlistTrackFromGqlEdge(edge) {
   const node = edge && edge.node;
   if (!node || !node.id || !node.title) return null;
+  if (node.__typename && node.__typename !== 'Track') return null;
   const artists = (node.contributingArtists && Array.isArray(node.contributingArtists.edges))
     ? node.contributingArtists.edges : [];
   const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
@@ -1106,6 +1147,7 @@ module.exports = {
   amazonGqlFetchHeaders,
   capturedOperationNames,
   searchTracksFromGql,
+  createSearchBreaker,
   playlistTrackFromGqlEdge,
   playlistFromGql,
   playlistPageInfoFromGql,

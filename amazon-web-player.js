@@ -68,6 +68,7 @@ const {
   amazonPlaylistDetailRequest,
   amazonSpecSearchRequest,
   searchTracksFromGql,
+  createSearchBreaker,
   paginatePlaylistTracks,
   amazonGqlFetchHeaders,
   capturedOperationNames,
@@ -281,6 +282,13 @@ const amazonWebPlayer = {
   currentAsin: null,
   playGeneration: 0,
   cookieWarned: false,
+  // Circuit breaker for search's structural failures — a hornet rename of the
+  // search operation makes every search burn the full capture window before
+  // failing not-ready, serially on the search chain (starving playlist
+  // imports too). After consecutive structural failures this opens and
+  // searchTracks fails fast for a cooldown (createSearchBreaker in
+  // amazon-music-logic.js, unit-tested there).
+  searchBreaker: createSearchBreaker(),
   _onHostClosed: null,
   // Audio representations parsed from the captured DASH manifest (+ init
   // segment STREAMINFO), scoped to the current play: nulled when a play
@@ -798,18 +806,25 @@ const amazonWebPlayer = {
   // Search runs over the page's own GraphQL — the same capture-and-replay
   // pattern as lookupPlaylist. The songs page (/search/<q>/songs) fires
   // SpecSearchSeeMorePage with our exact searchText; that request (URL,
-  // headers, APQ hash, variables) is captured while the page loads and
-  // replayed verbatim from the page world, then parsed pure — no DOM
-  // scraping: no row-mount waits, no testid heuristics, no like-button ASIN
-  // exclusion dance, and the track rows carry cover art the DOM never
-  // exposed. The request is matched on variables.searchText, not the
-  // operation name, so a hornet rename of the operation cannot break it.
+  // headers, APQ hash, variables) is captured while the page loads, its own
+  // RESPONSE is read from the preload's passive gql capture when present
+  // (no second request; replayed verbatim only as the fallback), and the
+  // result is parsed pure — no DOM scraping: no row-mount waits, no testid
+  // heuristics, no like-button ASIN exclusion dance, and the track rows carry
+  // cover art the DOM never exposed. The request is matched on
+  // variables.searchText, not the operation name, so a hornet rename of the
+  // operation cannot break it — and only the TRACK spec ever replays: an
+  // album/artist spec edge must never import as a track (an album ASIN in
+  // the track slot passes the confidence gate on self-titled releases).
   //
-  // A page that never fires a search request is a structural failure (hornet
-  // rename, SPA failure), not a miss — it throws not-ready so it is never
-  // cached as a 30-day noMatch. An envelope with empty edges IS a real miss
-  // and returns []. Runs on the search chain: lookupPlaylist and searchTracks
-  // share the search view, so they must not interleave page loads.
+  // Structural failures (the page never searched, another spec searched but
+  // the track spec never came, or the response carried no spec search
+  // envelope) throw not-ready — never cached as a 30-day noMatch — and trip
+  // the search breaker so a rename fails fast instead of burning the capture
+  // window on every search of a resolution run. An envelope with empty edges
+  // IS a real miss and returns []. Runs on the search chain: lookupPlaylist
+  // and searchTracks share the search view, so they must not interleave page
+  // loads.
   async searchTracks(input) {
     const opts = typeof input === 'string' ? { query: input } : (input || {});
     const spec = amazonSongSearchUrl(opts);
@@ -818,49 +833,90 @@ const amazonWebPlayer = {
     if (!(await this.isSignedIn())) {
       throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
+    if (this.searchBreaker && !this.searchBreaker.allows()) {
+      const probe = this.searchBreaker.isProbe() ? ' (probing after cooldown)' : '';
+      throw notReady('not-ready', `Amazon search is cooling down after repeated structural failures${probe}`);
+    }
     return this.enqueueSearch(async () => {
       const win = await this.ensureWindow('search');
       const mode = await this.layoutSearch(this.searchView);
       console.log(`[Amazon] search mode=${mode} ${url}`);
       const { captured, detach } = this.attachGqlCapture();
+      const structural = (message) => {
+        if (this.searchBreaker) {
+          this.searchBreaker.recordFailure();
+          const state = this.searchBreaker.state();
+          if (state.open) console.warn(`[Amazon] search breaker open for ${Math.max(0, state.openUntil - Date.now())}ms (${state.failures} consecutive structural failures)`);
+        }
+        return notReady('not-ready', message);
+      };
       try {
         await loadURLBudgeted(win, url);
         // Wait for the page's own search request (boot + query is ~1-3s on a
         // warm view; the poll window covers a slow load). The entry must also
         // have its headers — onBeforeSendHeaders fires milliseconds *after*
-        // onBeforeRequest, so accepting the body alone races it.
+        // onBeforeRequest, so accepting the body alone races it. ALL
+        // header-complete bodies go to the matcher each poll — the matcher
+        // only ever accepts the track spec, so an album-spec request that
+        // arrives first cannot win by first-arrival.
+        let request = null;
         let entry = null;
-        for (let i = 0; i < 60 && !entry; i++) {
+        let otherSpecSeenAt = -1;
+        for (let i = 0; i < 60 && !request; i++) {
           await new Promise(r => setTimeout(r, 250));
           const href = win.isDestroyed() ? '' : win.webContents.getURL();
           if (pageBlocksPlayback(href)) {
             console.warn(`[Amazon] search blocked: ${href}`);
             throw notReady('not-signed-in', 'Choose an Amazon Music profile');
           }
-          entry = captured.find(r => r.headers && amazonSpecSearchRequest([r.body], searchText));
+          const ready = captured.filter(r => r.headers);
+          const bodies = ready.map(r => r.body);
+          request = amazonSpecSearchRequest(bodies, searchText);
+          if (request) {
+            entry = ready.find(r => amazonSpecSearchRequest([r.body], searchText));
+            break;
+          }
+          // Another spec searched our text but the track spec has not arrived:
+          // give it a short grace (the page may fire specs out of order), then
+          // conclude structurally instead of burning the full window.
+          if (otherSpecSeenAt < 0 && amazonSpecSearchRequest(bodies, searchText, { anySpec: true })) {
+            otherSpecSeenAt = i;
+            console.warn(`[Amazon] search: a non-track spec searched for ${JSON.stringify(searchText)}; waiting briefly for the track spec`);
+          }
+          if (otherSpecSeenAt >= 0 && i - otherSpecSeenAt >= 8) break;
         }
-        if (!entry) {
-          // The page loaded but never searched: a hornet rename of the
-          // operation (or the search page itself), or an SPA failure. Log
+        if (!request || !entry) {
+          // The page loaded but never ran our track search: a hornet rename of
+          // the operation (or the search page itself), or an SPA failure. Log
           // what the page did fire so a rename reads as a rename instead of a
           // silent run of empty searches each cached as a 30-day noMatch.
-          console.warn(`[Amazon] search: page never fired a search request for ${JSON.stringify(searchText)}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
-          throw notReady('not-ready', 'Amazon search page never issued its search query');
+          console.warn(`[Amazon] search: page never fired the track search for ${JSON.stringify(searchText)}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
+          throw structural('Amazon search page never issued its track search');
         }
-        const request = amazonSpecSearchRequest([entry.body], searchText);
-        if (!request || !request.variables || typeof request.variables !== 'object') {
-          throw notReady('not-ready', 'Unexpected Amazon search query shape');
+        if (!request.variables || typeof request.variables !== 'object') {
+          throw structural('Unexpected Amazon search query shape');
         }
+
+        // Replay the page's own request verbatim. (Capturing the page's own
+        // response in the page world instead — the stream-capture pattern —
+        // does NOT work here: hornet binds its fetch at module init, before
+        // any preload-injected wrapper can install, so the page's own search
+        // bypasses the wrapper (live-verified 2026-10; the stream capture only
+        // survives because media segments are fetched seconds later, at play
+        // time). The replay's cost is one request on top of the ~9 ops the
+        // page load itself fires.)
         const outcome = await this.replayGql(win, entry, request);
         if (outcome.error) throw notReady('not-ready', outcome.error);
-        const { tracks, envelope } = searchTracksFromGql(outcome.parsed && outcome.parsed.data);
+        const parsed = outcome.parsed;
+        const { tracks, envelope } = searchTracksFromGql(parsed && parsed.data);
         if (!envelope) {
           // The response carried no spec search envelope: hornet renamed the
           // response field. A rename must surface as not-ready, not as a
           // cached miss.
           console.warn(`[Amazon] search response was not a spec search envelope for ${JSON.stringify(searchText)}`);
-          throw notReady('not-ready', 'Amazon search response was not a spec search envelope');
+          throw structural('Amazon search response was not a spec search envelope');
         }
+        if (this.searchBreaker) this.searchBreaker.recordSuccess();
         console.log(`[Amazon] search returning ${tracks.length} tracks for ${JSON.stringify(searchText)}`);
         return tracks;
       } finally {
