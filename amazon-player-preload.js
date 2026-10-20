@@ -12,11 +12,12 @@
 // — never local files. An earlier revision required ./amazon-music-logic here,
 // which throws "module not found" and silently killed the ENTIRE preload: no
 // trap, no visibility stub, with the localStorage quality fallback masking the
-// damage (verified live on Electron 39 +wvcus). So installAmazonRequireTrap and
-// installAmazonStreamCapture are inlined below as literal copies of the ones
-// in amazon-music-logic.js, and tests/resolver/amazon-player-preload.test.js
-// fails the build if the copies drift or if a local require ever comes back.
-// Do not require local modules from this file.
+// damage (verified live on Electron 39 +wvcus). So installAmazonRequireTrap
+// and installAmazonStreamCapture are inlined below as literal copies of the
+// ones in amazon-music-logic.js, and
+// tests/resolver/amazon-player-preload.test.js fails the build if the copies
+// drift or if a local require ever comes back. Do not require local modules
+// from this file.
 //
 // contextIsolation puts this file in a different world from the page. Patching
 // document here would not affect Amazon's scripts, so the stub is evaluated in

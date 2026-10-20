@@ -57,6 +57,9 @@ module.exports = {
           amazonUniqueId: t.uniqueId,
           genre: t.genre || null,
           explicit: !!t.explicit,
+          // The gql search response carries the track's own cover art (the
+          // DOM scrape never had it) — getAlbumArtFromResolvers can hit it.
+          albumArt: t.albumArt || null,
         };
       });
     } catch (error) {

@@ -398,6 +398,34 @@ function amazonStreamQualityRecord(kbps, info) {
   return rec;
 }
 
+// Circuit breaker for search's structural failures. A hornet rename of the
+// search operation makes every search wait the full capture window and then
+// throw not-ready — serially on the search chain, a 100-track resolution run
+// burns ~25 minutes there and starves playlist imports too. After `threshold`
+// consecutive structural failures the breaker opens for `cooldownMs`; while
+// open, searchTracks fails fast instead of burning the window. When the
+// cooldown elapses the next search is a probe (one window); a failure re-opens
+// the breaker, any success closes it. Pure with an injected now() — the poller
+// pattern.
+function createSearchBreaker({ threshold = 3, cooldownMs = 10 * 60 * 1000, now = Date.now } = {}) {
+  let failures = 0;
+  let openUntil = 0;
+  const open = () => failures >= threshold && now() < openUntil;
+  return {
+    allows: () => !open(),
+    isProbe: () => failures >= threshold && now() >= openUntil,
+    recordFailure() {
+      failures += 1;
+      if (failures >= threshold) openUntil = now() + cooldownMs;
+    },
+    recordSuccess() {
+      failures = 0;
+      openUntil = 0;
+    },
+    state: () => ({ failures, openUntil, open: open() })
+  };
+}
+
 // Passive network capture for the DASH manifest and the init segments,
 // installed in the page world at document-start (before hornet's scripts),
 // covering both the fetch and XHR paths whichever loader the player uses. It
@@ -727,80 +755,27 @@ function shouldRevealPlayerOnFailure() {
   return false;
 }
 
-function isAmazonPlayerChrome(testIds) {
-  return /miniplayer|nowplaying|playbacktransport/i.test((testIds || []).join(' '));
-}
-
-// Songs-tab rows put the track ASIN on a descendant element id (the like
-// button); the artist and album ASINs arrive on /artists/ and /albums/ hrefs.
-// The first B-prefixed 10-char id used to win, which matched the album ASIN
-// whenever it sorted earlier in the row — and the row's title and artist still
-// matched, so the wrong id sailed through the confidence gate and playback
-// targeted the album. Prefer an id that is not any ASIN the row links to.
-function pickTrackAsinFromIds(ids, linkedAsins = []) {
-  const exclude = new Set((Array.isArray(linkedAsins) ? linkedAsins : [])
-    .filter(Boolean).map(a => String(a).toUpperCase()));
-  for (const raw of (Array.isArray(ids) ? ids : [])) {
-    if (typeof raw !== 'string') continue;
-    const id = raw.toUpperCase();
-    if (!/^B[A-Z0-9]{9}$/.test(id)) continue;
-    if (exclude.has(id)) continue;
-    return id;
-  }
-  return null;
-}
-
-// Search rows render durations as "N MIN M SEC" (en). Also accept "M:SS",
-// "H:MM:SS" and a bare "N SEC" so the common shapes parse; anything else
-// (localized, missing) is 0 — same as the old English-only parse, which
-// button-scraped rows never got at all.
-function parseRowDurationSec(text) {
-  const s = String(text || '');
-  let m = s.match(/(\d+)\s*MIN(?:\s*(\d+)\s*SEC)?/i);
-  if (m) return parseInt(m[1], 10) * 60 + (m[2] ? parseInt(m[2], 10) : 0);
-  m = s.match(/(\d+):(\d{2})(?::(\d{2}))?/);
-  if (m) {
-    if (m[3]) return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
-    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-  }
-  m = s.match(/(\d+)\s*SEC/i);
-  if (m) return parseInt(m[1], 10);
-  return 0;
-}
-
 // A loose "Stations Warning" search misses the song. Amazon's songs tab
 // with both terms quoted does not: /search/"stations" "Warning"/songs.
-function amazonSongSearchUrl({ title, artist, query, songs } = {}) {
+// Returns { url, searchText } — the search runs over gql (the page's own
+// SpecSearchSeeMorePage request, captured and replayed), and searchText is the
+// exact string the page puts in variables.searchText, so the caller can find
+// its own request among everything the page fires. The songs tab is always
+// used: that is the page which fires the track search. Returns null when
+// there is nothing to search.
+function amazonSongSearchUrl({ title, artist, query } = {}) {
   const quote = (value) => '"' + String(value || '').replace(/"/g, '').trim() + '"';
   let q = '';
-  let songsOnly = !!songs;
   if ((title && String(title).trim()) || (artist && String(artist).trim())) {
     const parts = [];
     if (title && String(title).trim()) parts.push(quote(title));
     if (artist && String(artist).trim()) parts.push(quote(artist));
     q = parts.join(' ');
-    songsOnly = true;
   } else {
     q = String(query || '').trim();
   }
   if (!q) return null;
-  return 'https://music.amazon.com/search/' + encodeURIComponent(q) + (songsOnly ? '/songs' : '');
-}
-
-// The songs tab does not use SearchResultsWidget. Its rows are
-// <button data-testid="HorizontalItem,undefined">. The general search
-// page uses HorizontalItem,SearchResultsWidget_Item. Mini-player chrome
-// is not a HorizontalItem.
-function isAmazonSongResultItem(testId) {
-  const id = testId || '';
-  if (!/^HorizontalItem,/i.test(id)) return false;
-  return !isAmazonPlayerChrome([id]);
-}
-
-function acceptAmazonSearchAnchor(testIds, onSearchPage) {
-  if (isAmazonPlayerChrome(testIds)) return false;
-  if (/searchresults|topresults/i.test((testIds || []).join(' '))) return true;
-  return !!onSearchPage;
+  return { url: 'https://music.amazon.com/search/' + encodeURIComponent(q) + '/songs', searchText: q };
 }
 
 // A playlist page lives at /playlists/<id> (shared/brand playlists),
@@ -857,6 +832,39 @@ function amazonPlaylistDetailRequest(bodies, playlistId) {
   return null;
 }
 
+// The search request the page fired for OUR query — the same
+// capture-and-replay pattern as playlistDetail. Matched on
+// variables.searchText (case-insensitive equality), NOT the operationName:
+// the songs tab fires SpecSearchSeeMorePage today, but matching the text
+// survives an operation rename, and the text is unique among the page's
+// requests (only the spec search carries it).
+//
+// Only the TRACK spec is ever accepted: an album/artist/playlist spec for
+// the same text is a different entity whose ASIN must never reach playback —
+// an album-shaped edge maps to { asin: <albumAsin>, title, artist } and a
+// self-titled release passes the confidence gate, which is exactly the
+// album-ASIN failure the DOM-era exclusion dance existed to prevent. A body
+// with no specType at all is accepted (older deploys). With { anySpec: true }
+// the first searchText match of ANY spec is returned — used only to detect
+// "the page searched our text, but the track spec never came" (the grace
+// decision in searchTracks), never for replay.
+function amazonSpecSearchRequest(bodies, searchText, { anySpec = false } = {}) {
+  const wanted = String(searchText || '').trim().toLowerCase();
+  if (!wanted) return null;
+  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { continue; }
+    const batch = Array.isArray(parsed) ? parsed : [parsed];
+    for (const req of batch) {
+      const vars = req && req.variables;
+      if (!vars || typeof vars.searchText !== 'string') continue;
+      if (String(vars.searchText).trim().toLowerCase() !== wanted) continue;
+      if (anySpec || vars.specType == null || vars.specType === 'track') return req;
+    }
+  }
+  return null;
+}
+
 // Headers to copy onto the replayed gql fetch. The request the page made is
 // authoritative (x-api-key, csrf-*, music-territory, x-amzn-*); the browser
 // adds cookies (credentials: 'include') and origin/referer/sec-* itself, and
@@ -876,13 +884,30 @@ function amazonGqlFetchHeaders(headers) {
   return out;
 }
 
+// The widest imageType=PRIMARY image, else the widest image overall. The
+// playlist cover and the per-track art use the same pick.
+function gqlPrimaryImageUrl(images) {
+  const list = (Array.isArray(images) ? images : []).filter(i => i && i.url);
+  const widest = (l) => (l.length ? l.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
+  return (widest(list.filter(i => i.imageType === 'PRIMARY')) || widest(list) || {}).url || null;
+}
+
 // One tracks.edges[] entry -> the lookupPlaylist track shape. Artist is the
 // joined contributing artists (PRIMARY first); album is the album shortTitle
 // (the detail response has no full album title). A row without asin + title +
-// artist is dropped (the import path filters on both anyway).
+// artist is dropped (the import path filters on both anyway). The same mapper
+// serves the search response — its edges carry the same Track entity
+// (live-verified 2026-10: id/title/contributingArtists/album/duration/images
+// are identical shapes), and the search flow additionally uses the art.
+// Only Track entities import: the search response asks for __typename, and an
+// album/artist-spec edge (an Album node) must never become a track — an album
+// ASIN in the track slot passes the confidence gate on self-titled releases
+// and playback loads /tracks/<albumAsin>. Absent __typename (the playlist
+// detail response does not request it) is allowed.
 function playlistTrackFromGqlEdge(edge) {
   const node = edge && edge.node;
   if (!node || !node.id || !node.title) return null;
+  if (node.__typename && node.__typename !== 'Track') return null;
   const artists = (node.contributingArtists && Array.isArray(node.contributingArtists.edges))
     ? node.contributingArtists.edges : [];
   const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
@@ -897,6 +922,7 @@ function playlistTrackFromGqlEdge(edge) {
     artist: artist.slice(0, 200),
     album: String(album.shortTitle || album.title || '').slice(0, 200),
     albumAsin: album.id || null,
+    albumArt: gqlPrimaryImageUrl(node.images) || null,
     duration: typeof node.duration === 'number' ? node.duration : 0
   };
 }
@@ -909,9 +935,7 @@ function playlistFromGql(data) {
   if (!playlist) return null;
   // Cover: the widest imageType=PRIMARY entry (the 2400×2400 square); when
   // there is no PRIMARY, the widest image overall.
-  const images = (Array.isArray(playlist.images) ? playlist.images : []).filter(i => i && i.url);
-  const widest = (list) => (list.length ? list.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
-  const cover = (widest(images.filter(i => i.imageType === 'PRIMARY')) || widest(images) || {}).url || null;
+  const cover = gqlPrimaryImageUrl(playlist.images);
   const curator = playlist.curator;
   const owner = (curator && typeof curator === 'object' && curator.name) || (typeof curator === 'string' ? curator : null);
   const tracks = (playlist.tracks && Array.isArray(playlist.tracks.edges))
@@ -969,6 +993,32 @@ function playlistEdgesFromGql(data) {
     return null;
   };
   return scan(data, 0);
+}
+
+// The SpecSearchSeeMorePage response -> the searchTracks result. The
+// response answers with data.specificationSearch.result[], the spec result
+// carrying edges[].node = the same Track entity the playlist detail returns
+// (shared edge mapper above). A miss is a present envelope with empty edges;
+// an absent envelope (hornet renamed the field) is a structural failure — the
+// caller must throw not-ready, not cache a 30-day noMatch. Returns
+// { tracks, envelope }.
+function searchTracksFromGql(data) {
+  const search = data && data.specificationSearch;
+  if (!search || typeof search !== 'object') return { tracks: [], envelope: false };
+  const results = Array.isArray(search.result) ? search.result : [];
+  let spec = null;
+  for (const r of results) {
+    if (r && Array.isArray(r.edges) && r.edges.length) { spec = r; break; }
+  }
+  if (!spec) {
+    for (const r of results) {
+      if (r && Array.isArray(r.edges)) { spec = r; break; }
+    }
+  }
+  const tracks = ((spec && spec.edges) || [])
+    .map(playlistTrackFromGqlEdge)
+    .filter(Boolean);
+  return { tracks, envelope: true };
 }
 
 // Follow a playlist's own pagination to the end of the list. The gql server
@@ -1051,18 +1101,6 @@ function amazonMediaPauseExpr(expectedGeneration) {
   return `if (window.__parachordPlayGen !== ${gen}) return { ok: false, superseded: true }; m.pause();`;
 }
 
-// Title links render before the artist link. Returning those rows makes
-// resolve fail the artist gate and the miss is cached for 30 days. Wait, and
-// if the artist never arrives, the caller must throw not-ready — not return
-// the title-only rows, and not return [] (that is a real miss).
-function amazonSearchDecision(tracks, pollIndex) {
-  const list = Array.isArray(tracks) ? tracks : [];
-  const ready = list.filter(t => t && String(t.artist || '').trim());
-  if (ready.length) return { action: 'return', tracks: ready };
-  if (list.length && pollIndex >= 12) return { action: 'not-ready' };
-  return { action: 'wait' };
-}
-
 function isAmazonMusicPage(url) {
   try {
     return new URL(url).origin === 'https://music.amazon.com';
@@ -1079,7 +1117,6 @@ module.exports = {
   reportedPlaybackAsin,
   amazonMediaPauseExpr,
   amazonPlayGenerationStamp,
-  amazonSearchDecision,
   isAmazonMusicPage,
   shouldRevealPlayerOnFailure,
   playerDurationMs,
@@ -1102,17 +1139,15 @@ module.exports = {
   readPersistedQuality,
   writePersistedQuality,
   amazonQualityFromStore,
-  isAmazonPlayerChrome,
-  pickTrackAsinFromIds,
-  parseRowDurationSec,
   amazonSongSearchUrl,
-  isAmazonSongResultItem,
-  acceptAmazonSearchAnchor,
   asinFromPlayerUrl,
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
+  amazonSpecSearchRequest,
   amazonGqlFetchHeaders,
   capturedOperationNames,
+  searchTracksFromGql,
+  createSearchBreaker,
   playlistTrackFromGqlEdge,
   playlistFromGql,
   playlistPageInfoFromGql,
