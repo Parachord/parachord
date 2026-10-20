@@ -15,6 +15,7 @@ const { Play } = Icons;
 // hashString (module scope in app.js) is used by generateArtistPattern;
 // exported back so app.js's own call sites keep the same binding.
 const hashString = require('../lib/hash-string');
+const { trackSlug } = require('../lib/track-slug');
 
 // Generate a unique pattern/gradient for an artist based on their name
 // Returns an object with CSS gradient and optional SVG pattern
@@ -197,7 +198,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       e.dataTransfer.setData('text/plain', JSON.stringify({
         type: 'artist',
         artist: {
-          id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          id: slug(artist.name || 'unknown'),
           name: artist.name,
           image: imageUrl
         }
@@ -210,7 +211,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
         window.electron.contextMenu.showTrackMenu({
           type: 'artist',
           artist: {
-            id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+            id: slug(artist.name || 'unknown'),
             name: artist.name,
             image: imageUrl
           }
@@ -284,7 +285,7 @@ const SearchArtistCard = ({ artist, getArtistImage, onClick, onContextMenu, onPl
       e.dataTransfer.setData('text/plain', JSON.stringify({
         type: 'artist',
         artist: {
-          id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          id: slug(artist.name || 'unknown'),
           name: artist.name,
           image: imageUrl
         }
@@ -732,7 +733,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
     const albumData = {
       type: 'album',
       album: {
-        id: `${currentArtist?.name || release.artist?.name || 'unknown'}-${release.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+        id: trackSlug(currentArtist?.name || release.artist?.name || 'unknown', release.title || 'untitled'),
         title: release.title,
         artist: currentArtist?.name || release.artist?.name,
         year: year ? parseInt(year) : null,
@@ -1054,7 +1055,7 @@ const ReleasePage = ({
             const albumData = {
               type: 'album',
               album: {
-                id: `${release.artist?.name || 'unknown'}-${release.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                id: trackSlug(release.artist?.name || 'unknown', release.title || 'untitled'),
                 title: release.title,
                 artist: release.artist?.name,
                 year: year ? parseInt(year) : null,
@@ -1340,7 +1341,7 @@ const ReleasePage = ({
         React.createElement('div', { className: 'space-y-0' },
           release.tracks.map((track, index) => {
             // Build track ID first, then use it to look up resolved sources
-            const trackId = `${release.artist.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            const trackId = trackSlug(release.artist.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
             const sources = trackSources[trackId] || {};
             const availableResolvers = Object.keys(sources).filter(id => activeResolvers.includes(id) && !sources[id]?.noMatch);
             // Tri-state for badge area: still-loading vs resolved-with-no-matches vs playable.
@@ -1402,7 +1403,7 @@ const ReleasePage = ({
                 if (availableResolvers.length > 0) {
                   // Build queue from remaining tracks (after this one)
                   const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
-                    const tId = `${release.artist.name || 'unknown'}-${t.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                    const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
                     const tSources = trackSources[tId] || {};
                     return {
                       ...t,
@@ -1540,7 +1541,7 @@ const ReleasePage = ({
 
                         // Build queue from remaining tracks (after this one)
                         const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
-                          const tId = `${release.artist.name || 'unknown'}-${t.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
                           const tSources = trackSources[tId] || {};
                           return {
                             ...t,

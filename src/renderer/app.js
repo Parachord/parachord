@@ -1132,6 +1132,9 @@ const generateArtistId = (name) => {
 };
 
 // Generate a unique hash from a string (for deterministic pattern generation)
+// Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
+// that collapsed every non-Latin track to the same id (lib/track-slug.js).
+const { trackSlug } = require('./lib/track-slug');
 // ─── Cards (src/renderer/components/cards.js) ──────────────────────────────
 // The card family (search/collection/artist pages) + generateArtistPattern
 // (exported back — the in-component call sites keep the same binding) move
@@ -2354,7 +2357,7 @@ const executeDjTool = async (name, args, context) => {
           artist: t.artist,
           title: t.title,
           album: t.album || null,
-          id: `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+          id: trackSlug(t.artist, t.title)
         }));
         context.addTracksToPlaylist(playlist.id, tracksToAdd);
         return {
@@ -9871,7 +9874,7 @@ const Parachord = () => {
           addToQueue: (tracks, position) => {
             const tracksWithIds = tracks.map((t, i) => ({
               ...t,
-              id: t.id || `mcp-queue-${Date.now()}-${i}-${t.artist?.slice(0, 10)}-${t.title?.slice(0, 10)}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+              id: t.id || trackSlug(`mcp-queue-${Date.now()}-${i}`, t.artist?.slice(0, 10), t.title?.slice(0, 10)),
               sources: t.sources || {}
             }));
             addToQueue(tracksWithIds, { type: 'aiPlaylist', name: 'Claude' }, { skipAutoPlay: true });
@@ -14317,7 +14320,7 @@ ${trackListXml}
       const visibleTracks = [];
       visibleReleaseTrackIds.current.forEach(trackId => {
         const track = currentRelease.tracks.find(t => {
-          const computedId = `${artistName || 'unknown'}-${t.title || 'untitled'}-${currentRelease.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          const computedId = trackSlug(artistName || 'unknown', t.title || 'untitled', currentRelease.title || 'noalbum');
           return computedId === trackId;
         });
         if (track) {
@@ -18029,7 +18032,7 @@ ${trackListXml}
     // Deduplicate by id
     const trackMap = new Map();
     allTracks.forEach(track => {
-      const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      const trackId = track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
       if (!trackMap.has(trackId)) {
         trackMap.set(trackId, { ...track, id: trackId });
       }
@@ -18727,7 +18730,7 @@ ${trackListXml}
         // This prevents the "all tracks purple" bug when clicking a track with undefined id
         const tracksWithIds = tracks.map((t, i) => ({
           ...t,
-          id: t.id || `ai-queue-${Date.now()}-${i}-${t.artist?.slice(0, 10)}-${t.title?.slice(0, 10)}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          id: t.id || trackSlug(`ai-queue-${Date.now()}-${i}`, t.artist?.slice(0, 10), t.title?.slice(0, 10)),
           sources: t.sources || {}
         }));
         // skipAutoPlay: true because queue_add tool handles auto-play itself
@@ -18794,7 +18797,7 @@ ${trackListXml}
         // Deduplicate by id
         const trackMap = new Map();
         allTracks.forEach(track => {
-          const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          const trackId = track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
           if (!trackMap.has(trackId)) {
             trackMap.set(trackId, { ...track, id: trackId });
           }
@@ -23186,7 +23189,7 @@ ${trackListXml}
       const artistName = artist?.name || artist || 'Unknown Artist';
       console.log(`🎵 [release] Triggering resolution for ${tracks.length} album tracks (artist=${artistName}, release=${releaseData.title})`);
       tracks.forEach(track => {
-        const trackId = `${artistName || 'unknown'}-${track.title || 'untitled'}-${releaseData.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', releaseData.title || 'noalbum');
         resolveTrack({ ...track, id: trackId }, artistName, {});
       });
 
@@ -23323,7 +23326,7 @@ ${trackListXml}
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = `${artist?.name || 'unknown'}-${track.title || 'untitled'}-${release.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const trackId = trackSlug(artist?.name || 'unknown', track.title || 'untitled', release.title || 'noalbum');
               tracks.push({
                 id: trackId,
                 position: track.position,
@@ -23399,7 +23402,7 @@ ${trackListXml}
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = `${artistName}-${track.title || 'untitled'}-${album.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const trackId = trackSlug(artistName, track.title || 'untitled', album.title || 'noalbum');
               // Get album art - could be on album.albumArt (quick search) or in searchAlbumArt state (detail view)
               const albumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null;
               tracks.push({
@@ -23477,7 +23480,7 @@ ${trackListXml}
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = `${artistName}-${track.title || 'untitled'}-${album.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const trackId = trackSlug(artistName, track.title || 'untitled', album.title || 'noalbum');
               const albumArt = album.albumArt || null;
               tracks.push({
                 id: trackId,
@@ -25036,7 +25039,7 @@ ${trackListXml}
             // Release tracks from API don't have id - we need to find by matching the computed ID
             // The trackId is computed as: artist-title-album (lowercase, alphanumeric only)
             const track = releaseTracks.find(t => {
-              const computedId = `${artistName || 'unknown'}-${t.title || 'untitled'}-${releaseTitle || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const computedId = trackSlug(artistName || 'unknown', t.title || 'untitled', releaseTitle || 'noalbum');
               return computedId === trackId;
             });
             if (track) {
@@ -30004,7 +30007,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         (medium.tracks || []).forEach(track => {
           const trackTitle = track.title || track.recording?.title || 'Unknown Track';
           tracks.push({
-            id: `${artistName}-${trackTitle}-${albumTitle}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+            id: trackSlug(artistName, trackTitle, albumTitle),
             position: track.position,
             title: trackTitle,
             artist: artistName,
@@ -32138,7 +32141,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           releaseData.media.forEach((medium) => {
             if (medium.tracks) {
               medium.tracks.forEach(track => {
-                const trackId = `${artistName}-${track.title || 'untitled'}-${albumName}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                const trackId = trackSlug(artistName, track.title || 'untitled', albumName);
                 tracks.push({
                   id: trackId,
                   position: track.position,
@@ -32203,7 +32206,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = `${artistName}-${track.title || 'untitled'}-${albumName}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const trackId = trackSlug(artistName, track.title || 'untitled', albumName);
               tracks.push({
                 id: trackId,
                 position: track.position,
@@ -32362,7 +32365,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         releaseData.media.forEach((medium) => {
           if (medium.tracks) {
             medium.tracks.forEach(track => {
-              const trackId = `${album.artist}-${track.title || 'untitled'}-${album.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const trackId = trackSlug(album.artist, track.title || 'untitled', album.title);
               tracks.push({
                 id: trackId,
                 position: track.position,
@@ -34262,7 +34265,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Step 1: Immediately display all tracks with metadata (no sources yet)
         const tracksWithIds = parsed.tracks.map(track => {
-          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
           return { ...track, id: trackId, sources: {} };
         });
         setPlaylistTracks(tracksWithIds);
@@ -34302,7 +34305,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (tracks.length > 0) {
         // Add IDs and sources to tracks
         const tracksWithIds = tracks.map(track => {
-          const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          const trackId = track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
           return { ...track, id: trackId, sources: track.sources || {} };
         });
         setPlaylistTracks(tracksWithIds);
@@ -34345,7 +34348,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       // Add IDs and sources to tracks if not present
       const tracksWithIds = playlist.tracks.map(track => {
-        const trackId = track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const trackId = track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
         return { ...track, id: trackId, sources: track.sources || {} };
       });
       setPlaylistTracks(tracksWithIds);
@@ -34562,7 +34565,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         };
       } else if (currentArtist?.name) {
         const artist = {
-          id: (currentArtist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          id: slug(currentArtist.name || 'unknown'),
           name: currentArtist.name,
           image: artistImage
         };
@@ -35206,7 +35209,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       if (selectedPlaylistRef.current?.id === playlistId && result?.playlist?.tracks) {
         const tracksWithIds = result.playlist.tracks.map(track => {
-          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+          const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
           return { ...track, id: trackId, sources: {} };
         });
         setPlaylistTracks(tracksWithIds);
@@ -38586,7 +38589,7 @@ useEffect(() => {
                         e.dataTransfer.setData('text/plain', JSON.stringify({
                           type: 'artist',
                           artist: {
-                            id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            id: slug(artist.name || 'unknown'),
                             name: artist.name,
                             image: artist.image || null
                           }
@@ -38600,7 +38603,7 @@ useEffect(() => {
                           window.electron.contextMenu.showTrackMenu({
                             type: 'artist',
                             artist: {
-                              id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                              id: slug(artist.name || 'unknown'),
                               name: artist.name,
                               image: artist.image || null
                             }
@@ -38760,7 +38763,7 @@ useEffect(() => {
                         e.dataTransfer.setData('text/plain', JSON.stringify({
                           type: 'album',
                           album: {
-                            id: `${album['artist-credit']?.[0]?.name || 'unknown'}-${album.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            id: trackSlug(album['artist-credit']?.[0]?.name || 'unknown', album.title || 'untitled'),
                             title: album.title,
                             artist: album['artist-credit']?.[0]?.name || 'Unknown',
                             year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
@@ -39222,7 +39225,7 @@ useEffect(() => {
                             if (playlist.tracks?.length > 0) {
                               const tracksWithIds = playlist.tracks.map(track => ({
                                 ...track,
-                                id: `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                                 sources: {}
                               }));
                               setAddToPlaylistPanel({
@@ -39251,7 +39254,7 @@ useEffect(() => {
                             if (playlist.tracks?.length > 0) {
                               const tracksWithIds = playlist.tracks.map(track => ({
                                 ...track,
-                                id: `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                                 sources: {}
                               }));
                               const context = { type: 'playlist', id: playlist.title, name: playlist.title };
@@ -39276,7 +39279,7 @@ useEffect(() => {
                             if (playlist.tracks?.length > 0) {
                               const tracksWithIds = playlist.tracks.map(track => ({
                                 ...track,
-                                id: `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                                id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                                 sources: {}
                               }));
                               const context = { type: 'playlist', id: playlist.title, name: playlist.title };
@@ -39656,7 +39659,7 @@ useEffect(() => {
                       window.electron.contextMenu.showTrackMenu({
                         type: 'artist',
                         artist: {
-                          id: (artist.name || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                          id: slug(artist.name || 'unknown'),
                           name: artist.name,
                           image: null
                         }
@@ -39929,7 +39932,7 @@ useEffect(() => {
                     e.dataTransfer.setData('text/plain', JSON.stringify({
                       type: 'album',
                       album: {
-                        id: `${album['artist-credit']?.[0]?.name || 'unknown'}-${album.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                        id: trackSlug(album['artist-credit']?.[0]?.name || 'unknown', album.title || 'untitled'),
                         title: album.title,
                         artist: album['artist-credit']?.[0]?.name || 'Unknown',
                         year: album['first-release-date']?.split('-')[0] ? parseInt(album['first-release-date'].split('-')[0]) : null,
@@ -40717,7 +40720,7 @@ useEffect(() => {
               if (rel.tracks?.length > 0) {
                 const context = { type: 'album', id: rel.id, name: rel.title, artist: rel.artist?.name };
                 const tracks = rel.tracks.map(t => {
-                  const trackId = `${rel.artist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
                   return {
                     ...t,
                     id: trackId,
@@ -40736,7 +40739,7 @@ useEffect(() => {
             onAlbumAddToQueue: (rel) => {
               if (rel.tracks?.length > 0) {
                 const tracks = rel.tracks.map(t => {
-                  const trackId = `${rel.artist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
                   return {
                     ...t,
                     id: trackId,
@@ -40753,7 +40756,7 @@ useEffect(() => {
             onAlbumAddToPlaylist: (rel) => {
               if (rel.tracks?.length > 0) {
                 const tracks = rel.tracks.map(t => {
-                  const trackId = `${rel.artist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                  const trackId = trackSlug(rel.artist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
                   return {
                     ...t,
                     id: trackId,
@@ -41116,7 +41119,7 @@ useEffect(() => {
                       } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                         // Use already loaded tracks from current release
                         const tracks = currentRelease.tracks.map(t => {
-                          const trackId = `${currentArtist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
                           return {
                             ...t,
                             id: trackId,
@@ -41156,7 +41159,7 @@ useEffect(() => {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = `${currentArtist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
                         return {
                           ...t,
                           id: trackId,
@@ -41195,7 +41198,7 @@ useEffect(() => {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = `${currentArtist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
                         return {
                           ...t,
                           id: trackId,
@@ -41224,7 +41227,7 @@ useEffect(() => {
                       tracks = prefetched.tracks;
                     } else if (currentRelease?.id === rel.id && currentRelease?.tracks?.length > 0) {
                       tracks = currentRelease.tracks.map(t => {
-                        const trackId = `${currentArtist?.name || 'unknown'}-${t.title || 'untitled'}-${rel.title || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                        const trackId = trackSlug(currentArtist?.name || 'unknown', t.title || 'untitled', rel.title || 'noalbum');
                         return {
                           ...t,
                           id: trackId,
@@ -42952,7 +42955,7 @@ useEffect(() => {
                           e.stopPropagation();
                           const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
-                            id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                             sources: trackSources[track.id] || {}
                           }));
                           if (tracksWithIds.length > 0) {
@@ -42982,7 +42985,7 @@ useEffect(() => {
                           setTrackLoading(true);
                           const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
-                            id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                             sources: trackSources[track.id] || {}
                           }));
                           if (tracksWithIds.length > 0) {
@@ -43007,7 +43010,7 @@ useEffect(() => {
                           e.stopPropagation();
                           const tracksWithIds = (playlistTracks || []).map(track => ({
                             ...track,
-                            id: track.id || `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                            id: track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                             sources: trackSources[track.id] || {}
                           }));
                           if (tracksWithIds.length > 0) {
@@ -43880,7 +43883,7 @@ useEffect(() => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
                         const tracksWithIds = (playlist.tracks || []).map((track, idx) => {
-                          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                           return { ...track, id: trackId, sources: {} };
                         });
                         window.electron.contextMenu.showTrackMenu({
@@ -43907,7 +43910,7 @@ useEffect(() => {
                       draggable: true,
                       onDragStart: (e) => {
                         const tracksWithIds = (playlist.tracks || []).map(track => {
-                          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                           return { ...track, id: trackId, sources: {} };
                         });
                         e.dataTransfer.effectAllowed = 'copy';
@@ -44003,7 +44006,7 @@ useEffect(() => {
                             e.stopPropagation();
                             const tracksWithIds = (playlist.tracks || []).map(track => ({
                               ...track,
-                              id: `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                              id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                               sources: {}
                             }));
                             if (tracksWithIds.length > 0) {
@@ -44032,7 +44035,7 @@ useEffect(() => {
                             setTrackLoading(true);
                             const tracksWithIds = (playlist.tracks || []).map(track => ({
                               ...track,
-                              id: `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                              id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                               sources: {}
                             }));
                             if (tracksWithIds.length > 0) {
@@ -44057,7 +44060,7 @@ useEffect(() => {
                             e.stopPropagation();
                             const tracksWithIds = (playlist.tracks || []).map(track => ({
                               ...track,
-                              id: `${track.artist || 'unknown'}-${track.title || 'untitled'}`.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                              id: trackSlug(track.artist || 'unknown', track.title || 'untitled'),
                               sources: {}
                             }));
                             if (tracksWithIds.length > 0) {
@@ -44161,7 +44164,7 @@ useEffect(() => {
                   draggable: true,
                   onDragStart: (e) => {
                     const tracksWithIds = (playlist.tracks || []).map(track => {
-                      const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                      const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                       return { ...track, id: trackId, sources: {} };
                     });
                     e.dataTransfer.effectAllowed = 'copy';
@@ -44184,7 +44187,7 @@ useEffect(() => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
                       const tracksWithIds = (playlist.tracks || []).map((track, idx) => {
-                        const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                        const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                         return { ...track, id: trackId, sources: {} };
                       });
                       window.electron.contextMenu.showTrackMenu({
@@ -44313,7 +44316,7 @@ useEffect(() => {
                       if (tracks.length > 0) {
                         // Create track objects with IDs matching the playlist view format
                         const tracksWithIds = tracks.map(track => {
-                          const trackId = `${track.artist || 'unknown'}-${track.title || 'untitled'}-${track.album || 'noalbum'}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                          const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                           return { ...track, id: trackId, sources: {} };
                         });
                         const context = { type: 'playlist', name: playlist.title };
@@ -54533,7 +54536,7 @@ useEffect(() => {
                       artist: currentTrack.artist,
                       album: currentTrack.album,
                       duration: currentTrack.duration,
-                      id: `${currentTrack.artist}-${currentTrack.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                      id: trackSlug(currentTrack.artist, currentTrack.title)
                     }
                   };
                   e.dataTransfer.effectAllowed = 'copy';
@@ -61071,7 +61074,7 @@ useEffect(() => {
                     artist: t.artist,
                     album: t.album,
                     duration: t.duration,
-                    id: t.id || `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                    id: t.id || trackSlug(t.artist, t.title)
                   }));
 
                   setPlaylists(prev => prev.map(p => {
@@ -61311,7 +61314,7 @@ useEffect(() => {
                         artist: t.artist,
                         album: t.album,
                         duration: t.duration,
-                        id: t.id || `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                        id: t.id || trackSlug(t.artist, t.title)
                       }));
                       const newPlaylist = {
                         id: playlistId,
@@ -61353,7 +61356,7 @@ useEffect(() => {
                       artist: t.artist,
                       album: t.album,
                       duration: t.duration,
-                      id: t.id || `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                      id: t.id || trackSlug(t.artist, t.title)
                     }));
                     const newPlaylist = {
                       id: playlistId,
@@ -61441,7 +61444,7 @@ useEffect(() => {
                   artist: t.artist,
                   album: t.album,
                   duration: t.duration,
-                  id: t.id || `${t.artist}-${t.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                  id: t.id || trackSlug(t.artist, t.title)
                 }));
 
                 // Build updated playlist for saving
