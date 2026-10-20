@@ -99,6 +99,14 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
           echo "Code signing certificate imported successfully"
 
+          # electron-builder signs from this keychain (CSC_KEYCHAIN) instead
+          # of building its own from CSC_LINK: its importCerts passes the
+          # .p12 password to `set-key-partition-list -k`, which takes the
+          # KEYCHAIN password, and macOS 26 runner images reject the mismatch
+          # ("SecKeychainUnlock: The user name or passphrase you entered is
+          # not correct"; still present in electron-builder 26.15.3).
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
       # Restore MusicKit private key from secret (enables auto token generation)
       - name: Restore MusicKit key
         if: env.HAS_MUSICKIT_KEY == 'true'
@@ -217,7 +225,29 @@ jobs:
             unset CSC_LINK CSC_KEY_PASSWORD
             echo "[CI] CSC_LINK empty (likely a fork PR) — skipping code signing"
           fi
+          # macOS: sign from the keychain the import step built (see the
+          # comment there). Without CSC_LINK, electron-builder finds the
+          # Developer ID identity in CSC_KEYCHAIN. The keychain only exists
+          # when the signing secrets do (never on fork PRs), so internal PRs
+          # can sign too: CSC_FOR_PULL_REQUEST makes their builds exercise the
+          # same signing path as main and release builds, instead of skipping
+          # it and leaving the first real signing to the post-merge build.
+          if [ -n "${CSC_KEYCHAIN:-}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_FOR_PULL_REQUEST=true
+            echo "[CI] macOS: signing from $CSC_KEYCHAIN"
+          fi
           npm run build:${{ matrix.platform }} -- --${{ matrix.arch }} --publish never
+          # electron-builder skips signing with only a warning when it finds
+          # no identity, so check the app actually carries the Developer ID
+          # signature whenever signing was expected.
+          if [ -n "${CSC_KEYCHAIN:-}" ]; then
+            APP=$(ls -d dist/mac*/Parachord.app | head -1)
+            codesign --verify --deep --strict "$APP"
+            codesign -dv --verbose=2 "$APP" 2>&1 | grep -q '^Authority=Developer ID Application' \
+              || { echo "::error::$APP is not signed with a Developer ID Application identity"; exit 1; }
+            echo "[CI] $APP is Developer ID signed"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # macOS code signing (also read by electron-builder on Windows
