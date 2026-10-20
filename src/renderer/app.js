@@ -15865,6 +15865,20 @@ ${trackListXml}
 
       if (sortedSources.length === 0) {
         console.error('❌ No enabled resolvers found for track. Available sources:', Object.keys(trackOrSource.sources), 'Active resolvers:', currentActiveResolvers);
+        // Which axis failed? "sources exist + resolver active + still dropped" always
+        // means the confidence floor rejected them (artist/title containment), but
+        // the log above can't say WHICH side mismatched. Dump the per-source score
+        // and both identities so a field report pinpoints it without a debugger.
+        console.warn('⬇️ Dropped below floor:', availableResolvers.map(id => {
+          const src = trackOrSource.sources[id];
+          return {
+            id,
+            storedConfidence: src && typeof src.confidence !== 'undefined' ? src.confidence : null,
+            rescored: src ? confidenceForSource({ artist: trackOrSource.artist, title: trackOrSource.title }, src) : null,
+            source: src ? `${src.artist || '?'} — ${src.title || '?'}` : null,
+            target: `${trackOrSource.artist || '?'} — ${trackOrSource.title || '?'}`
+          };
+        }));
         if (autoSkipIfAdvancing('no enabled source matches')) return;
         setTrackLoading(false); // Clear loading state
         showConfirmDialog({
