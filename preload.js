@@ -186,6 +186,20 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Discord Rich Presence. Deliberately thin: the renderer reports what is
+  // playing and whether the toggle is on. The Discord socket, the Application
+  // id and the reconnect schedule all live in the main process — nothing here
+  // can read or write Discord state directly.
+  discordPresence: {
+    setEnabled: (enabled) => ipcRenderer.invoke('discordrpc:set-enabled', enabled),
+    getStatus: () => ipcRenderer.invoke('discordrpc:get-status'),
+    updateTrack: (track) => ipcRenderer.invoke('discordrpc:update-track', track),
+    updateState: (patch) => ipcRenderer.invoke('discordrpc:update-state', patch),
+    updatePlaybackState: (status) => ipcRenderer.invoke('discordrpc:update-playback-state', status),
+    updatePosition: (positionSeconds) => ipcRenderer.invoke('discordrpc:update-position', positionSeconds),
+    clear: () => ipcRenderer.invoke('discordrpc:clear')
+  },
+
   // Menu action handlers
   onMenuAction: (callback) => {
     const handler = (event, action) => callback(action);

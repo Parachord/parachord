@@ -17,7 +17,7 @@
 const js = require('@eslint/js');
 
 const strictRules = {
-  'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+  'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
   'no-undef': 'error',
   'no-redeclare': 'error',
   'no-dupe-keys': 'error',
@@ -117,6 +117,8 @@ const STRICT_FILES = [
   'mbid-lookup.js',
   'recommendation-blocklist.js',
   'album-art-catalog.js',
+  'discord-presence.js',
+  'discord-presence-logic.js',
   'resolver-loader.js',
   'scrobbler-loader.js',
   'resolution-scheduler.js',

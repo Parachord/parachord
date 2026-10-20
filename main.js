@@ -15,6 +15,7 @@ process.on('uncaughtException', (error) => {
 console.log('=== Parachord Startup ===');
 console.log('SPOTIFY_CLIENT_ID:', process.env.SPOTIFY_CLIENT_ID ? '✅ .env' : '⚪ Not in .env (user can configure in Settings)');
 console.log('MUSICKIT_DEVELOPER_TOKEN:', process.env.MUSICKIT_DEVELOPER_TOKEN ? '✅ .env' : '⚪ Will generate from .p8 key');
+console.log('DISCORD_CLIENT_ID:', process.env.DISCORD_CLIENT_ID ? '✅ .env (overrides the shipped id)' : '⚪ Using the shipped Application id');
 console.log('=========================');
 
 
@@ -22,6 +23,17 @@ const { app, BrowserWindow, ipcMain, globalShortcut, shell, protocol, Menu, nati
 const path = require('path');
 const fs = require('fs');
 const { createLocalAudioHandler } = require('./local-files/audio-protocol');
+
+// Discord Rich Presence. The connection owner is main-process only — the
+// renderer pushes now-playing state over IPC and never sees the socket. The
+// handlers, the presence singleton and the boot hydration live in
+// main-process/ipc/discord-presence.js; `discord-presence.js` lazy-requires
+// @xhayper/discord-rpc, so loading it costs nothing and can never fail startup.
+const {
+  registerDiscordPresenceIpc,
+  hydrateDiscordPresence,
+  disposeDiscordPresence,
+} = require('./main-process/ipc/discord-presence');
 
 // Canonical User-Agent for MetaBrainz services (MusicBrainz / ListenBrainz /
 // mapper / Cover Art Archive). Their rate-limiting + bot-mitigation require a
@@ -2195,6 +2207,10 @@ app.whenReady().then(async () => {
     }
   }
 
+  // Discord Rich Presence — only start connecting when the user has opted in,
+  // so a disabled feature costs no socket attempt and no reconnect timer.
+  hydrateDiscordPresence(store);
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -2353,6 +2369,13 @@ ipcMain.handle('mpris:update-shuffle', (event, shuffle) => {
 ipcMain.handle('mpris:update-loop', (event, loop) => {
   if (mprisPlayer) mprisPlayer.updateLoop(loop);
 });
+
+// ── Discord Rich Presence state push ────────────────────────────
+//
+// Same shape as the MPRIS feed above: the renderer fires these on track
+// change / play-pause / seek — those handlers live in
+// main-process/ipc/discord-presence.js with the presence singleton.
+registerDiscordPresenceIpc({ ipcMain, store });
 
 // Crypto utilities for scrobbling (Last.fm requires MD5 signatures)
 const crypto = require('crypto');
@@ -7361,6 +7384,9 @@ ipcMain.handle('ollama:check', async () => {
 // Stop MusicKit helper and system volume monitor on app quit
 app.on('will-quit', () => {
   systemVolumeMonitor.stop();
+  // Clear the Discord activity and close the socket so a presence does not
+  // outlive the process that set it.
+  disposeDiscordPresence();
   const bridge = getMusicKitBridge();
   bridge.stop();
 

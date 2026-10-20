@@ -26,6 +26,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'cache_artist_images', 'cache_charts', 'cache_concerts', 'cache_mbid_mapper', 'cache_new_releases', 'cache_playlist_covers', 'cache_track_sources',
   'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
   'discovery_seen_charts', 'discovery_seen_concerts', 'discovery_seen_criticsPicks', 'discovery_seen_newReleases', 'discovery_seen_recommendations',
+  'discord_presence_enabled',
   'friends', 'last_active_view', 'local_playlists', 'media-key-handling',
   'meta_service_configs', 'pinnedFriendIds', 'playlists_view_mode', 'preferred_spotify_device_id',
   'recommendation_blocklist', 'remember_queue', 'resolver_blocklist',

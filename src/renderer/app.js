@@ -1766,6 +1766,39 @@ const FALLBACK_RESOLVERS = [
 
 
 // Canonical priority order for content resolvers (determines insertion position when enabling)
+// Discord Rich Presence — settings-row copy for each connection state main
+// can report (see discord-presence-logic.js presenceStatus()). Kept at module
+// scope so the settings tab does not rebuild the maps on every render.
+const DISCORD_PRESENCE_STATUS_LABELS = {
+  'off': 'Off',
+  'connected': 'Connected to Discord',
+  'connecting': 'Connecting…',
+  'discord-not-running': 'Discord is not running',
+  'discord-not-responding': 'Discord is not responding',
+  'not-configured': 'No Discord Application id configured',
+  'invalid-client-id': 'Discord rejected the Application id',
+  'rate-limited': 'Rate limited by Discord',
+  'token-revoked': 'Discord revoked the connection',
+  'invalid-version': 'Discord is too old for this build',
+  'invalid-origin': 'Discord rejected the connection',
+  'set-activity-failed': 'Discord refused the update',
+  'dependency-missing': 'Discord support unavailable in this build',
+  'disconnected': 'Disconnected — retrying',
+  'error': 'Disconnected — retrying',
+};
+
+const DISCORD_PRESENCE_STATUS_TONES = {
+  'connected': 'good',
+  'connecting': 'warn',
+  'off': 'neutral',
+  'dependency-missing': 'warn',
+};
+
+const discordPresenceStatusTone = (status) => {
+  if (DISCORD_PRESENCE_STATUS_TONES[status]) return DISCORD_PRESENCE_STATUS_TONES[status];
+  return status === 'connected' ? 'good' : 'warn';
+};
+
 const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'youtube'];
 
 // Insert a resolver ID into an order array at its canonical position
@@ -3559,6 +3592,13 @@ const Parachord = () => {
 
   // Media key handling mode: 'always' | 'non-spotify' | 'never'
   const [mediaKeyMode, setMediaKeyMode] = useState('always');
+
+  // Discord Rich Presence (now playing on the user's Discord profile).
+  // Main process owns the socket, the Discord Application id and the reconnect
+  // schedule; the renderer only reports the toggle, what is playing, and what
+  // main says the connection is doing.
+  const [discordPresenceEnabled, setDiscordPresenceEnabled] = useState(false);
+  const [discordPresenceState, setDiscordPresenceState] = useState(null);
 
   // Meta Services state (Last.fm, ListenBrainz, etc.)
   const [metaServices, setMetaServices] = useState([]); // Loaded meta service plug-ins
@@ -10254,6 +10294,80 @@ const Parachord = () => {
     if (!window.electron?.mpris?.updateShuffle) return;
     window.electron.mpris.updateShuffle(shuffleMode).catch(() => {});
   }, [shuffleMode]);
+
+  // Discord Rich Presence: read the stored toggle + connection status from
+  // main (it owns the store key, so there is one source of truth), then mirror
+  // now-playing state into it. Every push is gated on the toggle, so a user who
+  // never enabled the feature generates no IPC and no socket attempt.
+  useEffect(() => {
+    const discordBridge = window.electron?.discordPresence;
+    if (!discordBridge?.getStatus) return;
+    discordBridge.getStatus().then((status) => {
+      if (!status) return;
+      setDiscordPresenceEnabled(Boolean(status.enabled));
+      setDiscordPresenceState(status);
+    }).catch(() => {});
+  }, []);
+
+  // One combined snapshot per change: track + play state + position. Sending
+  // them separately would publish an activity built from the new title and the
+  // previous position first, which reads as a wrong elapsed time for a frame.
+  // The effect keys on the payload FIELDS, not currentTrack identity: the
+  // track object churns several times per play (art and stream-quality
+  // backfills clone it), and each identity churn re-fires an effect whose
+  // computed start may round to a different second — re-sends the dedupe in
+  // main cannot see. The duration is in the key too: a duration that arrives
+  // late (Amazon's play-time repair patches the track) updates the progress
+  // bar.
+  const discordNowPlayingKey = currentTrack
+    ? `${currentTrack.title}|${currentTrack.artist}|${currentTrack.album}|${currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt || currentTrack.sources?.applemusic?.albumArt || ''}|${currentTrack.duration || 0}|${isPlaying}`
+    : '';
+  useEffect(() => {
+    const discordBridge = window.electron?.discordPresence;
+    if (!discordPresenceEnabled || !discordBridge?.updateState) return;
+    if (!currentTrack) {
+      discordBridge.updateState({ track: null, status: 'stopped' }).catch(() => {});
+      return;
+    }
+    // Only a playing track has a presence: main clears it when the status is
+    // not 'playing', and the same snapshot rebuilds it on resume.
+    discordBridge.updateState({
+      track: {
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        album: currentTrack.album,
+        // https-only covers are fetchable by Discord; main re-checks this, and
+        // falls back to the application artwork when it is not.
+        albumArt: currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt
+          || currentTrack.sources?.applemusic?.albumArt || null,
+      },
+      status: isPlaying ? 'playing' : 'paused',
+      positionSeconds: progressRef.current || 0,
+      // currentTrack.duration is SECONDS — same units as progressRef (the
+      // progress interpolation and the scrobbler's <30s floor compare them
+      // directly). Dividing here made a 251s track arrive as 0.251s, so
+      // timestamps.end landed at/below the start and was dropped — the progress
+      // bar never showed.
+      durationSeconds: currentTrack.duration || 0,
+    }).catch(() => {});
+  }, [discordNowPlayingKey, discordPresenceEnabled]);
+
+  // Discord: the connection resolves asynchronously (and Discord can start,
+  // restart, or close while the row is open), so the status line re-reads from
+  // main instead of freezing on "Connecting…". Bounded to the general tab — no
+  // idle poll when nothing is showing the status.
+  useEffect(() => {
+    if (!discordPresenceEnabled) return;
+    if (activeView !== 'settings' || settingsTab !== 'general') return;
+    const discordBridge = window.electron?.discordPresence;
+    if (!discordBridge?.getStatus) return;
+    const refresh = () => discordBridge.getStatus()
+      .then((status) => { if (status) setDiscordPresenceState(status); })
+      .catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 3000);
+    return () => clearInterval(timer);
+  }, [discordPresenceEnabled, activeView, settingsTab]);
 
   // OS Now Playing via navigator.mediaSession (parachord#976) — macOS Now
   // Playing widget / Control Center and the Windows media overlay (SMTC).
@@ -37029,8 +37143,21 @@ useEffect(() => {
       try { await window.electron.amazonMusic.seek(newPosition * 1000); } catch (err) { console.warn('[Seek] Amazon Music seek failed:', err); }
     }
     if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
-    seekTimeoutRef.current = setTimeout(() => { seekingRef.current = false; }, 1000);
-  }, [currentTrack, browserPlaybackActive]);
+    seekTimeoutRef.current = setTimeout(() => {
+      seekingRef.current = false;
+      // Re-anchor Discord's elapsed clock once per drag gesture, not per slider
+      // tick: the range input fires onChange continuously, and every position
+      // computes a different activity start, so the payload dedupe never
+      // suppresses — a whole drag would be a burst of SET_ACTIVITYs. This runs
+      // 1s after the last drag movement. Only while this track is still the
+      // one playing — a track change inside the window already carried its own
+      // position in the combined snapshot.
+      if (discordPresenceEnabled && window.electron?.discordPresence?.updatePosition
+          && currentTrackRef.current === currentTrack) {
+        window.electron.discordPresence.updatePosition(newPosition).catch(() => {});
+      }
+    }, 1000);
+  }, [currentTrack, browserPlaybackActive, discordPresenceEnabled]);
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return '';
@@ -53740,6 +53867,102 @@ useEffect(() => {
                     )
                   )
                 ),
+
+                // Discord Rich Presence Section
+                React.createElement('div', {
+                  style: {
+                    backgroundColor: 'var(--card-bg)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '12px',
+                    padding: '24px',
+                    boxShadow: 'var(--card-shadow)'
+                  }
+                },
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('h3', {
+                      style: {
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: 'var(--text-tertiary)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em'
+                      }
+                    }, 'Discord Presence'),
+                    React.createElement('p', {
+                      style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }
+                    }, 'Show what you are playing on your Discord profile')
+                  ),
+                  React.createElement('div', {
+                    style: {
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '16px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--hover-bg-default)'
+                    }
+                  },
+                    React.createElement('div', null,
+                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Share my now playing'),
+                      React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' } },
+                        'Needs the Discord desktop app open alongside Parachord.'
+                      )
+                    ),
+                    React.createElement('button', {
+                      type: 'button',
+                      role: 'switch',
+                      'aria-checked': discordPresenceEnabled,
+                      'aria-label': 'Share my now playing on Discord',
+                      onClick: async () => {
+                        const next = !discordPresenceEnabled;
+                        setDiscordPresenceEnabled(next);
+                        const discordBridge = window.electron?.discordPresence;
+                        if (!discordBridge?.setEnabled) return;
+                        const status = await discordBridge.setEnabled(next).catch(() => null);
+                        if (status) setDiscordPresenceState(status);
+                        showToast(next ? 'Discord presence turned on' : 'Discord presence turned off');
+                      },
+                      className: `relative w-11 h-6 rounded-full transition-colors ${discordPresenceEnabled ? 'bg-purple-600' : 'bg-gray-300'}`
+                    },
+                      React.createElement('span', {
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${discordPresenceEnabled ? 'translate-x-5' : 'translate-x-0'}`
+                      })
+                    )
+                  ),
+                  // Connection state, straight from the main process.
+                  discordPresenceEnabled && (() => {
+                    const statusKey = discordPresenceState?.statusOverride
+                      || discordPresenceState?.status
+                      || 'connecting';
+                    const tone = discordPresenceStatusTone(statusKey);
+                    return React.createElement('div', {
+                      style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }
+                    },
+                      React.createElement('span', {
+                        style: {
+                          padding: '2px 10px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          backgroundColor: tone === 'good' ? 'rgba(34,197,94,0.16)' : tone === 'warn' ? 'rgba(245,158,11,0.16)' : 'var(--hover-bg-default)',
+                          color: tone === 'good' ? '#16a34a' : tone === 'warn' ? '#b45309' : 'var(--text-tertiary)'
+                        }
+                      }, DISCORD_PRESENCE_STATUS_LABELS[statusKey] || statusKey),
+                      statusKey === 'not-configured' && React.createElement('span', {
+                        style: { fontSize: '12px', color: 'var(--text-tertiary)' }
+                      }, 'This build has no Discord Application id, so there is nothing to connect to yet.')
+                    );
+                  })(),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-tertiary)',
+                      marginTop: '14px',
+                      lineHeight: '1.6'
+                    }
+                  }, 'Discord shows the track under "Listening to Parachord". The cover travels when it is an https image; local-only art falls back to the Parachord artwork. The presence is only up while something is actually playing: pausing clears it, resuming puts it back, and it is gone when the queue is cleared or Parachord closes. Discord itself must allow it: Settings → Activity Privacy → "Share your detected activities with others".'),
+                                  ),
 
                 // Dialogs Section - Reset "Don't show again" preferences
                 React.createElement('div', {
