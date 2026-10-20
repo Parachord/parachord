@@ -23,8 +23,12 @@ function preloadChannels() {
 }
 
 function mainHandlers() {
-  const main = read('main.js');
-  return new Set([...main.matchAll(/ipcMain\.handle\(\s*'(discordrpc:[a-z-]+)'/g)].map((m) => m[1]));
+  const moduleSrc = read('main-process/ipc/discord-presence.js');
+  const handlers = [...moduleSrc.matchAll(/ipcMain\.handle\(\s*'(discordrpc:[a-z-]+)'/g)].map((m) => m[1]);
+  // The registration smoke test (tests/main-process/registration-smoke.test.js)
+  // drives the whole module; here just check main.js actually registers it.
+  expect(read('main.js')).toMatch(/registerDiscordPresenceIpc\(\{ ipcMain, store \}\)/);
+  return new Set(handlers);
 }
 
 function managerMethods() {
@@ -64,11 +68,11 @@ describe('Discord presence IPC bridge', () => {
   });
 
   test('main only calls methods the presence manager implements', () => {
-    const main = read('main.js');
+    const mainSide = read('main-process/ipc/discord-presence.js');
     const methods = managerMethods();
     const called = new Set(
-      [...main.matchAll(/discordPresence\.([a-zA-Z]+)\(/g)].map((m) => m[1])
-        .concat([...main.matchAll(/presence\.([a-zA-Z]+)\(/g)].map((m) => m[1])),
+      [...mainSide.matchAll(/discordPresence\.([a-zA-Z]+)\(/g)].map((m) => m[1])
+        .concat([...mainSide.matchAll(/presence\.([a-zA-Z]+)\(/g)].map((m) => m[1])),
     );
     // `presence` is also used as a local name elsewhere; only judge the ones
     // that look like presence-manager verbs.
@@ -112,17 +116,20 @@ describe('Discord presence store keys', () => {
     // builds use DISCORD_CLIENT_ID; users use the checkbox.
     const files = [
       'main.js', 'preload.js', 'src/renderer/app.js', 'main-process/ipc/store.js',
+      'main-process/ipc/discord-presence.js',
       'discord-presence-logic.js', 'discord-presence.js',
     ];
     for (const file of files) expect(read(file)).not.toMatch(/discord_client_id/);
     expect(read('discord-presence-logic.js')).toMatch(/const DEFAULT_DISCORD_CLIENT_ID = /);
-    expect(read('main.js')).toMatch(/process\.env\.DISCORD_CLIENT_ID/);
+    expect(read('main-process/ipc/discord-presence.js')).toMatch(/process\.env\.DISCORD_CLIENT_ID/);
     expect(read('.env.example')).toMatch(/DISCORD_CLIENT_ID=/);
   });
 
   test('main references the store key by constant, not by duplicate literal', () => {
-    const main = read('main.js');
-    expect(main).toMatch(/DISCORD_PRESENCE_ENABLED_STORE_KEY/);
-    expect(main).not.toMatch(/store\.(?:get|set|delete)\(\s*'discord_/);
+    const ipcModule = read('main-process/ipc/discord-presence.js');
+    expect(ipcModule).toMatch(/DISCORD_PRESENCE_ENABLED_STORE_KEY/);
+    for (const file of ['main.js', 'main-process/ipc/discord-presence.js']) {
+      expect(read(file)).not.toMatch(/store\.(?:get|set|delete)\(\s*'discord_/);
+    }
   });
 });

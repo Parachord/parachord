@@ -32,6 +32,7 @@ const { registerLocalFilesIpc } = require('../../main-process/ipc/local-files');
 const { registerSyncCreateIpc } = require('../../main-process/ipc/sync-create');
 const { registerSyncStartIpc } = require('../../main-process/ipc/sync-start');
 const { registerSyncPlaylistsIpc } = require('../../main-process/ipc/sync-playlists');
+const { registerDiscordPresenceIpc } = require('../../main-process/ipc/discord-presence');
 const { createSyncLinks } = require('../../main-process/sync-links');
 
 // Error classes that mean "the registration forgot something":
@@ -173,12 +174,29 @@ describe('registration smoke — all IPC modules together', () => {
     achordion: fakes.achordion, syncLinks: fakes.syncLinks,
   });
   fakes.syncLinks.registerSyncLinksIpc({ ipcMain });
+  // The presence manager injected here is a stub, not the real one — the
+  // smoke run invokes every handler, and set-enabled must not open a real
+  // Discord socket attempt from inside jest.
+  registerDiscordPresenceIpc({
+    ipcMain, store: fakes.store,
+    createPresence: () => ({
+      setEnabled: () => ({ enabled: true, status: 'connected' }),
+      getStatus: () => ({ enabled: false, status: 'off', connected: false, connecting: false }),
+      setTrack: () => {},
+      updateState: () => {},
+      setPlaybackStatus: () => {},
+      setPosition: () => {},
+      clear: () => {},
+      dispose: () => {},
+    }),
+  });
 
   test('the full decomposed surface registers with no duplicate channels', () => {
-    // Six IPC modules + the sync-links factory. If a module silently stops
+    // Seven IPC modules + the sync-links factory. If a module silently stops
     // registering (or two claim one channel), this count or the shared
     // ipcMain above catches it.
-    expect(handlers.size).toBeGreaterThanOrEqual(57);
+    expect(handlers.size).toBeGreaterThanOrEqual(64);
+    expect([...handlers.keys()].filter((c) => c.startsWith('discordrpc:')).length).toBe(7);
     expect([...handlers.keys()].filter((c) => c.startsWith('sync:')).length).toBeGreaterThanOrEqual(20);
   });
 

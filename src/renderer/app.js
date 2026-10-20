@@ -3599,7 +3599,6 @@ const Parachord = () => {
   // main says the connection is doing.
   const [discordPresenceEnabled, setDiscordPresenceEnabled] = useState(false);
   const [discordPresenceState, setDiscordPresenceState] = useState(null);
-  const discordPresenceTrackRef = useRef(null); // last snapshot pushed
 
   // Meta Services state (Last.fm, ListenBrainz, etc.)
   const [metaServices, setMetaServices] = useState([]); // Loaded meta service plug-ins
@@ -10313,6 +10312,14 @@ const Parachord = () => {
   // One combined snapshot per change: track + play state + position. Sending
   // them separately would publish an activity built from the new title and the
   // previous position first, which reads as a wrong elapsed time for a frame.
+  // The effect keys on the payload FIELDS, not currentTrack identity: the
+  // track object churns several times per play (art and stream-quality
+  // backfills clone it), and each identity churn re-fires an effect whose
+  // computed start may round to a different second — re-sends the dedupe in
+  // main cannot see.
+  const discordNowPlayingKey = currentTrack
+    ? `${currentTrack.title}|${currentTrack.artist}|${currentTrack.album}|${currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt || currentTrack.sources?.applemusic?.albumArt || ''}|${isPlaying}`
+    : '';
   useEffect(() => {
     const discordBridge = window.electron?.discordPresence;
     if (!discordPresenceEnabled || !discordBridge?.updateState) return;
@@ -10322,21 +10329,21 @@ const Parachord = () => {
     }
     // Only a playing track has a presence: main clears it when the status is
     // not 'playing', and the same snapshot rebuilds it on resume.
-    discordPresenceTrackRef.current = {
-      title: currentTrack.title,
-      artist: currentTrack.artist,
-      album: currentTrack.album,
-      // https-only covers are fetchable by Discord; main re-checks this, and
-      // falls back to the application artwork when it is not.
-      albumArt: currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt
-        || currentTrack.sources?.applemusic?.albumArt || null,
-    };
     discordBridge.updateState({
-      track: discordPresenceTrackRef.current,
+      track: {
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        album: currentTrack.album,
+        // https-only covers are fetchable by Discord; main re-checks this, and
+        // falls back to the application artwork when it is not.
+        albumArt: currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt
+          || currentTrack.sources?.applemusic?.albumArt || null,
+      },
       status: isPlaying ? 'playing' : 'paused',
       positionSeconds: progressRef.current || 0,
+      durationSeconds: (currentTrack.duration || 0) / 1000 || 0,
     }).catch(() => {});
-  }, [currentTrack, isPlaying, discordPresenceEnabled]);
+  }, [discordNowPlayingKey, discordPresenceEnabled]);
 
   // Discord: the connection resolves asynchronously (and Discord can start,
   // restart, or close while the row is open), so the status line re-reads from

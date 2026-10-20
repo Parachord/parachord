@@ -23,7 +23,9 @@
  *     everyone who can see the user's profile.
  *   - `timestamps.start` is a unix timestamp in seconds (the documented IPC
  *     example uses `time(nullptr)`); elapsed = now - start, computed by
- *     Discord's client, which echoes it back in milliseconds. A paused track
+ *     Discord's client, which echoes it back in milliseconds. `timestamps.end`,
+ *     sent when the track duration is known, gives Discord's profile card a
+ *     progress bar instead of elapsed-only. A paused track
  *     shows nothing at all: the builder returns null and the caller clears.
  *     Freezing the clock instead (sending `timestamps: {}`, which a live client
  *     confirmed does replace a stored start) turns out to be more moving parts
@@ -222,6 +224,9 @@ function formatPresenceLines(track) {
  *                     stopped) returns null and the caller clears — no frozen
  *                     clock, no paused badge.
  *   positionSeconds   current position, used to back-compute start.
+ *   durationSeconds   track duration; when known (and longer than the
+ *                     position) it becomes timestamps.end, which Discord
+ *                     renders as a progress bar.
  *   nowSeconds        unix seconds; injected so the test is deterministic.
  *   includeAlbumArt   false → no image and no album line at all; Discord shows
  *                     the application artwork.
@@ -243,6 +248,7 @@ function buildDiscordActivity(track, options = {}) {
   const {
     isPlaying = false,
     positionSeconds = 0,
+    durationSeconds = 0,
     nowSeconds = Math.floor(Date.now() / 1000),
     includeAlbumArt = true,
     type = 'listening',
@@ -258,6 +264,14 @@ function buildDiscordActivity(track, options = {}) {
 
   const position = Number.isFinite(positionSeconds) && positionSeconds > 0 ? positionSeconds : 0;
   activity.timestamps = { start: Math.max(0, Math.floor(nowSeconds - position)) };
+  // A known duration longer than the position gives Discord a progress bar
+  // (start..end) instead of an open-ended "listening for" clock. Omitted when
+  // unknown, zero or bogus — an end at or before the start renders as a
+  // full/empty bar on the profile card.
+  const duration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 0;
+  if (duration > position) {
+    activity.timestamps.end = activity.timestamps.start + Math.floor(duration);
+  }
 
   if (includeAlbumArt) {
     const assets = {};

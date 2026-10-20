@@ -15,12 +15,15 @@
  *   - A reconnect (Discord restart) must re-publish whatever is playing
  *     right now, from the state we keep here — not from whatever the renderer
  *     happened to push before the drop.
- *   - `@xmcl/discord-rpc` has no auto-reconnect, and its `request()` rejects
- *     pending calls only when the socket closes. Every call here is
- *     fire-and-forget with a catch, so a wedged socket can never stall
- *     playback or accumulate unhandled rejections.
- *   - SET_ACTIVITY is sent at most once per distinct payload, so a seek
- *     storm or a re-render cannot flood the socket.
+ *   - `@xhayper/discord-rpc` has no auto-reconnect, and its `request()` rejects
+ *     pending calls when the socket closes (and throws when called while not
+ *     connected). Every call here is fire-and-forget with a catch, so a wedged
+ *     socket can never stall playback or accumulate unhandled rejections.
+ *   - SET_ACTIVITY is rate-floored (one send per 4s, trailing newest state) and
+ *     de-duplicated per distinct payload, so a seek storm, a re-render or a
+ *     scripted run of track changes cannot flood the socket past Discord's
+ *     per-client update limit — over-limit updates are silently DROPPED, which
+ *     leaves a stale track showing on the profile.
  */
 
 'use strict';
@@ -35,14 +38,17 @@ const {
   nextReconnectDelay,
 } = require('./discord-presence-logic');
 
-// @xmcl/discord-rpc pulls undici + discord-api-types with it. If any of that
-// fails to load, the presence is simply unavailable — startup must not care.
+// @xhayper/discord-rpc (a maintained fork of discordjs/RPC) pulls
+// @discordjs/rest + discord-api-types with it; @xmcl/discord-rpc, the original
+// choice, nested-pinned undici 6.0.1 (Jan 2024) with open high-severity
+// advisories. If any of it fails to load, the presence is simply unavailable —
+// startup must not care.
 let discordRpcModule = null;
 function loadRpc() {
   if (discordRpcModule !== null) return discordRpcModule;
   try {
-    discordRpcModule = require('@xmcl/discord-rpc');
-  } catch (err) {
+    discordRpcModule = require('@xhayper/discord-rpc');
+  } catch (_err) {
     discordRpcModule = false;
   }
   return discordRpcModule;
@@ -63,6 +69,18 @@ const HANDSHAKE_TIMEOUT_MS = 8000;
 
 /** Discord's close code for a refused Application id. */
 const INVALID_CLIENT_ID_CLOSE = 4000;
+
+/** Discord's RPC error code for a rejected payload (an ERROR reply's data.code). */
+const INVALID_PAYLOAD_ERROR = 4000;
+
+/**
+ * Minimum gap between SET_ACTIVITY sends. Discord rate-limits activity
+ * updates per client and silently DROPS over-limit ones, which leaves a stale
+ * track showing; a scripted run of quick track changes reached the limit
+ * (7 sends in 14s). Pushes inside the gap are coalesced into one trailing
+ * send of the newest state.
+ */
+const MIN_SEND_GAP_MS = 4000;
 
 function connectionErrorKind(code) {
   if (code === COULD_NOT_CONNECT) return 'discord-not-running';
@@ -118,6 +136,7 @@ function createDiscordPresence(options = {}) {
     track: null,
     isPlaying: false,
     positionSeconds: 0,
+    durationSeconds: 0,
   };
 
   let client = null;
@@ -126,6 +145,10 @@ function createDiscordPresence(options = {}) {
   let pushInFlight = false;
   let pushAgain = false;
   let disposed = false;
+  // Send-rate floor state (see MIN_SEND_GAP_MS).
+  let lastSendAtMs = 0;
+  let gapTimer = null;
+  let pendingGapSend = false;
 
   const log = (message, extra) => {
     if (!logger || !logger.warn) return;
@@ -137,7 +160,7 @@ function createDiscordPresence(options = {}) {
     try {
       const resolved = resolveClientId();
       return typeof resolved === 'string' ? resolved.trim() : '';
-    } catch (err) {
+    } catch (_err) {
       return '';
     }
   };
@@ -146,6 +169,14 @@ function createDiscordPresence(options = {}) {
     if (retryTimer) {
       try { clearTimeoutFn(retryTimer); } catch (_err) { /* already fired */ }
       retryTimer = null;
+    }
+  };
+
+  const clearGapTimer = () => {
+    pendingGapSend = false;
+    if (gapTimer) {
+      try { clearTimeoutFn(gapTimer); } catch (_err) { /* already fired */ }
+      gapTimer = null;
     }
   };
 
@@ -168,6 +199,7 @@ function createDiscordPresence(options = {}) {
     state.connected = false;
     state.connecting = false;
     lastPayload = null;
+    clearGapTimer();
     if (!dying) return;
     if (clearPresence) {
       // Best effort: the socket may already be gone.
@@ -271,6 +303,7 @@ function createDiscordPresence(options = {}) {
     client = null;
     state.connected = false;
     lastPayload = null;
+    clearGapTimer();
     const code = reason && typeof reason.code === 'number' ? reason.code : null;
     if (code === null) {
       state.lastError = null;
@@ -360,6 +393,7 @@ function createDiscordPresence(options = {}) {
     return buildDiscordActivity(state.track, {
       isPlaying: state.isPlaying,
       positionSeconds: state.positionSeconds,
+      durationSeconds: state.durationSeconds,
       type: typeMode === 'fallback' ? null : 'listening',
     });
   }
@@ -378,6 +412,28 @@ function createDiscordPresence(options = {}) {
     // reconnect (and every connect while paused) spends a round trip telling
     // Discord to remove an activity it is not showing.
     if (!payload && !lastPayload) return;
+
+    // Discord rate-limits activity updates per client and DROPS over-limit
+    // ones (a dropped update leaves the stale track showing), so sends are
+    // floored to one per MIN_SEND_GAP_MS. A push inside the gap coalesces into
+    // one trailing send of the newest state — a rapid run of track changes
+    // lands as at most one send per window plus the final state.
+    if (!force && Date.now() - lastSendAtMs < MIN_SEND_GAP_MS) {
+      pendingGapSend = true;
+      if (!gapTimer) {
+        const wait = MIN_SEND_GAP_MS - (Date.now() - lastSendAtMs);
+        gapTimer = setTimeoutFn(() => {
+          gapTimer = null;
+          if (!pendingGapSend) return;
+          pendingGapSend = false;
+          publish({ force: true });
+        }, wait);
+        // Never keep the process alive for a trailing presence send.
+        if (gapTimer && typeof gapTimer.unref === 'function') gapTimer.unref();
+      }
+      return;
+    }
+    lastSendAtMs = Date.now();
 
     if (pushInFlight) {
       // Last write wins; the in-flight push will loop and send the newest.
@@ -411,9 +467,15 @@ function createDiscordPresence(options = {}) {
         lastPayload = payload;
       } catch (err) {
         const code = err && err.code;
-        // A client that rejects `type: listening` gets one retry without the
-        // type, and remembers it for the rest of the session.
-        if (payload && state.activityTypeMode !== 'fallback') {
+        // A payload rejection is the only failure that says anything about the
+        // payload: Discord answers a rejected SET_ACTIVITY with an ERROR reply
+        // carrying data.code 4000 (INVALID_PAYLOAD). Only that gets the one
+        // type-less retry — "Listening" is the one field a picky client might
+        // refuse. Any other failure (socket dropped mid-send, not connected)
+        // must NOT downgrade the session: one transient error used to
+        // permanently turn "Listening to Parachord" into "Playing Parachord".
+        const isPayloadRejection = Number(code) === INVALID_PAYLOAD_ERROR;
+        if (payload && isPayloadRejection && state.activityTypeMode !== 'fallback') {
           state.activityTypeMode = 'fallback';
           const fallbackPayload = activityForCurrentState('fallback');
           try {
@@ -481,6 +543,7 @@ function createDiscordPresence(options = {}) {
           state.track = null;
           state.isPlaying = false;
           state.positionSeconds = 0;
+          state.durationSeconds = 0;
         } else {
           state.isPlaying = normalized === 'playing';
         }
@@ -489,6 +552,11 @@ function createDiscordPresence(options = {}) {
       if ('positionSeconds' in patch) {
         const value = Number(patch.positionSeconds);
         state.positionSeconds = Number.isFinite(value) && value > 0 ? value : 0;
+        changed = true;
+      }
+      if ('durationSeconds' in patch) {
+        const value = Number(patch.durationSeconds);
+        state.durationSeconds = Number.isFinite(value) && value > 0 ? value : 0;
         changed = true;
       }
       if (changed) publish();
@@ -511,6 +579,7 @@ function createDiscordPresence(options = {}) {
       state.track = null;
       state.isPlaying = false;
       state.positionSeconds = 0;
+      state.durationSeconds = 0;
       publish();
       return api.getStatus();
     },

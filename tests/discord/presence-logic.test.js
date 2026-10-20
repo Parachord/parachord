@@ -268,6 +268,22 @@ describe('SET_ACTIVITY payload', () => {
     expect(start({ positionSeconds: -5 })).toBe(NOW);
     expect(start({ positionSeconds: NOW * 2 })).toBe(0);
   });
+
+  test('a known duration becomes timestamps.end — a progress bar, not elapsed-only', () => {
+    const playing = buildDiscordActivity(track, {
+      isPlaying: true, positionSeconds: 42, durationSeconds: 241, nowSeconds: NOW,
+    });
+    expect(playing.timestamps).toEqual({ start: NOW - 42, end: NOW - 42 + 241 });
+
+    // Unknown / zero / bogus duration: no end, an open-ended elapsed clock.
+    expect(buildDiscordActivity(track, { isPlaying: true, nowSeconds: NOW }).timestamps.end).toBeUndefined();
+    expect(buildDiscordActivity(track, { isPlaying: true, durationSeconds: 0, nowSeconds: NOW }).timestamps.end).toBeUndefined();
+    expect(buildDiscordActivity(track, { isPlaying: true, durationSeconds: NaN, nowSeconds: NOW }).timestamps.end).toBeUndefined();
+    // A duration at or before the position (bad metadata, or the last second
+    // of a track) would render a nonsense full/empty bar — omitted.
+    expect(buildDiscordActivity(track, { isPlaying: true, positionSeconds: 42, durationSeconds: 42, nowSeconds: NOW }).timestamps.end).toBeUndefined();
+    expect(buildDiscordActivity(track, { isPlaying: true, positionSeconds: 42, durationSeconds: 10, nowSeconds: NOW }).timestamps.end).toBeUndefined();
+  });
 });
 
 describe('payload de-duplication', () => {

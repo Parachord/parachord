@@ -15,12 +15,12 @@ const CLIENT_ID = '123456789012345678';
 const REFUSED_CLIENT_ID = '999999999999999999';
 
 /**
- * Fake @xmcl/discord-rpc Client, modelling the part of the real one that
- * matters: `connect()` resolves when the **socket opens**, while `user` and the
- * `connected` (READY) event arrive later; a refused Application id never
- * produces READY at all — it arrives as a transport CLOSE frame with code 4000.
- * Activities are recorded as raw `request('SET_ACTIVITY', args)` calls, which is
- * what the manager actually sends.
+ * Fake @xhayper/discord-rpc Client, modelling the part of the real one that
+ * matters: `connect()` resolves only when **READY** lands (a refused
+ * Application id never produces READY at all — it arrives as a transport CLOSE
+ * frame with code 4000), `user` exists only after READY, and activities are
+ * recorded as raw `request('SET_ACTIVITY', args)` calls, which is what the
+ * manager actually sends.
  */
 function makeFakeClientClass(behavior = {}) {
   const instances = [];
@@ -43,8 +43,10 @@ function makeFakeClientClass(behavior = {}) {
       transport.close = async () => { this.closedTransport = true; };
       this.transport = transport;
       if (behavior.onConnect) return behavior.onConnect(this, transport);
+      // @xhayper semantics: connect() resolves only when READY lands.
+      this.connectPromise = new Promise((resolve) => { this.resolveConnect = resolve; });
       this.emitReady();
-      return undefined;
+      return this.connectPromise;
     }
 
     /** The READY dispatch — when the real library sets `client.user`. */
@@ -56,6 +58,7 @@ function makeFakeClientClass(behavior = {}) {
           clearActivity: async () => this.request('SET_ACTIVITY', { activity: null }),
         };
         this.emit('connected');
+        if (this.resolveConnect) this.resolveConnect();
       });
     }
 
@@ -213,7 +216,7 @@ describe('publishing now playing', () => {
   });
 
   test('pause clears the presence, resume puts it back', async () => {
-    const { presence, Client } = makePresence();
+    const { presence, Client, timers } = makePresence();
     presence.setEnabled(true);
     presence.setTrack(TRACK);
     presence.setPlaybackStatus('playing');
@@ -224,6 +227,10 @@ describe('publishing now playing', () => {
 
     presence.setPlaybackStatus('paused');
     await flush();
+    // The clear is rate-floored with the send a moment ago: drain the trailing
+    // timer to land it.
+    timers.runPending();
+    await flush();
     expect(client.clearActivityCalls).toBe(1);
     expect(client.setActivityCalls.length).toBe(1);
 
@@ -232,6 +239,8 @@ describe('publishing now playing', () => {
     presence.setPosition(40);
     await flush();
     presence.setPlaybackStatus('playing');
+    await flush();
+    timers.runPending();
     await flush();
     expect(client.setActivityCalls.length).toBe(2);
     expect(client.clearActivityCalls).toBe(1);
@@ -263,13 +272,15 @@ describe('publishing now playing', () => {
   });
 
   test('stop clears the presence', async () => {
-    const { presence, Client } = makePresence();
+    const { presence, Client, timers } = makePresence();
     presence.setEnabled(true);
     presence.setTrack(TRACK);
     presence.setPlaybackStatus('playing');
     await flush();
     expect(Client.instances[0].setActivityCalls.length).toBe(1);
     presence.setPlaybackStatus('stopped');
+    await flush();
+    timers.runPending();
     await flush();
     expect(Client.instances[0].clearActivityCalls).toBe(1);
   });
@@ -283,6 +294,35 @@ describe('publishing now playing', () => {
     presence.setPlaybackStatus('playing');
     await flush();
     expect(Client.instances[0].setActivityCalls.length).toBe(1);
+  });
+
+  test('rapid track changes coalesce into one send per window, trailing newest', async () => {
+    // Discord rate-limits activity updates per client and silently DROPS
+    // over-limit ones, which leaves a stale track showing — a scripted run of
+    // quick changes sent 7 in 14s, past the limit. Sends are floored to one
+    // per MIN_SEND_GAP_MS with a trailing send of the newest state, so the
+    // burst lands as at most one send plus the final track.
+    const { presence, Client, timers } = makePresence();
+    presence.setEnabled(true);
+    presence.setTrack(TRACK);
+    presence.setPlaybackStatus('playing');
+    await flush();
+    const client = Client.instances[0];
+    expect(client.setActivityCalls.length).toBe(1);
+
+    for (const title of ['Two', 'Three', 'Four', 'Five', 'Six']) {
+      presence.setTrack({ ...TRACK, title });
+      await flush();
+    }
+    // All five rapid changes are inside the gap: nothing new sent yet, one
+    // trailing timer armed.
+    expect(client.setActivityCalls.length).toBe(1);
+
+    timers.runPending();
+    await flush();
+    expect(client.setActivityCalls.length).toBe(2);
+    const last = client.setActivityCalls[client.setActivityCalls.length - 1];
+    expect(last.details).toBe('Six'); // the trailing send carries the newest state
   });
 
   test('disabling clears the presence and stops reconnecting', async () => {
@@ -392,7 +432,7 @@ describe('a Discord that is not there, or that comes and goes', () => {
 
   test('a client that rejects type:listening falls back to no type, once', async () => {
     let first = true;
-    const { presence, Client } = makePresence({
+    const { presence, Client, timers } = makePresence({
       onRequest: (entry) => {
         if (first && entry.activity && entry.activity.type === 2) {
           first = false;
@@ -415,10 +455,44 @@ describe('a Discord that is not there, or that comes and goes', () => {
     // Later updates must not re-probe the rejected type.
     presence.setTrack({ title: 'Other', artist: 'Someone' });
     await flush();
+    timers.runPending();
+    await flush();
     const last = client.setActivityCalls[client.setActivityCalls.length - 1];
     expect('type' in last).toBe(false);
     // listening (rejected) -> fallback -> next track (no re-probe)
     expect(client.setActivityCalls.length).toBe(3);
+  });
+
+  test('a non-payload failure never downgrades the session to type-less', async () => {
+    // Only a payload rejection (ERROR reply, code 4000) says anything about
+    // the payload. A transient failure — socket dropped mid-send, not
+    // connected — must not permanently turn "Listening to Parachord" into
+    // "Playing Parachord" for the whole session.
+    let failFirst = true;
+    const { presence, Client, timers } = makePresence({
+      onRequest: (entry) => {
+        if (failFirst && entry.activity) {
+          failFirst = false;
+          const err = new Error('not connected');
+          err.code = 4; // CUSTOM_RPC_ERROR_CODE.NOT_CONNECTED — not a payload rejection
+          throw err;
+        }
+        return { data: entry.activity };
+      },
+    });
+    presence.setEnabled(true);
+    presence.setTrack(TRACK);
+    presence.setPlaybackStatus('playing');
+    await flush();
+    const client = Client.instances[0];
+    expect(client.setActivityCalls.length).toBe(1); // no type-less retry: the failure was not about the payload
+
+    presence.setTrack({ title: 'Other', artist: 'Someone' });
+    await flush();
+    timers.runPending();
+    await flush();
+    const last = client.setActivityCalls[client.setActivityCalls.length - 1];
+    expect(last.type).toBe(2); // still Listening — the session was not downgraded
   });
 });
 

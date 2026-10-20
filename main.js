@@ -25,14 +25,15 @@ const fs = require('fs');
 const { createLocalAudioHandler } = require('./local-files/audio-protocol');
 
 // Discord Rich Presence. The connection owner is main-process only — the
-// renderer pushes now-playing state over IPC and never sees the socket.
-// `discord-presence.js` lazy-requires @xmcl/discord-rpc, so requiring this at
-// startup costs nothing and can never fail startup.
-const createDiscordPresence = require('./discord-presence');
+// renderer pushes now-playing state over IPC and never sees the socket. The
+// handlers, the presence singleton and the boot hydration live in
+// main-process/ipc/discord-presence.js; `discord-presence.js` lazy-requires
+// @xhayper/discord-rpc, so loading it costs nothing and can never fail startup.
 const {
-  resolveDiscordClientId,
-  DISCORD_PRESENCE_ENABLED_STORE_KEY,
-} = require('./discord-presence-logic');
+  registerDiscordPresenceIpc,
+  hydrateDiscordPresence,
+  disposeDiscordPresence,
+} = require('./main-process/ipc/discord-presence');
 
 // Canonical User-Agent for MetaBrainz services (MusicBrainz / ListenBrainz /
 // mapper / Cover Art Archive). Their rate-limiting + bot-mitigation require a
@@ -2208,10 +2209,7 @@ app.whenReady().then(async () => {
 
   // Discord Rich Presence — only start connecting when the user has opted in,
   // so a disabled feature costs no socket attempt and no reconnect timer.
-  if (store.get(DISCORD_PRESENCE_ENABLED_STORE_KEY)) {
-    const presence = getDiscordPresence();
-    if (presence) presence.setEnabled(true);
-  }
+  hydrateDiscordPresence(store);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -2294,30 +2292,6 @@ let mediaKeysRegistered = true; // Track current state
 // Null on non-Linux or when init failed; methods are gated at call sites.
 let mprisPlayer = null;
 
-// Discord Rich Presence. Null when the presence has never been needed or the
-// @xmcl/discord-rpc dependency failed to load; every handler below gates on it.
-let discordPresence = null;
-
-// Resolved on every connection attempt, so DISCORD_CLIENT_ID set for a fork
-// or a dev build takes effect on the next try without a restart.
-const resolveDiscordClientIdFromEnv = () => resolveDiscordClientId({
-  env: process.env.DISCORD_CLIENT_ID,
-});
-
-const getDiscordPresence = () => {
-  if (discordPresence) return discordPresence;
-  try {
-    discordPresence = createDiscordPresence({
-      getClientId: resolveDiscordClientIdFromEnv,
-      logger: console,
-    });
-  } catch (err) {
-    console.warn('[Discord] presence init failed (non-fatal):', err.message);
-    discordPresence = null;
-  }
-  return discordPresence;
-};
-
 const registerMediaKeys = () => {
   if (mediaKeysRegistered) return;
   globalShortcut.register('MediaPlayPause', () => {
@@ -2399,51 +2373,9 @@ ipcMain.handle('mpris:update-loop', (event, loop) => {
 // ── Discord Rich Presence state push ────────────────────────────
 //
 // Same shape as the MPRIS feed above: the renderer fires these on track
-// change / play-pause / seek, and discord-presence.js decides what to send to
-// the Discord IPC socket (and whether to be connected at all). The renderer
-// must never talk to Discord directly — the Application id, the socket and the
-// reconnect schedule all stay here.
-ipcMain.handle('discordrpc:set-enabled', (event, enabled) => {
-  const value = Boolean(enabled);
-  store.set(DISCORD_PRESENCE_ENABLED_STORE_KEY, value);
-  const presence = getDiscordPresence();
-  if (!presence) return { enabled: value, status: value ? 'dependency-missing' : 'off' };
-  return presence.setEnabled(value);
-});
-
-ipcMain.handle('discordrpc:get-status', () => {
-  const presence = discordPresence || getDiscordPresence();
-  if (!presence) {
-    return {
-      enabled: Boolean(store.get(DISCORD_PRESENCE_ENABLED_STORE_KEY)),
-      status: store.get(DISCORD_PRESENCE_ENABLED_STORE_KEY) ? 'dependency-missing' : 'off',
-      configured: Boolean(resolveDiscordClientIdFromEnv()),
-    };
-  }
-  return presence.getStatus();
-});
-
-ipcMain.handle('discordrpc:update-track', (event, track) => {
-  if (discordPresence) discordPresence.setTrack(track);
-});
-
-// The combined push the renderer uses for a now-playing change: one IPC, one
-// SET_ACTIVITY, no intermediate payload built from half-updated state.
-ipcMain.handle('discordrpc:update-state', (event, patch) => {
-  if (discordPresence) discordPresence.updateState(patch || {});
-});
-
-ipcMain.handle('discordrpc:update-playback-state', (event, status) => {
-  if (discordPresence) discordPresence.setPlaybackStatus(status);
-});
-
-ipcMain.handle('discordrpc:update-position', (event, positionSeconds) => {
-  if (discordPresence) discordPresence.setPosition(positionSeconds);
-});
-
-ipcMain.handle('discordrpc:clear', () => {
-  if (discordPresence) discordPresence.clear();
-});
+// change / play-pause / seek — those handlers live in
+// main-process/ipc/discord-presence.js with the presence singleton.
+registerDiscordPresenceIpc({ ipcMain, store });
 
 // Crypto utilities for scrobbling (Last.fm requires MD5 signatures)
 const crypto = require('crypto');
@@ -7454,7 +7386,7 @@ app.on('will-quit', () => {
   systemVolumeMonitor.stop();
   // Clear the Discord activity and close the socket so a presence does not
   // outlive the process that set it.
-  if (discordPresence) discordPresence.dispose();
+  disposeDiscordPresence();
   const bridge = getMusicKitBridge();
   bridge.stop();
 

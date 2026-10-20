@@ -78,7 +78,7 @@ describe('Settings → General Discord presence control', () => {
     expect(refresh).toMatch(/return \(\) => clearInterval\(timer\);/);
   });
 
-  test('the now-playing feed is gated on the toggle', () => {
+  test('the now-playing feed is gated on the toggle and keyed on payload fields', () => {
     const feed = section(
       '// One combined snapshot per change',
       '// OS Now Playing via navigator.mediaSession',
@@ -86,6 +86,17 @@ describe('Settings → General Discord presence control', () => {
     expect(feed).toMatch(/if \(!discordPresenceEnabled \|\| !discordBridge\?\.updateState\) return;/);
     expect(feed).toMatch(/status: isPlaying \? 'playing' : 'paused'/);
     expect(feed).toMatch(/positionSeconds: progressRef\.current \|\| 0/);
+    // Keyed on the payload fields, not currentTrack identity: the track
+    // object churns several times per play (art / stream-quality backfills),
+    // and each identity churn re-fires the effect with a computed start that
+    // may round to a different second — re-sends the main-process dedupe
+    // cannot see. A duration is pushed too: it becomes timestamps.end, which
+    // Discord renders as a progress bar.
+    expect(feed).toMatch(/const discordNowPlayingKey = currentTrack/);
+    expect(feed).toMatch(/\}, \[discordNowPlayingKey, discordPresenceEnabled\]\)/);
+    expect(feed).toMatch(/durationSeconds: \(currentTrack\.duration \|\| 0\) \/ 1000 \|\| 0/);
+    // currentTrack identity must NOT be in the dep array.
+    expect(feed).not.toMatch(/\}, \[currentTrack,/);
   });
 
   test('a seek re-anchors Discord\u2019s elapsed clock, once per drag gesture', () => {
