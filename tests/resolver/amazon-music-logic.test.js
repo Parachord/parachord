@@ -23,6 +23,7 @@ const {
   amazonPlaylistDetailRequest,
   playlistPageInfoFromGql,
   playlistEdgesFromGql,
+  paginatePlaylistTracks,
   amazonGqlFetchHeaders,
   capturedOperationNames,
   playlistTrackFromGqlEdge,
@@ -961,10 +962,13 @@ describe('amazonPlaylistIdFromUrl', () => {
       .toBe('PP6417A00A9C99470BBC8834FF3BF6009A');
     expect(amazonPlaylistIdFromUrl('https://music.amazon.com/my/playlists/PP6417A00A9C99470BBC8834FF3BF6009A?ref=dm_sh'))
       .toBe('PP6417A00A9C99470BBC8834FF3BF6009A');
-    // /user-playlists/<hex-uuid> is the share-link shape for user-created
-    // playlists (observed 2026-10); its id has no PP prefix.
+    // /user-playlists/<uuid> is the share-link shape for user-created
+    // playlists (observed 2026-10); ids come bare-hex AND dashed — a dashed
+    // id truncated at its first dash never matches the page's own request.
     expect(amazonPlaylistIdFromUrl('https://music.amazon.com/user-playlists/e518f7064d964396a9dc211c4a705a80'))
       .toBe('e518f7064d964396a9dc211c4a705a80');
+    expect(amazonPlaylistIdFromUrl('https://music.amazon.com/user-playlists/1ff61395-8d2c-4c12-a5de-8fc0b69bdf02'))
+      .toBe('1ff61395-8d2c-4c12-a5de-8fc0b69bdf02');
   });
 
   test('track, album and non-Amazon URLs are not playlists', () => {
@@ -1196,6 +1200,173 @@ describe('playlistEdgesFromGql', () => {
 
 
 
+
+describe('paginatePlaylistTracks', () => {
+  const edge = (position, asin, title) => ({
+    cursor: `${position}:dfeab136-0000-0000-0000-${String(position).padStart(12, '0')}`,
+    node: asin == null ? null : {
+      id: asin,
+      title: title || `Track ${asin}`,
+      duration: 200,
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Artist' } }] },
+      album: { id: 'B0ALBUM', shortTitle: 'Album' }
+    }
+  });
+  const pageData = (positions, over = {}) => ({
+    playlist: {
+      id: 'PP1',
+      title: 'Test',
+      trackCount: over.trackCount != null ? over.trackCount : positions.length,
+      tracks: {
+        edges: positions.map(p => (Array.isArray(p) ? edge(p[0], p[1], p[2]) : edge(p, 'B0' + String(p).padStart(8, '0')))),
+        pageInfo: over.pageInfo != null ? over.pageInfo : { hasNextPage: false }
+      }
+    }
+  });
+  const pageInfo = (over = {}) => ({ hasNextPage: true, endCursor: '99:x', token: 'TOKEN', ...over });
+  // fetchPage over a script of canned pages; records the tokens it was called with
+  const fetcher = (pages) => {
+    const calls = [];
+    const fn = async (token) => {
+      calls.push(token);
+      const next = pages.shift();
+      if (!next) return { error: 'no more pages' };
+      if (next.error) return { error: next.error };
+      return { data: next.data };
+    };
+    fn.calls = calls;
+    return fn;
+  };
+
+  test('follows the token page over page until trackCount is reached', async () => {
+    const first = pageData([0, 1], { trackCount: 4, pageInfo: pageInfo({ token: 'T1' }) });
+    const pages = [
+      { data: pageData([2, 3], { trackCount: 4, pageInfo: pageInfo({ token: 'T2' }) }) }
+    ];
+    const r = await paginatePlaylistTracks({ firstPageData: first, fetchPage: fetcher(pages) });
+    expect(r.stop).toBe('complete');
+    expect(r.pages).toBe(1);
+    expect(r.playlist.tracks).toHaveLength(4);
+    expect(r.playlist.trackCount).toBe(4);
+  });
+
+  test('no token on the first page and hasNextPage false both end naturally (exhausted)', async () => {
+    const noToken = await paginatePlaylistTracks({
+      firstPageData: pageData([0, 1], { trackCount: 5, pageInfo: pageInfo({ token: null }) }),
+      fetchPage: fetcher([])
+    });
+    expect(noToken.stop).toBe('exhausted');
+    expect(noToken.pages).toBe(0);
+    expect(noToken.playlist.tracks).toHaveLength(2);
+
+    const lastPage = await paginatePlaylistTracks({
+      firstPageData: pageData([0, 1], { trackCount: 5, pageInfo: pageInfo({ token: 'T1' }) }),
+      fetchPage: fetcher([{ data: pageData([2], { trackCount: 3, pageInfo: { hasNextPage: false, token: null } }) }])
+    });
+    expect(lastPage.stop).toBe('exhausted');
+    expect(lastPage.playlist.tracks).toHaveLength(3);
+  });
+
+  test('a page that is entirely delisted rows (node:null) advances — mapped zero is not a stop', async () => {
+    // review feedback on #1072: an all-null page used to end the import even
+    // though later pages exist.
+    const first = pageData([0], { trackCount: 4, pageInfo: pageInfo({ token: 'T1' }) });
+    const pages = [
+      { data: pageData([[100, null], [101, null]], { trackCount: 4, pageInfo: pageInfo({ token: 'T2' }) }) },
+      { data: pageData([200, 201], { trackCount: 4, pageInfo: { hasNextPage: false, token: null } }) }
+    ];
+    const r = await paginatePlaylistTracks({ firstPageData: first, fetchPage: fetcher(pages) });
+    expect(r.stop).toBe('exhausted');
+    expect(r.pages).toBe(2);
+    expect(r.playlist.tracks.map(t => t.asin)).toHaveLength(3); // row 0 + rows 200-201
+  });
+
+  test('a duplicate track first on two consecutive pages advances — the cursor distinguishes windows', async () => {
+    // review feedback on #1072: same asin first on consecutive pages used to
+    // read as a repeated window.
+    const first = pageData([[0, 'BDUP', 'First']], { trackCount: 5, pageInfo: pageInfo({ token: 'T1' }) });
+    const pages = [
+      { data: pageData([[100, 'BDUP', 'Dup again'], [101, 'B0X', 'Other']], { trackCount: 5, pageInfo: pageInfo({ token: 'T2' }) }) },
+      { data: pageData([200], { trackCount: 4, pageInfo: { hasNextPage: false, token: null } }) }
+    ];
+    const r = await paginatePlaylistTracks({ firstPageData: first, fetchPage: fetcher(pages) });
+    expect(r.stop).toBe('exhausted');
+    expect(r.playlist.tracks).toHaveLength(4);
+    expect(r.playlist.tracks.filter(t => t.asin === 'BDUP')).toHaveLength(2);
+  });
+
+  test('a repeated window (same first cursor) stops with no-advance', async () => {
+    const first = pageData([0], { trackCount: 5, pageInfo: pageInfo({ token: 'T1' }) });
+    const pages = [
+      { data: pageData([100, 101], { trackCount: 5, pageInfo: pageInfo({ token: 'T1' }) }) },
+      { data: pageData([100, 101], { trackCount: 5, pageInfo: pageInfo({ token: 'T1' }) }) }
+    ];
+    const r = await paginatePlaylistTracks({ firstPageData: first, fetchPage: fetcher(pages) });
+    expect(r.stop).toBe('no-advance');
+    expect(r.pages).toBe(2);
+    expect(r.playlist.tracks).toHaveLength(3); // first page + one real page
+  });
+
+  test('a page error stops and keeps what merged (page-error)', async () => {
+    const first = pageData([0], { trackCount: 9, pageInfo: pageInfo({ token: 'T1' }) });
+    const pages = [{ error: 'Amazon playlist query failed (500)' }];
+    const r = await paginatePlaylistTracks({ firstPageData: first, fetchPage: fetcher(pages) });
+    expect(r.stop).toBe('page-error');
+    expect(r.playlist.tracks).toHaveLength(1);
+  });
+
+  test('an empty page (zero raw edges) stops (empty-page)', async () => {
+    const first = pageData([0], { trackCount: 9, pageInfo: pageInfo({ token: 'T1' }) });
+    const pages = [{ data: pageData([], { trackCount: 9, pageInfo: pageInfo({ token: 'T2' }) }) }];
+    const r = await paginatePlaylistTracks({ firstPageData: first, fetchPage: fetcher(pages) });
+    expect(r.stop).toBe('empty-page');
+    expect(r.playlist.tracks).toHaveLength(1);
+  });
+
+  test('the page cap stops the loop (page-limit)', async () => {
+    const first = pageData([0], { trackCount: 9999, pageInfo: pageInfo({ token: 'T0' }) });
+    const pages = [];
+    for (let i = 1; i <= 10; i++) pages.push({ data: pageData([i * 100], { trackCount: 9999, pageInfo: pageInfo({ token: 'T' + i }) }) });
+    const r = await paginatePlaylistTracks({ firstPageData: first, fetchPage: fetcher(pages), maxPages: 3 });
+    expect(r.stop).toBe('page-limit');
+    expect(r.pages).toBe(3);
+    expect(r.playlist.tracks).toHaveLength(4); // first page + 3
+  });
+
+  test('the time cap stops the loop (time-limit)', async () => {
+    let clock = 0;
+    const first = pageData([0], { trackCount: 9999, pageInfo: pageInfo({ token: 'T0' }) });
+    const pages = [];
+    for (let i = 1; i <= 10; i++) pages.push({ data: pageData([i * 100], { trackCount: 9999, pageInfo: pageInfo({ token: 'T' + i }) }) });
+    const r = await paginatePlaylistTracks({
+      firstPageData: first,
+      fetchPage: fetcher(pages),
+      maxMs: 1000,
+      now: () => (clock += 400) // crosses the cap on the third check
+    });
+    expect(r.stop).toBe('time-limit');
+    expect(r.playlist.tracks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('a null first page (deleted/private) reports no-playlist', async () => {
+    const r = await paginatePlaylistTracks({ firstPageData: { playlist: null }, fetchPage: fetcher([]) });
+    expect(r.playlist).toBeNull();
+    expect(r.stop).toBe('no-playlist');
+  });
+
+  test('trackCount can grow from later responses', async () => {
+    const first = pageData([0], { trackCount: 2, pageInfo: pageInfo({ token: 'T1' }) });
+    const pages = [
+      { data: pageData([100], { trackCount: 3, pageInfo: pageInfo({ token: 'T2' }) }) },
+      { data: pageData([200], { trackCount: 3, pageInfo: { hasNextPage: false, token: null } }) }
+    ];
+    const r = await paginatePlaylistTracks({ firstPageData: first, fetchPage: fetcher(pages) });
+    // trackCount grew to 3 and the second page reached it — complete, not exhausted
+    expect(r.stop).toBe('complete');
+    expect(r.playlist.trackCount).toBe(3);
+    expect(r.playlist.tracks).toHaveLength(3);
+  });
+});
 
 describe('amazonSearchDecision', () => {
   test('rows with an artist are returned and title-only siblings are dropped', () => {
