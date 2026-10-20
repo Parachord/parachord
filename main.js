@@ -2259,6 +2259,13 @@ app.whenReady().then(async () => {
     safeSendToRenderer,
     mediaKeysEnabled: () => (store.get('media-key-handling') || 'always') !== 'never'
   });
+  const { createEmbeddedPlayerMirror, sendMirrorToEmbeddedPlayer } = require('./main-process/ipc/embedded-player');
+  embeddedPlayerMirror = createEmbeddedPlayerMirror({
+    sendMirror: (payload) => sendMirrorToEmbeddedPlayer('amazonmusic', payload),
+    // currentAsin is non-null exactly while the Amazon player owns playback.
+    isOwned: () => !!amazonWebPlayer.currentAsin,
+    enabled: () => process.platform !== 'linux'
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -2341,6 +2348,14 @@ let mediaKeysRegistered = true; // Track current state
 // Null on non-Linux or when init failed; methods are gated at call sites.
 let mprisPlayer = null;
 
+// Now-playing mirror for embedded web players (Amazon's hidden views) — the
+// embedded view's session is the app's ACTIVE session during its playback,
+// and with the page's metadata blocked the OS card falls back to the page's
+// own label ("Amazon Music", the document title). Created in whenReady;
+// the mpris:update-* handlers below feed it alongside the native MPRIS
+// player. Null on Linux (#848 policy: never feed Chromium's MPRIS there).
+let embeddedPlayerMirror = null;
+
 const registerMediaKeys = () => {
   if (mediaKeysRegistered) return;
   globalShortcut.register('MediaPlayPause', () => {
@@ -2401,14 +2416,17 @@ ipcMain.handle('media-keys-update-playback-source', (event, source) => {
 // has media-key-handling set to 'never').
 ipcMain.handle('mpris:update-track', (event, track) => {
   if (mprisPlayer) mprisPlayer.updateTrack(track);
+  if (embeddedPlayerMirror) embeddedPlayerMirror.updateTrack(track);
 });
 
 ipcMain.handle('mpris:update-playback-state', (event, state) => {
   if (mprisPlayer) mprisPlayer.updatePlaybackState(state);
+  if (embeddedPlayerMirror) embeddedPlayerMirror.updatePlaybackState(state);
 });
 
 ipcMain.handle('mpris:update-position', (event, positionSeconds) => {
   if (mprisPlayer) mprisPlayer.updatePosition(positionSeconds);
+  if (embeddedPlayerMirror) embeddedPlayerMirror.updatePosition(positionSeconds);
 });
 
 ipcMain.handle('mpris:update-shuffle', (event, shuffle) => {

@@ -3,7 +3,7 @@
 // the per-preload literal copies are behaviorally diffed against it in
 // tests/resolver/amazon-player-preload.test.js.
 
-const { installMediaSessionHijack } = require('../../embedded-player-kit');
+const { installMediaSessionHijack, applyMediaSessionMirror } = require('../../embedded-player-kit');
 
 // A scope shaped like the page world: a navigator whose mediaSession is the
 // real (Chromium-bound) object. The facade swap happens on the navigator, so
@@ -159,5 +159,141 @@ describe('installMediaSessionHijack', () => {
     expect(Object.keys(pageC.realHandlers)).toEqual([]);
     expect(Object.keys(pageD.realHandlers)).toEqual([]);
     expect(pageD.navigator.mediaSession).not.toBe(pageD.real);
+  });
+});
+
+// The now-playing mirror — main feeds Parachord's track through the preload
+// into the page world, and applyMediaSessionMirror writes the REAL session
+// behind the facade so the OS card shows the track instead of the page's own
+// label ("Amazon Music", the document title).
+describe('applyMediaSessionMirror', () => {
+  let MediaMetadataCtor;
+  const constructed = [];
+
+  beforeAll(() => {
+    // The page world's MediaMetadata constructor; captured so the tests can
+    // assert what Chromium would receive.
+    MediaMetadataCtor = global.MediaMetadata;
+    global.MediaMetadata = class MediaMetadata {
+      constructor(init) {
+        if (init && init.title === 'THROW') throw new TypeError('bad metadata');
+        this.init = init;
+        constructed.push(init);
+      }
+    };
+  });
+  afterAll(() => {
+    if (MediaMetadataCtor === undefined) delete global.MediaMetadata;
+    else global.MediaMetadata = MediaMetadataCtor;
+  });
+
+  // A page whose hijack installed: the real session is stashed on the scope.
+  const makeInstalledPage = () => {
+    const real = {
+      handlers: {},
+      metadata: undefined,
+      playbackState: 'none',
+      positionState: null,
+      setActionHandler(a, fn) { this.handlers[a] = fn; },
+      setPositionState(s) { this.positionState = s; }
+    };
+    real.setActionHandler = real.setActionHandler.bind(real);
+    const scope = { navigator: { mediaSession: real } };
+    if (typeof global.MediaMetadata === 'function') scope.MediaMetadata = global.MediaMetadata;
+    installMediaSessionHijack(scope, null);
+    return { scope, real };
+  };
+
+  test('the hijack stashes the real session for the mirror path', () => {
+    const { scope, real } = makeInstalledPage();
+    expect(scope.__parachordMediaSessionReal).toBe(real);
+  });
+
+  test('metadata writes reach the real session; https artwork passes, others drop', () => {
+    const { scope, real } = makeInstalledPage();
+    applyMediaSessionMirror(scope, {
+      metadata: { title: 'Metal Health', artist: 'Quiet Riot', album: 'Metal Health', artwork: 'https://example.com/a.jpg' }
+    });
+    expect(real.metadata.init).toEqual({
+      title: 'Metal Health', artist: 'Quiet Riot', album: 'Metal Health',
+      artwork: [{ src: 'https://example.com/a.jpg', sizes: '512x512' }]
+    });
+    // The page facade is unaffected by the mirror — writes behind the facade
+    expect(scope.navigator.mediaSession.metadata).toBeNull();
+
+    applyMediaSessionMirror(scope, {
+      metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'local-art://embedded/x' }
+    });
+    expect(real.metadata.init).toEqual({ title: 'T', artist: 'A', album: 'AL' }); // no artwork
+  });
+
+  test('null metadata clears; a throwing MediaMetadata degrades to text-only', () => {
+    const { scope, real } = makeInstalledPage();
+    applyMediaSessionMirror(scope, { metadata: { title: 'T', artist: 'A', album: 'AL' } });
+    expect(real.metadata).toBeTruthy();
+    applyMediaSessionMirror(scope, { metadata: null });
+    expect(real.metadata).toBeNull();
+
+    applyMediaSessionMirror(scope, {
+      metadata: { title: 'THROW', artist: 'A', album: 'AL', artwork: 'https://e.com/a.jpg' }
+    });
+    // First construction throws (artwork + THROW title), fallback retries without artwork, still throws → null
+    expect(real.metadata).toBeNull();
+  });
+
+  test('playbackState and clamped positionState reach the real session', () => {
+    const { scope, real } = makeInstalledPage();
+    applyMediaSessionMirror(scope, { playbackState: 'playing' });
+    expect(real.playbackState).toBe('playing');
+    applyMediaSessionMirror(scope, { playbackState: 'bogus' });
+    expect(real.playbackState).toBe('playing'); // invalid values ignored
+
+    applyMediaSessionMirror(scope, { position: { duration: 317, position: 400, rate: 1 } });
+    expect(real.positionState).toEqual({ duration: 317, position: 317, playbackRate: 1 });
+    applyMediaSessionMirror(scope, { position: { duration: 317, position: 10, rate: 0 } });
+    expect(real.positionState).toEqual({ duration: 317, position: 10, playbackRate: 0 });
+    applyMediaSessionMirror(scope, { position: { duration: 0, position: 10, rate: 1 } });
+    expect(real.positionState.position).toBe(10); // no duration → skipped entirely
+  });
+
+  test('no stash / no data / hostile sessions are tolerated', () => {
+    expect(() => applyMediaSessionMirror(null, { metadata: null })).not.toThrow();
+    expect(() => applyMediaSessionMirror({}, { metadata: null })).not.toThrow(); // hijack never ran
+    const { scope, real } = makeInstalledPage();
+    expect(() => applyMediaSessionMirror(scope, null)).not.toThrow();
+    expect(() => applyMediaSessionMirror(scope, 'junk')).not.toThrow();
+
+    // A real session whose setters throw is tolerated
+    const hostile = {
+      set metadata(v) { throw new Error('no'); },
+      set playbackState(v) { throw new Error('no'); },
+      setActionHandler() { throw new Error('no'); },
+      setPositionState() { throw new Error('no'); }
+    };
+    const hostileScope = { navigator: { mediaSession: hostile } };
+    installMediaSessionHijack(hostileScope, null);
+    expect(() => applyMediaSessionMirror(hostileScope, {
+      metadata: { title: 'T', artist: 'A', album: 'AL' },
+      playbackState: 'playing',
+      position: { duration: 10, position: 1, rate: 1 }
+    })).not.toThrow();
+    // the earlier page is untouched
+    expect(real.metadata).toBeUndefined();
+  });
+
+  test('the mirror is serialization-safe: .toString() + eval behaves identically', () => {
+    const restored = new Function(`return (${applyMediaSessionMirror.toString()})`)();
+    const a = makeInstalledPage();
+    const b = makeInstalledPage();
+    const payload = {
+      metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'https://e.com/a.jpg' },
+      playbackState: 'playing',
+      position: { duration: 100, position: 50, rate: 1 }
+    };
+    applyMediaSessionMirror(a.scope, payload);
+    restored(b.scope, payload);
+    expect(b.real.metadata.init).toEqual(a.real.metadata.init);
+    expect(b.real.playbackState).toBe(a.real.playbackState);
+    expect(b.real.positionState).toEqual(a.real.positionState);
   });
 });

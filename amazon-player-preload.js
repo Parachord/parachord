@@ -11,8 +11,10 @@
 // page is the only audio playing in the app during Amazon playback, so
 // Chromium hands the OS media surface (MPRIS/SMTC/Control Center) and OS
 // media keys to the page's own media session. Our handlers on the real
-// session receive the keys and postMessage them here, and the page's own
-// metadata/handlers hit an inert facade and never reach the OS.
+// session receive the keys and postMessage them here, the page's own
+// metadata/handlers hit an inert facade and never reach the OS, and main's
+// now-playing mirror (embedded-player-mirror, relayed below) writes
+// Parachord's track into the real session so the OS card shows it.
 //
 // SANDBOX CONSTRAINT (load-bearing): the Amazon views run with sandbox: true,
 // and a sandboxed preload can only require 'electron'/'events'/'timers'/'url'
@@ -176,6 +178,9 @@ function installMediaSessionHijack(scope, onAction) {
   const real = scope.navigator.mediaSession;
   if (!real) return;
   scope.__parachordMediaSessionHijack = true;
+  // The now-playing mirror needs the real session AFTER the facade has
+  // shadowed navigator.mediaSession — stash it (same world).
+  scope.__parachordMediaSessionReal = real;
   if (typeof onAction === 'function') {
     const report = (action) => {
       try {
@@ -210,6 +215,49 @@ function installMediaSessionHijack(scope, onAction) {
   } catch {}
 }
 
+function applyMediaSessionMirror(scope, data) {
+  if (!scope || !data || typeof data !== 'object') return;
+  const real = scope.__parachordMediaSessionReal;
+  if (!real) return;
+  try {
+    if ('metadata' in data) {
+      const m = data.metadata;
+      const MediaMetadataCtor = scope.MediaMetadata;
+      if (!m) {
+        real.metadata = null;
+      } else if (typeof MediaMetadataCtor === 'function') {
+        const base = {
+          title: String(m.title || ''),
+          artist: String(m.artist || ''),
+          album: String(m.album || '')
+        };
+        const art = m.artwork && typeof m.artwork === 'string' && /^https?:/i.test(m.artwork);
+        try {
+          real.metadata = new MediaMetadataCtor(art
+            ? { title: base.title, artist: base.artist, album: base.album, artwork: [{ src: m.artwork, sizes: '512x512' }] }
+            : base);
+        } catch (e) {
+          try { real.metadata = new MediaMetadataCtor(base); } catch (e2) {}
+        }
+      }
+    }
+    if (data.playbackState === 'playing' || data.playbackState === 'paused' || data.playbackState === 'none') {
+      try { real.playbackState = data.playbackState; } catch (e) {}
+    }
+    if (data.position && Number(data.position.duration) > 0) {
+      const duration = Number(data.position.duration);
+      const position = Math.max(0, Math.min(Number(data.position.position) || 0, duration));
+      try {
+        real.setPositionState({
+          duration,
+          position,
+          playbackRate: data.position.rate === 0 ? 0 : 1
+        });
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 const PAGE_STUB = `(function () {
   const installAmazonRequireTrap = ${installAmazonRequireTrap.toString()};
   installAmazonRequireTrap(window);
@@ -226,6 +274,20 @@ const PAGE_STUB = `(function () {
   installMediaSessionHijack(window, nativePlayerOwnsKeys ? null : (action) => {
     try {
       window.postMessage({ __parachordEmbeddedPlayer: { resolverId: 'amazonmusic', type: 'action', action: String(action) } }, '*');
+    } catch (e) {}
+  });
+  const applyMediaSessionMirror = ${applyMediaSessionMirror.toString()};
+  // Main → view now-playing mirror: the preload world (which owns ipcRenderer)
+  // relays 'embedded-player-mirror' payloads as postMessage events; the stub
+  // applies them to the real session behind the facade so the OS card shows
+  // Parachord's track instead of the page's own label ("Amazon Music"). The
+  // marker is page-forgeable by design — the payload only carries display
+  // metadata.
+  window.addEventListener('message', (event) => {
+    try {
+      const payload = event && event.data && event.data.__parachordEmbeddedPlayer;
+      if (!payload || payload.type !== 'mirror') return;
+      applyMediaSessionMirror(window, payload.data);
     } catch (e) {}
   });
   const stop = (event) => { event.stopImmediatePropagation(); };
@@ -262,6 +324,14 @@ try {
         resolverId: String(payload.resolverId || ''),
         action: String(payload.action)
       });
+    } catch (e) {}
+  });
+  // Main → view now-playing mirror (macOS/Windows; main gates the platform
+  // and playback ownership). Relay to the page world, where the stub applies
+  // it to the real session behind the facade.
+  ipcRenderer.on('embedded-player-mirror', (event, data) => {
+    try {
+      window.postMessage({ __parachordEmbeddedPlayer: { type: 'mirror', data } }, '*');
     } catch (e) {}
   });
 } catch (e) {}

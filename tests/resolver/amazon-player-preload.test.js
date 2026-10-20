@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { installAmazonRequireTrap, installAmazonStreamCapture } = require('../../amazon-music-logic');
-const { installMediaSessionHijack } = require('../../embedded-player-kit');
+const { installMediaSessionHijack, applyMediaSessionMirror } = require('../../embedded-player-kit');
 
 const src = fs.readFileSync(path.join(__dirname, '../../amazon-player-preload.js'), 'utf8');
 
@@ -52,6 +52,16 @@ function inlinedHijackSource() {
 
 function inlinedHijack() {
   const text = inlinedHijackSource();
+  return text ? new Function(`return (${text})`)() : null;
+}
+
+function inlinedMirrorSource() {
+  const m = src.match(/function applyMediaSessionMirror\(scope, data\) \{[\s\S]*?\n\}/);
+  return m ? m[0] : null;
+}
+
+function inlinedMirror() {
+  const text = inlinedMirrorSource();
   return text ? new Function(`return (${text})`)() : null;
 }
 
@@ -389,6 +399,40 @@ describe('amazon-player-preload', () => {
     expect(real.metadata).toBeUndefined();
   });
 
+  test('the inlined now-playing mirror is behaviorally identical to embedded-player-kit.js', () => {
+    // Same rationale as the hijack parity: behavioral batteries against both
+    // copies. A page-world MediaMetadata stub stands in for Chromium's.
+    global.MediaMetadata = global.MediaMetadata || class MediaMetadata {
+      constructor(init) { this.init = init; }
+    };
+    const runMirrorScenarios = (mirror) => {
+      const out = [];
+      const real = {
+        handlers: {}, metadata: undefined, playbackState: 'none', positionState: null,
+        setActionHandler(a, fn) { this.handlers[a] = fn; },
+        setPositionState(s) { this.positionState = s; }
+      };
+      const scope = { navigator: { mediaSession: real } };
+      scope.MediaMetadata = global.MediaMetadata;
+      installMediaSessionHijack(scope, null);
+      mirror(scope, { metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'https://e.com/a.jpg' } });
+      out.push(['metadata', JSON.stringify(real.metadata.init)]);
+      mirror(scope, { playbackState: 'playing' });
+      mirror(scope, { position: { duration: 317, position: 500, rate: 1 } });
+      out.push(['state', real.playbackState, JSON.stringify(real.positionState)]);
+      mirror(scope, { metadata: null });
+      mirror(scope, { playbackState: 'bogus' });
+      out.push(['clear', real.metadata, real.playbackState]);
+      let threw = false;
+      try { mirror(scope, null); mirror({}, { metadata: null }); mirror(null, { metadata: null }); } catch (e) { threw = true; }
+      out.push(['tolerant', threw]);
+      return out;
+    };
+    const inlined = inlinedMirror();
+    expect(inlined).toBeInstanceOf(Function);
+    expect(runMirrorScenarios(inlined)).toEqual(runMirrorScenarios(applyMediaSessionMirror));
+  });
+
   test('the page stub runs standalone and logs the canary', () => {
     const m = src.match(/const PAGE_STUB = `([\s\S]*?)`;$/m);
     expect(m).toBeTruthy();
@@ -401,19 +445,28 @@ describe('amazon-player-preload', () => {
       .replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString())
       .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString())
       .replace('${installMediaSessionHijack.toString()}', installMediaSessionHijack.toString())
+      .replace('${applyMediaSessionMirror.toString()}', applyMediaSessionMirror.toString())
       // The platform splice is evaluated at preload load time; force both
       // branches here so the test is deterministic on every platform.
       .replace(/\$\{typeof process[^}]*\}/, 'false');
     const logs = [];
     const posted = [];
     const realHandlers = {};
+    const stubListeners = [];
     const realSession = {
-      setActionHandler(action, fn) { realHandlers[action] = fn; }
+      setActionHandler(action, fn) { realHandlers[action] = fn; },
+      metadata: null,
+      playbackState: 'none',
+      positionState: null,
+      setPositionState(s) { this.positionState = s; }
     };
     const fakeWindow = {
-      addEventListener: () => {},
+      addEventListener: (type, fn) => { if (type === 'message') stubListeners.push(fn); },
       postMessage: (payload) => posted.push(payload),
-      navigator: { mediaSession: realSession }
+      navigator: { mediaSession: realSession },
+      MediaMetadata: class MediaMetadata {
+        constructor(init) { this.init = init; }
+      }
     };
     const fakeDocument = { addEventListener: () => {} };
     const Document = function Document() {};
@@ -431,6 +484,23 @@ describe('amazon-player-preload', () => {
     expect(posted).toEqual([
       { __parachordEmbeddedPlayer: { resolverId: 'amazonmusic', type: 'action', action: 'pause' } }
     ]);
+
+    // The mirror relay end-to-end: the preload world forwards main's
+    // `embedded-player-mirror` payloads as postMessage events, and the
+    // stub's message listener applies them to the real session behind the
+    // facade. A page-world MediaMetadata stub stands in for Chromium's.
+    expect(stubListeners.length).toBe(1);
+    {
+      stubListeners[0]({ data: { __parachordEmbeddedPlayer: { type: 'mirror', data: {
+        metadata: { title: 'Два монаха в одну ночь', artist: 'Король и Шут', album: 'Альбом' },
+        playbackState: 'playing',
+        position: { duration: 254, position: 10, rate: 1 }
+      } } } });
+      stubListeners[0]({ data: { __parachordEmbeddedPlayer: { type: 'mirror', data: { playbackState: 'paused' } } } });
+      expect(realSession.metadata.init.title).toBe('Два монаха в одну ночь');
+      expect(realSession.playbackState).toBe('paused');
+      expect(realSession.positionState).toEqual({ duration: 254, position: 10, playbackRate: 1 });
+    }
   });
 
   test('the page stub on Linux (native-player branch) suppresses without registering handlers', () => {
@@ -445,6 +515,7 @@ describe('amazon-player-preload', () => {
       .replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString())
       .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString())
       .replace('${installMediaSessionHijack.toString()}', installMediaSessionHijack.toString())
+      .replace('${applyMediaSessionMirror.toString()}', applyMediaSessionMirror.toString())
       .replace(/\$\{typeof process[^}]*\}/, 'true');
     const posted = [];
     const realHandlers = {};

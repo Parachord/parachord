@@ -24,12 +24,14 @@
 
 'use strict';
 
-// webContents.id → { resolverId }. Only registered views may send.
+// webContents.id → { resolverId, webContents }. Only registered views may
+// send media-key events, and mirrors are delivered to a resolver's views
+// through the same registry.
 const registeredViews = new Map();
 
 function registerEmbeddedPlayer(webContents, { resolverId } = {}) {
   if (!webContents || typeof webContents.id !== 'number') return;
-  registeredViews.set(webContents.id, { resolverId: resolverId || 'unknown' });
+  registeredViews.set(webContents.id, { resolverId: resolverId || 'unknown', webContents });
   try {
     webContents.once('destroyed', () => registeredViews.delete(webContents.id));
   } catch { /* already destroyed */ }
@@ -59,4 +61,79 @@ function registerEmbeddedPlayerIpc({ ipcMain, safeSendToRenderer, mediaKeysEnabl
   });
 }
 
-module.exports = { registerEmbeddedPlayer, registerEmbeddedPlayerIpc };
+// Deliver a now-playing mirror payload to a resolver's live views (the
+// preload relays it into the page world, where the kit's
+// applyMediaSessionMirror writes the real session behind the facade).
+// Destroyed views are pruned here — the registry's destroyed hook can miss
+// views torn down while no one was sending.
+function sendMirrorToEmbeddedPlayer(resolverId, payload) {
+  for (const [id, entry] of registeredViews) {
+    if (!entry || entry.resolverId !== resolverId) continue;
+    const wc = entry.webContents;
+    if (!wc || typeof wc.send !== 'function' || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) {
+      registeredViews.delete(id);
+      continue;
+    }
+    try {
+      wc.send('embedded-player-mirror', payload);
+    } catch (e) { /* destroyed mid-send */ }
+  }
+}
+
+// Compose and forward the mirror feed from the renderer's existing
+// mpris:update-* pushes (track change / play-pause / seek — the same events
+// native MPRIS consumes; main.js calls both from the same handlers).
+// Stateful on purpose: setPositionState needs the track's duration, which
+// the position pushes don't carry — the last-seen track caches it.
+//
+//   sendMirror(payload)  — delivery (sendMirrorToEmbeddedPlayer bound to a
+//                          resolver by the caller)
+//   isOwned()            — gate: is the embedded resolver the one playing?
+//                          (main binds this to the amazon player's
+//                          currentAsin — non-null exactly while it owns
+//                          playback)
+//   enabled()           — platform gate (skip on Linux: #848 policy — never
+//                          feed Chromium's MPRIS there)
+function createEmbeddedPlayerMirror({ sendMirror, isOwned, enabled }) {
+  const state = { duration: 0, position: 0, playbackState: 'paused' };
+  const push = (payload) => {
+    if (typeof sendMirror !== 'function') return;
+    if (typeof isOwned === 'function' && !isOwned()) return;
+    if (typeof enabled === 'function' && !enabled()) return;
+    sendMirror(payload);
+  };
+  const positionPatch = () => (state.duration > 0
+    ? { position: { duration: state.duration, position: state.position, rate: state.playbackState === 'playing' ? 1 : 0 } }
+    : {});
+  return {
+    updateTrack(track) {
+      const t = track && typeof track === 'object' ? track : null;
+      state.duration = t && Number(t.duration) > 0 ? Number(t.duration) : 0;
+      state.position = 0;
+      push({
+        metadata: t ? {
+          title: t.title || '',
+          artist: t.artist || '',
+          album: t.album || '',
+          artwork: t.albumArt || null
+        } : null,
+        ...positionPatch()
+      });
+    },
+    updatePlaybackState(playbackState) {
+      state.playbackState = playbackState === 'playing' ? 'playing' : 'paused';
+      push({
+        playbackState: state.playbackState,
+        ...positionPatch()
+      });
+    },
+    updatePosition(seconds) {
+      const p = Number(seconds);
+      if (Number.isFinite(p) && p >= 0) state.position = p;
+      const patch = positionPatch();
+      if (Object.keys(patch).length) push(patch);
+    }
+  };
+}
+
+module.exports = { registerEmbeddedPlayer, registerEmbeddedPlayerIpc, sendMirrorToEmbeddedPlayer, createEmbeddedPlayerMirror };

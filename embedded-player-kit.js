@@ -68,11 +68,16 @@
 // third-party page we inject into). Accepted — the payload only carries
 // idempotent transport actions, deduped on the renderer side.
 //
-// Follow-up (not in this file): mirroring Parachord's now-playing metadata
-// into the embedded view's real session on macOS/Windows, so the OS widget
-// shows the track instead of a generic app name while the embedded player
-// owns the active session. Skipped on Linux by design (#848 policy: never
-// feed Chromium's MPRIS there).
+// The now-playing MIRROR (applyMediaSessionMirror) is the other half of the
+// design: the embedded view's session is the app's ACTIVE session during
+// playback, and with the page's metadata blocked the OS card falls back to
+// the page's own label — "Amazon Music" (the document title; observed live
+// on macOS, 2026-10). The mirror writes Parachord's now-playing into the
+// real session behind the facade — the page can neither see nor interfere
+// with it. Driven by main through the same renderer pushes native MPRIS uses
+// (the mpris:update-* IPC), gated to the resolver that owns playback, and
+// skipped on Linux by design (#848 policy: never feed Chromium's MPRIS
+// there).
 
 'use strict';
 
@@ -81,6 +86,9 @@ function installMediaSessionHijack(scope, onAction) {
   const real = scope.navigator.mediaSession;
   if (!real) return;
   scope.__parachordMediaSessionHijack = true;
+  // The now-playing mirror needs the real session AFTER the facade has
+  // shadowed navigator.mediaSession — stash it (same world).
+  scope.__parachordMediaSessionReal = real;
   if (typeof onAction === 'function') {
     const report = (action) => {
       try {
@@ -115,4 +123,56 @@ function installMediaSessionHijack(scope, onAction) {
   } catch {}
 }
 
-module.exports = { installMediaSessionHijack };
+// Apply Parachord's now-playing to the embedded view's REAL session (the
+// object stashed by installMediaSessionHijack), behind the facade — the page
+// cannot see or interfere with these writes. `data` fields, all optional:
+//   metadata:  { title, artist, album, artwork } | null (null clears)
+//   playbackState: 'playing' | 'paused' | 'none'
+//   position:  { duration, position, rate } — seconds; clamped to the duration
+// Artwork is https-only (the OS fetches it; custom-protocol and file URLs
+// render nothing), and a MediaMetadata the engine rejects degrades to
+// text-only metadata rather than being dropped (the #976 pattern).
+function applyMediaSessionMirror(scope, data) {
+  if (!scope || !data || typeof data !== 'object') return;
+  const real = scope.__parachordMediaSessionReal;
+  if (!real) return;
+  try {
+    if ('metadata' in data) {
+      const m = data.metadata;
+      const MediaMetadataCtor = scope.MediaMetadata;
+      if (!m) {
+        real.metadata = null;
+      } else if (typeof MediaMetadataCtor === 'function') {
+        const base = {
+          title: String(m.title || ''),
+          artist: String(m.artist || ''),
+          album: String(m.album || '')
+        };
+        const art = m.artwork && typeof m.artwork === 'string' && /^https?:/i.test(m.artwork);
+        try {
+          real.metadata = new MediaMetadataCtor(art
+            ? { title: base.title, artist: base.artist, album: base.album, artwork: [{ src: m.artwork, sizes: '512x512' }] }
+            : base);
+        } catch (e) {
+          try { real.metadata = new MediaMetadataCtor(base); } catch (e2) {}
+        }
+      }
+    }
+    if (data.playbackState === 'playing' || data.playbackState === 'paused' || data.playbackState === 'none') {
+      try { real.playbackState = data.playbackState; } catch (e) {}
+    }
+    if (data.position && Number(data.position.duration) > 0) {
+      const duration = Number(data.position.duration);
+      const position = Math.max(0, Math.min(Number(data.position.position) || 0, duration));
+      try {
+        real.setPositionState({
+          duration,
+          position,
+          playbackRate: data.position.rate === 0 ? 0 : 1
+        });
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
+module.exports = { installMediaSessionHijack, applyMediaSessionMirror };
