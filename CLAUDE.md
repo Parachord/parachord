@@ -101,9 +101,9 @@ This split preserves the Achordion contribution path: local-only listeners playi
 
 **Critical placement note:** the slow-trickle useEffect references `cacheLoaded` in its dep array, so it MUST live AFTER the `useState` line that declares `cacheLoaded` (~L9066). It's intentionally separated from its logical sibling (the background-sync useEffect around L6177) for this reason. See the placement comment in app.js and the React useEffect TDZ note in [Common Patterns](#common-patterns).
 
-### Spotify Playback Modes
-- **Browser (Web Playback SDK)**: In-app streaming, `streamingPlaybackActiveRef.current = true`
-- **Spotify Connect** (`playOnSpotifyConnect`, L32465): Controls external Spotify clients via REST API (`/v1/me/player` endpoints)
+### Spotify Playback (Connect only)
+- **Spotify Connect is the only mode.** The resolver's `play` (`plugins-src/spotify/implementation.js`) and `playOnSpotifyConnect` (app.js ~L36591) drive an external Spotify client (desktop app, phone, speaker) through the REST API (`/v1/me/player` endpoints). There is no in-app Spotify player: the Web Playback SDK is not loaded anywhere. In-app playback via the SDK on the castlabs Widevine build is tracked in parachord#1077.
+- `streamingPlaybackActiveRef.current = true` is not a Spotify mode. It is set whenever any resolver with `capabilities.stream` starts playback, so browser-extension playback events are ignored while a streaming resolver owns playback.
 
 ### Volume Management
 - `volumeRef` (L6673): Current playback volume (0–100%). Always use the ref in async/event code to avoid stale closures
