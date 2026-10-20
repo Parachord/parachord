@@ -49,6 +49,7 @@
 //                   signature refused (development certificate)
 
 const path = require('path');
+const { registerEmbeddedPlayer } = require('./main-process/ipc/embedded-player');
 const HOME_URL = 'https://music.amazon.com/';
 const PARTITION = 'persist:amazon-music';
 const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
@@ -545,6 +546,11 @@ const amazonWebPlayer = {
     this.session();
     const view = new WebContentsView({ webPreferences: this.webPreferences() });
     this.attachContents(view.webContents);
+    // The view's preload hijacks navigator.mediaSession (embedded-player-kit):
+    // OS media keys that Chromium routes to this view's active session are
+    // reported through the `embedded-player-media-key` IPC, which accepts
+    // sends only from views registered here.
+    registerEmbeddedPlayer(view.webContents, { resolverId: 'amazonmusic' });
     this.host.contentView.addChildView(view);
     this.collapse(view);
     this[key] = view;
@@ -653,30 +659,34 @@ const amazonWebPlayer = {
     return this.emeProbed;
   },
 
-  // Diagnostic for the preload: did the stub/trap actually run in the live
-  // player page? null = no page loaded yet (fresh start, about:blank) or the
-  // page could not be read; false on a loaded music.amazon.com page means the
-  // preload did not run there — the exact failure mode that hid for weeks
+  // Diagnostic for the preload: did the stub/trap/hijack actually run in the
+  // live player page? null = no page loaded yet (fresh start, about:blank) or
+  // the page could not be read; false on a loaded music.amazon.com page means
+  // the preload did not run there — the exact failure mode that hid for weeks
   // behind the localStorage fallback. storeCaptured is opportunistic: it
   // flips true only if the page's own requires route through the global __r —
   // observed false on track pages (2026-10), where the persisted localStorage
-  // entry is what quality actually uses.
+  // entry is what quality actually uses. mediaSessionShim is the
+  // navigator.mediaSession hijack (embedded-player-kit.js) — on a loaded track
+  // page it must be true, or the page's session is driving the OS media
+  // surface again.
   async preloadProbe() {
     const view = this.playerView;
-    if (!this.alive(view)) return { stub: null, storeCaptured: null };
+    if (!this.alive(view)) return { stub: null, storeCaptured: null, mediaSessionShim: null };
     let url = '';
     try { url = view.webContents.getURL(); } catch { /* destroyed */ }
-    if (!url || url === 'about:blank') return { stub: null, storeCaptured: null };
+    if (!url || url === 'about:blank') return { stub: null, storeCaptured: null, mediaSessionShim: null };
     try {
       return await this.evalOn(view, `(() => ({
         stub: window.__parachordRequireTrap === true,
         storeCaptured: !!window.__parachordAmazonPlayback,
+        mediaSessionShim: window.__parachordMediaSessionHijack === true,
         streamCapture: window.__parachordStreamCapture === true,
         streamManifests: (window.__parachordStreamCaps && window.__parachordStreamCaps.manifests || []).length,
         streamInits: (window.__parachordStreamCaps && window.__parachordStreamCaps.inits || []).length
       }))()`);
     } catch {
-      return { stub: null, storeCaptured: null };
+      return { stub: null, storeCaptured: null, mediaSessionShim: null };
     }
   },
 

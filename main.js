@@ -2247,6 +2247,19 @@ app.whenReady().then(async () => {
   // so a disabled feature costs no socket attempt and no reconnect timer.
   hydrateDiscordPresence(store);
 
+  // Embedded web players (Amazon's hidden views) — OS media keys that
+  // Chromium routes to the embedded page's active media session are hijacked
+  // by the preload's mediaSession shim (embedded-player-kit.js) and arrive
+  // on `embedded-player-media-key`; forward them into the same channel
+  // native MPRIS uses so they hit the renderer's idempotent, deduped
+  // transport handler. Gated on the same setting as globalShortcuts/MPRIS.
+  const { registerEmbeddedPlayerIpc } = require('./main-process/ipc/embedded-player');
+  registerEmbeddedPlayerIpc({
+    ipcMain,
+    safeSendToRenderer,
+    mediaKeysEnabled: () => (store.get('media-key-handling') || 'always') !== 'never'
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

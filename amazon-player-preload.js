@@ -7,6 +7,13 @@
 // factories to find it wedges the page — so the trap only observes requires
 // that Amazon's own code makes and captures the store passively.
 //
+// And it hijacks navigator.mediaSession (embedded-player-kit.js): Amazon's
+// page is the only audio playing in the app during Amazon playback, so
+// Chromium hands the OS media surface (MPRIS/SMTC/Control Center) and OS
+// media keys to the page's own media session. Our handlers on the real
+// session receive the keys and postMessage them here, and the page's own
+// metadata/handlers hit an inert facade and never reach the OS.
+//
 // SANDBOX CONSTRAINT (load-bearing): the Amazon views run with sandbox: true,
 // and a sandboxed preload can only require 'electron'/'events'/'timers'/'url'
 // — never local files. An earlier revision required ./amazon-music-logic here,
@@ -14,7 +21,8 @@
 // trap, no visibility stub, with the localStorage quality fallback masking the
 // damage (verified live on Electron 39 +wvcus). So installAmazonRequireTrap
 // and installAmazonStreamCapture are inlined below as literal copies of the
-// ones in amazon-music-logic.js, and
+// ones in amazon-music-logic.js, installMediaSessionHijack of the one in
+// embedded-player-kit.js, and
 // tests/resolver/amazon-player-preload.test.js fails the build if the copies
 // drift or if a local require ever comes back. Do not require local modules
 // from this file.
@@ -163,11 +171,54 @@ function installAmazonStreamCapture(scope) {
   } catch (e) {}
 }
 
+function installMediaSessionHijack(scope, onAction) {
+  if (!scope || !scope.navigator || scope.__parachordMediaSessionHijack) return;
+  const real = scope.navigator.mediaSession;
+  if (!real) return;
+  scope.__parachordMediaSessionHijack = true;
+  const report = (action) => {
+    try {
+      if (typeof onAction === 'function') onAction(action);
+    } catch {}
+  };
+  for (const action of ['play', 'pause', 'previoustrack', 'nexttrack', 'stop']) {
+    try {
+      real.setActionHandler(action, () => report(action));
+    } catch {}
+  }
+  // Inert facade. Every page-world write becomes a silent no-op that never
+  // reaches Chromium; reads return inert defaults (or the page's own last
+  // write for metadata/playbackState — plain object properties — so
+  // read-back page code keeps working). 'mediaSession' in navigator stays
+  // true, and the MediaMetadata constructor pages call before assigning
+  // .metadata is left untouched.
+  const facade = {
+    metadata: null,
+    playbackState: 'none',
+    setActionHandler() {},
+    setPositionState() {},
+    setCameraActive() {},
+    setMicrophoneActive() {}
+  };
+  try {
+    Object.defineProperty(scope.navigator, 'mediaSession', {
+      configurable: true,
+      get() { return facade; }
+    });
+  } catch {}
+}
+
 const PAGE_STUB = `(function () {
   const installAmazonRequireTrap = ${installAmazonRequireTrap.toString()};
   installAmazonRequireTrap(window);
   const installAmazonStreamCapture = ${installAmazonStreamCapture.toString()};
   installAmazonStreamCapture(window);
+  const installMediaSessionHijack = ${installMediaSessionHijack.toString()};
+  installMediaSessionHijack(window, (action) => {
+    try {
+      window.postMessage({ __parachordEmbeddedPlayer: { resolverId: 'amazonmusic', type: 'action', action: String(action) } }, '*');
+    } catch (e) {}
+  });
   const stop = (event) => { event.stopImmediatePropagation(); };
   window.addEventListener('blur', stop, true);
   window.addEventListener('pagehide', stop, true);
@@ -182,6 +233,29 @@ const PAGE_STUB = `(function () {
   // sandboxed-preload failure mode this file's header warns about.
   console.log('[Amazon] Parachord preload stub active');
 })();`;
+
+// Bridge for the media-session hijack: the page-world stub reports OS media
+// keys that Chromium routed to this view's active session (through our
+// handlers on the real navigator.mediaSession) as postMessage events, since
+// the page world has no ipcRenderer. Forward them to main, which validates
+// this view against its registry and funnels them into the renderer's
+// existing mpris-control transport path. DOM events cross worlds under
+// contextIsolation, so the page-world postMessage reaches this listener.
+// The marker is page-forgeable by design — the payload only carries
+// idempotent transport actions.
+try {
+  const { ipcRenderer } = require('electron');
+  window.addEventListener('message', (event) => {
+    try {
+      const payload = event && event.data && event.data.__parachordEmbeddedPlayer;
+      if (!payload || payload.type !== 'action' || !payload.action) return;
+      ipcRenderer.send('embedded-player-media-key', {
+        resolverId: String(payload.resolverId || ''),
+        action: String(payload.action)
+      });
+    } catch (e) {}
+  });
+} catch (e) {}
 
 try {
   const { webFrame } = require('electron');

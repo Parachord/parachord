@@ -124,6 +124,7 @@ const STRICT_FILES = [
   'resolution-scheduler.js',
   'resolver-limiter.js',
   'migration-plan.js',
+  'embedded-player-kit.js',
   'scripts/build-axes.js',
   'scripts/build-renderer.js',
 ];

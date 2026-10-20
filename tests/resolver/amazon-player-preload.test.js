@@ -16,6 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { installAmazonRequireTrap, installAmazonStreamCapture } = require('../../amazon-music-logic');
+const { installMediaSessionHijack } = require('../../embedded-player-kit');
 
 const src = fs.readFileSync(path.join(__dirname, '../../amazon-player-preload.js'), 'utf8');
 
@@ -41,6 +42,16 @@ function inlinedGqlCapture() {
 
 function inlinedTrap() {
   const text = inlinedTrapSource();
+  return text ? new Function(`return (${text})`)() : null;
+}
+
+function inlinedHijackSource() {
+  const m = src.match(/function installMediaSessionHijack\(scope, onAction\) \{[\s\S]*?\n\}/);
+  return m ? m[0] : null;
+}
+
+function inlinedHijack() {
+  const text = inlinedHijackSource();
   return text ? new Function(`return (${text})`)() : null;
 }
 
@@ -115,6 +126,89 @@ function runTrapScenarios(trap) {
     let threw = false;
     try { scope.__r(7); } catch (e) { threw = true; }
     out.push(['hostile', threw, JSON.stringify(scope.__r(8)), scope.__parachordAmazonPlayback]);
+  }
+
+  return out;
+}
+
+// Scenario battery for installMediaSessionHijack, same pattern as the trap
+// battery above: each scenario returns observable state so the kit module's
+// copy (embedded-player-kit.js) and the inlined preload copy can be diffed.
+// The same shape runs standalone in tests/preload/embedded-player-kit.test.js.
+function runHijackScenarios(hijack) {
+  const out = [];
+
+  // 1. our transport handlers are registered on the real session; seek
+  //    actions are deliberately absent
+  {
+    const real = { handlers: {} };
+    real.setActionHandler = (a, fn) => { real.handlers[a] = fn; };
+    const scope = { navigator: { mediaSession: real } };
+    const seen = [];
+    hijack(scope, (a) => seen.push(a));
+    real.handlers.play();
+    real.handlers.nexttrack();
+    out.push(['handlers', Object.keys(real.handlers).sort().join(','), JSON.stringify(seen)]);
+  }
+
+  // 2. page-world writes hit the facade and never reach the real session
+  {
+    const real = { handlers: {}, metadata: undefined, playbackState: 'none' };
+    real.setActionHandler = (a, fn) => { real.handlers[a] = fn; };
+    const scope = { navigator: { mediaSession: real } };
+    hijack(scope, () => {});
+    const ms = scope.navigator.mediaSession;
+    ms.metadata = { title: 'T' };
+    ms.playbackState = 'playing';
+    ms.setActionHandler('play', () => { throw new Error('page handler ran'); });
+    ms.setPositionState({ duration: 1 });
+    out.push(['facade', JSON.stringify(ms.metadata), ms.playbackState,
+      real.metadata === undefined, real.playbackState === 'none',
+      typeof real.handlers.play === 'function', scope.__parachordMediaSessionHijack === true]);
+  }
+
+  // 3. install is idempotent — a second install cannot re-shadow or re-register
+  {
+    const real = { handlers: {} };
+    real.setActionHandler = (a, fn) => { real.handlers[a] = fn; };
+    const scope = { navigator: { mediaSession: real } };
+    hijack(scope, () => {});
+    const firstFacade = scope.navigator.mediaSession;
+    const firstHandler = real.handlers.play;
+    hijack(scope, () => {});
+    out.push(['idempotent', scope.navigator.mediaSession === firstFacade, real.handlers.play === firstHandler]);
+  }
+
+  // 4. missing navigator/mediaSession and hostile sessions are tolerated
+  {
+    const hostile = { setActionHandler() { throw new Error('unsupported action'); } };
+    let threw = false;
+    try {
+      hijack(null, () => {});
+      hijack({}, () => {});
+      hijack({ navigator: {} }, () => {});
+      hijack({ navigator: { mediaSession: hostile } }, () => {});
+    } catch (e) { threw = true; }
+    out.push(['tolerant', threw]);
+  }
+
+  // 5. a frozen navigator (facade cannot install) still gets our handlers
+  {
+    const handlers = {};
+    const frozenNav = Object.freeze({ mediaSession: { setActionHandler: (a, fn) => { handlers[a] = fn; } } });
+    let threw = false;
+    try { hijack({ navigator: frozenNav }, () => {}); } catch (e) { threw = true; }
+    out.push(['frozen', threw, typeof handlers.play === 'function']);
+  }
+
+  // 6. a throwing onAction never propagates into Chromium key dispatch
+  {
+    const real = { handlers: {} };
+    real.setActionHandler = (a, fn) => { real.handlers[a] = fn; };
+    hijack({ navigator: { mediaSession: real } }, () => { throw new Error('bridge down'); });
+    let threw = false;
+    try { real.handlers.pause(); } catch (e) { threw = true; }
+    out.push(['throwing-callback', threw]);
   }
 
   return out;
@@ -257,27 +351,67 @@ describe('amazon-player-preload', () => {
     ]);
   });
 
+  test('the inlined mediaSession hijack is behaviorally identical to embedded-player-kit.js', () => {
+    // Same rationale as the trap: Function.prototype.toString normalizes under
+    // the test transform, so parity is enforced behaviorally — the kit's
+    // function and the inlined copy run the same scenario battery and must
+    // leave identical observable state.
+    const inlined = inlinedHijack();
+    expect(inlined).toBeInstanceOf(Function);
+    expect(runHijackScenarios(inlined)).toEqual(runHijackScenarios(installMediaSessionHijack));
+  });
+
+  test('the inlined mediaSession hijack still registers and shadows on its own', () => {
+    const real = { handlers: {} };
+    real.setActionHandler = (a, fn) => { real.handlers[a] = fn; };
+    const scope = { navigator: { mediaSession: real } };
+    const seen = [];
+    inlinedHijack()(scope, (a) => seen.push(a));
+    expect(scope.navigator.mediaSession).not.toBe(real);
+    real.handlers.pause();
+    expect(seen).toEqual(['pause']);
+    scope.navigator.mediaSession.metadata = { title: 'T' };
+    expect(real.metadata).toBeUndefined();
+  });
+
   test('the page stub runs standalone and logs the canary', () => {
     const m = src.match(/const PAGE_STUB = `([\s\S]*?)`;$/m);
     expect(m).toBeTruthy();
     // The stub runs in the page world where window/document exist; give it
     // bare equivalents so a closure reference into the preload's scope (or a
     // typo) fails here instead of inside Amazon's page. The stored template
-    // references the trap and capture via ${...toString()} — splice the real
-    // sources in the way the template literal itself does at runtime.
+    // references the trap, capture and hijack via ${...toString()} — splice the
+    // real sources in the way the template literal itself does at runtime.
     const stubBody = m[1]
       .replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString())
-      .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString());
+      .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString())
+      .replace('${installMediaSessionHijack.toString()}', installMediaSessionHijack.toString());
     const logs = [];
-    const fakeWindow = { addEventListener: () => {} };
+    const posted = [];
+    const realHandlers = {};
+    const realSession = {
+      setActionHandler(action, fn) { realHandlers[action] = fn; }
+    };
+    const fakeWindow = {
+      addEventListener: () => {},
+      postMessage: (payload) => posted.push(payload),
+      navigator: { mediaSession: realSession }
+    };
     const fakeDocument = { addEventListener: () => {} };
     const Document = function Document() {};
     const run = new Function(
-      'window', 'document', 'Document', 'console',
-      `${stubBody}\nreturn [window.__parachordRequireTrap, typeof window.__r, typeof document.hidden === 'boolean', window.__parachordStreamCapture === true, !!window.__parachordStreamCaps];`
+      'window', 'document', 'Document', 'console', 'realSession',
+      `${stubBody}\nreturn [window.__parachordRequireTrap, typeof window.__r, typeof document.hidden === 'boolean', window.__parachordStreamCapture === true, !!window.__parachordStreamCaps, window.__parachordMediaSessionHijack === true, window.navigator.mediaSession !== realSession, typeof window.navigator.mediaSession.setActionHandler === 'function'];`
     );
-    const result = run(fakeWindow, fakeDocument, Document, { log: logs.push.bind(logs) });
-    expect(result).toEqual([true, 'object', true, true, true]);
+    const result = run(fakeWindow, fakeDocument, Document, { log: logs.push.bind(logs) }, realSession);
+    expect(result).toEqual([true, 'object', true, true, true, true, true, true]);
     expect(logs).toEqual(['[Amazon] Parachord preload stub active']);
+    // Our handler on the real session bridges through postMessage — the
+    // preload world listens for exactly this shape and forwards it to the
+    // embedded-player-media-key IPC.
+    realHandlers.pause();
+    expect(posted).toEqual([
+      { __parachordEmbeddedPlayer: { resolverId: 'amazonmusic', type: 'action', action: 'pause' } }
+    ]);
   });
 });
