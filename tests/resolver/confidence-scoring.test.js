@@ -20,6 +20,34 @@ const {
   MIN_CONFIDENCE_THRESHOLD,
 } = require('../helpers/confidence-scoring');
 
+// Identity tier (parachord#926): the same ISRC or recording MBID on both sides
+// is the same recording whatever the strings look like, and scores 1.0 before
+// any name comparison. Only an exact id on BOTH sides counts; a missing or
+// different id falls through to the name gate unchanged.
+describe('calculateConfidence identity tier (ISRC / MBID)', () => {
+  const original = { artist: 'Radiohead', title: 'Everything in Its Right Place' };
+
+  test('matching ISRC scores 1.0 even when the names would fail', () => {
+    expect(calculateConfidence({ ...original, isrc: 'GBAYK0000001' }, { artist: 'Various Artists', title: 'Track 1', isrc: 'gbayk0000001 ' })).toBe(1.0);
+  });
+
+  test('the original ISRC may live on a resolver source instead of the top level', () => {
+    const withSource = { ...original, sources: { spotify: { isrc: 'GBAYK0000001' } } };
+    expect(calculateConfidence(withSource, { artist: 'X', title: 'Y', isrc: 'GBAYK0000001' })).toBe(1.0);
+  });
+
+  test('matching recording MBID scores 1.0 regardless of case and field name', () => {
+    expect(calculateConfidence({ ...original, mbid: '2C6CF4F6-1A4F-4B8B-9B67-4C6C6A2F1C11' }, { artist: 'X', title: 'Y', recordingMbid: '2c6cf4f6-1a4f-4b8b-9b67-4c6c6a2f1c11' })).toBe(1.0);
+  });
+
+  test('a different id, a one-sided id, or a malformed ISRC falls through to the name gate', () => {
+    expect(calculateConfidence({ ...original, isrc: 'GBAYK0000001' }, { ...original, isrc: 'USRC17607839' })).toBe(0.95);
+    expect(calculateConfidence({ ...original, isrc: 'GBAYK0000001' }, { artist: 'X', title: 'Y' })).toBe(0.5);
+    expect(calculateConfidence({ ...original, isrc: 'not-an-isrc' }, { artist: 'X', title: 'Y', isrc: 'not-an-isrc' })).toBe(0.5);
+    expect(calculateConfidence({ ...original, mbid: 'abc' }, { artist: 'X', title: 'Y', mbid: 'xyz' })).toBe(0.5);
+  });
+});
+
 describe('normalizeStr', () => {
   test('lowercases and strips punctuation', () => {
     expect(normalizeStr("Don't Stop Believin'")).toBe('dontstopbelievin');

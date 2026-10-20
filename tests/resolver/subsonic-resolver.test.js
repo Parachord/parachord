@@ -94,7 +94,7 @@ beforeEach(() => {
 describe('subsonic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('subsonic');
-    expect(axe.manifest.version).toBe('0.1.0');
+    expect(axe.manifest.version).toBe('0.1.1');
   });
 
   test('declares streaming capabilities with userpass auth', () => {
@@ -118,7 +118,7 @@ describe('subsonic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['cleanup', 'getStreamUrl', 'init', 'play', 'resolve', 'search'].sort()
+      ['cleanup', 'getStreamUrl', 'init', 'isConfigured', 'play', 'resolve', 'search'].sort()
     );
   });
 });
@@ -342,10 +342,11 @@ describe('app.js integration', () => {
     expect(m[1]).toContain("'subsonic'");
   });
 
-  test('handlePlay has a subsonic branch that plays through the shared audioRef', () => {
-    expect(appSrc).toContain("if (resolverId === 'subsonic') {");
+  test('handlePlay has an html5Stream branch that plays through the shared audioRef', () => {
+    // Subsonic reaches it by declaring capabilities.html5Stream, not by name.
+    expect(appSrc).toContain('if (isHtml5StreamResolver(resolverId)) {');
     // the branch must come before the generic resolver.play() path
-    const branchIdx = appSrc.indexOf("if (resolverId === 'subsonic') {");
+    const branchIdx = appSrc.indexOf('if (isHtml5StreamResolver(resolverId)) {');
     const genericIdx = appSrc.indexOf('const success = await resolver.play(sourceToPlay, config);');
     expect(branchIdx).toBeGreaterThan(0);
     expect(branchIdx).toBeLessThan(genericIdx);
@@ -353,12 +354,21 @@ describe('app.js integration', () => {
 
   test('transport routing treats subsonic as an HTML5 audio resolver', () => {
     // play/pause toggle
-    expect(appSrc).toContain("_activeResolver === 'localfiles' || currentTrack?._activeResolver === 'soundcloud' || currentTrack?._activeResolver === 'subsonic'");
+    // The host never names Subsonic (or Plex) in the transport lists: a
+    // resolver declaring capabilities.html5Stream is routed by capability
+    // through usesSharedAudio / isHtml5StreamResolver.
+    expect(axe.capabilities.html5Stream).toBe(true);
+    expect(appSrc).toContain("const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;");
+    expect(appSrc).toContain("const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id);");
+    // play/pause toggle
+    expect(appSrc).toContain('audioRef.current && usesSharedAudio(currentTrack?._activeResolver)');
     // seek keys off the resolver actually playing, not "has a subsonic source"
-    expect(appSrc).toContain("activeResolver === 'localfiles' || activeResolver === 'soundcloud' || activeResolver === 'subsonic') && audioRef.current");
+    expect(appSrc).toContain('usesSharedAudio(activeResolver) && audioRef.current');
     expect(appSrc).not.toContain('currentTrack?.sources?.subsonic');
     // volume slider support
-    expect(appSrc).toContain("currentResolverId === 'soundcloud' || currentResolverId === 'subsonic'");
+    expect(appSrc).toContain('usesSharedAudio(currentResolverId) || currentResolverId === \'amazonmusic\'');
+    // and no id list is left behind
+    expect(appSrc).not.toMatch(/activeResolver(?:Id)? === 'subsonic'|resolverId === 'subsonic'/);
   });
 
   test('the fallback wall-clock progress tracker skips subsonic (HTML5 audio owns progress)', () => {
@@ -367,9 +377,9 @@ describe('app.js integration', () => {
     // (progress bar jumps back and forth) and its elapsed>=duration check can
     // fire a premature handleNext after a pause/resume. localfiles/soundcloud
     // are skipped the same way.
-    const m = appSrc.match(/const isSoundCloud = activeResolver === 'soundcloud';\n    const isSubsonic = activeResolver === 'subsonic';/);
+    const m = appSrc.match(/const isSoundCloud = activeResolver === 'soundcloud';\n    const isHtml5Stream = isHtml5StreamResolver\(activeResolver\);/);
     expect(m).toBeTruthy();
-    expect(appSrc).toContain('!isLocalFile && !isSoundCloud && !isSubsonic && !isBrowserTrack');
+    expect(appSrc).toContain('!isLocalFile && !isSoundCloud && !isHtml5Stream && !isBrowserTrack');
   });
 
   test('resolver volume offsets include subsonic (neutral)', () => {
@@ -379,7 +389,11 @@ describe('app.js integration', () => {
   });
 
   test('shared HTML5 element is created once and every path uses it', () => {
-    expect(appSrc.match(/ensureSharedAudioElement\(trackOrSource\)/g)).toHaveLength(3);
+    // localfiles + soundcloud hand the track over as-is; the shared
+    // subsonic/plex stream branch tags it with the owning resolver because
+    // both play http(s) URLs and the element's src can't tell them apart.
+    expect(appSrc.match(/ensureSharedAudioElement\(trackOrSource\)/g)).toHaveLength(2);
+    expect(appSrc).toContain('ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId })');
     expect(appSrc).toContain('const audio = new Audio()');
     expect(appSrc).not.toContain('audioRef.current = new Audio()');
     expect(appSrc).not.toContain('sourceToPlay.subsonicStreamUrl');
@@ -389,10 +403,11 @@ describe('app.js integration', () => {
   // --check, absorbed into scripts/build-axes.js) now lives in
   // tests/plugins/axes-drift.test.js and covers every bundled plugin.
 
-  test('_fetchResolverConfig reads subsonic credentials from meta_service_configs', () => {
-    const idx = appSrc.indexOf("if (resolverId === 'subsonic') {");
-    const cfgIdx = appSrc.indexOf("metaConfigs?.subsonic");
-    expect(idx).toBeGreaterThan(0);
-    expect(cfgIdx).toBeGreaterThan(idx);
+  test('the resolver config is the meta_service_configs entry the settings panel saved, with no subsonic branch', () => {
+    // The userpass panel saves serverUrl/username/password under
+    // meta_service_configs.subsonic; getResolverConfig's generic fallback hands
+    // that entry to search/getStreamUrl, same as for any other plugin.
+    expect(appSrc).not.toContain("if (resolverId === 'subsonic') {");
+    expect(appSrc).toContain('return metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId] || {};');
   });
 });
