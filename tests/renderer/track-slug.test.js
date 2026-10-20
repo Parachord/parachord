@@ -58,7 +58,17 @@ describe('trackSlug', () => {
     );
   });
 
-  test('fallbacks are the caller\'s choice; two-part and single-part forms', () => {
+  test('NFKD-output uppercase folds to lowercase (order: decompose, strip marks, THEN lowercase)', () => {
+    // Lowercasing before the decomposition lets NFKD's uppercase output leak
+    // into ids: '™' → 'TM', '℡' → 'TEL', math-bold letters → uppercase ASCII
+    // (review, PR #1079). Lowercase-after keeps ASCII identical and folds
+    // these.
+    expect(slug('Song™')).toBe('songtm');
+    expect(slug('℡')).toBe('tel');
+    expect(slug('𝐀𝐁𝐂')).toBe('abc');
+  });
+
+  test('fallbacks are the caller’s choice; two-part and single-part forms', () => {
     expect(trackSlug('', '')).toBe('-');
     expect(trackSlug('unknown', 'untitled', 'noalbum')).toBe('unknown-untitled-noalbum');
     expect(trackSlug('Artist', 'Title')).toBe('artist-title');
@@ -66,9 +76,14 @@ describe('trackSlug', () => {
     expect(slug(' artist ')).toBe('artist');
   });
 
-  test('undefined album is two-part, not "undefined"', () => {
-    expect(trackSlug('A', 'B', undefined)).toBe('a-b');
+  test('a two-part call is distinct from a three-part call with an undefined album', () => {
+    // The 2-part form is a distinct call (arguments.length) so a 3-part site
+    // that passes an undefined album keeps the three-part SHAPE (empty third
+    // axis) instead of silently falling into the 2-part form and colliding
+    // across albums (review, PR #1079).
     expect(trackSlug('A', 'B')).toBe('a-b');
+    expect(trackSlug('A', 'B', undefined)).toBe('a-b-');
+    expect(trackSlug('A', 'B', '')).toBe('a-b-');
   });
 });
 
@@ -116,5 +131,72 @@ describe('track-slug drift guard', () => {
         }
       }
     }
+  });
+});
+
+// The render smoke test renders components with empty props, so event
+// handlers never run — a helper referenced only inside a handler (the PR
+// #1079 review: `slug` was used without being in the import destructure)
+// resolves by accident in the esbuild bundle and ReferenceErrors in the
+// field while every suite stays green. Here the artist cards render with
+// real props, the drag/context handlers React received are CAPTURED via a
+// createElement spy, and the handler that builds the artist id runs under
+// jest — ReferenceError and all.
+describe('artist-card id handlers run under jest', () => {
+  let renderToStaticMarkup;
+
+  beforeAll(() => {
+    global.React = require('react');
+    global.window = global.window || {};
+    ({ renderToStaticMarkup } = require('react-dom/server'));
+  });
+
+  const captureHandler = (Component, props, handlerName) => {
+    const realCreateElement = global.React.createElement;
+    let captured = null;
+    global.React.createElement = (type, elProps, ...rest) => {
+      if (elProps && typeof elProps[handlerName] === 'function') captured = elProps[handlerName];
+      return realCreateElement(type, elProps, ...rest);
+    };
+    try {
+      renderToStaticMarkup(realCreateElement(Component, props));
+    } finally {
+      global.React.createElement = realCreateElement;
+    }
+    return captured;
+  };
+
+  test.each([
+    ['RelatedArtistCard', { artist: { name: 'Король и Шут' }, getArtistImage: async () => null, onNavigate: () => {} }, 'корольишут'],
+    ['SearchArtistCard', { artist: { name: 'Beyoncé' }, getArtistImage: async () => null }, 'beyonce'],
+  ])('%s: onDragStart builds a Unicode artist id without a ReferenceError', (componentName, props, expectedId) => {
+    const cards = require('../../src/renderer/components/cards');
+    const onDragStart = captureHandler(cards[componentName], props, 'onDragStart');
+    expect(typeof onDragStart).toBe('function');
+    const payload = [];
+    const event = {
+      dataTransfer: {
+        effectAllowed: '',
+        setData: (type, data) => payload.push([type, data])
+      }
+    };
+    expect(() => onDragStart(event)).not.toThrow();
+    expect(event.dataTransfer.effectAllowed).toBe('copy');
+    expect(payload.length).toBe(1);
+    expect(payload[0][0]).toBe('text/plain');
+    const dragged = JSON.parse(payload[0][1]);
+    expect(dragged.type).toBe('artist');
+    expect(dragged.artist.id).toBe(expectedId);
+  });
+
+  test('RelatedArtistCard: onContextMenu does not throw (window.electron absent)', () => {
+    const { RelatedArtistCard } = require('../../src/renderer/components/cards');
+    const onContextMenu = captureHandler(RelatedArtistCard, {
+      artist: { name: 'Король и Шут' },
+      getArtistImage: async () => null,
+      onNavigate: () => {}
+    }, 'onContextMenu');
+    expect(typeof onContextMenu).toBe('function');
+    expect(() => onContextMenu({ preventDefault() {}, stopPropagation() {} })).not.toThrow();
   });
 });

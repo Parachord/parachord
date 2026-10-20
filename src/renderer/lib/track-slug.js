@@ -11,31 +11,43 @@
 // active, still No Enabled Source" (live-reported 2026-10, a Король и Шут
 // release). Same bug class confidence-scoring.js fixed for normalizeStr.
 //
-// The fold mirrors that philosophy (NFKD + combining-mark strip + Unicode
-// letters/digits keepset, hyphens kept) while staying BYTE-IDENTICAL to the
-// old formula for pure-ASCII input, so Latin-script track ids — and the
-// sources cached under them — do not churn.
+// The fold is byte-identical to the old formula for pure-ASCII input.
+// Accented-Latin ids change once (Beyoncé: beyonc → beyonce) — these ids key
+// session state (trackSources) and queue entries, NOT `cache_track_sources`
+// (keyed by raw `artist|title`), so the worst case is a restored queue item
+// not showing as playing on a release page until it is replayed.
 //
-// KNOWN SIBLING (not fixed here): `normalizeForId` in app.js +
+// Ordering matters: NFKD → combining-mark strip → LOWERCASE (review, PR
+// #1079). Lowercasing before the decomposition lets NFKD's uppercase output
+// leak into ids: '™' → 'TM', '℡' → 'TEL', math-bold letters → uppercase
+// ASCII. Lowercase after the strip folds all of those; ASCII input is
+// unaffected either way.
+//
+// KNOWN SIBLINGS (not fixed here — follow-ups): `normalizeForId` in app.js +
 // sync-providers/spotify.js (hyphen-replace semantics, byte-parity pair
-// used for collection/library ids) collapses non-Latin scripts the same
-// way. Fixing it means changing both sides of the parity pair plus the
-// sync provider's id namespace — tracked as a follow-up.
+// behind generateTrackId/generateAlbumId/generateArtistId — collection /
+// love-push / sync / Achordion ids) collapses non-Latin the same way; and
+// the remaining same-class id sites in app.js (createTrackFromMeta
+// ~L6152, critics-${artist}-${album} ~L27085, the hyphen-replace artist ids
+// ~L29288/L29389/L41763/L41777).
 
 'use strict';
 
 const slugPart = (value) =>
   String(value || '')
-    .toLowerCase()
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
+    .toLowerCase()
     .replace(/[^\p{L}\p{N}-]/gu, '');
 
-// trackSlug(artist, title, album?) — the per-surface track id. Fallbacks
-// ('unknown'/'untitled'/'noalbum') are the CALLER's choice, preserved from
-// the old inline formulas; album is omitted for the two-part id sites.
+// trackSlug(artist, title[, album]) — the per-surface track id. The
+// two-part form is a DISTINCT call (arguments.length), so a three-part call
+// with an explicitly undefined album keeps the three-part shape (empty third
+// axis, "a-b-") instead of silently falling into the two-part form and
+// colliding across albums. Fallbacks ('unknown'/'untitled'/'noalbum') are
+// the CALLER's choice, preserved from the old inline formulas.
 function trackSlug(artist, title, album) {
-  if (album === undefined) {
+  if (arguments.length === 2) {
     return `${slugPart(artist)}-${slugPart(title)}`;
   }
   return `${slugPart(artist)}-${slugPart(title)}-${slugPart(album)}`;
