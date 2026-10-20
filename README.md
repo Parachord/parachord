@@ -56,6 +56,10 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Mixed-Source Queues** - Seamlessly play tracks from different services
 - **Resolver Blocklist** - Report and block bad source matches without disabling an entire resolver
 
+### Sharing
+- **Discord Rich Presence** - Opt-in "Listening to Parachord" presence on your Discord profile, with cover art when it's a public https image (Settings → General)
+- **Smart Links** - Parachord deep links that render a preview anywhere
+
 ### Browser Extension
 - **Send to Parachord** - Right-click any song link to send it to the desktop app
 - **Page Detection** - Green badge indicator when the current page is a supported playlist or album
