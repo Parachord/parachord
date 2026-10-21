@@ -5399,6 +5399,28 @@ const Parachord = () => {
   const [collectionLoading, setCollectionLoading] = useState(true);
   const collectionLoadingRef = useRef(true);
 
+  // Collection → Songs list: the local library merged with collection tracks
+  // (deduplicated by id), then filtered and sorted. This used to be built
+  // inline in the render, so every state change anywhere in the app (a full
+  // re-render, see CLAUDE.md "coalesce bursts") re-merged the whole library,
+  // copied every track object and re-sorted it while the tab was open: tens
+  // of thousands of objects per render on a big local library. Memoized on
+  // its real inputs. Tracks that already have an id are kept as the SAME
+  // object, not copied: the MBID/artwork enrichment mutates library tracks in
+  // place (enrichTrackWithMbid, enrichLocalTracksWithArtwork), and a memoized
+  // copy would keep serving the pre-enrichment fields.
+  const collectionSongsSorted = useMemo(() => {
+    const trackMap = new Map();
+    for (const track of [...library, ...collectionData.tracks]) {
+      const trackId = track.id || generateTrackId(track.artist, track.title, track.album);
+      if (!trackMap.has(trackId)) {
+        trackMap.set(trackId, track.id ? track : { ...track, id: trackId });
+      }
+    }
+    const filtered = filterCollectionItems(Array.from(trackMap.values()), 'tracks');
+    return sortCollectionItems(filtered, 'tracks');
+  }, [library, collectionData.tracks, filterCollectionItems, sortCollectionItems]);
+
   // Auto-select a populated collection tab when entering the library view
   // This fixes the issue where sidebar navigation lands on an empty tab
   // (e.g., 'artists' tab with no data) while other tabs have synced content
@@ -46987,22 +47009,9 @@ useEffect(() => {
                 );
               }
 
-              // Merge local files with collection tracks
-              const allTracks = [...library, ...collectionData.tracks];
-
-              // Deduplicate by id
-              const trackMap = new Map();
-              allTracks.forEach(track => {
-                const trackId = track.id || generateTrackId(track.artist, track.title, track.album);
-                if (!trackMap.has(trackId)) {
-                  trackMap.set(trackId, { ...track, id: trackId });
-                }
-              });
-
-              const mergedTracks = Array.from(trackMap.values());
-
-              const filtered = filterCollectionItems(mergedTracks, 'tracks');
-              const sorted = sortCollectionItems(filtered, 'tracks');
+              // Merged, filtered and sorted once per input change (see
+              // collectionSongsSorted), not on every render of the app.
+              const sorted = collectionSongsSorted;
 
               if (sorted.length === 0 && collectionSearch) {
                 return React.createElement('div', { className: 'text-center py-12 text-gray-400' },
