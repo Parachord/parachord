@@ -10384,7 +10384,12 @@ const Parachord = () => {
     }).catch(() => {});
   }, [currentTrack]);
 
-  // MPRIS: push playback state on play/pause change
+  // MPRIS: push playback state on play/pause change. The position push rides
+  // along: position is event-driven (state change / seek — the renderer does
+  // not poll it), and the native MPRIS player + the embedded-player mirror
+  // both need a real position at those moments (the mirror's cached position
+  // anchors the OS card; without it, a state change would anchor a stale
+  // position).
   useEffect(() => {
     if (!window.electron?.mpris?.updatePlaybackState) return;
     if (!currentTrack) {
@@ -10392,6 +10397,9 @@ const Parachord = () => {
       return;
     }
     window.electron.mpris.updatePlaybackState(isPlaying ? 'playing' : 'paused').catch(() => {});
+    if (window.electron.mpris.updatePosition) {
+      window.electron.mpris.updatePosition(progressRef.current).catch(() => {});
+    }
   }, [isPlaying, currentTrack]);
 
   // MPRIS: push shuffle state on toggle
@@ -10573,7 +10581,9 @@ const Parachord = () => {
     const fields = {
       title: currentTrack.title || '',
       artist: currentTrack.artist || '',
-      album: currentTrack.album || '',
+      // Same fallback as the MPRIS push: many resolvers carry the album only
+      // on the source record (e.g. Amazon's sources.amazonmusic.album).
+      album: currentTrack.album || window.pickAlbumNameForTrack(currentTrack, null) || '',
     };
     const art = currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt
       || currentTrack.sources?.applemusic?.albumArt || null;
@@ -15876,11 +15886,12 @@ ${trackListXml}
 
       if (sortedSources.length === 0) {
         console.error('❌ No enabled resolvers found for track. Available sources:', Object.keys(trackOrSource.sources), 'Active resolvers:', currentActiveResolvers);
-        // Which axis failed? "sources exist + resolver active + still dropped" always
-        // means the confidence floor rejected them (artist/title containment), but
-        // the log above can't say WHICH side mismatched. Dump the per-source score
-        // and both identities so a field report pinpoints it without a debugger.
-        console.warn('⬇️ Dropped below floor:', availableResolvers.map(id => {
+        // Per-candidate scorecard for the empty selection — the dialog above
+        // is blind to the reason. NOTE: availableResolvers is every resolver
+        // that has a source on the track, so entries here cover confidence-
+        // floor drops (failed artist/title containment), INACTIVE resolvers
+        // and BLOCKLISTED sources alike — a scorecard, not a floor-drop log.
+        console.warn('⬇️ Source selection scorecard (target vs candidates):', availableResolvers.map(id => {
           const src = trackOrSource.sources[id];
           return {
             id,
@@ -37408,6 +37419,12 @@ useEffect(() => {
       if (discordPresenceEnabled && window.electron?.discordPresence?.updatePosition
           && currentTrackRef.current === currentTrack) {
         window.electron.discordPresence.updatePosition(newPosition).catch(() => {});
+      }
+      // Same re-anchor for the MPRIS surfaces (native player + the
+      // embedded-player mirror's cached position): once per drag gesture,
+      // with the settled position.
+      if (currentTrackRef.current === currentTrack && window.electron?.mpris?.updatePosition) {
+        window.electron.mpris.updatePosition(newPosition).catch(() => {});
       }
     }, 1000);
   }, [currentTrack, browserPlaybackActive, discordPresenceEnabled]);

@@ -35,11 +35,6 @@ function inlinedCapture() {
   return text ? new Function(`return (${text})`)() : null;
 }
 
-function inlinedGqlCapture() {
-  const text = inlinedGqlCaptureSource();
-  return text ? new Function(`return (${text})`)() : null;
-}
-
 function inlinedTrap() {
   const text = inlinedTrapSource();
   return text ? new Function(`return (${text})`)() : null;
@@ -56,7 +51,10 @@ function inlinedHijack() {
 }
 
 function inlinedMirrorSource() {
-  const m = src.match(/function applyMediaSessionMirror\(scope, data\) \{[\s\S]*?\n\}/);
+  // Signature-agnostic param match: the mirror's signature changed during
+  // review (scope,data → real,data,MediaMetadataCtor) and a hardcoded old
+  // signature silently spliced `null` into the stub instead of the function.
+  const m = src.match(/function applyMediaSessionMirror\([^)]*\) \{[\s\S]*?\n\}/);
   return m ? m[0] : null;
 }
 
@@ -149,16 +147,18 @@ function runHijackScenarios(hijack) {
   const out = [];
 
   // 1. our transport handlers are registered on the real session; seek
-  //    actions are deliberately absent
+  //    actions are deliberately absent; install RETURNS the real session and
+  //    stashes NOTHING on the scope (a window property is page-writable)
   {
     const real = { handlers: {} };
     real.setActionHandler = (a, fn) => { real.handlers[a] = fn; };
     const scope = { navigator: { mediaSession: real } };
     const seen = [];
-    hijack(scope, (a) => seen.push(a));
+    const returned = hijack(scope, (a) => seen.push(a));
     real.handlers.play();
     real.handlers.nexttrack();
-    out.push(['handlers', Object.keys(real.handlers).sort().join(','), JSON.stringify(seen)]);
+    out.push(['handlers', Object.keys(real.handlers).sort().join(','), JSON.stringify(seen),
+      returned === real, scope.__parachordMediaSessionReal === undefined]);
   }
 
   // 2. page-world writes hit the facade and never reach the real session
@@ -221,9 +221,9 @@ function runHijackScenarios(hijack) {
     out.push(['throwing-callback', threw]);
   }
 
-  // 7. a null onAction suppresses without claiming (the Linux policy: no
-  //    registered actions, no metadata → Chromium publishes no MPRIS entry
-  //    next to the native player)
+  // 7. a null onAction suppresses without claiming the key path (an optional
+  //    API shape — not the Amazon preload's choice, and not Linux-specific;
+  //    the Linux kill is main.js's disable-features switch)
   {
     const real = { handlers: {}, metadata: undefined, playbackState: 'none' };
     real.setActionHandler = (a, fn) => { real.handlers[a] = fn; };
@@ -401,11 +401,15 @@ describe('amazon-player-preload', () => {
 
   test('the inlined now-playing mirror is behaviorally identical to embedded-player-kit.js', () => {
     // Same rationale as the hijack parity: behavioral batteries against both
-    // copies. A page-world MediaMetadata stub stands in for Chromium's.
+    // copies — and the install+mirror PAIR runs together, because the mirror's
+    // contract depends on what install returned (the real session). Running
+    // the kit's install against the inlined mirror (or vice versa) would miss
+    // an inlined drift in the OTHER function. A page-world MediaMetadata stub
+    // stands in for Chromium's.
     global.MediaMetadata = global.MediaMetadata || class MediaMetadata {
       constructor(init) { this.init = init; }
     };
-    const runMirrorScenarios = (mirror) => {
+    const runMirrorScenarios = (install, mirror) => {
       const out = [];
       const real = {
         handlers: {}, metadata: undefined, playbackState: 'none', positionState: null,
@@ -413,24 +417,31 @@ describe('amazon-player-preload', () => {
         setPositionState(s) { this.positionState = s; }
       };
       const scope = { navigator: { mediaSession: real } };
-      scope.MediaMetadata = global.MediaMetadata;
-      installMediaSessionHijack(scope, null);
-      mirror(scope, { metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'https://e.com/a.jpg' } });
+      const returned = install(scope, null);
+      out.push(['install-return', returned === real]);
+      mirror(returned, { metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'https://e.com/a.jpg' } }, global.MediaMetadata);
       out.push(['metadata', JSON.stringify(real.metadata.init)]);
-      mirror(scope, { playbackState: 'playing' });
-      mirror(scope, { position: { duration: 317, position: 500, rate: 1 } });
+      mirror(returned, { playbackState: 'playing' }, global.MediaMetadata);
+      mirror(returned, { position: { duration: 317, position: 500, rate: 1 } }, global.MediaMetadata);
       out.push(['state', real.playbackState, JSON.stringify(real.positionState)]);
-      mirror(scope, { metadata: null });
-      mirror(scope, { playbackState: 'bogus' });
+      mirror(returned, { metadata: null }, global.MediaMetadata);
+      mirror(returned, { playbackState: 'bogus' }, global.MediaMetadata);
       out.push(['clear', real.metadata, real.playbackState]);
       let threw = false;
-      try { mirror(scope, null); mirror({}, { metadata: null }); mirror(null, { metadata: null }); } catch (e) { threw = true; }
+      try {
+        mirror(returned, null, global.MediaMetadata);
+        mirror({}, { metadata: null }, global.MediaMetadata);
+        mirror(null, { metadata: null }, global.MediaMetadata);
+      } catch (e) { threw = true; }
       out.push(['tolerant', threw]);
       return out;
     };
-    const inlined = inlinedMirror();
-    expect(inlined).toBeInstanceOf(Function);
-    expect(runMirrorScenarios(inlined)).toEqual(runMirrorScenarios(applyMediaSessionMirror));
+    const inlinedInstall = inlinedHijack();
+    const inlinedMirrorFn = inlinedMirror();
+    expect(inlinedMirrorFn).toBeInstanceOf(Function);
+    // module pair vs inlined pair — each pair exercises its own install
+    expect(runMirrorScenarios(inlinedInstall, inlinedMirrorFn))
+      .toEqual(runMirrorScenarios(installMediaSessionHijack, applyMediaSessionMirror));
   });
 
   test('the page stub runs standalone and logs the canary', () => {
@@ -438,14 +449,16 @@ describe('amazon-player-preload', () => {
     expect(m).toBeTruthy();
     // The stub runs in the page world where window/document exist; give it
     // bare equivalents so a closure reference into the preload's scope (or a
-    // typo) fails here instead of inside Amazon's page. The stored template
-    // references the trap, capture and hijack via ${...toString()} — splice the
-    // real sources in the way the template literal itself does at runtime.
+    // typo) fails here instead of inside Amazon's page. The trap/capture are
+    // spliced from their modules (amazon-music-logic), but the hijack and
+    // mirror are spliced from the INLINE sources in THIS file — running the
+    // page stub against exactly what ships in the preload is the parity
+    // net that catches an inlined drift the module batteries could miss.
     const stubBody = m[1]
       .replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString())
       .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString())
-      .replace('${installMediaSessionHijack.toString()}', installMediaSessionHijack.toString())
-      .replace('${applyMediaSessionMirror.toString()}', applyMediaSessionMirror.toString());
+      .replace('${installMediaSessionHijack.toString()}', inlinedHijackSource())
+      .replace('${applyMediaSessionMirror.toString()}', inlinedMirrorSource());
     const logs = [];
     const posted = [];
     const realHandlers = {};
@@ -484,19 +497,27 @@ describe('amazon-player-preload', () => {
 
     // The mirror relay end-to-end: the preload world forwards main's
     // `embedded-player-mirror` payloads as postMessage events, and the
-    // stub's message listener applies them to the real session behind the
-    // facade. A page-world MediaMetadata stub stands in for Chromium's.
+    // stub's message listener applies them to the real session the stub
+    // CAPTURED from install (held in its closure — not on window) and passes
+    // to applyMediaSessionMirror along with the page's MediaMetadata
+    // constructor. A page-world MediaMetadata stub stands in for Chromium's.
+    // Cross-origin iframes are dropped: the listener requires
+    // event.source === window.
     expect(stubListeners.length).toBe(1);
     {
-      stubListeners[0]({ data: { __parachordEmbeddedPlayer: { type: 'mirror', data: {
+      const mirrorEvent = (data, source) => ({ data: { __parachordEmbeddedPlayer: { type: 'mirror', data } }, source });
+      stubListeners[0](mirrorEvent({
         metadata: { title: 'Два монаха в одну ночь', artist: 'Король и Шут', album: 'Альбом' },
         playbackState: 'playing',
         position: { duration: 254, position: 10, rate: 1 }
-      } } } });
-      stubListeners[0]({ data: { __parachordEmbeddedPlayer: { type: 'mirror', data: { playbackState: 'paused' } } } });
+      }, fakeWindow));
+      stubListeners[0](mirrorEvent({ playbackState: 'paused' }, fakeWindow));
       expect(realSession.metadata.init.title).toBe('Два монаха в одну ночь');
       expect(realSession.playbackState).toBe('paused');
       expect(realSession.positionState).toEqual({ duration: 254, position: 10, playbackRate: 1 });
+      // A cross-origin iframe's message is ignored (source is not the window)
+      stubListeners[0](mirrorEvent({ playbackState: 'playing' }, { alien: true }));
+      expect(realSession.playbackState).toBe('paused');
     }
   });
 

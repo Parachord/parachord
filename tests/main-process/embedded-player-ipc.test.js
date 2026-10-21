@@ -72,8 +72,39 @@ describe('registerEmbeddedPlayerIpc', () => {
     fire(view, { action: 'seekto' });              // not a hijacked action
     fire(view, { action: 'drop-table' });          // forged/stale payload
     fire(view, null);                              // no payload at all
+    // Prototype keys pass a bare property lookup — the allowlist must not let
+    // 'constructor'/'toString'/'__proto__' through (PR review, 2026-10)
+    fire(view, { action: 'constructor' });
+    fire(view, { action: 'toString' });
+    fire(view, { action: '__proto__' });
 
     expect(sent).toEqual([]);
+  });
+
+  test('a registered view whose resolver does not own playback cannot drive the transport', () => {
+    // The search view / a parked player view must not reach Parachord's
+    // transport while another resolver plays — the registration's isOwned()
+    // gate (amazonWebPlayer.currentAsin, PR review, 2026-10).
+    const { fire, sent } = setup();
+    const owned = { value: true };
+    const view = makeWebContents(31);
+    registerEmbeddedPlayer(view, { resolverId: 'amazonmusic', isOwned: () => owned.value });
+    fire(view, { action: 'play' });
+    expect(sent.length).toBe(1);
+    owned.value = false; // Amazon no longer owns playback (halted / disabled)
+    fire(view, { action: 'pause' });
+    fire(view, { action: 'nexttrack' });
+    expect(sent.length).toBe(1);
+  });
+
+  test('a per-sender rate limit caps transport spam from a page script', () => {
+    const { fire, sent } = setup();
+    const view = makeWebContents(32);
+    registerEmbeddedPlayer(view, { resolverId: 'amazonmusic' });
+    for (let i = 0; i < 12; i++) fire(view, { action: i % 2 ? 'nexttrack' : 'previoustrack' });
+    expect(sent.length).toBe(12); // within the window
+    fire(view, { action: 'play' });
+    expect(sent.length).toBe(12); // capped
   });
 
   test('the media-key-handling opt-out is honored per event', () => {
@@ -144,14 +175,67 @@ describe('createEmbeddedPlayerMirror', () => {
     }]);
   });
 
-  test('position pushes reuse the cached duration and playback rate', () => {
+  test('a REAL state transition re-anchors with the cached position and the matching rate', () => {
+    // PR review, 2026-10: a bare state push with no position leaves a stale
+    // rate anchor (cold start used to stick at rate 0). A real transition now
+    // carries playbackState + a position patch with the CACHED position (the
+    // renderer pushes mpris:update-position alongside state changes) and the
+    // matching rate. Repeated identical state pushes (churn re-fires) push
+    // nothing at all.
     const { mirror, sent } = setup();
     mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 254 });
-    mirror.updatePlaybackState('playing');
     mirror.updatePosition(30);
-    expect(sent[sent.length - 1]).toEqual({ position: { duration: 254, position: 30, rate: 1 } });
-    mirror.updatePlaybackState('paused');
-    expect(sent[sent.length - 1]).toEqual({ playbackState: 'paused' });
+    const before = sent.length;
+    mirror.updatePlaybackState('playing'); // real transition: paused → playing
+    expect(sent[sent.length - 1]).toEqual({
+      playbackState: 'playing',
+      position: { duration: 254, position: 30, rate: 1 }
+    });
+    mirror.updatePlaybackState('playing'); // churn re-fire, no transition
+    expect(sent.length).toBe(before + 1);
+    mirror.updatePlaybackState('paused'); // real transition
+    expect(sent[sent.length - 1]).toEqual({
+      playbackState: 'paused',
+      position: { duration: 254, position: 30, rate: 0 }
+    });
+    // 'stopped' maps to 'none' (the renderer sends it when currentTrack
+    // clears), not collapsed to 'paused'
+    mirror.updatePlaybackState('stopped');
+    expect(sent[sent.length - 1].playbackState).toBe('none');
+  });
+
+  test('a same-track churn that first makes the duration known re-anchors with it', () => {
+    // A search-resolved Amazon track starts at duration 0; the poller repairs
+    // it mid-play as a same-track churn. Without a position push there, the
+    // card never gets the duration (PR review, 2026-10).
+    const { mirror, sent } = setup();
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL' }); // no duration
+    mirror.updatePlaybackState('playing');
+    mirror.updatePosition(5);
+    const before = sent.length;
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 442 }); // repaired
+    expect(sent[sent.length - 1]).toEqual({
+      metadata: { title: 'T', artist: 'A', album: 'AL', artwork: null },
+      position: { duration: 442, position: 5, rate: 1 }
+    });
+    // A churn that does NOT change the duration pushes metadata only — no
+    // position re-anchor
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 442 });
+    expect(sent[sent.length - 1].position).toBeUndefined();
+    expect(sent.length).toBe(before + 2); // the repair anchor + this metadata-only push
+  });
+
+  test('artwork is filtered https-only in MAIN before the payload crosses into the page world', () => {
+    // PR review, 2026-10: the mirror payload is postMessage-broadcast in the
+    // page world (visible to page listeners), so a file:// cover path must
+    // never make the trip. main is the filter; the kit check is the belt.
+    const { mirror, sent } = setup();
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 100, albumArt: 'file:///Users/theli/covers/x.jpg' });
+    expect(sent[sent.length - 1].metadata.artwork).toBeNull();
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 100, albumArt: 'https://dn710707.ca.archive.org/cover.jpg' });
+    expect(sent[sent.length - 1].metadata.artwork).toBe('https://dn710707.ca.archive.org/cover.jpg');
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 100, albumArt: 'local-art://embedded/abc' });
+    expect(sent[sent.length - 1].metadata.artwork).toBeNull();
   });
 
   test('a same-track churn does NOT reset the position (the macOS progress-loop regression)', () => {
@@ -168,14 +252,13 @@ describe('createEmbeddedPlayerMirror', () => {
     mirror.updatePosition(120);
     const pushesBeforeChurn = sent.length;
     mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 254, albumArt: 'https://e.com/late-art.jpg' });
-    mirror.updatePlaybackState('playing');
+    mirror.updatePlaybackState('playing'); // same state — deduped to nothing
     mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 254 });
-    expect(sent.length).toBe(pushesBeforeChurn + 3);
+    expect(sent.length).toBe(pushesBeforeChurn + 2);
     expect(sent[pushesBeforeChurn]).toEqual({
       metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'https://e.com/late-art.jpg' }
     });
-    expect(sent[pushesBeforeChurn + 1]).toEqual({ playbackState: 'playing' });
-    expect(sent[pushesBeforeChurn + 2].position).toBeUndefined();
+    expect(sent[pushesBeforeChurn + 1].position).toBeUndefined();
     // A REAL track change re-anchors at 0
     mirror.updateTrack({ id: 't2', title: 'U', artist: 'B', album: 'AL', duration: 300 });
     expect(sent[sent.length - 1]).toEqual({
@@ -210,7 +293,7 @@ describe('createEmbeddedPlayerMirror', () => {
     mirror.updateTrack({ title: 'T2', artist: 'A', album: 'AL', duration: 10 });
     expect(sent.length).toBe(1);
     owned.value = true;
-    linux.value = true; // the enabled() gate stays available for future policy
+    linux.value = true; // the enabled() gate models main's Linux skip (platform !== 'linux')
     mirror.updateTrack({ title: 'T3', artist: 'A', album: 'AL', duration: 10 });
     expect(sent.length).toBe(1);
   });

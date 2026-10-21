@@ -31,19 +31,21 @@
 // the OS key path (an API option; the Amazon preload always registers — see
 // the platform policy below).
 //
-// PLATFORM POLICY (live-verified on Linux, 2026-10, two rounds): Chromium
+// PLATFORM POLICY (live-verified on Linux, 2026-10 — three rounds): Chromium
 // publishes its MPRIS entry whenever the view's session is ACTIVE (audio
-// playing) — regardless of registered actions and metadata. With handlers
-// registered the entry appeared title-less with progress; with NO handlers
-// and NO metadata it still appears, titled by the DOCUMENT TITLE fallback
-// ("Amazon Music" — the page's <title>). So there is no page-level way to
-// remove it, and the handlers MUST be registered on every platform: without
-// them, a DE that routes media keys to the chromium entry falls through to
-// Chromium's default behavior — pausing the element directly, the desync
-// bug this kit exists to prevent. With handlers, keys on EITHER entry (the
-// chromium one or the native org.mpris.MediaPlayer2.parachord player) land
-// in Parachord's transport; the renderer's isDuplicateTransport guard
-// absorbs a double delivery.
+// playing) — regardless of registered actions and metadata, and for ANY
+// renderer audio. The kill is NOT page-level: main.js disables the
+// MediaSession/InternalMediaSession/HardwareMediaKeyHandling features on
+// Linux, so Chromium's OS media integration never exists there and the
+// native org.mpris.MediaPlayer2.parachord player is the single surface (the
+// kit's handlers are moot there but harmless). On macOS/Windows the session
+// stays: SMTC/Control Center is the surface this kit feeds and receives
+// keys through. The handlers are registered on every platform regardless —
+// without them, a DE that routes media keys to a live session falls through
+// to Chromium's default behavior (pausing the element directly, the desync
+// this kit exists to prevent); with them, keys land in Parachord's
+// transport, and the renderer's isDuplicateTransport guard absorbs a double
+// delivery.
 //
 // The handlers are registered on the real object BEFORE shadowing, from the
 // same world the page would use, so whatever Chromium does with the page's
@@ -73,25 +75,40 @@
 // design: the embedded view's session is the app's ACTIVE session during
 // playback, and with the page's metadata blocked the OS card falls back to
 // the page's own label — "Amazon Music" (the document title; observed live
-// on macOS, 2026-10). The mirror writes Parachord's now-playing into the
-// real session behind the facade — the page can neither see nor interfere
-// with it. Driven by main through the same renderer pushes native MPRIS uses
-// (the mpris:update-* IPC), gated to the resolver that owns playback. Runs on
-// every platform: on Linux Chromium's MPRIS entry materializes whenever the
-// view's session is active, metadata or not (live-verified 2026-10), so the
-// old #848 "never feed Chromium's MPRIS" policy only ever chose between a
-// junk "Amazon Music" card and a correct one — it never kept the entry away.
+// on macOS, 2026-10). The mirror writes Parachord's now-playing to the real
+// session the caller captured from installMediaSessionHijack — held in a
+// closure, NOT on the window, so ordinary page code cannot reach it and
+// re-register handlers or metadata over the hijack. (Full page-world
+// isolation is not achievable: a determined script can still reach the real
+// session through Navigator.prototype's getter, and mirror payloads cross the
+// page world where page listeners can observe them — display data only, with
+// artwork filtered https-only in main before it is ever sent. The main-side
+// gates — player-view-only registration, playback-ownership, per-sender rate
+// limit — bound what a hostile page can do.)
+// Driven by main through the same renderer pushes native MPRIS uses (the
+// mpris:update-* IPC), gated to the resolver that owns playback, and skipped
+// on Linux (Chromium's OS media integration is disabled there — the
+// disable-features block at the top of main.js; the native MPRIS player is
+// the single surface).
 
 'use strict';
 
+// installMediaSessionHijack returns the REAL navigator.mediaSession object
+// it captured (or null). The caller keeps the return value in a closure — it
+// is deliberately NOT stashed on the scope/window: the page must not be able
+// to reach the real session and re-register its own handlers or metadata over
+// the hijack (a plain window property is page-writable). The marker
+// (__parachordMediaSessionHijack) is non-writable and non-configurable for
+// the same reason; it exists for the getStatus() preload probe only.
 function installMediaSessionHijack(scope, onAction) {
-  if (!scope || !scope.navigator || scope.__parachordMediaSessionHijack) return;
+  if (!scope || !scope.navigator || scope.__parachordMediaSessionHijack) return null;
   const real = scope.navigator.mediaSession;
-  if (!real) return;
-  scope.__parachordMediaSessionHijack = true;
-  // The now-playing mirror needs the real session AFTER the facade has
-  // shadowed navigator.mediaSession — stash it (same world).
-  scope.__parachordMediaSessionReal = real;
+  if (!real) return null;
+  try {
+    Object.defineProperty(scope, '__parachordMediaSessionHijack', { value: true });
+  } catch {
+    scope.__parachordMediaSessionHijack = true;
+  }
   if (typeof onAction === 'function') {
     const report = (action) => {
       try {
@@ -124,25 +141,27 @@ function installMediaSessionHijack(scope, onAction) {
       get() { return facade; }
     });
   } catch {}
+  return real;
 }
 
 // Apply Parachord's now-playing to the embedded view's REAL session (the
-// object stashed by installMediaSessionHijack), behind the facade — the page
-// cannot see or interfere with these writes. `data` fields, all optional:
+// object RETURNED by installMediaSessionHijack and held in the caller's
+// closure), behind the facade — the page can neither see nor reach the
+// session, so it cannot interfere with these writes. `data` fields, all optional:
 //   metadata:  { title, artist, album, artwork } | null (null clears)
 //   playbackState: 'playing' | 'paused' | 'none'
 //   position:  { duration, position, rate } — seconds; clamped to the duration
 // Artwork is https-only (the OS fetches it; custom-protocol and file URLs
 // render nothing), and a MediaMetadata the engine rejects degrades to
 // text-only metadata rather than being dropped (the #976 pattern).
-function applyMediaSessionMirror(scope, data) {
-  if (!scope || !data || typeof data !== 'object') return;
-  const real = scope.__parachordMediaSessionReal;
-  if (!real) return;
+// The MediaMetadata CONSTRUCTOR is passed in (the page world's global) —
+// applyMediaSessionMirror itself must stay serialization-safe with no bare
+// global references. All three arguments come from the caller's closure.
+function applyMediaSessionMirror(real, data, MediaMetadataCtor) {
+  if (!real || !data || typeof data !== 'object') return;
   try {
     if ('metadata' in data) {
       const m = data.metadata;
-      const MediaMetadataCtor = scope.MediaMetadata;
       if (!m) {
         real.metadata = null;
       } else if (typeof MediaMetadataCtor === 'function') {
@@ -156,13 +175,13 @@ function applyMediaSessionMirror(scope, data) {
           real.metadata = new MediaMetadataCtor(art
             ? { title: base.title, artist: base.artist, album: base.album, artwork: [{ src: m.artwork, sizes: '512x512' }] }
             : base);
-        } catch (e) {
-          try { real.metadata = new MediaMetadataCtor(base); } catch (e2) {}
+        } catch {
+          try { real.metadata = new MediaMetadataCtor(base); } catch {}
         }
       }
     }
     if (data.playbackState === 'playing' || data.playbackState === 'paused' || data.playbackState === 'none') {
-      try { real.playbackState = data.playbackState; } catch (e) {}
+      try { real.playbackState = data.playbackState; } catch {}
     }
     if (data.position && Number(data.position.duration) > 0) {
       const duration = Number(data.position.duration);
@@ -173,9 +192,9 @@ function applyMediaSessionMirror(scope, data) {
           position,
           playbackRate: data.position.rate === 0 ? 0 : 1
         });
-      } catch (e) {}
+      } catch {}
     }
-  } catch (e) {}
+  } catch {}
 }
 
 module.exports = { installMediaSessionHijack, applyMediaSessionMirror };

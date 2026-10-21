@@ -546,11 +546,20 @@ const amazonWebPlayer = {
     this.session();
     const view = new WebContentsView({ webPreferences: this.webPreferences() });
     this.attachContents(view.webContents);
-    // The view's preload hijacks navigator.mediaSession (embedded-player-kit):
-    // OS media keys that Chromium routes to this view's active session are
-    // reported through the `embedded-player-media-key` IPC, which accepts
-    // sends only from views registered here.
-    registerEmbeddedPlayer(view.webContents, { resolverId: 'amazonmusic' });
+    // Only the PLAYER view joins the embedded-player registry: it is the view
+    // that plays, so it is the only view whose hijacked media keys and
+    // now-playing mirror are legitimate. The SEARCH view also runs live
+    // Amazon pages (background resolution, playlist import) while another
+    // resolver may be playing — a script there must not reach Parachord's
+    // transport or the mirror. The isOwned gate further accepts keys only
+    // while this player owns playback (currentAsin is non-null exactly
+    // then).
+    if (which !== 'search') {
+      registerEmbeddedPlayer(view.webContents, {
+        resolverId: 'amazonmusic',
+        isOwned: () => !!this.currentAsin
+      });
+    }
     this.host.contentView.addChildView(view);
     this.collapse(view);
     this[key] = view;

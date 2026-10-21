@@ -176,13 +176,14 @@ function installAmazonStreamCapture(scope) {
 }
 
 function installMediaSessionHijack(scope, onAction) {
-  if (!scope || !scope.navigator || scope.__parachordMediaSessionHijack) return;
+  if (!scope || !scope.navigator || scope.__parachordMediaSessionHijack) return null;
   const real = scope.navigator.mediaSession;
-  if (!real) return;
-  scope.__parachordMediaSessionHijack = true;
-  // The now-playing mirror needs the real session AFTER the facade has
-  // shadowed navigator.mediaSession — stash it (same world).
-  scope.__parachordMediaSessionReal = real;
+  if (!real) return null;
+  try {
+    Object.defineProperty(scope, '__parachordMediaSessionHijack', { value: true });
+  } catch {
+    scope.__parachordMediaSessionHijack = true;
+  }
   if (typeof onAction === 'function') {
     const report = (action) => {
       try {
@@ -215,16 +216,14 @@ function installMediaSessionHijack(scope, onAction) {
       get() { return facade; }
     });
   } catch {}
+  return real;
 }
 
-function applyMediaSessionMirror(scope, data) {
-  if (!scope || !data || typeof data !== 'object') return;
-  const real = scope.__parachordMediaSessionReal;
-  if (!real) return;
+function applyMediaSessionMirror(real, data, MediaMetadataCtor) {
+  if (!real || !data || typeof data !== 'object') return;
   try {
     if ('metadata' in data) {
       const m = data.metadata;
-      const MediaMetadataCtor = scope.MediaMetadata;
       if (!m) {
         real.metadata = null;
       } else if (typeof MediaMetadataCtor === 'function') {
@@ -238,13 +237,13 @@ function applyMediaSessionMirror(scope, data) {
           real.metadata = new MediaMetadataCtor(art
             ? { title: base.title, artist: base.artist, album: base.album, artwork: [{ src: m.artwork, sizes: '512x512' }] }
             : base);
-        } catch (e) {
-          try { real.metadata = new MediaMetadataCtor(base); } catch (e2) {}
+        } catch {
+          try { real.metadata = new MediaMetadataCtor(base); } catch {}
         }
       }
     }
     if (data.playbackState === 'playing' || data.playbackState === 'paused' || data.playbackState === 'none') {
-      try { real.playbackState = data.playbackState; } catch (e) {}
+      try { real.playbackState = data.playbackState; } catch {}
     }
     if (data.position && Number(data.position.duration) > 0) {
       const duration = Number(data.position.duration);
@@ -255,9 +254,9 @@ function applyMediaSessionMirror(scope, data) {
           position,
           playbackRate: data.position.rate === 0 ? 0 : 1
         });
-      } catch (e) {}
+      } catch {}
     }
-  } catch (e) {}
+  } catch {}
 }
 
 const PAGE_STUB = `(function () {
@@ -266,7 +265,11 @@ const PAGE_STUB = `(function () {
   const installAmazonStreamCapture = ${installAmazonStreamCapture.toString()};
   installAmazonStreamCapture(window);
   const installMediaSessionHijack = ${installMediaSessionHijack.toString()};
-  installMediaSessionHijack(window, (action) => {
+  // The hijack RETURNS the real session; the stub holds it in this closure.
+  // It is deliberately NOT stashed on window — a plain window property is
+  // page-writable, and the page must not be able to reach the real session
+  // and re-register its own handlers or metadata over the hijack.
+  const msReal = installMediaSessionHijack(window, (action) => {
     try {
       window.postMessage({ __parachordEmbeddedPlayer: { resolverId: 'amazonmusic', type: 'action', action: String(action) } }, '*');
     } catch (e) {}
@@ -275,14 +278,17 @@ const PAGE_STUB = `(function () {
   // Main → view now-playing mirror: the preload world (which owns ipcRenderer)
   // relays 'embedded-player-mirror' payloads as postMessage events; the stub
   // applies them to the real session behind the facade so the OS card shows
-  // Parachord's track instead of the page's own label ("Amazon Music"). The
-  // marker is page-forgeable by design — the payload only carries display
-  // metadata.
+  // Parachord's track instead of the page's own label ("Amazon Music").
+  // event.source === window drops messages from cross-origin iframes (they
+  // can postMessage to the window too). The bridge is page-forgeable by
+  // design — the payload only carries display metadata, and main filters the
+  // artwork before it is ever sent.
   window.addEventListener('message', (event) => {
     try {
+      if (event.source !== window) return;
       const payload = event && event.data && event.data.__parachordEmbeddedPlayer;
       if (!payload || payload.type !== 'mirror') return;
-      applyMediaSessionMirror(window, payload.data);
+      applyMediaSessionMirror(msReal, payload.data, window.MediaMetadata);
     } catch (e) {}
   });
   const stop = (event) => { event.stopImmediatePropagation(); };
@@ -313,6 +319,9 @@ try {
   const { ipcRenderer } = require('electron');
   window.addEventListener('message', (event) => {
     try {
+      // event.source === window: a cross-origin iframe inside the page can
+      // postMessage to the window too — only same-window messages are ours.
+      if (event.source !== window) return;
       const payload = event && event.data && event.data.__parachordEmbeddedPlayer;
       if (!payload || payload.type !== 'action' || !payload.action) return;
       ipcRenderer.send('embedded-player-media-key', {

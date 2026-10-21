@@ -2281,10 +2281,6 @@ app.whenReady().then(async () => {
     sendMirror: (payload) => sendMirrorToEmbeddedPlayer('amazonmusic', payload),
     // currentAsin is non-null exactly while the Amazon player owns playback.
     isOwned: () => !!amazonWebPlayer.currentAsin,
-    // Linux skips the mirror: Chromium's OS media integration is disabled
-    // process-wide there (see the disable-features block at the top of this
-    // file) — there is no entry to mirror into, and the native MPRIS player is
-    // the single surface.
     enabled: () => process.platform !== 'linux'
   });
 
@@ -2374,8 +2370,10 @@ let mprisPlayer = null;
 // and with the page's metadata blocked the OS card falls back to the page's
 // own label ("Amazon Music", the document title). Created in whenReady;
 // the mpris:update-* handlers below feed it alongside the native MPRIS
-// player. Runs on every platform — the #848 Linux exception is void (see the
-// embedded-player kit docs for the evidence).
+// player. Skipped on Linux: Chromium's OS media integration is disabled
+// process-wide there (the disable-features block at the top of this file),
+// so there is no entry to mirror into — the native player is the single
+// surface.
 let embeddedPlayerMirror = null;
 
 const registerMediaKeys = () => {

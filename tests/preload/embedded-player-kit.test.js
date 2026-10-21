@@ -6,15 +6,16 @@
 const { installMediaSessionHijack, applyMediaSessionMirror } = require('../../embedded-player-kit');
 
 // A scope shaped like the page world: a navigator whose mediaSession is the
-// real (Chromium-bound) object. The facade swap happens on the navigator, so
-// the harness keeps a handle on the "real" object the way the kit does.
+// real (Chromium-bound) object. installMediaSessionHijack RETURNS the real
+// session (held in a closure by callers — it is deliberately not stashed on
+// the scope, which the page could reach).
 function makePage() {
   const realHandlers = {};
   const real = {
     setActionHandler(action, handler) { realHandlers[action] = handler; },
     metadata: undefined,
     playbackState: 'none',
-    setPositionState() { real.positionPushed = (real.positionPushed || 0) + 1; }
+    setPositionState(s) { this.positionState = s; }
   };
   const navigator = { mediaSession: real };
   return { navigator, real, realHandlers };
@@ -37,6 +38,26 @@ describe('installMediaSessionHijack', () => {
     page.realHandlers.play();
     page.realHandlers.nexttrack();
     expect(seen).toEqual(['play', 'nexttrack']);
+  });
+
+  test('returns the real session for the caller to hold in a closure', () => {
+    const page = makePage();
+    const scope = { navigator: page.navigator };
+    expect(installMediaSessionHijack(scope, () => {})).toBe(page.real);
+    // No real-session stash on the scope — a plain window property is
+    // page-writable, and the page must not be able to reach the real session
+    // and re-register its own handlers over the hijack.
+    expect(scope.__parachordMediaSessionReal).toBeUndefined();
+  });
+
+  test('the marker is non-writable and non-configurable (diagnostics only, page cannot scrub it)', () => {
+    const page = makePage();
+    const scope = { navigator: page.navigator };
+    installMediaSessionHijack(scope, () => {});
+    const desc = Object.getOwnPropertyDescriptor(scope, '__parachordMediaSessionHijack');
+    expect(desc.value).toBe(true);
+    expect(desc.writable).toBe(false);
+    expect(desc.configurable).toBe(false);
   });
 
   test('page-world mediaSession writes become inert and never touch the real session', () => {
@@ -82,12 +103,11 @@ describe('installMediaSessionHijack', () => {
     expect(page.realHandlers.play).toBe(firstHandler);
   });
 
-  test('a null onAction suppresses the session without claiming it (the Linux policy)', () => {
-    // On Linux the native MPRIS player owns the OS surface. Chromium
-    // publishes its own MPRIS entry for a CONTROLLABLE session (registered
-    // actions) or one with metadata, so the kit must suppress the page's
-    // session WITHOUT registering handlers there — no metadata, no actions,
-    // no entry (same state as the main renderer's audio, #848).
+  test('a null onAction suppresses the session without claiming its key path (optional API)', () => {
+    // Suppression without handler registration — a caller that owns the OS key
+    // path some other way. The Amazon preload always registers its handlers;
+    // nothing about this branch is Linux-specific anymore (the Linux kill is
+    // main.js's disable-features switch).
     const page = makePage();
     installMediaSessionHijack({ navigator: page.navigator }, null);
     expect(Object.keys(page.realHandlers)).toEqual([]); // nothing registered
@@ -114,7 +134,7 @@ describe('installMediaSessionHijack', () => {
     expect(() => installMediaSessionHijack(null, () => {})).not.toThrow();
     expect(() => installMediaSessionHijack({}, () => {})).not.toThrow();
     expect(() => installMediaSessionHijack({ navigator: {} }, () => {})).not.toThrow();
-    expect(() => installMediaSessionHijack({ navigator: {} }, () => {})).not.toThrow();
+    expect(installMediaSessionHijack({ navigator: {} }, () => {})).toBeNull();
 
     // A navigator that cannot be shadowed (frozen) still gets our handlers —
     // the key hijack matters even when the metadata facade cannot install.
@@ -141,34 +161,27 @@ describe('installMediaSessionHijack', () => {
     const pageB = makePage();
     const seenA = [];
     const seenB = [];
-    installMediaSessionHijack({ navigator: pageA.navigator }, (a) => seenA.push(a));
-    restored({ navigator: pageB.navigator }, (a) => seenB.push(a));
+    const realA = installMediaSessionHijack({ navigator: pageA.navigator }, (a) => seenA.push(a));
+    const realB = restored({ navigator: pageB.navigator }, (a) => seenB.push(a));
     pageA.realHandlers.play();
     pageB.realHandlers.play();
     pageA.navigator.mediaSession.metadata = { x: 1 };
     pageB.navigator.mediaSession.metadata = { x: 1 };
     expect(seenA).toEqual(seenB);
+    expect(realA).toBe(pageA.real);
+    expect(realB).toBe(pageB.real);
     expect(pageA.navigator.mediaSession.metadata).toEqual(pageB.navigator.mediaSession.metadata);
     expect(pageA.real.metadata).toBeUndefined();
     expect(pageB.real.metadata).toBeUndefined();
-    // The null-onAction branch survives serialization too
-    const pageC = makePage();
-    const pageD = makePage();
-    installMediaSessionHijack({ navigator: pageC.navigator }, null);
-    restored({ navigator: pageD.navigator }, null);
-    expect(Object.keys(pageC.realHandlers)).toEqual([]);
-    expect(Object.keys(pageD.realHandlers)).toEqual([]);
-    expect(pageD.navigator.mediaSession).not.toBe(pageD.real);
   });
 });
 
 // The now-playing mirror — main feeds Parachord's track through the preload
 // into the page world, and applyMediaSessionMirror writes the REAL session
-// behind the facade so the OS card shows the track instead of the page's own
-// label ("Amazon Music", the document title).
+// (the object installMediaSessionHijack returned, held in the caller's
+// closure) so the OS card shows the track instead of the page's own label.
 describe('applyMediaSessionMirror', () => {
   let MediaMetadataCtor;
-  const constructed = [];
 
   beforeAll(() => {
     // The page world's MediaMetadata constructor; captured so the tests can
@@ -178,7 +191,6 @@ describe('applyMediaSessionMirror', () => {
       constructor(init) {
         if (init && init.title === 'THROW') throw new TypeError('bad metadata');
         this.init = init;
-        constructed.push(init);
       }
     };
   });
@@ -187,81 +199,62 @@ describe('applyMediaSessionMirror', () => {
     else global.MediaMetadata = MediaMetadataCtor;
   });
 
-  // A page whose hijack installed: the real session is stashed on the scope.
-  const makeInstalledPage = () => {
-    const real = {
-      handlers: {},
-      metadata: undefined,
-      playbackState: 'none',
-      positionState: null,
-      setActionHandler(a, fn) { this.handlers[a] = fn; },
-      setPositionState(s) { this.positionState = s; }
-    };
-    real.setActionHandler = real.setActionHandler.bind(real);
-    const scope = { navigator: { mediaSession: real } };
-    if (typeof global.MediaMetadata === 'function') scope.MediaMetadata = global.MediaMetadata;
-    installMediaSessionHijack(scope, null);
-    return { scope, real };
-  };
-
-  test('the hijack stashes the real session for the mirror path', () => {
-    const { scope, real } = makeInstalledPage();
-    expect(scope.__parachordMediaSessionReal).toBe(real);
-  });
-
   test('metadata writes reach the real session; https artwork passes, others drop', () => {
-    const { scope, real } = makeInstalledPage();
-    applyMediaSessionMirror(scope, {
+    const page = makePage();
+    const real = installMediaSessionHijack({ navigator: page.navigator }, null);
+    applyMediaSessionMirror(real, {
       metadata: { title: 'Metal Health', artist: 'Quiet Riot', album: 'Metal Health', artwork: 'https://example.com/a.jpg' }
-    });
-    expect(real.metadata.init).toEqual({
+    }, global.MediaMetadata)
+    expect(page.real.metadata.init).toEqual({
       title: 'Metal Health', artist: 'Quiet Riot', album: 'Metal Health',
       artwork: [{ src: 'https://example.com/a.jpg', sizes: '512x512' }]
     });
     // The page facade is unaffected by the mirror — writes behind the facade
-    expect(scope.navigator.mediaSession.metadata).toBeNull();
+    expect(page.navigator.mediaSession.metadata).toBeNull();
 
-    applyMediaSessionMirror(scope, {
+    applyMediaSessionMirror(real, {
       metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'local-art://embedded/x' }
-    });
-    expect(real.metadata.init).toEqual({ title: 'T', artist: 'A', album: 'AL' }); // no artwork
+    }, global.MediaMetadata)
+    expect(page.real.metadata.init).toEqual({ title: 'T', artist: 'A', album: 'AL' }); // no artwork
   });
 
   test('null metadata clears; a throwing MediaMetadata degrades to text-only', () => {
-    const { scope, real } = makeInstalledPage();
-    applyMediaSessionMirror(scope, { metadata: { title: 'T', artist: 'A', album: 'AL' } });
-    expect(real.metadata).toBeTruthy();
-    applyMediaSessionMirror(scope, { metadata: null });
-    expect(real.metadata).toBeNull();
+    const page = makePage();
+    const real = installMediaSessionHijack({ navigator: page.navigator }, null);
+    applyMediaSessionMirror(real, { metadata: { title: 'T', artist: 'A', album: 'AL' } }, global.MediaMetadata)
+    expect(page.real.metadata).toBeTruthy();
+    applyMediaSessionMirror(real, { metadata: null }, global.MediaMetadata)
+    expect(page.real.metadata).toBeNull();
 
-    applyMediaSessionMirror(scope, {
+    applyMediaSessionMirror(real, {
       metadata: { title: 'THROW', artist: 'A', album: 'AL', artwork: 'https://e.com/a.jpg' }
-    });
+    }, global.MediaMetadata)
     // First construction throws (artwork + THROW title), fallback retries without artwork, still throws → null
-    expect(real.metadata).toBeNull();
+    expect(page.real.metadata).toBeNull();
   });
 
   test('playbackState and clamped positionState reach the real session', () => {
-    const { scope, real } = makeInstalledPage();
-    applyMediaSessionMirror(scope, { playbackState: 'playing' });
-    expect(real.playbackState).toBe('playing');
-    applyMediaSessionMirror(scope, { playbackState: 'bogus' });
-    expect(real.playbackState).toBe('playing'); // invalid values ignored
+    const page = makePage();
+    const real = installMediaSessionHijack({ navigator: page.navigator }, null);
+    applyMediaSessionMirror(real, { playbackState: 'playing' }, global.MediaMetadata)
+    expect(page.real.playbackState).toBe('playing');
+    applyMediaSessionMirror(real, { playbackState: 'bogus' }, global.MediaMetadata)
+    expect(page.real.playbackState).toBe('playing'); // invalid values ignored
 
-    applyMediaSessionMirror(scope, { position: { duration: 317, position: 400, rate: 1 } });
-    expect(real.positionState).toEqual({ duration: 317, position: 317, playbackRate: 1 });
-    applyMediaSessionMirror(scope, { position: { duration: 317, position: 10, rate: 0 } });
-    expect(real.positionState).toEqual({ duration: 317, position: 10, playbackRate: 0 });
-    applyMediaSessionMirror(scope, { position: { duration: 0, position: 10, rate: 1 } });
-    expect(real.positionState.position).toBe(10); // no duration → skipped entirely
+    applyMediaSessionMirror(real, { position: { duration: 317, position: 400, rate: 1 } }, global.MediaMetadata)
+    expect(page.real.positionState).toEqual({ duration: 317, position: 317, playbackRate: 1 });
+    applyMediaSessionMirror(real, { position: { duration: 317, position: 10, rate: 0 } }, global.MediaMetadata)
+    expect(page.real.positionState).toEqual({ duration: 317, position: 10, playbackRate: 0 });
+    applyMediaSessionMirror(real, { position: { duration: 0, position: 10, rate: 1 } }, global.MediaMetadata)
+    expect(page.real.positionState.position).toBe(10); // no duration → skipped entirely
   });
 
-  test('no stash / no data / hostile sessions are tolerated', () => {
+  test('missing real/data and hostile sessions are tolerated', () => {
     expect(() => applyMediaSessionMirror(null, { metadata: null })).not.toThrow();
-    expect(() => applyMediaSessionMirror({}, { metadata: null })).not.toThrow(); // hijack never ran
-    const { scope, real } = makeInstalledPage();
-    expect(() => applyMediaSessionMirror(scope, null)).not.toThrow();
-    expect(() => applyMediaSessionMirror(scope, 'junk')).not.toThrow();
+    const page = makePage();
+    const real = installMediaSessionHijack({ navigator: page.navigator }, null);
+    expect(() => applyMediaSessionMirror(real, global.MediaMetadata, null)).not.toThrow();
+    expect(() => applyMediaSessionMirror(real, global.MediaMetadata, 'junk')).not.toThrow();
 
     // A real session whose setters throw is tolerated
     const hostile = {
@@ -270,28 +263,28 @@ describe('applyMediaSessionMirror', () => {
       setActionHandler() { throw new Error('no'); },
       setPositionState() { throw new Error('no'); }
     };
-    const hostileScope = { navigator: { mediaSession: hostile } };
-    installMediaSessionHijack(hostileScope, null);
-    expect(() => applyMediaSessionMirror(hostileScope, {
+    expect(() => applyMediaSessionMirror(hostile, global.MediaMetadata, {
       metadata: { title: 'T', artist: 'A', album: 'AL' },
       playbackState: 'playing',
       position: { duration: 10, position: 1, rate: 1 }
     })).not.toThrow();
     // the earlier page is untouched
-    expect(real.metadata).toBeUndefined();
+    expect(page.real.metadata).toBeUndefined();
   });
 
   test('the mirror is serialization-safe: .toString() + eval behaves identically', () => {
     const restored = new Function(`return (${applyMediaSessionMirror.toString()})`)();
-    const a = makeInstalledPage();
-    const b = makeInstalledPage();
+    const a = makePage();
+    const b = makePage();
+    const realA = installMediaSessionHijack({ navigator: a.navigator }, null);
+    const realB = installMediaSessionHijack({ navigator: b.navigator }, null);
     const payload = {
       metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'https://e.com/a.jpg' },
       playbackState: 'playing',
       position: { duration: 100, position: 50, rate: 1 }
     };
-    applyMediaSessionMirror(a.scope, payload);
-    restored(b.scope, payload);
+    applyMediaSessionMirror(realA, payload, global.MediaMetadata)
+    restored(realB, payload, global.MediaMetadata);
     expect(b.real.metadata.init).toEqual(a.real.metadata.init);
     expect(b.real.playbackState).toBe(a.real.playbackState);
     expect(b.real.positionState).toEqual(a.real.positionState);
