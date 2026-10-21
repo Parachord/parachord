@@ -1,7 +1,7 @@
 /**
  * Pages as React.memo'd modules (Track 2b state-domain split; performance:
  * every Parachord setState used to re-render the page on screen too): the
- * Collection page, the Home page, the playlist view and the artist page. A memo only helps while every prop is stable unless its data
+ * Collection page, the Home page, the playlist view, the artist page and Search. A memo only helps while every prop is stable unless its data
  * changed, and that is easy to break silently: pass one function defined in
  * the component body, or one object literal, and the page re-renders on
  * every Parachord render again with nothing failing. These tests pin it.
@@ -21,6 +21,7 @@ const { CollectionPage, COLLECTION_PAGE_HANDLERS } = require('../../src/renderer
 const { HomePage, HOME_PAGE_HANDLERS } = require('../../src/renderer/components/home-page');
 const { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS } = require('../../src/renderer/components/playlist-view-page');
 const { ArtistPage, ARTIST_PAGE_HANDLERS } = require('../../src/renderer/components/artist-page');
+const { SearchPage, SEARCH_PAGE_HANDLERS } = require('../../src/renderer/components/search-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
@@ -28,6 +29,7 @@ const PAGES = [
   { component: 'HomePage', file: 'home-page.js', handlersVar: 'homePageHandlers', handlers: HOME_PAGE_HANDLERS, memo: HomePage },
   { component: 'PlaylistViewPage', file: 'playlist-view-page.js', handlersVar: 'playlistViewPageHandlers', handlers: PLAYLIST_VIEW_PAGE_HANDLERS, memo: PlaylistViewPage },
   { component: 'ArtistPage', file: 'artist-page.js', handlersVar: 'artistPageHandlers', handlers: ARTIST_PAGE_HANDLERS, memo: ArtistPage },
+  { component: 'SearchPage', file: 'search-page.js', handlersVar: 'searchPageHandlers', handlers: SEARCH_PAGE_HANDLERS, memo: SearchPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
