@@ -113,18 +113,20 @@ module.exports = {
       }
     }
 
-    // Convert tools to Gemini format
-    const geminiTools = tools
-      ? [
-          {
-            functionDeclarations: tools.map((tool) => ({
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.parameters,
-            })),
-          },
-        ]
-      : undefined;
+    // Convert tools to Gemini format. An empty functionDeclarations list is
+    // not a valid tool, so a caller that wants a plain answer sends none.
+    const geminiTools =
+      tools && tools.length > 0
+        ? [
+            {
+              functionDeclarations: tools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+              })),
+            },
+          ]
+        : undefined;
 
     const requestBody = {
       contents: contents,
