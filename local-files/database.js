@@ -215,6 +215,12 @@ class LocalFilesDatabase {
     return stmt.all();
   }
 
+  // Every file path, nothing else (the missing-files check walks the whole
+  // library; SELECT * would load every metadata column for nothing).
+  getAllFilePaths() {
+    return this.db.prepare(`SELECT file_path FROM tracks`).all().map((row) => row.file_path);
+  }
+
   search(query) {
     const normalized = this.normalize(query);
     const pattern = `%${normalized}%`;

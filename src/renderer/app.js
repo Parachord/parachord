@@ -14389,6 +14389,18 @@ ${trackListXml}
           } else if (data.type === 'artist' && data.artist) {
             addArtistToCollection(data.artist);
           }
+        } else if (data.action === 'remove-missing-local-file' && data.filePath) {
+          // A library row whose file is gone (#1002). Main re-checks before
+          // deleting, so a file that came back in the meantime is kept.
+          window.electron?.localFiles?.removeMissing?.([data.filePath]).then((result) => {
+            if (!result?.success) {
+              showToast(`Could not remove it from the library: ${result?.error || 'unknown error'}`, 'error');
+            } else if (result.removed > 0) {
+              showToast(`Removed "${data.track?.title || 'track'}" from your local library`, 'success');
+            } else {
+              showToast('The file is back on disk, so it was kept', 'info');
+            }
+          }).catch(() => {});
         } else if (data.action === 'remove-from-collection') {
           // Remove from collection based on type
           if (data.type === 'track' && data.track) {
@@ -15047,6 +15059,48 @@ ${trackListXml}
       await window.electron.localFiles.rescanFolder(folderPath);
       setWatchFolders(await window.electron.localFiles.getWatchFolders());
       setLocalFilesStats(await window.electron.localFiles.getStats());
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  // "Remove Missing Files" (#1002). Automatic scans never delete rows when a
+  // folder comes back empty (an unmounted drive looks the same), so a folder
+  // the user emptied on purpose kept its tracks forever. This is the explicit
+  // path: count what is missing, ask, then delete. Folders whose root cannot
+  // be read are skipped and named, never counted as missing.
+  const handleRemoveMissingFiles = async () => {
+    const bridge = window.electron?.localFiles;
+    if (!bridge?.findMissing || !bridge?.removeMissing) return;
+    setIsScanning(true);
+    try {
+      const found = await bridge.findMissing();
+      if (!found?.success) {
+        showToast(`Could not check for missing files: ${found?.error || 'unknown error'}`, 'error');
+        return;
+      }
+      const skipped = found.unreachableFolders?.length
+        ? `\n\nSkipped because the folder can't be read right now (is a drive disconnected?):\n${found.unreachableFolders.join('\n')}`
+        : '';
+      if (found.missing.length === 0) {
+        if (skipped) {
+          showConfirmDialog({ type: 'info', title: 'No Missing Files', message: `Every file in the folders that could be checked is still there.${skipped}` });
+        } else {
+          showToast('No missing files: every library file is still on disk', 'success');
+        }
+        return;
+      }
+      const n = found.missing.length;
+      const ok = window.confirm(`${n} file${n === 1 ? '' : 's'} in your library ${n === 1 ? 'is' : 'are'} no longer on disk. Remove ${n === 1 ? 'it' : 'them'} from the library?\n\nThis only removes library entries; nothing on disk is touched.${skipped}`);
+      if (!ok) return;
+      const result = await bridge.removeMissing(found.missing);
+      if (!result?.success) {
+        showToast(`Could not remove missing files: ${result?.error || 'unknown error'}`, 'error');
+        return;
+      }
+      showToast(`Removed ${result.removed} missing file${result.removed === 1 ? '' : 's'} from your library${result.kept ? ` (${result.kept} came back and were kept)` : ''}`, 'success');
+      setWatchFolders(await bridge.getWatchFolders());
+      setLocalFilesStats(await bridge.getStats());
     } finally {
       setIsScanning(false);
     }
@@ -47090,10 +47144,16 @@ useEffect(() => {
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
+                        // This tab lists local-library tracks too, and those are
+                        // not in the collection: claiming they were offered
+                        // "Remove from Collection", which could only fail with
+                        // "not in your collection" (#1002).
+                        const inCollection = collectionData.tracks.some(t => t.id === track.id);
                         window.electron.contextMenu.showTrackMenu({
                           type: 'track',
                           track: track,
-                          isInCollection: true  // Collection tracks are always in collection
+                          isInCollection: inCollection,
+                          isLibraryTrack: !inCollection && !!(track.filePath || track.sources?.localfiles?.filePath)
                         });
                       }
                     }
@@ -60275,7 +60335,13 @@ useEffect(() => {
                 onClick: handleRescanAll,
                 disabled: isScanning || watchFolders.length === 0,
                 className: 'mt-4 px-4 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-              }, 'Rescan All Folders')
+              }, 'Rescan All Folders'),
+              React.createElement('button', {
+                onClick: handleRemoveMissingFiles,
+                disabled: isScanning || watchFolders.length === 0,
+                title: 'Remove library entries for files that are no longer on disk',
+                className: 'mt-4 ml-2 px-4 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+              }, 'Remove Missing Files')
             )
           )
         ),

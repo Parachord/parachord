@@ -389,6 +389,8 @@ contextBridge.exposeInMainWorld('electron', {
     resolveArt: (track) => ipcRenderer.invoke('localFiles:resolveArt', track),
     getStreamInfo: (filePath) => ipcRenderer.invoke('localFiles:stream-info', filePath),
     fileStatus: (filePath) => ipcRenderer.invoke('localFiles:file-status', filePath),
+    findMissing: () => ipcRenderer.invoke('localFiles:find-missing'),
+    removeMissing: (filePaths) => ipcRenderer.invoke('localFiles:remove-missing', filePaths),
     getStats: () => ipcRenderer.invoke('localFiles:getStats'),
     saveId3Tags: (filePath, tags) => ipcRenderer.invoke('localFiles:saveId3Tags', filePath, tags),
 

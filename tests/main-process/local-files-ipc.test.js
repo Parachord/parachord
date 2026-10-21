@@ -14,7 +14,7 @@ const CHANNELS = [
   'localFiles:resolveArt', 'localFiles:stream-info', 'localFiles:rescanAll',
   'localFiles:rescanFolder', 'localFiles:getAllTracks', 'localFiles:search',
   'localFiles:resolve', 'localFiles:getStats', 'localFiles:saveId3Tags',
-  'localFiles:file-status',
+  'localFiles:file-status', 'localFiles:find-missing', 'localFiles:remove-missing',
 ];
 
 function makeHarness({ dialogResult, serviceImpl } = {}) {
@@ -38,7 +38,7 @@ function makeHarness({ dialogResult, serviceImpl } = {}) {
   for (const method of [
     'addWatchFolder', 'removeWatchFolder', 'getWatchFolders', 'resolveArtForTrack', 'getStreamInfo',
     'rescanAll', 'scanFolder', 'getAllTracks', 'search', 'resolve', 'getStats', 'saveId3Tags',
-    'fileStatus',
+    'fileStatus', 'findMissingFiles', 'removeMissingFiles',
   ]) {
     service[method] = async (...args) => {
       serviceCalls.push({ method, args });
@@ -68,6 +68,28 @@ describe('localFiles:file-status (#1002)', () => {
     const { handlers } = makeHarness({ serviceImpl: () => { throw new Error('db closed'); } });
     await expect(handlers.get('localFiles:file-status')(null, '')).resolves.toBe('unknown');
     await expect(handlers.get('localFiles:file-status')(null, '/music/a.flac')).resolves.toBe('unknown');
+  });
+});
+
+describe('localFiles missing-files channels (#1002)', () => {
+  test('find-missing wraps the service result', async () => {
+    const { handlers } = makeHarness({ serviceImpl: () => ({ missing: ['/m/a.flac'], unreachableFolders: [], checked: 3 }) });
+    await expect(handlers.get('localFiles:find-missing')()).resolves.toEqual({
+      success: true, missing: ['/m/a.flac'], unreachableFolders: [], checked: 3,
+    });
+  });
+
+  test('remove-missing passes only string paths, and does nothing for none', async () => {
+    const { handlers, serviceCalls } = makeHarness({ serviceImpl: () => ({ removed: 1, kept: 0 }) });
+    await expect(handlers.get('localFiles:remove-missing')(null, ['/m/a.flac', 7, '', null])).resolves.toEqual({ success: true, removed: 1, kept: 0 });
+    expect(serviceCalls).toEqual([{ method: 'removeMissingFiles', args: [['/m/a.flac']] }]);
+    await expect(handlers.get('localFiles:remove-missing')(null, 'not-an-array')).resolves.toEqual({ success: true, removed: 0, kept: 0 });
+  });
+
+  test('a service failure comes back as an error, not a throw', async () => {
+    const { handlers } = makeHarness({ serviceImpl: () => { throw new Error('db closed'); } });
+    await expect(handlers.get('localFiles:find-missing')()).resolves.toEqual({ success: false, error: 'db closed' });
+    await expect(handlers.get('localFiles:remove-missing')(null, ['/m/a.flac'])).resolves.toEqual({ success: false, error: 'db closed' });
   });
 });
 

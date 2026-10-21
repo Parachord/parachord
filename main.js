@@ -4890,6 +4890,32 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         });
       }
     });
+
+    // A track that is in the local library but not the collection (#1002):
+    // the Collection view lists these too, and its only removal action used
+    // to be "Remove from Collection", which cannot apply. Offer what does:
+    // show the file, or drop the row when the file is gone.
+    if (data.isLibraryTrack) {
+      const service = await waitForLocalFilesService().catch(() => null);
+      const status = service ? await service.fileStatus(trackFilePath).catch(() => 'unknown') : 'unknown';
+      if (status === 'missing') {
+        menuItems.push({
+          label: 'Remove Missing File from Library',
+          click: () => {
+            safeSendToRenderer('track-context-menu-action', {
+              action: 'remove-missing-local-file',
+              track: data.track,
+              filePath: trackFilePath
+            });
+          }
+        });
+      } else if (status === 'present') {
+        menuItems.push({
+          label: process.platform === 'darwin' ? 'Show in Finder' : 'Show in Folder',
+          click: () => shell.showItemInFolder(trackFilePath)
+        });
+      }
+    }
   }
 
   // Add "Remove from Collection" option for collection albums

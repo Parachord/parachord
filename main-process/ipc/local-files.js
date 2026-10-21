@@ -112,6 +112,32 @@ function registerLocalFilesIpc({ ipcMain, dialog, getMainWindow, waitForLocalFil
     }
   });
 
+  // "Remove missing files" (#1002): find is read-only (the renderer shows the
+  // count and asks first); remove re-checks every path before deleting.
+  ipcMain.handle('localFiles:find-missing', async () => {
+    const service = await waitForLocalFilesService();
+    if (!service) return { success: false, error: 'Local files not available' };
+    try {
+      return { success: true, ...(await service.findMissingFiles()) };
+    } catch (err) {
+      console.error('[LocalFiles] find-missing failed:', err);
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('localFiles:remove-missing', async (_event, filePaths) => {
+    const service = await waitForLocalFilesService();
+    if (!service) return { success: false, error: 'Local files not available' };
+    const paths = Array.isArray(filePaths) ? filePaths.filter((p) => typeof p === 'string' && p) : [];
+    if (paths.length === 0) return { success: true, removed: 0, kept: 0 };
+    try {
+      return { success: true, ...(await service.removeMissingFiles(paths)) };
+    } catch (err) {
+      console.error('[LocalFiles] remove-missing failed:', err);
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('localFiles:rescanAll', async () => {
     console.log('=== Rescan All Folders ===');
 
