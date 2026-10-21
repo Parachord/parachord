@@ -1135,6 +1135,14 @@ const generateArtistId = (name) => {
 // Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
 // that collapsed every non-Latin track to the same id (lib/track-slug.js).
 const { trackSlug, slug } = require('./lib/track-slug');
+// Stale local-file sources (parachord#1002): a localfiles source whose file
+// is no longer in the local library.
+const {
+  libraryFilePaths,
+  isStaleLocalSource,
+  withoutStaleLocalSource,
+  tracksWithoutStaleLocalSources,
+} = require('./lib/local-sources');
 // ─── Cards (src/renderer/components/cards.js) ──────────────────────────────
 // The card family (search/collection/artist pages) + generateArtistPattern
 // (exported back — the in-component call sites keep the same binding) move
@@ -3515,6 +3523,21 @@ const Parachord = () => {
   const [draggedResolver, setDraggedResolver] = useState(null);
   const [dragOverResolver, setDragOverResolver] = useState(null);  // Which resolver is being dragged over
   const [library, setLibrary] = useState([]);
+  // File paths of the last SUCCESSFUL local-library load, or null until one
+  // has happened. Every stale-local-source check keys off this (#1002); a
+  // failed load leaves it untouched, so a DB read error can never be taken
+  // for "every file is gone".
+  const libraryFilePathsRef = useRef(null);
+  const [libraryPathsVersion, setLibraryPathsVersion] = useState(0);
+  // A file play found missing on disk before the library noticed (the
+  // watcher or the 5-minute background poll will drop its row): treat it as
+  // gone now, so the reconcile below strips its local source everywhere.
+  const forgetMissingLocalFile = (filePath) => {
+    const paths = libraryFilePathsRef.current;
+    if (!paths || !paths.has(filePath)) return;
+    paths.delete(filePath);
+    setLibraryPathsVersion(v => v + 1);
+  };
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [localLibraryVersion, setLocalLibraryVersion] = useState(0); // Incremented when local files library changes (triggers album re-resolution)
   const [audioContext, setAudioContext] = useState(null);
@@ -7232,6 +7255,56 @@ const Parachord = () => {
   // Cache for track sources (trackKey -> { sources, timestamp })
   // trackKey format: "artist|title|album"
   const trackSourcesCache = useRef({});
+
+  // Stale local-file sources (#1002). After every successful local-library
+  // load (startup, and each change the watcher or the background poll
+  // reports), drop `localfiles` sources whose file is no longer in the
+  // library, everywhere one is kept: the resolution cache, the session's
+  // trackSources, and the collection, playlist and queue tracks. Before this,
+  // a deleted file kept its local badge and play tried it until the 30-day
+  // cache expired. Waits for the cache and the collection to load, so it
+  // runs over what they restored. The collection and playlists are cleaned
+  // in memory only; this runs on every launch, so their on-disk copies never
+  // resurface, and resolveTrack ignores a stale local source regardless.
+  useEffect(() => {
+    const paths = libraryFilePathsRef.current;
+    if (!paths || !cacheLoaded || collectionLoading) return;
+    let cached = 0;
+    for (const entry of Object.values(trackSourcesCache.current)) {
+      if (entry?.sources && isStaleLocalSource(entry.sources.localfiles, paths)) {
+        entry.sources = withoutStaleLocalSource(entry.sources, paths);
+        entry.resolverHash = null;
+        cached++;
+      }
+    }
+    flushTrackSources(); // queued writes first, so none re-adds a stale source after this
+    setTrackSources(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [key, sources] of Object.entries(prev)) {
+        const cleaned = withoutStaleLocalSource(sources, paths);
+        if (cleaned !== sources) { next[key] = cleaned; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+    setCollectionData(prev => {
+      const tracks = tracksWithoutStaleLocalSources(prev.tracks, paths);
+      return tracks === prev.tracks ? prev : { ...prev, tracks };
+    });
+    setPlaylists(prev => {
+      let changed = false;
+      const next = prev.map(p => {
+        const tracks = tracksWithoutStaleLocalSources(p.tracks, paths);
+        if (tracks === p.tracks) return p;
+        changed = true;
+        return { ...p, tracks };
+      });
+      return changed ? next : prev;
+    });
+    setPlaylistTracks(prev => tracksWithoutStaleLocalSources(prev, paths));
+    setCurrentQueue(prev => tracksWithoutStaleLocalSources(prev, paths));
+    if (cached > 0) console.log(`📚 Dropped ${cached} cached local source(s) for files no longer in the library`);
+  }, [libraryPathsVersion, cacheLoaded, collectionLoading]);
 
   // After sign-in, tracks resolved while Amazon was not ready have no
   // amazonmusic key (notReady skips the noMatch marker) but a fresh timestamp.
@@ -12232,6 +12305,10 @@ ${trackListXml}
           const tLocal = performance.now();
           const localTracks = await window.electron.localFiles.getAllTracks();
           const localMs = Math.round(performance.now() - tLocal);
+          if (Array.isArray(localTracks)) {
+            libraryFilePathsRef.current = libraryFilePaths(localTracks);
+            setLibraryPathsVersion(v => v + 1);
+          }
           if (localTracks && localTracks.length > 0) {
             console.log(`📚 Loaded ${localTracks.length} local tracks into library (${localMs}ms IPC)`);
             setLibrary(localTracks);
@@ -15770,6 +15847,38 @@ ${trackListXml}
     if (resolverId === 'localfiles') {
       console.log('🎵 Playing local file:', sourceToPlay.filePath || sourceToPlay.fileUrl);
       console.log('🎵 Source details:', JSON.stringify(sourceToPlay, null, 2));
+
+      // A deleted file reaches the audio element as a 404, which Chromium
+      // reports as "source not supported", so the user was told the file
+      // could not be decoded (#1002). Check first: a missing file falls back
+      // to the track's other sources, or says plainly that it is gone.
+      const localPath = sourceToPlay.filePath;
+      if (localPath && window.electron?.localFiles?.fileStatus) {
+        const fileStatus = await window.electron.localFiles.fileStatus(localPath).catch(() => 'unknown');
+        if (playbackGenerationRef.current !== thisGeneration) return;
+        if (fileStatus === 'missing') {
+          console.warn('🎵 Local file is no longer on disk:', localPath);
+          forgetMissingLocalFile(localPath);
+          const others = trackOrSource.sources
+            ? Object.keys(trackOrSource.sources).filter(id => id !== 'localfiles' && !trackOrSource.sources[id]?.noMatch)
+            : [];
+          if (others.length > 0) {
+            handlePlay({
+              ...trackOrSource,
+              sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== 'localfiles'))
+            });
+            return;
+          }
+          setTrackLoading(false);
+          if (autoSkipIfAdvancing(`local file missing: ${localPath}`)) return;
+          showConfirmDialog({
+            type: 'error',
+            title: 'File Not Found',
+            message: `This file is no longer on disk, so it can't be played:\n${localPath}`
+          });
+          return;
+        }
+      }
 
       // Stop Spotify polling when switching to local file playback
       if (playbackPollerRef.current) {
@@ -24058,6 +24167,13 @@ ${trackListXml}
 
     // Check cache first (unless force refresh)
     const cachedData = trackSourcesCache.current[cacheKey];
+    // A cached local file that has left the library (#1002): drop it and
+    // invalidate the entry, so the missing resolvers are asked again rather
+    // than the cache answering with a file that is gone.
+    if (cachedData?.sources && isStaleLocalSource(cachedData.sources.localfiles, libraryFilePathsRef.current)) {
+      cachedData.sources = withoutStaleLocalSource(cachedData.sources, libraryFilePathsRef.current);
+      cachedData.resolverHash = null;
+    }
     const now = Date.now();
 
     // Get current active resolvers for filtering
@@ -24075,6 +24191,8 @@ ${trackListXml}
           Object.entries(track.sources).filter(([resolverId, sourceData]) => {
             // Must be from an active resolver
             if (!currentActiveResolvers.includes(resolverId)) return false;
+            // A local file that has left the library (#1002) is not a source
+            if (resolverId === 'localfiles' && isStaleLocalSource(sourceData, libraryFilePathsRef.current)) return false;
             // Sources without resolvedAt are from sync (Spotify) - always valid
             if (!sourceData.resolvedAt) return true;
             // Check if source is within persisted TTL

@@ -111,7 +111,8 @@ describe('the pages use the mitigations', () => {
     const bulk = app.match(/setTrackSources\(prev => \{/g) || [];
     const flushes = app.match(/flushTrackSources\(\); \/\//g) || [];
     expect(bulk.length).toBeGreaterThanOrEqual(4);
-    expect(flushes.length).toBe(3);
+    // 4th: the stale local-source reconcile after a library load (#1002).
+    expect(flushes.length).toBe(4);
   });
 
   test('hover prefetch is dwell-timed on both card grids and cancelled on leave', () => {

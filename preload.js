@@ -388,6 +388,7 @@ contextBridge.exposeInMainWorld('electron', {
     resolve: (params) => ipcRenderer.invoke('localFiles:resolve', params),
     resolveArt: (track) => ipcRenderer.invoke('localFiles:resolveArt', track),
     getStreamInfo: (filePath) => ipcRenderer.invoke('localFiles:stream-info', filePath),
+    fileStatus: (filePath) => ipcRenderer.invoke('localFiles:file-status', filePath),
     getStats: () => ipcRenderer.invoke('localFiles:getStats'),
     saveId3Tags: (filePath, tags) => ipcRenderer.invoke('localFiles:saveId3Tags', filePath, tags),
 

@@ -99,6 +99,19 @@ function registerLocalFilesIpc({ ipcMain, dialog, getMainWindow, waitForLocalFil
     }
   });
 
+  // 'present' | 'missing' | 'unknown' for a library file (#1002): lets a
+  // failed local play say the file is gone instead of "could not be decoded".
+  ipcMain.handle('localFiles:file-status', async (_event, filePath) => {
+    const service = await waitForLocalFilesService();
+    if (!service || !filePath) return 'unknown';
+    try {
+      return await service.fileStatus(filePath);
+    } catch (err) {
+      console.warn('[LocalFiles] file-status IPC failed:', err && err.message ? err.message : err);
+      return 'unknown';
+    }
+  });
+
   ipcMain.handle('localFiles:rescanAll', async () => {
     console.log('=== Rescan All Folders ===');
 

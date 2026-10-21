@@ -163,6 +163,24 @@ class LocalFilesService {
     return track ? this.formatTrackForRenderer(track) : null;
   }
 
+  // Is a library file still on disk? (parachord#1002) Used when local
+  // playback fails, to tell "the file is gone" from "the file won't decode".
+  // Answers only for paths the library knows ('unknown' otherwise), so the
+  // renderer cannot probe arbitrary paths. Never deletes the row: a whole
+  // volume going away looks the same as a deleted file from here, and the
+  // scanner's empty-folder guard exists to keep exactly that from wiping
+  // the library.
+  async fileStatus(filePath) {
+    if (!filePath || typeof filePath !== 'string') return 'unknown';
+    if (!this.db.getTrackByPath(filePath)) return 'unknown';
+    try {
+      await fs.promises.access(filePath);
+      return 'present';
+    } catch (err) {
+      return err && (err.code === 'ENOENT' || err.code === 'ENOTDIR') ? 'missing' : 'unknown';
+    }
+  }
+
   // Stats
   getStats() {
     return this.db.getStats();

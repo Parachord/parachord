@@ -14,6 +14,7 @@ const CHANNELS = [
   'localFiles:resolveArt', 'localFiles:stream-info', 'localFiles:rescanAll',
   'localFiles:rescanFolder', 'localFiles:getAllTracks', 'localFiles:search',
   'localFiles:resolve', 'localFiles:getStats', 'localFiles:saveId3Tags',
+  'localFiles:file-status',
 ];
 
 function makeHarness({ dialogResult, serviceImpl } = {}) {
@@ -37,6 +38,7 @@ function makeHarness({ dialogResult, serviceImpl } = {}) {
   for (const method of [
     'addWatchFolder', 'removeWatchFolder', 'getWatchFolders', 'resolveArtForTrack', 'getStreamInfo',
     'rescanAll', 'scanFolder', 'getAllTracks', 'search', 'resolve', 'getStats', 'saveId3Tags',
+    'fileStatus',
   ]) {
     service[method] = async (...args) => {
       serviceCalls.push({ method, args });
@@ -54,6 +56,20 @@ function makeHarness({ dialogResult, serviceImpl } = {}) {
   });
   return { handlers, service, serviceCalls, dialog, dialogCalls, sent, win };
 }
+
+describe('localFiles:file-status (#1002)', () => {
+  test('delegates to the service', async () => {
+    const { handlers, serviceCalls } = makeHarness({ serviceImpl: () => 'missing' });
+    await expect(handlers.get('localFiles:file-status')(null, '/music/gone.flac')).resolves.toBe('missing');
+    expect(serviceCalls).toEqual([{ method: 'fileStatus', args: ['/music/gone.flac'] }]);
+  });
+
+  test('answers unknown for no path or a failing service, never throws', async () => {
+    const { handlers } = makeHarness({ serviceImpl: () => { throw new Error('db closed'); } });
+    await expect(handlers.get('localFiles:file-status')(null, '')).resolves.toBe('unknown');
+    await expect(handlers.get('localFiles:file-status')(null, '/music/a.flac')).resolves.toBe('unknown');
+  });
+});
 
 describe('localFiles IPC surface', () => {
   test('registers exactly the full channel surface', () => {
