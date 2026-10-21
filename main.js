@@ -64,7 +64,19 @@ app.name = 'Parachord';
 // Amazon's web player runs in an opacity-0 window behind Parachord. Chromium
 // otherwise treats that window as occluded and tears the Widevine element down
 // as soon as focus returns to the main window.
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+//
+// TEMPORARY EXPERIMENT (Linux media-session kill-switch hunt, 2026-10 — do
+// not merge as-is): CalculateNativeWinOcclusion is permanent; the media-
+// session features are the candidate list mined from the Linux binary's
+// feature symbols (kMediaSession / kMediaSessionService / kInternalMediaSession
+// / kHardwareMediaKeyHandling) — testing whether any of them gates Chromium's
+// Linux MPRIS entry (the `chromium.instance*` player that materializes next to
+// the native org.mpris.MediaPlayer2.parachord). One appendSwitch with the
+// comma-joined list — repeated 'disable-features' switches are last-wins in
+// Chromium, so the lists must be merged into one. If the entry dies, bisect
+// down to the winning feature; if nothing changes, revert to the occlusion
+// flag alone and use the DBUS_SESSION_BUS_ADDRESS sentinel instead.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,MediaSession,MediaSessionService,InternalMediaSession,HardwareMediaKeyHandling');
 
 // Widevine (parachord#882): Parachord runs on castlabs' Electron for Content
 // Security (ECS), which delivers the Widevine CDM through Chromium's Component
