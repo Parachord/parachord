@@ -1429,7 +1429,9 @@ const HomePage = React.memo(function HomePage(props) {
                                 }
                               }));
                             } else {
-                              // Keep cached data visible on failure
+                              // Keep cached data visible on failure, and say so: a silent
+                              // failure looks exactly like "nothing new to suggest".
+                              showToast("Couldn't refresh suggestions. Check your AI provider in Settings.", 'error');
                               setHomeData(prev => {
                                 const existing = prev.aiRecommendations;
                                 if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {

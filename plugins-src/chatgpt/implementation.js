@@ -9,6 +9,9 @@ module.exports = {
     if (!apiKey) throw new Error('OpenAI API key not configured');
 
     const model = config.model || 'gpt-4o-mini';
+    // GPT-5 (except the gpt-5-chat models) and the o-series reasoning
+    // models accept only the default temperature and answer 0.7 with a 400.
+    const fixedTemperature = /^(o\d|gpt-5(?!-chat))/i.test(model);
 
     let systemPrompt =
       'You are a music expert. Generate a playlist based on the user\'s request. Return ONLY a JSON array of objects with "title" and "artist" fields. No explanations, just the JSON array. Example: [{"title": "Song Name", "artist": "Artist Name"}]';
@@ -30,7 +33,7 @@ module.exports = {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
         ],
-        temperature: 0.7,
+        temperature: fixedTemperature ? undefined : 0.7,
       }),
     });
 
@@ -86,17 +89,23 @@ module.exports = {
     if (!apiKey) throw new Error('OpenAI API key not configured');
 
     const model = config.model || 'gpt-4o-mini';
+    // GPT-5 (except the gpt-5-chat models) and the o-series reasoning
+    // models accept only the default temperature and answer 0.7 with a 400.
+    const fixedTemperature = /^(o\d|gpt-5(?!-chat))/i.test(model);
 
-    const openaiTools = tools
-      ? tools.map((tool) => ({
-          type: 'function',
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        }))
-      : undefined;
+    // OpenAI rejects an empty tools array (and tool_choice without tools)
+    // with a 400, so a caller that wants a plain answer must send neither.
+    const openaiTools =
+      tools && tools.length > 0
+        ? tools.map((tool) => ({
+            type: 'function',
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            },
+          }))
+        : undefined;
 
     // Convert messages to OpenAI format
     // Tool calls need type: 'function' and stringified arguments
@@ -130,7 +139,7 @@ module.exports = {
         messages: openaiMessages,
         tools: openaiTools,
         tool_choice: openaiTools ? 'auto' : undefined,
-        temperature: 0.7,
+        temperature: fixedTemperature ? undefined : 0.7,
       }),
     });
 
