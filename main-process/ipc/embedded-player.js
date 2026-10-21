@@ -92,8 +92,8 @@ function sendMirrorToEmbeddedPlayer(resolverId, payload) {
 //                          (main binds this to the amazon player's
 //                          currentAsin — non-null exactly while it owns
 //                          playback)
-//   enabled()           — platform gate (skip on Linux: #848 policy — never
-//                          feed Chromium's MPRIS there)
+//   enabled()           — optional extra gate (none today: the mirror runs on
+//                          every platform — the #848 Linux exception is void)
 function createEmbeddedPlayerMirror({ sendMirror, isOwned, enabled }) {
   const state = { duration: 0, position: 0, playbackState: 'paused' };
   const push = (payload) => {

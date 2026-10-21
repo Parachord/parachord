@@ -76,9 +76,11 @@
 // on macOS, 2026-10). The mirror writes Parachord's now-playing into the
 // real session behind the facade — the page can neither see nor interfere
 // with it. Driven by main through the same renderer pushes native MPRIS uses
-// (the mpris:update-* IPC), gated to the resolver that owns playback, and
-// skipped on Linux by design (#848 policy: never feed Chromium's MPRIS
-// there).
+// (the mpris:update-* IPC), gated to the resolver that owns playback. Runs on
+// every platform: on Linux Chromium's MPRIS entry materializes whenever the
+// view's session is active, metadata or not (live-verified 2026-10), so the
+// old #848 "never feed Chromium's MPRIS" policy only ever chose between a
+// junk "Amazon Music" card and a correct one — it never kept the entry away.
 
 'use strict';
 

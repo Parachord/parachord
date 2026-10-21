@@ -170,7 +170,7 @@ describe('createEmbeddedPlayerMirror', () => {
     expect(sent[sent.length - 1]).toEqual({ metadata: { title: 'U', artist: 'B', album: 'AL', artwork: null } });
   });
 
-  test('isOwned and enabled gates apply to every push (Amazon must own playback; Linux skips the mirror)', () => {
+  test('isOwned and enabled gates apply to every push (Amazon must own playback; an enabled() gate stays available)', () => {
     const owned = { value: true };
     const linux = { value: false };
     const { mirror, sent } = setup({
@@ -183,7 +183,7 @@ describe('createEmbeddedPlayerMirror', () => {
     mirror.updateTrack({ title: 'T2', artist: 'A', album: 'AL', duration: 10 });
     expect(sent.length).toBe(1);
     owned.value = true;
-    linux.value = true; // #848 policy: never feed Chromium's MPRIS on Linux
+    linux.value = true; // the enabled() gate stays available for future policy
     mirror.updateTrack({ title: 'T3', artist: 'A', album: 'AL', duration: 10 });
     expect(sent.length).toBe(1);
   });

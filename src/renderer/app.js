@@ -10497,15 +10497,26 @@ const Parachord = () => {
   }, [discordPresenceEnabled, activeView, settingsTab]);
 
   // OS Now Playing via navigator.mediaSession (parachord#976) — macOS Now
-  // Playing widget / Control Center and the Windows media overlay (SMTC).
-  // Chromium already registers a media session with the OS whenever an
-  // <audio> element plays in this renderer (local files, SoundCloud, MusicKit
-  // JS, Spotify Web Playback SDK) — but with no MediaMetadata it falls back to
-  // the window title, so the widget showed "Parachord Desktop" with no track.
-  // These effects mirror the MPRIS feed above.
+  // Playing widget / Control Center, the Windows media overlay (SMTC), and
+  // Linux's Chromium MPRIS entry. Chromium already registers a media session
+  // with the OS whenever an <audio> element plays in this renderer (local
+  // files, Subsonic, SoundCloud, MusicKit JS, Spotify Web Playback SDK) — but
+  // with no MediaMetadata it falls back to the window title, so the widget
+  // showed "Parachord Desktop" with no track. These effects mirror the MPRIS
+  // feed above.
   //
-  // Skipped on Linux: Chromium publishes mediaSession as its OWN MPRIS player,
-  // which would duplicate the native MPRIS integration above (#848).
+  // NOT skipped on Linux (policy change, live-verified 2026-10): Chromium's
+  // own MPRIS entry materializes on Linux whenever renderer audio plays —
+  // regardless of metadata or handlers (#848's "don't feed it, it would
+  // duplicate the native player" premise was wrong: the duplicate publishes
+  // anyway, titled by the document title, and leaving it unfed showed a junk
+  // "Parachord Desktop" card next to the native one). Feeding it makes the
+  // entry correct, and its action handlers close the same desync hole the
+  // embedded-player kit closes for the Amazon view: without handlers, a DE
+  // routing media keys to Chromium's entry falls through to default element
+  // control, pausing the shared audio element behind Parachord's transport.
+  // The native MPRIS player stays — it is the only surface for playback with
+  // no renderer audio (Spotify Connect) and the only one with shuffle/loop.
   //
   // Coverage limit: playback that produces no renderer audio (Spotify Connect,
   // native MusicKit helper, YouTube/Bandcamp in the browser) has no Chromium
@@ -10513,8 +10524,7 @@ const Parachord = () => {
   // MPNowPlayingInfoCenter bridge (follow-up).
   const mediaSessionEnabled = () =>
     typeof navigator !== 'undefined'
-    && 'mediaSession' in navigator
-    && window.electron?.platform !== 'linux';
+    && 'mediaSession' in navigator;
 
   // Transport controls from the widget / Control Center / hardware keys routed
   // by the OS. play/pause are idempotent (a "pause" while already paused is a

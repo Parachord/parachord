@@ -2263,8 +2263,12 @@ app.whenReady().then(async () => {
   embeddedPlayerMirror = createEmbeddedPlayerMirror({
     sendMirror: (payload) => sendMirrorToEmbeddedPlayer('amazonmusic', payload),
     // currentAsin is non-null exactly while the Amazon player owns playback.
-    isOwned: () => !!amazonWebPlayer.currentAsin,
-    enabled: () => process.platform !== 'linux'
+    isOwned: () => !!amazonWebPlayer.currentAsin
+    // No platform gate: on Linux Chromium's MPRIS entry materializes whenever
+    // the view's session is active, metadata or not (live-verified 2026-10) —
+    // the old #848 "never feed Chromium's MPRIS" premise is void, and an
+    // unfed entry shows a junk "Amazon Music" (document-title) card next to
+    // the native player. Feeding it makes it correct.
   });
 
   app.on('activate', () => {
@@ -2353,7 +2357,8 @@ let mprisPlayer = null;
 // and with the page's metadata blocked the OS card falls back to the page's
 // own label ("Amazon Music", the document title). Created in whenReady;
 // the mpris:update-* handlers below feed it alongside the native MPRIS
-// player. Null on Linux (#848 policy: never feed Chromium's MPRIS there).
+// player. Runs on every platform — the #848 Linux exception is void (see the
+// embedded-player kit docs for the evidence).
 let embeddedPlayerMirror = null;
 
 const registerMediaKeys = () => {
