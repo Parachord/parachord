@@ -125,6 +125,23 @@ if (autoUpdater) {
 const store = new Store();
 let mainWindow;
 let authServer;
+// Local server port (parachord#958): OAuth callbacks + the /protocol bridge.
+// Read once at startup (startAuthServer); a changed setting applies on the
+// next launch. Redirect URIs use the BOUND port, never a just-saved one, so
+// a sign-in before the restart still reaches this listener.
+const {
+  DEFAULT_AUTH_PORT,
+  resolveAuthPort,
+  loopbackRedirectUri,
+  soundCloudSignInAllowed,
+} = require('./main-process/auth-port');
+const authServerState = { port: null, listening: false, error: null };
+const getAuthPort = () => authServerState.port
+  ?? resolveAuthPort({ stored: store.get('oauth_callback_port'), env: process.env.AUTH_SERVER_PORT });
+// SPOTIFY_REDIRECT_URI is a developer override and wins verbatim; it must
+// name the same port the server binds or Spotify's callback goes nowhere.
+const spotifyRedirectUri = () => process.env.SPOTIFY_REDIRECT_URI || loopbackRedirectUri(getAuthPort(), '/callback');
+const soundCloudRedirectUri = () => loopbackRedirectUri(getAuthPort(), '/callback/soundcloud');
 const net = require('net');
 let wss; // WebSocket server for embed players
 let nmIpcServer = null; // IPC socket server for native messaging host
@@ -1123,8 +1140,27 @@ function startAuthServer() {
     }
   });
 
-  authServer = expressApp.listen(8888, '127.0.0.1', () => {
-    console.log('Auth server running on http://127.0.0.1:8888');
+  const port = getAuthPort();
+  authServerState.port = port;
+  // Express 5 also calls this callback when the bind fails, with the error;
+  // that case is reported by the 'error' handler below.
+  authServer = expressApp.listen(port, '127.0.0.1', (err) => {
+    if (err) return;
+    authServerState.listening = true;
+    console.log(`Auth server running on http://127.0.0.1:${port}`);
+    const envUri = process.env.SPOTIFY_REDIRECT_URI;
+    if (envUri && !envUri.startsWith(`http://127.0.0.1:${port}/`)) {
+      console.warn(`⚠️ SPOTIFY_REDIRECT_URI (${envUri}) does not point at the server's port ${port}; Spotify sign-in will not reach Parachord.`);
+    }
+  });
+  // A port already in use used to fail silently: Spotify and SoundCloud
+  // sign-in and the /protocol bridge just never answered. Record it for the
+  // settings screen (which reads it on load) and tell an open window now.
+  authServer.on('error', (err) => {
+    authServerState.listening = false;
+    authServerState.error = { code: err.code || 'ERROR', message: err.message };
+    console.error(`❌ Auth server could not listen on 127.0.0.1:${port}:`, err.code || err.message);
+    safeSendToRenderer('auth-server:error', { port, ...authServerState.error });
   });
 }
 
@@ -1520,7 +1556,7 @@ async function exchangeCodeForToken(code) {
   console.log('Code received:', code ? 'Yes' : 'No');
 
   const { clientId, source } = getSpotifyCredentials();
-  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:8888/callback';
+  const redirectUri = spotifyRedirectUri();
   console.log('Using credentials from:', source);
 
   if (!spotifyCodeVerifier) {
@@ -1589,7 +1625,7 @@ async function exchangeSoundCloudCodeForToken(code) {
 
   // Get credentials with fallback chain: user-stored > env
   const { clientId, clientSecret, source } = getSoundCloudCredentials();
-  const redirectUri = 'http://127.0.0.1:8888/callback/soundcloud';
+  const redirectUri = soundCloudRedirectUri();
   console.log('Using credentials from:', source);
 
   // Validate credentials exist
@@ -2895,6 +2931,10 @@ nativeTheme.on('updated', () => {
 const { registerStoreIpc } = require('./main-process/ipc/store');
 registerStoreIpc({ ipcMain, store, app, getPluginsCacheDir });
 
+// Local server port setting (parachord#958): main-process/ipc/auth-server.js.
+const { registerAuthServerIpc } = require('./main-process/ipc/auth-server');
+registerAuthServerIpc({ ipcMain, store, getAuthServerState: () => authServerState });
+
 // ─── In-app announcements ────────────────────────────────────────────────────
 // Polls a public JSON file on achordion.xyz for product announcements
 // (banner notifications). The fetched payload is cached in electron-store
@@ -3122,7 +3162,7 @@ ipcMain.handle('musickit:token-status', async () => {
 // Spotify OAuth handler
 ipcMain.handle('spotify-auth', async () => {
   const { clientId, source } = getSpotifyCredentials();
-  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:8888/callback';
+  const redirectUri = spotifyRedirectUri();
   console.log('🔑 Spotify auth using credentials from:', source);
 
   // Require user-provided Client ID — no fallback
@@ -3261,13 +3301,27 @@ ipcMain.handle('soundcloud-set-credentials', (event, { clientId, clientSecret })
 ipcMain.handle('soundcloud-auth', async () => {
   // Get credentials with fallback chain: user-stored > env
   const { clientId, source } = getSoundCloudCredentials();
-  const redirectUri = 'http://127.0.0.1:8888/callback/soundcloud';
+  const redirectUri = soundCloudRedirectUri();
   console.log('🔑 SoundCloud auth using credentials from:', source);
 
   // Validate client ID exists
   if (!clientId) {
     console.error('❌ No SoundCloud credentials configured!');
     return { success: false, error: 'SoundCloud requires API credentials. Configure them in Settings → Installed → SoundCloud → Advanced.' };
+  }
+
+  // The bundled (and .env) SoundCloud app is registered at :8888 and
+  // SoundCloud matches the redirect URI exactly, so on another port only the
+  // user's own app can complete sign-in. Say so instead of sending them to a
+  // SoundCloud error page.
+  const authPort = getAuthPort();
+  if (!soundCloudSignInAllowed({ source, port: authPort })) {
+    return {
+      success: false,
+      error: `SoundCloud's built-in sign-in only works on port ${DEFAULT_AUTH_PORT}, and Parachord's local server is on port ${authPort}. `
+        + `Either set the port back to ${DEFAULT_AUTH_PORT} in Settings → General, or add your own SoundCloud app credentials `
+        + `(Settings → Installed → SoundCloud → Advanced) with ${redirectUri} registered as its redirect URI.`
+    };
   }
 
   // Generate PKCE code verifier and challenge (required by SoundCloud OAuth 2.1)

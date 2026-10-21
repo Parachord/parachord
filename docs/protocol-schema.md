@@ -15,7 +15,7 @@ open "parachord://control/pause"
 
 ### 2. HTTP Endpoint (Development & Scripting)
 
-Send protocol URLs via HTTP to `localhost:8888/protocol`. Works reliably in all environments:
+Send protocol URLs via HTTP to `127.0.0.1:8888/protocol`. Works reliably in all environments. 8888 is the default port; if it is changed in Settings → General (Local Server Port), use that port in every example below:
 ```bash
 curl "http://127.0.0.1:8888/protocol?url=parachord://control/pause"
 ```
@@ -624,7 +624,7 @@ Create a Shortcut that opens a URL:
 
 ### Raycast
 
-Parachord includes a full Raycast extension in `raycast-extension/`. It uses the HTTP endpoint for reliable communication:
+Parachord includes a full Raycast extension in `raycast-extension/`. It uses the HTTP endpoint for reliable communication. It assumes the default port 8888, so it does not reach Parachord if the local server port was changed in Settings → General:
 
 ```typescript
 // raycast-extension/src/utils.ts

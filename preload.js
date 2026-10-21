@@ -200,6 +200,18 @@ contextBridge.exposeInMainWorld('electron', {
     clear: () => ipcRenderer.invoke('discordrpc:clear')
   },
 
+  // Local server port (parachord#958): Spotify/SoundCloud sign-in callbacks
+  // and the parachord:// HTTP bridge. A saved port applies after a restart.
+  authServer: {
+    getStatus: () => ipcRenderer.invoke('auth-server:get-status'),
+    setPort: (port) => ipcRenderer.invoke('auth-server:set-port', port),
+    onError: (callback) => {
+      const handler = (event, info) => callback(info);
+      ipcRenderer.on('auth-server:error', handler);
+      return () => ipcRenderer.removeListener('auth-server:error', handler);
+    }
+  },
+
   // Menu action handlers
   onMenuAction: (callback) => {
     const handler = (event, action) => callback(action);

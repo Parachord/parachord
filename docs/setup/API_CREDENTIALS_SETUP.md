@@ -42,7 +42,7 @@ Spotify limits developer apps to 5 users in development mode. To work around thi
 4. Fill in:
    - **App Name:** "Parachord" (or your choice)
    - **App Description:** "Personal music player"
-   - **Redirect URI:** `http://127.0.0.1:8888/callback` (important!)
+   - **Redirect URI:** `http://127.0.0.1:8888/callback` (important! 8888 is the default local server port. If you changed it in Settings → General, use that port instead; the Spotify settings show the exact URI to copy.)
    - **API:** Check "Web API"
 5. Click **"Save"**
 6. Click **"Settings"**
@@ -195,7 +195,7 @@ SOUNDCLOUD_CLIENT_SECRET=
 # MusicBrainz (no credentials needed)
 # Bandcamp (no credentials needed)
 
-# Server Configuration
+# Local server port (default 8888). Settings → General wins over this.
 AUTH_SERVER_PORT=8888
 ```
 
@@ -209,7 +209,7 @@ AUTH_SERVER_PORT=8888
 
 **Solution:**
 1. Go to https://developer.spotify.com/dashboard and create an app
-2. Add redirect URI: `http://127.0.0.1:8888/callback`
+2. Add redirect URI: `http://127.0.0.1:8888/callback` (or your port, if you changed it in Settings → General)
 3. Copy your Client ID
 4. Either paste it in Parachord Settings or add to `.env` file
 5. Restart the app if using `.env`

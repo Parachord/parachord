@@ -33,6 +33,7 @@ const { registerSyncCreateIpc } = require('../../main-process/ipc/sync-create');
 const { registerSyncStartIpc } = require('../../main-process/ipc/sync-start');
 const { registerSyncPlaylistsIpc } = require('../../main-process/ipc/sync-playlists');
 const { registerDiscordPresenceIpc } = require('../../main-process/ipc/discord-presence');
+const { registerAuthServerIpc } = require('../../main-process/ipc/auth-server');
 const { createSyncLinks } = require('../../main-process/sync-links');
 
 // Error classes that mean "the registration forgot something":
@@ -191,12 +192,18 @@ describe('registration smoke — all IPC modules together', () => {
     }),
   });
 
+  registerAuthServerIpc({
+    ipcMain, store: fakes.store,
+    getAuthServerState: () => ({ port: 8888, listening: true, error: null }),
+  });
+
   test('the full decomposed surface registers with no duplicate channels', () => {
     // Seven IPC modules + the sync-links factory. If a module silently stops
     // registering (or two claim one channel), this count or the shared
     // ipcMain above catches it.
     expect(handlers.size).toBeGreaterThanOrEqual(64);
     expect([...handlers.keys()].filter((c) => c.startsWith('discordrpc:')).length).toBe(7);
+    expect([...handlers.keys()].filter((c) => c.startsWith('auth-server:')).length).toBe(2);
     expect([...handlers.keys()].filter((c) => c.startsWith('sync:')).length).toBeGreaterThanOrEqual(20);
   });
 

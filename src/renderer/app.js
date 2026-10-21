@@ -3600,6 +3600,15 @@ const Parachord = () => {
   const [discordPresenceEnabled, setDiscordPresenceEnabled] = useState(false);
   const [discordPresenceState, setDiscordPresenceState] = useState(null);
 
+  // Local server port (parachord#958): the loopback server behind Spotify and
+  // SoundCloud sign-in callbacks and the parachord:// HTTP bridge. Main binds
+  // it once at startup; `authServerStatus.port` is the BOUND port (what every
+  // redirect URI shown below must use), `configuredPort` the one the next
+  // launch will bind.
+  const [authServerStatus, setAuthServerStatus] = useState(null);
+  const [authPortInput, setAuthPortInput] = useState('');
+  const authPort = authServerStatus?.port || 8888;
+
   // Meta Services state (Last.fm, ListenBrainz, etc.)
   const [metaServices, setMetaServices] = useState([]); // Loaded meta service plug-ins
   const [metaServiceConfigs, setMetaServiceConfigs] = useState({}); // { lastfm: { username, apiKey }, listenbrainz: { username, userToken } }
@@ -10307,6 +10316,33 @@ const Parachord = () => {
       setDiscordPresenceEnabled(Boolean(status.enabled));
       setDiscordPresenceState(status);
     }).catch(() => {});
+  }, []);
+
+  // Local server port: read what main bound, and say so when it could not
+  // bind. Before #958 a port already in use just meant Spotify/SoundCloud
+  // sign-in and the parachord:// bridge never answered, with nothing on
+  // screen. The startup failure usually happens before this window exists,
+  // so it is read from the status on mount as well as from the live event.
+  useEffect(() => {
+    const bridge = window.electron?.authServer;
+    if (!bridge?.getStatus) return;
+    const warn = (port) => showToast(
+      `Port ${port} is already in use, so Spotify and SoundCloud sign-in won't work. Choose another port in Settings → General.`,
+      'error',
+      { label: 'Settings', onClick: () => { navigateTo('settings'); setSettingsTab('general'); } },
+      { persistent: true }
+    );
+    bridge.getStatus().then((status) => {
+      if (!status) return;
+      setAuthServerStatus(status);
+      setAuthPortInput(String(status.configuredPort));
+      if (status.error?.code === 'EADDRINUSE') warn(status.port);
+    }).catch(() => {});
+    const off = bridge.onError?.((info) => {
+      setAuthServerStatus((prev) => (prev ? { ...prev, listening: false, error: info } : prev));
+      if (info?.code === 'EADDRINUSE') warn(info.port);
+    });
+    return () => { if (typeof off === 'function') off(); };
   }, []);
 
   // One combined snapshot per change: track + play state + position. Sending
@@ -35630,8 +35666,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
                 '1. Go to developer.spotify.com/dashboard\n' +
                 '2. Create an app (name it anything)\n' +
                 '3. Add both redirect URIs:\n' +
-                '   http://127.0.0.1:8888/callback\n' +
-                '   http://[::1]:8888/callback\n' +
+                `   http://127.0.0.1:${authPort}/callback\n` +
+                `   http://[::1]:${authPort}/callback\n` +
                 '4. Under "APIs used", tick both Web API and Web Playback SDK\n' +
                 '5. Copy your Client ID and paste it in Settings'
             });
@@ -53964,6 +54000,111 @@ useEffect(() => {
                   }, 'Discord shows the track under "Listening to Parachord". The cover travels when it is an https image; local-only art falls back to the Parachord artwork. The presence is only up while something is actually playing: pausing clears it, resuming puts it back, and it is gone when the queue is cleared or Parachord closes. Discord itself must allow it: Settings → Activity Privacy → "Share your detected activities with others".'),
                                   ),
 
+                // Local Server Port Section (parachord#958)
+                React.createElement('div', {
+                  style: {
+                    backgroundColor: 'var(--card-bg)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '12px',
+                    padding: '24px',
+                    boxShadow: 'var(--card-shadow)'
+                  }
+                },
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('h3', {
+                      style: {
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: 'var(--text-tertiary)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em'
+                      }
+                    }, 'Local Server Port'),
+                    React.createElement('p', {
+                      style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '4px' }
+                    }, 'Receives Spotify and SoundCloud sign-in, and parachord:// links from Raycast or curl. Change it if another app already uses this port.')
+                  ),
+                  React.createElement('div', {
+                    style: {
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '16px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--hover-bg-default)',
+                      flexWrap: 'wrap'
+                    }
+                  },
+                    React.createElement('div', null,
+                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Port'),
+                      React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '2px' } },
+                        authServerStatus?.error?.code === 'EADDRINUSE'
+                          ? `Port ${authPort} is in use by another app, so sign-in is not working.`
+                          : authServerStatus?.listening
+                            ? `Running on 127.0.0.1:${authPort}`
+                            : `127.0.0.1:${authPort}`
+                      )
+                    ),
+                    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+                      React.createElement('input', {
+                        type: 'number',
+                        min: 1024,
+                        max: 65535,
+                        value: authPortInput,
+                        'aria-label': 'Local server port',
+                        onChange: (e) => setAuthPortInput(e.target.value),
+                        style: {
+                          width: '96px',
+                          padding: '6px 8px',
+                          fontSize: '13px',
+                          color: 'var(--text-primary)',
+                          backgroundColor: 'var(--card-bg)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: '6px',
+                          outline: 'none'
+                        }
+                      }),
+                      React.createElement('button', {
+                        type: 'button',
+                        onClick: async () => {
+                          const bridge = window.electron?.authServer;
+                          if (!bridge?.setPort) return;
+                          const result = await bridge.setPort(authPortInput).catch(() => null);
+                          if (!result) return;
+                          setAuthServerStatus(result);
+                          if (!result.success) {
+                            showToast(result.message, 'error');
+                            return;
+                          }
+                          setAuthPortInput(String(result.configuredPort));
+                          showToast(result.configuredPort === result.port
+                            ? `Using port ${result.port}`
+                            : `Saved. Restart Parachord to switch to port ${result.configuredPort}.`, 'success');
+                        },
+                        className: 'px-3 py-1.5 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors'
+                      }, 'Save'),
+                      React.createElement('button', {
+                        type: 'button',
+                        onClick: () => setAuthPortInput('8888'),
+                        className: 'px-3 py-1.5 text-sm rounded-lg transition-colors',
+                        style: { color: 'var(--text-secondary)', backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-subtle)' }
+                      }, 'Default')
+                    )
+                  ),
+                  authServerStatus && authServerStatus.configuredPort !== authServerStatus.port && React.createElement('p', {
+                    style: { fontSize: '12px', color: '#b45309', marginTop: '12px' }
+                  }, `Restart Parachord to switch to port ${authServerStatus.configuredPort}.`),
+                  React.createElement('p', {
+                    style: {
+                      fontSize: '12px',
+                      color: 'var(--text-tertiary)',
+                      marginTop: '14px',
+                      lineHeight: '1.6'
+                    }
+                  }, 'After changing the port, add the new Redirect URI shown in the Spotify settings to your Spotify developer app, or Spotify sign-in will fail. SoundCloud\'s built-in sign-in only works on port 8888; on another port, use your own SoundCloud app credentials. Raycast and curl integrations need the new port too. Ports 1024 to 65535; 9876 is taken by the browser extension server.')
+                ),
+
                 // Dialogs Section - Reset "Don't show again" preferences
                 React.createElement('div', {
                   className: 'bg-white border border-gray-200 rounded-xl p-6 hover:shadow-sm hover:border-gray-300 transition-all'
@@ -57235,16 +57376,16 @@ useEffect(() => {
                 React.createElement('div', null, '2. Add both Redirect URIs:'),
                 React.createElement('div', { style: { paddingLeft: '12px', marginTop: '2px', marginBottom: '2px' } },
                   React.createElement('code', {
-                    onClick: () => { navigator.clipboard.writeText('http://127.0.0.1:8888/callback'); showToast('Copied to clipboard', 'success'); },
+                    onClick: () => { navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback`); showToast('Copied to clipboard', 'success'); },
                     title: 'Click to copy',
                     style: { cursor: 'pointer', backgroundColor: 'var(--hover-bg-default)', padding: '1px 4px', borderRadius: '3px', display: 'inline-block', marginBottom: '2px', userSelect: 'all' }
-                  }, 'http://127.0.0.1:8888/callback'),
+                  }, `http://127.0.0.1:${authPort}/callback`),
                   React.createElement('br'),
                   React.createElement('code', {
-                    onClick: () => { navigator.clipboard.writeText('http://[::1]:8888/callback'); showToast('Copied to clipboard', 'success'); },
+                    onClick: () => { navigator.clipboard.writeText(`http://[::1]:${authPort}/callback`); showToast('Copied to clipboard', 'success'); },
                     title: 'Click to copy',
                     style: { cursor: 'pointer', backgroundColor: 'var(--hover-bg-default)', padding: '1px 4px', borderRadius: '3px', display: 'inline-block', userSelect: 'all' }
-                  }, 'http://[::1]:8888/callback')
+                  }, `http://[::1]:${authPort}/callback`)
                 ),
                 // Without Web Playback SDK ticked, play commands can fail with
                 // 403 "Restriction violated" (parachord#985).
@@ -57281,7 +57422,7 @@ useEffect(() => {
                 React.createElement('div', { style: { display: 'flex', gap: '6px', marginBottom: '6px' } },
                   React.createElement('input', {
                     type: 'text',
-                    value: 'http://127.0.0.1:8888/callback',
+                    value: `http://127.0.0.1:${authPort}/callback`,
                     readOnly: true,
                     style: {
                       flex: 1,
@@ -57296,7 +57437,7 @@ useEffect(() => {
                   }),
                   React.createElement('button', {
                     onClick: () => {
-                      navigator.clipboard.writeText('http://127.0.0.1:8888/callback');
+                      navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback`);
                       showToast('Copied to clipboard', 'success');
                     },
                     title: 'Copy to clipboard',
@@ -57314,7 +57455,7 @@ useEffect(() => {
                 React.createElement('div', { style: { display: 'flex', gap: '6px' } },
                   React.createElement('input', {
                     type: 'text',
-                    value: 'http://[::1]:8888/callback',
+                    value: `http://[::1]:${authPort}/callback`,
                     readOnly: true,
                     style: {
                       flex: 1,
@@ -57329,7 +57470,7 @@ useEffect(() => {
                   }),
                   React.createElement('button', {
                     onClick: () => {
-                      navigator.clipboard.writeText('http://[::1]:8888/callback');
+                      navigator.clipboard.writeText(`http://[::1]:${authPort}/callback`);
                       showToast('Copied to clipboard', 'success');
                     },
                     title: 'Copy to clipboard',
@@ -57828,7 +57969,7 @@ useEffect(() => {
                     },
                       React.createElement('input', {
                         type: 'text',
-                        value: 'http://127.0.0.1:8888/callback/soundcloud',
+                        value: `http://127.0.0.1:${authPort}/callback/soundcloud`,
                         readOnly: true,
                         style: {
                           flex: 1,
@@ -57843,7 +57984,7 @@ useEffect(() => {
                       }),
                       React.createElement('button', {
                         onClick: () => {
-                          navigator.clipboard.writeText('http://127.0.0.1:8888/callback/soundcloud');
+                          navigator.clipboard.writeText(`http://127.0.0.1:${authPort}/callback/soundcloud`);
                           showToast('Redirect URI copied', 'success');
                         },
                         title: 'Copy to clipboard',
@@ -57864,7 +58005,9 @@ useEffect(() => {
                         color: 'var(--text-tertiary)',
                         marginTop: '4px'
                       }
-                    }, 'Add this to your SoundCloud app\'s Redirect URI')
+                    }, authPort === 8888
+                      ? 'Add this to your SoundCloud app\'s Redirect URI'
+                      : `Add this to your SoundCloud app's Redirect URI. Parachord's local server is on port ${authPort}, so signing in to SoundCloud needs your own app credentials here: the built-in sign-in only works on port 8888.`)
                   ),
                   React.createElement('div', { className: 'flex gap-2' },
                     React.createElement('button', {

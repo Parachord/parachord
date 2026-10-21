@@ -2,7 +2,13 @@
 
 **Goal:** Let a user change the local server port (default **8888**) so Parachord can run when 8888 collides with another app, without breaking any existing install.
 
-**Status:** Design accepted. Not yet implemented. Placement + apply-mode decided (see Decisions).
+**Status:** Implemented (2026-10). Differences from this design, decided while building it:
+
+- **Placement:** Settings → General ("Local Server Port"), not the resolver settings. Resolver settings are per-plugin modals, and the port also drives the `/protocol` bridge, so it is not a resolver setting.
+- **SoundCloud:** instead of pinning the bundled client's redirect URI to `:8888` while the server listens elsewhere (a callback nothing receives), `soundcloud-auth` refuses up front on a custom port unless the user's own SoundCloud credentials are set, with a message naming both fixes.
+- **Saving:** a dedicated `auth-server:set-port` IPC that validates in main, rather than the generic store IPC with `oauth_callback_port` allowlisted, so an invalid port can never be stored.
+- **Redirect URIs** use the port bound at startup (`authServerState.port`), so a sign-in after saving but before the restart still reaches the listener.
+- **Raycast** stays on 8888; documented as such in docs/protocol-schema.md.
 
 **Issue:** [parachord#958](https://github.com/Parachord/parachord/issues/958) — "8888 is an incredibly generic port."
 
