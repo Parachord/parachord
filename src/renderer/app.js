@@ -10510,18 +10510,13 @@ const Parachord = () => {
   // showed "Parachord Desktop" with no track. These effects mirror the MPRIS
   // feed above.
   //
-  // NOT skipped on Linux (policy change, live-verified 2026-10): Chromium's
-  // own MPRIS entry materializes on Linux whenever renderer audio plays —
-  // regardless of metadata or handlers (#848's "don't feed it, it would
-  // duplicate the native player" premise was wrong: the duplicate publishes
-  // anyway, titled by the document title, and leaving it unfed showed a junk
-  // "Parachord Desktop" card next to the native one). Feeding it makes the
-  // entry correct, and its action handlers close the same desync hole the
-  // embedded-player kit closes for the Amazon view: without handlers, a DE
-  // routing media keys to Chromium's entry falls through to default element
-  // control, pausing the shared audio element behind Parachord's transport.
-  // The native MPRIS player stays — it is the only surface for playback with
-  // no renderer audio (Spotify Connect) and the only one with shuffle/loop.
+  // NOT enabled on Linux: Chromium's OS media integration is disabled
+  // process-wide there (the disable-features switch at the top of main.js,
+  // live-verified 2026-10 — Chromium's MPRIS entry materialized next to the
+  // native player for ANY renderer audio, and the feature switch is the only
+  // thing that kills it), so there is no Chromium session to feed; the native
+  // MPRIS player is the single Linux surface. The #848 policy's goal — no
+  // duplicate card — now holds by enforcement instead of by not feeding it.
   //
   // Coverage limit: playback that produces no renderer audio (Spotify Connect,
   // native MusicKit helper, YouTube/Bandcamp in the browser) has no Chromium
@@ -10529,7 +10524,8 @@ const Parachord = () => {
   // MPNowPlayingInfoCenter bridge (follow-up).
   const mediaSessionEnabled = () =>
     typeof navigator !== 'undefined'
-    && 'mediaSession' in navigator;
+    && 'mediaSession' in navigator
+    && window.electron?.platform !== 'linux';
 
   // Transport controls from the widget / Control Center / hardware keys routed
   // by the OS. play/pause are idempotent (a "pause" while already paused is a

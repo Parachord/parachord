@@ -65,18 +65,23 @@ app.name = 'Parachord';
 // otherwise treats that window as occluded and tears the Widevine element down
 // as soon as focus returns to the main window.
 //
-// TEMPORARY EXPERIMENT (Linux media-session kill-switch hunt, 2026-10 — do
-// not merge as-is): CalculateNativeWinOcclusion is permanent; the media-
-// session features are the candidate list mined from the Linux binary's
-// feature symbols (kMediaSession / kMediaSessionService / kInternalMediaSession
-// / kHardwareMediaKeyHandling) — testing whether any of them gates Chromium's
-// Linux MPRIS entry (the `chromium.instance*` player that materializes next to
-// the native org.mpris.MediaPlayer2.parachord). One appendSwitch with the
-// comma-joined list — repeated 'disable-features' switches are last-wins in
-// Chromium, so the lists must be merged into one. If the entry dies, bisect
-// down to the winning feature; if nothing changes, revert to the occlusion
-// flag alone and use the DBUS_SESSION_BUS_ADDRESS sentinel instead.
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,MediaSession,MediaSessionService,InternalMediaSession,HardwareMediaKeyHandling');
+// Linux additionally disables Chromium's OS media integration entirely
+// (live-verified 2026-10, third playerctl round): Chromium registers its own
+// MPRIS entry (org.mpris.MediaPlayer2.chromium) whenever ANY renderer audio
+// plays — metadata, handlers and feature flags notwithstanding — duplicating
+// the native org.mpris.MediaPlayer2.parachord player. The candidate features
+// below (mined from the Linux binary's k... feature symbols; MediaSessionService
+// is proven non-gating on its own) kill that entry, leaving the native player
+// as the single MPRIS surface, with media keys arriving over its D-Bus. NOT
+// disabled on macOS/Windows: the same machinery there is SMTC / Control
+// Center, which the embedded-player kit deliberately feeds and receives keys
+// through. A media-key-handling='never' opt-out therefore means NO MPRIS on
+// Linux at all (neither player) — consistent with what the opt-out asks for.
+const disabledFeatures = ['CalculateNativeWinOcclusion'];
+if (process.platform === 'linux') {
+  disabledFeatures.push('MediaSession', 'InternalMediaSession', 'HardwareMediaKeyHandling');
+}
+app.commandLine.appendSwitch('disable-features', disabledFeatures.join(','));
 
 // Widevine (parachord#882): Parachord runs on castlabs' Electron for Content
 // Security (ECS), which delivers the Widevine CDM through Chromium's Component
@@ -2275,12 +2280,12 @@ app.whenReady().then(async () => {
   embeddedPlayerMirror = createEmbeddedPlayerMirror({
     sendMirror: (payload) => sendMirrorToEmbeddedPlayer('amazonmusic', payload),
     // currentAsin is non-null exactly while the Amazon player owns playback.
-    isOwned: () => !!amazonWebPlayer.currentAsin
-    // No platform gate: on Linux Chromium's MPRIS entry materializes whenever
-    // the view's session is active, metadata or not (live-verified 2026-10) —
-    // the old #848 "never feed Chromium's MPRIS" premise is void, and an
-    // unfed entry shows a junk "Amazon Music" (document-title) card next to
-    // the native player. Feeding it makes it correct.
+    isOwned: () => !!amazonWebPlayer.currentAsin,
+    // Linux skips the mirror: Chromium's OS media integration is disabled
+    // process-wide there (see the disable-features block at the top of this
+    // file) — there is no entry to mirror into, and the native MPRIS player is
+    // the single surface.
+    enabled: () => process.platform !== 'linux'
   });
 
   app.on('activate', () => {
