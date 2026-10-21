@@ -12,6 +12,8 @@ const fs = require('fs');
 const path = require('path');
 
 const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+// The Songs tab now lives in the Collection page module (Track 2b split).
+const page = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
 
 describe('Collection songs list is memoized', () => {
   test('built once per input change, at component scope', () => {
@@ -24,9 +26,9 @@ describe('Collection songs list is memoized', () => {
   });
 
   test('the Songs tab reads the memo instead of rebuilding the list', () => {
-    const start = app.indexOf("collectionTab === 'tracks' && (() => {");
+    const start = page.indexOf("collectionTab === 'tracks' && (() => {");
     expect(start).toBeGreaterThan(-1);
-    const body = app.slice(start, app.indexOf('React.createElement(VirtualizedTrackList', start));
+    const body = page.slice(start, page.indexOf('React.createElement(VirtualizedTrackList', start));
     expect(body).toMatch(/const sorted = collectionSongsSorted;/);
     expect(body).not.toMatch(/\[\.\.\.library, \.\.\.collectionData\.tracks\]/);
     expect(body).not.toMatch(/sortCollectionItems\(/);
