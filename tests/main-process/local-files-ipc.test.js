@@ -15,6 +15,7 @@ const CHANNELS = [
   'localFiles:rescanFolder', 'localFiles:getAllTracks', 'localFiles:search',
   'localFiles:resolve', 'localFiles:getStats', 'localFiles:saveId3Tags',
   'localFiles:file-status', 'localFiles:find-missing', 'localFiles:remove-missing',
+  'localFiles:getTracksByPaths',
 ];
 
 function makeHarness({ dialogResult, serviceImpl } = {}) {
@@ -38,7 +39,7 @@ function makeHarness({ dialogResult, serviceImpl } = {}) {
   for (const method of [
     'addWatchFolder', 'removeWatchFolder', 'getWatchFolders', 'resolveArtForTrack', 'getStreamInfo',
     'rescanAll', 'scanFolder', 'getAllTracks', 'search', 'resolve', 'getStats', 'saveId3Tags',
-    'fileStatus', 'findMissingFiles', 'removeMissingFiles',
+    'fileStatus', 'findMissingFiles', 'removeMissingFiles', 'getTracksByPaths',
   ]) {
     service[method] = async (...args) => {
       serviceCalls.push({ method, args });

@@ -169,6 +169,21 @@ function registerLocalFilesIpc({ ipcMain, dialog, getMainWindow, waitForLocalFil
     }
   });
 
+  // Incremental library updates (#784): the rows for just the paths a
+  // watcher change touched. Capped so one call can't become a full reload in
+  // disguise; the renderer falls back to getAllTracks above that.
+  ipcMain.handle('localFiles:getTracksByPaths', async (_event, filePaths) => {
+    const service = await waitForLocalFilesService();
+    if (!service || !Array.isArray(filePaths)) return [];
+    const paths = filePaths.filter((p) => typeof p === 'string' && p).slice(0, 5000);
+    try {
+      return service.getTracksByPaths(paths);
+    } catch (err) {
+      console.error('[LocalFiles] getTracksByPaths failed:', err);
+      return null;
+    }
+  });
+
   ipcMain.handle('localFiles:getAllTracks', async () => {
     const service = await waitForLocalFilesService();
     return service.getAllTracks();
