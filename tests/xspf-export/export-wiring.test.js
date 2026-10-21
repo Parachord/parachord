@@ -21,9 +21,12 @@ describe('playlist XSPF export is reachable', () => {
   });
 
   test('the playlist header Share menu, the context-menu action and the queue dialog call it', () => {
-    const calls = [...app.matchAll(/handleExportPlaylist\(/g)].length;
-    expect(calls).toBe(3); // share menu + context-menu action + queue "Save to file"
-    expect(app).toMatch(/'Export as XSPF…'/);
+    // The playlist header (and its Share menu) moved into its own module in
+    // the Track 2b split; the other two callers stay in app.js.
+    const playlistView = read('src/renderer/components/playlist-view-page.js');
+    expect([...app.matchAll(/handleExportPlaylist\(/g)].length).toBe(2); // context-menu action + queue "Save to file"
+    expect([...playlistView.matchAll(/handleExportPlaylist\(/g)].length).toBe(1); // share menu
+    expect(playlistView).toMatch(/'Export as XSPF…'/);
     expect(app).toMatch(/data\.action === 'export-playlist' && data\.playlistId/);
     expect(app).toMatch(/const handleSaveQueueToFile = async \(\) => \{/);
     expect(app).toMatch(/onClick: handleSaveQueueToFile,/);

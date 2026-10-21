@@ -1,7 +1,7 @@
 /**
  * Pages as React.memo'd modules (Track 2b state-domain split; performance:
  * every Parachord setState used to re-render the page on screen too): the
- * Collection page and the Home page. A memo only helps while every prop is stable unless its data
+ * Collection page, the Home page and the playlist view. A memo only helps while every prop is stable unless its data
  * changed, and that is easy to break silently: pass one function defined in
  * the component body, or one object literal, and the page re-renders on
  * every Parachord render again with nothing failing. These tests pin it.
@@ -19,11 +19,13 @@ global.React = global.React || require('react');
 global.ReactVirtual = global.ReactVirtual || require('@tanstack/react-virtual');
 const { CollectionPage, COLLECTION_PAGE_HANDLERS } = require('../../src/renderer/components/collection-page');
 const { HomePage, HOME_PAGE_HANDLERS } = require('../../src/renderer/components/home-page');
+const { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS } = require('../../src/renderer/components/playlist-view-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
   { component: 'CollectionPage', file: 'collection-page.js', handlersVar: 'collectionPageHandlers', handlers: COLLECTION_PAGE_HANDLERS, memo: CollectionPage },
   { component: 'HomePage', file: 'home-page.js', handlersVar: 'homePageHandlers', handlers: HOME_PAGE_HANDLERS, memo: HomePage },
+  { component: 'PlaylistViewPage', file: 'playlist-view-page.js', handlersVar: 'playlistViewPageHandlers', handlers: PLAYLIST_VIEW_PAGE_HANDLERS, memo: PlaylistViewPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
