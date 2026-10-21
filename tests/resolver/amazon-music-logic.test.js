@@ -27,8 +27,10 @@ const {
   NEAR_END_MS,
   EMPTY_WHILE_PAUSED_POLL_LIMIT,
   measuredStreamKbps,
+  createStreamBitrateMeter,
   QUALITY_MIN_PAIRS,
   QUALITY_PAIR_WINDOW,
+  QUALITY_SHIFT_RATIO,
   installAmazonStreamCapture,
   mpdAudioRepresentations,
   flacStreamInfoFromInit,
@@ -383,6 +385,72 @@ describe('measuredStreamKbps', () => {
       ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 4000, startPositionMs: 4000 })
     ];
     expect(measuredStreamKbps(counterless)).toBe(850);
+  });
+});
+
+// The poller's meter: the median of every steady pair rate of the track, so a
+// VBR stream settles on its average instead of following a 16s window
+// (review on #1100), with a tier change (auto adjust) still followed.
+describe('createStreamBitrateMeter', () => {
+  // Feed 2s pairs with the given per-pair rates, continuing from `from` (the
+  // last sample fed, or a fresh start). Returns the last sample.
+  const feed = (meter, rates, from = null) => {
+    let cur = from || { wallMs: 0, positionMs: 0, bytes: 0 };
+    if (!from) meter.addSample(cur);
+    for (const kbps of rates) {
+      cur = { wallMs: cur.wallMs + 2000, positionMs: cur.positionMs + 2000, bytes: cur.bytes + kbps * 250 };
+      meter.addSample(cur);
+    }
+    return cur;
+  };
+  const meterWithRates = (rates) => {
+    const meter = createStreamBitrateMeter();
+    feed(meter, rates);
+    return meter;
+  };
+
+  test('reports nothing until enough steady pairs exist', () => {
+    expect(meterWithRates(Array(QUALITY_MIN_PAIRS - 1).fill(850)).kbps()).toBeNull();
+    expect(meterWithRates(Array(QUALITY_MIN_PAIRS).fill(850)).kbps()).toBe(850);
+  });
+
+  test('a VBR stream reports the track median, not the latest 16s window', () => {
+    // Pair rates wander 760-1040 around ~900; the last window happens to be high.
+    const rates = [];
+    for (let i = 0; i < 40; i++) rates.push(900 + ((i * 37) % 9 - 4) * 35);
+    const tail = Array(QUALITY_PAIR_WINDOW).fill(1000);
+    const meter = meterWithRates([...rates, ...tail]);
+    const track = meter.kbps();
+    expect(track).toBeGreaterThanOrEqual(880);
+    expect(track).toBeLessThanOrEqual(920);
+    // 1000 vs ~900 is inside the shift ratio: wobble, not a tier change.
+    expect(Math.abs(1000 - track) / track).toBeLessThan(QUALITY_SHIFT_RATIO);
+  });
+
+  test('the startup buffer-fill overshoot does not drag the report', () => {
+    expect(meterWithRates([5130, 4200, ...Array(20).fill(850)]).kbps()).toBe(850);
+  });
+
+  test('a tier change mid-track is followed once the recent window shows it', () => {
+    const meter = createStreamBitrateMeter();
+    let last = feed(meter, Array(60).fill(900));
+    expect(meter.kbps()).toBe(900);
+    // Auto adjust drops to AAC 256: the whole-track median alone would sit at
+    // 900 for minutes; the recent window's shift resets it.
+    last = feed(meter, Array(QUALITY_PAIR_WINDOW).fill(256), last);
+    expect(meter.kbps()).toBe(256);
+    // ...and from then on the track figure is the new tier's.
+    feed(meter, Array(4).fill(260), last);
+    expect(meter.kbps()).toBeGreaterThanOrEqual(256);
+    expect(meter.kbps()).toBeLessThanOrEqual(260);
+  });
+
+  test('a seek or pause between reads is not a pair', () => {
+    const meter = createStreamBitrateMeter();
+    const last = feed(meter, Array(QUALITY_MIN_PAIRS).fill(850));
+    // Forward seek: playhead jumps 60s while the wall clock moves 2s.
+    meter.addSample({ wallMs: last.wallMs + 2000, positionMs: last.positionMs + 60000, bytes: last.bytes + 9000000 });
+    expect(meter.kbps()).toBe(850);
   });
 });
 

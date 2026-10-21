@@ -96,31 +96,82 @@ const QUALITY_MAX_PAIR_MS = 4000;  // a longer pair spans a dropped poll — ski
 const QUALITY_MAX_DRIFT_MS = 400;  // |playheadΔ − wallΔ| beyond this is a seek or pause
 const QUALITY_MIN_KBPS = 16;       // sanity bounds — outside is a transient, not the stream
 const QUALITY_MAX_KBPS = 10000;
+const QUALITY_SHIFT_RATIO = 0.35;  // recent median this far from the track median = a real quality change
+const QUALITY_TRACK_RATES_MAX = 2000; // ~66 min of 2s pairs; older rates drop first
+
+// The kbps of one pair of consecutive samples, or null when the pair is not
+// a steady measurement (seek, pause, dropped poll, stalled or missing counter,
+// absurd rate).
+function streamPairKbps(prev, next) {
+  if (!prev || !next) return null;
+  const wallMs = (next.wallMs || 0) - (prev.wallMs || 0);
+  const posMs = (next.positionMs || 0) - (prev.positionMs || 0);
+  const bytes = (next.bytes || 0) - (prev.bytes || 0);
+  if (wallMs < QUALITY_MIN_PAIR_MS || wallMs > QUALITY_MAX_PAIR_MS) return null;
+  if (Math.abs(posMs - wallMs) > QUALITY_MAX_DRIFT_MS) return null;
+  if (bytes <= 0) return null; // nothing decoded in the window (counter missing / stall)
+  const kbps = Math.round((bytes * 8) / posMs);
+  if (kbps < QUALITY_MIN_KBPS || kbps > QUALITY_MAX_KBPS) return null;
+  return kbps;
+}
+
+function medianKbps(rates) {
+  const sorted = rates.slice().sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
 
 // samples: [{ wallMs, positionMs, bytes }] as recorded by the poller (bytes
 // may be null on reads where the element exposed no counter — those just never
-// form pairs). Returns kbps, or null while too few steady pairs exist.
+// form pairs). Returns the median of the last QUALITY_PAIR_WINDOW pair rates
+// (~16s at the 2s cadence), or null while too few steady pairs exist.
 function measuredStreamKbps(samples) {
   const list = Array.isArray(samples) ? samples : [];
   const rates = [];
   for (let i = 1; i < list.length; i++) {
-    const prev = list[i - 1];
-    const next = list[i];
-    if (!prev || !next) continue;
-    const wallMs = (next.wallMs || 0) - (prev.wallMs || 0);
-    const posMs = (next.positionMs || 0) - (prev.positionMs || 0);
-    const bytes = (next.bytes || 0) - (prev.bytes || 0);
-    if (wallMs < QUALITY_MIN_PAIR_MS || wallMs > QUALITY_MAX_PAIR_MS) continue;
-    if (Math.abs(posMs - wallMs) > QUALITY_MAX_DRIFT_MS) continue;
-    if (bytes <= 0) continue; // nothing decoded in the window (counter missing / stall)
-    const kbps = Math.round((bytes * 8) / posMs);
-    if (kbps < QUALITY_MIN_KBPS || kbps > QUALITY_MAX_KBPS) continue;
-    rates.push(kbps);
+    const kbps = streamPairKbps(list[i - 1], list[i]);
+    if (kbps !== null) rates.push(kbps);
   }
   if (rates.length < QUALITY_MIN_PAIRS) return null;
-  const window = rates.slice(-QUALITY_PAIR_WINDOW).sort((a, b) => a - b);
-  const mid = window.length >> 1;
-  return window.length % 2 ? window[mid] : Math.round((window[mid - 1] + window[mid]) / 2);
+  return medianKbps(rates.slice(-QUALITY_PAIR_WINDOW));
+}
+
+// The bitrate the poller reports: the median of every steady pair rate of the
+// track, so a VBR stream (every Amazon tier above 160 kbps) settles on its
+// average instead of following a 16s window (review on #1100). A median, not
+// a running mean, because the first pairs read 3-5x high while the decoder's
+// buffers fill, and a mean carries that for minutes. The recent window still
+// matters for one thing: when its median is more than QUALITY_SHIFT_RATIO
+// away from the track's, the stream changed tier (Amazon's auto adjust), and
+// the track's rates restart from the recent window so the report follows it.
+// One meter per track (the poller makes a new one in start()).
+function createStreamBitrateMeter() {
+  let last = null;
+  let trackRates = [];
+  const recent = [];
+  return {
+    addSample(sample) {
+      const kbps = streamPairKbps(last, sample);
+      last = sample;
+      if (kbps === null) return;
+      trackRates.push(kbps);
+      if (trackRates.length > QUALITY_TRACK_RATES_MAX) trackRates.shift();
+      recent.push(kbps);
+      if (recent.length > QUALITY_PAIR_WINDOW) recent.shift();
+    },
+    kbps() {
+      if (trackRates.length < QUALITY_MIN_PAIRS) return null;
+      const track = medianKbps(trackRates);
+      if (recent.length >= QUALITY_MIN_PAIRS) {
+        const now = medianKbps(recent);
+        if (Math.abs(now - track) / track > QUALITY_SHIFT_RATIO) {
+          trackRates = recent.slice();
+          return now;
+        }
+      }
+      return track;
+    },
+  };
 }
 
 // ── DASH manifest → stream parameters ────────────────────────────────────────
@@ -1123,6 +1174,7 @@ module.exports = {
   decidePollAdvance,
   shouldPollFaster,
   measuredStreamKbps,
+  createStreamBitrateMeter,
   mpdAudioRepresentations,
   flacStreamInfoFromInit,
   attachInitStreamInfo,
@@ -1158,5 +1210,6 @@ module.exports = {
   FAST_POLL_REMAINING_MS,
   EMPTY_WHILE_PAUSED_POLL_LIMIT,
   QUALITY_PAIR_WINDOW,
+  QUALITY_SHIFT_RATIO,
   QUALITY_MIN_PAIRS
 };
