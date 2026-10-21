@@ -1,7 +1,7 @@
 /**
  * Pages as React.memo'd modules (Track 2b state-domain split; performance:
  * every Parachord setState used to re-render the page on screen too): the
- * Collection page, the Home page and the playlist view. A memo only helps while every prop is stable unless its data
+ * Collection page, the Home page, the playlist view and the artist page. A memo only helps while every prop is stable unless its data
  * changed, and that is easy to break silently: pass one function defined in
  * the component body, or one object literal, and the page re-renders on
  * every Parachord render again with nothing failing. These tests pin it.
@@ -20,12 +20,14 @@ global.ReactVirtual = global.ReactVirtual || require('@tanstack/react-virtual');
 const { CollectionPage, COLLECTION_PAGE_HANDLERS } = require('../../src/renderer/components/collection-page');
 const { HomePage, HOME_PAGE_HANDLERS } = require('../../src/renderer/components/home-page');
 const { PlaylistViewPage, PLAYLIST_VIEW_PAGE_HANDLERS } = require('../../src/renderer/components/playlist-view-page');
+const { ArtistPage, ARTIST_PAGE_HANDLERS } = require('../../src/renderer/components/artist-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
 const PAGES = [
   { component: 'CollectionPage', file: 'collection-page.js', handlersVar: 'collectionPageHandlers', handlers: COLLECTION_PAGE_HANDLERS, memo: CollectionPage },
   { component: 'HomePage', file: 'home-page.js', handlersVar: 'homePageHandlers', handlers: HOME_PAGE_HANDLERS, memo: HomePage },
   { component: 'PlaylistViewPage', file: 'playlist-view-page.js', handlersVar: 'playlistViewPageHandlers', handlers: PLAYLIST_VIEW_PAGE_HANDLERS, memo: PlaylistViewPage },
+  { component: 'ArtistPage', file: 'artist-page.js', handlersVar: 'artistPageHandlers', handlers: ARTIST_PAGE_HANDLERS, memo: ArtistPage },
 ];
 
 describe.each(PAGES)('$component', ({ memo }) => {
@@ -90,6 +92,9 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
     if (init?.type === 'CallExpression' && ['useRef', 'useCallback', 'useMemo', 'useStableHandlers'].includes(init.callee.name)) return init.callee.name;
     // An alias of another stable value (allResolvers = loadedResolvers).
     if (init?.type === 'Identifier') return stability(resolve(init));
+    // A comparison always yields a boolean, which React.memo compares by
+    // value (ArtistPage's isCompactHeader = mainContentWidth < 700).
+    if (init?.type === 'BinaryExpression' && ['<', '>', '<=', '>=', '===', '!==', '==', '!='].includes(init.operator)) return 'primitive';
     return init ? init.type : 'none';
   };
 
@@ -103,7 +108,7 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
     for (const prop of call.arguments[1].properties) {
       if (prop.type === 'SpreadElement') continue;
       const kind = stability(resolve(prop.value));
-      if (!['state', 'useRef', 'useCallback', 'useMemo'].includes(kind)) unstable.push(`${prop.key.name} (${kind})`);
+      if (!['state', 'useRef', 'useCallback', 'useMemo', 'primitive'].includes(kind)) unstable.push(`${prop.key.name} (${kind})`);
     }
     expect(unstable).toEqual([]);
   });
