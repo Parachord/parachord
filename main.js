@@ -139,7 +139,23 @@ if (autoUpdater) {
   autoUpdater.allowPrerelease = true;
 }
 
-const store = new Store();
+// The big keys (playlists, every cache_*) live in files of their own under
+// userData/store/, because electron-store rewrites and re-parses its whole
+// file on every set (main-process/split-store.js). Split files are written
+// compact: nobody reads a 9 MB cache by hand, and the tabs cost write time.
+const { createSplitStore } = require('./main-process/split-store');
+const splitStoreDir = path.join(app.getPath('userData'), 'store');
+const store = createSplitStore({
+  main: new Store(),
+  openKeyStore: (key) => new Store({ cwd: splitStoreDir, name: key, serialize: (value) => JSON.stringify(value) }),
+  listKeyStores: () => {
+    try {
+      return fs.readdirSync(splitStoreDir).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5));
+    } catch {
+      return [];
+    }
+  },
+});
 let mainWindow;
 let authServer;
 // Local server port (parachord#958): OAuth callbacks + the /protocol bridge.
