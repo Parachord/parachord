@@ -1122,6 +1122,7 @@ const { trackSlug, slug } = require('./lib/track-slug');
 // Stale local-file sources (parachord#1002): a localfiles source whose file
 // is no longer in the local library.
 const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require('./lib/library-changes');
+const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const {
   libraryFilePaths,
   isStaleLocalSource,
@@ -5685,6 +5686,11 @@ const Parachord = () => {
   const [activeExtensionTabId, setActiveExtensionTabId] = useState(null);
   const pendingCloseTabIdRef = useRef(null);
   const streamingPlaybackActiveRef = useRef(false); // Track when playing via Spotify/streaming to ignore browser events
+  // A play was sent to Spotify Connect and no pause has followed it. The
+  // track-change pauses key off this, not streamingPlaybackActiveRef: that
+  // flag is set by every streaming resolver, so an Apple Music or Amazon
+  // track change paused Spotify too (a 404 when no Spotify device is active).
+  const spotifyPlaySentRef = useRef(false);
 
   // Refs to keep current values available in event handlers (avoids stale closure issues)
   const currentQueueRef = useRef([]);
@@ -15583,7 +15589,8 @@ ${trackListXml}
     // paused the user's own Spotify session while Parachord was playing
     // something else, and answered 403 (already paused) in the console on
     // every skip.
-    if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
+    if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || spotifyPlaySentRef.current)) {
+      spotifyPlaySentRef.current = false;
       console.log('⏹️ Pausing Spotify before playing new track');
       pausePromises.push(
         fetch('https://api.spotify.com/v1/me/player/pause', {
@@ -16757,6 +16764,7 @@ ${trackListXml}
       const config = await getResolverConfig(resolverId);
       console.log(`▶️ Using ${resolver.name} to play track...`);
 
+      if (resolverId === 'spotify') spotifyPlaySentRef.current = true;
       const success = await resolver.play(sourceToPlay, config);
 
       // Check if another play request superseded this one during play
@@ -17903,7 +17911,8 @@ ${trackListXml}
       // This handles race conditions during async track loading
 
       // Pause Spotify only if Parachord's current playback is on it (see handlePlay)
-      if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
+      if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || spotifyPlaySentRef.current)) {
+        spotifyPlaySentRef.current = false;
         console.log('⏹️ Pausing Spotify before next track');
         fetch('https://api.spotify.com/v1/me/player/pause', {
           method: 'PUT',
@@ -18164,7 +18173,8 @@ ${trackListXml}
     // This prevents race conditions where the streamingPlaybackActiveRef flag may be stale
 
     // Pause Spotify only if Parachord's current playback is on it (see handlePlay)
-    if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || streamingPlaybackActiveRef.current)) {
+    if (spotifyToken && (currentTrackRef.current?._activeResolver === 'spotify' || spotifyPlaySentRef.current)) {
+      spotifyPlaySentRef.current = false;
       console.log('⏹️ Pausing Spotify before previous track');
       fetch('https://api.spotify.com/v1/me/player/pause', {
         method: 'PUT',
@@ -18723,37 +18733,45 @@ ${trackListXml}
         try {
           console.log('🎵 Fetching listening context from Last.fm (multiple time periods)...');
 
-          // Fetch all periods in parallel (artists, tracks, albums)
+          // Fetch all periods in parallel (artists, tracks, albums). Each
+          // period settles to null on failure: these start before the
+          // recently-played request below, and if that one throws, the jump
+          // to the catch leaves them unawaited (an "Uncaught (in promise)"
+          // per period whenever the service is unreachable).
           const periodPromises = periods.map(async (period) => {
-            const [artistsRes, tracksRes, albumsRes] = await Promise.all([
-              lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
-              lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`),
-              lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.albumLimit}`)
-            ]);
+            try {
+              const [artistsRes, tracksRes, albumsRes] = await Promise.all([
+                lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopartists&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.artistLimit}`),
+                lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.trackLimit}`),
+                lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&period=${period.lastfm}&limit=${period.albumLimit}`)
+              ]);
 
-            if (artistsRes.ok && tracksRes.ok && albumsRes.ok) {
-              const [artistsData, tracksData, albumsData] = await Promise.all([artistsRes.json(), tracksRes.json(), albumsRes.json()]);
-              return {
-                window: period.label,
-                top_artists: (artistsData.topartists?.artist || []).map(a => a.name),
-                top_tracks: (tracksData.toptracks?.track || []).map(t => ({
-                  artist: t.artist?.name || 'Unknown',
-                  title: t.name
-                })),
-                top_albums: (albumsData.topalbums?.album || []).map(a => ({
-                  artist: a.artist?.name || 'Unknown',
-                  title: a.name
-                }))
-              };
+              if (artistsRes.ok && tracksRes.ok && albumsRes.ok) {
+                const [artistsData, tracksData, albumsData] = await Promise.all([artistsRes.json(), tracksRes.json(), albumsRes.json()]);
+                return {
+                  window: period.label,
+                  top_artists: (artistsData.topartists?.artist || []).map(a => a.name),
+                  top_tracks: (tracksData.toptracks?.track || []).map(t => ({
+                    artist: t.artist?.name || 'Unknown',
+                    title: t.name
+                  })),
+                  top_albums: (albumsData.topalbums?.album || []).map(a => ({
+                    artist: a.artist?.name || 'Unknown',
+                    title: a.name
+                  }))
+                };
+              }
+              return null;
+            } catch {
+              return null;
             }
-            return null;
           });
 
           // Use cached recently played if available, otherwise fetch
           let recentlyPlayed = cachedRecentlyPlayed || [];
           if (!cachedRecentlyPlayed) {
-            const recentRes = await lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`);
-            if (recentRes.ok) {
+            const recentRes = await lastfmFetch(`https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(lastfmConfig.username)}&api_key=${apiKey}&format=json&limit=50`).catch(() => null);
+            if (recentRes?.ok) {
               const recentData = await recentRes.json();
               recentlyPlayed = (recentData.recenttracks?.track || [])
                 .filter(t => !t['@attr']?.nowplaying) // Exclude currently playing
@@ -18796,44 +18814,49 @@ ${trackListXml}
       try {
         console.log('🎵 Fetching listening context from ListenBrainz (multiple time periods)...');
 
-        // Fetch all periods in parallel (artists, tracks, releases/albums)
+        // Fetch all periods in parallel (artists, tracks, releases/albums).
+        // Each settles to null on failure (see the Last.fm branch above).
         const periodPromises = periods.map(async (period) => {
-          const [artistsRes, tracksRes, releasesRes] = await Promise.all([
-            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=${period.listenbrainz}&count=${period.artistLimit}`),
-            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`),
-            fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/releases?range=${period.listenbrainz}&count=${period.albumLimit}`)
-          ]);
+          try {
+            const [artistsRes, tracksRes, releasesRes] = await Promise.all([
+              fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/artists?range=${period.listenbrainz}&count=${period.artistLimit}`),
+              fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/recordings?range=${period.listenbrainz}&count=${period.trackLimit}`),
+              fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(listenbrainzConfig.username)}/releases?range=${period.listenbrainz}&count=${period.albumLimit}`)
+            ]);
 
-          // Handle 204 No Content for any
-          const artistsOk = artistsRes.ok && artistsRes.status !== 204;
-          const tracksOk = tracksRes.ok && tracksRes.status !== 204;
-          const releasesOk = releasesRes.ok && releasesRes.status !== 204;
+            // Handle 204 No Content for any
+            const artistsOk = artistsRes.ok && artistsRes.status !== 204;
+            const tracksOk = tracksRes.ok && tracksRes.status !== 204;
+            const releasesOk = releasesRes.ok && releasesRes.status !== 204;
 
-          if (!artistsOk && !tracksOk && !releasesOk) return null;
+            if (!artistsOk && !tracksOk && !releasesOk) return null;
 
-          const artistsData = artistsOk ? await artistsRes.json() : { payload: { artists: [] } };
-          const tracksData = tracksOk ? await tracksRes.json() : { payload: { recordings: [] } };
-          const releasesData = releasesOk ? await releasesRes.json() : { payload: { releases: [] } };
+            const artistsData = artistsOk ? await artistsRes.json() : { payload: { artists: [] } };
+            const tracksData = tracksOk ? await tracksRes.json() : { payload: { recordings: [] } };
+            const releasesData = releasesOk ? await releasesRes.json() : { payload: { releases: [] } };
 
-          return {
-            window: period.label,
-            top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
-            top_tracks: (tracksData.payload?.recordings || []).map(t => ({
-              artist: t.artist_name || 'Unknown',
-              title: t.track_name
-            })),
-            top_albums: (releasesData.payload?.releases || []).map(r => ({
-              artist: r.artist_name || 'Unknown',
-              title: r.release_name
-            }))
-          };
+            return {
+              window: period.label,
+              top_artists: (artistsData.payload?.artists || []).map(a => a.artist_name),
+              top_tracks: (tracksData.payload?.recordings || []).map(t => ({
+                artist: t.artist_name || 'Unknown',
+                title: t.track_name
+              })),
+              top_albums: (releasesData.payload?.releases || []).map(r => ({
+                artist: r.artist_name || 'Unknown',
+                title: r.release_name
+              }))
+            };
+          } catch {
+            return null;
+          }
         });
 
         // Use cached recently played if available, otherwise fetch
         let lbRecentlyPlayed = cachedRecentlyPlayed || [];
         if (!cachedRecentlyPlayed) {
-          const recentRes = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/listens?count=50`);
-          if (recentRes.ok) {
+          const recentRes = await fetch(`https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/listens?count=50`).catch(() => null);
+          if (recentRes?.ok) {
             const recentData = await recentRes.json();
             lbRecentlyPlayed = (recentData.payload?.listens || []).map(l => ({
               artist: l.track_metadata?.artist_name || 'Unknown',
@@ -31089,6 +31112,17 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     };
   };
 
+  // Per-friend backoff for accounts that always fail (private 403, deleted
+  // 404) and rate limits, plus one weekly-stats attempt per 30 min.
+  const friendPollBackoffRef = useRef(null);
+  if (!friendPollBackoffRef.current) friendPollBackoffRef.current = createFriendPollBackoff();
+  const recordFriendPollStatus = (friend, status) => {
+    const delay = friendPollBackoffRef.current.recordStatus(friend.id, status);
+    if (delay > 0) {
+      console.log(`👥 ${friend.username} (${friend.service}) answered ${status}; not polling for ${Math.round(delay / 60000)} min`);
+    }
+  };
+
   // Fetch friend's most recent track (for on-air status)
   const fetchFriendRecentTrack = async (friend) => {
     try {
@@ -31098,6 +31132,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=1`;
         const response = await lastfmFetch(url);
+        recordFriendPollStatus(friend, response.status);
         if (!response.ok) return null;
 
         const data = await response.json();
@@ -31118,6 +31153,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       } else if (friend.service === 'listenbrainz') {
         const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/listens?count=1`;
         const response = await fetch(url);
+        recordFriendPollStatus(friend, response.status);
         if (!response.ok) return null;
 
         const data = await response.json();
@@ -31754,6 +31790,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     );
 
     for (const friend of friendsToCheck) {
+      if (friendPollBackoffRef.current.shouldSkip(friend.id)) continue;
       const recentTrack = await fetchFriendRecentTrack(friend);
       if (recentTrack) {
         // Check if track changed before updating
@@ -31778,12 +31815,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           }, 400);
         }
 
-        // Check if we should refresh weekly stats cache (every 30 minutes)
-        const statsStale = !friend.cachedWeeklyStats ||
-          (Date.now() - (friend.cachedWeeklyStats.fetchedAt || 0)) > 30 * 60 * 1000;
+        // Refresh the weekly stats cache at most every 30 minutes, counting
+        // failed and empty attempts too (they used to be retried every poll)
+        const statsStale = friendPollBackoffRef.current.statsDue(friend.id, friend.cachedWeeklyStats?.fetchedAt);
 
         let newWeeklyStats = friend.cachedWeeklyStats;
         if (statsStale) {
+          friendPollBackoffRef.current.recordStatsAttempt(friend.id);
           // Fetch in background, don't await to avoid slowing down polling
           fetchFriendWeeklyStats(friend).then(stats => {
             if (stats) {
