@@ -64,7 +64,24 @@ app.name = 'Parachord';
 // Amazon's web player runs in an opacity-0 window behind Parachord. Chromium
 // otherwise treats that window as occluded and tears the Widevine element down
 // as soon as focus returns to the main window.
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+//
+// Linux additionally disables Chromium's OS media integration entirely
+// (live-verified 2026-10, third playerctl round): Chromium registers its own
+// MPRIS entry (org.mpris.MediaPlayer2.chromium) whenever ANY renderer audio
+// plays — metadata, handlers and feature flags notwithstanding — duplicating
+// the native org.mpris.MediaPlayer2.parachord player. The candidate features
+// below (mined from the Linux binary's k... feature symbols; MediaSessionService
+// is proven non-gating on its own) kill that entry, leaving the native player
+// as the single MPRIS surface, with media keys arriving over its D-Bus. NOT
+// disabled on macOS/Windows: the same machinery there is SMTC / Control
+// Center, which the embedded-player kit deliberately feeds and receives keys
+// through. A media-key-handling='never' opt-out therefore means NO MPRIS on
+// Linux at all (neither player) — consistent with what the opt-out asks for.
+const disabledFeatures = ['CalculateNativeWinOcclusion'];
+if (process.platform === 'linux') {
+  disabledFeatures.push('MediaSession', 'InternalMediaSession', 'HardwareMediaKeyHandling');
+}
+app.commandLine.appendSwitch('disable-features', disabledFeatures.join(','));
 
 // Widevine (parachord#882): Parachord runs on castlabs' Electron for Content
 // Security (ECS), which delivers the Widevine CDM through Chromium's Component
@@ -2247,6 +2264,26 @@ app.whenReady().then(async () => {
   // so a disabled feature costs no socket attempt and no reconnect timer.
   hydrateDiscordPresence(store);
 
+  // Embedded web players (Amazon's hidden views) — OS media keys that
+  // Chromium routes to the embedded page's active media session are hijacked
+  // by the preload's mediaSession shim (embedded-player-kit.js) and arrive
+  // on `embedded-player-media-key`; forward them into the same channel
+  // native MPRIS uses so they hit the renderer's idempotent, deduped
+  // transport handler. Gated on the same setting as globalShortcuts/MPRIS.
+  const { registerEmbeddedPlayerIpc } = require('./main-process/ipc/embedded-player');
+  registerEmbeddedPlayerIpc({
+    ipcMain,
+    safeSendToRenderer,
+    mediaKeysEnabled: () => (store.get('media-key-handling') || 'always') !== 'never'
+  });
+  const { createEmbeddedPlayerMirror, sendMirrorToEmbeddedPlayer } = require('./main-process/ipc/embedded-player');
+  embeddedPlayerMirror = createEmbeddedPlayerMirror({
+    sendMirror: (payload) => sendMirrorToEmbeddedPlayer('amazonmusic', payload),
+    // currentAsin is non-null exactly while the Amazon player owns playback.
+    isOwned: () => !!amazonWebPlayer.currentAsin,
+    enabled: () => process.platform !== 'linux'
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -2328,6 +2365,17 @@ let mediaKeysRegistered = true; // Track current state
 // Null on non-Linux or when init failed; methods are gated at call sites.
 let mprisPlayer = null;
 
+// Now-playing mirror for embedded web players (Amazon's hidden views) — the
+// embedded view's session is the app's ACTIVE session during its playback,
+// and with the page's metadata blocked the OS card falls back to the page's
+// own label ("Amazon Music", the document title). Created in whenReady;
+// the mpris:update-* handlers below feed it alongside the native MPRIS
+// player. Skipped on Linux: Chromium's OS media integration is disabled
+// process-wide there (the disable-features block at the top of this file),
+// so there is no entry to mirror into — the native player is the single
+// surface.
+let embeddedPlayerMirror = null;
+
 const registerMediaKeys = () => {
   if (mediaKeysRegistered) return;
   globalShortcut.register('MediaPlayPause', () => {
@@ -2388,14 +2436,17 @@ ipcMain.handle('media-keys-update-playback-source', (event, source) => {
 // has media-key-handling set to 'never').
 ipcMain.handle('mpris:update-track', (event, track) => {
   if (mprisPlayer) mprisPlayer.updateTrack(track);
+  if (embeddedPlayerMirror) embeddedPlayerMirror.updateTrack(track);
 });
 
 ipcMain.handle('mpris:update-playback-state', (event, state) => {
   if (mprisPlayer) mprisPlayer.updatePlaybackState(state);
+  if (embeddedPlayerMirror) embeddedPlayerMirror.updatePlaybackState(state);
 });
 
 ipcMain.handle('mpris:update-position', (event, positionSeconds) => {
   if (mprisPlayer) mprisPlayer.updatePosition(positionSeconds);
+  if (embeddedPlayerMirror) embeddedPlayerMirror.updatePosition(positionSeconds);
 });
 
 ipcMain.handle('mpris:update-shuffle', (event, shuffle) => {

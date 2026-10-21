@@ -10368,7 +10368,12 @@ const Parachord = () => {
       id: currentTrack.id,
       title: currentTrack.title,
       artist: currentTrack.artist,
-      album: currentTrack.album,
+      // An Amazon-played track often has no top-level album (the search
+      // result carries it on sources.amazonmusic.album) — fall back to the
+      // shared picker so the native player AND the embedded-player mirror
+      // don't relay an album-less card (live-reported 2026-10: both MPRIS
+      // entries showed empty xesam:album for the same track).
+      album: currentTrack.album || window.pickAlbumNameForTrack(currentTrack, null) || '',
       duration: currentTrack.duration,
       // Album art passes through as-is — HTTPS URLs work everywhere;
       // file:// URLs work for DEs that allow local file access;
@@ -10379,12 +10384,23 @@ const Parachord = () => {
     }).catch(() => {});
   }, [currentTrack]);
 
-  // MPRIS: push playback state on play/pause change
+  // MPRIS: push playback state on play/pause change. The position push rides
+  // along: position is event-driven (state change / seek — the renderer does
+  // not poll it), and the native MPRIS player + the embedded-player mirror
+  // both need a real position at those moments (the mirror's cached position
+  // anchors the OS card; without it, a state change would anchor a stale
+  // position).
   useEffect(() => {
     if (!window.electron?.mpris?.updatePlaybackState) return;
     if (!currentTrack) {
       window.electron.mpris.updatePlaybackState('stopped').catch(() => {});
       return;
+    }
+    // Position first: the mirror's state-transition push anchors the OS card
+    // with the CACHED position, so the position must land before the state
+    // push or the transition carries a stale anchor for one IPC batch.
+    if (window.electron.mpris.updatePosition) {
+      window.electron.mpris.updatePosition(progressRef.current).catch(() => {});
     }
     window.electron.mpris.updatePlaybackState(isPlaying ? 'playing' : 'paused').catch(() => {});
   }, [isPlaying, currentTrack]);
@@ -10497,15 +10513,21 @@ const Parachord = () => {
   }, [discordPresenceEnabled, activeView, settingsTab]);
 
   // OS Now Playing via navigator.mediaSession (parachord#976) — macOS Now
-  // Playing widget / Control Center and the Windows media overlay (SMTC).
-  // Chromium already registers a media session with the OS whenever an
-  // <audio> element plays in this renderer (local files, SoundCloud, MusicKit
-  // JS, Spotify Web Playback SDK) — but with no MediaMetadata it falls back to
-  // the window title, so the widget showed "Parachord Desktop" with no track.
-  // These effects mirror the MPRIS feed above.
+  // Playing widget / Control Center, the Windows media overlay (SMTC), and
+  // Linux's Chromium MPRIS entry. Chromium already registers a media session
+  // with the OS whenever an <audio> element plays in this renderer (local
+  // files, Subsonic, SoundCloud, MusicKit JS, Spotify Web Playback SDK) — but
+  // with no MediaMetadata it falls back to the window title, so the widget
+  // showed "Parachord Desktop" with no track. These effects mirror the MPRIS
+  // feed above.
   //
-  // Skipped on Linux: Chromium publishes mediaSession as its OWN MPRIS player,
-  // which would duplicate the native MPRIS integration above (#848).
+  // NOT enabled on Linux: Chromium's OS media integration is disabled
+  // process-wide there (the disable-features switch at the top of main.js,
+  // live-verified 2026-10 — Chromium's MPRIS entry materialized next to the
+  // native player for ANY renderer audio, and the feature switch is the only
+  // thing that kills it), so there is no Chromium session to feed; the native
+  // MPRIS player is the single Linux surface. The #848 policy's goal — no
+  // duplicate card — now holds by enforcement instead of by not feeding it.
   //
   // Coverage limit: playback that produces no renderer audio (Spotify Connect,
   // native MusicKit helper, YouTube/Bandcamp in the browser) has no Chromium
@@ -10562,7 +10584,9 @@ const Parachord = () => {
     const fields = {
       title: currentTrack.title || '',
       artist: currentTrack.artist || '',
-      album: currentTrack.album || '',
+      // Same fallback as the MPRIS push: many resolvers carry the album only
+      // on the source record (e.g. Amazon's sources.amazonmusic.album).
+      album: currentTrack.album || window.pickAlbumNameForTrack(currentTrack, null) || '',
     };
     const art = currentTrack.albumArt || currentTrack.sources?.spotify?.albumArt
       || currentTrack.sources?.applemusic?.albumArt || null;
@@ -15865,6 +15889,21 @@ ${trackListXml}
 
       if (sortedSources.length === 0) {
         console.error('❌ No enabled resolvers found for track. Available sources:', Object.keys(trackOrSource.sources), 'Active resolvers:', currentActiveResolvers);
+        // Per-candidate scorecard for the empty selection — the dialog above
+        // is blind to the reason. NOTE: availableResolvers is every resolver
+        // that has a source on the track, so entries here cover confidence-
+        // floor drops (failed artist/title containment), INACTIVE resolvers
+        // and BLOCKLISTED sources alike — a scorecard, not a floor-drop log.
+        console.warn('⬇️ Source selection scorecard (target vs candidates):', availableResolvers.map(id => {
+          const src = trackOrSource.sources[id];
+          return {
+            id,
+            storedConfidence: src && typeof src.confidence !== 'undefined' ? src.confidence : null,
+            rescored: src ? confidenceForSource({ artist: trackOrSource.artist, title: trackOrSource.title }, src) : null,
+            source: src ? `${src.artist || '?'} — ${src.title || '?'}` : null,
+            target: `${trackOrSource.artist || '?'} — ${trackOrSource.title || '?'}`
+          };
+        }));
         if (autoSkipIfAdvancing('no enabled source matches')) return;
         setTrackLoading(false); // Clear loading state
         showConfirmDialog({
@@ -37383,6 +37422,12 @@ useEffect(() => {
       if (discordPresenceEnabled && window.electron?.discordPresence?.updatePosition
           && currentTrackRef.current === currentTrack) {
         window.electron.discordPresence.updatePosition(newPosition).catch(() => {});
+      }
+      // Same re-anchor for the MPRIS surfaces (native player + the
+      // embedded-player mirror's cached position): once per drag gesture,
+      // with the settled position.
+      if (currentTrackRef.current === currentTrack && window.electron?.mpris?.updatePosition) {
+        window.electron.mpris.updatePosition(newPosition).catch(() => {});
       }
     }, 1000);
   }, [currentTrack, browserPlaybackActive, discordPresenceEnabled]);
