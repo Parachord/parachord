@@ -156,15 +156,25 @@ class FileWatcher {
     console.log('[LocalFiles] Polling for changes...');
 
     const folders = this.db.getWatchFolders();
+    let added = 0, updated = 0, removed = 0;
     for (const folder of folders) {
       if (folder.enabled) {
         // Do a quick scan to detect changes
-        await this.scanner.scanFolder(folder.path);
+        const result = await this.scanner.scanFolder(folder.path);
+        if (result) {
+          added += result.added || 0;
+          updated += result.updated || 0;
+          removed += result.removed || 0;
+        }
       }
     }
 
-    if (this.onLibraryChanged) {
-      this.onLibraryChanged([{ action: 'poll-complete' }]);
+    // Only when something changed (#784). This used to fire after every
+    // 5-minute background poll, and the renderer answers it by reloading the
+    // whole library over IPC: for a big library, a full reload every five
+    // minutes all day long while nothing on disk had moved.
+    if ((added || updated || removed) && this.onLibraryChanged) {
+      this.onLibraryChanged([{ action: 'poll-complete', added, updated, removed }]);
     }
   }
 
