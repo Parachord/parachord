@@ -95,7 +95,7 @@ function sendMirrorToEmbeddedPlayer(resolverId, payload) {
 //   enabled()           — optional extra gate (none today: the mirror runs on
 //                          every platform — the #848 Linux exception is void)
 function createEmbeddedPlayerMirror({ sendMirror, isOwned, enabled }) {
-  const state = { duration: 0, position: 0, playbackState: 'paused' };
+  const state = { trackId: null, duration: 0, position: 0, playbackState: 'paused' };
   const push = (payload) => {
     if (typeof sendMirror !== 'function') return;
     if (typeof isOwned === 'function' && !isOwned()) return;
@@ -108,8 +108,18 @@ function createEmbeddedPlayerMirror({ sendMirror, isOwned, enabled }) {
   return {
     updateTrack(track) {
       const t = track && typeof track === 'object' ? track : null;
+      const trackId = t ? String(t.id || t.title || '') : '';
+      // The renderer fires update-track on every currentTrack IDENTITY churn —
+      // during Amazon playback the poller's ~2s progress emits re-create the
+      // object (duration repair, stream-quality attach). A same-track push
+      // must NOT reset the position to 0: the OS card loops 0:00 → 0:02 →
+      // reset at the poller's cadence (observed on macOS, 2026-10). The
+      // native MPRIS player never touches position from updateTrack; mirror
+      // that — only a REAL track change re-anchors the position.
+      const trackChanged = trackId !== state.trackId;
+      state.trackId = trackId;
       state.duration = t && Number(t.duration) > 0 ? Number(t.duration) : 0;
-      state.position = 0;
+      if (trackChanged) state.position = 0;
       push({
         metadata: t ? {
           title: t.title || '',
@@ -117,15 +127,16 @@ function createEmbeddedPlayerMirror({ sendMirror, isOwned, enabled }) {
           album: t.album || '',
           artwork: t.albumArt || null
         } : null,
-        ...positionPatch()
+        ...(trackChanged ? positionPatch() : {})
       });
     },
     updatePlaybackState(playbackState) {
       state.playbackState = playbackState === 'playing' ? 'playing' : 'paused';
-      push({
-        playbackState: state.playbackState,
-        ...positionPatch()
-      });
+      // playbackState only — no position patch. Nothing pushes position during
+      // steady playback (position pushes are event-driven: seek, track
+      // change), so the cached position is stale here, and the media
+      // element's own clock is the card's anchor between pushes.
+      push({ playbackState: state.playbackState });
     },
     updatePosition(seconds) {
       const p = Number(seconds);

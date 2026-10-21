@@ -146,14 +146,41 @@ describe('createEmbeddedPlayerMirror', () => {
 
   test('position pushes reuse the cached duration and playback rate', () => {
     const { mirror, sent } = setup();
-    mirror.updateTrack({ title: 'T', artist: 'A', album: 'AL', duration: 254 });
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 254 });
     mirror.updatePlaybackState('playing');
     mirror.updatePosition(30);
     expect(sent[sent.length - 1]).toEqual({ position: { duration: 254, position: 30, rate: 1 } });
     mirror.updatePlaybackState('paused');
+    expect(sent[sent.length - 1]).toEqual({ playbackState: 'paused' });
+  });
+
+  test('a same-track churn does NOT reset the position (the macOS progress-loop regression)', () => {
+    // During Amazon playback the poller's ~2s progress emits re-create the
+    // currentTrack object (duration repair, stream-quality attach), and each
+    // identity churn re-fires the mpris:update-track AND update-playback-state
+    // pushes. updateTrack used to push position 0 on every call, so the OS
+    // card looped 0:00 → 0:02 → reset at the poller's cadence (observed on
+    // macOS, 2026-10). Same-track pushes must carry metadata only, and
+    // update-playback-state must not carry a position patch at all.
+    const { mirror, sent } = setup();
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 254 });
+    mirror.updatePlaybackState('playing');
+    mirror.updatePosition(120);
+    const pushesBeforeChurn = sent.length;
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 254, albumArt: 'https://e.com/late-art.jpg' });
+    mirror.updatePlaybackState('playing');
+    mirror.updateTrack({ id: 't1', title: 'T', artist: 'A', album: 'AL', duration: 254 });
+    expect(sent.length).toBe(pushesBeforeChurn + 3);
+    expect(sent[pushesBeforeChurn]).toEqual({
+      metadata: { title: 'T', artist: 'A', album: 'AL', artwork: 'https://e.com/late-art.jpg' }
+    });
+    expect(sent[pushesBeforeChurn + 1]).toEqual({ playbackState: 'playing' });
+    expect(sent[pushesBeforeChurn + 2].position).toBeUndefined();
+    // A REAL track change re-anchors at 0
+    mirror.updateTrack({ id: 't2', title: 'U', artist: 'B', album: 'AL', duration: 300 });
     expect(sent[sent.length - 1]).toEqual({
-      playbackState: 'paused',
-      position: { duration: 254, position: 30, rate: 0 }
+      metadata: { title: 'U', artist: 'B', album: 'AL', artwork: null },
+      position: { duration: 300, position: 0, rate: 1 }
     });
   });
 
