@@ -55,7 +55,10 @@ function registerEmbeddedPlayer(webContents, { resolverId, isOwned } = {}) {
     isOwned: typeof isOwned === 'function' ? isOwned : null
   });
   try {
-    webContents.once('destroyed', () => registeredViews.delete(webContents.id));
+    webContents.once('destroyed', () => {
+      registeredViews.delete(webContents.id);
+      senderWindows.delete(webContents.id);
+    });
   } catch { /* already destroyed */ }
 }
 
@@ -72,10 +75,12 @@ const ACTION_MAP = {
   nexttrack: 'next'
 };
 
-// Per-sender sliding window: a legit user pressing keys fast produces a few
-// actions a second; a page script spamming the bridge produces a burst. Past
-// the cap the sender is dropped until the window slides.
-const RATE_LIMIT_ACTIONS = 12;
+// Per-sender sliding window: a legit user skimming a playlist (or holding a
+// key with key-repeat) produces a few actions a second; a page script spamming
+// the bridge produces a burst. Past the cap the sender is dropped until the
+// window slides — 3/s sustained is generous for fingers and still bounds a
+// page burst by orders of magnitude.
+const RATE_LIMIT_ACTIONS = 30;
 const RATE_LIMIT_WINDOW_MS = 10000;
 const senderWindows = new Map();
 

@@ -41,7 +41,9 @@ function inlinedTrap() {
 }
 
 function inlinedHijackSource() {
-  const m = src.match(/function installMediaSessionHijack\(scope, onAction\) \{[\s\S]*?\n\}/);
+  // Signature-agnostic param match, same lesson as inlinedMirrorSource: a
+  // hardcoded signature failed loudly at worst, but stay consistent.
+  const m = src.match(/function installMediaSessionHijack\([^)]*\) \{[\s\S]*?\n\}/);
   return m ? m[0] : null;
 }
 

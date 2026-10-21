@@ -10396,10 +10396,13 @@ const Parachord = () => {
       window.electron.mpris.updatePlaybackState('stopped').catch(() => {});
       return;
     }
-    window.electron.mpris.updatePlaybackState(isPlaying ? 'playing' : 'paused').catch(() => {});
+    // Position first: the mirror's state-transition push anchors the OS card
+    // with the CACHED position, so the position must land before the state
+    // push or the transition carries a stale anchor for one IPC batch.
     if (window.electron.mpris.updatePosition) {
       window.electron.mpris.updatePosition(progressRef.current).catch(() => {});
     }
+    window.electron.mpris.updatePlaybackState(isPlaying ? 'playing' : 'paused').catch(() => {});
   }, [isPlaying, currentTrack]);
 
   // MPRIS: push shuffle state on toggle

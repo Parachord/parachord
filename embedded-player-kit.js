@@ -170,7 +170,7 @@ function applyMediaSessionMirror(real, data, MediaMetadataCtor) {
           artist: String(m.artist || ''),
           album: String(m.album || '')
         };
-        const art = m.artwork && typeof m.artwork === 'string' && /^https?:/i.test(m.artwork);
+        const art = m.artwork && typeof m.artwork === 'string' && /^https:/i.test(m.artwork);
         try {
           real.metadata = new MediaMetadataCtor(art
             ? { title: base.title, artist: base.artist, album: base.album, artwork: [{ src: m.artwork, sizes: '512x512' }] }

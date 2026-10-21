@@ -253,8 +253,10 @@ describe('applyMediaSessionMirror', () => {
     expect(() => applyMediaSessionMirror(null, { metadata: null })).not.toThrow();
     const page = makePage();
     const real = installMediaSessionHijack({ navigator: page.navigator }, null);
-    expect(() => applyMediaSessionMirror(real, global.MediaMetadata, null)).not.toThrow();
-    expect(() => applyMediaSessionMirror(real, global.MediaMetadata, 'junk')).not.toThrow();
+    // Signature is (real, data, MediaMetadataCtor) — a swapped arg order here
+    // once voided this whole battery silently (data must be the payload).
+    expect(() => applyMediaSessionMirror(real, null, global.MediaMetadata)).not.toThrow();
+    expect(() => applyMediaSessionMirror(real, 'junk', global.MediaMetadata)).not.toThrow();
 
     // A real session whose setters throw is tolerated
     const hostile = {
@@ -263,11 +265,11 @@ describe('applyMediaSessionMirror', () => {
       setActionHandler() { throw new Error('no'); },
       setPositionState() { throw new Error('no'); }
     };
-    expect(() => applyMediaSessionMirror(hostile, global.MediaMetadata, {
+    expect(() => applyMediaSessionMirror(hostile, {
       metadata: { title: 'T', artist: 'A', album: 'AL' },
       playbackState: 'playing',
       position: { duration: 10, position: 1, rate: 1 }
-    })).not.toThrow();
+    }, global.MediaMetadata)).not.toThrow();
     // the earlier page is untouched
     expect(page.real.metadata).toBeUndefined();
   });

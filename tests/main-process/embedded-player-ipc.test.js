@@ -101,10 +101,10 @@ describe('registerEmbeddedPlayerIpc', () => {
     const { fire, sent } = setup();
     const view = makeWebContents(32);
     registerEmbeddedPlayer(view, { resolverId: 'amazonmusic' });
-    for (let i = 0; i < 12; i++) fire(view, { action: i % 2 ? 'nexttrack' : 'previoustrack' });
-    expect(sent.length).toBe(12); // within the window
+    for (let i = 0; i < 30; i++) fire(view, { action: i % 2 ? 'nexttrack' : 'previoustrack' });
+    expect(sent.length).toBe(30); // within the window
     fire(view, { action: 'play' });
-    expect(sent.length).toBe(12); // capped
+    expect(sent.length).toBe(30); // capped
   });
 
   test('the media-key-handling opt-out is honored per event', () => {
