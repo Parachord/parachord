@@ -6,6 +6,29 @@ const FileScanner = require('./scanner');
 const FileWatcher = require('./watcher');
 const AlbumArtResolver = require('./album-art');
 const MetadataReader = require('./metadata-reader');
+const { findMissingFiles, removeMissingFiles } = require('./missing-files');
+
+// 'present' | 'missing' | 'unknown'. Only a definite ENOENT/ENOTDIR is
+// missing; a permission error or a stalled network mount is unknown.
+async function pathStatus(filePath) {
+  try {
+    await fs.promises.access(filePath);
+    return 'present';
+  } catch (err) {
+    return err && (err.code === 'ENOENT' || err.code === 'ENOTDIR') ? 'missing' : 'unknown';
+  }
+}
+
+async function folderReadable(folderPath) {
+  try {
+    const stats = await fs.promises.stat(folderPath);
+    if (!stats.isDirectory()) return false;
+    await fs.promises.readdir(folderPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 class LocalFilesService {
   constructor(userDataPath) {
@@ -173,12 +196,39 @@ class LocalFilesService {
   async fileStatus(filePath) {
     if (!filePath || typeof filePath !== 'string') return 'unknown';
     if (!this.db.getTrackByPath(filePath)) return 'unknown';
-    try {
-      await fs.promises.access(filePath);
-      return 'present';
-    } catch (err) {
-      return err && (err.code === 'ENOENT' || err.code === 'ENOTDIR') ? 'missing' : 'unknown';
+    return pathStatus(filePath);
+  }
+
+  // Library rows whose file is gone, for "Remove missing files" (#1002).
+  // Read-only: the renderer shows the count and asks before anything is
+  // deleted. Watch folders whose root cannot be read are skipped and
+  // reported, so an unmounted drive never reads as "all missing".
+  async findMissingFiles() {
+    return findMissingFiles({
+      folders: this.db.getWatchFolders().map((f) => f.path),
+      filePaths: this.db.getAllFilePaths(),
+      folderReadable,
+      fileStatus: pathStatus,
+    });
+  }
+
+  // Deletes the rows for the given paths that are still missing (each one is
+  // re-checked), then tells the renderer the library changed.
+  async removeMissingFiles(filePaths) {
+    const result = await removeMissingFiles({
+      filePaths: Array.isArray(filePaths) ? filePaths : [],
+      folders: this.db.getWatchFolders().map((f) => f.path),
+      isKnown: (p) => !!this.db.getTrackByPath(p),
+      folderReadable,
+      fileStatus: pathStatus,
+      removeTrack: (p) => this.db.removeTrack(p),
+    });
+    if (result.removed.length > 0) {
+      if (this.watcher?.onLibraryChanged) {
+        this.watcher.onLibraryChanged([{ action: 'missing-removed', count: result.removed.length }]);
+      }
     }
+    return { removed: result.removed.length, kept: result.kept.length };
   }
 
   // Stats
