@@ -10,7 +10,7 @@
 // functions Parachord recreates on every render, which come in as stable
 // wrappers (useStableHandlers in app.js; the list is COLLECTION_PAGE_HANDLERS).
 // A new prop must be one of those, or the memo silently stops helping
-// (tests/renderer/collection-page.test.js checks the call site).
+// (tests/renderer/page-memo.test.js checks the call site).
 //
 // The body is the original render expression, unchanged: it reads its inputs
 // from props under their old names.
