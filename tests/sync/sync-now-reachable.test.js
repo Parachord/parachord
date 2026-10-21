@@ -8,11 +8,14 @@ const fs = require('fs');
 const path = require('path');
 
 const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+// The Collection page header (where the opener lives) moved into its own
+// module in the Track 2b split.
+const collectionPage = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
 
 describe('Sync Now is reachable', () => {
   test('something opens syncStatusModal', () => {
-    expect(app).toMatch(/setSyncStatusModal\(\{ open: true \}\)/);
-    expect(app).toMatch(/'Sync status & Sync Now'/);
+    expect(collectionPage).toMatch(/setSyncStatusModal\(\{ open: true \}\)/);
+    expect(collectionPage).toMatch(/'Sync status & Sync Now'/);
   });
 
   test('the modal\'s Sync Now runs a full (unstaggered) sync', () => {

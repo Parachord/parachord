@@ -104,12 +104,14 @@ describe('wiring', () => {
   const root = path.join(__dirname, '..', '..');
   const app = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8');
   const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+  // The Collection songs tab moved into its own module (Track 2b split).
+  const collectionPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
 
   test('the Collection songs tab tells the menu whether a track is really in the collection', () => {
     // It used to send isInCollection: true for every row, library-only ones
     // included, so "Remove from Collection" failed with "not in your collection".
-    expect(app).not.toMatch(/isInCollection: true\s+\/\/ Collection tracks are always in collection/);
-    expect(app).toMatch(/isLibraryTrack: !inCollection && !!\(track\.filePath \|\| track\.sources\?\.localfiles\?\.filePath\)/);
+    expect(collectionPage).not.toMatch(/isInCollection: true\s+\/\/ Collection tracks are always in collection/);
+    expect(collectionPage).toMatch(/isLibraryTrack: !inCollection && !!\(track\.filePath \|\| track\.sources\?\.localfiles\?\.filePath\)/);
   });
 
   test('library-only tracks get Show in Folder, or Remove Missing File when the file is gone', () => {
