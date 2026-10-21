@@ -1,7 +1,7 @@
 /**
- * The Collection page as a React.memo'd module (Track 2b state-domain split;
- * performance: every Parachord setState used to re-render this ~1,200-line
- * page too). A memo only helps while every prop is stable unless its data
+ * Pages as React.memo'd modules (Track 2b state-domain split; performance:
+ * every Parachord setState used to re-render the page on screen too): the
+ * Collection page and the Home page. A memo only helps while every prop is stable unless its data
  * changed, and that is easy to break silently: pass one function defined in
  * the component body, or one object literal, and the page re-renders on
  * every Parachord render again with nothing failing. These tests pin it.
@@ -16,12 +16,19 @@ const ROOT = path.join(__dirname, '..', '..');
 const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'app.js'), 'utf8');
 
 global.React = global.React || require('react');
+global.ReactVirtual = global.ReactVirtual || require('@tanstack/react-virtual');
 const { CollectionPage, COLLECTION_PAGE_HANDLERS } = require('../../src/renderer/components/collection-page');
+const { HomePage, HOME_PAGE_HANDLERS } = require('../../src/renderer/components/home-page');
 const { useStableHandlers } = require('../../src/renderer/lib/stable-handlers');
 
-describe('CollectionPage', () => {
+const PAGES = [
+  { component: 'CollectionPage', file: 'collection-page.js', handlersVar: 'collectionPageHandlers', handlers: COLLECTION_PAGE_HANDLERS, memo: CollectionPage },
+  { component: 'HomePage', file: 'home-page.js', handlersVar: 'homePageHandlers', handlers: HOME_PAGE_HANDLERS, memo: HomePage },
+];
+
+describe.each(PAGES)('$component', ({ memo }) => {
   test('is React.memo', () => {
-    expect(CollectionPage.$$typeof).toBe(Symbol.for('react.memo'));
+    expect(memo.$$typeof).toBe(Symbol.for('react.memo'));
   });
 });
 
@@ -54,14 +61,14 @@ describe('useStableHandlers', () => {
   });
 });
 
-describe('the app.js call site keeps every prop stable', () => {
+describe.each(PAGES)('$component: the app.js call site keeps every prop stable', ({ component, file, handlersVar, handlers }) => {
   const ast = espree.parse(appSrc, { ecmaVersion: 'latest', range: true, loc: true });
   const scopes = eslintScope.analyze(ast, { ecmaVersion: 2022 });
 
   let call = null;
   (function walk(n) {
     if (!n || typeof n.type !== 'string' || call) return;
-    if (n.type === 'CallExpression' && n.arguments[0]?.type === 'Identifier' && n.arguments[0].name === 'CollectionPage') { call = n; return; }
+    if (n.type === 'CallExpression' && n.arguments[0]?.type === 'Identifier' && n.arguments[0].name === component) { call = n; return; }
     for (const k in n) { const v = n[k]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v.type === 'string') walk(v); }
   })(ast);
 
@@ -101,24 +108,28 @@ describe('the app.js call site keeps every prop stable', () => {
 
   test('plain functions come only through the stable-handlers spread, with the documented keys', () => {
     const spread = call.arguments[1].properties.filter((p) => p.type === 'SpreadElement');
-    expect(spread.map((s) => s.argument.name)).toEqual(['collectionPageHandlers']);
+    expect(spread.map((s) => s.argument.name)).toEqual([handlersVar]);
     expect(stability(resolve(spread[0].argument))).toBe('useStableHandlers');
 
     let handlersCall = null;
     (function walk(n) {
       if (!n || typeof n.type !== 'string' || handlersCall) return;
-      if (n.type === 'VariableDeclarator' && n.id.name === 'collectionPageHandlers') { handlersCall = n.init; return; }
+      if (n.type === 'VariableDeclarator' && n.id.name === handlersVar) { handlersCall = n.init; return; }
       for (const k in n) { const v = n[k]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v.type === 'string') walk(v); }
     })(ast);
     const keys = handlersCall.arguments[0].properties.map((p) => p.key.name).sort();
-    expect(keys).toEqual([...COLLECTION_PAGE_HANDLERS].sort());
+    expect(keys).toEqual([...handlers].sort());
   });
 
   test('the page destructures exactly what the call site passes', () => {
-    const page = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
+    const page = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'components', file), 'utf8');
     const destructure = page.match(/const \{\n([\s\S]*?)\n {2}\} = props;/)[1]
       .split('\n').map((l) => l.trim().replace(/,$/, '')).filter(Boolean).sort();
-    const passed = call.arguments[1].properties.filter((p) => p.type !== 'SpreadElement').map((p) => p.key.name);
-    expect(destructure).toEqual([...passed, ...COLLECTION_PAGE_HANDLERS].sort());
+    // `_`-prefixed props are memo invalidators the page reads only through a
+    // stable handler (HomePage's _metaServices); the page does not destructure them.
+    const passed = call.arguments[1].properties
+      .filter((p) => p.type !== 'SpreadElement' && !p.key.name.startsWith('_'))
+      .map((p) => p.key.name);
+    expect(destructure).toEqual([...passed, ...handlers].sort());
   });
 });
