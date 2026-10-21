@@ -221,6 +221,20 @@ class LocalFilesService {
     return track ? this.formatTrackForRenderer(track) : null;
   }
 
+  // The current rows for a set of paths, formatted like getAllTracks (#784):
+  // the renderer applies a watcher change (a few files added or re-tagged)
+  // by fetching just those rows instead of reloading the whole library.
+  // Paths with no row (removed meanwhile) are simply absent from the result.
+  getTracksByPaths(filePaths) {
+    const artIndex = this.buildArtIndex();
+    const out = [];
+    for (const filePath of filePaths) {
+      const row = typeof filePath === 'string' ? this.db.getTrackByPath(filePath) : null;
+      if (row) out.push(this.formatTrackForRenderer(row, artIndex));
+    }
+    return out;
+  }
+
   // Is a library file still on disk? (parachord#1002) Used when local
   // playback fails, to tell "the file is gone" from "the file won't decode".
   // Answers only for paths the library knows ('unknown' otherwise), so the

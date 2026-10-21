@@ -1121,6 +1121,7 @@ const { normalizeForId, generateTrackId, generateAlbumId, generateArtistId } = r
 const { trackSlug, slug } = require('./lib/track-slug');
 // Stale local-file sources (parachord#1002): a localfiles source whose file
 // is no longer in the local library.
+const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require('./lib/library-changes');
 const {
   libraryFilePaths,
   isStaleLocalSource,
@@ -3520,6 +3521,9 @@ const Parachord = () => {
   // failed load leaves it untouched, so a DB read error can never be taken
   // for "every file is gone".
   const libraryFilePathsRef = useRef(null);
+  // Albums the local-art pass already tried this session (#784): a reload
+  // or library change must not re-walk the whole library.
+  const localArtAttemptedRef = useRef(new Set());
   const [libraryPathsVersion, setLibraryPathsVersion] = useState(0);
   // A file play found missing on disk before the library noticed (the
   // watcher or the 5-minute background poll will drop its row): treat it as
@@ -7562,6 +7566,10 @@ const Parachord = () => {
     // block a richer mapper entry once the mapper recovers. Track-level
     // mutation alone is enough — `if (track.mbid) return` above short-
     // circuits on the next call for the same track.
+    // The bulk local-art pass skips this: the ISRC endpoint yields no
+    // release MBID (all that pass needs), and at library scale it would fill
+    // MusicBrainz's 1 req/s background lane for hours.
+    if (opts.skipIsrcFallback) return;
     const isrc = window.pickTrackIsrc ? window.pickTrackIsrc(track) : (track.isrc || null);
     if (isrc && window.resolveMbidViaIsrc) {
       const isrcMbid = await window.resolveMbidViaIsrc(isrc, opts);
@@ -7681,50 +7689,75 @@ const Parachord = () => {
     console.log(`🎨 [Local Art] Warmup complete · resolved ${totalResolved} of ${candidates.length} candidates`);
   };
 
+  // Library-scale artwork for local tracks with no embedded or folder art
+  // (#784). One representative track per album is looked up (MBID mapper,
+  // 4 in flight on the background lane, no ISRC fallback), its release's
+  // Cover Art Archive front is fetched once, and the URL is applied to every
+  // track of that album: ~15k lookups for a 150k-track library instead of
+  // 150k. Each album is attempted once per session (keyed by artist +
+  // album, or by file for album-less tracks), so a library change or reload
+  // does not re-walk the library. Art found is published onto the CURRENT
+  // library rows by file path, in batches and without mutating: a reload
+  // mid-pass replaces the row objects, and a mutation would neither reach
+  // the new rows nor re-render the memoized pages. This replaced a
+  // 10k-track cutoff above which the pass was skipped entirely.
   const enrichLocalTracksWithArtwork = async (tracks) => {
     if (!tracks || tracks.length === 0) return;
+    const attempted = localArtAttemptedRef.current;
+    const groups = new Map();
+    for (const track of tracks) {
+      if (!track || track.albumArt || !track.artist || !track.title) continue;
+      const key = albumArtGroupKey(track);
+      if (attempted.has(key)) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(track);
+    }
+    if (groups.size === 0) return;
+    for (const key of groups.keys()) attempted.add(key);
 
-    // Phase 1: MBID enrichment, only for tracks that still lack art (the
-    // user-visible payoff of this pass; a track that already has embedded or
-    // folder art gets its MBID lazily on play). Used to be Promise.all over
-    // the WHOLE library: with the mapper down that was thousands of queued
-    // lookups per launch, and every one of them sat ahead of the lookup
-    // handlePlay waits on and of the MusicBrainz calls behind search and
-    // artist pages. Now: 4 in flight, background lane on both limiters.
-    const needsArt = tracks.filter(t => !t.albumArt);
+    const queue = [...groups.values()];
     const ENRICH_CONCURRENCY = 4;
+    const PUBLISH_EVERY = 200; // albums with new art between library publishes
+    let found = 0;
+    let unpublished = 0;
+    const pending = new Map(); // filePath -> { url, releaseMbid }
+    const publish = () => {
+      if (pending.size === 0) return;
+      const batch = new Map(pending);
+      pending.clear();
+      unpublished = 0;
+      setLibrary(prev => {
+        let changed = false;
+        const next = prev.map(t => {
+          const hit = batch.get(t.filePath);
+          if (!hit || t.albumArt) return t;
+          changed = true;
+          return { ...t, albumArt: hit.url, releaseMbid: t.releaseMbid || hit.releaseMbid };
+        });
+        return changed ? next : prev;
+      });
+    };
     let cursor = 0;
     const worker = async () => {
-      while (cursor < needsArt.length) {
-        const track = needsArt[cursor++];
-        await enrichTrackWithMbid(track, { background: true }).catch(() => {});
+      while (cursor < queue.length) {
+        const albumTracks = queue[cursor++];
+        if (albumTracks.some(t => t.albumArt)) continue; // the warmup got there first
+        const rep = albumTracks[0];
+        await enrichTrackWithMbid(rep, { background: true, skipIsrcFallback: true }).catch(() => {});
+        if (!rep.releaseMbid) continue;
+        const url = await fetchArtworkViaMbid(rep).catch(() => null);
+        if (!url) continue;
+        for (const t of albumTracks) {
+          if (t.filePath) pending.set(t.filePath, { url, releaseMbid: rep.releaseMbid });
+        }
+        found++;
+        if (++unpublished >= PUBLISH_EVERY) publish();
       }
     };
-    await Promise.all(Array.from({ length: Math.min(ENRICH_CONCURRENCY, needsArt.length) }, worker));
-
-    // Phase 2: Fetch artwork for tracks that lack albumArt but got a releaseMbid
-    const artlessTracks = tracks.filter(t => !t.albumArt && t.releaseMbid);
-    if (artlessTracks.length === 0) return;
-
-    console.log(`🎨 Fetching artwork for ${artlessTracks.length} local tracks via MBID...`);
-    let fetched = 0;
-
-    // Process in batches of 5 to avoid hammering CAA
-    for (let i = 0; i < artlessTracks.length; i += 5) {
-      const batch = artlessTracks.slice(i, i + 5);
-      await Promise.all(batch.map(track =>
-        fetchArtworkViaMbid(track).then(url => {
-          if (url) {
-            track.albumArt = url;
-            fetched++;
-          }
-        }).catch(() => {})
-      ));
-    }
-
-    if (fetched > 0) {
-      console.log(`🎨 Fetched artwork for ${fetched}/${artlessTracks.length} local tracks`);
-    }
+    console.log(`🎨 Looking up artwork for ${queue.length} local album(s) without art...`);
+    await Promise.all(Array.from({ length: Math.min(ENRICH_CONCURRENCY, queue.length) }, worker));
+    publish();
+    if (found > 0) console.log(`🎨 Found artwork for ${found}/${queue.length} local album(s)`);
   };
 
   // Cache for recommendations data (tracks from API)
@@ -12361,19 +12394,10 @@ ${trackListXml}
             // file-cache writes), bounded by concurrency cap, big payoff
             // for users with well-tagged libraries (issue #786).
             enrichLocalTracksWithEmbeddedArt(localTracks).catch(() => {});
-            // Bulk MBID + CAA enrichment is the slow path that froze the
-            // renderer at 150k tracks (#784): it fires Promise.all over
-            // tracks.length tracks with no concurrency cap, allocating
-            // 150k pending fetches in one tick. Cap usage to libraries
-            // small enough that the unbounded Promise.all is still safe;
-            // larger libraries skip it (their embedded/folder art covers
-            // most cases anyway). Once #784 lands a proper concurrency-
-            // limited version, this gate goes away.
-            if (localTracks.length > 10000) {
-              console.warn(`[Library] Skipping bulk MBID/CAA enrichment for ${localTracks.length} tracks (>10k threshold). Embedded/folder art still resolves via the warmup loop; see issue #784.`);
-            } else {
-              enrichLocalTracksWithArtwork(localTracks).catch(() => {});
-            }
+            // Library-scale artwork lookup: one per album, once per session,
+            // 4 in flight on the background lane (#784; replaced a 10k-track
+            // cutoff above which this was skipped).
+            enrichLocalTracksWithArtwork(localTracks).catch(() => {});
           } else {
             console.log(`📚 No local files found - library is empty (${localMs}ms IPC)`);
             setLibrary([]);
@@ -12428,10 +12452,43 @@ ${trackListXml}
     // Listen for local files library changes
     let libraryChangeCleanup = null;
     if (window.electron?.localFiles?.onLibraryChanged) {
-      libraryChangeCleanup = window.electron.localFiles.onLibraryChanged((changes) => {
-        console.log('📚 Library changed, reloading...', changes);
-        loadLocalFilesLibrary();
+      // Apply what changed instead of reloading the whole library (#784):
+      // the watcher's per-file results name the paths, so only those rows
+      // are fetched. Folder scans, rescans, folder removal, "remove missing
+      // files" and background polls can touch any number of rows and still
+      // reload in full, as does anything before the first full load.
+      const applyLibraryChanges = async (changes) => {
+        const plan = classifyLibraryChanges(changes);
+        const paths = libraryFilePathsRef.current;
+        if (!plan.incremental || !paths || !window.electron?.localFiles?.getTracksByPaths) {
+          console.log('📚 Library changed, reloading...', changes);
+          await loadLocalFilesLibrary();
+          setLocalLibraryVersion(v => v + 1);
+          return;
+        }
+        if (plan.upsertPaths.length === 0 && plan.removedPaths.length === 0) return;
+        const fetched = plan.upsertPaths.length > 0
+          ? await window.electron.localFiles.getTracksByPaths(plan.upsertPaths)
+          : [];
+        if (!Array.isArray(fetched)) {
+          await loadLocalFilesLibrary();
+          setLocalLibraryVersion(v => v + 1);
+          return;
+        }
+        console.log(`📚 Library changed: ${fetched.length} added/updated, ${plan.removedPaths.length} removed`);
+        setLibrary(prev => applyLibraryPatch(prev, plan, fetched));
+        for (const p of plan.removedPaths) paths.delete(p);
+        for (const p of plan.upsertPaths) paths.delete(p);
+        for (const t of fetched) if (t.filePath) paths.add(t.filePath);
+        setLibraryPathsVersion(v => v + 1);
+        if (fetched.length > 0) {
+          enrichLocalTracksWithEmbeddedArt(fetched).catch(() => {});
+          enrichLocalTracksWithArtwork(fetched).catch(() => {});
+        }
         setLocalLibraryVersion(v => v + 1);
+      };
+      libraryChangeCleanup = window.electron.localFiles.onLibraryChanged((changes) => {
+        applyLibraryChanges(changes).catch((err) => console.error('📚 Applying library changes failed:', err));
       });
     }
 
