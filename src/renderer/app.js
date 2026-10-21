@@ -10368,7 +10368,12 @@ const Parachord = () => {
       id: currentTrack.id,
       title: currentTrack.title,
       artist: currentTrack.artist,
-      album: currentTrack.album,
+      // An Amazon-played track often has no top-level album (the search
+      // result carries it on sources.amazonmusic.album) — fall back to the
+      // shared picker so the native player AND the embedded-player mirror
+      // don't relay an album-less card (live-reported 2026-10: both MPRIS
+      // entries showed empty xesam:album for the same track).
+      album: currentTrack.album || window.pickAlbumNameForTrack(currentTrack, null) || '',
       duration: currentTrack.duration,
       // Album art passes through as-is — HTTPS URLs work everywhere;
       // file:// URLs work for DEs that allow local file access;
