@@ -11824,8 +11824,11 @@ ${trackListXml}
             if (!data.asin || !playingAsin || data.asin === playingAsin) {
               setCurrentTrack(prev => {
                 if (!prev || prev.id !== track.id) return prev;
+                // VBR wobble is not a change (isStreamQualityChange): replacing
+                // currentTrack every 2 s poll re-rendered every memoized page and
+                // re-saved the queue for the whole of an Amazon track.
                 const existing = prev.sources?.amazonmusic?.streamQuality;
-                if (existing && JSON.stringify(existing) === JSON.stringify(measuredQuality)) return prev;
+                if (!window.isStreamQualityChange(existing, measuredQuality)) return prev;
                 return {
                   ...prev,
                   sources: {
@@ -14801,7 +14804,12 @@ ${trackListXml}
     // Debounce the save to avoid saving too frequently
     const timeoutId = setTimeout(async () => {
       if (window.electron?.store) {
-        // Save currentTrack + queue together so we restore the correct playing track
+        // Save currentTrack + queue together so we restore the correct playing track.
+        // Keyed on the track's id, not the object: the playing track is re-created
+        // by in-place updates (Amazon's measured stream quality, duration repair,
+        // art backfill), and each one re-saved the whole queue. The ref still
+        // saves the latest version of it.
+        const currentTrack = currentTrackRef.current;
         const fullQueue = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
         await window.electron.store.set('saved_queue', fullQueue);
         // Also save playback context
@@ -14816,7 +14824,7 @@ ${trackListXml}
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [currentTrack, currentQueue, rememberQueue, playbackContext, shuffleMode]);
+  }, [currentTrack?.id, currentQueue, rememberQueue, playbackContext, shuffleMode]);
 
   // Persist friends to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
