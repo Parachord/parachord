@@ -6,7 +6,7 @@
 // sync:start is the big one — library/collection import + selected-playlist
 // inbound sync with per-phase cancellation (parachord#799), staggered playlist
 // cycles (parachord#800), snapshot adoption rules, and the >70% completeness
-// guard before clearing syncedFrom. The invariants are documented in CLAUDE.md
+// guard before clearing syncedFrom. The invariants are documented in docs/architecture/sync.md
 // ("Background Sync Cadence", "Staggered playlist sync per cycle",
 // "Invariants & Traps") — read them before editing.
 //
@@ -80,7 +80,7 @@ ipcMain.handle('sync:check-auth', async (event, providerId) => {
     }
   } else if (providerId === 'listenbrainz') {
     // LB user token lives in the scrobbler-side config, not a separate
-    // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+    // sync key. See docs/architecture/android-parity.md "ListenBrainz auth token auto-attach".
     const cfg = store.get('scrobbler-config-listenbrainz') || {};
     token = cfg.userToken || null;
     if (!token) {

@@ -146,7 +146,7 @@
   // so any field missing here is deleted on disk. The old hand-written list
   // omitted `localOnly` and `description`, so adding or removing a track on a
   // "Local only" playlist cleared the flag and the next sync pushed it to the
-  // user's services. CLAUDE.md lists the fields every save must carry.
+  // user's services. docs/architecture/sync.md lists the fields every save must carry.
   // UI-only flags that ride on selectedPlaylist (Weekly Jams, external views)
   // are stripped so they never reach disk.
   const PLAYLIST_UI_ONLY_FIELDS = ['isEphemeral', 'isExternal', 'tracksLoaded'];

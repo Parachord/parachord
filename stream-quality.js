@@ -4,7 +4,7 @@
  * A resolver that knows the technical parameters of the stream a track plays
  * through it attaches a `streamQuality` record to its own entry in
  * `track.sources` — the same cross-cutting-source-record pattern as `isrc`
- * (see the Resolver Result Shape section in CLAUDE.md):
+ * (see the Resolver Result Shape section in docs/architecture/playback.md):
  *
  *   track.sources[resolverId].streamQuality = {
  *     tier: 'Ultra HD',                     // resolver's quality tier label

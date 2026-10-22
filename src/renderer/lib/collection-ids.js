@@ -5,7 +5,7 @@
 // These must stay byte-identical in behaviour with sync-providers/spotify.js:
 // collection, love-push, sync and Achordion keys are built from them. Known
 // gap: normalizeForId keeps only [a-z0-9], so non-Latin names collapse (see
-// the track-slug follow-up in CLAUDE.md); fixing it means changing both
+// the track-slug follow-up in docs/architecture/renderer-patterns.md); fixing it means changing both
 // sides of the pair together.
 
 'use strict';

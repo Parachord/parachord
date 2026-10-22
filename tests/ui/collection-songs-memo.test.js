@@ -36,7 +36,7 @@ describe('Collection songs list is memoized', () => {
 
   test('the memo is declared after everything its dependency list reads', () => {
     // A useMemo's deps are evaluated during render, so a dep declared later
-    // in the component is a TDZ crash (see CLAUDE.md "useEffect dep array TDZ").
+    // in the component is a TDZ crash (see docs/architecture/renderer-patterns.md "useEffect dep array TDZ").
     const memoAt = app.indexOf('const collectionSongsSorted = useMemo(');
     for (const decl of [
       'const [library, setLibrary] = useState(',

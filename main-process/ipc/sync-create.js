@@ -5,7 +5,7 @@
 // sync:create-playlist is the single chokepoint for creating a remote playlist:
 // every create passes the three-layer dedup here (durable ID link → syncedTo
 // link → name-match fallback), so a renderer save bug can never cause a
-// duplicate remote. The invariants are documented in CLAUDE.md
+// duplicate remote. The invariants are documented in docs/architecture/sync.md
 // ("Three-Layer Duplicate Prevention") and the parachord#846 retryable
 // fetch-failure handling — do not bypass the getRemotePlaylists gating when
 // editing.

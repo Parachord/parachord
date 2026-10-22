@@ -779,7 +779,7 @@ function getSyncProviderToken(providerId) {
     }
   } else if (providerId === 'listenbrainz') {
     // LB user token lives in the scrobbler-side config, not a separate
-    // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+    // sync key. See docs/architecture/android-parity.md "ListenBrainz auth token auto-attach".
     const cfg = store.get('scrobbler-config-listenbrainz') || {};
     return cfg.userToken || null;
   }

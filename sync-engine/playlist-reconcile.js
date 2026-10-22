@@ -68,7 +68,7 @@ function distinct(arr) {
  * The robust fix is a `missingStreak >= 2 consecutive complete fetches` /
  * `lastSeenAt` gate before escalating to a deletion — but this rule is
  * BYTE-SHARED with the Kotlin engine (SyncEngine.runNwayPropagation /
- * NwayMaterializeTest) and the shared fixtures, so per CLAUDE.md's cross-engine
+ * NwayMaterializeTest) and the shared fixtures, so per the cross-engine
  * parity contract it must change in LOCKSTEP on both engines with a shared
  * fixture. Flagged to the human; tracked for a coordinated change before
  * `nway_propagate` is ever armed. Surfaced by the PR-4a adversarial review.
