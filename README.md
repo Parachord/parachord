@@ -185,7 +185,7 @@ Parachord uses a plug-in architecture with two types:
 - Implement service-specific APIs for artist info, recommendations, scrobbling
 - Examples: Last.fm, ListenBrainz, MusicBrainz
 
-Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript implementation. See `docs/architecture/AXE_FORMAT_SPEC.md` for details. The bundled `.axe` files are generated from `plugins-src/<id>/` (see [Development](#development)); community plug-ins live in [Parachord/parachord-plugins](https://github.com/Parachord/parachord-plugins).
+Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript implementation. See [Authoring a plugin](docs/architecture/plugins.md#authoring-a-plugin-axe-format) for the format. The bundled `.axe` files are generated from `plugins-src/<id>/` (see [Development](#development)); community plug-ins live in [Parachord/parachord-plugins](https://github.com/Parachord/parachord-plugins).
 
 ## Tech Stack
 

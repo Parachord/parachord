@@ -45,7 +45,7 @@ if (id && resolverLoaderRef.current.getUrlType(url) === 'playlist') {
 - **Manifest**: `marketplace-manifest.json` in this repo — the central catalog of all plugins with version numbers (entry `version` is generator-synced; category/tags/downloadUrl/capabilities in the entry are editorial, hand-maintained)
 - **Client sync**: `main.js` fetches manifest + `.axe` files from `https://raw.githubusercontent.com/Parachord/parachord-plugins/main/`
 
-### Plugin Loading Order (main.js L4270–4545)
+### Plugin Loading Order (main.js `resolvers-load-builtin`)
 1. Shipped plugins from app `plugins/` directory (bundled in ASAR for packaged builds)
 2. Cached marketplace plugins from `~/.parachord/plugins/`
 3. Version comparison: newer version always wins; same version prefers shipped over cached
@@ -54,7 +54,7 @@ if (id && resolverLoaderRef.current.getUrlType(url) === 'playlist') {
 1. **Edit `plugins-src/<id>/implementation.js`** (or `manifest.json`) — and bump `manifest.version` in `plugins-src/<id>/manifest.json`
 2. **Run `node scripts/build-axes.js`** — regenerates `plugins/<id>.axe`, the app.js `FALLBACK_RESOLVERS` line, and syncs the `marketplace-manifest.json` entry version (warns if content changed without a version bump — marketplace clients won't re-download)
 3. **Push to main** — the `sync-repos.yml` CI workflow automatically syncs `.axe` files and manifest to `Parachord/parachord-plugins`
-4. **User relaunches Parachord** — `syncPluginsWithMarketplace()` (app.js L993) compares cached version against marketplace manifest version; if different, downloads the new `.axe` and fires `parachord-plugins-updated` event for hot-reload
+4. **User relaunches Parachord** — `syncPluginsWithMarketplace()` (src/renderer/app.js) compares cached version against marketplace manifest version; if different, downloads the new `.axe` and fires `parachord-plugins-updated` event for hot-reload
 
 ### Critical: Both Files Must Be Updated
 This footgun is now generator-owned: `node scripts/build-axes.js` writes the `.axe` version and the `marketplace-manifest.json` entry version from the same source manifest, and `tests/plugins/axes-drift.test.js` fails if they drift. The only manual rule that remains: bump `manifest.version` in `plugins-src/<id>/manifest.json` when the implementation changes — the writer warns when it detects content churn on an unchanged version.
@@ -86,3 +86,41 @@ Plugins the mobile runtime also evaluates (subsonic, bandcamp) must keep ES5-lev
 - `fallbackOptions` in the plugin manifest shown when fetch fails or no API key configured yet
 - Refresh button (↻) next to model label for manual re-fetch
 - The AI config block renders extra `settings.configurable` fields generically (select/text/number) beyond the auth key + model pair — `customllm` uses it for `api` (dialect select), `baseUrl`, `maxTokens`; older AI plugins declare only apiKey + model so they render nothing extra. For `requiresAuth: false` AI services the block also renders an explicit **Enable toggle** (these services are enabled *solely* by `config.enabled === true` — see `isServiceEnabled` — so the flag must be visible and flippable, same as Ollama's own block), the modal footer's Enable button tracks `enabled !== true` (a set `apiKey` does NOT count as enabled for them), and the apiKey onBlur preserves the toggle (`state.enabled === true || !!value` — deliberately NOT `??`: nullish coalescing doesn't fall through on `false`, so an early empty-key blur would poison `enabled: false` and a later key entry could never re-enable — that exact sequence shipped customllm with a configured-but-disabled service).
+
+## Authoring a plugin (.axe format)
+
+An `.axe` file is JSON with up to five top-level keys: `manifest`, `capabilities`, `urlPatterns`, `settings` and `implementation`. For a bundled plugin you never write that JSON by hand. You write `plugins-src/<id>/manifest.json` (everything except `implementation`) and `plugins-src/<id>/implementation.js` (`module.exports = { search: async function (query, config) { ... }, ... }`), then run `node scripts/build-axes.js`, which serializes each exported function with `String(fn)` into the `.axe`. Because the source is a real module, modern syntax including template literals is fine, except in plugins flagged `es5` (see above). A community plugin installed from a file is the same JSON, however it was produced.
+
+### Manifest
+
+`resolver-loader.js` (`createResolverInstance`) reads `id` and `name` (both required; the file installer rejects a file without them), `version` (semver; the loader and marketplace sync compare it), `author`, `description`, `icon` (an emoji; defaults to 🎵), `color` (hex; defaults to `#888888`), `homepage` and `email`. `type` is either absent (or `"resolver"`), meaning a content resolver that plays or finds tracks, or `"meta-service"`, meaning everything else: AI providers, concert sources, metadata and recommendation services, scrobbling services and the Achordion telemetry plugin. A `manifest.id` may contain only letters, digits, dots, dashes and underscores.
+
+### Capabilities
+
+A flat object of booleans. Content resolvers use `resolve`, `search`, `stream`, `browse`, `urlLookup` and `purchase` (shows a Buy button in the playbar). Meta-services use, among others, `generate` (one-shot AI playlist), `chat` (Shuffleupagus), `concerts`, `playbackTelemetry` (self-registers with `window.scrobbleManager`), `recommendations`, `metadata`, `artistImages`, `biography`, `listeningHistory` and `scrobbling`. Several of these gate loading: the renderer loads a meta-service's implementation only when it declares `generate`, `chat`, `concerts` or `playbackTelemetry` alongside the matching function, or `urlLookup` with `urlPatterns`. `mobile: false` (declared by Ollama) marks a plugin the mobile client should not offer. Check the existing `plugins-src/*/manifest.json` files before inventing a new flag; nothing reads an unknown one.
+
+### URL patterns and lookups
+
+`urlPatterns` is a top-level array of glob-like strings, for example `"open.spotify.com/playlist/*"`, `"*.bandcamp.com/album/*"` or `"spotify:track:*"`. The protocol and a trailing slash are ignored, a leading `*.` matches any subdomain, a middle `*` matches one path segment, a trailing `*` matches the rest of the path, and the query string is ignored unless the pattern itself contains `?` (`matchUrlPattern`). `findResolverForUrl(url)` returns the first resolver whose pattern matches.
+
+`lookupUrl(url, config)` returns a track, `lookupAlbum(url, config)` returns `{ name, artist, albumArt, tracks, ... }`, and `lookupPlaylist(url, config)` returns `{ name, tracks, trackCount, ... }`. Each may return `null`, and callers must handle that. Note that `getUrlType(url)` (which decides whether a matched URL is a track, album, playlist or artist) is a per-host switch inside `resolver-loader.js`, not plugin data, so a new service's URLs come back `'unknown'` until that function gets an arm for its host.
+
+### Settings
+
+`settings.requiresAuth` (boolean), `settings.authType` (`none`, `apikey`, `oauth`, `token`, `username`, `userpass` or `musickit` in the shipped plugins) and `settings.configurable`, a map of field key to `{ type, label, description?, default?, options? }`. Field types in use: `text`, `password`, `select` and `dynamic-select`. A `dynamic-select` gets its options from the plugin's `listModels(config)`, shows `fallbackOptions` until that succeeds, and with `allowCustom: true` renders a free-text input with suggestions (see Dynamic Model Selection above).
+
+### Implementation functions
+
+Each entry in `implementation` is materialized with `new Function('return ' + src)()` in the renderer, then bound so `this` is the resolver object (a `resolve` can call `this.search(...)`). Consequences:
+
+- **Plugins are not sandboxed.** The code runs in the renderer with the same privileges as the app's own renderer code: `fetch`, `window` (including `window.electron.*` bridges such as `proxyFetch`), the DOM, and globals the app sets up. Install only plugins you trust.
+- **Each function is isolated from the others.** There is no shared module scope, so a helper used by two functions must be defined inside each.
+- Implementation keys that collide with resolver fields (`id`, `name`, `capabilities`, `config`, `__proto__` and similar) are skipped with a warning.
+
+Common signatures, taken from the shipped plugins: `search(query, config)` returns an array of tracks; `resolve(artist, track, album, config)` returns one track or `null`; `play(track, config)` returns a truthy value on success (falsy makes `handlePlay` try the next source); `init(config)` and `cleanup()` run on load and unload. A track carries `id`, `title`, `artist`, `album`, `duration` (seconds), `sources: ['<resolverId>']`, the resolver's own identifier (`spotifyId`, `bandcampUrl`, `youtubeId`, `soundcloudId`, `appleMusicId`, ...) and any cross-cutting metadata such as `isrc` (see "Resolver Result Shape" in [playback.md](playback.md)). Meta-services implement the functions their capability names: `generate(prompt, config, listeningContext)`, `chat(messages, tools, config)`, `listModels(config)`, `searchArtistEvents(artistName, config)` and `searchArtist(artistName, config)`.
+
+Practical rules: return `[]` or `null` instead of throwing on a miss; check a service's minimum query length before calling it; respect the service's rate limits (content resolvers other than Apple Music, Spotify and local files are wrapped by the shared resolver limiter automatically); and log enough to debug a failure.
+
+### Where plugins load from, and installing one
+
+At startup the main process (`resolvers-load-builtin`) reads the app's own `plugins/` directory (inside the ASAR in a packaged build) and `~/.parachord/plugins/` (marketplace downloads and user installs), keeping the newer version of each id and preferring the shipped copy on a tie. The renderer also carries a `FALLBACK_RESOLVERS` copy of every bundled plugin in `src/renderer/app.js` for when that load fails or misses one. The "Add from file" button in Settings → Plug-Ins installs an `.axe` from a file (`resolvers-pick-file` then `resolvers-install`, which writes it into `~/.parachord/plugins/`) and hot-loads it without a restart; the marketplace installs and updates plugins the same way. To contribute a plugin to everyone, add it to [Parachord/parachord-plugins](https://github.com/Parachord/parachord-plugins).
