@@ -21774,6 +21774,19 @@ ${trackListXml}
           console.log(`📦 Loaded ${concertsData.events.length} stale concerts from cache (will refresh)`);
         }
       }
+
+      // Critical Darlings restored from cache (above) keep whatever art they were
+      // saved with, and the art pass only runs from loadCriticsPicks, which a
+      // cache under 4 hours old skips. Picks saved without a cover (an older
+      // pass gave up, or every source missed last time) get another look now
+      // that the album-art caches are in, same as Fresh Drops above.
+      const criticsMissingArt = (criticsPicksCache.current.albums || []).filter(a => typeof a.albumArt !== 'string');
+      if (criticsMissingArt.length > 0) {
+        const resolversReadyForCritics = resolversInitRef.current || new Promise(resolve => setTimeout(resolve, 3000));
+        Promise.race([resolversReadyForCritics, new Promise(resolve => setTimeout(resolve, 15000))])
+          .then(() => fetchCriticsPicksAlbumArt(criticsMissingArt))
+          .catch(() => {});
+      }
       }); // end scheduleIdle for big-cache hydration
 
       // AI suggestions and view restoration (already loaded in batch)
