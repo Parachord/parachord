@@ -7,9 +7,9 @@ Reference guide for the visual design language, tokens, components, and patterns
 Parachord is an Electron-based music player built with React (via `React.createElement`, no JSX), Tailwind CSS v3, and CSS custom properties for theming. The UI supports light and dark modes, toggled via the `.dark` class on the root element (`darkMode: 'class'`).
 
 **Tech stack:**
-- **Framework:** React 18 (production UMD build, no build step/JSX)
+- **Framework:** React 18 (vendored production UMD build in `vendor/`, no JSX); `src/renderer/app.js` and its component modules are bundled by esbuild into the root `app.js` with no transforms
 - **Styling:** Tailwind CSS 3.4 + CSS custom properties + inline styles
-- **Icons:** Lucide React with emoji fallbacks
+- **Icons:** inline SVGs, plus the small `Icons` fallback set in `src/renderer/components/icons.js` (Lucide React is not loaded; see [Icons](#icons))
 - **Virtualization:** TanStack Virtual (for queue list)
 - **Search:** Fuse.js (fuzzy re-ranking)
 
@@ -77,11 +77,15 @@ Each music service has a branded color used in badges and icons:
 | Service | Text Class | Badge Color | Icon Hex |
 |---------|-----------|-------------|----------|
 | Spotify | `text-green-400` | `bg-green-600/20` | `#1DB954` |
+| Apple Music | — | — | `#FA243C` |
+| Amazon Music | — | — | `#25D1DA` |
 | YouTube | `text-red-400` | `bg-red-600/20` | `#FF0000` |
-| Bandcamp | `text-cyan-400` | `bg-cyan-600/20` | `#1DA0C3` |
-| Qobuz | `text-blue-400` | `bg-blue-600/20` | `#4285F4` |
+| Bandcamp | `text-cyan-400` | `bg-cyan-600/20` | `#629AA9` |
 | SoundCloud | `text-orange-400` | `bg-orange-600/20` | `#FF5500` |
-| Local Files | `text-purple-400` | — | — |
+| Subsonic | `text-teal-400` | `bg-teal-600/20` | `#14b8a6` |
+| Local Files | — | — | `#6366f1` |
+
+The icon hex is each plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`); the resolver badges in the track lists use it as their background (`backgroundColor: resolver.color` in `track-lists.js`). The text and badge classes are `TrackRow`'s `resolverMeta` map in `src/renderer/components/track-lists.js`, which covers only the services listed with classes here (it still carries a `qobuz` entry, though no Qobuz plug-in exists).
 
 ### Shadows
 
@@ -163,9 +167,14 @@ Certain UI elements (player bar, queue drawer, AI chat panels) remain dark regar
 
 | Token | Light | Dark |
 |-------|-------|------|
-| `--surface-dark` | `rgba(31,41,55,0.95)` | `rgba(22,22,22,0.95)` |
-| `--surface-dark-solid` | `rgba(17,24,39,0.98)` | `rgba(22,22,22,0.98)` |
-| `--surface-dark-border` | `#374151` | `rgba(255,255,255,0.06)` |
+| `--surface-dark` | `rgba(31,41,55,0.95)` | `rgba(38,38,38,0.95)` |
+| `--surface-dark-solid` | `rgba(17,24,39,0.98)` | `rgba(38,38,38,0.98)` |
+| `--surface-dark-gradient-from` | `rgba(17,24,39,0.9)` | `rgba(38,38,38,0.95)` |
+| `--surface-dark-gradient-to` | `rgba(17,24,39,0.5)` | `rgba(38,38,38,0.85)` |
+| `--surface-dark-header` | `rgba(17,24,39,0.6)` | `rgba(42,42,42,0.95)` |
+| `--surface-dark-border` | `#374151` | `rgba(255,255,255,0.1)` |
+
+In dark mode these surfaces are lifted slightly above `--bg-primary` so they still read as separate panels (values from `index.html`).
 
 ---
 
@@ -192,7 +201,18 @@ Additionally, `index.html` contains overrides that map standard Tailwind classes
 
 ## Components
 
-All components are defined in `app.js` using `React.createElement()` (no JSX). Key reusable components:
+Components use `React.createElement()` (no JSX). The reusable ones live in `src/renderer/components/`, required by `src/renderer/app.js`:
+
+| Module | Exports |
+|--------|---------|
+| `ui-atoms.js` | `Tooltip`, `FixedTooltip`, `ResolverIcon`, `SERVICE_LOGO_PATHS`, `SERVICE_LOGO_IMAGES`, `SERVICE_LOGOS`, `ParachordWordmark`, `PlaybackProgress` |
+| `icons.js` | `Icons` (the fallback icon set) |
+| `track-lists.js` | `TrackRow`, `VirtualizedQueueList`, `VirtualizedTrackList`, `getBestSourceConfidence` |
+| `cards.js` | `ReleaseCard`, `ReleasePage`, `RelatedArtistCard`, `SearchArtistCard`, `SearchHistoryItem`, `CollectionArtistCard`, `CollectionAlbumCard`, `PlayTop10Icon`, `QueueTop10Icon`, `generateArtistPattern` |
+| `settings-cards.js` | `ResolverCard`, `McpSettingsSection`, `ScrobblerSettingsCard`, `FriendMiniPlaybar` |
+| `home-page.js`, `collection-page.js`, `artist-page.js`, `playlist-view-page.js`, `search-page.js` | Whole pages (`HomePage`, `CollectionPage`, `ArtistPage`, `PlaylistViewPage`, `SearchPage`), each `React.memo`'d |
+
+Everything else still renders inline in `src/renderer/app.js`. Key reusable components:
 
 ### Tooltip
 
@@ -284,8 +304,8 @@ FriendMiniPlaybar({ track, getAlbumArt, onPlay, onContextMenu })
 ResolverIcon({ resolverId, size, fill })
 ```
 
-- Renders the branded SVG icon for a given music service
-- SoundCloud uses a PNG image; all others use inline SVGs
+- Renders the branded icon for a given music service
+- SoundCloud and Subsonic use PNG images (`SERVICE_LOGO_IMAGES`); the others use inline SVG paths (`SERVICE_LOGO_PATHS`)
 
 ### ParachordWordmark
 
@@ -305,9 +325,9 @@ ParachordWordmark({ fill, height })
 
 ### Primary Icon Set
 
-The app uses **Lucide React** icons as the primary icon set, with emoji fallbacks when Lucide is unavailable:
+`src/renderer/components/icons.js` exports `Icons`: the `lucideReact` global if one is loaded, otherwise a fallback set. Nothing loads Lucide (there is no script for it in `index.html` and no copy in `vendor/`), so the fallbacks below are what actually renders wherever `Icons` is used: mostly single glyphs or emoji, and an SVG for `List`. Most other icons in the app are inline SVG paths written where they are used.
 
-| Icon | Lucide | Fallback |
+| Icon | Lucide name (unused) | What renders |
 |------|--------|----------|
 | Play | `lucideReact.Play` | `▶` |
 | Pause | `lucideReact.Pause` | `⏸` |
@@ -326,7 +346,7 @@ The app uses **Lucide React** icons as the primary icon set, with emoji fallback
 
 ### Service Logos
 
-Inline SVG logos for music services are stored in the `SERVICE_LOGOS` object. Each service has a white SVG with standardized `w-16 h-16` sizing. Services include: Spotify, Bandcamp, Qobuz, YouTube, SoundCloud, Apple Music, Local Files, MusicBrainz, Last.fm, Libre.fm, ChatGPT, Claude, Gemini, Ollama, Wikipedia, Discogs, Bandsintown, Songkick, SeatGeek, and Ticketmaster.
+Large service logos are stored in the `SERVICE_LOGOS` object (`ui-atoms.js`), sized `w-16 h-16` and mostly white for coloured backgrounds. Services include: Spotify, Apple Music, Amazon Music, YouTube, Bandcamp, SoundCloud, Subsonic, Local Files, MusicBrainz, Last.fm, Libre.fm, ListenBrainz, ChatGPT, Claude, Gemini, Ollama, Shuffleupagus, Wikipedia, Discogs, Bandsintown, Songkick, SeatGeek, Ticketmaster and Achordion. SoundCloud and Subsonic are images; the rest are SVGs. (A `qobuz` entry also remains, though no Qobuz plug-in exists.)
 
 ### Custom Icons
 
@@ -422,7 +442,7 @@ Navigation is state-driven via `activeView`. Available views:
 | `playlists` | Playlist list and management |
 | `playlist-view` | Individual playlist detail |
 | `settings` | App settings (resolvers, scrobblers, AI, plugins) |
-| `recommendations` | AI-powered music recommendations |
+| `recommendations` | Recommended artists and songs from Last.fm and ListenBrainz |
 | `discover` | Charts (Pop of the Tops) |
 | `critics-picks` | Curated editor/critic selections |
 | `new-releases` | Latest releases |
