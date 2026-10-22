@@ -181,7 +181,7 @@ https://github.com/Parachord/parachord/discussions
 
 | Action | Shortcut |
 |--------|----------|
-| Play/Pause | `Space` |
+| Play/Pause | Media key (no keyboard shortcut) |
 | Next Track | `Cmd/Ctrl + Right` |
 | Previous Track | `Cmd/Ctrl + Left` |
 | Search | `Cmd/Ctrl + F` |
