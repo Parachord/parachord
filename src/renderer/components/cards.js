@@ -620,7 +620,13 @@ const CollectionAlbumCard = ({ album, getAlbumArt, onNavigate, onAddToPlaylist, 
         },
         ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
         onLoad: (e) => { e.target.style.opacity = '1'; },
-        onError: (e) => { e.target.style.display = 'none'; }
+        // A dead cached URL: placeholder now, the art pipeline's retry if it finds one.
+        onError: () => {
+          const broken = imageUrl;
+          setImageUrl(null);
+          const report = globalThis.reportBrokenAlbumArt;
+          if (report) report(broken, { artist: album.artist, album: album.title }).then((url) => { if (url) setImageUrl(url); });
+        }
       }),
       // Placeholder icon when no art found
       imageUrl === null && React.createElement('div', {
@@ -721,12 +727,31 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
   const year = release.date ? release.date.split('-')[0] : '';
   const [imageFailed, setImageFailed] = React.useState(false);
   const [imageLoaded, setImageLoaded] = React.useState(false);
+  // A fresh cover found after the cached one failed to load (see onArtError).
+  const [replacementArt, setReplacementArt] = React.useState(null);
+  const art = replacementArt || release.albumArt;
 
   // Reset image states when album art URL changes
   React.useEffect(() => {
     setImageFailed(false);
     setImageLoaded(false);
+    setReplacementArt(null);
   }, [release.albumArt]);
+
+  // The cached URL is dead (e.g. a Bandcamp cover the artist replaced): show
+  // the placeholder, and swap in whatever the art pipeline finds on a retry.
+  const onArtError = () => {
+    setImageFailed(true);
+    const report = globalThis.reportBrokenAlbumArt;
+    const artistName = currentArtist?.name || release.artist?.name || (typeof release.artist === 'string' ? release.artist : null);
+    if (!report) return;
+    report(art, { artist: artistName, album: release.title, releaseId: release.id }).then((url) => {
+      if (!url) return;
+      setReplacementArt(url);
+      setImageFailed(false);
+      setImageLoaded(false);
+    });
+  };
 
   const handleDragStart = (e) => {
     e.dataTransfer.effectAllowed = 'copy';
@@ -737,7 +762,7 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
         title: release.title,
         artist: currentArtist?.name || release.artist?.name,
         year: year ? parseInt(year) : null,
-        art: release.albumArt,
+        art,
         trackCount: release.tracks?.length || null
       }
     };
@@ -793,17 +818,17 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
   },
     // Album art container with inner shadow overlay
     React.createElement('div', {
-      className: `album-art-container group/art ${(release.albumArt === null || imageFailed || imageLoaded) ? '' : 'animate-shimmer'}`,
+      className: `album-art-container group/art ${(art === null || imageFailed || imageLoaded) ? '' : 'animate-shimmer'}`,
       style: {
         width: '100%',
         aspectRatio: '1',
         borderRadius: '6px',
-        background: release.albumArt === null || imageFailed
+        background: art === null || imageFailed
           ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
           : imageLoaded
             ? 'var(--placeholder-bg-light)'
             : 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-        backgroundSize: (release.albumArt === null || imageFailed || imageLoaded) ? undefined : '200% 100%',
+        backgroundSize: (art === null || imageFailed || imageLoaded) ? undefined : '200% 100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -813,8 +838,8 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
       }
     },
       // Album art image with fade-in
-      release.albumArt && !imageFailed && React.createElement('img', {
-        src: release.albumArt,
+      art && !imageFailed && React.createElement('img', {
+        src: art,
         alt: release.title,
         style: {
           width: '100%',
@@ -833,11 +858,11 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
           }
         },
         onLoad: () => setImageLoaded(true),
-        onError: () => setImageFailed(true)
+        onError: onArtError
       }),
 
       // Music icon placeholder - refined dark style
-      (release.albumArt === null || imageFailed) && React.createElement('svg', {
+      (art === null || imageFailed) && React.createElement('svg', {
         style: {
           width: '36px',
           height: '36px',
@@ -984,6 +1009,11 @@ const ReleasePage = ({
   publishCollectionSmartLink,
   copyCollectionEmbedCode
 }) => {
+  // A fresh cover found after the cached one failed to load (header image onError).
+  const [replacementArt, setReplacementArt] = React.useState(null);
+  React.useEffect(() => { setReplacementArt(null); }, [release.albumArt]);
+  const headerArt = replacementArt || release.albumArt;
+
   const formatDuration = (ms) => {
     if (!ms) return '';
     const totalSeconds = Math.floor(ms / 1000);
@@ -1096,8 +1126,9 @@ const ReleasePage = ({
             }
           },
             // Image (absolute positioned, fades in on load, hides on error)
-            release.albumArt && React.createElement('img', {
-              src: release.albumArt,
+            headerArt && React.createElement('img', {
+              key: headerArt,
+              src: headerArt,
               alt: release.title,
               style: {
                 width: '100%',
@@ -1112,7 +1143,13 @@ const ReleasePage = ({
               },
               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
               onLoad: (e) => { e.target.style.opacity = '1'; },
-              onError: (e) => { e.target.style.display = 'none'; }
+              onError: (e) => {
+                e.target.style.display = 'none';
+                // A dead cached URL: retry the art pipeline once (lib/broken-art.js).
+                const report = globalThis.reportBrokenAlbumArt;
+                const artistName = release.artist?.name || (typeof release.artist === 'string' ? release.artist : null);
+                if (report) report(headerArt, { artist: artistName, album: release.title, releaseId: release.id }).then((url) => { if (url) setReplacementArt(url); });
+              }
             }),
             // Placeholder icon (always behind) - dark theme
             React.createElement('svg', {

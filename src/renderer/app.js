@@ -1123,6 +1123,7 @@ const { trackSlug, slug } = require('./lib/track-slug');
 // is no longer in the local library.
 const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require('./lib/library-changes');
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
+const { createBrokenArtRetry } = require('./lib/broken-art');
 const {
   libraryFilePaths,
   isStaleLocalSource,
@@ -33170,6 +33171,26 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     return null;
   };
+
+  // A cached cover that fails to load (Bandcamp image ids change when an
+  // artist replaces the cover; archive.org mirror hosts move) is dropped from
+  // the caches and looked up again, once per album per session. Cards reach it
+  // through window.reportBrokenAlbumArt from their <img> onError
+  // (src/renderer/lib/broken-art.js).
+  const getAlbumArtLatestRef = useRef(null);
+  getAlbumArtLatestRef.current = getAlbumArt;
+  const brokenArtRetryRef = useRef(null);
+  if (!brokenArtRetryRef.current) {
+    brokenArtRetryRef.current = createBrokenArtRetry({
+      getCache: () => albumArtCache.current,
+      getSessionCache: () => resolverArtCache.current,
+      refetch: (artist, album) => getAlbumArtLatestRef.current(artist, album),
+    });
+  }
+  useEffect(() => {
+    window.reportBrokenAlbumArt = brokenArtRetryRef.current.report;
+    return () => { delete window.reportBrokenAlbumArt; };
+  }, []);
 
   // Fetch album art for current track if missing
   useEffect(() => {
