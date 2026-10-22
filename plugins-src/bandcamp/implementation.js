@@ -94,8 +94,8 @@ module.exports = {
     // ranked first. This is only a ranking hint - the platform-native confidence
     // gate is still authoritative - so it uses engine-portable ASCII normalization
     // (no Unicode property-escape regex, guarded String.normalize) because this .axe also runs in the
-    // mobile JS runtime. Non-Latin names normalize to '' and just fall through to
-    // the top result.
+    // mobile JS runtime. Non-Latin names normalize to '' and fall through to
+    // the top result that is not another version.
     var norm = function (s) {
       s = (s || '').toString().toLowerCase();
       if (typeof s.normalize === 'function') s = s.normalize('NFKD').replace(/[̀-ͯ]/g, '');
@@ -104,18 +104,65 @@ module.exports = {
     var contains = function (a, b) {
       return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);
     };
-    var targetArtist = norm(artist);
-    var targetTitle = norm(track);
+    //
+    // Bandcamp's search API ranks covers, remixes and live versions by other
+    // uploaders alongside (often above) the original, and containment accepts
+    // all of them: "Dear Prudence (Cover)" contains "Dear Prudence", and
+    // "Steven Gilpin (covering the Foo Fighters)" contains "Foo Fighters". The
+    // first containment hit used to win, so the playbar's Buy link pointed at
+    // "Cleopatra (Live from Wrigley Field)" while plain "Cleopatra" sat lower
+    // in the same results. So: an exact match first, then a containment match
+    // that is not a different version (a version word the requested title
+    // doesn't have, in the title or the uploader's name), else nothing.
+    var stripFeat = function (s) {
+      return (s || '')
+        .toString()
+        .replace(/\s*[([]\s*(feat\.?|ft\.?|featuring)\s[^)\]]*[)\]]/gi, '')
+        .replace(/\s+(feat\.?|ft\.?|featuring)\s.*$/i, '');
+    };
+    var VARIANT =
+      /\b(live|remix(es|ed)?|rmx|cover(s|ed)?|covering|tribute|karaoke|instrumental|acoustic|demo|unplugged|rework|bootleg|mashup|reprise|edit|jam track|sped up|slowed|in the style of)\b/gi;
+    // A version word counts only when the requested name lacks it, so
+    // "Live Forever" or "Take Me Out (Live)" can still match themselves.
+    var hasVariant = function (s, target) {
+      var words = (s || '').toString().match(VARIANT) || [];
+      var t = (target || '').toString().toLowerCase();
+      for (var w = 0; w < words.length; w++) {
+        if (t.indexOf(words[w].toLowerCase()) === -1) return true;
+      }
+      return false;
+    };
+    var targetArtist = norm(stripFeat(artist));
+    var targetTitle = norm(stripFeat(track));
+    var isVariant = function (r) {
+      return hasVariant(r.title, track) || hasVariant(r.artist, artist);
+    };
     var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config);
     if (results.length === 0) return null;
-    for (var i = 0; i < results.length; i++) {
+    var i;
+    if (targetArtist && targetTitle) {
+      for (i = 0; i < results.length; i++) {
+        var ra = norm(stripFeat(results[i].artist));
+        var rt = norm(stripFeat(results[i].title));
+        // Label accounts often title a track "Artist - Title".
+        if (rt.indexOf(targetArtist) === 0 && rt !== targetArtist) rt = rt.slice(targetArtist.length);
+        if (ra === targetArtist && rt === targetTitle && !isVariant(results[i])) return results[i];
+      }
+    }
+    for (i = 0; i < results.length; i++) {
       if (
+        !isVariant(results[i]) &&
         contains(norm(results[i].artist), targetArtist) &&
         contains(norm(results[i].title), targetTitle)
       )
         return results[i];
     }
-    return results[0];
+    // Non-Latin names normalize to '' and reach here; hand back the top
+    // result that is not another version and let the confidence gate decide.
+    for (i = 0; i < results.length; i++) {
+      if (!isVariant(results[i])) return results[i];
+    }
+    return null;
   },
   lookupUrl: async function (url, config) {
     try {
