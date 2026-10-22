@@ -10,7 +10,7 @@
 > - **No frontend build step:** `src/renderer/app.js` is now bundled by esbuild (`scripts/build-renderer.js`) into the root `app.js`.
 > - **Monolith frontend:** splitting `app.js` has begun; components live in `src/renderer/components/`.
 >
-> Still true: plugins run unsandboxed via `new Function()` in the renderer (C1). Note also that there is no Qobuz plugin; rows below that name Qobuz describe code that no longer ships.
+> Still true: plugins run unsandboxed via `new Function()` in the renderer (C1). Note also that there is no Qobuz plugin; rows below that name Qobuz describe code that was removed (the last stubs went in parachord#1111).
 
 ---
 

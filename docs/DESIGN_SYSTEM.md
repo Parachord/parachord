@@ -85,7 +85,7 @@ Each music service has a branded color used in badges and icons:
 | Subsonic | `text-teal-400` | `bg-teal-600/20` | `#14b8a6` |
 | Local Files | - | - | `#6366f1` |
 
-The icon hex is each plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`); the resolver badges in the track lists use it as their background (`backgroundColor: resolver.color` in `track-lists.js`). The text and badge classes are `TrackRow`'s `resolverMeta` map in `src/renderer/components/track-lists.js`, which covers only the services listed with classes here (it still carries a `qobuz` entry, though no Qobuz plug-in exists).
+The icon hex is each plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`); the resolver badges in the track lists use it as their background (`backgroundColor: resolver.color` in `track-lists.js`). The text and badge classes are `TrackRow`'s `resolverMeta` map in `src/renderer/components/track-lists.js`, which covers only the services listed with classes here.
 
 ### Shadows
 
@@ -346,7 +346,7 @@ ParachordWordmark({ fill, height })
 
 ### Service Logos
 
-Large service logos are stored in the `SERVICE_LOGOS` object (`ui-atoms.js`), sized `w-16 h-16` and mostly white for coloured backgrounds. Services include: Spotify, Apple Music, Amazon Music, YouTube, Bandcamp, SoundCloud, Subsonic, Local Files, MusicBrainz, Last.fm, Libre.fm, ListenBrainz, ChatGPT, Claude, Gemini, Ollama, Shuffleupagus, Wikipedia, Discogs, Bandsintown, Songkick, SeatGeek, Ticketmaster and Achordion. SoundCloud and Subsonic are images; the rest are SVGs. (A `qobuz` entry also remains, though no Qobuz plug-in exists.)
+Large service logos are stored in the `SERVICE_LOGOS` object (`ui-atoms.js`), sized `w-16 h-16` and mostly white for coloured backgrounds. Services include: Spotify, Apple Music, Amazon Music, YouTube, Bandcamp, SoundCloud, Subsonic, Local Files, MusicBrainz, Last.fm, Libre.fm, ListenBrainz, ChatGPT, Claude, Gemini, Ollama, Shuffleupagus, Wikipedia, Discogs, Bandsintown, Songkick, SeatGeek, Ticketmaster and Achordion. SoundCloud and Subsonic are images; the rest are SVGs.
 
 ### Custom Icons
 
