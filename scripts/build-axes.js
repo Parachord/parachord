@@ -294,6 +294,10 @@ function collectExpected() {
 
 function runWrite() {
   const plans = collectExpected();
+  // The plugins/ dir is no longer tracked (artifacts are gitignored —
+  // parachord#1099), so a fresh CI checkout doesn't have it at all;
+  // writeFileSync(a missing dir) → ENOENT.
+  fs.mkdirSync(PLUGINS_DIR, { recursive: true });
   const fallbackEdits = [];
   const marketplace = readMarketplace();
   let marketplaceDirty = false;
