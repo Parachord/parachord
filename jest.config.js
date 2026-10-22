@@ -24,10 +24,13 @@ module.exports = {
     '/node_modules/',
     // Git worktrees checked out under the repo (gitignored) carry their own
     // copy of tests/; a stale one ran 22 duplicate suites for months.
-    '/.worktrees/',
+    // Anchored to <rootDir>: an unanchored '/.claude/' also matches every
+    // path when jest runs INSIDE an agent worktree (which lives under
+    // .claude/worktrees/), and the run then finds no tests at all.
+    '<rootDir>/.worktrees/',
     // Same for agent worktrees the Claude Code app creates under .claude/
     // (they tripled the suite count while two agents had worktrees open).
-    '/.claude/',
+    '<rootDir>/.claude/',
     // Legacy tests use custom framework, run with npm run test:legacy
     'tests/resolution-scheduler.test.js',
     'tests/youtube-resolver.test.js',
