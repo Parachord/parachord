@@ -15,7 +15,7 @@ This document describes all external data sources used by Parachord for fetching
 | **Critics Picks** | Achordion RSS (Critical Darlings) | RSSground (transitional) | - | - |
 | **Recommendations** | Last.fm | ListenBrainz | - | - |
 | **Scrobbling** | Last.fm | ListenBrainz | Libre.fm | - |
-| **Library Sync** | Spotify | - | - | - |
+| **Library Sync** | Spotify | Apple Music | ListenBrainz (playlists) | - |
 
 ---
 
@@ -30,9 +30,9 @@ Used for artist page headers, related artists grid, recommendations, and playlis
 | Wikipedia | `en.wikipedia.org/api/rest_v1/page/summary` | No | Via MusicBrainz→Wikidata chain |
 | Discogs | `api.discogs.com/artists/{id}` | Optional PAT | Higher rate limits with token |
 
-**Code Location:** `app.js` → `getArtistImage()` (~line 19180)
+**Code Location:** `src/renderer/app.js` → `getArtistImage()`
 
-**Cache:** `artistImageCache` with 7-day TTL, persisted to electron store.
+**Cache:** `artistImageCache` with a 90-day TTL (`CACHE_TTL.artistImage`), persisted to electron store.
 
 ---
 
@@ -46,7 +46,7 @@ Displayed on artist pages below the header.
 | Wikipedia | `en.wikipedia.org/w/api.php?action=query&prop=extracts` | No | Via MusicBrainz MBID lookup |
 | Discogs | `api.discogs.com/artists/{id}` | Optional PAT | Profile field |
 
-**Code Location:** `app.js` → `getLastfmBio()` (~line 19328), `getWikipediaBio()` (~line 19458)
+**Code Location:** `src/renderer/app.js` → `getLastfmBio()`, `getWikipediaBio()`, `getDiscogsBio()`
 
 **Lookup Chain for Wikipedia:**
 1. Search MusicBrainz for artist MBID
@@ -65,7 +65,7 @@ Displayed on artist pages in the "Similar Artists" section. Results from multipl
 | Last.fm | `ws.audioscrobbler.com/2.0/?method=artist.getsimilar` | API key | Match scores 0-1, limit 20 |
 | ListenBrainz | `labs.api.listenbrainz.org/similar-artists/json` | No | ML-based, requires MBID |
 
-**Code Location:** `app.js` → `getRelatedArtists()` (~line 20129)
+**Code Location:** `src/renderer/app.js` → `getRelatedArtists()`
 
 **Merging Logic:**
 - Fetch from both sources in parallel
@@ -89,7 +89,7 @@ Used throughout the app for album displays, track lists, and playlist mosaics.
 | Embedded | Local file metadata | N/A | ID3v2/Vorbis tags |
 | Folder | `cover.jpg`, `folder.jpg`, `album.jpg`, etc. | N/A | Same directory as audio files |
 
-**Code Location:** `app.js` → `getAlbumArt()` (the one pipeline; search for "THE album-art pipeline"), `getAlbumArtFromResolvers()`, `getTrackArt()`; `album-art-catalog.js` (iTunes → Deezer chain, tests in `tests/resolver/album-art-catalog.test.js`)
+**Code Location:** `src/renderer/app.js` → `getAlbumArt()` (the one pipeline; search for "THE album-art pipeline"), `getAlbumArtFromResolvers()`, `getTrackArt()`; `album-art-catalog.js` (iTunes → Deezer chain, tests in `tests/resolver/album-art-catalog.test.js`)
 
 **Lookup Process (one pipeline for every surface):**
 1. Caches: `albumArtCache` by MusicBrainz id, plus `resolver:` / `catalog:` keys by artist+album
@@ -124,7 +124,7 @@ Displayed on the "Pop of the Tops" page.
 | `ws.audioscrobbler.com/2.0/?method=chart.gettoptracks` | API key | Global charts |
 | `ws.audioscrobbler.com/2.0/?method=geo.gettoptracks&country={country}` | API key | Country-specific |
 
-**Code Location:** `src/charts-utils.js`
+**Code Location:** `src/renderer/app.js` → `loadCharts()` (Apple Music albums), `loadAppleMusicSongsCharts()`, `loadLastfmCharts()`. `src/charts-utils.js` holds copies of the parsing helpers that only `tests/charts/charts.test.js` uses; the app does not load it.
 
 ---
 
@@ -137,7 +137,7 @@ Displayed on the "Critical Darlings" page.
 | Achordion RSS | `achordion.xyz/api/critical-darlings/feed.xml` | Aggregated critic-acclaimed albums (public, no auth) |
 | RSSground (transitional) | `rssground.com/p/uncoveries` | Legacy feed, client-side union top-up during the Achordion store's ramp-up; self-deactivates and is removed once the store is populated (achordion#83) |
 
-**Code Location:** `app.js` → `loadCriticsPicks()` (~line 28923)
+**Code Location:** `src/renderer/app.js` → `loadCriticsPicks()`
 
 **Data Includes:** Artist, album title, description/synopsis, publication date, Spotify URL
 
@@ -154,7 +154,7 @@ The Recommendations page itself uses:
 | Last.fm | `last.fm/player/station/user/{username}/recommended` | None (website JSON, no API key) | Recommended tracks |
 | ListenBrainz | `api.listenbrainz.org/1/user/{username}/playlists/recommendations`, then `/1/playlist/{id}` | None | Falls back to `/1/stats/user/{username}/recordings?range=month` when no recommendation playlist exists |
 
-**Code Location:** `app.js` → `loadRecommendations()` (~line 31293)
+**Code Location:** `src/renderer/app.js` → `loadRecommendations()`
 
 ---
 
@@ -180,7 +180,7 @@ Track listening history to external services.
 
 ## Library Sync
 
-Import library and playlists from external services, and keep playlists mirrored to them. Every import path (URL, drag and drop, XSPF files, deep links, the browser extension, hosted playlists, AI chat, MCP) and the sync behaviour per provider is inventoried in [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](../features/PLAYLIST_IMPORT_AND_SYNC.md). Sync internals (data model, duplicate prevention, push semantics) are in the Syncing System section of CLAUDE.md.
+Import library and playlists from external services, and keep playlists mirrored to them. Every import path (URL, drag and drop, XSPF files, deep links, the browser extension, hosted playlists, AI chat, MCP) and the sync behaviour per provider is inventoried in [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](../features/PLAYLIST_IMPORT_AND_SYNC.md). Sync internals (data model, duplicate prevention, push semantics) are in [sync.md](sync.md).
 
 | Provider | Module | Auth | Data |
 |----------|--------|------|------|
@@ -222,14 +222,14 @@ Bridge between MusicBrainz and Wikipedia.
 
 | Feature | File | Function |
 |---------|------|----------|
-| Artist images | `app.js` | `getArtistImage()` |
-| Artist bios | `app.js` | `getLastfmBio()`, `getWikipediaBio()`, `getDiscogsBio()` |
-| Related artists | `app.js` | `getRelatedArtists()`, `getLastfmSimilarArtists()`, `getListenBrainzSimilarArtists()` |
-| Album art | `app.js` | `getAlbumArt()` |
-| Charts | `src/charts-utils.js` | `parseAppleMusicAlbumsJSON()`, `parseLastfmChartsJSON()` |
+| Artist images | `src/renderer/app.js` | `getArtistImage()` |
+| Artist bios | `src/renderer/app.js` | `getLastfmBio()`, `getWikipediaBio()`, `getDiscogsBio()` |
+| Related artists | `src/renderer/app.js` | `getRelatedArtists()`, `getLastfmSimilarArtists()`, `getListenBrainzSimilarArtists()` |
+| Album art | `src/renderer/app.js` | `getAlbumArt()` |
+| Charts | `src/renderer/app.js` | `loadCharts()`, `loadAppleMusicSongsCharts()`, `loadLastfmCharts()` |
 | MusicKit artist images | `musickit-web.js` | `getArtistImage()` |
-| Scrobblers | `scrobblers/*.js` | Individual scrobbler classes |
-| Library sync | `sync-providers/spotify.js` | `SpotifySyncProvider` |
+| Scrobblers | `scrobbler-loader.js` | `ScrobbleManager`, `LastFmScrobbler`, `ListenBrainzScrobbler`, `LibreFmScrobbler` |
+| Library sync | `sync-providers/spotify.js`, `sync-providers/applemusic.js`, `sync-providers/listenbrainz.js` | One provider per service |
 
 ---
 
@@ -237,12 +237,24 @@ Bridge between MusicBrainz and Wikipedia.
 
 All metadata is cached to reduce API calls and improve performance:
 
-| Cache | TTL | Persisted | Key Format |
-|-------|-----|-----------|------------|
-| Artist Images | 7 days | Yes | `{normalized_artist_name}` |
-| Album Art | 30 days | Yes | `{artist}-{album}` (normalized) |
-| Artist Data | 24 hours | Yes | `{normalized_artist_name}` |
-| Playlist Covers | 30 days | Yes | `{playlist_id}` |
-| Album-to-Release ID | Indefinite | Yes | `{artist}-{album}` |
+TTLs come from `CACHE_TTL` in `src/renderer/app.js`:
+
+| Cache | TTL (`CACHE_TTL` key) |
+|-------|-----|
+| Album art | 90 days (`albumArt`) |
+| Artist images | 90 days (`artistImage`) |
+| Artist data | 30 days (`artistData`) |
+| Artist extended info | 30 days (`artistExtendedInfo`) |
+| Playlist covers | 30 days (`playlistCover`) |
+| Track sources | 7 days (`trackSources`) |
+| Sources persisted to collection and playlists | 30 days (`persistedSources`) |
+| Release details (tracklists) | 30 days (`releaseDetails`) |
+| MBID mapper | 90 days (`mbidMapper`) |
+| Recommendations | 1 hour (`recommendations`) |
+| Charts | 24 hours (`charts`) |
+| New releases | 6 hours (`newReleases`) |
+| Concerts | 24 hours (`concerts`) |
+
+`albumToReleaseIdCache` (artist + album to MusicBrainz release id) has no TTL.
 
 Caches are loaded from electron store on app startup and saved periodically.

@@ -31,7 +31,7 @@ If the Tomahawk resolver still exists and the service API hasn't changed:
 **Probably Compatible (with updates):**
 - ⚠️ **Spotify** - API changed, need new auth flow (we have this)
 - ⚠️ **Deezer** - API still exists, may need updates
-- ⚠️ **Qobuz** - API exists (we have this)
+- ⚠️ **Qobuz** - API exists (Parachord has no Qobuz plug-in)
 - ⚠️ **Tidal** - API exists but different auth
 
 **Dead/Incompatible:**
@@ -103,6 +103,8 @@ Tomahawk.resolver.instance = SpotifyResolver;
   }
 }
 ```
+
+The JSON above is the wire format. You don't write it by hand: a bundled plug-in's source is `plugins-src/<id>/manifest.json` (everything except `implementation`) plus `plugins-src/<id>/implementation.js` (`module.exports = { resolve: async function (artist, track, album, config) { ... } }`), and `node scripts/build-axes.js` generates `plugins/<id>.axe` from them. See [Authoring a plugin](plugins.md#authoring-a-plugin-axe-format).
 
 ### ⚠️ API Calls
 
@@ -243,7 +245,7 @@ For each Tomahawk resolver:
 
 ### ✅ Structure
 - [ ] Copy resolver name, icon, description
-- [ ] Convert to .axe JSON format
+- [ ] Write `plugins-src/<id>/manifest.json` and `implementation.js`, then run `node scripts/build-axes.js` to generate the `.axe`
 - [ ] Set capabilities based on functions present
 
 ### ✅ Functions
@@ -267,7 +269,7 @@ For each Tomahawk resolver:
 - [ ] Pass via `config` parameter
 
 ### ✅ Testing
-- [ ] Validate JSON syntax
+- [ ] Run `npm run axes:check` and `npm test`
 - [ ] Test search functionality
 - [ ] Test resolve functionality
 - [ ] Test playback
@@ -289,7 +291,7 @@ Based on Tomahawk's old resolver library:
 8. **Napster** - Rebranded, still exists
 
 ### Low Priority (Niche)
-9. **Subsonic** - Personal servers
+9. **Subsonic** - Done: Parachord ships a Subsonic plug-in (#1030)
 10. **Ampache** - Personal servers
 11. **ownCloud Music** - Self-hosted
 
@@ -308,7 +310,7 @@ node tomahawk-to-axe.js spotify-resolver.js
 # Creates: spotify-resolver-conversion-guide.md
 ```
 
-Then manually convert the functions following the guide.
+Then manually convert the functions following the guide, and move the result into `plugins-src/<id>/` as described above.
 
 ## Limitations
 
