@@ -21,6 +21,10 @@ Full Apple Music integration uses a native Swift helper that has additional requ
 
 If the MusicKit helper is unavailable, Parachord falls back to the MusicKit JS web API and iTunes Search API.
 
+### Widevine CDM
+
+Amazon Music always plays through the Widevine CDM, on macOS as well as Windows and Linux, so it needs the same first-launch CDM download (about 20 MB on disk) described for those platforms below.
+
 ## Windows
 
 | Requirement | Details |
@@ -29,7 +33,7 @@ If the MusicKit helper is unavailable, Parachord falls back to the MusicKit JS w
 | **Architecture** | x64, arm64 |
 | **Disk space** | ~250 MB for application, plus space for local music database |
 | **Distribution formats** | `.exe` (NSIS installer), portable |
-| **Widevine CDM** | Downloaded automatically on first launch (about 20 MB on disk); needed for full Apple Music playback |
+| **Widevine CDM** | Downloaded automatically on first launch (about 20 MB on disk); needed for full Apple Music playback and for all Amazon Music playback |
 
 No additional OS-level dependencies are required beyond a standard Windows 10+ installation.
 
@@ -41,7 +45,7 @@ No additional OS-level dependencies are required beyond a standard Windows 10+ i
 | **Architecture** | x64 |
 | **Disk space** | ~250 MB for application, plus space for local music database |
 | **Distribution formats** | `.AppImage`, `.deb`, `.rpm` |
-| **Widevine CDM** | Downloaded automatically on first launch (about 20 MB on disk); needed for full Apple Music playback |
+| **Widevine CDM** | Downloaded automatically on first launch (about 20 MB on disk); needed for full Apple Music playback and for all Amazon Music playback |
 
 ### Audio subsystem
 
@@ -80,7 +84,7 @@ Building Parachord from source has the following additional requirements on all 
 ### Platform-specific build tools
 
 **macOS:**
-- Xcode Command Line Tools (`xcode-select --install`); they also provide the Swift toolchain that `npm run build:mac` uses to compile the MusicKit helper in `musickit-helper/`
+- Xcode Command Line Tools (`xcode-select --install`); they also provide the Swift toolchain that `npm run build:mac` uses to compile the MusicKit helper in `native/musickit-helper/`
 
 **Windows:**
 - Visual Studio Build Tools with the "Desktop development with C++" workload, or `npm install -g windows-build-tools`
@@ -105,11 +109,12 @@ Parachord streams music from external services and requires internet access for 
 - **YouTube** - Audio streaming
 - **Bandcamp** - Streaming and browsing (`bandcamp.com`)
 - **SoundCloud** - Streaming (`api.soundcloud.com`)
-- **Qobuz** - High-quality streaming (`www.qobuz.com`)
+- **Apple Music** - Catalog and playback (`api.music.apple.com`, `music.apple.com`), MusicKit JS (`js-cdn.music.apple.com`), iTunes Search fallback and charts (`itunes.apple.com`, `rss.marketingtools.apple.com`)
+- **Amazon Music** - Amazon's web player and its GraphQL API (`music.amazon.com`, `gql.music.amazon.com`), plus Amazon's sign-in pages
 - **MusicBrainz** - Metadata (`musicbrainz.org`)
 - **Last.fm** - Scrobbling and recommendations (`ws.audioscrobbler.com`)
 - **Cover Art Archive** - Album artwork (`coverartarchive.org`)
 - **GitHub** - Auto-update checks (`github.com`)
-- **Google** - Widevine CDM download and updates via Chromium's component updater (`update.googleapis.com`, `clients2.google.com`, plus Google's download CDN). Fetched once on first launch; without it, DRM-protected services such as Apple Music on Windows and Linux play only previews, and startup waits up to 10 seconds for the download before giving up for that launch
+- **Google** - Widevine CDM download and updates via Chromium's component updater (`update.googleapis.com`, `clients2.google.com`, plus Google's download CDN). Fetched once on first launch; without it, Apple Music on Windows and Linux plays only previews and Amazon Music does not play, and startup waits up to 10 seconds for the download before giving up for that launch
 
 Local file playback works fully offline.
