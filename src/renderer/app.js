@@ -27865,12 +27865,16 @@ ${tracks}
       // Skip albums that already have artwork from the JSON feed
       if (album.albumArt) continue;
 
-      const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
-      const cachedReleaseId = albumToReleaseIdCache.current[lookupKey];
-
-      if (cachedReleaseId && albumArtCache.current[cachedReleaseId]?.url) {
-        cachedUpdates.push({ id: album.id, albumArt: albumArtCache.current[cachedReleaseId].url });
-      } else if (cachedReleaseId !== null) {
+      // getCachedAlbumArt covers every cache shape (MB ids in either form,
+      // resolver:/catalog: hits). A miss goes to getAlbumArt, including when
+      // MusicBrainz had no match (albumToReleaseIdCache null): that only means
+      // MB lacks the release, and getAlbumArt carries on to the resolvers and
+      // the iTunes/Deezer catalogs. Skipping those left new and small releases
+      // without art for good.
+      const cachedArt = getCachedAlbumArt(album.artist, album.title);
+      if (cachedArt) {
+        cachedUpdates.push({ id: album.id, albumArt: cachedArt });
+      } else {
         albumsNeedingFetch.push(album);
       }
     }
@@ -32729,33 +32733,27 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // First pass: check cache for all albums (instant, no network)
     const albumsNeedingFetch = [];
     const cachedUpdates = [];
-    const failedAlbumIds = [];
 
     for (const album of albums) {
-      const lookupKey = `${album.artist}-${album.title}`.toLowerCase();
-      const cachedReleaseId = albumToReleaseIdCache.current[lookupKey];
-      const hasArtUrl = cachedReleaseId && albumArtCache.current[cachedReleaseId]?.url;
-
-      if (hasArtUrl) {
-        // We have cached art - collect for batch update
-        cachedUpdates.push({ id: album.id, albumArt: albumArtCache.current[cachedReleaseId].url });
-      } else if (cachedReleaseId === null) {
-        // Previously failed to find this album - mark as null to show placeholder
-        failedAlbumIds.push(album.id);
+      // Same classification as the Charts pass: any cache shape hits, every
+      // miss goes to getAlbumArt. A null in albumToReleaseIdCache used to be
+      // read as "no art anywhere" and pinned the placeholder (persisted with
+      // the picks), though it only means MusicBrainz had no match and the
+      // resolvers and catalogs were never asked.
+      const cachedArt = getCachedAlbumArt(album.artist, album.title);
+      if (cachedArt) {
+        cachedUpdates.push({ id: album.id, albumArt: cachedArt });
       } else {
-        // No cached art or release ID not yet looked up - need to fetch
         albumsNeedingFetch.push(album);
       }
     }
 
-    // Apply cached updates immediately (both successes and known failures)
-    if (cachedUpdates.length > 0 || failedAlbumIds.length > 0) {
-      console.log(`📰 Using cached art for ${cachedUpdates.length} Critic's Picks albums, ${failedAlbumIds.length} known failures`);
+    // Apply cached updates immediately
+    if (cachedUpdates.length > 0) {
+      console.log(`📰 Using cached art for ${cachedUpdates.length} Critic's Picks albums`);
       setCriticsPicks(prev => prev.map(a => {
         const cached = cachedUpdates.find(u => u.id === a.id);
-        if (cached) return { ...a, albumArt: cached.albumArt };
-        if (failedAlbumIds.includes(a.id)) return { ...a, albumArt: null };
-        return a;
+        return cached ? { ...a, albumArt: cached.albumArt } : a;
       }));
     }
 
