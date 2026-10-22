@@ -259,11 +259,15 @@ describe('signInLanded', () => {
 });
 
 describe('amazonSongSearchUrl', () => {
-  test('quotes title then artist, stays on the songs tab, and echoes the searchText the page will search', () => {
+  test('quotes both terms and ORs the two phrase orders — Amazon matching is order-sensitive in both directions', () => {
     expect(amazonSongSearchUrl({ title: 'stations', artist: 'Warning' })).toEqual({
-      url: 'https://music.amazon.com/search/%22stations%22%20%22Warning%22/songs',
-      searchText: '"stations" "Warning"'
+      url: 'https://music.amazon.com/search/%22stations%22%20%22Warning%22%20OR%20%22Warning%22%20%22stations%22/songs',
+      searchText: '"stations" "Warning" OR "Warning" "stations"'
     });
+    // The case that surfaced this: "Яйца" "ХЛЕБ" returns nothing on Amazon;
+    // ORing the reversed clauses is what surfaces ХЛЕБ — Яйца.
+    expect(amazonSongSearchUrl({ title: 'Яйца', artist: 'ХЛЕБ' }).searchText)
+      .toBe('"Яйца" "ХЛЕБ" OR "ХЛЕБ" "Яйца"');
   });
 
   test('still uses the songs tab when only one field is present', () => {

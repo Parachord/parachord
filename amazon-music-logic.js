@@ -806,8 +806,15 @@ function shouldRevealPlayerOnFailure() {
   return false;
 }
 
-// A loose "Stations Warning" search misses the song. Amazon's songs tab
-// with both terms quoted does not: /search/"stations" "Warning"/songs.
+// A loose "Stations Warning" search misses the song, so both terms are
+// quoted — but quoting alone imposes phrase ORDER, and Amazon's matching
+// is order-sensitive in both directions (live-verified 2026-10 through the
+// app): Warning's "Stations" only surfaces as '"Stations" "Warning"' while
+// ХЛЕБ's "Яйца" only surfaces as '"ХЛЕБ" "Яйца"'. So the query ORs the two
+// orders in one page load: '"title" "artist" OR "artist" "title"'. Amazon
+// unions the clauses (the literal keyword OR adds a few noise rows — tracks
+// whose title contains "or" — which the resolver's artist+title filter and
+// the confidence gate drop).
 // Returns { url, searchText } — the search runs over gql (the page's own
 // SpecSearchSeeMorePage request, captured and replayed), and searchText is the
 // exact string the page puts in variables.searchText, so the caller can find
@@ -818,10 +825,11 @@ function amazonSongSearchUrl({ title, artist, query } = {}) {
   const quote = (value) => '"' + String(value || '').replace(/"/g, '').trim() + '"';
   let q = '';
   if ((title && String(title).trim()) || (artist && String(artist).trim())) {
-    const parts = [];
-    if (title && String(title).trim()) parts.push(quote(title));
-    if (artist && String(artist).trim()) parts.push(quote(artist));
-    q = parts.join(' ');
+    const titlePart = title && String(title).trim() ? quote(title) : '';
+    const artistPart = artist && String(artist).trim() ? quote(artist) : '';
+    q = titlePart && artistPart
+      ? titlePart + ' ' + artistPart + ' OR ' + artistPart + ' ' + titlePart
+      : titlePart || artistPart;
   } else {
     q = String(query || '').trim();
   }
