@@ -2,7 +2,7 @@
 
 https://parachord.com
 
-A modern multi-source music player inspired by [Tomahawk](https://github.com/tomahawk-player/tomahawk). Play music from Spotify, YouTube, Bandcamp, SoundCloud, local files, and more - all in one unified interface.
+A modern multi-source music player inspired by [Tomahawk](https://github.com/tomahawk-player/tomahawk). Play music from Spotify, Apple Music, Amazon Music, YouTube, Bandcamp, SoundCloud, your own Subsonic server, local files, and more - all in one unified interface.
 
 ![Parachord Screenshot](assets/artist-page2.png)
 
@@ -18,13 +18,15 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Supported Sources
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
 - **Apple Music** - Full playback via native MusicKit on macOS or MusicKit JS on Windows and Linux (subscription required). Windows and Linux playback needs the Widevine CDM, which Parachord downloads on first launch (see [System Requirements](#system-requirements))
+- **Amazon Music** - Plays through Amazon's web player inside Parachord, decrypted by the Widevine CDM on every platform (Amazon Music account required; you sign in once in a Parachord window). It does not use the Amazon Music desktop app
 - **YouTube** - Stream audio from YouTube videos
 - **Bandcamp** - Browse, play, and purchase from independent artists
 - **SoundCloud** - Stream from SoundCloud's catalog
+- **Subsonic** - Stream from your own Subsonic-compatible server (Navidrome, Airsonic, Gonic, ...)
 - **Local Files** - Scan and play your local music library with metadata extraction
 
 ### Plug-in Architecture
-- **Sandboxed Execution** - Plug-ins run securely isolated from your system
+- **Trusted Code** - Plug-ins are not sandboxed: they run in the app's renderer with the same access as Parachord's own code, so install only plug-ins you trust
 - **Marketplace** - Browse and install plug-ins from the built-in marketplace
 - **.axe Format** - Simple JSON-based plug-in format for content resolvers, meta services, and AI backends
 - **Hot Reload** - Develop and test plug-ins without restarting
@@ -48,7 +50,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Charts** - Browse top albums and songs from iTunes and Last.fm, filterable by country
 
 ### Playlists & Queue
-- **URL Import** - Paste Spotify, Apple Music, or hosted .xspf playlist URLs
+- **URL Import** - Paste Spotify, Apple Music, Amazon Music, SoundCloud, YouTube, or hosted .xspf playlist URLs
 - **File Import** - Load local .xspf playlist files
 - **Export** - Save any playlist, or the current queue, as an .xspf file
 - **Queue Management** - Add tracks, reorder, and manage your listening queue
@@ -58,13 +60,13 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 
 ### Sharing
 - **Discord Rich Presence** - Opt-in "Listening to Parachord" presence on your Discord profile, with cover art when it's a public https image (Settings → General)
-- **Smart Links** - Parachord deep links that render a preview anywhere
+- **Copy link** - "Copy link" on a track, album, artist or playlist copies an [Achordion](https://achordion.xyz) page that links the music on every service
 
 ### Browser Extension
 - **Send to Parachord** - Right-click any song link to send it to the desktop app
 - **Page Detection** - Green badge indicator when the current page is a supported playlist or album
 - **Import Playlists & Albums** - Scrape Spotify, Apple Music, Bandcamp, SoundCloud, and YouTube pages directly into your queue
-- **WebSocket Communication** - Real-time connection between browser and desktop app
+- **Native Messaging** - The extension talks to the desktop app through a native messaging host, so it needs no open network port
 
 ### Social Features
 - **Friend Activity** - See what your friends are listening to in real-time via Last.fm and ListenBrainz
@@ -76,11 +78,10 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Collection View** - Browse your aggregated music collection
 - **Recommendations** - Personalized suggestions via Last.fm, ListenBrainz Weekly Jams, and AI (full inventory in [docs/features/RECOMMENDATIONS.md](docs/features/RECOMMENDATIONS.md); import and sync paths in [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](docs/features/PLAYLIST_IMPORT_AND_SYNC.md))
 - **Scrobbling** - Track your listening history with Last.fm, ListenBrainz, and Libre.fm
-- **Smart Links** - Generate shareable cross-service links for any track
 - **Deep Links** - `parachord://` protocol for opening artists, albums, playlists, and search from other apps
 - **Application Menu** - Full menu bar with keyboard shortcuts
 - **Auto-Updates** - Automatic update checking with GitHub Releases
-- **Configurable Media Keys** - Control media key behavior when Spotify is running
+- **Configurable Media Keys** - Choose whether Parachord captures media keys always, only when you're not using Spotify, or never (Spotify may capture them too)
 
 ## System Requirements
 
@@ -92,13 +93,13 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Windows
 - **Windows 10** or later
 - x64 or arm64
-- Full Apple Music playback needs Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
+- Full Apple Music playback and all Amazon Music playback need Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
 
 ### Linux
 - **Ubuntu 18.04+**, **Debian 10+**, **Fedora 32+**, or equivalent
 - x64
 - PulseAudio or PipeWire (for audio output)
-- Full Apple Music playback needs Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
+- Full Apple Music playback and all Amazon Music playback need Google's Widevine CDM, downloaded automatically on first launch (about 20 MB on disk)
 
 ### Building from Source
 - **Node.js 22 or newer** to build and run; **24.9 or newer** to run the test suite (jest loads the ESM-only packages through `require(esm)`, which it supports from Node 24.9). CI builds on 22 and tests on 24; the app itself runs on the Node 24 inside Electron 44.
@@ -132,7 +133,7 @@ npm install
 npm start
 ```
 
-Parachord is built on [castlabs Electron for Content Security](https://github.com/castlabs/electron-releases) (ECS), a fork of Electron with the Widevine CDM. It isn't on the npm registry, so `npm install` fetches it from castlabs' GitHub releases. Stock Electron has no Widevine, so DRM-protected services (Apple Music on Windows and Linux) can't play full tracks on it.
+Parachord is built on [castlabs Electron for Content Security](https://github.com/castlabs/electron-releases) (ECS), a fork of Electron with the Widevine CDM. It isn't on the npm registry, so `npm install` fetches it from castlabs' GitHub releases. Stock Electron has no Widevine, so DRM-protected services (Apple Music on Windows and Linux, Amazon Music everywhere) can't play on it.
 
 **Electron 44 doesn't download its binary during `npm install`.** The package has no postinstall; the ~100 MB binary from castlabs' releases is fetched lazily, on the first `npm start` (a one-time "Downloading Electron binary..." pause). To pre-download it, or to retry a download that failed, run:
 
@@ -165,7 +166,7 @@ parachord/
 │   ├── metadata-reader.js # ID3/audio metadata extraction
 │   ├── database.js        # SQLite music database
 │   └── watcher.js         # File system watcher
-├── musickit-helper/       # Native MusicKit helper (Swift, macOS only)
+├── native/musickit-helper/ # Native MusicKit helper (Swift, macOS only)
 ├── scripts/               # Build scripts (renderer bundle, .axe generator, VMP signing, notarization)
 ├── tests/                 # Jest suites
 ├── parachord-extension/   # Browser extension source
@@ -183,9 +184,9 @@ Parachord uses a plug-in architecture with two types:
 
 **Meta Services** - Provide metadata and recommendations
 - Implement service-specific APIs for artist info, recommendations, scrobbling
-- Examples: Last.fm, ListenBrainz, MusicBrainz
+- Examples: Last.fm, ListenBrainz, Wikipedia, Discogs, concert listings (Songkick, Bandsintown, Ticketmaster, SeatGeek), and the AI backends
 
-Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript implementation. See `docs/architecture/AXE_FORMAT_SPEC.md` for details. The bundled `.axe` files are generated from `plugins-src/<id>/` (see [Development](#development)); community plug-ins live in [Parachord/parachord-plugins](https://github.com/Parachord/parachord-plugins).
+Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript implementation. See [Authoring a plugin](docs/architecture/plugins.md#authoring-a-plugin-axe-format) for the format. The bundled `.axe` files are generated from `plugins-src/<id>/` (see [Development](#development)); community plug-ins live in [Parachord/parachord-plugins](https://github.com/Parachord/parachord-plugins).
 
 ## Tech Stack
 
@@ -193,8 +194,8 @@ Plug-ins use the `.axe` format - a JSON file containing metadata and JavaScript 
 - **React 18** - UI framework, `React.createElement` only (no JSX); vendored in `vendor/`, bundled by esbuild with no transforms
 - **Tailwind CSS** - Utility-first styling; the CSS is built into `vendor/tailwind.css` (`npm run build:css`), nothing loads from a CDN
 - **SQLite** - Local music library database (via better-sqlite3)
-- **Express** - OAuth callback server for Spotify
-- **WebSocket** - Real-time communication with browser extension
+- **Express** - Loopback server for the Spotify and SoundCloud OAuth callbacks and the `/protocol` deep-link bridge (port 8888 by default, configurable in Settings)
+- **WebSocket** - Local server on port 9876 for the embeddable "Send to Parachord" web button (the browser extension uses native messaging instead)
 - **electron-updater** - Auto-update functionality
 
 ## Development
@@ -253,9 +254,15 @@ macOS and Windows builds are VMP-signed through castlabs EVS (`scripts/vmp-sign.
 |--------|----------|
 | New Playlist | Cmd/Ctrl+N |
 | Find/Search | Cmd/Ctrl+F |
-| Play/Pause | Space |
+| Previous Track | Cmd/Ctrl+Left |
 | Next Track | Cmd/Ctrl+Right |
 | Toggle Shuffle | Cmd/Ctrl+S |
+| Settings (macOS) | Cmd+, |
+| Copy Diagnostic Log | Cmd/Ctrl+Shift+L |
+| Leave Search | Escape |
+| Play/Pause, Next, Previous | Media keys (configurable in Settings) |
+
+Play/Pause has no keyboard shortcut (Space was removed because it conflicted with typing in chat); use the playbar or a media key.
 
 ## Contributing
 

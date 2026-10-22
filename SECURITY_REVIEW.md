@@ -4,6 +4,14 @@
 **Scope:** Full codebase review of Parachord v0.6.0-alpha.1
 **Reviewer:** Automated deep review (Claude Opus 4.6)
 
+> **Status (2026-10-22).** This is a dated record of the v0.6.0-alpha.1 codebase and its body has not been updated. Findings resolved since then:
+> - **Duplicate scrobbler implementation:** `scrobble-manager.js` and the `scrobblers/` directory were removed (parachord#757); `scrobbler-loader.js` is the only implementation.
+> - **Browser extension transport:** the extension now talks to the app over native messaging (`chrome.runtime.connectNative` and `native-messaging/host.js`), not the WebSocket, and its `injectCode` / `new Function()` path is gone. The local WebSocket server on port 9876 still exists, for the embeddable web button only.
+> - **No frontend build step:** `src/renderer/app.js` is now bundled by esbuild (`scripts/build-renderer.js`) into the root `app.js`.
+> - **Monolith frontend:** splitting `app.js` has begun; components live in `src/renderer/components/`.
+>
+> Still true: plugins run unsandboxed via `new Function()` in the renderer (C1). Note also that there is no Qobuz plugin; rows below that name Qobuz describe code that was removed (the last stubs went in parachord#1111).
+
 ---
 
 ## Executive Summary

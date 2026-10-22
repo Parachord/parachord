@@ -1,7 +1,7 @@
 # 🎯 Parachord - Feature Roadmap
 
 > **Major features and enhancements**
-> Last updated: 2026-03-02
+> Last updated: 2026-10-22
 
 ---
 
@@ -10,7 +10,7 @@
 ### Resolvers
 - [ ] **Tidal resolver** - Hi-res streaming
 - [ ] **Deezer resolver** - Additional streaming source
-- [ ] **Qobuz full streaming** - User authentication
+- [ ] **Qobuz resolver** - No Qobuz plug-in exists yet
 
 
 ### Playlists
@@ -26,9 +26,6 @@
 ### Social
 - [ ] **Collaborative playlists** - Multi-user editing
 - [ ] **Listening parties** - Synchronized group listening
-
-### Accessibility & UX
-- [ ] **Themes** - Light/dark mode toggle
 
 ### Artist Pages
 - [x] **Tour Dates/Tickets** - bandsintown/songkick (Concerts tab in Discover section)
@@ -67,7 +64,6 @@
 ## 🐛 Known Issues
 
 - [ ] **Bandcamp autoplay** - Embedded player autoplay unreliable
-- [ ] **Apple Music playlist extraction** - `serialized-server-data` parsing incomplete
 
 ---
 
@@ -82,8 +78,11 @@
 - Data portability of music data & playlists (in and out)
 
 ### Plug-Ins (content resolvers and metadata providers)
-- Spotify Connect, YouTube, Bandcamp, Qobuz, SoundCloud
-- Apple Music (search only), Wikipedia, Discogs
+- Spotify Connect, YouTube, Bandcamp, SoundCloud
+- Apple Music (full playback: native MusicKit on macOS, MusicKit JS elsewhere), Wikipedia, Discogs
+- Amazon Music (Amazon's web player in a hidden in-app view, decrypted by the Widevine CDM; #983)
+- Subsonic-compatible servers such as Navidrome (#1030)
+- Custom LLM (any OpenAI- or Anthropic-compatible endpoint; #1003)
 - Local files resolver (scan user's music folder)
 - Plugin system (.axe format) with marketplace
 - Ship all resolvers as .axe files; marketplace cache overrides shipped versions
@@ -93,7 +92,7 @@
 - Seamless transitioning of mixed source playback, queuing and playlisting
 - Standard transport controls (prev/next/play/pause/shuffle) that work consistently across all playback sources (even those like YT that playback in browser)
 - Apple Music embedded playback with play/pause and seeking controls
-- Apple Music switched to SystemMusicPlayer with proper system volume monitoring
+- Apple Music native helper plays through ApplicationMusicPlayer (volume follows the system; the helper has no volume control)
 - Volume normalization settings persisted between launches
 - Fixed Spotify/Apple Music phantom auto-play on pause (polling stopped)
 - "Top Loader" Queue with virtualization and option to save queue between sessions
@@ -123,12 +122,12 @@
 - Playback control URLs: play, pause, skip, queue, shuffle, collection-radio
 - Navigation URLs: artist pages, albums, library, search, settings
 - AI chat URL with prompt parameter
-- HTTP endpoint (port 8888) for apps that can't use custom protocols
+- HTTP endpoint (`/protocol`, port 8888 by default, configurable in Settings) for apps that can't use custom protocols
 - Raycast extension with full playback control, search, AI chat, Collection Radio
 - Raycast Extension discovery UI in Settings and Home page
 
 ### Playlists
-- Drag/drop/import of Spotify, Apple Music and hosted .XSPF playlists
+- Drag/drop/import of Spotify, Apple Music, Amazon Music, SoundCloud, YouTube and hosted .XSPF playlists
 - AI/Prompted Playlists via ChatGPT and/or Google Gemini
 - Two-way playlist sync with Spotify (tracks added/removed in Parachord sync back to Spotify)
 - Manage/edit playlists
@@ -175,6 +174,7 @@
 
 ### UI/UX
 - Cinematic Light design system
+- Light, dark and system themes
 - First-run tutorial with fresh install UX overhaul (canonical resolver order, proper state management)
 - In-app drag/drop of objects to playbar, queue and playlists
 - Full keyboard navigation with shortcuts
@@ -184,14 +184,14 @@
 - Home page: Songs card and improved AI card
 
 ### Web
-- Embedded web player with smart links
-- Browser extension for one-click imports and YT playback control
+- Browser extension for one-click imports and YT playback control, talking to the app over native messaging (no open port)
 - Inline "Send to Parachord" buttons on music sites (Bandcamp, Pitchfork, Last.fm, ListenBrainz)
 - Automated extension publishing to Chrome Web Store and Firefox Add-ons (AMO)
 - Embeddable "Send to Parachord" button for third-party websites (CDN-hosted on Cloudflare Pages)
 - Parachord.com website
 
 ### Platform
+- castlabs Electron (ECS) with the Widevine CDM and EVS VMP signing, for Apple Music on Windows and Linux and for Amazon Music (#989)
 - macOS universal build (Intel + Apple Silicon)
 - Windows builds (x64, arm64) with native title bar for menu access
 - Linux builds (.deb, .rpm, AppImage)
@@ -201,18 +201,8 @@
 - DMG installer with Applications folder icon
 - CDN libraries bundled locally for instant app startup
 
-### Smart Links (v0.7.x–v0.8.x)
-- Publish Smart Links from context menu — shareable web pages for any track
-- Cloudflare Workers backend with KV storage at go.parachord.com
-- Embedded player with WebSocket connection to Parachord desktop app ("Play in Parachord")
-- Apple Music support in smart links
-- Official service logos (Spotify, YouTube, SoundCloud, Apple Music, Bandcamp)
-- Copy Embed Code for embedding smart link players in websites
-- Auto-copy link URL to clipboard on publish
-- Album & playlist smart links with service icons and full tracklist
-- Large embed (600px) with album art, Play All button, and per-track service badges
-- oEmbed discovery for rich embeds on Discord, Slack, etc.
-- Playlist smart links with 2×2 album art mosaic and .xspf download
+### Sharing links
+- Smart Links (v0.7.x–v0.8.x, go.parachord.com) were retired in favour of Achordion: "Copy link" on a track, album, artist or playlist now copies an achordion.xyz page. go.parachord.com still serves links published before the switch.
 
 ### MCP Server (v0.7.x)
 - MCP server for Claude Desktop integration (playback control, search, queue management)

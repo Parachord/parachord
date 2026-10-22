@@ -28,7 +28,7 @@ Goal: lossless cross-service love history without forcing every Parachord user t
 **ListenBrainz** — `POST /1/feedback/recording-feedback` with body `{ recording_mbid, score: 1 }` and `Authorization: Token <userToken>`. Requires an MBID (no fallback to artist+title strings). Resolution path:
 
 1. Use `track.mbid` if cached on the collection track (often is — gets populated during playback via the MBID Mapper).
-2. If absent, hit the [MBID Mapper](https://mapper.listenbrainz.org/mapping/lookup) (~4ms typical, no rate limit, already integrated in Parachord per CLAUDE.md "MBID Mapper Integration").
+2. If absent, hit the [MBID Mapper](https://mapper.listenbrainz.org/mapping/lookup) (~4ms typical, no rate limit, already integrated in Parachord per "MBID Mapper Integration", now [docs/architecture/mbid-mapper.md](../architecture/mbid-mapper.md)).
 3. If mapper returns `confidence < 0.7` or no result, **skip** the LB push for that track. Log once. The track stays loved locally and is still pushed to LFM (which doesn't need the MBID).
 
 ## Persistence

@@ -12,6 +12,7 @@ Control Parachord music player directly from Raycast.
 - **Volume Control** - Adjust volume from Raycast
 - **Shuffle Toggle** - Turn shuffle on/off
 - **Open Artist** - Jump directly to an artist page
+- **Collection Radio** - Shuffle and play your entire collection
 
 ## Installation
 
@@ -48,8 +49,9 @@ npm run dev
 | Set Volume | Adjust volume | |
 | Toggle Shuffle | Shuffle on/off | |
 | Clear Queue | Clear playback queue | |
-| Open Parachord | Launch the app | |
+| Open Parachord | Show the home page (the app must already be running) | |
 | Open Artist | Go to artist page | |
+| Collection Radio | Shuffle and play your entire collection | |
 
 ## Usage Tips
 
@@ -72,7 +74,7 @@ Set up your own shortcuts in Raycast Preferences → Extensions → Parachord
 
 ## How It Works
 
-This extension uses the `parachord://` URL protocol to communicate with the Parachord app. When you run a command, it opens a protocol URL that Parachord handles to perform the requested action.
+Each command builds a `parachord://` URL and sends it to the running app over HTTP: `GET http://127.0.0.1:8888/protocol?url=<encoded parachord:// URL>` (see `src/utils.ts`). The port is hardcoded to 8888, Parachord's default local server port. If you change the port in Parachord (Settings → General → Local Server Port), the extension cannot reach the app and reports "Parachord not running"; set it back to 8888 or edit `PARACHORD_HTTP_PORT` in `src/utils.ts`.
 
 ## License
 

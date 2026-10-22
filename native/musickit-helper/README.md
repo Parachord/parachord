@@ -82,7 +82,8 @@ JSON messages over stdin/stdout:
 |--------|--------|-------------|
 | `checkAuthStatus` | - | Check current authorization |
 | `authorize` | - | Request Apple Music access |
-| `search` | `query`, `limit` | Search catalog |
+| `fetchUserToken` | `developerToken`, `ignoreCache` (optional, default `false`) | Get a Music User Token for the given developer token through MusicKit's `DefaultMusicTokenProvider` (requires authorization). Used for Apple Music API calls that need a user token, such as library and playlist sync. `ignoreCache: true` bypasses MusicKit's token cache (parachord#773) |
+| `search` | `query`, `limit` (default 25) | Search catalog |
 | `resolve` | `artist`, `title`, `album` | Find specific track |
 | `play` | `songId` | Play track by ID |
 | `pause` | - | Pause playback |
@@ -94,7 +95,7 @@ JSON messages over stdin/stdout:
 | `getPlaybackState` | - | Get current state |
 | `getNowPlaying` | - | Get now playing info |
 | `addToQueue` | `songId` | Add to queue |
-| `setVolume` | `volume` | Set volume (0-1) |
+| `setVolume` | `volume` | No-op: `ApplicationMusicPlayer` has no volume control, so it answers `{ volume, note: "Use system volume" }` |
 | `ping` | - | Health check |
 | `quit` | - | Exit helper |
 

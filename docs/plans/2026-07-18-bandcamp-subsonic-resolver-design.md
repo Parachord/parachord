@@ -1,5 +1,7 @@
 # Bandcamp Subsonic Resolver — Design
 
+> **Status (2026-10-22):** a generic Subsonic resolver for any Subsonic-compatible server (`plugins-src/subsonic/`) shipped in parachord#1030 on 2026-10-16. The Bandcamp-specific owned-collection enrichment and library view designed below have not been built.
+
 **Date:** 2026-07-18
 **Status:** Design approved, pending implementation
 **Related:** Bandcamp announcement — [Discover improvements and Subsonic implementation](https://blog.bandcamp.com/2026/07/16/discover-improvements-and-subsonic-implementation/)

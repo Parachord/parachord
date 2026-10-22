@@ -1,7 +1,7 @@
 # Amazon Music resolver
 
 Date: 2026-09-23. Updated 2026-10-12.
-Status: **shipped.** Playback is the in-app web player in `amazon-web-player.js`. Operational invariants live in CLAUDE.md § Amazon Music Resolver.
+Status: **shipped.** Playback is the in-app web player in `amazon-web-player.js`. Operational invariants live in [docs/architecture/amazon-music.md](../architecture/amazon-music.md) (formerly CLAUDE.md § Amazon Music Resolver).
 
 Do not launch the Amazon Music desktop app. Do not open a remote-debugging port. That CDP approach was explored and dropped.
 

@@ -1,6 +1,8 @@
 # Parachord Smart Links
 
-Shareable music links powered by Cloudflare Pages + KV. Similar to feature.fm or linkfire.
+Shareable music links powered by Cloudflare Pages + KV, served at `go.parachord.com`. Similar to feature.fm or linkfire.
+
+> **Status:** the desktop app no longer creates links here. Its "Copy link" now produces an [Achordion](https://achordion.xyz) page instead (see the `achordion.xyz` link builders in `src/renderer/app.js`). This backend stays deployed so links published before the switch keep working: it serves the link pages and embeds (`/:id`, `/:id/embed`, `/:id/playlist.xspf`), oEmbed, `/api/lookup` (the iOS app resolves a `go.parachord.com/<id>` link through it), the iOS Universal Links manifest (`/.well-known/apple-app-site-association`), and `button.js`, the embeddable "Send to Parachord" button. `POST /api/create` still exists but nothing in this repo calls it.
 
 ## Features
 
@@ -41,13 +43,11 @@ id = "your-namespace-id-here"
 npm run deploy
 ```
 
-This will deploy to `https://parachord-links.pages.dev`
+This will deploy to `https://parachord-links.pages.dev`. Pushes to main that touch `smart-links/` deploy automatically (`.github/workflows/deploy-smart-links.yml`).
 
-### 4. Custom Domain (Optional)
+### 4. Custom Domain
 
-In Cloudflare dashboard:
-1. Go to Pages > parachord-links > Custom domains
-2. Add `links.parachord.app` (or your preferred subdomain)
+Production is served at `go.parachord.com` (Cloudflare dashboard: Pages > parachord-links > Custom domains).
 
 ## Local Development
 
@@ -83,7 +83,7 @@ Response:
 ```json
 {
   "id": "abc12345",
-  "url": "https://links.parachord.app/abc12345"
+  "url": "https://go.parachord.com/abc12345"
 }
 ```
 
@@ -93,7 +93,23 @@ Response:
 GET /:id
 ```
 
-Returns the smart link page HTML.
+Returns the smart link page HTML. Links without stored enrichment get missing service URLs filled in the background (`lib/enrich.js`).
+
+### Lookup Link
+
+```
+GET /api/lookup?id=:id
+```
+
+Returns the stored link payload as JSON (`{ title, artist, creator, albumArt, type, urls, tracks, deeplink, createdAt, enrichedAt }`), with CORS open. The iOS app calls this when a user opens a `go.parachord.com/<id>` link.
+
+### Playlist XSPF
+
+```
+GET /:id/playlist.xspf
+```
+
+Returns the link's tracklist as an XSPF download.
 
 ### Embed Link
 
@@ -113,14 +129,14 @@ Returns a full-page embeddable player (600px wide) for albums and playlists. Inc
 
 Example iframe:
 ```html
-<iframe src="https://links.parachord.app/abc12345/embed?size=large" width="600" height="500" frameborder="0" style="border-radius: 8px;"></iframe>
+<iframe src="https://go.parachord.com/abc12345/embed?size=large" width="600" height="500" frameborder="0" style="border-radius: 8px;"></iframe>
 ```
 
 ### oEmbed
 
 ```
-GET /api/oembed?url=https://links.parachord.app/abc12345
-GET /api/oembed?url=https://links.parachord.app/abc12345&size=large
+GET /api/oembed?url=https://go.parachord.com/abc12345
+GET /api/oembed?url=https://go.parachord.com/abc12345&size=large
 ```
 
 Returns oEmbed JSON for rich embeds. Pass `size=large` to get the large embed iframe dimensions and URL in the response.
@@ -131,11 +147,14 @@ Returns oEmbed JSON for rich embeds. Pass `size=large` to get the large embed if
 smart-links/
 ├── functions/
 │   ├── api/
-│   │   ├── create.js     # POST /api/create
+│   │   ├── create.js     # POST /api/create (no longer called by the desktop app)
+│   │   ├── lookup.js     # GET /api/lookup?id= (stored payload, used by iOS)
 │   │   └── oembed.js     # GET /api/oembed
-│   └── [[path]].js       # GET /:id and /:id/embed
+│   └── [[path]].js       # GET /:id, /:id/embed, /:id/playlist.xspf, and the AASA manifest
 ├── lib/
+│   ├── enrich.js         # Server-side enrichment of missing service URLs (iTunes, YouTube, Spotify)
 │   └── html.js           # Shared HTML generation
+├── public/               # Static assets: button.js (copy of ../parachord-button.js), icons, index.html
 ├── package.json
 ├── wrangler.toml
 └── README.md

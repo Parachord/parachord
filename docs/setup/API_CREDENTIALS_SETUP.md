@@ -90,25 +90,11 @@ These resolvers don't require API keys yet (or at all):
 
 ---
 
-### 🔮 **YouTube** (Future Implementation)
+### ⚪ **YouTube** (No API Key Needed)
 
-**Status:** Not yet implemented
+**Status:** Working without credentials
 
-**When Implemented:** Will need YouTube Data API v3 key
-
-**How to Get (for future):**
-1. Go to: https://console.cloud.google.com/
-2. Create a new project
-3. Enable **YouTube Data API v3**
-4. Create credentials (API key)
-5. Restrict the key to YouTube Data API
-
-**Add to .env (when implemented):**
-```bash
-YOUTUBE_API_KEY=your_api_key_here
-```
-
-**Current Status:** YouTube resolver is a placeholder and doesn't search anything yet.
+**Why:** The YouTube plug-in searches by fetching `youtube.com/results` and reading the page, so it needs no YouTube Data API key. There is no `YOUTUBE_API_KEY` setting.
 
 ---
 
@@ -136,43 +122,40 @@ SOUNDCLOUD_CLIENT_SECRET=your_client_secret_here
 
 **Note:** SoundCloud migrated to [OAuth 2.1 with mandatory PKCE](https://developers.soundcloud.com/blog/oauth-migration). Parachord's integration is fully compliant. Fallback credentials are included for convenience, but users can provide their own via Settings or environment variables.
 
+**Port:** Parachord's built-in SoundCloud app is registered for the redirect URI on port 8888, and SoundCloud matches the port exactly. If you change the local server port (Settings → General), SoundCloud sign-in works only with your own SoundCloud credentials registered for `http://127.0.0.1:<port>/callback/soundcloud`. See the local server port section of [docs/architecture/platform.md](../architecture/platform.md).
+
 ---
 
-### ⚪ **Qobuz** (Public Demo Credentials)
+### ⚪ **Last.fm** (Built-in Key, Optional Override)
 
-**Status:** Working with public demo app_id
-
-**What Works:**
-- Search Qobuz catalog
-- Display results with quality info
-- Play 30-second previews
-- No authentication needed for basic features
-
-**Current Credentials:**
-Using public demo `app_id: 285473059` - works for search and previews!
-
-**How to Get Your Own (optional):**
-1. Go to: https://github.com/Qobuz/api-documentation
-2. Request API access from Qobuz
-3. Wait for approval (may take time)
-4. Get your app_id and secret
+**Status:** Works out of the box with Parachord's built-in API key and secret
 
 **Add to .env (optional):**
 ```bash
-QOBUZ_APP_ID=your_app_id_here
-QOBUZ_SECRET=your_secret_here
+LASTFM_API_KEY=your_api_key_here
+LASTFM_API_SECRET=your_shared_secret_here
 ```
 
-**Why Get Your Own:**
-- Higher rate limits
-- Full track streaming (with subscription)
-- User authentication
-- Production use
+`LASTFM_SHARED_SECRET` is accepted as an alternative name for the secret. Get your own at https://www.last.fm/api/account/create if the shared key is rate-limited.
 
-**Current Limitations:**
-- Preview-only playback (30 seconds)
-- Public demo may have rate limits
-- No full streaming without subscription
+---
+
+### ⚪ **Apple Music / MusicKit** (Optional)
+
+**Status:** On macOS the native MusicKit helper needs no developer token. MusicKit JS (every platform) needs one, which release builds generate from the bundled `.p8` key (see the Apple Music section of [docs/architecture/playback.md](../architecture/playback.md)).
+
+**Add to .env (optional, overrides the generated token):**
+```bash
+MUSICKIT_DEVELOPER_TOKEN=your_jwt_here
+```
+
+A token can also be pasted in Settings.
+
+---
+
+### ⚪ **Discord Rich Presence** (Optional)
+
+**Status:** Uses the Discord Application id Parachord ships. Only a fork or dev build that registered its own Discord application needs `DISCORD_CLIENT_ID`.
 
 ---
 
@@ -183,20 +166,32 @@ QOBUZ_SECRET=your_secret_here
 ```bash
 # Spotify API Credentials (BYOK — each user needs their own)
 SPOTIFY_CLIENT_ID=your_client_id_here
+# Optional override; must use the same port as the local server
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
 
-# YouTube API Credentials (optional - for future implementation)
-YOUTUBE_API_KEY=
-
-# SoundCloud API Credentials (optional - extension scraping works, desktop resolver WIP)
+# SoundCloud API Credentials (optional; built-in fallback credentials exist)
 SOUNDCLOUD_CLIENT_ID=
 SOUNDCLOUD_CLIENT_SECRET=
 
-# MusicBrainz (no credentials needed)
-# Bandcamp (no credentials needed)
+# Last.fm (optional; built-in fallback key exists)
+LASTFM_API_KEY=
+LASTFM_API_SECRET=
+
+# Apple Music developer token (optional; overrides the generated token)
+MUSICKIT_DEVELOPER_TOKEN=
+
+# Discord Application id (optional; only for forks and dev builds)
+DISCORD_CLIENT_ID=
 
 # Local server port (default 8888). Settings → General wins over this.
 AUTH_SERVER_PORT=8888
+
+# Development only: run a second, isolated instance with its own settings
+# PARACHORD_USER_DATA=/path/to/sandbox
+# PARACHORD_MCP_PORT=9422
+
+# MusicBrainz, YouTube, Bandcamp and Subsonic need no .env entries
+# (Subsonic's server URL and login are set in Settings).
 ```
 
 ---
@@ -242,24 +237,9 @@ AUTH_SERVER_PORT=8888
 
 ---
 
-## 📦 package.json Dependencies
+## 📦 Dependencies
 
-Make sure you have this in `package.json`:
-
-```json
-{
-  "dependencies": {
-    "dotenv": "^16.0.3",
-    "electron-store": "^8.1.0",
-    "express": "^4.18.2"
-  }
-}
-```
-
-If `dotenv` is missing:
-```bash
-npm install dotenv --save
-```
+`dotenv` is a regular dependency in `package.json`, so `npm install` brings it in. `main.js` loads `.env` on its first line (`require('dotenv').config({ quiet: true })`).
 
 ---
 
@@ -267,9 +247,8 @@ npm install dotenv --save
 
 ### 1. Check Environment Variables Load:
 
-Add this to the top of `main.js` temporarily:
+Add this after the `require('dotenv')` line at the top of `main.js` temporarily:
 ```javascript
-require('dotenv').config();
 console.log('Spotify Client ID:', process.env.SPOTIFY_CLIENT_ID ? 'Found' : 'Missing');
 ```
 
@@ -294,7 +273,6 @@ console.log('Spotify Client ID:', process.env.SPOTIFY_CLIENT_ID ? 'Found' : 'Mis
 
 - **Spotify API Docs:** https://developer.spotify.com/documentation/web-api
 - **MusicBrainz API:** https://musicbrainz.org/doc/MusicBrainz_API
-- **YouTube Data API:** https://developers.google.com/youtube/v3
 - **SoundCloud API:** https://developers.soundcloud.com/docs/api/guide
 
 ---

@@ -4,12 +4,12 @@
 
 **Goal:** Add ListenBrainz as a third playlist sync provider alongside Spotify and Apple Music — including **cross-service collaboration** (a Spotify user and an Apple Music user share an LB playlist; either's edits propagate to both streaming services). Ship the missing pieces that follow naturally — Achordion-side playlist-link display, default-private semantics, and an Achordion-hosted `/go` redirect to replace the last remaining `parachord.com/go` reference.
 
-**Architecture:** ListenBrainz playlists use JSPF + recording MBIDs as the canonical identifier. We mirror the existing `sync-providers/{spotify,applemusic}.js` shape so the multi-provider plumbing (sync_playlist_links durable map, three-layer dedup, mirror-propagation invariants per [CLAUDE.md L236+](../../CLAUDE.md)) extends without special-casing. MBID-or-skip is enforced at push time. Playlist↔LB mapping is also pushed to a new Achordion endpoint so Achordion's UI can surface "View on ListenBrainz" links for shared playlist pages.
+**Architecture:** ListenBrainz playlists use JSPF + recording MBIDs as the canonical identifier. We mirror the existing `sync-providers/{spotify,applemusic}.js` shape so the multi-provider plumbing (sync_playlist_links durable map, three-layer dedup, mirror-propagation invariants per [docs/architecture/sync.md § Multi-Provider Mirror Propagation](../architecture/sync.md#multi-provider-mirror-propagation), formerly CLAUDE.md L236+) extends without special-casing. MBID-or-skip is enforced at push time. Playlist↔LB mapping is also pushed to a new Achordion endpoint so Achordion's UI can surface "View on ListenBrainz" links for shared playlist pages.
 
 **Tech Stack:**
 - Desktop: `sync-providers/listenbrainz.js` (Node, uses `electron.net.fetch`), main.js IPC handlers, app.js renderer wizard UI
 - Achordion: Next.js API routes (TypeScript + zod), Upstash Redis for storage
-- ListenBrainz API: REST + JSPF, `Authorization: Token <user_token>` header (token from the existing scrobbler config, NOT the meta-service config — see CLAUDE.md "ListenBrainz auth token auto-attach")
+- ListenBrainz API: REST + JSPF, `Authorization: Token <user_token>` header (token from the existing scrobbler config, NOT the meta-service config — see "ListenBrainz auth token auto-attach", now in [docs/architecture/android-parity.md](../architecture/android-parity.md))
 - MBID Mapper at `https://mapper.listenbrainz.org/mapping/lookup` for tracks lacking MBIDs at push time
 
 ---
@@ -18,7 +18,7 @@
 
 The four requirements in the request resolve as follows. Marking each so an executor doesn't need to re-decide:
 
-1. **Conflict resolution with existing Spotify/AM sync** — Reuse the existing multi-provider mirror system end-to-end. LB is the 3rd provider, not a special case. The four cooperating fixes documented at [CLAUDE.md L236+](../../CLAUDE.md) (handlePull mirror flag, local-mutator persistence, provider-scoped `syncedFrom` guard, post-push clear logic) all extend automatically once LB shows up in `enabledProviders`. See [Phase 3](#phase-3-desktop--integration-into-sync-pipeline) for the audit checklist.
+1. **Conflict resolution with existing Spotify/AM sync** — Reuse the existing multi-provider mirror system end-to-end. LB is the 3rd provider, not a special case. The four cooperating fixes documented at [docs/architecture/sync.md § Multi-Provider Mirror Propagation](../architecture/sync.md#multi-provider-mirror-propagation) (formerly CLAUDE.md L236+) (handlePull mirror flag, local-mutator persistence, provider-scoped `syncedFrom` guard, post-push clear logic) all extend automatically once LB shows up in `enabledProviders`. See [Phase 3](#phase-3-desktop--integration-into-sync-pipeline) for the audit checklist.
 
 2. **Achordion playlist links** — Parachord pushes `{ playlistMbid, links: [{ host, url, label }, ...], name?, creatorName?, trackCount? }` to a new Achordion endpoint `POST /api/playlist-links/submit` (mirrors `/api/track-links/submit`). Achordion stores per-LB-MBID and renders "View on Spotify" / "View on Apple Music" / "View on ListenBrainz" links on a new `/playlist/<mbid>` page. Direction is one-way Parachord → Achordion, matching the existing track-links flow.
 
@@ -1299,7 +1299,7 @@ if (sourceProvider === providerId) {
 }
 ```
 
-Apply at both sites (L5817 and L9483) in lockstep — same rule applies to the background and post-wizard push loops per CLAUDE.md "Push-loop syncedFrom guard must be provider-scoped."
+Apply at both sites (L5817 and L9483) in lockstep — same rule applies to the background and post-wizard push loops per "Push-loop `syncedFrom` guard must be provider-scoped" (formerly CLAUDE.md, now [docs/architecture/sync.md](../architecture/sync.md)).
 
 **Step 3a: Grep current state**
 
