@@ -49,6 +49,7 @@ The website worker that serves these landing pages and the `.well-known/assetlin
 | Play playlist | `parachord://play/playlist?url=https://example.com/playlist.xspf` |
 | Play radio | `parachord://play/radio?url=https://api.listenbrainz.org/1/explore/lb-radio?prompt=tag%3Ashoegaze&mode=easy` |
 | Listen along | `parachord://listen-along?service=listenbrainz&user=mr_monkey` |
+| Collection radio | `parachord://collection-radio` |
 | Pause | `parachord://control/pause` |
 | Add to queue | `parachord://queue/add?artist=Radiohead&title=Paranoid%20Android` |
 | Open artist | `parachord://artist/Radiohead` |
@@ -246,12 +247,15 @@ parachord://play/playlist?tracks={base64_json}&title={display_name}
 | `open.spotify.com/playlist/<id>` | Spotify playlist import |
 | `music.apple.com/<region>/playlist/<slug>/<id>` | Apple Music playlist import |
 | `soundcloud.com/<user>/sets/<slug>` | SoundCloud playlist import |
-| `music.amazon.com/playlists/<id>`, `music.amazon.com/my/playlists/<id>` | Amazon Music playlist import (requires being signed in to Amazon Music in the app — the page only renders authenticated) |
+| `music.amazon.com/playlists/<id>`, `music.amazon.com/my/playlists/<id>`, `music.amazon.com/user-playlists/<id>` (the share-link shape for user-created playlists; the id may be a plain or dashed hex uuid) | Amazon Music playlist import (requires being signed in to Amazon Music in the app — the page only renders authenticated) |
+| `youtube.com/playlist?list=<id>`, `music.youtube.com/playlist?list=<id>` | YouTube playlist import (the plug-in reads the playlist page and stops at 100 tracks) |
 | `on.soundcloud.com/<short-id>` | Short-link — app follows the 302 to `soundcloud.com/<user>/sets/...` itself, then re-validates the final host before importing. The website does NOT pre-resolve the short link. |
 | `achordion.xyz/playlist/<mbid>` | Fetched from `https://achordion.xyz/api/playlist/<mbid>/xspf` (public, returns XSPF) — the page itself is bot-challenged by Vercel; only the `/api/` route is reachable from the app's IP. |
 | anything else | Falls back to the original behavior: fetch the URL and parse as XSPF / JSPF / JSON tracklist. |
 
-A pure host classifier helper lives in [`tests/helpers/playlist-url-classify.js`](../tests/helpers/playlist-url-classify.js) with tests in [`tests/protocol/playlist-url-classify.test.js`](../tests/protocol/playlist-url-classify.test.js).
+Only the Achordion and `on.soundcloud.com` rows are special-cased by host. Every provider row is the generic plug-in path: whichever loaded plug-in's `urlPatterns` claim the URL, and `getUrlType` calls it a playlist, gets it through its `lookupPlaylist`. A new streaming plug-in with those two pieces works here with no change to this command.
+
+The host classifier is `classifyPlaylistUrl` in [`protocol-url.js`](../protocol-url.js) (pure, no I/O); [`tests/helpers/playlist-url-classify.js`](../tests/helpers/playlist-url-classify.js) is a re-export of it, and the tests are in [`tests/protocol/playlist-url-classify.test.js`](../tests/protocol/playlist-url-classify.test.js).
 
 **Examples:**
 ```
@@ -326,6 +330,14 @@ If the target user isn't currently listening, a toast surfaces "<user> is not cu
 parachord://listen-along?service=listenbrainz&user=mr_monkey
 ```
 
+### Collection Radio
+
+Shuffle-play your whole collection (collection tracks plus the local files library, deduplicated). Ends any listen-along session first. No parameters.
+
+```
+parachord://collection-radio
+```
+
 ---
 
 ## Navigation
@@ -349,13 +361,14 @@ parachord://artist/{name}/{tab?}
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `name` | Yes | Artist name |
-| `tab` | No | Tab to open: `music`, `biography`, `related` |
+| `tab` | No | Tab to open: `music`, `biography`, `related`, `on-tour` (concert dates) |
 
 **Examples:**
 ```
 parachord://artist/Radiohead
 parachord://artist/Big%20Thief/biography
 parachord://artist/Bjork/related
+parachord://artist/Big%20Thief/on-tour
 ```
 
 ### Album Page
@@ -474,6 +487,30 @@ Open the critics picks page.
 ```
 parachord://critics-picks
 ```
+
+### Fresh Drops
+
+Open the Fresh Drops page (new releases from artists in your library).
+
+```
+parachord://new-releases
+```
+
+### Concerts
+
+Open the Concerts page.
+
+```
+parachord://concerts
+```
+
+### Now Playing
+
+```
+parachord://now-playing
+```
+
+Accepted but currently does nothing (the handler is a placeholder).
 
 ### Playlists
 
@@ -704,18 +741,7 @@ start parachord://play?artist=Radiohead&title=Karma%20Police
 
 ### Browser Extension
 
-The browser extension can fall back to protocol URLs when WebSocket is unavailable:
-
-```javascript
-function sendToParachord(command) {
-  if (wsConnected) {
-    ws.send(JSON.stringify(command));
-  } else {
-    const url = buildProtocolUrl(command);
-    window.location.href = url;
-  }
-}
-```
+The browser extension does not use `parachord://` URLs or the HTTP endpoint. It talks to the desktop app over native messaging: the extension calls `chrome.runtime.connectNative('com.parachord.desktop')`, the browser launches `native-messaging/host.js`, and the host relays length-prefixed JSON messages to the app over a local socket (`~/.parachord/native-messaging.sock`, or the `parachord-native-messaging` named pipe on Windows). The app registers the host manifest for Chrome, Chromium-based browsers and Firefox on startup (`native-messaging/install.js`). Messages such as `sendToParachord`, `scrapedPlaylist` and `scrapedAlbum` go to the queue; see [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](features/PLAYLIST_IMPORT_AND_SYNC.md#browser-extension).
 
 ### Embeddable "Send to Parachord" Button
 
