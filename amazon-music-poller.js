@@ -30,7 +30,7 @@ const {
   playerDurationMs,
   decidePollAdvance,
   shouldPollFaster,
-  measuredStreamKbps,
+  createStreamBitrateMeter,
   amazonStreamQualityRecord
 } = require('./amazon-music-logic');
 
@@ -61,11 +61,11 @@ function createAmazonMusicPoller({ player, send }) {
     seekSuppressUntil: 0,
     emptyWhilePausedPolls: 0,
     diedWhilePaused: false,
-    // [{ wallMs, positionMs, bytes }] — consecutive PLAYING reads of the
-    // media element's audio decode counter, paired into a measured bitrate by
-    // measuredStreamKbps. Reset per track in start(); a stale pair across a
-    // track boundary would be a garbage measurement.
-    qualitySamples: [],
+    // Consecutive PLAYING reads of the media element's audio decode counter,
+    // paired into the track's median bitrate (createStreamBitrateMeter). A
+    // new meter per track in start(); a stale pair across a track boundary
+    // would be a garbage measurement.
+    qualityMeter: createStreamBitrateMeter(),
 
     async start({ asin, trackTitle, trackArtist, duration }) {
       console.log('🎵 [Main] Starting Amazon Music polling...');
@@ -82,7 +82,7 @@ function createAmazonMusicPoller({ player, send }) {
       this.seekSuppressUntil = 0;
       this.emptyWhilePausedPolls = 0;
       this.diedWhilePaused = false;
-      this.qualitySamples = [];
+      this.qualityMeter = createStreamBitrateMeter();
       void trackTitle; void trackArtist; // accepted for IPC symmetry; the advance signal carries the reason only
 
       // Cancellable delay so a quick skip doesn't start a second interval
@@ -159,16 +159,15 @@ function createAmazonMusicPoller({ player, send }) {
         const state = s.state;
 
         // Measured stream quality (stream-quality.js contract): record the
-        // decode counter on every PLAYING read; measuredStreamKbps pairs
-        // consecutive samples (steady playhead-vs-wallclock deltas only, so
-        // seeks and pauses never form a pair) and reports the median once
+        // decode counter on every PLAYING read; the meter pairs consecutive
+        // samples (steady playhead-vs-wallclock deltas only, so seeks and
+        // pauses never form a pair) and reports the track's median once
         // enough steady pairs exist. The player's captured manifest/init params
         // (codec / sample rate / bit depth / channels, from which the SD/HD/
         // Ultra HD tier derives) upgrade the record when available — never
         // fabricated, only what the captured manifest and init segment prove.
         if (state === 'PLAYING' && typeof s.audioDecodedBytes === 'number' && s.audioDecodedBytes > 0) {
-          this.qualitySamples.push({ wallMs: Date.now(), positionMs, bytes: s.audioDecodedBytes });
-          if (this.qualitySamples.length > 17) this.qualitySamples.shift(); // 8-pair window + slack
+          this.qualityMeter.addSample({ wallMs: Date.now(), positionMs, bytes: s.audioDecodedBytes });
         }
         const progress = {
           state,
@@ -177,7 +176,7 @@ function createAmazonMusicPoller({ player, send }) {
           percentComplete: durationMs > 0 ? (positionMs / durationMs) * 100 : 0,
           asin: s.asin || null
         };
-        const kbps = measuredStreamKbps(this.qualitySamples);
+        const kbps = this.qualityMeter.kbps();
         if (kbps) {
           let params = null;
           try {

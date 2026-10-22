@@ -9,7 +9,7 @@
  * track, never "any source on the track".
  */
 
-const { pickStreamQuality, streamQualityCodecLabel, formatStreamQuality } = require('../../stream-quality');
+const { pickStreamQuality, streamQualityCodecLabel, formatStreamQuality, isStreamQualityChange } = require('../../stream-quality');
 
 const FLAC_ROW = {
   codec: 'flac',
@@ -144,5 +144,63 @@ describe('stream quality review follow-ups', () => {
     const src = read('local-files/metadata-reader.js');
     const start = src.indexOf('static async getStreamInfo(filePath) {');
     expect(src.slice(start, start + 400)).toMatch(/mm\.parseFile\(filePath, \{ skipCovers: true \}\)/);
+  });
+});
+
+// Amazon's measured bitrate is a median over 2 s polls, and every tier above
+// 160 kbps is VBR, so it moves on almost every poll. Each accepted change
+// re-creates currentTrack (memoized pages re-render, the queue is re-saved),
+// so bitrate wobble within 10% of the stored value is not a change (#1092).
+describe('isStreamQualityChange', () => {
+  const HD = { tier: 'HD', codec: 'flac', sampleRate: 44100, bitDepth: 16, channels: 2, bitrate: 900, origin: 'measured' };
+
+  test('the first record is a change, a missing next is not', () => {
+    expect(isStreamQualityChange(undefined, HD)).toBe(true);
+    expect(isStreamQualityChange(HD, null)).toBe(false);
+  });
+
+  test('VBR wobble within 10% of the stored bitrate is not a change', () => {
+    expect(isStreamQualityChange(HD, { ...HD, bitrate: 950 })).toBe(false);
+    expect(isStreamQualityChange(HD, { ...HD, bitrate: 820 })).toBe(false);
+    expect(isStreamQualityChange(HD, { ...HD })).toBe(false);
+  });
+
+  test('a bitrate more than 10% away is', () => {
+    expect(isStreamQualityChange(HD, { ...HD, bitrate: 1000 })).toBe(true);
+    expect(isStreamQualityChange(HD, { ...HD, bitrate: 800 })).toBe(true);
+  });
+
+  test('any other field changing is, whatever the bitrate', () => {
+    expect(isStreamQualityChange(HD, { ...HD, tier: 'Ultra HD', bitDepth: 24 })).toBe(true);
+    expect(isStreamQualityChange(HD, { ...HD, sampleRate: 48000 })).toBe(true);
+    // The first emit is bitrate-only; the captured init segment adds the rest.
+    const bitrateOnly = { bitrate: 900, origin: 'measured' };
+    expect(isStreamQualityChange(bitrateOnly, HD)).toBe(true);
+  });
+
+  test('a bitrate appearing or disappearing is a change', () => {
+    const { bitrate, ...noBitrate } = HD;
+    expect(bitrate).toBe(900);
+    expect(isStreamQualityChange(noBitrate, HD)).toBe(true);
+    expect(isStreamQualityChange(HD, noBitrate)).toBe(true);
+  });
+});
+
+describe('Amazon quality updates and the queue save do not churn on every poll', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+
+  test('the Amazon progress handler gates on isStreamQualityChange', () => {
+    const at = app.indexOf('const measuredQuality = data.streamQuality;');
+    const block = app.slice(at, at + 1600);
+    expect(block).toMatch(/if \(!window\.isStreamQualityChange\(existing, measuredQuality\)\) return prev;/);
+    expect(block).not.toMatch(/JSON\.stringify\(existing\)/);
+  });
+
+  test('the saved-queue effect keys on the track id and saves the latest track', () => {
+    expect(app).toMatch(/\}, \[currentTrack\?\.id, currentQueue, rememberQueue, playbackContext, shuffleMode\]\);/);
+    const at = app.indexOf("await window.electron.store.set('saved_queue', fullQueue);");
+    expect(app.slice(at - 700, at)).toMatch(/const currentTrack = currentTrackRef\.current;/);
   });
 });

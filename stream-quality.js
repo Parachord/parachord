@@ -95,11 +95,36 @@
     return parts.join(' · ');
   }
 
-  const api = { pickStreamQuality, streamQualityCodecLabel, formatStreamQuality };
+  // How far a measured bitrate must move before it replaces the stored one.
+  const BITRATE_CHANGE_TOLERANCE = 0.1;
+  const STREAM_FIELDS = ['tier', 'codec', 'container', 'sampleRate', 'bitDepth', 'channels', 'origin'];
+
+  /**
+   * Whether `next` should replace `prev` as a playing track's record. A
+   * measured VBR bitrate (every Amazon tier above 160 kbps) moves on almost
+   * every 2 s poll, and each replacement re-creates currentTrack, which
+   * re-renders every memoized page that takes it and re-saves the queue.
+   * So a bitrate within BITRATE_CHANGE_TOLERANCE of the stored one is not a
+   * change; any other field changing always is.
+   */
+  function isStreamQualityChange(prev, next) {
+    if (!next || typeof next !== 'object') return false;
+    if (!prev || typeof prev !== 'object') return true;
+    for (const field of STREAM_FIELDS) {
+      if (prev[field] !== next[field]) return true;
+    }
+    const a = prev.bitrate || 0;
+    const b = next.bitrate || 0;
+    if (!a || !b) return a !== b;
+    return Math.abs(b - a) / a > BITRATE_CHANGE_TOLERANCE;
+  }
+
+  const api = { pickStreamQuality, streamQualityCodecLabel, formatStreamQuality, isStreamQualityChange };
   if (typeof window !== 'undefined') {
     window.pickStreamQuality = pickStreamQuality;
     window.streamQualityCodecLabel = streamQualityCodecLabel;
     window.formatStreamQuality = formatStreamQuality;
+    window.isStreamQualityChange = isStreamQualityChange;
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();
