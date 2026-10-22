@@ -272,7 +272,10 @@ jobs:
           # Generate the .axe artifacts from plugins-src/ — the monorepo no
           # longer tracks them (they are build-time artifacts, like the
           # renderer bundle), so this job is their publisher.
-          npm ci --silent
+          # npm ci stays full (NOT --ignore-scripts: esbuild's postinstall
+          # provides the binary the es5 transpile path requires); only the
+          # unused ~100MB Electron binary download is skipped.
+          ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --silent
           node scripts/build-axes.js
 
           # Get the source commit info for the sync commit message

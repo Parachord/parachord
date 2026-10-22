@@ -184,6 +184,14 @@ jobs:
     steps:
       - name: Checkout monorepo
         uses: actions/checkout@v6
+        with:
+          # Deliberate: this job executes imported plugin code (the writer
+          # require()s each plugins-src implementation, and string-form
+          # values are evaluated as expressions at require time), so no
+          # token may linger in git config while that code runs. The push
+          # below authenticates per-command instead of via a persisted
+          # credential.
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -199,12 +207,24 @@ jobs:
             exit 0
           fi
           git clone "https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/parachord-plugins.git" /tmp/plugins-repo
+          # Drop the token from the clone's git config — this job only
+          # reads from it, and the code that runs later (require() of the
+          # imported plugin implementations) must not find a credential
+          # sitting in /tmp/plugins-repo/.git/config.
+          git -C /tmp/plugins-repo remote set-url origin "https://github.com/Parachord/parachord-plugins.git"
 
       - name: Generate .axe artifacts from plugins-src
+        env:
+          # Build-time dep the writer may need: esbuild (ES5 transpile for
+          # plugins flagged es5:true — real postinstall, don't skip).
+          # Electron's own ~100MB binary is never used here.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
         run: |
           # plugins/*.axe are generated artifacts (build-axes.js reads
           # plugins-src/). Fresh generation here so the comparison below
           # runs against our current source of truth, not a stale artifact.
+          # npm ci stays full (NOT --ignore-scripts): esbuild's postinstall
+          # provides the binary the es5 transpile path requires.
           npm ci --silent
           node scripts/build-axes.js
 
@@ -375,9 +395,14 @@ jobs:
           # run retries.
           if [ -s /tmp/axe-decisions ]; then
             while IFS= read -r id; do
+              # Stash build.json (the es5/transpile flag) — the .axe doesn't
+              # carry it, so a plain rm+import would drop it on an updated
+              # plugin.
+              [ -f "plugins-src/$id/build.json" ] && cp "plugins-src/$id/build.json" "/tmp/build-json-$id"
               rm -rf "plugins-src/$id"
               if node scripts/build-axes.js --import --plugin "$id"; then
                 echo "Imported $id.axe → plugins-src/$id"
+                [ -f "/tmp/build-json-$id" ] && cp "/tmp/build-json-$id" "plugins-src/$id/build.json"
               else
                 echo "::warning::--import failed for $id — dropping the adoption this run"
                 git checkout -- "plugins-src/$id" 2>/dev/null || rm -rf "plugins-src/$id"
@@ -422,7 +447,10 @@ jobs:
           git add plugins-src/ plugins/ marketplace-manifest.json src/renderer/app.js
           git commit -m "Reverse sync: plugins repo → monorepo"
 
-          git push -u origin "$BRANCH"
+          # Push with the token inline (checkout is persist-credentials:
+          # false, so no persisted credential exists at this point — by
+          # design, since this job executes imported plugin code).
+          git push "https://x-access-token:${{ secrets.REPO_SYNC_TOKEN }}@github.com/${{ github.repository }}" "$BRANCH"
 
           EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$EXISTING" ]; then
