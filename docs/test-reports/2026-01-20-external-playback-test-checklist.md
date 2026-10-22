@@ -1,5 +1,7 @@
 # External Playback System Test Checklist
 
+> **Historical record, do not use as a live checklist.** The browser extension now talks to the app over native messaging rather than a WebSocket, and Spotify playback is Spotify Connect only.
+
 **Date:** 2026-01-20
 **Tester:** _______________
 **App Version:** _______________

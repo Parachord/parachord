@@ -34,7 +34,7 @@ const { validIsrc, validMbid, deriveNorm } = require('./playlist-merge');
 //   raw track object.
 //
 // Match (two-phase norm-bridge guard, parachord#911 P3 —
-//   docs/plans/2026-06-28-nway-norm-bridge-guard.md, mobile#289):
+//   docs/plans/2026-06-28-nway-norm-bridge-guard.md (parachord-mobile), mobile#289):
 //   1. STRONG phase (unconditional): union by equal ISRC, then equal MBID.
 //      A shared MBID may legitimately span two DIFFERENT ISRCs (same recording,
 //      reissue/market re-registration) → they become ONE component.
