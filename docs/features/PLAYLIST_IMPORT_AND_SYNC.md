@@ -2,7 +2,7 @@
 
 Every way a playlist gets into Parachord, and every way one is kept in step with an outside service. Written from the code as of October 2026, not from the design plans. Line numbers are approximate and refer to `app.js` unless another file is named.
 
-Related: [RECOMMENDATIONS.md](RECOMMENDATIONS.md), [XSPF_IMPORT_EXPORT_GUIDE.md](XSPF_IMPORT_EXPORT_GUIDE.md), [protocol-schema.md](../protocol-schema.md), and the Syncing System section of [CLAUDE.md](../../CLAUDE.md) for sync internals (data model, link map, push loops, provider quirks).
+Related: [RECOMMENDATIONS.md](RECOMMENDATIONS.md), [protocol-schema.md](../protocol-schema.md), [docs/architecture/sync.md](../architecture/sync.md) for sync internals (data model, link map, push loops, provider quirks), and [docs/architecture/android-parity.md](../architecture/android-parity.md) for the rules the Android client must match.
 
 All playlists live in the electron-store key `local_playlists`, read and written through the `playlists-load`, `playlists-save` and `playlists-delete` IPC handlers (main.js ~L5258 onward). The `playlists/` folder in the repo is not read at runtime.
 
@@ -66,6 +66,26 @@ There is no file drop. `dataTransfer.files` is never read, so dropping `.xspf`, 
 **Import.** "Load from File" in the Import modal (~L58278) calls `handleImportPlaylist` (~L36747), which uses the `playlists-import` IPC (main.js ~L5279). The file dialog allows `.xspf` only and checks for a `<playlist>` element. Saved as `imported-${Date.now()}` with `source: 'imported-xspf'`. One-shot.
 
 **Export.** `handleExportPlaylist` (~L37530) writes an `.xspf` through the `playlists-export` IPC save dialog (main.js ~L6526). Reachable from the playlist header's Share menu ("Export as XSPF…"), the playlist row context menu, and the queue save dialog's "Save to file" button (the dialog's "Save" still saves into the library). Playlists created in-app carry no stored XSPF, so the document is generated from their tracks.
+
+**What is read and written.** `parseXSPF` (used by file import and the URL import path) reads the playlist's `<title>`, `<creator>` and `<date>`, and for each `<track>` its `<title>`, `<creator>` (the artist), `<album>`, `<duration>` (milliseconds, converted to seconds) and `<location>`. Missing fields fall back to "Untitled Playlist", "Unknown", "Unknown Track" and "Unknown Artist". Other XSPF elements are ignored. `generateXSPF` writes the same playlist fields (`<date>` from `createdAt`, or the current time) and per track `<title>`, `<creator>`, `<album>` and `<duration>` in milliseconds; it does not write `<location>`. A minimal document:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <title>My Mix</title>
+  <creator>Your Name</creator>
+  <trackList>
+    <track>
+      <title>Song Title</title>
+      <creator>Artist Name</creator>
+      <album>Album Name</album>
+      <duration>240000</duration>
+    </track>
+  </trackList>
+</playlist>
+```
+
+`parachord://play/playlist` uses a different parser, `parseProtocolTracklist`, which accepts XSPF (when the response content type contains `xml`; tracks without both a title and a creator are dropped), JSPF and `{ tracks: [] }` JSON.
 
 ## `parachord://` deep links
 
