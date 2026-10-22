@@ -4056,7 +4056,7 @@ const Parachord = () => {
                   // timestamp so the comparison is false right after a pull; a
                   // subsequent real edit bumps `lastModified` and flips it true.
                   // Same reasoning as the sync banner's push-state check (see
-                  // CLAUDE.md "Sync banner's push-state check must discount
+                  // docs/architecture/sync.md "Sync banner's push-state check must discount
                   // pull-induced locallyModified").
                   {
                     const sourceProvider = playlist.syncedFrom?.resolver;
@@ -8691,7 +8691,7 @@ const Parachord = () => {
     // separate sync OAuth flow. If the user hasn't connected LB for
     // scrobbling yet, point them at Settings → Plugins (where the LB
     // scrobbler card lives) rather than introducing a parallel auth path.
-    // See CLAUDE.md "ListenBrainz auth token auto-attach".
+    // See docs/architecture/android-parity.md "ListenBrainz auth token auto-attach".
     if (providerId === 'listenbrainz') {
       const lbCfg = await window.electron.store.get('scrobbler-config-listenbrainz').catch(() => null);
       const lbAuthenticated = !!lbCfg?.userToken;
@@ -9158,7 +9158,7 @@ const Parachord = () => {
                 }
                 // LB-specific opt-in. Mirrors the background-sync push loop's
                 // gate (see comment at L~6357) — must stay in lockstep with it
-                // per CLAUDE.md ("Push-loop syncedFrom guard must be
+                // per docs/architecture/sync.md ("Push-loop syncedFrom guard must be
                 // provider-scoped" extends to any guard added to the loop).
                 // The wizard's pushLocalPlaylists checkbox writes through to
                 // syncSetupModal.settings, which is the `settings` destructured

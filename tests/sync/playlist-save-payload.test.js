@@ -15,7 +15,7 @@ const path = require('path');
 
 const { buildPlaylistSavePayload: build } = require('../../protocol-url');
 
-// CLAUDE.md "Playlist data-model fields to preserve on every save".
+// docs/architecture/android-parity.md "Playlist data-model fields to preserve on every save".
 const REQUIRED = [
   'id', 'title', 'description', 'tracks',
   'syncedFrom', 'syncedTo', 'syncSources',

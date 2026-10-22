@@ -1,0 +1,34 @@
+# parachord:// protocol surface
+
+> Moved verbatim out of `CLAUDE.md` on 2026-10-22 so the always-loaded guide stays short; `CLAUDE.md` indexes this file. Line references such as `app.js L####` date from when each passage was written and have drifted: search for the named function instead. Cross-references to other sections point at sibling files in `docs/architecture/`.
+
+## `parachord://` Protocol Surface
+
+Custom-scheme deep links handled at app.js's protocol switch (search `switch (command)` ~L13329). Public docs at [`docs/protocol-schema.md`](../../docs/protocol-schema.md).
+
+| Command | Inputs | Confirmation |
+|---|---|---|
+| `parachord://play` | `artist` + `title` | None |
+| `parachord://play/album` | `mbid` / `spotify` / `applemusic` / `url` / `tracks` / `artist`+`title` | None |
+| `parachord://play/playlist` | `url` (hosted XSPF/JSPF/JSON tracklist **or** provider playlist page — see below) / `tracks` (optional `title`, `creator`, `shuffle`) | None |
+| `parachord://play/radio` | `url` (also reused as refill) / `tracks`+`refill` / `artist`[+`title`] | None |
+| `parachord://listen-along` | `service`=`listenbrainz`\|`lastfm`, `user`=`<username>` | None |
+| `parachord://import` | `url` / `tracks` | Required (writes to library) |
+| `parachord://chat` | `prompt` | Required (sends to AI) |
+| `parachord://control/<action>`, `queue/<action>`, `shuffle/<state>`, `volume/<level>`, etc. | varies | None |
+
+**Shared input resolution** (`resolveProtocolPlayInput`, ~L13106): all `play-*` commands feed through one helper that turns `mbid`/provider IDs/url/tracks/artist+title into a normalized `{ displayName, tracks: [{artist, title, album?, mbid?, isrc?}], albumArt? }`. Priority: mbid → spotify → applemusic → url → tracks → artist+title. `opts.allowMbid` / `allowProviderId` / `allowArtistTitleAlbum` gate per-command (album-only shapes silently fall through for non-album commands).
+
+**`play/playlist?url=` provider sniffing** (`classifyPlaylistUrl` in protocol-url.js, tests at `tests/protocol/playlist-url-classify.test.js`): host-sniffs `open.spotify.com` / `music.apple.com` / `soundcloud.com` / `on.soundcloud.com` (short link — main-process `HEAD` follows the 302, re-validates final host) / `achordion.xyz/playlist/<mbid>` (fetched from `https://achordion.xyz/api/playlist/<mbid>/xspf`; the page itself is Vercel bot-challenged). Anything else falls through to the existing hosted-tracklist parse. **Sniffing is gated to `play/playlist` only** — `play/album?url=` and `play/radio?url=` stay tracklist-document-only. Public doc: [`docs/protocol-schema.md` § Play Playlist § Provider URL sniffing](../../docs/protocol-schema.md). Landed in PR #932 for parachord#930; the website worker's matching path-form bounce in [parachord-website#102](https://github.com/Parachord/parachord-website/pull/102).
+
+**Universal / App Links (HTTPS share form).** Every `parachord://<verb>` URL has a byte-identical `https://parachord.com/<verb>` form. The website worker reconstructs `parachord://` from incoming HTTPS by stripping the host and prefixing the scheme — same path, same query. **The deep link must be the canonical path form** (`parachord://play/playlist?url=...`, not `parachord://play?type=playlist&url=...`); the desktop and mobile parsers read the play sub-action from the path segment, not from `?type=`. The web worker formerly leaked the `?type=` form during internal normalization and silently broke every HTTPS bounce — see [parachord-website#102](https://github.com/Parachord/parachord-website/pull/102) for the inverse-normalization fix. Defense-in-depth: this client also accepts the play sub-action via `segments[0] || params.type` to remain robust against any future re-normalization. URL conventions reference: [parachord-website/CLAUDE.md](https://github.com/Parachord/parachord-website/blob/main/CLAUDE.md).
+
+**Tracklist parser** (`window.parseProtocolTracklist`, ~L36978; SYNCed with `tests/helpers/tracklist-parser.js`): auto-detects XSPF (XML, DOMParser) / JSPF / generic JSON tracklist. JSPF identifier strings are MBID-validated (`/^[a-f0-9-]{36}$/i`). Inline tracks capped at 500; bodies capped at 100KB.
+
+**`play/radio` extends in-app spinoff** (`startSpinoff` overloaded to accept `{ pool, displayName, refillUrl }`, ~L32066). Refill loop polls the URL when pool falls below 3 tracks, soft-rate-limited to ≥5s between fetches; stops after 3 consecutive empty fetches. Mode B (`?artist=`) uses the existing similar-tracks endpoint; Mode C (`?url=` / `?tracks=`+`?refill=`) uses an externally-curated pool.
+
+**SSRF guard** (protocol-url.js): rejects non-HTTP(S), loopback, RFC1918, CGNAT (100.64/10), link-local 169.254/16 (incl. cloud-metadata IP), `.local` mDNS (with trailing-dot variants), IPv6 loopback / link-local fe80::/10 / ULA fc00::/7 / IPv4-mapped `::ffff:0:0/96`. Applied at five call sites: `resolveProtocolPlayInput` URL branch, `play/radio` upfront refill check, `refillSpinoffPool` re-check on every refill, the `import` handler, and (parachord#1011) the hosted-playlist fetch `fetchHostedPlaylistText` (~L37055) that `handleImportPlaylistFromUrl` and `pollHostedPlaylists` share, via `window.hostedPlaylistFetchProblem` (protocol-url.js). Does NOT defend against DNS rebinding (documented). The four protocol fetchers pass `redirect: 'error'` to defend against 3xx-to-private redirects; the hosted-playlist fetch instead follows redirects (hosted XSPF commonly sits behind http→https or Dropbox `dl=1` redirects, and existing `sourceUrl`s must keep working) and rejects the body when `response.url` fails the same guard, and when the body exceeds `HOSTED_PLAYLIST_MAX_BYTES` (5 MB).
+
+**Listen-along** (`activateListenAlongRef.current(friend)`, ~L29637 wiring): the `listen-along` case looks up an existing friend; if none, fetches the user's now-playing via `fetchTransientFriendNowPlaying(service, user)` and constructs a transient friend record. LB uses `/1/user/{name}/playing-now`; Last.fm uses `user.getrecenttracks?limit=1` and checks `@attr.nowplaying === 'true'`.
+
+**Acknowledgment toast for slow commands** (~L10847): right after URL parsing, the protocol handler fires a `showToast(..., 'info', null, { duration: 30000 })` for `play`, `import`, `chat`, and `listen-along` (skipped for `control/*`, `queue/*`, `shuffle/*`, `volume/*`, navigation — those complete instantly). Per-command messages: "Loading album…" / "Loading playlist…" / `Loading radio${name ? \`: ${name}\` : ''}…` / `Looking up "${title}" by ${artist}…` / "Importing…" / "Opening chat…" / `Connecting to ${user}…`. The 30s duration covers the worst-case cold-cache resolution window (URL fetch + JSPF parse + N=2 lookahead resolve); the success or error toast that fires when work completes naturally replaces the acknowledgment. Without the long duration, the default 3s timeout would dismiss the loading toast mid-resolution and the user would see a several-second silent gap.

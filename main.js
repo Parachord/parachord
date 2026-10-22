@@ -6505,7 +6505,7 @@ migrateSyncLinksFromPlaylists();
 // The current `isOwnPullSource` guard at sync:start prevents this going
 // forward, but existing corrupted state needs healing. The heuristic is
 // safe: imported playlist IDs are `${providerId}-${externalId}` by
-// construction (CLAUDE.md "Imported playlist ID convention"), so any
+// construction (docs/architecture/sync.md "Imported playlist ID convention"), so any
 // playlist whose ID starts with `spotify-` was, historically, imported
 // from Spotify and `syncedFrom.resolver` MUST be `spotify`. If it isn't,
 // we restore it and demote the wrong provider to a `syncedTo` mirror so
@@ -6679,7 +6679,7 @@ ipcMain.handle('playlists-delete-from-source', async (event, providerId, externa
       }
     } else if (providerId === 'listenbrainz') {
       // LB user token lives in the scrobbler-side config, not a separate
-      // sync key. See CLAUDE.md "ListenBrainz auth token auto-attach".
+      // sync key. See docs/architecture/android-parity.md "ListenBrainz auth token auto-attach".
       const cfg = store.get('scrobbler-config-listenbrainz') || {};
       token = cfg.userToken || null;
     }

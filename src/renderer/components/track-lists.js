@@ -4,7 +4,7 @@
 //
 // TrackRow is the single track row (resolver badges via the ui-atoms kit,
 // confidence-badge dimming via getBestSourceConfidence — the absolute
-// >= 0.95 = full-opacity model, see CLAUDE.md "Match Confidence + Selection
+// >= 0.95 = full-opacity model, see docs/architecture/playback.md "Match Confidence + Selection
 // Floor"); VirtualizedQueueList / VirtualizedTrackList are the windowed lists
 // (ReactVirtual is the vendor global). getBestSourceConfidence moves WITH its
 // primary pre-component consumer and is exported back to app.js, where the

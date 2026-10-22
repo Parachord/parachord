@@ -3,7 +3,7 @@
 // Uses JSPF for playlist body and recording MBIDs as the canonical track
 // identifier. The user token used here is the SCROBBLER-side token (key
 // `scrobbler-config-listenbrainz`.userToken), not the meta-service config —
-// see CLAUDE.md "ListenBrainz auth token auto-attach" for the rationale.
+// see docs/architecture/android-parity.md "ListenBrainz auth token auto-attach" for the rationale.
 //
 // Capability matrix (mirrors the shape used by spotify.js / applemusic.js):
 //   - playlists: true
@@ -277,8 +277,8 @@ async function createPlaylist(name, description, token) {
       annotation: description || '',
       extension: {
         'https://musicbrainz.org/doc/jspf#playlist': {
-          // Default-private. Hard-coded; see CLAUDE.md "ListenBrainz Playlist
-          // Sync" section for rationale and the user-toggle follow-up.
+          // Default-private. Hard-coded; see docs/architecture/sync.md
+          // "ListenBrainz Specifics" for rationale and the user-toggle follow-up.
           public: false,
           creator: userName,
         },
@@ -490,7 +490,7 @@ async function updatePlaylistDetails(playlistMbid, details, token) {
   const res = await lbRequest(`/1/playlist/edit/${encodeURIComponent(playlistMbid)}`, token, { method: 'POST', body });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    // Don't throw — see CLAUDE.md "Apple Music fallback behavior" rationale.
+    // Don't throw — see docs/architecture/sync.md "Apple Music fallback behavior" rationale.
     // Track-push happens AFTER details-push in sync:push-playlist; a throw
     // here would abort the track push too. Log + return success-with-skip.
     console.warn(`[LB] updatePlaylistDetails returned ${res.status}: ${text.slice(0, 200)}`);
