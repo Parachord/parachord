@@ -41,7 +41,7 @@ Install from [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/pa
 
 1. Make sure Parachord desktop is running
 2. Click the Parachord icon in your browser toolbar to open the popup
-3. The extension will automatically connect to Parachord on `localhost:21863`
+3. The extension connects to Parachord automatically through native messaging: the browser launches Parachord's native messaging host (`com.parachord.desktop`, registered by the desktop app when it starts), which relays messages to the running app. No network port is involved
 
 ### Context Menu
 
@@ -53,7 +53,7 @@ When you're on a supported site (YouTube, Spotify, etc.), the extension will det
 
 ## Development
 
-The extension uses Chrome Manifest V3 with:
+The extension uses Manifest V3 with (the Firefox build is generated from the same manifest by `scripts/package-extension.js`):
 
 - `background.js` - Service worker for handling connections and context menus
 - `content.js` - Generic content script for YouTube and Bandcamp
@@ -61,12 +61,13 @@ The extension uses Chrome Manifest V3 with:
 - `content-applemusic.js` - Apple Music-specific content script
 - `content-soundcloud.js` - SoundCloud-specific content script
 - `content-pitchfork.js` - Pitchfork review page content script
+- `content-inline.js` - Adds inline "Send to Parachord" buttons next to supported music links and embeds on other sites
 - `popup.html/js` - Extension popup UI
 
 ## Requirements
 
-- Chrome, Edge, or other Chromium-based browser
-- Parachord desktop app running locally
+- Chrome, Edge, another Chromium-based browser, or Firefox
+- Parachord desktop app installed and running locally (it registers the native messaging host the extension needs)
 
 ## License
 
