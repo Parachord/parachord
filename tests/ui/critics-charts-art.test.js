@@ -39,3 +39,27 @@ describe.each(['fetchCriticsPicksAlbumArt', 'fetchChartsAlbumArt'])('%s', (name)
     expect(b).not.toMatch(/albumArtCache\.current\[cachedReleaseId\]/);
   });
 });
+
+// Critical Darlings restored from cache keep the art they were saved with, and
+// the art pass only ran from loadCriticsPicks, which a cache under 4 hours old
+// skips: picks saved with albumArt: null stayed blank until the cache went
+// stale. The deferred big-cache hydration now retries them once the album-art
+// caches are in (the restore itself runs before those load).
+describe('Critical Darlings restored from cache', () => {
+  const start = app.indexOf('scheduleIdle(async () => {');
+  const idle = app.slice(start, app.indexOf('// end scheduleIdle for big-cache hydration', start));
+
+  test('the deferred hydration retries picks saved without a cover', () => {
+    expect(idle).toMatch(/const criticsMissingArt = \(criticsPicksCache\.current\.albums \|\| \[\]\)\.filter\(a => typeof a\.albumArt !== 'string'\);/);
+    expect(idle).toMatch(/\.then\(\(\) => fetchCriticsPicksAlbumArt\(criticsMissingArt\)\)/);
+  });
+
+  test('it waits for resolvers, bounded, like the Fresh Drops pass', () => {
+    expect(idle).toMatch(/Promise\.race\(\[resolversReadyForCritics, new Promise\(resolve => setTimeout\(resolve, 15000\)\)\]\)/);
+  });
+
+  test('it runs after the album-art cache is hydrated', () => {
+    expect(idle.indexOf('albumArtCache.current = Object.fromEntries(validEntries);')).toBeGreaterThan(-1);
+    expect(idle.indexOf('albumArtCache.current = Object.fromEntries(validEntries);')).toBeLessThan(idle.indexOf('const criticsMissingArt'));
+  });
+});
