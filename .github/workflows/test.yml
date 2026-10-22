@@ -33,12 +33,20 @@ jobs:
       - name: Run test suite
         run: npm test
         env:
-          # npm test's pretest hook builds the generated renderer bundle
-          # (app.js) and the generated plugin artifacts (plugins/*.axe)
-          # from their sources. The tracked-artifact drift guard
-          # (tests/plugins/axes-drift.test.js) is retired — a tracked
-          # artifact cannot drift when it isn't tracked; the --check step
-          # below guards generation consistency instead.
+          # npm test's pretest hook (build-axes BEFORE build-renderer) builds
+          # the generated plugin artifacts and the renderer bundle
+          # (app.js) from their sources. Drift is checked by the step below,
+          # not a test: a tracked artifact cannot drift when it isn't
+          # tracked, and a --check run AFTER pretest's writer cannot fail
+          # (the writer has already regenerated everything on disk).
           CI: true
-      - name: Verify generated plugin artifacts are generation-consistent
-        run: node scripts/build-axes.js --check
+      - name: Generated outputs are committed (plugin drift gate)
+        # tests/plugins/axes-drift.test.js replacement: the writer must be a
+        # no-op against what the PR committed. A PR that edits plugins-src/
+        # without committing the regenerated FALLBACK_RESOLVERS block and
+        # marketplace-manifest versions fails here.
+        run: |
+          if ! git diff --exit-code -- src/renderer/app.js marketplace-manifest.json; then
+            echo "::error::build-axes rewrote committed files — run 'node scripts/build-axes.js' and commit src/renderer/app.js plus marketplace-manifest.json"
+            exit 1
+          fi

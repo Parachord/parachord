@@ -18,6 +18,12 @@
 //   `git fetch origin $GITHUB_BASE_REF --depth=1`). The diff is a direct
 //   tree-vs-tree comparison, so no merge-base history is needed.
 //
+// LOCAL-RUN CAVEAT: with the default baseRef the diff compares against
+// origin/main's TIP, so on a branch behind main a plugin version bump that
+// LANDED on main looks like your PR's own unbumped edit (false positive).
+// git fetch + rebase (or pass your merge-base explicitly) first. In CI
+// this can't happen: HEAD is the merge commit against a fresh base fetch.
+//
 // Exit codes: 0 pass / nothing to check, 1 one or more bumps missing,
 // 2 the check itself could not run (bad ref, etc.).
 
