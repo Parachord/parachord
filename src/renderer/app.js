@@ -41340,43 +41340,46 @@ useEffect(() => {
               }, 'Retry')
             ),
 
-            // Skeleton loading state - show when loading OR when critics picks haven't been loaded yet
+            // Skeleton loading state - show when loading OR when critics picks haven't been loaded yet.
+            // Same box as the album cards below (12px padding, 10px radius, card
+            // background + shadow, 180px cover, 12px between cards, text column
+            // centered with the same line heights), so the list doesn't jump
+            // when the picks arrive.
             !criticsPicksError && (criticsPicksLoading || !criticsPicksLoaded) && React.createElement('div', {
-              className: 'space-y-4 pb-6'
+              className: 'space-y-3 pb-6'
             },
-            Array.from({ length: 8 }).map((_, i) =>
-              React.createElement('div', {
-                key: `skeleton-${i}`,
-                className: 'flex gap-5 p-4 bg-white rounded-xl border border-gray-100'
+            Array.from({ length: 8 }).map((_, i) => {
+              // A shimmer bar of the given height inside a text line of lineHeight.
+              const line = (lineHeight, barHeight, width, delay, marginTop = 0) => React.createElement('div', {
+                style: { height: `${lineHeight}px`, marginTop: `${marginTop}px`, display: 'flex', alignItems: 'center' }
               },
-                // Skeleton album art
                 React.createElement('div', {
-                  className: 'w-28 h-28 flex-shrink-0 rounded-lg shimmer-light animate-shimmer',
-                  style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
+                  className: 'shimmer-light rounded animate-shimmer',
+                  style: { height: `${barHeight}px`, width, backgroundSize: '200% 100%', animationDelay: `${i * 50 + delay}ms` }
+                })
+              );
+              return React.createElement('div', {
+                key: `skeleton-${i}`,
+                className: 'flex gap-4',
+                style: { padding: '12px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' }
+              },
+                // Cover (the cards' 180px album-art-container)
+                React.createElement('div', {
+                  className: 'shimmer-light animate-shimmer',
+                  style: { width: '180px', height: '180px', flexShrink: 0, borderRadius: '8px', backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
                 }),
-                // Skeleton content
-                React.createElement('div', { className: 'flex-1 space-y-3 py-1' },
-                  React.createElement('div', {
-                    className: 'h-5 shimmer-light rounded w-2/5 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                  }),
-                  React.createElement('div', {
-                    className: 'h-4 shimmer-light rounded w-1/4 animate-shimmer',
-                    style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                  }),
-                  React.createElement('div', { className: 'space-y-2 pt-2' },
-                    React.createElement('div', {
-                      className: 'h-3 shimmer-light rounded w-full animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
-                    }),
-                    React.createElement('div', {
-                      className: 'h-3 shimmer-light rounded w-4/5 animate-shimmer',
-                      style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 100}ms` }
-                    })
-                  )
+                // Title (15px), artist (13px, 2px gap), two synopsis lines (12px, 8px
+                // gap); every line at the base 1.5 line height
+                React.createElement('div', {
+                  style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }
+                },
+                  line(22.5, 14, '40%', 25),
+                  line(19.5, 12, '25%', 50, 2),
+                  line(18, 10, '100%', 75, 8),
+                  line(18, 10, '80%', 100)
                 )
-              )
-            )
+              );
+            })
           ),
 
           // Albums grid with filter/sort - only show when loaded and not loading
@@ -42682,8 +42685,37 @@ useEffect(() => {
                 // Loading state - show skeleton for active tab
                 recommendations.loading ?
               React.createElement('div', null,
-                // Artists tab - cards will appear with their own shimmer animations
-                recommendationsTab === 'artists' && null,
+                // Artists tab skeleton while the recommendations are fetched. The
+                // cards shimmer their own images once they exist, but until the
+                // fetch returns there are no cards, and the default tab rendered
+                // blank (86dd867 removed this as a "double skeleton"). Same grid,
+                // card box and text-line height as the cards, so nothing shifts.
+                recommendationsTab === 'artists' && React.createElement('div', {
+                  className: 'grid gap-4',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
+                },
+                  ...Array(12).fill(null).map((_, i) =>
+                    React.createElement('div', {
+                      key: `rec-artist-skeleton-${i}`,
+                      className: 'rounded-lg overflow-hidden',
+                      style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' }
+                    },
+                      React.createElement('div', {
+                        className: 'aspect-square shimmer-strong animate-shimmer',
+                        style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(i * 30, 300)}ms` }
+                      }),
+                      React.createElement('div', { className: 'p-3' },
+                        // A text-sm line is 20px tall; the bar sits inside it.
+                        React.createElement('div', { style: { height: '20px', display: 'flex', alignItems: 'center' } },
+                          React.createElement('div', {
+                            className: 'h-3.5 w-3/4 rounded shimmer-light animate-shimmer',
+                            style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(i * 30, 300) + 50}ms` }
+                          })
+                        )
+                      )
+                    )
+                  )
+                ),
                 // Songs skeleton (when songs tab active)
                 recommendationsTab === 'songs' && React.createElement('div', { className: 'space-y-0' },
                   ...Array(15).fill(null).map((_, i) =>
