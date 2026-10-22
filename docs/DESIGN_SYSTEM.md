@@ -77,13 +77,13 @@ Each music service has a branded color used in badges and icons:
 | Service | Text Class | Badge Color | Icon Hex |
 |---------|-----------|-------------|----------|
 | Spotify | `text-green-400` | `bg-green-600/20` | `#1DB954` |
-| Apple Music | — | — | `#FA243C` |
-| Amazon Music | — | — | `#25D1DA` |
+| Apple Music | - | - | `#FA243C` |
+| Amazon Music | - | - | `#25D1DA` |
 | YouTube | `text-red-400` | `bg-red-600/20` | `#FF0000` |
 | Bandcamp | `text-cyan-400` | `bg-cyan-600/20` | `#629AA9` |
 | SoundCloud | `text-orange-400` | `bg-orange-600/20` | `#FF5500` |
 | Subsonic | `text-teal-400` | `bg-teal-600/20` | `#14b8a6` |
-| Local Files | — | — | `#6366f1` |
+| Local Files | - | - | `#6366f1` |
 
 The icon hex is each plug-in's `manifest.color` (`plugins-src/<id>/manifest.json`); the resolver badges in the track lists use it as their background (`backgroundColor: resolver.color` in `track-lists.js`). The text and badge classes are `TrackRow`'s `resolverMeta` map in `src/renderer/components/track-lists.js`, which covers only the services listed with classes here (it still carries a `qobuz` entry, though no Qobuz plug-in exists).
 
