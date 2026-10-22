@@ -1,17 +1,17 @@
 # Playlist Import and Sync
 
-Every way a playlist gets into Parachord, and every way one is kept in step with an outside service. Written from the code as of October 2026, not from the design plans. Line numbers are approximate and refer to `app.js` unless another file is named.
+Every way a playlist gets into Parachord, and every way one is kept in step with an outside service. Written from the code as of October 2026, not from the design plans. Functions are in `src/renderer/app.js` unless another file is named; the playlist detail view (sync banner, Pull and Push, the Local only pill, edit mode) is `PlaylistViewPage` in `src/renderer/components/playlist-view-page.js`.
 
 Related: [RECOMMENDATIONS.md](RECOMMENDATIONS.md), [protocol-schema.md](../protocol-schema.md), [docs/architecture/sync.md](../architecture/sync.md) for sync internals (data model, link map, push loops, provider quirks), and [docs/architecture/android-parity.md](../architecture/android-parity.md) for the rules the Android client must match.
 
-All playlists live in the electron-store key `local_playlists`, read and written through the `playlists-load`, `playlists-save` and `playlists-delete` IPC handlers (main.js ~L5258 onward). The `playlists/` folder in the repo is not read at runtime.
+All playlists live in the electron-store key `local_playlists`, read and written through the `playlists-load`, `playlists-save` and `playlists-delete` IPC handlers (main.js). The `playlists/` folder in the repo is not read at runtime.
 
 ## Summary
 
 | Path | Entry point | Accepts | Saved to library? | Ongoing? |
 |---|---|---|---|---|
 | Import from URL | Import Playlist modal; Playlists page Import button; File menu | Spotify, Apple Music, SoundCloud sets, YouTube playlists, Amazon playlists, any hosted XSPF URL | Yes | Hosted XSPF: re-fetched at startup and every 5 minutes. Provider URL imports are snapshots: manual Refresh only |
-| Drop a URL | Sidebar Playlists button; Playlists page | Same as above | Yes | Yes |
+| Drop a URL | Sidebar Playlists button; Playlists page | Same as above | Yes | Same as above: hosted XSPF yes, provider URLs are snapshots |
 | Drop a URL on the queue or now-playing | Queue panel; playbar | Track, album or playlist URL any resolver claims | No, queue only | No |
 | XSPF file | Import modal "Load from File" | `.xspf` file | Yes | No |
 | `parachord://import` | Deep link, website bounce, embed button, local HTTP/WebSocket server | `url=` (hosted or provider) or inline `tracks=` | Yes, after a confirmation dialog | URL form yes, inline form no |
@@ -28,22 +28,23 @@ Not supported anywhere: Bandcamp playlist URLs (no `lookupPlaylist` in `bandcamp
 
 ## Import from URL
 
-Code: `handleImportPlaylistFromUrl` (~L36907).
+Code: `handleImportPlaylistFromUrl`.
 
-Entry points: the Import Playlist modal (~L58082, URL card labelled "Spotify, Apple Music, or hosted .xspf"), the Import button on the Playlists page (~L45582), File menu "Import Playlist..." (main.js ~L1968, menu action `import-playlist` at ~L12698), dropping a URL (next section), `parachord://import?url=`, and the hosted-playlist reload and poller.
+Entry points: the Import Playlist modal (URL card labelled "Spotify, Apple Music, Amazon Music, or hosted .xspf"), the Import button on the Playlists page, File menu "Import Playlist..." (main.js application menu, menu action `import-playlist`), dropping a URL (next section), `parachord://import?url=`, and the hosted-playlist reload and poller.
 
 How a URL is handled:
-1. `findResolverForUrl` (resolver-loader.js ~L217) asks every loaded `.axe` whether its `urlPatterns` match. If one does and `getUrlType` says `playlist`, that resolver's `lookupPlaylist` runs and the result is converted to XSPF with `generateXSPF`.
-2. Otherwise the URL is fetched with a plain renderer `fetch` and parsed by `parseXSPF` (~L28996). That parser handles XML only, so JSPF and JSON documents are not accepted on this path (they are on `play/playlist`).
+1. `findResolverForUrl` (resolver-loader.js) asks every loaded `.axe` whether its `urlPatterns` match. If one does and `getUrlType` says `playlist`, that resolver's `lookupPlaylist` runs and the result is converted to XSPF with `generateXSPF`.
+2. Otherwise the URL is fetched with a plain renderer `fetch` and parsed by `parseXSPF`. That parser handles XML only, so JSPF and JSON documents are not accepted on this path (they are on `play/playlist`).
 
 Resolvers that implement `lookupPlaylist`:
 
 | Plugin | Playlist URLs | Notes |
 |---|---|---|
-| spotify.axe | `open.spotify.com/playlist/*`, `open.spotify.com/intl-*/playlist/*`, `spotify:playlist:*` | Web API, 100 tracks per page. On 403, 404 or no token, falls back to scraping the embed page via the `spotify-scrape-playlist` IPC (main.js ~L3567). |
-| applemusic.axe | `music.apple.com/*/playlist/*/*` | `window.appleMusicLookupPlaylist` (~L1028): a MusicKit catalog lookup. Returns nothing when MusicKit is not configured. |
+| spotify.axe | `open.spotify.com/playlist/*`, `open.spotify.com/intl-*/playlist/*`, `spotify:playlist:*` | Web API, 100 tracks per page. On 403, 404 or no token, falls back to scraping the embed page via the `spotify-scrape-playlist` IPC (main.js). |
+| applemusic.axe | `music.apple.com/*/playlist/*/*` | `window.appleMusicLookupPlaylist`: a MusicKit catalog lookup. Returns nothing when MusicKit is not configured. |
 | soundcloud.axe | `soundcloud.com/*/sets/*` | Needs a SoundCloud OAuth token; returns nothing without one. |
 | youtube.axe | `youtube.com/playlist?list=*`, `music.youtube.com`, any URL with `&list=` | Scrapes the playlist page, stops at 100 tracks, splits "Artist - Title" on the dash. Not mentioned in the modal label. |
+| amazonmusic.axe | `music.amazon.com/playlists/*`, `music.amazon.com/my/playlists/*`, `music.amazon.com/user-playlists/*` | Loads the playlist page in a hidden view and replays the page's own `playlistDetail` GraphQL request, following the continuation token page by page. Needs an Amazon Music sign-in, not the Widevine CDM. Rows Amazon has delisted are dropped. See [docs/architecture/amazon-music.md](../architecture/amazon-music.md). |
 
 The imported playlist gets the id `hosted-${hash(url)}`, `sourceUrl: url`, and `source` of `${resolverId}-import` or `hosted-xspf`. A hosted XSPF URL is appended to the `hosted_playlists` store list. A provider URL import is not — that list is re-imported at launch, and fetching a provider playlist page as XSPF shows "Failed to parse XSPF" (Electron's `file://` renderer does not enforce CORS, so the HTML comes back and parses to zero tracks). Re-importing an existing URL updates the playlist in place and sets `locallyModified` only when the content changed. Provider imports keep `sourceUrl` for a manual Refresh button, which re-runs `lookupPlaylist` and toasts on failure. They are not polled.
 
@@ -53,19 +54,19 @@ The hosted fetch goes through `fetchHostedPlaylistText`, which applies `hostedPl
 
 Two different drops exist and they do different things.
 
-**Drop a URL to import** (`handlePlaylistDrop`, ~L37109). Targets: the sidebar "Playlists" button (~L39056) and the whole Playlists page (~L45405). Accepts a resolver URL of type `playlist`, or any http(s) URL no resolver claims, which is treated as hosted XSPF. Album and track URLs are ignored here. The URL is read from `text/uri-list` or `text/plain` (`extractUrlFromDrop`, ~L9049). Saves to the library through the URL import above.
+**Drop a URL to import** (`handlePlaylistDrop`). Targets: the sidebar "Playlists" button and the whole Playlists page. Accepts a resolver URL of type `playlist`, or any http(s) URL no resolver claims, which is treated as hosted XSPF. Album and track URLs are ignored here. The URL is read from `text/uri-list` or `text/plain` (`extractUrlFromDrop`). Saves to the library through the URL import above.
 
-**Drop a URL to play or queue** (`handleUrlDrop`, ~L9134, via `handleDrop` ~L9584). Targets: the queue panel and the now-playing area. Album and playlist URLs go through `handleCollectionUrlDrop` (~L9161), which uses `lookupAlbum` or `lookupPlaylist` and puts the tracks at the front of the queue, or plays them when dropped on now-playing. Nothing is saved.
+**Drop a URL to play or queue** (`handleUrlDrop`, via `handleDrop`). Targets: the queue panel and the now-playing area. Album and playlist URLs go through `handleCollectionUrlDrop`, which uses `lookupAlbum` or `lookupPlaylist` and puts the tracks at the front of the queue, or plays them when dropped on now-playing. Nothing is saved.
 
 There is no file drop. `dataTransfer.files` is never read, so dropping `.xspf`, `.m3u` or audio files does nothing. There is no paste handler.
 
-**Editing playlists by dragging** (not importing): dragging a track over the sidebar opens the Add-to-Playlist panel (~L38941), where a track can be dropped on a playlist row (~L62733) or on the New Playlist row (~L62476). Because Electron does not always fire `onDrop`, `handlePlaylistDragEnd` (~L9113) acts as a fallback. Playlist edit mode supports drag-to-reorder (~L45164).
+**Editing playlists by dragging** (not importing): dragging a track over the sidebar opens the Add-to-Playlist panel, where a track can be dropped on a playlist row or on the New Playlist row. Because Electron does not always fire `onDrop`, `handlePlaylistDragEnd` acts as a fallback. Playlist edit mode (`PlaylistViewPage`) supports drag-to-reorder.
 
 ## XSPF files
 
-**Import.** "Load from File" in the Import modal (~L58278) calls `handleImportPlaylist` (~L36747), which uses the `playlists-import` IPC (main.js ~L5279). The file dialog allows `.xspf` only and checks for a `<playlist>` element. Saved as `imported-${Date.now()}` with `source: 'imported-xspf'`. One-shot.
+**Import.** "Load from File" in the Import modal calls `handleImportPlaylist`, which uses the `playlists-import` IPC (main.js). The file dialog allows `.xspf` only and checks for a `<playlist>` element. Saved as `imported-${Date.now()}` with `source: 'imported-xspf'`. One-shot.
 
-**Export.** `handleExportPlaylist` (~L37530) writes an `.xspf` through the `playlists-export` IPC save dialog (main.js ~L6526). Reachable from the playlist header's Share menu ("Export as XSPF…"), the playlist row context menu, and the queue save dialog's "Save to file" button (the dialog's "Save" still saves into the library). Playlists created in-app carry no stored XSPF, so the document is generated from their tracks.
+**Export.** `handleExportPlaylist` writes an `.xspf` through the `playlists-export` IPC save dialog (main.js). Reachable from the playlist header's Share menu ("Export as XSPF…"), the playlist row context menu, and the queue save dialog's "Save to file" button (the dialog's "Save" still saves into the library). Playlists created in-app carry no stored XSPF, so the document is generated from their tracks.
 
 **What is read and written.** `parseXSPF` (used by file import and the URL import path) reads the playlist's `<title>`, `<creator>` and `<date>`, and for each `<track>` its `<title>`, `<creator>` (the artist), `<album>`, `<duration>` (milliseconds, converted to seconds) and `<location>`. Missing fields fall back to "Untitled Playlist", "Unknown", "Unknown Track" and "Unknown Artist". Other XSPF elements are ignored. `generateXSPF` writes the same playlist fields (`<date>` from `createdAt`, or the current time) and per track `<title>`, `<creator>`, `<album>` and `<duration>` in milliseconds; it does not write `<location>`. A minimal document:
 
@@ -89,37 +90,37 @@ There is no file drop. `dataTransfer.files` is never read, so dropping `.xspf`, 
 
 ## `parachord://` deep links
 
-The command switch is at ~L13306. Public docs: [protocol-schema.md](../protocol-schema.md). The website reconstructs `parachord://` from `https://parachord.com/<verb>` links, so every form below also works as an HTTPS share link.
+The command switch is the `switch (command)` block in the protocol handler. Public docs: [protocol-schema.md](../protocol-schema.md). The website reconstructs `parachord://` from `https://parachord.com/<verb>` links, so every form below also works as an HTTPS share link.
 
-**`parachord://import`** (~L13834) saves to the library and always shows a confirmation dialog first.
-- `?url=`: must pass `isPublicHttpUrl` (~L188). On confirm it calls the URL import above. A hosted XSPF keeps updating. A provider playlist URL is a snapshot (manual Refresh only).
+**`parachord://import`** saves to the library and always shows a confirmation dialog first.
+- `?url=`: must pass `isPublicHttpUrl`. On confirm it calls the URL import above. A hosted XSPF keeps updating. A provider playlist URL is a snapshot (manual Refresh only).
 - `?tracks=<base64 JSON>` with optional `title` and `creator`: rejected over 100,000 encoded characters or 500 tracks. Decoded as UTF-8. Saved as `imported-${Date.now()}` with `source: 'imported-xspf'`. One-shot.
 
-**`parachord://play/playlist`** (~L13319) plays only and never saves. Input resolution is `resolveProtocolPlayInput` (~L13083).
-- `?url=` must pass the public-URL guard, then `resolveProviderPlaylistUrl` (~L12996) applies `classifyPlaylistUrl` (~L231): `achordion.xyz/playlist/<mbid>` is fetched from `achordion.xyz/api/playlist/<mbid>/xspf`; `on.soundcloud.com` short links are resolved with a main-process HEAD request and re-checked; any other URL a resolver claims goes to its `lookupPlaylist`; everything else is fetched with `redirect: 'error'`, a 100 KB body cap, and the ListenBrainz token attached for `api.listenbrainz.org`, then parsed by `parseProtocolTracklist` (~L36833), which accepts XSPF, JSPF (including the ListenBrainz `payload.jspf` wrapper) and `{ tracks: [] }` JSON, capped at 500 tracks.
+**`parachord://play/playlist`** plays only and never saves. Input resolution is `resolveProtocolPlayInput`.
+- `?url=` must pass the public-URL guard, then `resolveProviderPlaylistUrl` applies `classifyPlaylistUrl`: `achordion.xyz/playlist/<mbid>` is fetched from `achordion.xyz/api/playlist/<mbid>/xspf`; `on.soundcloud.com` short links are resolved with a main-process HEAD request and re-checked; any other URL a resolver claims goes to its `lookupPlaylist`; everything else is fetched with `redirect: 'error'`, a 100 KB body cap, and the ListenBrainz token attached for `api.listenbrainz.org`, then parsed by `parseProtocolTracklist`, which accepts XSPF, JSPF (including the ListenBrainz `payload.jspf` wrapper) and `{ tracks: [] }` JSON, capped at 500 tracks.
 - `?tracks=` inline: same 100 KB and 500-track caps.
 - `?shuffle=1` shuffles before playing.
 
 `parachord://play/radio` starts a spinoff pool (documented in RECOMMENDATIONS.md) and `parachord://playlist/<id>` only navigates.
 
-**Embed button and local server.** `parachord-button.js` (the embeddable web button) talks to a local server on 127.0.0.1:9876 (WebSocket `importPlaylist`, HTTP `POST /import` at main.js ~L1121). `handleEmbedMessage` (main.js ~L1426) turns those into `parachord://import?url=` or `?tracks=` links, so they go through the same confirmation dialog.
+**Embed button and local server.** `parachord-button.js` (the embeddable web button) talks to a local server on 127.0.0.1:9876 (WebSocket `importPlaylist`, HTTP `POST /import`, both in main.js). `handleEmbedMessage` (main.js) turns those into `parachord://import?url=` or `?tracks=` links, so they go through the same confirmation dialog.
 
 ## Browser extension
 
-Source: `parachord-extension/` (Manifest V3, version 0.4.0). Transport is Chrome native messaging (`chrome.runtime.connectNative`), through a native host that connects to the app's IPC socket (main.js ~L1191). The app forwards messages to the renderer (~L12109).
+Source: `parachord-extension/` (Manifest V3, version 0.4.0). Transport is Chrome native messaging (`chrome.runtime.connectNative`), through a native host that connects to the app's IPC socket (main.js). The app forwards messages to the renderer.
 
 What the renderer does with each message:
 
 | Message | Handler | Result |
 |---|---|---|
-| `sendToParachord { url }` | `handleSendToParachord` (~L11096), then `handleUrlDrop(url, 'queue')` | Queue only |
-| `scrapedPlaylist` | `handleScrapedPlaylist` (~L11115) | Front of queue |
-| `scrapedAlbum` | `handleScrapedAlbum` (~L11163), MusicBrainz release-group lookup | Front of queue |
+| `sendToParachord { url }` | `handleSendToParachord`, then `handleUrlDrop(url, 'queue')` | Queue only |
+| `scrapedPlaylist` | `handleScrapedPlaylist` | Front of queue |
+| `scrapedAlbum` | `handleScrapedAlbum`, MusicBrainz release-group lookup | Front of queue |
 | `addFriend { url }` | `addFriend` | Adds a friend |
 
 Nothing the extension sends is saved as a playlist. To keep a playlist from the extension, save the queue afterwards.
 
-Page detection in the popup (`popup.js` ~L20 onward):
+Page detection in the popup (`popup.js`):
 
 | Site | Page types |
 |---|---|
@@ -145,7 +146,7 @@ A URL no resolver claims is a hosted XSPF. There is no checkbox and no `.xspf` e
 
 ## Provider sync
 
-Providers: Spotify, Apple Music and ListenBrainz (`syncProviderConfig`, ~L6590; `sync-providers/*.js`). There is no YouTube Music provider; the YouTube Music sync design in docs/plans was not built.
+Providers: Spotify, Apple Music and ListenBrainz (`syncProviderConfig`; `sync-providers/*.js`). There is no YouTube Music provider; the YouTube Music sync design in docs/plans was not built.
 
 | Provider | Remove track | Reorder | Delete playlist | Rename |
 |---|---|---|---|---|
@@ -153,46 +154,45 @@ Providers: Spotify, Apple Music and ListenBrainz (`syncProviderConfig`, ~L6590; 
 | Apple Music | not supported by Apple's public API | no | no | no |
 | ListenBrainz | by position | no | yes | yes |
 
-Apple Music writes degrade to append-only when Apple rejects PUT; removals stay on the remote. ListenBrainz needs a recording MBID for every pushed track and detects collaborators. Details and invariants are in CLAUDE.md under Provider-Specific Push Semantics and ListenBrainz Specifics.
+Apple Music writes degrade to append-only when Apple rejects PUT; removals stay on the remote. ListenBrainz needs a recording MBID for every pushed track and detects collaborators. Details and invariants are in [docs/architecture/sync.md](../architecture/sync.md) under Provider-Specific Push Semantics and ListenBrainz Specifics.
 
-**Sync wizard** (`openSyncSetupModal`, ~L11284). Opened from the Collection header Sync dropdown (~L48262), the Collection empty-state buttons, the plugin detail page in Settings (sync, Manage Sync, Stop Syncing), and automatically after Spotify authorisation completes. ListenBrainz requires the scrobbler token first. Steps: options (Playlists, Liked Songs, Saved Albums, Followed Artists, filtered by what the provider supports), playlists (All / Created by Me / Following filters, Select All, and for ListenBrainz a "Push my Parachord playlists" toggle that defaults off), syncing, complete. The checked set is seeded from saved selections plus existing `syncedFrom` and `syncedTo` links. ListenBrainz imports every playlist by default; unticked ones go to `suppressed_sync_playlists`. Start Sync runs `sync:start` with `fullSync: true` and then creates or pushes local playlists.
+**Sync wizard** (`openSyncSetupModal`). Opened from the Collection header Sync dropdown, the Collection empty-state buttons, the plugin detail page in Settings (sync, Manage Sync, Stop Syncing), and automatically after Spotify authorisation completes. ListenBrainz requires the scrobbler token first. Steps: options (Playlists, Liked Songs, Saved Albums, Followed Artists, filtered by what the provider supports), playlists (All / Created by Me / Following filters, Select All, and for ListenBrainz a "Push my Parachord playlists" toggle that defaults off), syncing, complete. The checked set is seeded from saved selections plus existing `syncedFrom` and `syncedTo` links. ListenBrainz imports every playlist by default; unticked ones go to `suppressed_sync_playlists`. Start Sync runs `sync:start` with `fullSync: true` and then creates or pushes local playlists.
 
-**Background sync** (`runBackgroundSync`, ~L6829): first run 60 seconds after launch, then every 15 minutes, and 30 seconds after the window loses focus with a 5-minute staleness gate. Background runs process a batch of the oldest-stale playlists per cycle; the wizard and "Sync Now" bypass the stagger. A return to the foreground cancels an in-flight background sync.
+**Background sync** (`runBackgroundSync`): first run 60 seconds after launch, then every 15 minutes, and 30 seconds after the window loses focus with a 5-minute staleness gate. Background runs process a batch of the oldest-stale playlists per cycle; the wizard and "Sync Now" bypass the stagger. A return to the foreground cancels an in-flight background sync.
 
 **Sync status and "Sync Now".** The Collection header's Sync dropdown has a "Sync status & Sync Now" entry (shown once any provider is enabled) that opens the Library Sync modal: per-provider last-sync time and live progress, a "Sync Now" button that runs `sync:start` with `fullSync: true` for every enabled, authenticated provider and reloads the collection and playlists, and a "Manage settings" link to the Plugins tab (parachord#1009).
 
-**Pull and push** (classic engine). `sync:start` (main.js ~L7130) imports the selected remote playlists as `${providerId}-${externalId}`. A changed remote snapshot sets `hasUpdates`; tracks are re-fetched automatically only when the local copy is empty or the playlist is Spotify-curated. Otherwise the playlist banner (~L44466) offers Pull (`handlePull`, ~L44575), Push (`handlePush`, ~L44536), or dismiss, and shows a conflict state when both sides changed. The renderer push loop creates or updates remote copies of local playlists, skipping `localOnly` ones and honouring per-playlist channel overrides. A playlist can mirror to several providers at once; a pull from one provider marks the others for push.
+**Pull and push** (classic engine). `sync:start` (main.js) imports the selected remote playlists as `${providerId}-${externalId}`. A changed remote snapshot sets `hasUpdates`; tracks are re-fetched automatically only when the local copy is empty or the playlist is Spotify-curated. Otherwise the playlist banner in `PlaylistViewPage` offers Pull (`handlePull`), Push (`handlePush`), or dismiss (all three in `src/renderer/components/playlist-view-page.js`), and shows a conflict state when both sides changed. The renderer push loop creates or updates remote copies of local playlists, skipping `localOnly` ones and honouring per-playlist channel overrides. A playlist can mirror to several providers at once; a pull from one provider marks the others for push.
 
-**Per-playlist controls.** The "Local only" / "Syncing" pill (~L44986) appears on playlists that have `syncedTo` and no `syncedFrom`. The native context menu "Sync" submenu (main.js ~L4693) has one checkbox per provider (`sync:set-channel`, optionally deleting the remote copy) plus "Mirror only (one-way)", stored in `sync_playlist_mirror_only`. These match the Android client's channel manager.
+**Per-playlist controls.** The "Local only" / "Syncing" pill in `PlaylistViewPage` appears on playlists that have `syncedTo` and no `syncedFrom`. The native context menu "Sync" submenu (main.js) has one checkbox per provider (`sync:set-channel`, optionally deleting the remote copy) plus "Mirror only (one-way)", stored in `sync_playlist_mirror_only`. These match the Android client's channel manager.
 
-**Engine mode.** `sync_engine_mode` is `legacy` (default), `shadow` or `new` (`sync-engine/sync-engine-mode.js`). In `new` mode the classic import, push and create steps stand down and the n-way reconciler runs every 15 minutes plus 90 seconds after startup (`runNwayArmedDrive`, main.js ~L5970). Switch in Settings, Developer Settings, "Use new sync": Preview (a dry run), then accept, or "Switch back to classic" (~L55858).
+**Engine mode.** `sync_engine_mode` is `legacy` (default), `shadow` or `new` (`sync-engine/sync-engine-mode.js`). In `new` mode the classic import, push and create steps stand down and the n-way reconciler runs every 15 minutes plus 90 seconds after startup (`runNwayArmedDrive`, main.js). Switch in Settings, Developer Settings, "Use new sync": Preview (a dry run), then accept, or "Switch back to classic".
 
-**Achordion.** After a successful ListenBrainz-anchored sync, playlist links are posted to `achordion.xyz/api/playlist-links/submit` (main.js ~L5989), fire-and-forget. `publishCollectionSmartLink` (~L15409) produces an `achordion.xyz/playlist/<mbid>` share link for a playlist that has a ListenBrainz MBID.
+**Achordion.** After a successful ListenBrainz-anchored sync, playlist links are posted to `achordion.xyz/api/playlist-links/submit` (main.js), fire-and-forget. `publishCollectionSmartLink` produces an `achordion.xyz/playlist/<mbid>` share link for a playlist that has a ListenBrainz MBID.
 
 ## Shuffleupagus chat and MCP
 
-**Chat.** The `create_playlist` tool (~L4984, executor ~L5272) calls `createPlaylistFromChat` (~L20791), which saves `ai-chat-${Date.now()}` with creator "Shuffleupagus". It is not behind the "Share my data" gate; the other playlist tools (`get_playlists`, `get_playlist_tracks`, `add_to_playlist`, `remove_from_playlist`, `reorder_playlist`, `rename_playlist`, `delete_playlist`) are.
+**Chat.** The `create_playlist` tool (in the inline `djTools` list, dispatched by `executeDjTool`) calls `createPlaylistFromChat`, which saves `ai-chat-${Date.now()}` with creator "Shuffleupagus". It is not behind the "Share my data" gate; the other playlist tools (`get_playlists`, `get_playlist_tracks`, `add_to_playlist`, `remove_from_playlist`, `reorder_playlist`, `rename_playlist`, `delete_playlist`) are.
 
-**One-shot AI Playlist.** Plugins with the `generate` capability (ChatGPT, Gemini) return a track list shown in a sidebar with Play, Add to Queue and Add to Playlist (`handleAiAddToPlaylist`, ~L20712, which opens the Add-to-Playlist panel). `handleAiSavePlaylist` (~L29064) and its dialog are defined but never called. The panel itself is only reachable when no chat-capable plugin is enabled.
+**One-shot AI Playlist.** Plugins with the `generate` capability (ChatGPT, Gemini) return a track list shown in a sidebar with Play, Add to Queue and Add to Playlist (`handleAiAddToPlaylist`, which opens the Add-to-Playlist panel). `handleAiSavePlaylist` and its dialog are defined but never called. The panel itself is only reachable when no chat-capable plugin is enabled.
 
 **MCP server.** `services/mcp-server.js` serves `tools/dj-tools.js` on 127.0.0.1:9421. All eight playlist tools work: the playlist methods are built once by `buildPlaylistToolContext` and spread into both the chat and MCP tool contexts (parachord#1008). The MCP context has no "Share my data" gate, since that setting belongs to in-app chat and the MCP server is its own opt-in.
 
 ## Other ways a playlist is created
 
-- **Save the queue.** The queue panel SAVE button (~L65283) and File menu "Export Queue as Playlist..." open the save dialog (`handleSaveQueueAsPlaylist` ~L20295), which saves the current track plus the queue as `queue-${Date.now()}` with creator "Queue".
-- **Weekly Jams / Weekly Exploration.** The SAVE button on a ListenBrainz weekly playlist (~L44299) copies it into the library as `playlist-${Date.now()}` with `source: 'listenbrainz'`.
+- **Save the queue.** The queue panel SAVE button and File menu "Export Queue as Playlist..." open the save dialog (`handleSaveQueueAsPlaylist`), which saves the current track plus the queue as `queue-${Date.now()}` with creator "Queue".
+- **Weekly Jams / Weekly Exploration.** The SAVE button on a ListenBrainz weekly playlist (`PlaylistViewPage`) copies it into the library as `playlist-${Date.now()}` with `source: 'listenbrainz'`.
 - **Add-to-Playlist panel.** Opened from album, track, playlist and friend views and from the native context menu; its New Playlist row creates `<slug>-${Date.now()}`.
-- **Collection drops** (`handleCollectionDrop`, ~L39091) add to the collection, not to a playlist.
+- **Collection drops** (`handleCollectionDrop`) add to the collection, not to a playlist.
 
 ## Android
 
-Where the code or CLAUDE.md states parity: `play/playlist` provider sniffing mirrors the mobile deep-link handler and provider playlist resolver; the Sync submenu channels and mirror-only setting match mobile's channel manager; Android auto-pulls on any snapshot change and has no pull banner; every sync field on the playlist object must be preserved by both clients. Nothing states whether URL import, the extension, hosted playlist polling, file import or the MCP server exist on Android.
+Where the code or [docs/architecture/android-parity.md](../architecture/android-parity.md) states parity: `play/playlist` provider sniffing mirrors the mobile deep-link handler and provider playlist resolver; the Sync submenu channels and mirror-only setting match mobile's channel manager; Android auto-pulls on any snapshot change and has no pull banner; every sync field on the playlist object must be preserved by both clients. Nothing states whether URL import, the extension, hosted playlist polling, file import or the MCP server exist on Android.
 
 ## Known gaps
 
 Found while writing this inventory; none are fixed by this document.
 
-1. **Hosted-playlist polling of provider URLs** compares HTML bodies that always differ and is usually blocked by CORS, so provider imports refresh only at startup. (parachord#1018)
-2. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import. (parachord#1019)
+1. **The Import modal label** omits SoundCloud sets and YouTube playlists, which do import. (parachord#1019)
 
-Fixed since the first version: the MCP playlist tools work (parachord#1008), "Sync Now" is reachable from the Collection Sync dropdown (parachord#1009), playlist XSPF export is wired to the UI (parachord#1010), the URL import path has the public-URL guard and body cap (parachord#1011), and the chat share link host and stale line numbers in CLAUDE.md were corrected (parachord#1012; the link deliberately uses `achordion.xyz/go`, which renders a preview page, rather than the static `parachord.com/go` bounce).
+Fixed since the first version: provider playlist URLs are no longer treated as hosted XSPF, so they are not polled or re-imported at startup and the "Failed to parse XSPF" launch dialog is gone (parachord#1018, fixed by the provider-snapshot change that shipped with parachord#983; manual Refresh only); the MCP playlist tools work (parachord#1008), "Sync Now" is reachable from the Collection Sync dropdown (parachord#1009), playlist XSPF export is wired to the UI (parachord#1010), the URL import path has the public-URL guard and body cap (parachord#1011), and the chat share link host and stale line numbers in the agent guide were corrected (parachord#1012; the link deliberately uses `achordion.xyz/go`, which renders a preview page, rather than the static `parachord.com/go` bounce).
