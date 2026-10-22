@@ -3276,8 +3276,7 @@ const Parachord = () => {
     soundcloud: 0,   // SoundCloud varies, start neutral
     subsonic: 0,     // Subsonic streams whatever the file is — start neutral
     bandcamp: -3,    // Bandcamp tends to be slightly louder
-    youtube: -6,     // YouTube videos are often much louder
-    qobuz: 0         // Qobuz is typically well mastered
+    youtube: -6      // YouTube videos are often much louder
   });
   const resolverVolumeOffsetsRef = useRef(resolverVolumeOffsets);  // Ref to avoid stale closure in save
   // Per-track volume adjustments (trackId -> dB offset from resolver default)
@@ -3594,8 +3593,6 @@ const Parachord = () => {
   const [insertedTrackId, setInsertedTrackId] = useState(null); // Track ID that was just inserted via "previous"
   const [queueSaveDialogOpen, setQueueSaveDialogOpen] = useState(false); // Save queue as playlist dialog
   const [queueSavePlaylistName, setQueueSavePlaylistName] = useState(''); // Name for saved queue playlist
-  const [qobuzToken, setQobuzToken] = useState(null);
-  const [qobuzConnected, setQobuzConnected] = useState(false);
   const [soundcloudToken, setSoundcloudToken] = useState(null);
   const [soundcloudConnected, setSoundcloudConnected] = useState(false);
   const [soundcloudAdvancedOpen, setSoundcloudAdvancedOpen] = useState(false); // Advanced settings accordion
@@ -7036,7 +7033,6 @@ const Parachord = () => {
     if (track.amazonAsin && active.includes('amazonmusic')) return 'amazonmusic';
     if (track.bandcampUrl && active.includes('bandcamp')) return 'bandcamp';
     if ((track.youtubeUrl || track.youtubeId) && active.includes('youtube')) return 'youtube';
-    if (track.qobuzId && active.includes('qobuz')) return 'qobuz';
     if (track.subsonicId && active.includes('subsonic')) return 'subsonic';
     if ((track.filePath || track.fileUrl) && active.includes('localfiles')) return 'localfiles';
 
@@ -7049,7 +7045,6 @@ const Parachord = () => {
     if (track.amazonAsin || track.sources?.amazonmusic) return 'amazonmusic';
     if (track.bandcampUrl || track.sources?.bandcamp) return 'bandcamp';
     if (track.youtubeUrl || track.youtubeId || track.sources?.youtube) return 'youtube';
-    if (track.qobuzId || track.sources?.qobuz) return 'qobuz';
     if (track.filePath || track.fileUrl || track.sources?.localfiles) return 'localfiles';
 
     return null;
@@ -12118,7 +12113,7 @@ ${trackListXml}
           });
           const source = trackSourceKey ? trackSources[trackSourceKey][data.resolverId] : null;
           const sourceId = source
-            ? (source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.qobuzId || source.filePath || source.id || null)
+            ? (source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.filePath || source.id || null)
             : null;
 
           // Check if this exact source is already blocklisted
@@ -12377,7 +12372,6 @@ ${trackListXml}
     }
 
     const configs = {
-      qobuz: { appId: '285473059', volume: volume / 100 },
       bandcamp: {}
     };
     return configs[resolverId] || {};
@@ -15563,7 +15557,7 @@ ${trackListXml}
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
-    // Stop all local audio sources (HTML5 Audio, Qobuz) - do this first to prevent overlap
+    // Stop all local audio sources (HTML5 Audio) - do this first to prevent overlap
     // Always stop regardless of paused state to handle edge cases
     stopAllLocalAudio();
 
@@ -15938,7 +15932,7 @@ ${trackListXml}
       .filter(s => s.confidence >= MIN_CONFIDENCE_THRESHOLD)
       .filter(s => {  // Filter blocklisted specific source results
         const src = s.source;
-        const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.qobuzId || src.filePath || src.id || null) : null;
+        const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.filePath || src.id || null) : null;
         return !currentBlocklist.some(entry =>
           entry.resolverId === s.resolverId &&
           entry.artist === trackArtistNorm &&
@@ -16003,7 +15997,6 @@ ${trackListXml}
       else if (trackOrSource.appleMusicId) resolverId = 'applemusic';
       else if (trackOrSource.youtubeId) resolverId = 'youtube';
       else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
-      else if (trackOrSource.qobuzId) resolverId = 'qobuz';
       else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
       // Fallback: use the 'source' property if set (added by search tagging)
@@ -16079,12 +16072,6 @@ ${trackListXml}
       // Also stop main process polling
       if (window.electron?.spotify?.polling) {
         window.electron.spotify.polling.stop();
-      }
-
-      // Stop Qobuz audio if playing (Qobuz uses its own global audio element)
-      if (window.qobuzAudio) {
-        window.qobuzAudio.pause();
-        window.qobuzAudio.currentTime = 0;
       }
 
       // Stop Apple Music preview audio if playing
@@ -16293,12 +16280,6 @@ ${trackListXml}
       // Also stop main process polling
       if (window.electron?.spotify?.polling) {
         window.electron.spotify.polling.stop();
-      }
-
-      // Stop Qobuz audio if playing (Qobuz uses its own global audio element)
-      if (window.qobuzAudio) {
-        window.qobuzAudio.pause();
-        window.qobuzAudio.currentTime = 0;
       }
 
       // Stop Apple Music preview audio if playing
@@ -17257,17 +17238,6 @@ ${trackListXml}
       }
     }
 
-    // Stop Qobuz audio if it exists (Qobuz uses its own global audio element)
-    if (window.qobuzAudio) {
-      try {
-        window.qobuzAudio.pause();
-        window.qobuzAudio.currentTime = 0;
-        console.log('⏹️ Stopped Qobuz audio element');
-      } catch (e) {
-        console.error('Error stopping Qobuz audio:', e);
-      }
-    }
-
     // Stop Apple Music preview audio if it exists (used for 30-second previews)
     if (window._appleMusicPreviewAudio) {
       try {
@@ -17907,7 +17877,7 @@ ${trackListXml}
       }
       stopAmazonIfActive('⏹️ Stopping Amazon Music before next track');
 
-      // Stop all local audio sources (HTML5 Audio for local files/SoundCloud, Qobuz audio)
+      // Stop all local audio sources (HTML5 Audio for local files/SoundCloud)
       // Always stop regardless of paused state to handle edge cases and prevent overlap
       stopAllLocalAudio();
 
@@ -24854,7 +24824,7 @@ ${trackListXml}
     // Helper to extract a stable source identifier for blocklist matching
     const getSourceId = (source) => {
       if (!source) return null;
-      return source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.qobuzId || source.filePath || source.id || null;
+      return source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.filePath || source.id || null;
     };
 
     // Get blocklisted source IDs for this track
@@ -29157,15 +29127,13 @@ ${tracks}
     } catch (browserErr) {
       console.log('📍 Browser geolocation failed, trying IP lookup:', browserErr.message);
     }
-    // Fallback: IP-based geolocation — try multiple services
+    // Fallback: IP-based geolocation — try multiple services. HTTPS only:
+    // ip-api.com was dropped because its free tier answers over plain HTTP,
+    // which would send the lookup (and the user's IP-derived location) in clear.
     const ipServices = [
       {
         url: 'https://ipapi.co/json/',
         parse: (d) => d.latitude && d.longitude ? { lat: d.latitude, lng: d.longitude } : null
-      },
-      {
-        url: 'http://ip-api.com/json/?fields=lat,lon,status',
-        parse: (d) => d.status === 'success' && d.lat && d.lon ? { lat: d.lat, lng: d.lon } : null
       },
       {
         url: 'https://ipwho.is/',
@@ -45946,8 +45914,7 @@ useEffect(() => {
                         localfiles: 0,
                         soundcloud: 0,
                         bandcamp: -3,
-                        youtube: -6,
-                        qobuz: 0
+                        youtube: -6
                       }),
                       className: 'inline-flex items-center gap-2 transition-all',
                       style: {
@@ -47340,7 +47307,6 @@ useEffect(() => {
                 const resolverColors = {
                   spotify: { color: 'text-green-400', bg: 'bg-green-400' },
                   bandcamp: { color: 'text-cyan-400', bg: 'bg-cyan-400' },
-                  qobuz: { color: 'text-blue-400', bg: 'bg-blue-400' },
                   youtube: { color: 'text-red-400', bg: 'bg-red-400' },
                   localfiles: { color: 'text-purple-400', bg: 'bg-purple-400' }
                 };
@@ -47353,7 +47319,7 @@ useEffect(() => {
                       if (!activeResolvers.includes(resId)) return false;
                       if (currentTrack.sources[resId]?.noMatch) return false;
                       const src = currentTrack.sources[resId];
-                      const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.qobuzId || src.filePath || src.id || null) : null;
+                      const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.filePath || src.id || null) : null;
                       return !resolverBlocklist.some(entry =>
                         entry.resolverId === resId &&
                         entry.artist === playbarTrackArtistNorm &&
@@ -47371,7 +47337,6 @@ useEffect(() => {
                   const resolverIconColors = {
                     spotify: '#1DB954',
                     bandcamp: '#1DA0C3',
-                    qobuz: '#4285F4',
                     youtube: '#FF0000',
                     localfiles: '#A855F7',
                     soundcloud: '#FF5500',
@@ -47547,7 +47512,7 @@ useEffect(() => {
                       ),
                       'external'
                     ),
-                    // Buy button - shows when track has a purchasable source (Bandcamp, Qobuz)
+                    // Buy button - shows when track has a purchasable source (Bandcamp)
                     (() => {
                       // Merge sources from state, cache, and currentTrack (same pattern as Save to Collection)
                       const stateSources = currentTrack.id ? trackSources[currentTrack.id] : undefined;
@@ -47583,20 +47548,6 @@ useEffect(() => {
                           resolverId: 'bandcamp',
                           resolverName: resolver ? resolver.name : 'Bandcamp',
                           purchaseUrl: bandcampUrl
-                        });
-                      }
-
-                      // Check Qobuz - construct URL from qobuzId
-                      const qobuzSource = effectiveSources.qobuz;
-                      const qobuzId = qobuzSource?.qobuzId || currentTrack.qobuzId;
-                      const qobuzConfidence = qobuzSource?.confidence || 0;
-                      const qobuzArtistMatch = artistsMatch(currentTrack.artist, qobuzSource?.artist);
-                      if (qobuzId && qobuzConfidence >= MIN_PURCHASE_CONFIDENCE && qobuzArtistMatch) {
-                        const resolver = allResolvers.find(r => r.id === 'qobuz');
-                        purchasableSources.push({
-                          resolverId: 'qobuz',
-                          resolverName: resolver ? resolver.name : 'Qobuz',
-                          purchaseUrl: `https://www.qobuz.com/us-en/track/${qobuzId}`
                         });
                       }
 
@@ -50322,34 +50273,6 @@ useEffect(() => {
               )
             );
           })(),
-
-          // Qobuz authentication section
-          selectedResolver.id === 'qobuz' && React.createElement('div', {
-            style: {
-              padding: '16px 0',
-              borderTop: '1px solid var(--border-subtle)'
-            }
-          },
-            React.createElement('div', null,
-              React.createElement('span', {
-                style: {
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  color: 'var(--text-primary)'
-                }
-              }, 'Qobuz Streaming'),
-              React.createElement('p', {
-                style: {
-                  fontSize: '12px',
-                  color: 'var(--text-secondary)',
-                  marginTop: '4px',
-                  lineHeight: '1.5'
-                }
-              },
-                'Currently using 30-second previews. Full streaming requires Qobuz subscription.'
-              )
-            )
-          ),
 
           // Apple Music / MusicKit authentication section
           selectedResolver.id === 'applemusic' && React.createElement('div', {

@@ -51,7 +51,6 @@ const TrackRow = React.memo(({ track, isPlaying, handlePlay, onArtistClick, onCo
     spotify: { label: 'Spotify', bgColor: 'bg-green-600/20', textColor: 'text-green-400' },
     youtube: { label: 'YouTube', bgColor: 'bg-red-600/20', textColor: 'text-red-400' },
     bandcamp: { label: 'Bandcamp', bgColor: 'bg-cyan-600/20', textColor: 'text-cyan-400' },
-    qobuz: { label: 'Qobuz', bgColor: 'bg-blue-600/20', textColor: 'text-blue-400' },
     soundcloud: { label: 'SoundCloud', bgColor: 'bg-orange-600/20', textColor: 'text-orange-400' },
     subsonic: { label: 'Subsonic', bgColor: 'bg-teal-600/20', textColor: 'text-teal-400' }
   };

@@ -168,8 +168,6 @@ function mapResolverResults(results) {
       serviceUrls.soundcloud = track.soundcloudUrl;
     } else if (resolverId === 'bandcamp' && track.bandcampUrl) {
       serviceUrls.bandcamp = track.bandcampUrl;
-    } else if (resolverId === 'qobuz' && track.qobuzId) {
-      serviceUrls.qobuz = `https://www.qobuz.com/track/${track.qobuzId}`;
     }
   }
 
