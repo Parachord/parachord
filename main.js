@@ -3162,7 +3162,7 @@ ipcMain.handle('announcements:record-event', async (_event, payload) => {
 // Config handler - expose select environment variables to renderer
 // Only expose whitelisted keys for security
 // Uses fallback values for services that support shared app credentials
-const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'LASTFM_API_SECRET', 'QOBUZ_APP_ID', 'MUSICKIT_DEVELOPER_TOKEN'];
+const ALLOWED_CONFIG_KEYS = ['LASTFM_API_KEY', 'LASTFM_API_SECRET', 'MUSICKIT_DEVELOPER_TOKEN'];
 const CONFIG_FALLBACKS = {
   'LASTFM_API_KEY': FALLBACK_LASTFM_API_KEY,
   'LASTFM_API_SECRET': FALLBACK_LASTFM_API_SECRET
@@ -3241,8 +3241,12 @@ ipcMain.handle('spotify-auth', async () => {
     };
   }
 
+  // No 'streaming': that scope is for the Web Playback SDK, which the app does
+  // not load (Spotify is Connect-only; Connect control needs
+  // user-modify-playback-state). In-app SDK playback (parachord#1077) would
+  // add it back. Dropping it forces no re-auth: the sync scope checks in
+  // main-process/ipc/sync-*.js never required it.
   const scopes = [
-    'streaming',
     'user-read-playback-state',
     'user-modify-playback-state',
     'user-read-currently-playing',

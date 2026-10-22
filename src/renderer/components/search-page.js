@@ -1735,7 +1735,6 @@ const SearchPage = React.memo(function SearchPage(props) {
                           spotify: '#1DB954',
                           youtube: '#FF0000',
                           bandcamp: '#1DA0C3',
-                          qobuz: '#0070CC',
                           applemusic: '#FA243C',
                           localfiles: '#6B7280'
                         };
