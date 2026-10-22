@@ -20,12 +20,25 @@ jobs:
         run: npm run lint
       - name: Type-check @ts-check modules
         run: npm run typecheck
+      - name: Fetch base branch for the plugin version gate
+        if: github.event_name == 'pull_request'
+        run: git fetch origin ${{ github.base_ref }} --depth=1
+      - name: Plugin version-bump gate
+        if: github.event_name == 'pull_request'
+        # parachord#1099: replaces the local build-axes content-vs-disk
+        # comparison, which went silent when plugins/*.axe were untracked.
+        # Any PR that touches plugins-src/<id>/ must bump that plugin's
+        # manifest.version or marketplace clients never re-download it.
+        run: node scripts/check-plugin-version-bumps.js FETCH_HEAD
       - name: Run test suite
         run: npm test
         env:
           # npm test's pretest hook builds the generated renderer bundle
-          # (app.js) from src/renderer/app.js. Includes the plugin pipeline
-          # drift guard (tests/plugins/axes-drift.test.js) — a PR that edits
-          # plugins/*.axe or the FALLBACK block without updating plugins-src
-          # (or vice versa) fails here.
+          # (app.js) and the generated plugin artifacts (plugins/*.axe)
+          # from their sources. The tracked-artifact drift guard
+          # (tests/plugins/axes-drift.test.js) is retired — a tracked
+          # artifact cannot drift when it isn't tracked; the --check step
+          # below guards generation consistency instead.
           CI: true
+      - name: Verify generated plugin artifacts are generation-consistent
+        run: node scripts/build-axes.js --check
