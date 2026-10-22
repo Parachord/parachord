@@ -184,11 +184,19 @@ jobs:
     steps:
       - name: Checkout monorepo
         uses: actions/checkout@v6
+        with:
+          # Deliberate: this job executes imported plugin code (the writer
+          # require()s each plugins-src implementation, and string-form
+          # values are evaluated as expressions at require time), so no
+          # token may linger in git config while that code runs. The push
+          # below authenticates per-command instead of via a persisted
+          # credential.
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: 24
 
       - name: Clone plugins repo
         env:
@@ -199,14 +207,39 @@ jobs:
             exit 0
           fi
           git clone "https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/parachord-plugins.git" /tmp/plugins-repo
+          # Drop the token from the clone's git config — this job only
+          # reads from it, and the code that runs later (require() of the
+          # imported plugin implementations) must not find a credential
+          # sitting in /tmp/plugins-repo/.git/config.
+          git -C /tmp/plugins-repo remote set-url origin "https://github.com/Parachord/parachord-plugins.git"
+
+      - name: Generate .axe artifacts from plugins-src
+        env:
+          # Build-time dep the writer may need: esbuild (ES5 transpile for
+          # plugins flagged es5:true — real postinstall, don't skip).
+          # Electron's own ~100MB binary is never used here.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          # plugins/*.axe are generated artifacts (build-axes.js reads
+          # plugins-src/). Fresh generation here so the comparison below
+          # runs against our current source of truth, not a stale artifact.
+          # npm ci stays full (NOT --ignore-scripts): esbuild's postinstall
+          # provides the binary the es5 transpile path requires.
+          npm ci --silent
+          node scripts/build-axes.js
 
       - name: Merge plugin changes into monorepo
         run: |
-          # Version-aware .axe copy: never downgrade or sidegrade. Only adopt
-          # a plugins-repo .axe when (a) we don't have a local copy yet
-          # (community contribution), or (b) the remote version is STRICTLY
-          # GREATER than ours per semver. Otherwise the monorepo is the
-          # source of truth and we keep our copy.
+          # Version-aware .axe adopt: never downgrade or sidegrade. Only adopt
+          # a plugins-repo .axe when (a) we don't have a matching plugins-src
+          # entry (community contribution), or (b) the remote version is
+          # STRICTLY GREATER than ours per semver. Otherwise plugins-src is
+          # the source of truth and we keep our freshly generated copy.
+          # An EQUAL version with different bytes is kept-local but flagged —
+          # someone edited the remote without bumping.
+          #
+          # The baseline is the freshly generated plugins/*.axe — replacing
+          # the old read of tracked artifacts (untracked since parachord#1099).
           #
           # This prevents the failure mode where the forward-sync hasn't yet
           # shipped our newer version to parachord-plugins, the daily
@@ -251,7 +284,8 @@ jobs:
             if (!fs.existsSync(LOCAL_DIR)) fs.mkdirSync(LOCAL_DIR, { recursive: true });
 
             const remoteFiles = fs.readdirSync(REMOTE_DIR).filter(f => f.endsWith('.axe'));
-            let copied = 0, skipped = 0, added = 0;
+            let copied = 0, skipped = 0, added = 0, flagged = 0;
+            const decisions = [];  // ids to import into plugins-src
 
             for (const f of remoteFiles) {
               const remotePath = path.join(REMOTE_DIR, f);
@@ -259,25 +293,44 @@ jobs:
               const remoteVersion = readVersion(remotePath);
               const localVersion = fs.existsSync(localPath) ? readVersion(localPath) : null;
 
-              if (localVersion === null) {
+              // The 'do we know this plugin' check is plugins-src, NOT the
+              // (untracked) artifact.
+              const id = JSON.parse(fs.readFileSync(remotePath, 'utf8'))?.manifest?.id || '';
+              const haveSource = !!id && fs.existsSync(path.join('plugins-src', id, 'manifest.json'));
+
+              if (!haveSource) {
                 fs.copyFileSync(remotePath, localPath);
                 console.log(\`[+] Added community plugin: \${f} @ \${remoteVersion || '?'}\`);
                 added++;
+                if (id) decisions.push(id);
               } else if (remoteVersion && cmpSemver(remoteVersion, localVersion) > 0) {
                 fs.copyFileSync(remotePath, localPath);
                 console.log(\`[~] Updated \${f}: \${localVersion} → \${remoteVersion}\`);
                 copied++;
+                if (id) decisions.push(id);
               } else {
+                const sameVersion = remoteVersion && localVersion &&
+                  cmpSemver(remoteVersion, localVersion) === 0;
+                const sameBytes = sameVersion &&
+                  fs.readFileSync(remotePath, 'utf8') === fs.readFileSync(localPath, 'utf8');
+                if (sameVersion && !sameBytes) {
+                  flagged++;
+                  console.log(\`::warning file=\${f}::Equal version \${remoteVersion} but content differs — remote edit without a version bump; keeping ours.\`);
+                }
                 console.log(\`[=] Kept local \${f} @ \${localVersion} (remote: \${remoteVersion || '?'})\`);
                 skipped++;
               }
             }
-            console.log(\`Plugin sync summary: \${added} added, \${copied} updated, \${skipped} kept\`);
+            console.log(\`Plugin sync summary: \${added} added, \${copied} updated, \${skipped} kept, \${flagged} flagged\`);
+            fs.writeFileSync('/tmp/axe-decisions', decisions.join('\n') + (decisions.length ? '\n' : ''));
           "
 
           # Merge manifest: bring in community-only entries, never overwrite
           # monorepo entries (those track the source-of-truth versions in
-          # plugins/*.axe via sync-repos.yml).
+          # plugins/*.axe via sync-repos.yml). Runs BEFORE the import/regen
+          # below: build-axes write mode requires a marketplace-manifest
+          # entry for every plugins-src id, and this block is what adds
+          # them for community-only plugins.
           node -e "
             const fs = require('fs');
 
@@ -300,6 +353,35 @@ jobs:
               }
             }
 
+            // Synthesize entries for adopted plugins the remote manifest is
+            // missing — a community contributor who pushes an .axe without
+            // touching manifest.json must not hard-fail build-axes (the
+            // write mode requires an entry per plugins-src id, and this
+            // workflow has no human to add one by hand). Minimal shape;
+            // category/tags stay editorial follow-up.
+            const ids = fs.existsSync('/tmp/axe-decisions')
+              ? fs.readFileSync('/tmp/axe-decisions', 'utf8').split('\n').filter(Boolean)
+              : [];
+            const mergedIds = new Set(merged.map(p => p.id));
+            for (const id of ids) {
+              if (mergedIds.has(id)) continue;
+              let axe;
+              try { axe = JSON.parse(fs.readFileSync(\`/tmp/plugins-repo/\${id}.axe\`, 'utf8')); } catch { continue; }
+              const m = axe.manifest || {};
+              merged.push({
+                id,
+                name: m.name || id,
+                version: m.version || '1.0.0',
+                author: m.author || '',
+                description: m.description || '',
+                icon: m.icon || '',
+                capabilities: axe.capabilities || {},
+                builtin: false,
+                downloadUrl: \`https://raw.githubusercontent.com/Parachord/parachord-plugins/main/\${id}.axe\`,
+              });
+              console.log(\`::notice::Synthesized minimal marketplace-manifest entry for \${id} — category/tags are editorial follow-up\`);
+            }
+
             // Merge categories
             const cats = new Set([...(local.categories || []), ...(remote.categories || [])]);
 
@@ -307,17 +389,43 @@ jobs:
             fs.writeFileSync('marketplace-manifest.json', JSON.stringify(result, null, 2) + '\n');
           "
 
+          # Import every adopted .axe into plugins-src — the source of truth.
+          # A failed import drops the adoption for this run (restores both
+          # paths from git) so the PR never half-adopts a plugin; the daily
+          # run retries.
+          if [ -s /tmp/axe-decisions ]; then
+            while IFS= read -r id; do
+              # Stash build.json (the es5/transpile flag) — the .axe doesn't
+              # carry it, so a plain rm+import would drop it on an updated
+              # plugin.
+              [ -f "plugins-src/$id/build.json" ] && cp "plugins-src/$id/build.json" "/tmp/build-json-$id"
+              rm -rf "plugins-src/$id"
+              if node scripts/build-axes.js --import --plugin "$id"; then
+                echo "Imported $id.axe → plugins-src/$id"
+                [ -f "/tmp/build-json-$id" ] && cp "/tmp/build-json-$id" "plugins-src/$id/build.json"
+              else
+                echo "::warning::--import failed for $id — dropping the adoption this run"
+                git checkout -- "plugins-src/$id" 2>/dev/null || rm -rf "plugins-src/$id"
+                git checkout -- "plugins/$id.axe" 2>/dev/null || rm -f "plugins/$id.axe"
+              fi
+            done < /tmp/axe-decisions
+            # Regenerate so freshly imported plugins-src round-trips to
+            # canonical artifacts (also refreshes the FALLBACK block and
+            # marketplace-manifest versions for any adopted plugin).
+            node scripts/build-axes.js
+          fi
+
       - name: Check for differences
         id: diff
         run: |
-          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard plugins/)" ]; then
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard plugins-src/ plugins/)" ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "No changes to reverse sync"
           else
             echo "has_changes=true" >> $GITHUB_OUTPUT
             echo "Changes detected:"
             git diff --stat
-            git ls-files --others --exclude-standard plugins/
+            git ls-files --others --exclude-standard plugins-src/ plugins/
           fi
 
       - name: Create pull request
@@ -331,10 +439,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -b "$BRANCH"
-          git add plugins/ marketplace-manifest.json
+          # Stage the SOURCE + every regenerated artifact. plugins/
+          # disappears from this add once the artifacts are untracked
+          # (parachord#1099 PR A); until then it keeps the pre-A tracked
+          # state self-consistent. app.js carries the regenerated FALLBACK
+          # block whenever an adopted plugin's manifest changed.
+          git add plugins-src/ plugins/ marketplace-manifest.json src/renderer/app.js
           git commit -m "Reverse sync: plugins repo → monorepo"
 
-          git push -u origin "$BRANCH"
+          # Push with the token inline (checkout is persist-credentials:
+          # false, so no persisted credential exists at this point — by
+          # design, since this job executes imported plugin code).
+          git push "https://x-access-token:${{ secrets.REPO_SYNC_TOKEN }}@github.com/${{ github.repository }}" "$BRANCH"
 
           EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$EXISTING" ]; then

@@ -6,7 +6,9 @@ on:
     paths:
       - 'parachord-extension/**'
       - 'raycast-extension/**'
-      - 'plugins/**'
+      # plugins/*.axe are generated artifacts (build-axes.js reads
+      # plugins-src/); the SOURCE is what must trigger a publish.
+      - 'plugins-src/**'
       - 'marketplace-manifest.json'
   workflow_dispatch:
     inputs:
@@ -211,6 +213,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
       - name: Check for plugin changes
         id: check_changes
         if: github.event_name == 'push'
@@ -230,11 +237,13 @@ jobs:
             CHANGED_FILES=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER" 2>/dev/null || echo "")
           fi
 
-          # Check if any plugin files or the manifest changed
-          if echo "$CHANGED_FILES" | grep -q "^plugins/\|^marketplace-manifest.json"; then
+          # Check if any plugin SOURCE files or the manifest changed.
+          # plugins/*.axe are generated and no longer trigger this job —
+          # see the Generate step below.
+          if echo "$CHANGED_FILES" | grep -q "^plugins-src/\|^marketplace-manifest.json"; then
             echo "plugins_changed=true" >> $GITHUB_OUTPUT
             echo "Plugin files changed:"
-            echo "$CHANGED_FILES" | grep "^plugins/\|^marketplace-manifest.json"
+            echo "$CHANGED_FILES" | grep "^plugins-src/\|^marketplace-manifest.json"
           else
             echo "plugins_changed=false" >> $GITHUB_OUTPUT
             echo "No plugin files changed"
@@ -259,6 +268,15 @@ jobs:
           # Clone the target repo
           TARGET_REPO="https://x-access-token:${SYNC_TOKEN}@github.com/Parachord/parachord-plugins.git"
           git clone "$TARGET_REPO" target-repo
+
+          # Generate the .axe artifacts from plugins-src/ — the monorepo no
+          # longer tracks them (they are build-time artifacts, like the
+          # renderer bundle), so this job is their publisher.
+          # npm ci stays full (NOT --ignore-scripts: esbuild's postinstall
+          # provides the binary the es5 transpile path requires); only the
+          # unused ~100MB Electron binary download is skipped.
+          ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --silent
+          node scripts/build-axes.js
 
           # Get the source commit info for the sync commit message
           SOURCE_COMMIT=$(git rev-parse --short HEAD)
