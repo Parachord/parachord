@@ -33191,6 +33191,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     window.reportBrokenAlbumArt = brokenArtRetryRef.current.report;
     return () => { delete window.reportBrokenAlbumArt; };
   }, []);
+  // The same retry for the inline grids that keep the cover on the item in
+  // their own list state (Fresh Drops, Pop of the Tops, Critical Darlings):
+  // patch the item when a fresh cover turns up.
+  const retryBrokenListArt = (url, { artist, album, id, cacheId }, apply) => {
+    brokenArtRetryRef.current.report(url, { artist, album, releaseId: cacheId }).then((fresh) => {
+      if (fresh) apply(id, fresh);
+    });
+  };
+  const patchListArt = (setList) => (id, fresh) => setList(prev => prev.map(a => (a.id === id ? { ...a, albumArt: fresh } : a)));
 
   // Fetch album art for current track if missing
   useEffect(() => {
@@ -40267,6 +40276,7 @@ useEffect(() => {
                       )
                     ),
                     item.albumArt && typeof item.albumArt === 'string' && React.createElement('img', {
+                      key: item.albumArt,
                       src: item.albumArt,
                       alt: item.title,
                       style: {
@@ -40281,7 +40291,10 @@ useEffect(() => {
                       className: 'group-hover:scale-105',
                       ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                       onLoad: (e) => { e.target.style.opacity = '1'; },
-                      onError: (e) => { e.target.style.display = 'none'; }
+                      onError: (e) => {
+                        e.target.style.display = 'none';
+                        retryBrokenListArt(item.albumArt, { artist: item.artist, album: item.title, id: item.id }, patchListArt(setCharts));
+                      }
                     }),
                     // Rank badge - refined
                     React.createElement('div', {
@@ -40968,6 +40981,7 @@ useEffect(() => {
                         ),
                         // Overlay image on top of placeholder (hides itself on error, revealing placeholder)
                         release.albumArt && React.createElement('img', {
+                          key: release.albumArt,
                           src: release.albumArt,
                           alt: release.title,
                           className: 'group-hover/art:scale-105',
@@ -40984,6 +40998,12 @@ useEffect(() => {
                           onLoad: (e) => { e.target.style.opacity = '1'; },
                           onError: (e) => {
                             e.target.style.display = 'none';
+                            // Dead cached URL: retry once and patch the release, including
+                            // the persisted copy (cache_new_releases) via the art writer.
+                            retryBrokenListArt(release.albumArt, { artist: release.artist, album: release.title, id: release.id, cacheId: release.id }, (id, fresh) => {
+                              newReleasesArtWriterRef.current.queue(id, fresh);
+                              newReleasesArtWriterRef.current.flush();
+                            });
                           }
                         }),
                         // Release type badge
@@ -41466,6 +41486,7 @@ useEffect(() => {
                   ),
                   // Image - show when we have a URL string
                   typeof album.albumArt === 'string' && React.createElement('img', {
+                    key: album.albumArt,
                     src: album.albumArt,
                     alt: album.title,
                     style: {
@@ -41480,7 +41501,10 @@ useEffect(() => {
                     className: 'group-hover:scale-105',
                     ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                     onLoad: (e) => { e.target.style.opacity = '1'; },
-                    onError: (e) => { e.target.style.display = 'none'; }
+                    onError: (e) => {
+                      e.target.style.display = 'none';
+                      retryBrokenListArt(album.albumArt, { artist: album.artist, album: album.title, id: album.id }, patchListArt(setCriticsPicks));
+                    }
                   }),
                   // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                   React.createElement('div', {

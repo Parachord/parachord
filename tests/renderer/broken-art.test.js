@@ -105,4 +105,26 @@ describe('wiring', () => {
     }
     expect(slice('ReleaseCard')).toMatch(/onError: onArtError/);
   });
+
+  // Fresh Drops, Pop of the Tops and Critical Darlings render their covers
+  // inline in app.js from their own list state (Fresh Drops' copy is persisted
+  // in cache_new_releases), so the retry has to patch that list. The img is
+  // keyed on its URL: onError hides the element, and React would otherwise
+  // reuse the hidden element for the fresh URL.
+  test.each([
+    ['new-releases', /retryBrokenListArt\(release\.albumArt, \{ artist: release\.artist, album: release\.title, id: release\.id, cacheId: release\.id \}/, 'key: release.albumArt,'],
+    ['discover', /retryBrokenListArt\(item\.albumArt, \{ artist: item\.artist, album: item\.title, id: item\.id \}, patchListArt\(setCharts\)\)/, 'key: item.albumArt,'],
+    ['critics-picks', /retryBrokenListArt\(album\.albumArt, \{ artist: album\.artist, album: album\.title, id: album\.id \}, patchListArt\(setCriticsPicks\)\)/, 'key: album.albumArt,'],
+  ])('the %s grid retries a dead cover and keys its img on the URL', (view, call, key) => {
+    const start = app.indexOf(`activeView === '${view}' && React.createElement`);
+    expect(start).toBeGreaterThan(-1);
+    const body = app.slice(start, start + 60000);
+    expect(body).toMatch(call);
+    expect(body).toContain(key);
+  });
+
+  test('Fresh Drops patches through its art writer, so the persisted copy is fixed too', () => {
+    const at = app.indexOf('retryBrokenListArt(release.albumArt');
+    expect(app.slice(at, at + 400)).toMatch(/newReleasesArtWriterRef\.current\.queue\(id, fresh\);\s*newReleasesArtWriterRef\.current\.flush\(\);/);
+  });
 });
