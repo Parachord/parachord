@@ -25,9 +25,12 @@
 //   --plugin <id>  restrict any mode to one plugin
 //
 // Review flow: PRs are reviewed on plugins-src/*.js (normal code diffs). The
-// .axe is a generated artifact — verify it with `node scripts/build-axes.js
-// --check` instead of reading 4KB JSON string lines. Jest runs the same check
-// on every PR (build-axes --check in .github/workflows/test.yml).
+// .axe is a generated, untracked artifact — verify it with `node
+// scripts/build-axes.js --check` locally instead of reading 4KB JSON string
+// lines. On every PR the gates live in .github/workflows/test.yml: the drift
+// gate (git diff --exit-code on the committed tracked outputs —
+// src/renderer/app.js FALLBACK block + marketplace-manifest.json versions)
+// and the PR-only version-bump gate (scripts/check-plugin-version-bumps.js).
 //
 // Version bumps: edit manifest.version in plugins-src/<id>/manifest.json, then
 // run the writer. It syncs the marketplace entry version and warns when .axe

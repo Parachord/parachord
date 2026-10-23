@@ -1,6 +1,9 @@
 /**
  * Keeps the three copies of each bundled plugin in step:
- *   plugins/<id>.axe            (source of truth, loaded from disk)
+ *   plugins/<id>.axe            (generated, untracked artifact — built by
+ *                                scripts/build-axes.js from plugins-src/,
+ *                                the source of truth; loaded from disk at
+ *                                runtime, present via the pretest hook)
  *   marketplace-manifest.json   (version the marketplace advertises)
  *   FALLBACK_RESOLVERS in app.js (used only when the .axe is missing on disk)
  *
