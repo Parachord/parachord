@@ -23,6 +23,7 @@ const {
   amazonGqlFetchHeaders,
   capturedOperationNames,
   playlistTrackFromGqlEdge,
+  stripAmazonTitleMarker,
   playlistFromGql,
   NEAR_END_MS,
   EMPTY_WHILE_PAUSED_POLL_LIMIT,
@@ -259,11 +260,15 @@ describe('signInLanded', () => {
 });
 
 describe('amazonSongSearchUrl', () => {
-  test('quotes title then artist, stays on the songs tab, and echoes the searchText the page will search', () => {
+  test('quotes both terms and ORs the two phrase orders — Amazon matching is order-sensitive in both directions', () => {
     expect(amazonSongSearchUrl({ title: 'stations', artist: 'Warning' })).toEqual({
-      url: 'https://music.amazon.com/search/%22stations%22%20%22Warning%22/songs',
-      searchText: '"stations" "Warning"'
+      url: 'https://music.amazon.com/search/%22stations%22%20%22Warning%22%20OR%20%22Warning%22%20%22stations%22/songs',
+      searchText: '"stations" "Warning" OR "Warning" "stations"'
     });
+    // The case that surfaced this: "Яйца" "ХЛЕБ" returns nothing on Amazon;
+    // ORing the reversed clauses is what surfaces ХЛЕБ — Яйца.
+    expect(amazonSongSearchUrl({ title: 'Яйца', artist: 'ХЛЕБ' }).searchText)
+      .toBe('"Яйца" "ХЛЕБ" OR "ХЛЕБ" "Яйца"');
   });
 
   test('still uses the songs tab when only one field is present', () => {
@@ -1160,7 +1165,8 @@ describe('searchTracksFromGql', () => {
         album: 'In Love',
         albumAsin: 'B073HX454H',
         albumArt: 'https://m.media-amazon.com/images/I/B073N3R1KZ_1400.jpg',
-        duration: 276
+        duration: 276,
+        explicit: false
       },
       {
         asin: 'B0D7W4QWZ7',
@@ -1169,7 +1175,8 @@ describe('searchTracksFromGql', () => {
         album: 'Eisenherz',
         albumAsin: 'B0D7W3YZJW',
         albumArt: 'https://m.media-amazon.com/images/I/B0D7W4QWZ7_1400.jpg',
-        duration: 267
+        duration: 267,
+        explicit: false
       },
       {
         asin: 'B0G6FM547C',
@@ -1178,7 +1185,8 @@ describe('searchTracksFromGql', () => {
         album: 'IN LOVE EP - Live im Nikolaisaal Potsdam',
         albumAsin: 'B0G6F5SV4J',
         albumArt: 'https://m.media-amazon.com/images/I/B0G6FM547C_1400.jpg',
-        duration: 289
+        duration: 289,
+        explicit: false
       }
     ]);
   });
@@ -1352,8 +1360,25 @@ describe('playlistTrackFromGqlEdge', () => {
       // the playlist detail response carries no track images, so it is null
       // there.
       albumArt: 'https://m.media-amazon.com/images/I/1400.jpg',
-      duration: 317
+      duration: 317,
+      explicit: false
     });
+  });
+
+  test('strips Amazon\'s in-title explicit marker and sets the flag instead', () => {
+    const track = playlistTrackFromGqlEdge(edge({
+      id: 'B0H7NMPYBC',
+      title: 'Kunnioita [Explicit]',
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Turmion Kätilöt' } }] },
+      album: { id: 'B0H7NSSY32', shortTitle: 'Resodance' }
+    }));
+    expect(track.title).toBe('Kunnioita');
+    expect(track.explicit).toBe(true);
+    // A title that is ONLY the marker is garbage — drop the row.
+    expect(playlistTrackFromGqlEdge(edge({
+      id: 'B1', title: '[Explicit]',
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'A' } }] }
+    }))).toBeNull();
   });
 
   test('joins multiple artists when none are PRIMARY, and falls back to the album title', () => {
@@ -1386,6 +1411,22 @@ describe('playlistTrackFromGqlEdge', () => {
     expect(playlistTrackFromGqlEdge(edge({
       id: 'B1', title: 'Song', contributingArtists: { edges: [{ node: { name: 'A' } }] }
     }))).not.toBeNull();
+  });
+});
+
+describe('stripAmazonTitleMarker', () => {
+  test('strips a trailing bracketed or parenthesized explicit marker, any case', () => {
+    expect(stripAmazonTitleMarker('Kunnioita [Explicit]')).toEqual({ title: 'Kunnioita', explicit: true });
+    expect(stripAmazonTitleMarker('Song (explicit)')).toEqual({ title: 'Song', explicit: true });
+    expect(stripAmazonTitleMarker('Song [EXPLICIT]')).toEqual({ title: 'Song', explicit: true });
+    expect(stripAmazonTitleMarker('Song[Explicit]')).toEqual({ title: 'Song', explicit: true });
+  });
+
+  test('leaves real titles alone — the bare word and parenthesized non-markers are title text', () => {
+    expect(stripAmazonTitleMarker('Sexually Explicit')).toEqual({ title: 'Sexually Explicit', explicit: false });
+    expect(stripAmazonTitleMarker('Explicit Content')).toEqual({ title: 'Explicit Content', explicit: false });
+    expect(stripAmazonTitleMarker('Metal Health (Bang Your Head)')).toEqual({ title: 'Metal Health (Bang Your Head)', explicit: false });
+    expect(stripAmazonTitleMarker('[Explicit] Content')).toEqual({ title: '[Explicit] Content', explicit: false });
   });
 });
 
@@ -1423,7 +1464,8 @@ describe('playlistFromGql', () => {
       album: 'Metal Health',
       albumAsin: 'B00136JQEQ',
       albumArt: null,
-      duration: 317
+      duration: 317,
+      explicit: false
     });
   });
 
