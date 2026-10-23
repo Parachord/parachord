@@ -127,6 +127,7 @@ const STRICT_FILES = [
   'embedded-player-kit.js',
   'scripts/build-axes.js',
   'scripts/build-renderer.js',
+  'scripts/check-plugin-version-bumps.js',
 ];
 
 module.exports = [

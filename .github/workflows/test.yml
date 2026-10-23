@@ -20,12 +20,33 @@ jobs:
         run: npm run lint
       - name: Type-check @ts-check modules
         run: npm run typecheck
+      - name: Fetch base branch for the plugin version gate
+        if: github.event_name == 'pull_request'
+        run: git fetch origin ${{ github.base_ref }} --depth=1
+      - name: Plugin version-bump gate
+        if: github.event_name == 'pull_request'
+        # parachord#1099: replaces the local build-axes content-vs-disk
+        # comparison, which went silent when plugins/*.axe were untracked.
+        # Any PR that touches plugins-src/<id>/ must bump that plugin's
+        # manifest.version or marketplace clients never re-download it.
+        run: node scripts/check-plugin-version-bumps.js FETCH_HEAD
       - name: Run test suite
         run: npm test
         env:
-          # npm test's pretest hook builds the generated renderer bundle
-          # (app.js) from src/renderer/app.js. Includes the plugin pipeline
-          # drift guard (tests/plugins/axes-drift.test.js) — a PR that edits
-          # plugins/*.axe or the FALLBACK block without updating plugins-src
-          # (or vice versa) fails here.
+          # npm test's pretest hook (build-axes BEFORE build-renderer) builds
+          # the generated plugin artifacts and the renderer bundle
+          # (app.js) from their sources. Drift is checked by the step below,
+          # not a test: a tracked artifact cannot drift when it isn't
+          # tracked, and a --check run AFTER pretest's writer cannot fail
+          # (the writer has already regenerated everything on disk).
           CI: true
+      - name: Generated outputs are committed (plugin drift gate)
+        # tests/plugins/axes-drift.test.js replacement: the writer must be a
+        # no-op against what the PR committed. A PR that edits plugins-src/
+        # without committing the regenerated FALLBACK_RESOLVERS block and
+        # marketplace-manifest versions fails here.
+        run: |
+          if ! git diff --exit-code -- src/renderer/app.js marketplace-manifest.json; then
+            echo "::error::build-axes rewrote committed files — run 'node scripts/build-axes.js' and commit src/renderer/app.js plus marketplace-manifest.json"
+            exit 1
+          fi

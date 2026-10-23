@@ -63,3 +63,8 @@ resources/keys/*.p8
 # Generated renderer bundle (source of truth: src/renderer/app.js)
 /app.js
 /app.js.map
+
+# Generated plugin artifacts (source of truth: plugins-src/; scripts/build-axes.js
+# writes them, the pretest/prestart/predev/prebuild* hooks; published to
+# parachord-plugins by sync-repos.yml — parachord#1099)
+/plugins/*.axe
