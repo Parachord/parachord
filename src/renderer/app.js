@@ -1125,6 +1125,7 @@ const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require(
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
+const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistListenbrainzMbid } = require('./lib/playlist-share');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const {
@@ -33721,14 +33722,28 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const artistData = await artistResponse.json();
 
       if (artistData.profile) {
-        // Clean up Discogs profile (remove [a=Artist] style links)
-        const cleanProfile = artistData.profile
-          .replace(/\[a=([^\]]+)\]/g, '$1')  // [a=Artist Name] -> Artist Name
-          .replace(/\[l=([^\]]+)\]/g, '$1')  // [l=Label Name] -> Label Name
-          .replace(/\[m=([^\]]+)\]/g, '$1')  // [m=Master] -> Master
-          .replace(/\[r=([^\]]+)\]/g, '$1')  // [r=Release] -> Release
-          .replace(/\[url=([^\]]+)\]([^\[]+)\[\/url\]/g, '$2')  // [url=...]text[/url] -> text
-          .trim();
+        // Resolve Discogs references to names; formatting tags ([b], [i],
+        // [u], [url=]) are kept and rendered by the artist page
+        // (src/renderer/lib/discogs-markup.js). Ids name members, labels and
+        // releases: the artist record's own member/group/alias lists cover
+        // most, the rest are looked up (at most MAX_REF_LOOKUPS).
+        const refNames = {};
+        for (const list of [artistData.members, artistData.groups, artistData.aliases]) {
+          for (const e of list || []) if (e && e.id && e.name) refNames['a' + e.id] = e.name;
+        }
+        const missingRefs = discogsRefIds(artistData.profile)
+          .filter(r => !refNames[r.type + r.id])
+          .slice(0, DISCOGS_MAX_REF_LOOKUPS);
+        await Promise.all(missingRefs.map(async (r) => {
+          try {
+            const res = await fetch(`https://api.discogs.com/${DISCOGS_REF_PATH[r.type]}/${r.id}`, { headers });
+            if (!res.ok) return;
+            const data = await res.json();
+            const name = data.name || data.title;
+            if (name) refNames[r.type + r.id] = name;
+          } catch (_) { /* dropped from the bio */ }
+        }));
+        const cleanProfile = normalizeDiscogsProfile(artistData.profile, refNames);
 
         console.log('📀 Discogs bio fetched successfully');
         return {
