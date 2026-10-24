@@ -11,6 +11,7 @@ class FileWatcher {
     this.pendingChanges = [];
     this.debounceTimer = null;
     this.onLibraryChanged = null; // Callback for notifying renderer
+    this.backgroundTimer = null; // pending switch to polling mode
   }
 
   async startWatching() {
@@ -116,8 +117,22 @@ class FileWatcher {
     }
   }
 
-  // Called when app goes to background
+  // Called when app goes to background. Window blur fires for every alt-tab,
+  // dialog and sign-in window, and switching modes closes the watchers that
+  // the next focus rebuilds, which re-walks the whole library: five focus
+  // changes in 90 seconds re-read a 2,000-file library on a spinning disk five
+  // times (parachord#1117). So the switch waits until the app has stayed in the
+  // background for BACKGROUND_GRACE_MS; coming back sooner cancels it.
   onAppBackground() {
+    if (!this.isForeground || this.backgroundTimer) return;
+    this.backgroundTimer = setTimeout(() => {
+      this.backgroundTimer = null;
+      this.enterPollingMode();
+    }, FileWatcher.BACKGROUND_GRACE_MS);
+    if (this.backgroundTimer.unref) this.backgroundTimer.unref();
+  }
+
+  enterPollingMode() {
     if (!this.isForeground) return;
 
     console.log('[LocalFiles] App backgrounded, switching to polling mode');
@@ -137,6 +152,12 @@ class FileWatcher {
 
   // Called when app comes to foreground
   onAppForeground() {
+    if (this.backgroundTimer) {
+      // Back before the grace period ran out: the watchers never stopped.
+      clearTimeout(this.backgroundTimer);
+      this.backgroundTimer = null;
+      return;
+    }
     if (this.isForeground) return;
 
     console.log('[LocalFiles] App foregrounded, switching to real-time watching');
@@ -179,6 +200,11 @@ class FileWatcher {
   }
 
   async stopAll() {
+    if (this.backgroundTimer) {
+      clearTimeout(this.backgroundTimer);
+      this.backgroundTimer = null;
+    }
+
     // Stop debounce timer
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
@@ -198,5 +224,9 @@ class FileWatcher {
     this.watchers.clear();
   }
 }
+
+// How long the app must stay in the background before the real-time watchers
+// give way to the 5-minute poll (see onAppBackground).
+FileWatcher.BACKGROUND_GRACE_MS = 2 * 60 * 1000;
 
 module.exports = FileWatcher;
