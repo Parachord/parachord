@@ -2,6 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const MetadataReader = require('./metadata-reader');
 
+// The scan runs in the main process. It used blocking fs calls (statSync per
+// file, readdirSync per folder) and only awaited microtasks, so a walk never
+// gave the event loop back: on a spinning disk a 2,000-file library held the
+// main process for seconds, and on Windows a blocked main process freezes the
+// window (parachord#1117). Every fs call is async now, and the walk yields a
+// full event-loop turn every YIELD_EVERY entries so IPC keeps flowing.
+const YIELD_EVERY = 50;
+const yieldToEventLoop = () => new Promise(resolve => setImmediate(resolve));
+
 class FileScanner {
   constructor(db) {
     this.db = db;
@@ -28,14 +37,14 @@ class FileScanner {
     try {
       // Verify the watch folder is actually accessible before doing
       // anything destructive. If the volume is unmounted, the network share
-      // is offline, or permissions lapsed transiently, statSync throws —
+      // is offline, or permissions lapsed transiently, the stat throws —
       // and we must NOT proceed to the diff-and-delete loop, otherwise an
       // unreadable folder gets interpreted as "all files deleted" and we
       // wipe the entire DB section for that folder. The user's library
       // would then "reappear" on the next scan once the volume came back,
       // matching real reports of disappearing/reappearing libraries.
       try {
-        const rootStat = fs.statSync(folderPath);
+        const rootStat = await fs.promises.stat(folderPath);
         if (!rootStat.isDirectory()) {
           console.warn(`[LocalFiles] Watch root is not a directory: ${folderPath}; skipping scan to preserve existing DB entries.`);
           return { processed: 0, added: 0, updated: 0, removed: 0, errors: 0, total: 0, skipped: 'not-a-directory' };
@@ -99,6 +108,7 @@ class FileScanner {
           break;
         }
 
+        if (processed > 0 && processed % YIELD_EVERY === 0) await yieldToEventLoop();
         processed++;
         if (this.onProgress) {
           this.onProgress(processed, files.length, filePath);
@@ -138,10 +148,11 @@ class FileScanner {
     // NOT treat the empty list as authoritative. Failures inside subdirs
     // are still tolerated (logged and skipped); we only escalate the
     // root-level error.
+    let seen = 0;
     const walk = async (dir, isRoot) => {
       let entries;
       try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
       } catch (error) {
         if (isRoot) {
           // Bubble up — caller decides whether to abort the scan.
@@ -154,6 +165,7 @@ class FileScanner {
       for (const entry of entries) {
         // Skip hidden files and directories
         if (entry.name.startsWith('.')) continue;
+        if (++seen % YIELD_EVERY === 0) await yieldToEventLoop();
 
         const fullPath = path.join(dir, entry.name);
 
@@ -161,7 +173,7 @@ class FileScanner {
           // Skip symlinks to prevent traversal outside watched folders
           if (entry.isSymbolicLink && entry.isSymbolicLink()) continue;
           try {
-            const stat = fs.lstatSync(fullPath);
+            const stat = await fs.promises.lstat(fullPath);
             if (stat.isSymbolicLink()) continue;
           } catch (_) { /* skip inaccessible entries */ continue; }
           await walk(fullPath, false);
@@ -184,7 +196,7 @@ class FileScanner {
     const existing = this.db.getTrackByPath(filePath);
 
     // Get file stats
-    const stats = fs.statSync(filePath);
+    const stats = await fs.promises.stat(filePath);
 
     // If exists and hasn't changed, skip
     if (existing && existing.modified_at === stats.mtimeMs) {
@@ -214,11 +226,18 @@ class FileScanner {
       'Folder.jpg', 'Folder.jpeg', 'Folder.png'
     ];
 
+    // One readdir instead of up to 18 existence checks. Matched without case,
+    // as the existence checks were on the case-insensitive macOS and Windows
+    // filesystems; the file's own spelling is returned.
+    let byLower;
+    try {
+      byLower = new Map((await fs.promises.readdir(dir)).map(n => [n.toLowerCase(), n]));
+    } catch (_) {
+      return null;
+    }
     for (const name of candidates) {
-      const artPath = path.join(dir, name);
-      if (fs.existsSync(artPath)) {
-        return artPath;
-      }
+      const actual = byLower.get(name.toLowerCase());
+      if (actual) return path.join(dir, actual);
     }
 
     return null;
