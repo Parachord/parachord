@@ -1035,6 +1035,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                     onClick: () => {
                       setShareDropdownOpen(false);
                       const collectionData = {
+                        playlistId: selectedPlaylist.id,
                         title: selectedPlaylist.title,
                         artist: null,
                         creator: selectedPlaylist.creator || null,
