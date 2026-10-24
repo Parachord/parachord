@@ -1125,6 +1125,7 @@ const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require(
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
+const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const {
   libraryFilePaths,
   isStaleLocalSource,
@@ -14097,106 +14098,77 @@ ${trackListXml}
     });
   }, [saveCollection]);
 
-  // Background sync: update track counts for albums missing them
-  const trackCountSyncedRef = useRef(new Set());
+  // Background sync: fill in track counts for collection albums missing them
+  // (src/renderer/lib/album-track-counts.js has the rules and the history,
+  // parachord#1117). Runs once per session on the MusicBrainz background lane
+  // and again only when albums are added; misses are remembered across launches
+  // in cache_album_track_counts.
   const trackCountSyncRunningRef = useRef(false);
+  const trackCountSyncUnmountedRef = useRef(false);
+  useEffect(() => () => { trackCountSyncUnmountedRef.current = true; }, []);
 
+  const applyAlbumTrackCounts = useCallback((updates) => {
+    const counts = new Map(updates.map(u => [u.id, u.trackCount]));
+    setCollectionData(prev => {
+      let changed = false;
+      const albums = prev.albums.map(a => {
+        const n = counts.get(a.id);
+        if (n == null || a.trackCount === n) return a;
+        changed = true;
+        return { ...a, trackCount: n };
+      });
+      if (!changed) return prev;
+      const newData = { ...prev, albums };
+      saveCollection(newData);
+      return newData;
+    });
+    console.log(`📀 Updated track counts for ${updates.length} album(s)`);
+  }, [saveCollection]);
+
+  const albumCount = collectionData.albums?.length || 0;
   useEffect(() => {
-    if (collectionLoading || !collectionData.albums?.length) return;
-    if (trackCountSyncRunningRef.current) return; // Already running
-
-    const albumsNeedingTrackCount = collectionData.albums.filter(
-      a => a.trackCount == null && !trackCountSyncedRef.current.has(a.id)
-    );
-    if (albumsNeedingTrackCount.length === 0) return;
-
-    console.log(`📀 Syncing track counts for ${albumsNeedingTrackCount.length} albums...`);
+    if (collectionLoading || albumCount === 0) return;
+    if (trackCountSyncRunningRef.current) return;
     trackCountSyncRunningRef.current = true;
 
-    let cancelled = false;
-
-    const syncTrackCounts = async () => {
-      for (const album of albumsNeedingTrackCount) {
-        if (cancelled) break;
-
-        // Mark as synced (attempted) to avoid re-processing
-        trackCountSyncedRef.current.add(album.id);
-
-        try {
-          // Search MusicBrainz for the release-group
-          const searchQuery = encodeURIComponent(`${album.artist} ${album.title}`);
-          const searchResponse = await fetch(
-            `https://musicbrainz.org/ws/2/release-group?query=${searchQuery}&limit=1&fmt=json`,
-            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-          );
-
-          if (!searchResponse.ok) {
-            // Rate limited - wait longer and continue
-            if (searchResponse.status === 503 || searchResponse.status === 429) {
-              await new Promise(r => setTimeout(r, 5000));
-            }
-            continue;
-          }
-
-          const searchData = await searchResponse.json();
-          const releaseGroup = searchData['release-groups']?.[0];
-          if (!releaseGroup) continue;
-
-          // Wait to avoid rate limiting
-          await new Promise(r => setTimeout(r, 1100));
-          if (cancelled) break;
-
-          // Get a release from this release-group to get track count
-          const releaseResponse = await fetch(
-            `https://musicbrainz.org/ws/2/release?release-group=${releaseGroup.id}&status=official&fmt=json&limit=1`,
-            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-          );
-
-          if (!releaseResponse.ok) continue;
-
-          const releaseData = await releaseResponse.json();
-          const release = releaseData.releases?.[0];
-          if (!release) continue;
-
-          // Wait to avoid rate limiting
-          await new Promise(r => setTimeout(r, 1100));
-          if (cancelled) break;
-
-          // Get release details with track count
-          const detailsResponse = await fetchReleaseDetails(release.id);
-
-          if (!detailsResponse.ok) continue;
-
-          const details = await detailsResponse.json();
-          let trackCount = 0;
-          if (details.media) {
-            details.media.forEach(medium => {
-              trackCount += medium['track-count'] || medium.tracks?.length || 0;
-            });
-          }
-
-          if (trackCount > 0 && !cancelled) {
-            updateCollectionAlbumTrackCount(album.artist, album.title, trackCount);
-          }
-
-          // Wait between albums to respect rate limits
-          await new Promise(r => setTimeout(r, 1100));
-
-        } catch (error) {
-          console.error(`Failed to sync track count for "${album.title}":`, error);
-        }
-      }
-
-      trackCountSyncRunningRef.current = false;
-      if (!cancelled) {
-        console.log('📀 Track count sync complete');
-      }
+    const MB_HEADERS = { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }, mbBackground: true };
+    const lookup = async (album) => {
+      const q = encodeURIComponent(`${album.artist} ${album.title}`);
+      const rgResponse = await fetch(`https://musicbrainz.org/ws/2/release-group?query=${q}&limit=1&fmt=json`, MB_HEADERS);
+      if (!rgResponse.ok) return { transient: true };
+      const releaseGroup = (await rgResponse.json())['release-groups']?.[0];
+      if (!releaseGroup) return { miss: true };
+      // inc=media carries each medium's track-count, so no full tracklist fetch.
+      const relResponse = await fetch(
+        `https://musicbrainz.org/ws/2/release?release-group=${releaseGroup.id}&status=official&inc=media&fmt=json&limit=1`,
+        MB_HEADERS
+      );
+      if (!relResponse.ok) return { transient: true };
+      const release = (await relResponse.json()).releases?.[0];
+      if (!release) return { miss: true };
+      return { trackCount: trackCountFromRelease(release) };
     };
 
-    syncTrackCounts();
-
-    return () => { cancelled = true; };
-  }, [collectionLoading, collectionData.albums, updateCollectionAlbumTrackCount]);
+    (async () => {
+      let misses = {};
+      try { misses = (await window.electron?.store?.get('cache_album_track_counts')) || {}; } catch (_) { /* start fresh */ }
+      const albums = collectionDataRef.current?.albums || [];
+      const pending = albumsNeedingTrackCount(albums, misses, Date.now()).length;
+      if (pending === 0) return;
+      console.log(`📀 Syncing track counts for ${pending} albums (background)...`);
+      const { found } = await runAlbumTrackCountSync({
+        albums,
+        misses,
+        lookup,
+        applyBatch: applyAlbumTrackCounts,
+        persistMisses: (m) => window.electron?.store?.set('cache_album_track_counts', m),
+        isCancelled: () => trackCountSyncUnmountedRef.current,
+      });
+      console.log(`📀 Track count sync complete: ${found} of ${pending} found`);
+    })()
+      .catch(err => console.warn('📀 Track count sync failed:', err?.message))
+      .finally(() => { trackCountSyncRunningRef.current = false; });
+  }, [collectionLoading, albumCount, applyAlbumTrackCounts]);
 
   // Add artist to collection
   const addArtistToCollection = useCallback((artist) => {
