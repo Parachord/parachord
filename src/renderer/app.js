@@ -1125,6 +1125,7 @@ const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require(
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
+const { playlistListenbrainzMbid } = require('./lib/playlist-share');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const {
   libraryFilePaths,
@@ -13250,8 +13251,11 @@ ${trackListXml}
     if (collection.type === 'playlist') {
       // Playlist sharing requires a ListenBrainz MBID anchor — that's the
       // cross-platform identifier Achordion keys its playlist-links cache on.
-      const lbMbid = collection.syncedTo?.listenbrainz?.externalId
-        || (collection.syncedFrom?.resolver === 'listenbrainz' && collection.syncedFrom.externalId);
+      // Callers hand over a display summary (the playlist page's Share menu,
+      // the context menus via main), not the playlist, so the sync fields come
+      // from the stored playlist by id (parachord#1084: without this every
+      // share ended at the "sync to ListenBrainz first" toast).
+      const lbMbid = playlistListenbrainzMbid(collection, playlistsRef.current);
       if (!lbMbid) {
         showToast(
           'Sync this playlist to ListenBrainz first to enable sharing via Achordion.',

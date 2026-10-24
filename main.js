@@ -5133,6 +5133,9 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         || data.tracks?.[0]?.releaseMbid
         || null;
       const collectionData = {
+        // The renderer looks the playlist's ListenBrainz link up by id
+        // (parachord#1084); this summary carries no sync fields.
+        playlistId: isPlaylist ? (data.playlistId || null) : undefined,
         title: data.name || data.title || data.album?.title,
         artist: collectionArtist,
         creator: data.creator || null,
