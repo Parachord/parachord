@@ -91,14 +91,49 @@ module.exports = {
       }),
     );
     if (results.length === 0) return null;
-    for (var i = 0; i < results.length; i++) {
-      if (
-        contains(norm(results[i].artist), targetArtist) &&
-        contains(norm(results[i].title), targetTitle)
-      )
-        return results[i];
+    // The first containment hit used to win, so a live cut, remix or karaoke
+    // version ranked above the original was what played and scrobbled (the
+    // same flaw the Bandcamp resolver had). Pass 1: an exact artist + title
+    // match, ignoring feat. credits. Pass 2: a containment match that is not
+    // another version (a version word the requested title lacks; the list
+    // matches src/renderer/lib/track-variants.js). Pass 3: any containment
+    // match, since a "Remastered" or live track by the right artist is still
+    // better than nothing on a service whose catalog is the artist's own.
+    var stripFeat = function (s) {
+      return (s || '')
+        .toString()
+        .replace(/\s*[([]\s*(feat\.?|ft\.?|featuring)\s[^)\]]*[)\]]/gi, '')
+        .replace(/\s+(feat\.?|ft\.?|featuring)\s.*$/i, '');
+    };
+    var VARIANT =
+      /\b(live|remix(es|ed)?|rmx|cover(s|ed)?|covering|tribute|karaoke|instrumental|acoustic|demo|unplugged|rework|bootleg|mashup|reprise|edit|jam track|sped up|slowed|in the style of)\b/gi;
+    var isVariant = function (r) {
+      var words = ((r.title || '') + ' ' + (r.artist || '')).match(VARIANT) || [];
+      var asked = ((track || '') + ' ' + (artist || '')).toLowerCase();
+      for (var w = 0; w < words.length; w++) {
+        if (asked.indexOf(words[w].toLowerCase()) === -1) return true;
+      }
+      return false;
+    };
+    var exactArtist = norm(stripFeat(artist));
+    var exactTitle = norm(stripFeat(track));
+    var containing = results.filter(function (r) {
+      return contains(norm(r.artist), targetArtist) && contains(norm(r.title), targetTitle);
+    });
+    if (exactArtist && exactTitle) {
+      for (var i = 0; i < containing.length; i++) {
+        if (
+          norm(stripFeat(containing[i].artist)) === exactArtist &&
+          norm(stripFeat(containing[i].title)) === exactTitle &&
+          !isVariant(containing[i])
+        )
+          return containing[i];
+      }
     }
-    return null;
+    for (var j = 0; j < containing.length; j++) {
+      if (!isVariant(containing[j])) return containing[j];
+    }
+    return containing[0] || null;
   },
   play: async function (track, config) {
     try {
