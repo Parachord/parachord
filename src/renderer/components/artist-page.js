@@ -23,6 +23,7 @@ const { Tooltip } = require('./ui-atoms');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
 const { trackSlug } = require('../lib/track-slug');
 const { generateArtistId } = require('../lib/collection-ids');
+const { parseBioMarkup } = require('../lib/discogs-markup');
 
 // Plain functions from Parachord, passed as stable wrappers.
 const ARTIST_PAGE_HANDLERS = [
@@ -1605,7 +1606,19 @@ const ArtistPage = React.memo(function ArtistPage(props) {
               !loadingBio && artistBio && artistBio !== false && React.createElement('div', { className: 'space-y-4' },
                 React.createElement('div', {
                   className: 'text-sm text-gray-700 leading-relaxed whitespace-pre-wrap'
-                }, artistBio.bio),
+                }, artistBio.source === 'discogs'
+                  // Discogs keeps its [b]/[i]/[u]/[url=] formatting tags.
+                  ? parseBioMarkup(artistBio.bio).map((seg, i) => {
+                      const style = {
+                        fontWeight: seg.bold ? 600 : undefined,
+                        fontStyle: seg.italic ? 'italic' : undefined,
+                        textDecoration: seg.underline ? 'underline' : undefined,
+                      };
+                      return seg.href
+                        ? React.createElement('a', { key: i, href: seg.href, target: '_blank', rel: 'noopener noreferrer', className: 'text-purple-600 hover:text-purple-700', style }, seg.text)
+                        : React.createElement('span', { key: i, style }, seg.text);
+                    })
+                  : artistBio.bio),
                 // Source attribution and link
                 React.createElement('div', { className: 'flex items-center gap-2 mt-4' },
                   React.createElement('span', {
