@@ -1126,6 +1126,7 @@ const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { playlistListenbrainzMbid } = require('./lib/playlist-share');
+const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const {
   libraryFilePaths,
@@ -29810,6 +29811,17 @@ Return ONLY the JSON array, no other text.`;
 
       console.log(`⭐ Merged ${listenbrainzTracks.length} ListenBrainz + ${lastfmTracks.length} Last.fm tracks → ${tracks.length} unique tracks`);
 
+      if (tracks.length === 0) {
+        // Not cached, so the next visit asks again.
+        setRecommendations({
+          artists: [],
+          tracks: [],
+          loading: false,
+          error: emptyRecommendationsMessage(!!listenbrainzConfig?.username, !!lastfmConfig?.username)
+        });
+        return;
+      }
+
       // Cache the merged tracks for quick reload
       recommendationsCache.current = {
         tracks,
@@ -29949,25 +29961,12 @@ Return ONLY the JSON array, no other text.`;
       }
     }
 
-    // Fallback: use top recordings as pseudo-recommendations
-    console.log('⭐ No ListenBrainz recommendation playlists found, falling back to top recordings');
-    const statsResponse = await fetchListenBrainz(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(username)}/recordings?range=month&count=50`);
-
-    if (statsResponse.ok) {
-      const statsData = await statsResponse.json();
-      const recordings = statsData.payload?.recordings || [];
-
-      return recordings.map((rec, index) => ({
-        id: rec.recording_mbid || `lb-top-${index}-${rec.track_name}`.replace(/\s+/g, '-'),
-        title: rec.track_name || 'Unknown Track',
-        artist: rec.artist_name || 'Unknown Artist',
-        duration: null,
-        sources: {},
-        mbid: rec.recording_mbid || null,
-        listenCount: rec.listen_count
-      }));
-    }
-
+    // No recommendation playlist yet (new accounts, or before ListenBrainz has
+    // generated one). This used to fall back to the user's own top recordings
+    // of the month, shown as recommendations: the opposite of what the page
+    // promises (parachord#1021). Nothing from ListenBrainz instead; the page
+    // says why when no source has anything.
+    console.log('⭐ No ListenBrainz recommendation playlist yet');
     return [];
   };
 
