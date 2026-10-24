@@ -46,8 +46,8 @@ describe.each(['fetchCriticsPicksAlbumArt', 'fetchChartsAlbumArt'])('%s', (name)
 // stale. The deferred big-cache hydration now retries them once the album-art
 // caches are in (the restore itself runs before those load).
 describe('Critical Darlings restored from cache', () => {
-  const start = app.indexOf('scheduleIdle(async () => {');
-  const idle = app.slice(start, app.indexOf('// end scheduleIdle for big-cache hydration', start));
+  const start = app.indexOf('const hydrateBigCaches = async () => {');
+  const idle = app.slice(start, app.indexOf('// end hydrateBigCaches', start));
 
   test('the deferred hydration retries picks saved without a cover', () => {
     expect(idle).toMatch(/const criticsMissingArt = \(criticsPicksCache\.current\.albums \|\| \[\]\)\.filter\(a => typeof a\.albumArt !== 'string'\);/);
