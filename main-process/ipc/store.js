@@ -22,7 +22,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'active_resolvers', 'ai_chat_histories', 'ai_include_history',
   'applemusic_authorized', 'applemusic_developer_token', 'applemusic_user_token',
   'auto_launch_spotify', 'autoPinnedFriendIds',
-  'cache_ai_suggestions', 'cache_album_art', 'cache_album_release_ids', 'cache_artist_data',
+  'cache_ai_suggestions', 'cache_album_art', 'cache_album_release_ids', 'cache_album_track_counts', 'cache_artist_data',
   'cache_artist_images', 'cache_charts', 'cache_concerts', 'cache_mbid_mapper', 'cache_new_releases', 'cache_playlist_covers', 'cache_track_sources',
   'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
   'discovery_seen_charts', 'discovery_seen_concerts', 'discovery_seen_criticsPicks', 'discovery_seen_newReleases', 'discovery_seen_recommendations',
