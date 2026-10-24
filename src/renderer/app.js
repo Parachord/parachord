@@ -4675,6 +4675,24 @@ const Parachord = () => {
   const [concertsLocationSuggestions, setConcertsLocationSuggestions] = useState([]);
   const concertsLocationSearchTimer = useRef(null);
   const concertsCache = useRef({ events: null, timestamp: 0 });
+  // The concerts, Fresh Drops and other big caches are restored after
+  // cacheLoaded flips (the deferred big-cache batch below). A loader that ran
+  // before that saw an empty cache and fetched everything again, so the
+  // Concerts page reloaded instead of showing the cache first (2026-10).
+  // Loaders that read a big cache await this first; it settles when the
+  // hydration finishes or fails, with a 10s cap so nothing can hang on it.
+  const bigCachesHydrated = useRef(null);
+  if (bigCachesHydrated.current === null) {
+    let resolve;
+    const promise = new Promise(r => { resolve = r; });
+    bigCachesHydrated.current = { promise, resolve };
+  }
+  const waitForBigCaches = () => Promise.race([
+    bigCachesHydrated.current.promise,
+    new Promise(r => setTimeout(r, 10000)),
+  ]);
+  const concertsLoadInFlightRef = useRef(false);
+  const newReleasesLoadInFlightRef = useRef(false);
   const [concertsTicketFlyout, setConcertsTicketFlyout] = useState(null); // event ID of open flyout
   const [concertsArtistImages, setConcertsArtistImages] = useState({}); // { normalizedArtistName: { url, facePosition } }
 
@@ -21547,7 +21565,7 @@ ${trackListXml}
       const scheduleIdle = window.requestIdleCallback
         ? (cb) => window.requestIdleCallback(cb, { timeout: 1000 })
         : (cb) => setTimeout(cb, 100);
-      scheduleIdle(async () => {
+      const hydrateBigCaches = async () => {
         // Await the second IPC kicked off above. By the time the idle
         // callback fires, this promise is usually already resolved
         // (main has been parsing in the background while we did
@@ -21742,7 +21760,12 @@ ${trackListXml}
           .then(() => fetchCriticsPicksAlbumArt(criticsMissingArt))
           .catch(() => {});
       }
-      }); // end scheduleIdle for big-cache hydration
+      }; // end hydrateBigCaches
+      scheduleIdle(() => {
+        hydrateBigCaches()
+          .catch(err => console.warn('Big-cache hydration failed:', err?.message || err))
+          .finally(() => bigCachesHydrated.current.resolve());
+      });
 
       // AI suggestions and view restoration (already loaded in batch)
       // Restore Critical Darlings from cache (parachord#962) BEFORE cacheLoaded
@@ -22332,6 +22355,7 @@ ${trackListXml}
       console.log(`📦 Cache loaded in ${Math.round(performance.now() - t0)}ms (resolver auth checks may still be completing)`);
     } catch (error) {
       console.error('Failed to load cache from store:', error);
+      bigCachesHydrated.current.resolve();
       // Even on error, mark as loaded so app can function
       resolverSettingsLoaded.current = true;
       setCacheLoaded(true);
@@ -28633,10 +28657,21 @@ ${tracks}
   };
 
   const loadNewReleases = async (forceRefresh = false) => {
-    if (newReleasesLoading) return;
+    if (newReleasesLoading || newReleasesLoadInFlightRef.current) return;
+    newReleasesLoadInFlightRef.current = true;
+    try {
+      await waitForBigCaches();
+      await loadNewReleasesNow(forceRefresh);
+    } finally {
+      newReleasesLoadInFlightRef.current = false;
+    }
+  };
 
-    // If we already have data in state and aren't force-refreshing, just show it
-    if (!forceRefresh && newReleases.length > 0 && newReleasesLoaded) {
+  const loadNewReleasesNow = async (forceRefresh) => {
+    // Same rules as loadConcertsNow: a fresh cache in state is used as is, a
+    // stale one is shown while it refreshes.
+    const newReleasesCacheFresh = (Date.now() - (newReleasesCache.current.timestamp || 0)) < CACHE_TTL.newReleases;
+    if (!forceRefresh && newReleases.length > 0 && newReleasesLoaded && newReleasesCacheFresh) {
       console.log(`✨ Using ${newReleases.length} cached new releases from state`);
       return;
     }
@@ -29181,10 +29216,22 @@ ${tracks}
 
   // Load concerts for user's favorite artists
   const loadConcerts = async (forceRefresh = false) => {
-    if (concertsLoading) return;
+    if (concertsLoading || concertsLoadInFlightRef.current) return;
+    concertsLoadInFlightRef.current = true;
+    try {
+      await waitForBigCaches();
+      await loadConcertsNow(forceRefresh);
+    } finally {
+      concertsLoadInFlightRef.current = false;
+    }
+  };
 
-    // If we already have data in state and aren't force-refreshing, just show it
-    if (!forceRefresh && concerts.length > 0 && concertsLoaded) {
+  const loadConcertsNow = async (forceRefresh) => {
+    // Data in state from a fresh cache: nothing to do. A stale cache restored
+    // at startup falls through to the stale-while-refreshing path below; it
+    // used to return here and never refresh until the user pressed refresh.
+    const concertsCacheFresh = (Date.now() - (concertsCache.current.timestamp || 0)) < CACHE_TTL.concerts;
+    if (!forceRefresh && concerts.length > 0 && concertsLoaded && concertsCacheFresh) {
       console.log(`🎤 Using ${concerts.length} cached concerts from state`);
       return;
     }
