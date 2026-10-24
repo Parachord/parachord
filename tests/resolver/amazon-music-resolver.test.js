@@ -36,7 +36,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.4.4');
+    expect(axe.manifest.version).toBe('1.4.5');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -195,6 +195,57 @@ describe('amazonmusic resolve', () => {
     global.window.electron.amazonMusic.searchTracks.mockResolvedValue({ success: true, tracks: [] });
     const resolver = instantiate(axe);
     expect(await resolver.resolve('Nobody', 'Nothing', null, {})).toBeNull();
+  });
+
+  const resolveAmong = async (tracks, artist, title) => {
+    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
+      success: true,
+      tracks: tracks.map(([asin, a, t]) => ({ asin, uniqueId: asin, title: t, artist: a, album: 'X', duration: 200 })),
+    });
+    return (await instantiate(axe).resolve(artist, title, null, {}))?.amazonAsin || null;
+  };
+
+  test('prefers the exact track over a live or remixed version ranked above it', async () => {
+    expect(await resolveAmong([
+      ['L', 'Daft Punk', 'Around the World (Live 2007)'],
+      ['R', 'Daft Punk', 'Around the World (Remix)'],
+      ['E', 'Daft Punk', 'Around the World'],
+    ], 'Daft Punk', 'Around the World')).toBe('E');
+  });
+
+  test('without an exact match, a non-variant containment match beats a variant', async () => {
+    expect(await resolveAmong([
+      ['K', 'Daft Punk', 'Around the World (Karaoke Version)'],
+      ['M', 'Daft Punk', 'Around the World - Remastered'],
+    ], 'Daft Punk', 'Around the World')).toBe('M');
+  });
+
+  test('a variant is still used when it is the only containment match', async () => {
+    expect(await resolveAmong([['L', 'Daft Punk', 'Around the World (Live)']], 'Daft Punk', 'Around the World')).toBe('L');
+  });
+
+  test('a version word the request names is not held against a result', async () => {
+    expect(await resolveAmong([
+      ['S', 'Oasis', 'Live Forever'],
+    ], 'Oasis', 'Live Forever')).toBe('S');
+    expect(await resolveAmong([
+      ['P', 'Daft Punk', 'Around the World'],
+      ['L', 'Daft Punk', 'Around the World (Live)'],
+    ], 'Daft Punk', 'Around the World (Live)')).toBe('L');
+  });
+
+  test('matches across feat. credits', async () => {
+    expect(await resolveAmong([
+      ['R', 'Shakey Graves', 'Ready or Not (Live)'],
+      ['E', 'Shakey Graves', 'Ready or Not (feat. Sierra Ferrell)'],
+    ], 'Shakey Graves feat. Sierra Ferrell', 'Ready or Not')).toBe('E');
+  });
+
+  test('the version word list matches the renderer\'s', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../../plugins-src/amazonmusic/implementation.js'), 'utf8');
+    const m = src.match(/var VARIANT =\s*\/(.*)\/gi;/);
+    expect(m).not.toBeNull();
+    expect(m[1]).toBe(require('../../src/renderer/lib/track-variants').VARIANT_WORDS.source);
   });
 });
 
