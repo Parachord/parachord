@@ -341,10 +341,37 @@ class BaseScrobbler {
 // ListenBrainzScrobbler - ListenBrainz scrobbler with token auth
 // ============================================================================
 
+// additional_info.submission_client_version: "<app version> (desktop)".
+// It used to be a hard-coded "1.1.0" on every client, so two Parachord
+// clients on one token were indistinguishable in duplicate-listen reports
+// (parachord#1125). Mobile sends "<version> (android|ios)"; the platform
+// names match the X-Parachord-Client allowlist. A missing version reads
+// "unknown" rather than an invented one.
+function formatSubmissionClientVersion(version) {
+  const v = typeof version === 'string' ? version.trim() : '';
+  return `${v || 'unknown'} (desktop)`;
+}
+
 class ListenBrainzScrobbler extends BaseScrobbler {
   constructor() {
     super('listenbrainz', 'ListenBrainz');
     this.apiBase = 'https://api.listenbrainz.org/1';
+    this._appVersion = null;
+  }
+
+  // The app version from main (updater-get-version), fetched once and kept
+  // for the session. A failed lookup is not kept, so the next submit retries.
+  async _submissionClientVersion() {
+    if (!this._appVersion) {
+      try {
+        const getVersion = window.electron && window.electron.updater && window.electron.updater.getVersion;
+        const version = getVersion ? await getVersion() : null;
+        if (typeof version === 'string' && version.trim()) this._appVersion = version.trim();
+      } catch (e) {
+        console.warn('[ListenBrainz] App version lookup failed:', e && e.message);
+      }
+    }
+    return formatSubmissionClientVersion(this._appVersion);
   }
 
   async isEnabled() {
@@ -470,7 +497,7 @@ class ListenBrainzScrobbler extends BaseScrobbler {
           additional_info: {
             media_player: 'Parachord',
             submission_client: 'Parachord',
-            submission_client_version: '1.1.0',
+            submission_client_version: await this._submissionClientVersion(),
             duration_ms: track.duration ? track.duration * 1000 : undefined,
             ...this._deriveSourceEnrichment(track)
           }
@@ -511,7 +538,7 @@ class ListenBrainzScrobbler extends BaseScrobbler {
           additional_info: {
             media_player: 'Parachord',
             submission_client: 'Parachord',
-            submission_client_version: '1.1.0',
+            submission_client_version: await this._submissionClientVersion(),
             duration_ms: track.duration ? track.duration * 1000 : undefined,
             ...this._deriveSourceEnrichment(track)
           }
@@ -1125,6 +1152,7 @@ if (typeof module !== 'undefined' && module.exports) {
     BaseScrobbler,
     ListenBrainzScrobbler,
     LastFmScrobbler,
-    LibreFmScrobbler
+    LibreFmScrobbler,
+    formatSubmissionClientVersion
   };
 }
