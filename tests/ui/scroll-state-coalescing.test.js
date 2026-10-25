@@ -192,9 +192,17 @@ describe('card click opens the release page before the lookup', () => {
     expect(body).toMatch(/releaseDetailsCache\.current\[album\.releaseGroupId\]/);
   });
 
-  test('fallbacks clear the placeholder release and loading state', () => {
-    const fallbacks = body.match(/setCurrentRelease\(null\);\s*setLoadingRelease\(false\);\s*fetchArtistData\(album\.artist\);/g) || [];
-    expect(fallbacks.length).toBe(2);
+  test('no failure path leaves the placeholder loading', () => {
+    // Not found on MusicBrainz: clear the placeholder and open the artist page.
+    const notFound = body.match(/setCurrentRelease\(null\);\s*setLoadingRelease\(false\);\s*fetchArtistData\(album\.artist\);/g) || [];
+    expect(notFound.length).toBe(1);
+    // A lookup that failed (outage, throttling) stays on the album page with
+    // the reason and a retry, instead of a second round of requests to the
+    // same down service through the artist page.
+    expect(body).toMatch(/catch \(error\) \{[\s\S]*?showReleaseLoadError\(album\.releaseGroupId \|\| album\.id, error, \{ kind: 'chartsAlbum', album \}\);/);
+    const helper = app.slice(app.indexOf('const showReleaseLoadError = '), app.indexOf('const retryReleaseLoad = '));
+    expect(helper).toMatch(/setLoadingRelease\(false\)/);
+    expect(helper).toMatch(/_loadError: message, _retry: retry/);
   });
 
   test('every hover prefetch uses the background lane of the MusicBrainz limiter', () => {

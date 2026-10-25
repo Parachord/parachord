@@ -1007,7 +1007,9 @@ const ReleasePage = ({
   shareDropdownOpen,
   setShareDropdownOpen,
   publishCollectionSmartLink,
-  copyCollectionEmbedCode
+  copyCollectionEmbedCode,
+  // A load that failed (release._loadError) offers a retry
+  onRetryLoad
 }) => {
   // A fresh cover found after the cached one failed to load (header image onError).
   const [replacementArt, setReplacementArt] = React.useState(null);
@@ -1283,7 +1285,7 @@ const ReleasePage = ({
               fontSize: isCompact ? '0.75rem' : '0.875rem',
               transition: 'font-size 300ms ease'
             }
-          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : 'Loading...'),
+          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : (release._loadError ? '' : 'Loading...')),
           // Share button
           React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: `${albumArtSize}px` } },
             React.createElement('button', {
@@ -1346,6 +1348,21 @@ const ReleasePage = ({
 
     // RIGHT COLUMN: Tracklist
     React.createElement('div', { className: 'flex-1 min-w-0 pt-6 scrollable-content', style: { overflowY: 'auto' } },
+      // A load that failed: the reason and a retry, in place of the skeleton
+      !release.tracks && release._loadError ? React.createElement('div', {
+        className: 'flex flex-col items-start gap-3 py-6 px-4',
+        role: 'alert'
+      },
+        React.createElement('p', { style: { color: 'var(--text-primary)', fontSize: '0.9375rem', fontWeight: 500 } },
+          "Couldn't load this album's tracks"),
+        React.createElement('p', { style: { color: 'var(--text-secondary)', fontSize: '0.875rem', maxWidth: '32rem' } },
+          release._loadError),
+        onRetryLoad && React.createElement('button', {
+          onClick: (e) => { e.stopPropagation(); onRetryLoad(); },
+          className: 'px-4 py-2 text-white rounded-lg text-sm transition-opacity hover:opacity-90',
+          style: { backgroundColor: 'var(--accent-primary)' }
+        }, 'Try Again')
+      ) :
       // Show skeleton while tracks are loading
       !release.tracks ? React.createElement('div', { className: 'space-y-0' },
         [75, 60, 85, 55, 70, 80, 50, 65, 90, 58].map((width, i) =>
