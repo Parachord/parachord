@@ -167,6 +167,61 @@ module.exports = {
       return null;
     }
   },
+  // Album search for the catalog fallback (docs/architecture/plugins.md,
+  // "searchAlbums"). The public iTunes catalog, so it answers with no Apple
+  // Music account or sign-in. Each result's url is a music.apple.com album
+  // URL, which lookupAlbum below accepts.
+  searchAlbums: async function (query, config) {
+    try {
+      var term =
+        typeof query === 'string'
+          ? query
+          : [query && query.artist, query && query.title].filter(Boolean).join(' ');
+      term = (term || '').trim();
+      if (term.length < 2) return [];
+      var storefront = (config && config.storefront) || 'us';
+      var fetchAlbums = async function (t, limit) {
+        var response = await window.iTunesRateLimiter.fetch(
+          'https://itunes.apple.com/search?term=' +
+            encodeURIComponent(t) +
+            '&media=music&entity=album&limit=' +
+            limit +
+            '&country=' +
+            storefront,
+        );
+        if (!response.ok) {
+          console.warn('Apple Music album search failed:', response.status);
+          return [];
+        }
+        var data = await response.json();
+        return (data && data.results) || [];
+      };
+      var results = await fetchAlbums(term, 10);
+      // iTunes matches combined artist + title terms poorly, so a miss is
+      // retried with the artist alone; the caller matches the title.
+      if (results.length === 0 && query && typeof query === 'object' && query.artist && query.title) {
+        results = await fetchAlbums(String(query.artist).trim(), 50);
+      }
+      return results
+        .filter(function (a) {
+          return a && a.collectionId && a.collectionName && a.collectionViewUrl;
+        })
+        .map(function (a) {
+          return {
+            id: 'applemusic-album-' + a.collectionId,
+            name: a.collectionName,
+            artist: a.artistName || '',
+            albumArt: a.artworkUrl100 ? a.artworkUrl100.replace('100x100', '500x500') : null,
+            releaseDate: a.releaseDate || null,
+            trackCount: a.trackCount || null,
+            url: a.collectionViewUrl,
+          };
+        });
+    } catch (error) {
+      console.error('Apple Music album search error:', error);
+      return [];
+    }
+  },
   lookupAlbum: async function (url, config) {
     try {
       console.log('Apple Music album lookup:', url);

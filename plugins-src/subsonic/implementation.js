@@ -297,6 +297,113 @@ module.exports = {
     }
     return null;
   },
+  // Album search for the catalog fallback (docs/architecture/plugins.md,
+  // "searchAlbums"). search3 with albums only. Each result's url is
+  // "subsonic:album:<id>", which lookupAlbum below accepts; no URL here
+  // carries the auth token.
+  searchAlbums: async function (query, config) {
+    try {
+      var term =
+        typeof query === 'string'
+          ? query
+          : [query && query.artist, query && query.title].filter(Boolean).join(' ');
+      term = (term || '').trim();
+      if (term.length < 2) return [];
+      // The URL helpers are set up by ensureHelpers, which each function used
+      // to embed in full (functions share no scope). getStreamUrl runs it
+      // before it looks at the track or config, so a call with a placeholder
+      // id primes window.__subsonicHelpers without a request.
+      if (!window.__subsonicHelpers) await this.getStreamUrl({ subsonicId: 'init' }, config);
+      var h = window.__subsonicHelpers;
+      if (!h) return [];
+      var url = h.apiUrl(
+        config,
+        'search3',
+        'f=json&query=' + encodeURIComponent(term) + '&songCount=0&artistCount=0&albumCount=20',
+      );
+      if (!url) return [];
+      var resp = await fetch(url);
+      if (!resp.ok) return [];
+      var data = await resp.json();
+      var sub = data && data['subsonic-response'];
+      if (!sub || sub.status !== 'ok') return [];
+      var albums = (sub.searchResult3 && sub.searchResult3.album) || [];
+      var out = [];
+      for (var i = 0; i < albums.length; i++) {
+        var a = albums[i];
+        if (!a || !a.id || !(a.name || a.title)) continue;
+        out.push({
+          id: 'subsonic-album-' + a.id,
+          name: a.name || a.title,
+          artist: a.artist || '',
+          albumArt: null, // a cover URL would carry the auth token
+          releaseDate: a.year ? String(a.year) : null,
+          trackCount: a.songCount || null,
+          url: 'subsonic:album:' + a.id,
+        });
+      }
+      return out;
+    } catch (error) {
+      console.error('Subsonic album search error:', error);
+      return [];
+    }
+  },
+  // An album's tracks (getAlbum), for a "subsonic:album:<id>" url from
+  // searchAlbums. Tracks have the same shape as search results.
+  lookupAlbum: async function (url, config) {
+    try {
+      var m = /^subsonic:album:(.+)$/.exec(url || '');
+      if (!m) return null;
+      var albumId = m[1];
+      if (!window.__subsonicHelpers) await this.getStreamUrl({ subsonicId: 'init' }, config);
+      var h = window.__subsonicHelpers;
+      if (!h) return null;
+      var apiUrl = h.apiUrl(config, 'getAlbum', 'f=json&id=' + encodeURIComponent(albumId));
+      if (!apiUrl) return null;
+      var resp = await fetch(apiUrl);
+      if (!resp.ok) return null;
+      var data = await resp.json();
+      var sub = data && data['subsonic-response'];
+      if (!sub || sub.status !== 'ok' || !sub.album) return null;
+      var album = sub.album;
+      var songs = album.song || [];
+      var server = h.normalizeBase(config && config.serverUrl);
+      var tracks = [];
+      for (var i = 0; i < songs.length; i++) {
+        var s = songs[i];
+        if (!s || !s.id || !s.title) continue;
+        tracks.push({
+          id: 'subsonic-' + s.id,
+          title: s.title,
+          artist: s.artist || album.artist || 'Unknown Artist',
+          album: s.album || album.name || '',
+          duration: s.duration || 0,
+          sources: ['subsonic'],
+          subsonicId: s.id,
+          subsonicServer: server,
+          trackNumber: s.track || i + 1,
+          discNumber: s.discNumber || 1,
+        });
+      }
+      tracks.sort(function (a, b) {
+        return a.discNumber !== b.discNumber ? a.discNumber - b.discNumber : a.trackNumber - b.trackNumber;
+      });
+      if (tracks.length === 0) return null;
+      return {
+        id: 'subsonic-album-' + albumId,
+        name: album.name || '',
+        artist: album.artist || '',
+        albumArt: null,
+        releaseDate: album.year ? String(album.year) : null,
+        trackCount: tracks.length,
+        tracks: tracks,
+        url: url,
+      };
+    } catch (error) {
+      console.error('Subsonic album lookup error:', error);
+      return null;
+    }
+  },
   getStreamUrl: async function (track, config) {
     var ensureHelpers = function () {
       if (window.__subsonicHelpers) return window.__subsonicHelpers;

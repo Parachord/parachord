@@ -1286,6 +1286,13 @@ const ReleasePage = ({
               transition: 'font-size 300ms ease'
             }
           }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : (release._loadError ? '' : 'Loading...')),
+          // A track list from a service's catalog, not MusicBrainz (the
+          // album-page catalog fallback): say where it came from.
+          release._catalogSource && React.createElement('p', {
+            className: 'text-gray-500',
+            style: { fontSize: '0.75rem', marginTop: '2px' },
+            title: 'MusicBrainz could not supply this album, so its track list came from another catalog'
+          }, `Track list from ${release._catalogSource.name}`),
           // Share button
           React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: `${albumArtSize}px` } },
             React.createElement('button', {

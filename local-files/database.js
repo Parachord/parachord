@@ -241,6 +241,44 @@ class LocalFilesDatabase {
     return stmt.all(pattern, pattern, pattern, pattern, pattern);
   }
 
+  // Albums whose name contains the query, one row per album and album artist
+  // (the album-page catalog fallback, through the Local Files plugin's
+  // searchAlbums). search() above can't serve this: it matches tracks and
+  // stops at 50 rows.
+  searchAlbums(query) {
+    const normalized = this.normalize(query);
+    if (!normalized) return [];
+    const stmt = this.db.prepare(`
+      SELECT album,
+             COALESCE(NULLIF(album_artist, ''), artist) AS album_artist_name,
+             MIN(year) AS year,
+             COUNT(*) AS track_count
+      FROM tracks
+      WHERE album IS NOT NULL AND album != '' AND album_normalized LIKE ?
+      GROUP BY album_normalized, COALESCE(NULLIF(album_artist, ''), artist)
+      ORDER BY track_count DESC
+      LIMIT 20
+    `);
+    return stmt.all(`%${normalized}%`);
+  }
+
+  // Every track on one album, in disc and track order. The artist is matched
+  // on the album artist, else the track artist, with the same normalizer the
+  // album column was stored with.
+  getAlbumTracks(album, albumArtist) {
+    const albumNorm = this.normalize(album);
+    if (!albumNorm) return [];
+    const artistNorm = this.normalize(albumArtist);
+    const rows = this.db.prepare(`
+      SELECT * FROM tracks
+      WHERE album_normalized = ?
+      ORDER BY COALESCE(disc_number, 1), COALESCE(track_number, 0), title
+    `).all(albumNorm);
+    return artistNorm
+      ? rows.filter(r => this.normalize(r.album_artist || r.artist) === artistNorm)
+      : rows;
+  }
+
   resolve(artist, track, album) {
     const artistNorm = this.normalize(artist);
     const trackNorm = this.normalize(track);

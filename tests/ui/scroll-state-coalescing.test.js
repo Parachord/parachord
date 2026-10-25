@@ -181,9 +181,10 @@ describe('card click opens the release page before the lookup', () => {
     const firstFetch = b.indexOf('musicbrainz.org/ws/2/');
     expect(show).toBeGreaterThan(-1);
     expect(show).toBeLessThan(firstFetch);
-    // every failure path clears the placeholder it showed
-    expect(b).toMatch(/const giveUp = \(message\) => \{/);
-    expect((b.match(/giveUp\(/g) || []).length).toBe(2); // not-found and error paths
+    // every failure path tries the catalogs, then clears the placeholder it showed
+    expect(b).toMatch(/const giveUp = async \(message\) => \{/);
+    expect((b.match(/await giveUp\(/g) || []).length).toBe(2); // not-found and error paths
+    expect(b).toMatch(/loadAlbumFromCatalogs\(\{ artist: track\.artist, title: albumName \}\)/);
     expect(b).toMatch(/setCurrentRelease\(null\);\s*setLoadingRelease\(false\);\s*fetchArtistData\(track\.artist\)/);
   });
 
@@ -199,7 +200,9 @@ describe('card click opens the release page before the lookup', () => {
     // A lookup that failed (outage, throttling) stays on the album page with
     // the reason and a retry, instead of a second round of requests to the
     // same down service through the artist page.
-    expect(body).toMatch(/catch \(error\) \{[\s\S]*?showReleaseLoadError\(album\.releaseGroupId \|\| album\.id, error, \{ kind: 'chartsAlbum', album \}\);/);
+    expect(body).toMatch(/catch \(error\) \{[\s\S]*?openFromCatalogs\(\)[\s\S]*?showReleaseLoadError\(placeholderId, error, \{ kind: 'chartsAlbum', album \}\);/);
+    // not found on MusicBrainz tries the catalogs before the artist page
+    expect(body).toMatch(/releases\.length === 0\) \{\s*if \(await openFromCatalogs\(\)\) return;/);
     const helper = app.slice(app.indexOf('const showReleaseLoadError = '), app.indexOf('const retryReleaseLoad = '));
     expect(helper).toMatch(/setLoadingRelease\(false\)/);
     expect(helper).toMatch(/_loadError: message, _retry: retry/);

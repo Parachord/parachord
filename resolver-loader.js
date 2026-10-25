@@ -338,6 +338,62 @@ class ResolverLoader {
   }
 
   /**
+   * Resolvers that can find an album by artist and title: they declare
+   * capabilities.albumSearch and implement searchAlbums and lookupAlbum
+   * (docs/architecture/plugins.md, "searchAlbums"). The album pages use them
+   * when MusicBrainz cannot supply a track list.
+   * @returns {object[]}
+   */
+  getAlbumSearchResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.albumSearch &&
+      typeof r.searchAlbums === 'function' &&
+      typeof r.lookupAlbum === 'function'
+    );
+  }
+
+  /**
+   * Search one resolver's albums.
+   * @param {string} resolverId
+   * @param {{artist?: string, title?: string}|string} query
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<object[]>} albums ({ id, name, artist, albumArt, releaseDate, trackCount, url }); [] on a miss or error
+   */
+  async searchAlbums(resolverId, query, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.albumSearch || typeof resolver.searchAlbums !== 'function') {
+      return [];
+    }
+    try {
+      const albums = await resolver.searchAlbums(query, configOverride || resolver.config || {});
+      return Array.isArray(albums) ? albums.filter(a => a && a.name && a.url) : [];
+    } catch (error) {
+      console.error(`Album search error for ${resolverId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Load an album that searchAlbums returned, from the resolver that returned
+   * it. Not routed by URL pattern: an album url can be private to its plugin
+   * (subsonic:album:<id>, localfiles:album:...) and match no urlPatterns.
+   * @returns {Promise<{album: object, resolverId: string}|null>}
+   */
+  async lookupAlbumFrom(resolverId, url, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || typeof resolver.lookupAlbum !== 'function' || !url) return null;
+    try {
+      const album = await resolver.lookupAlbum(url, configOverride || resolver.config || {});
+      if (album && Array.isArray(album.tracks) && album.tracks.length > 0) {
+        return { album, resolverId };
+      }
+    } catch (error) {
+      console.error(`Album lookup error for ${resolverId}:`, error);
+    }
+    return null;
+  }
+
+  /**
    * Look up playlist tracks from a URL
    * @param {string} url - The playlist URL to look up
    * @param {object} configOverride - Optional config to override resolver's stored config

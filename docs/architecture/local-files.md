@@ -51,6 +51,10 @@ Big libraries (50k–150k tracks) used to freeze the app for tens of seconds dur
 
 **Library scan progress toast.** Throttled at 250ms so navigating away from the scan screen mid-import still shows scan status. Prevents the "did it freeze?" reaction.
 
+### Album queries for the catalog fallback
+
+`localFiles:searchAlbums(query)` and `localFiles:getAlbumTracks({ album, albumArtist })` (`LocalFilesDatabase.searchAlbums` / `getAlbumTracks`) back the Local Files plugin's `searchAlbums` / `lookupAlbum`, which the album pages use when MusicBrainz can't supply a track list (docs/architecture/plugins.md, "Album search"). `search()` can't serve this: it matches tracks and stops at 50 rows, so a big album was cut short and an album name shared with a song title was crowded out. `searchAlbums` groups by `album_normalized` and the album artist (else the track artist); `getAlbumTracks` returns every track in disc and track order, matching the artist in JS with the same `normalize` the columns were stored with (there is no normalized album-artist column). Tests: `tests/local-files/album-queries.test.js`, against a real SQLite file.
+
 ### IPC field translation for resolveArt
 
 `localFiles:resolveArt` (main.js) accepts the renderer-shaped track payload (camelCase: `filePath`, `hasEmbeddedArt`, `folderArtPath`, `musicbrainzReleaseId`, `musicbrainzArtUrl`) and translates to the snake_case the resolver expects (`file_path`, `has_embedded_art`, `folder_art_path`, etc.) before calling `service.resolveArtForTrack(dbShaped)`. The renderer-side track may strip the `local-` prefix from `id`; the handler restores it for DB lookups. Forward-compatible: passing the raw snake_case shape also works since the handler reads from both keys.

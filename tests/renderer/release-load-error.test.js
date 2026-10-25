@@ -47,6 +47,16 @@ describe('ReleasePage load error', () => {
     expect(html).not.toContain('Try Again');
   });
 
+  test('a catalog track list says where it came from', () => {
+    const html = render({
+      ...base,
+      tracks: [{ position: 1, title: 'Still Coming Down', length: 200000, mediumIndex: 1 }],
+      _catalogSource: { resolverId: 'bandcamp', name: 'Bandcamp' }
+    });
+    expect(html).toContain('Track list from Bandcamp');
+    expect(render({ ...base, tracks: [] })).not.toContain('Track list from');
+  });
+
   test('still loading shows the skeleton as before', () => {
     const html = render(base);
     expect(html).not.toContain('role="alert"');
