@@ -17,7 +17,7 @@ const fnBody = (marker, end = '\n  };') => {
 };
 
 describe('loadAlbumFromCatalogs', () => {
-  const body = fnBody('const loadAlbumFromCatalogs = async (');
+  const body = fnBody('const loadAlbumFromCatalogsNow = async (');
 
   test('goes through the plugin registry, never a named service', () => {
     expect(body).toMatch(/getAlbumSearchResolvers\(\)/);
@@ -99,5 +99,33 @@ describe('search', () => {
   test('outage results are not cached', () => {
     expect(body).toMatch(/const cacheAlbums = \(list\) => \{\s*if \(!mbOk\) return;/);
     expect(body).not.toMatch(/searchResultsCache\.current\[cacheKey\] = \{\s*\.\.\.searchResultsCache\.current\[cacheKey\],\s*albums: (merged|rerankedAlbums)/);
+  });
+});
+
+describe('MusicBrainz slow, not failing', () => {
+  test('concurrent lookups for the same album share one', () => {
+    const body = fnBody('const loadAlbumFromCatalogs = (args) => {');
+    expect(body).toMatch(/catalogLookupsInFlight\.current\.get\(key\)/);
+    expect(body).toMatch(/\.finally\(\(\) => catalogLookupsInFlight\.current\.delete\(key\)\)/);
+  });
+
+  test('a page still waiting after MB_SLOW_FALLBACK_MS shows the catalogs\' list', () => {
+    expect(app).toMatch(/const MB_SLOW_FALLBACK_MS = 5000;/);
+    const s = app.indexOf('const waitingAlbumKey = ');
+    const body = app.slice(s, app.indexOf('}, [waitingAlbumKey]);', s));
+    expect(body).toMatch(/setTimeout\(async \(\) => \{/);
+    expect(body).toMatch(/currentReleaseRef\.current/); // the page now, not a stale closure
+    expect(body).toMatch(/sameAlbumIdentity\(prev, waiting\)/); // keyed on the album, not the id
+    expect(body).toMatch(/clearTimeout\(timer\)/);
+    // the dependency is computed during render from state declared above it
+    expect(app.indexOf('const [currentRelease, setCurrentRelease] = useState')).toBeLessThan(s);
+  });
+
+  test('fetchReleaseData does not blank a catalog list already on screen, and MusicBrainz success replaces it', () => {
+    const body = fnBody('const fetchReleaseData = async (release, artist) => {');
+    expect(body).toMatch(/const keepCatalogList = [\s\S]*?shownRelease\._catalogSource[\s\S]*?if \(!keepCatalogList\) \{\s*setCurrentRelease\(partialRelease\);/);
+    expect(body).toMatch(/setCurrentRelease\(releaseInfo\);/);
+    // a MusicBrainz failure with the catalog list showing leaves it be
+    expect(body).toMatch(/onScreen\._catalogSource && onScreen\.tracks[\s\S]*?setLoadingRelease\(false\);\s*return;/);
   });
 });
