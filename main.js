@@ -3835,6 +3835,28 @@ ipcMain.handle('amazonmusic-lookup-playlist', async (event, { url } = {}) => {
   }
 });
 
+// Diagnostic, no UI: record the gql an Amazon Music album or search page
+// fires (amazonWebPlayer.debugCaptureGql) into a JSON file in userData, for
+// building the plugin's album search. Run from DevTools:
+//   await window.electron.amazonMusic.debugCaptureGql('https://music.amazon.com/albums/<ASIN>')
+// Header values and credential-like fields never reach the file; review it
+// before sharing anyway (docs/architecture/amazon-music.md, "gql capture").
+ipcMain.handle('amazonmusic-debug-capture-gql', async (event, { url } = {}) => {
+  try {
+    const capture = await amazonWebPlayer.debugCaptureGql(url);
+    const file = path.join(app.getPath('userData'), `amazon-gql-capture-${capture.subject.kind}-${Date.now()}.json`);
+    await fs.promises.writeFile(file, JSON.stringify(capture, null, 2));
+    console.log(`[Amazon] gql capture written to ${file}`);
+    return {
+      success: true,
+      file,
+      operations: capture.operations.map(o => `${o.operationName || '(unnamed)'}${o.replayed ? ' (replayed)' : ''}`)
+    };
+  } catch (error) {
+    return { success: false, reason: error && error.reason, error: error && error.message };
+  }
+});
+
 ipcMain.handle('amazonmusic-play-track', async (event, { asin, title, artist }) => {
   try {
     const result = await amazonWebPlayer.playByAsin({ asin, title, artist });

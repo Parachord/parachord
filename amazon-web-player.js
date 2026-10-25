@@ -79,7 +79,12 @@ const {
   pickMpdRepresentation,
   amazonMediaPauseExpr,
   amazonPlayGenerationStamp,
-  isAmazonMusicPage
+  isAmazonMusicPage,
+  gqlCaptureSubject,
+  gqlRequestsIn,
+  gqlRequestIsAboutSubject,
+  redactGqlSample,
+  summarizeGqlRequest
 } = require('./amazon-music-logic');
 
 const HOOK_SCRIPT = `(() => {
@@ -1073,6 +1078,69 @@ const amazonWebPlayer = {
     });
   },
 
+
+  // Diagnostic (a developer tool, no UI): load one Amazon Music album page
+  // (/albums/<ASIN>) or search page (/search/<text>/<tab>) in the search view
+  // and record the gql operations it fires, for building the plugin's album
+  // search and album lookup, which need request and response shapes only a
+  // live signed-in session shows. Every operation is listed (name, endpoint,
+  // redacted variables, header NAMES only: their values carry the session);
+  // only the page's own read queries about its subject (gqlRequestIsAboutSubject)
+  // are replayed once each, so their response shapes can be read, and those
+  // responses are redacted and trimmed (redactGqlSample) before they leave
+  // this function. Runs on the search chain like every other page load here.
+  async debugCaptureGql(rawUrl) {
+    const subject = gqlCaptureSubject(rawUrl);
+    if (!subject) {
+      throw notReady('not-ready', 'Pass a music.amazon.com album URL (/albums/<ASIN>) or search URL (/search/<text>/<tab>)');
+    }
+    if (!(await this.isSignedIn())) {
+      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    return this.enqueueSearch(async () => {
+      const win = await this.ensureWindow('search');
+      await this.layoutSearch(this.searchView);
+      const { captured, detach } = this.attachGqlCapture();
+      try {
+        await loadURLBudgeted(win, rawUrl);
+        // Let the page fire its queries: stop after 3s with nothing new, at
+        // most 20s.
+        let lastCount = -1;
+        let quietTicks = 0;
+        for (let i = 0; i < 40 && quietTicks < 6; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          const href = win.isDestroyed() ? '' : win.webContents.getURL();
+          if (pageBlocksPlayback(href)) throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+          const count = captured.filter(r => r.headers).length;
+          quietTicks = count === lastCount ? quietTicks + 1 : 0;
+          lastCount = count;
+        }
+        const operations = [];
+        for (const entry of captured.filter(r => r.headers)) {
+          for (const req of gqlRequestsIn(entry.body)) {
+            const op = summarizeGqlRequest(entry, req);
+            if (gqlRequestIsAboutSubject(req, subject) && !win.isDestroyed()) {
+              const out = await this.replayGql(win, entry, req);
+              op.replayed = true;
+              op.response = out.error ? { error: out.error } : redactGqlSample(out.parsed);
+            }
+            operations.push(op);
+          }
+        }
+        console.log(`[Amazon] gql capture ${rawUrl}: ${operations.length} operation(s), ${operations.filter(o => o.replayed).length} replayed`);
+        return {
+          capturedAt: new Date().toISOString(),
+          page: rawUrl,
+          finalUrl: win.isDestroyed() ? null : win.webContents.getURL(),
+          subject,
+          operations
+        };
+      } finally {
+        detach();
+        await this.parkSearchView();
+      }
+    });
+  },
 
   async playByAsin({ asin, title, artist } = {}) {
     if (!asin) throw new Error('Amazon Music: no ASIN to play');

@@ -1187,11 +1187,121 @@ function isAmazonMusicPage(url) {
   }
 }
 
+// ── Diagnostic: gql shapes from a live page ─────────────────────────────────
+// Album search and album lookup for the Amazon plugin need the request and
+// response shapes Amazon's own album and search pages use, and only a live
+// signed-in session shows them (every Amazon flow replays the page's own
+// request; see docs/architecture/amazon-music.md). amazonWebPlayer's
+// debugCaptureGql records them; these pure helpers decide what it replays and
+// what may be written to disk.
+
+// What a page is about: an album page's ASIN, or a search page's text and tab
+// (/search/<text>/albums, /search/<text>/songs, ...). null for anything else.
+function gqlCaptureSubject(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch { return null; }
+  if (u.origin !== 'https://music.amazon.com') return null;
+  const album = /^\/albums\/([A-Z0-9]{10})(?:\/|$)/i.exec(u.pathname);
+  if (album) return { kind: 'album', asin: album[1].toUpperCase() };
+  const search = /^\/search\/([^/]+)(?:\/([a-z]+))?\/?$/i.exec(u.pathname);
+  if (search) {
+    let text;
+    try { text = decodeURIComponent(search[1]); } catch { text = search[1]; }
+    return { kind: 'search', searchText: text, tab: search[2] ? search[2].toLowerCase() : null };
+  }
+  return null;
+}
+
+// The requests in one captured body: a single request or a batch.
+function gqlRequestsIn(raw) {
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { return []; }
+  return (Array.isArray(parsed) ? parsed : [parsed]).filter(r => r && typeof r === 'object');
+}
+
+// Operation names that change account state or report activity. Never
+// replayed, even when their variables name the album: a replay would repeat
+// the action ("add to library", "record a view") on the user's account.
+const GQL_WRITE_OP = /^(?:add|remove|delete|update|set|put|create|follow|unfollow|like|unlike|save|record|log|report|send|post|mark)[A-Z_]|^track[A-Z]/;
+const GQL_MUTATION_NAME = /mutation/i;
+
+// Whether a captured request is the page's own read query for what it shows:
+// its variables name the album ASIN, or carry the search text. Only these are
+// replayed (to read their response shape); everything else is listed by name.
+function gqlRequestIsAboutSubject(req, subject) {
+  if (!req || !subject || !req.variables || typeof req.variables !== 'object') return false;
+  if (/^\s*mutation\b/.test(String(req.query || ''))) return false;
+  const opName = String(req.operationName || '');
+  if (GQL_WRITE_OP.test(opName) || GQL_MUTATION_NAME.test(opName)) return false;
+  if (subject.kind === 'album') {
+    return JSON.stringify(req.variables).toUpperCase().includes(subject.asin);
+  }
+  if (subject.kind === 'search') {
+    const text = req.variables.searchText;
+    return typeof text === 'string' && text.toLowerCase() === String(subject.searchText).toLowerCase();
+  }
+  return false;
+}
+
+// Keys whose values could identify or authenticate the user.
+const GQL_SECRET_KEY = /token|cookie|session|auth|csrf|secret|password|credential|signature|customer|device|email/i;
+
+// A copy of a gql value that is safe to write to disk and share: secret-
+// looking keys redacted, query strings cut from URLs (signed CDN URLs carry
+// credentials), long strings and long arrays trimmed. The shape survives;
+// that is what a parser needs.
+function redactGqlSample(value, opts = {}, depth = 0) {
+  const maxArray = opts.maxArray || 3;
+  const maxString = opts.maxString || 300;
+  if (depth > 40) return '[too deep]';
+  if (Array.isArray(value)) {
+    const out = value.slice(0, maxArray).map(v => redactGqlSample(v, opts, depth + 1));
+    if (value.length > maxArray) out.push(`[${value.length - maxArray} more]`);
+    return out;
+  }
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = GQL_SECRET_KEY.test(k) ? '[redacted]' : redactGqlSample(v, opts, depth + 1);
+    }
+    return out;
+  }
+  if (typeof value === 'string') {
+    let s = value;
+    if (/^https?:\/\//i.test(s) && s.includes('?')) s = `${s.slice(0, s.indexOf('?'))}?[query removed]`;
+    return s.length > maxString ? `${s.slice(0, maxString)}…` : s;
+  }
+  return value;
+}
+
+// One captured request as written to the capture file: never header values
+// (they carry the session), only their names.
+function summarizeGqlRequest(entry, req) {
+  let endpoint = null;
+  try {
+    const u = new URL(entry && entry.url);
+    endpoint = u.origin + u.pathname;
+  } catch { /* leave null */ }
+  return {
+    operationName: (req && req.operationName) || null,
+    endpoint,
+    persistedQuery: !!(req && req.extensions && req.extensions.persistedQuery),
+    hasQueryText: !!(req && req.query),
+    variables: redactGqlSample(req && req.variables, { maxArray: 10 }),
+    headerNames: Object.keys((entry && entry.headers) || {}).sort()
+  };
+}
+
 function amazonPlayGenerationStamp(generation) {
   return `window.__parachordPlayGen = ${generation | 0};`;
 }
 
 module.exports = {
+  gqlCaptureSubject,
+  gqlRequestsIn,
+  gqlRequestIsAboutSubject,
+  redactGqlSample,
+  summarizeGqlRequest,
   reportedPlaybackAsin,
   amazonMediaPauseExpr,
   amazonPlayGenerationStamp,
