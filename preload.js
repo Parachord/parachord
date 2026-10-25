@@ -616,6 +616,9 @@ contextBridge.exposeInMainWorld('electron', {
     searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks',
       query && typeof query === 'object' ? query : { query }),
     lookupPlaylist: (url) => ipcRenderer.invoke('amazonmusic-lookup-playlist', { url }),
+    // Diagnostic (DevTools only): record an album or search page's gql into a
+    // file in userData. See main.js 'amazonmusic-debug-capture-gql'.
+    debugCaptureGql: (url) => ipcRenderer.invoke('amazonmusic-debug-capture-gql', { url }),
     playTrack: (params) => ipcRenderer.invoke('amazonmusic-play-track', params),
     pause: () => ipcRenderer.invoke('amazonmusic-pause'),
     resume: () => ipcRenderer.invoke('amazonmusic-resume'),
