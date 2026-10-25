@@ -164,7 +164,7 @@ Providers are plugins with the `concerts` capability and a `searchArtistEvents` 
 | SeatGeek | `clientId` | `/2/performers?q=`, then `/2/events?performers.slug=` |
 | Ticketmaster | `apiKey` | Discovery v2 `attractions.json`, then `events.json` |
 
-All providers share one limiter (2 concurrent, 400 ms apart, cooldown after 429s). Events are deduplicated by date, artist and venue prefix, or by location within about 2 km, with ticket links combined. Past events are dropped. Location filtering uses Nominatim for search and browser geolocation with IP fallbacks, default radius 50 miles. Loads in the background about three minutes after startup. Cache 24 hours as `cache_concerts`; per-artist results cached 24 hours in memory. Not configured: a "No Concert Services Configured" card. The artist page "On Tour" tab only appears when that artist has events.
+Each provider has its own limiter (2 concurrent, 400 ms apart, cooldown after 429s; `src/renderer/lib/concert-limiters.js`), so providers run side by side; they used to share one, which queued SeatGeek behind Ticketmaster. Events are deduplicated by date, artist and venue prefix, or by location within about 2 km, with ticket links combined. Past events are dropped. Location filtering uses Nominatim for search and browser geolocation with IP fallbacks, default radius 50 miles. Loads in the background about three minutes after startup. Cache 24 hours as `cache_concerts`; per-artist results cached 24 hours in memory. Not configured: a "No Concert Services Configured" card. The artist page "On Tour" tab only appears when that artist has events.
 
 An AI concert path (`getAiConcertServices`) needs a plugin with both `concerts` and `chat`; no bundled plugin declares both, so it never runs.
 

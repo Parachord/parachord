@@ -1129,6 +1129,7 @@ const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_
 const { playlistListenbrainzMbid } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
+const { createConcertLimiters } = require('./lib/concert-limiters');
 const {
   libraryFilePaths,
   isStaleLocalSource,
@@ -21732,8 +21733,10 @@ ${trackListXml}
         }
       }
 
-      // Load concerts cache
-      const concertsData = d['cache_concerts'];
+      // Load concerts cache. It is in BIG_CACHE_KEYS, so it comes from
+      // dCaches; reading the critical batch (`d`) found nothing and every
+      // launch refetched from scratch (tests/ui/big-cache-restore.test.js).
+      const concertsData = dCaches['cache_concerts'];
       if (concertsData && concertsData.events && concertsData.events.length > 0) {
         const now2 = Date.now();
         if (concertsData.timestamp && (now2 - concertsData.timestamp) < CACHE_TTL.concerts) {
@@ -29383,59 +29386,38 @@ ${tracks}
         return true;
       };
 
-      // Run dedicated service queries and AI queries in parallel
-      // Use concurrency pool to avoid hammering APIs while keeping it fast
+      // Run dedicated service queries and AI queries in parallel.
+      // Each service has its own limiter (2 in flight, 400ms between starts,
+      // a cooldown after repeated 429s; Ticketmaster needs that pacing), and
+      // every artist lookup for a service is queued on it at once, so the
+      // services run side by side instead of sharing one queue
+      // (src/renderer/lib/concert-limiters.js).
       const dedicatedPromise = (async () => {
-        const dedicatedEvents = [];
-        // Ticketmaster allows 5 req/s and each artist lookup is 2 calls
-        // (attraction search, then events), so 5 parallel artists was a
-        // guaranteed burst of 429s and missing concerts. Gate every provider
-        // call through one limiter: 2 in flight, 400ms between starts, and a
-        // cooldown after repeated 429s. The pool just feeds the limiter.
-        if (!window.__concertsLimiter && window.createLimiter) {
-          window.__concertsLimiter = window.createLimiter({
-            name: 'concertsLimiter',
-            maxConcurrency: 2,
-            minGapMs: 400,
-            cooldownMs: 5000,
-            errorThreshold: 2,
-            isThrottleError: (err) => /\b429\b|rate.?limit|too many/i.test(String(err && err.message))
-          });
+        if (!window.__concertLimiters && window.createLimiter) {
+          window.__concertLimiters = createConcertLimiters(window.createLimiter);
         }
-        const concertsLimiter = window.__concertsLimiter;
-        const concurrency = 3; // artist workers feeding the limiter
-        let idx = 0;
-        const fetchArtist = async (artist) => {
-          const results = [];
-          for (const service of concertServices) {
-            try {
-              const rawConfig = metaServiceConfigs[service.id] || {};
-              // Map generic apiKey to the plugin's expected field (e.g. clientId, appId)
-              const authField = Object.keys(service.configurable || {}).find(k => k !== 'model');
-              const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
-                ? { ...rawConfig, [authField]: rawConfig.apiKey }
-                : rawConfig;
-              const events = concertsLimiter
-                ? await concertsLimiter.run(() => service.searchArtistEvents(artist.name, config))
-                : await service.searchArtistEvents(artist.name, config);
-              if (events && events.length > 0) {
-                results.push(...events.map(e => ({ event: e, artist: artist.name })));
-              }
-            } catch (e) {
-              console.log(`🎤 Error fetching concerts for ${artist.name} from ${service.id}:`, e.message);
-            }
-          }
-          return results;
-        };
-        const runNext = async () => {
-          while (idx < artistList.length) {
-            const i = idx++;
-            const results = await fetchArtist(artistList[i]);
-            dedicatedEvents.push(...results);
+        const fetchServiceArtist = async (service, limiter, artist) => {
+          try {
+            const rawConfig = metaServiceConfigs[service.id] || {};
+            // Map generic apiKey to the plugin's expected field (e.g. clientId, appId)
+            const authField = Object.keys(service.configurable || {}).find(k => k !== 'model');
+            const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
+              ? { ...rawConfig, [authField]: rawConfig.apiKey }
+              : rawConfig;
+            const events = limiter
+              ? await limiter.run(() => service.searchArtistEvents(artist.name, config))
+              : await service.searchArtistEvents(artist.name, config);
+            return (events || []).map(e => ({ event: e, artist: artist.name }));
+          } catch (e) {
+            console.log(`🎤 Error fetching concerts for ${artist.name} from ${service.id}:`, e.message);
+            return [];
           }
         };
-        await Promise.all(Array.from({ length: Math.min(concurrency, artistList.length) }, () => runNext()));
-        return dedicatedEvents;
+        const perService = await Promise.all(concertServices.map((service) => {
+          const limiter = window.__concertLimiters ? window.__concertLimiters.forService(service.id) : null;
+          return Promise.all(artistList.map(artist => fetchServiceArtist(service, limiter, artist)));
+        }));
+        return perService.flat(2);
       })();
 
       // AI queries — batch artists in groups of 15, run all batches in parallel
