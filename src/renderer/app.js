@@ -1113,6 +1113,15 @@ const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
 const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
+const { createWikidataIdLookup, createArtistBioCache } = require('./lib/artist-bio');
+// Wikidata first, MusicBrainz url-rels as the fallback, so the Wikipedia bio
+// and image survive a MusicBrainz outage; bios are shared by the playbar and
+// the artist page (src/renderer/lib/artist-bio.js).
+const lookupWikidataId = createWikidataIdLookup({
+  fetch: (...args) => fetch(...args),
+  userAgent: 'Parachord/1.0 (https://parachord.app)',
+});
+const artistBioCache = createArtistBioCache();
 const {
   libraryFilePaths,
   isStaleLocalSource,
@@ -33509,7 +33518,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
 
         // Fetch bio using the existing function
-        const bioData = await getArtistBio(currentTrack.artist, mbid);
+        const bioData = await fetchArtistBio(currentTrack.artist, mbid);
         if (bioData) {
           setPlaybarArtistBio({ ...bioData, artistName: currentTrack.artist });
         }
@@ -33768,32 +33777,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
 
     try {
-      // Step 1: Query MusicBrainz for Wikidata relation
-      const mbUrl = `https://musicbrainz.org/ws/2/artist/${artistMbid}?inc=url-rels&fmt=json`;
-      const mbResponse = await fetch(mbUrl, {
-        headers: { 'User-Agent': 'Parachord/1.0 (https://parachord.app)' }
-      });
+      // Step 1: the artist's Wikidata id (Wikidata's own MusicBrainz id
+      // property first, MusicBrainz url-rels as the fallback)
+      const wikidataId = await lookupWikidataId(artistMbid);
 
-      if (!mbResponse.ok) {
-        console.log('📚 MusicBrainz artist lookup failed:', mbResponse.status);
+      if (!wikidataId) {
+        console.log('📚 No Wikidata entry found for artist');
         return null;
       }
-
-      const mbData = await mbResponse.json();
-
-      // Find Wikidata URL in relations
-      const wikidataRel = mbData.relations?.find(r =>
-        r.type === 'wikidata' && r.url?.resource
-      );
-
-      if (!wikidataRel) {
-        console.log('📚 No Wikidata link found for artist');
-        return null;
-      }
-
-      // Extract Wikidata ID (e.g., "Q1299" from "https://www.wikidata.org/wiki/Q1299")
-      const wikidataUrl = wikidataRel.url.resource;
-      const wikidataId = wikidataUrl.split('/').pop();
 
       // Step 2: Query Wikidata for Wikipedia article title
       const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&props=sitelinks&sitefilter=enwiki&format=json&origin=*`;
@@ -33850,22 +33841,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (!artistMbid) return null;
 
     try {
-      // Step 1: Get Wikidata ID via MusicBrainz
-      const mbUrl = `https://musicbrainz.org/ws/2/artist/${artistMbid}?inc=url-rels&fmt=json`;
-      const mbResponse = await fetch(mbUrl, {
-        headers: { 'User-Agent': 'Parachord/1.0 (https://parachord.app)' }
-      });
+      // Step 1: the artist's Wikidata id (see getWikipediaBio)
+      const wikidataId = await lookupWikidataId(artistMbid);
 
-      if (!mbResponse.ok) return null;
-
-      const mbData = await mbResponse.json();
-      const wikidataRel = mbData.relations?.find(r =>
-        r.type === 'wikidata' && r.url?.resource
-      );
-
-      if (!wikidataRel) return null;
-
-      const wikidataId = wikidataRel.url.resource.split('/').pop();
+      if (!wikidataId) return null;
 
       // Step 2: Get Wikipedia article title
       const wdUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataId}&props=sitelinks&sitefilter=enwiki&format=json&origin=*`;
@@ -34049,10 +34028,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Fetch artist biography from all sources with priority: Wikipedia > Discogs > Last.fm
-  const getArtistBio = async (artistName, artistMbid) => {
-    if (!artistName) return null;
-
-    setLoadingBio(true);
+  const fetchArtistBioUncached = async (artistName, artistMbid) => {
     try {
       // Fetch from all sources in parallel
       const [wikipediaBio, discogsBio, lastfmBio] = await Promise.all([
@@ -34080,6 +34056,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     } catch (error) {
       console.error('Failed to fetch artist bio:', error);
       return null;
+    }
+  };
+
+  // Shared by the playbar and the artist page; a bio found by one is reused
+  // by the other. Touches no loading state.
+  const fetchArtistBio = (artistName, artistMbid) =>
+    artistBioCache.load(artistName, artistMbid, fetchArtistBioUncached);
+
+  // The artist page's fetch: drives its Biography tab skeleton. The playbar
+  // calls fetchArtistBio instead, so its fetch can't leave the tab's
+  // loadingBio set (the tab skips fetching while it is) and blank.
+  const getArtistBio = async (artistName, artistMbid) => {
+    if (!artistName) return null;
+    setLoadingBio(true);
+    try {
+      return await fetchArtistBio(artistName, artistMbid);
     } finally {
       setLoadingBio(false);
     }
