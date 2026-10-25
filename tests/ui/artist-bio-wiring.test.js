@@ -37,6 +37,12 @@ describe('artist bio wiring', () => {
     }
   });
 
+  test('the Wikipedia bio takes the whole article and trims it with bioFromWikipediaExtract', () => {
+    expect(wikiBio).toContain('prop=extracts&explaintext=1');
+    expect(wikiBio).not.toContain('exintro');
+    expect(wikiBio).toContain('bioFromWikipediaExtract(extract)');
+  });
+
   test('the Wikidata lookup and the bio cache are module-scope singletons', () => {
     expect(src).toMatch(/^const lookupWikidataId = createWikidataIdLookup\(/m);
     expect(src).toMatch(/^const artistBioCache = createArtistBioCache\(\);/m);

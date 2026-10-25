@@ -52,7 +52,14 @@ Displayed on artist pages below the header.
 1. The artist MBID (from the artist page, or the MBID mapper / a MusicBrainz search for the playbar)
 2. The Wikidata id: Wikidata's own search for the entity whose MusicBrainz artist ID (P434) is that MBID; only when Wikidata has none, the artist's MusicBrainz url-rels. `lookupWikidataId` (`src/renderer/lib/artist-bio.js`) keeps found ids for the session.
 3. Query Wikidata for Wikipedia article title
-4. Fetch article extract from Wikipedia API
+4. Fetch the whole article as plain text from the Wikipedia API (`prop=extracts&explaintext=1`, no `exintro`), then trim it with `bioFromWikipediaExtract` (`src/renderer/lib/wikipedia-bio.js`):
+   - a lead of 150 words or more is the whole bio;
+   - otherwise prose paragraphs from the following sections are added in article order until the bio reaches 400 words (whole paragraphs only);
+   - sections that aren't a bio (References, External links, See also, Notes, Discography, Band members, Personnel, Tours, Accolades, Timeline, ...) are skipped with their subsections;
+   - inside kept sections only prose survives (ends like a sentence, at least 4 words), so member and release lists don't;
+   - headings are dropped and paragraphs are separated by a blank line.
+
+   The lead alone was too thin when an article's lead is short (Wild Pink's is one sentence), and the whole article (what Android showed) carried the lists, empty headings, link stubs and raw `== History ==` markup. parachord-mobile mirrors this rule.
 
 Wikidata comes first so a MusicBrainz outage doesn't take the Wikipedia bio with it: the url-rels request waits in the 1 req/s MusicBrainz queue, and during an outage that queue is full of retrying requests (Wild Pink's Biography tab showed its skeleton, then nothing, on 2026-10-25). The Wikipedia artist image uses the same lookup.
 

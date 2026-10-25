@@ -1114,6 +1114,7 @@ const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync }
 const { createConcertLimiters } = require('./lib/concert-limiters');
 const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
 const { createWikidataIdLookup, createArtistBioCache } = require('./lib/artist-bio');
+const { bioFromWikipediaExtract } = require('./lib/wikipedia-bio');
 // Wikidata first, MusicBrainz url-rels as the fallback, so the Wikipedia bio
 // and image survive a MusicBrainz outage; bios are shared by the playbar and
 // the artist page (src/renderer/lib/artist-bio.js).
@@ -33803,9 +33804,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return null;
       }
 
-      // Step 3: Fetch Wikipedia article extract (longer bio)
-      // Using MediaWiki API with extracts to get more content than the summary endpoint
-      const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(wikiTitle)}&prop=extracts&exintro=1&explaintext=1&format=json&origin=*`;
+      // Step 3: Fetch the whole article as plain text; bioFromWikipediaExtract
+      // keeps the lead plus the prose sections (src/renderer/lib/wikipedia-bio.js)
+      const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(wikiTitle)}&prop=extracts&explaintext=1&format=json&origin=*`;
       const wpResponse = await fetch(wpUrl);
 
       if (!wpResponse.ok) {
@@ -33818,10 +33819,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const pageId = pages ? Object.keys(pages)[0] : null;
       const extract = pageId && pageId !== '-1' ? pages[pageId].extract : null;
 
-      if (extract) {
+      const formattedBio = extract ? bioFromWikipediaExtract(extract) : null;
+      if (formattedBio) {
         console.log('📚 Wikipedia bio fetched successfully');
-        // Normalize line breaks: ensure double newlines between paragraphs for visual separation
-        const formattedBio = extract.trim().replace(/\n+/g, '\n\n');
         return {
           bio: formattedBio,
           url: `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiTitle)}`,
