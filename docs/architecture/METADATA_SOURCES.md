@@ -27,7 +27,7 @@ Used for artist page headers, related artists grid, recommendations, and playlis
 |----------|----------|---------------|-------|
 | Spotify | `api.spotify.com/v1/search?type=artist` | OAuth token | Exact name match only |
 | MusicKit | `/v1/catalog/us/search?types=artists` | Developer token | Fallback when Spotify unavailable |
-| Wikipedia | `en.wikipedia.org/api/rest_v1/page/summary` | No | Via MusicBrainz→Wikidata chain |
+| Wikipedia | `en.wikipedia.org/api/rest_v1/page/summary` | No | Via the Wikidata id (see the Wikipedia bio lookup chain) |
 | Discogs | `api.discogs.com/artists/{id}` | Optional PAT | Higher rate limits with token |
 
 **Code Location:** `src/renderer/app.js` → `getArtistImage()`
@@ -43,16 +43,20 @@ Displayed on artist pages below the header.
 | Provider | Endpoint | Auth Required | Notes |
 |----------|----------|---------------|-------|
 | Last.fm | `ws.audioscrobbler.com/2.0/?method=artist.getinfo` | API key | Returns summary + full bio |
-| Wikipedia | `en.wikipedia.org/w/api.php?action=query&prop=extracts` | No | Via MusicBrainz MBID lookup |
+| Wikipedia | `en.wikipedia.org/w/api.php?action=query&prop=extracts` | No | Needs the artist MBID |
 | Discogs | `api.discogs.com/artists/{id}` | Optional PAT | Profile field |
 
 **Code Location:** `src/renderer/app.js` → `getLastfmBio()`, `getWikipediaBio()`, `getDiscogsBio()`
 
 **Lookup Chain for Wikipedia:**
-1. Search MusicBrainz for artist MBID
-2. Fetch artist relations from MusicBrainz to find Wikidata ID
+1. The artist MBID (from the artist page, or the MBID mapper / a MusicBrainz search for the playbar)
+2. The Wikidata id: Wikidata's own search for the entity whose MusicBrainz artist ID (P434) is that MBID; only when Wikidata has none, the artist's MusicBrainz url-rels. `lookupWikidataId` (`src/renderer/lib/artist-bio.js`) keeps found ids for the session.
 3. Query Wikidata for Wikipedia article title
 4. Fetch article extract from Wikipedia API
+
+Wikidata comes first so a MusicBrainz outage doesn't take the Wikipedia bio with it: the url-rels request waits in the 1 req/s MusicBrainz queue, and during an outage that queue is full of retrying requests (Wild Pink's Biography tab showed its skeleton, then nothing, on 2026-10-25). The Wikipedia artist image uses the same lookup.
+
+**Session cache:** bios go through `artistBioCache` (same file), shared by the playbar tooltip and the artist page, keyed by artist name plus MBID (a bio fetched without an MBID skipped Wikipedia, so it can't answer a request that has one). Found bios are kept for 6 hours; "no bio" is never kept, since it may mean a source was down. Concurrent requests for the same artist share one fetch. Only the artist page's `getArtistBio` sets `loadingBio`; the playbar calls `fetchArtistBio`, because the Biography tab skips its fetch while `loadingBio` is set.
 
 ---
 
@@ -214,6 +218,7 @@ Bridge between MusicBrainz and Wikipedia.
 
 | Endpoint | Purpose |
 |----------|---------|
+| `wikidata.org/w/api.php?action=query&list=search&srsearch=haswbstatement:P434={mbid}` | Find the Wikidata id for a MusicBrainz artist id |
 | `wikidata.org/w/api.php?action=wbgetentities&ids={id}&props=sitelinks` | Get Wikipedia article title from Wikidata ID |
 
 ---
