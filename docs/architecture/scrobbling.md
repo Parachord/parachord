@@ -46,6 +46,10 @@ The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, s
 | Loved-tracks push toggles + backfill | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` |
 | Removed | `scrobblers/` directory and `scrobble-manager.js` were a dead older copy, deleted 2026-10 (parachord#757; consolidation was commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
 
+### ListenBrainz client identity
+
+Every listen carries `additional_info.media_player: "Parachord"`, `submission_client: "Parachord"` and `submission_client_version: "<app version> (desktop)"` (`formatSubmissionClientVersion` in `scrobbler-loader.js`; the version comes from `window.electron.updater.getVersion()` once per session, and a failed lookup sends `unknown (desktop)` and retries on the next submit). Mobile sends `"<version> (android)"` / `"<version> (ios)"` (parachord-mobile#418); the platform names match the `X-Parachord-Client` allowlist. The version used to be a hard-coded `"1.1.0"` on every client, so two Parachord clients on one ListenBrainz token could not be told apart in duplicate-listen reports (parachord#1125). Keep `submission_client` at `"Parachord"`: Achordion's importer detection (`lib/clients/listenbrainz.ts`) reads only that field, matching spotify / last.fm / libre.fm to spot ListenBrainz importers.
+
 ## Achordion Pre-resolution Plugin
 
 `plugins/achordion.axe` — bundled, default-on. Submits confirmed-on-playback `recording-MBID → external-streaming-URL` mappings to Achordion's match cache (POST `https://achordion.xyz/api/track-links/submit`). Each entry stored 90 days with `source: "parachord"`, which outranks Achordion's own Odesli + MB url-rel lookups. Spec: [achordion AGENTS.md L484-507](../../../../achordion/AGENTS.md). This is the **submit half**; the consume half (skip live resolver search on a cache hit) is future work pending an Achordion GET endpoint.
