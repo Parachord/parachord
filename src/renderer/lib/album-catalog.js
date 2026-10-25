@@ -84,6 +84,21 @@ function albumMatchScore(target, album) {
   return (wantTitle === gotTitle ? 2 : 1) + exactTitle + (wantArtist === gotArtist ? 2 : 1);
 }
 
+// Whether two releases are the same album by artist and title, edition
+// suffixes aside. Ids are no help here: an album page starts on a
+// release-group id and fetchReleaseData moves it to a release id, while the
+// slow-MusicBrainz fallback may have filled it in between. Each side's artist
+// is a string or a release's { name } object.
+function sameAlbumIdentity(a, b) {
+  if (!a || !b) return false;
+  const artistOf = (x) => (typeof x.artist === 'string' ? x.artist : x.artist?.name) || '';
+  const titleA = normalizeAlbumTitle(a.title);
+  const artistA = normalizeArtistName(artistOf(a));
+  return !!titleA && !!artistA
+    && titleA === normalizeAlbumTitle(b.title)
+    && artistA === normalizeArtistName(artistOf(b));
+}
+
 // The best match among one resolver's results, or null.
 function pickCatalogAlbum(albums, target) {
   let best = null;
@@ -179,6 +194,7 @@ module.exports = {
   normalizeAlbumTitle,
   normalizeArtistName,
   albumMatchScore,
+  sameAlbumIdentity,
   pickCatalogAlbum,
   orderCatalogResolvers,
   catalogAlbumToRelease,

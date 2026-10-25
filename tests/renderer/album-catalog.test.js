@@ -9,6 +9,7 @@ const {
   resolverIdFromReleaseId,
   normalizeAlbumTitle,
   albumMatchScore,
+  sameAlbumIdentity,
   pickCatalogAlbum,
   orderCatalogResolvers,
   catalogAlbumToRelease,
@@ -153,5 +154,24 @@ test('catalogAlbumToSearchResult carries its source for the click', () => {
     'artist-credit': [{ name: 'Wild Pink' }],
     _source: 'bandcamp',
     _catalog: { resolverId: 'bandcamp', url: 'https://wildpink.bandcamp.com/album/still-coming-down' },
+  });
+});
+
+describe('sameAlbumIdentity', () => {
+  test('same artist and title, whatever the ids, the artist shape and the edition', () => {
+    expect(sameAlbumIdentity(
+      { id: 'rg-id', title: 'Dulling the Horns', artist: { name: 'Wild Pink' } },
+      { id: 'release-id', title: 'Dulling The Horns (Deluxe)', artist: 'wild pink' }
+    )).toBe(true);
+  });
+
+  test('a different album or artist is not the same', () => {
+    expect(sameAlbumIdentity({ title: 'A', artist: 'X' }, { title: 'B', artist: 'X' })).toBe(false);
+    expect(sameAlbumIdentity({ title: 'A', artist: 'X' }, { title: 'A', artist: 'Y' })).toBe(false);
+  });
+
+  test('missing fields never match', () => {
+    expect(sameAlbumIdentity({ title: '', artist: 'X' }, { title: '', artist: 'X' })).toBe(false);
+    expect(sameAlbumIdentity(null, { title: 'A', artist: 'X' })).toBe(false);
   });
 });

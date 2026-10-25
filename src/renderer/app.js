@@ -636,7 +636,8 @@ window.musicbrainzLimiter = window.createLimiter({
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
 const {
   isMusicBrainzId, resolverIdFromReleaseId, pickCatalogAlbum, orderCatalogResolvers,
-  catalogAlbumToRelease, catalogAlbumToSearchResult
+  catalogAlbumToRelease, catalogAlbumToSearchResult, sameAlbumIdentity,
+  normalizeAlbumTitle, normalizeArtistName
 } = require('./lib/album-catalog');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
@@ -3394,6 +3395,10 @@ const Parachord = () => {
   const artistConcertsCache = useRef({}); // { normalizedArtistName: { events: [], timestamp } }
   const [artistConcertsTicketFlyout, setArtistConcertsTicketFlyout] = useState(null);
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
+  // The release on screen now, for timers and async callbacks (the slow-
+  // MusicBrainz album fallback) that must not act on a stale closure.
+  const currentReleaseRef = useRef(null);
+  currentReleaseRef.current = currentRelease;
   const [loadingRelease, setLoadingRelease] = useState(false);
   const [prefetchedReleases, setPrefetchedReleases] = useState({}); // Cache for on-hover prefetched release tracks: { releaseId: { tracks: [...], title, albumArt } }
   const prefetchedReleasesRef = useRef(prefetchedReleases); // Ref to avoid stale closure in context menu handlers
@@ -23439,8 +23444,17 @@ ${trackListXml}
       tracks: null, // null indicates tracks are loading
       _isPartial: true
     };
-    setCurrentRelease(partialRelease);
-    setLoadingRelease(true);
+    // A catalog track list already on screen for this album (the slow-
+    // MusicBrainz fallback filled the page while the opener's lookup was
+    // queued) stays up until MusicBrainz answers; blanking it back to the
+    // skeleton would undo the fallback. Success below replaces it.
+    const shownRelease = currentReleaseRef.current;
+    const keepCatalogList = !!(shownRelease && shownRelease._catalogSource && shownRelease.tracks
+      && sameAlbumIdentity(shownRelease, { title: release.title, artist: artistNameForPartial }));
+    if (!keepCatalogList) {
+      setCurrentRelease(partialRelease);
+      setLoadingRelease(true);
+    }
     // Collapse header smoothly when opening a release
     setIsHeaderCollapsed(true);
 
@@ -23687,6 +23701,14 @@ ${trackListXml}
       
     } catch (error) {
       console.error('Error fetching release data:', error);
+      // The slow-MusicBrainz fallback already showed a catalog list for this
+      // album: that list stands, nothing more to do.
+      const onScreen = currentReleaseRef.current;
+      if (onScreen && onScreen._catalogSource && onScreen.tracks
+        && sameAlbumIdentity(onScreen, { title: release.title, artist: catalogArtistName })) {
+        setLoadingRelease(false);
+        return;
+      }
       // MusicBrainz failed or doesn't have it: try the services' catalogs
       // before giving up. The page used to keep its track skeleton forever
       // behind a generic dialog; if nothing has it, show the reason in place
@@ -23977,8 +23999,21 @@ ${trackListXml}
   // { artist, title } -> { album, resolverId, resolverName } | null.
   // catalog ({ resolverId, url }, from a search result) loads that album
   // directly; preferResolverId (the service a release id came from) is asked
-  // first.
-  const loadAlbumFromCatalogs = async ({ artist, title, preferResolverId = null, catalog = null }) => {
+  // first. Concurrent calls for the same album share one lookup: the slow-
+  // MusicBrainz timer and a MusicBrainz failure can ask at the same moment.
+  const catalogLookupsInFlight = useRef(new Map());
+  const loadAlbumFromCatalogs = (args) => {
+    const key = [
+      normalizeArtistName(args.artist), normalizeAlbumTitle(args.title),
+      args.catalog?.url || '', args.preferResolverId || ''
+    ].join('\u0000');
+    const inFlight = catalogLookupsInFlight.current.get(key);
+    if (inFlight) return inFlight;
+    const lookup = loadAlbumFromCatalogsNow(args).finally(() => catalogLookupsInFlight.current.delete(key));
+    catalogLookupsInFlight.current.set(key, lookup);
+    return lookup;
+  };
+  const loadAlbumFromCatalogsNow = async ({ artist, title, preferResolverId = null, catalog = null }) => {
     const loader = resolverLoaderRef.current;
     if (!loader?.getAlbumSearchResolvers) return null;
     const nameOf = (id) => loader.getResolver(id)?.name || id;
@@ -24048,6 +24083,51 @@ ${trackListXml}
     if (retry.kind === 'chartsAlbum') openChartsAlbum(retry.album);
     else fetchReleaseData(retry.release, retry.artist);
   };
+
+  // MusicBrainz slow, not failing: every MusicBrainz request waits its turn in
+  // a 1 request/s queue, so an album page can sit on its skeleton for many
+  // seconds behind other lookups. If a page is still waiting for its track
+  // list after MB_SLOW_FALLBACK_MS, show the catalogs' list in the meantime.
+  // When MusicBrainz answers, fetchReleaseData's success path replaces it, so
+  // MusicBrainz stays the canonical list (track ids, recording ids); until
+  // then fetchReleaseData's own load does not blank the catalog list. Keyed
+  // on the album, not the id: a page moves from a release-group id to a
+  // release id while it loads.
+  const MB_SLOW_FALLBACK_MS = 5000;
+  const waitingAlbumKey = (currentRelease && !currentRelease.tracks && !currentRelease._loadError
+    && currentRelease.title && currentRelease.artist?.name)
+    ? `${normalizeArtistName(currentRelease.artist.name)}\u0000${normalizeAlbumTitle(currentRelease.title)}`
+    : null;
+  useEffect(() => {
+    if (!waitingAlbumKey) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const waiting = currentReleaseRef.current;
+      if (cancelled || !waiting || waiting.tracks || waiting._loadError) return;
+      // A release with a service's id is already loading from the catalogs
+      // (fetchReleaseData skips MusicBrainz for those).
+      const knownIds = (resolverLoaderRef.current?.getAllResolvers?.() || []).map(r => r.id);
+      if (resolverIdFromReleaseId(waiting.id, knownIds)) return;
+      const stillThisAlbum = (prev) => !!prev && !prev.tracks && !prev._loadError && sameAlbumIdentity(prev, waiting);
+      try {
+        const found = await loadAlbumFromCatalogs({ artist: waiting.artist.name, title: waiting.title, catalog: waiting._catalog || null });
+        if (cancelled || !found || !stillThisAlbum(currentReleaseRef.current)) return;
+        console.log(`📀 MusicBrainz still loading "${waiting.title}" after ${MB_SLOW_FALLBACK_MS}ms: showing ${found.resolverId}'s track list meanwhile`);
+        showCatalogRelease({
+          found,
+          requested: { id: waiting.id, title: waiting.title, albumArt: waiting.albumArt, date: waiting.date, releaseType: waiting.releaseType },
+          artist: waiting.artist,
+          canApply: stillThisAlbum
+        });
+      } catch (e) {
+        console.warn('Slow-MusicBrainz album fallback failed:', e?.message || e);
+      }
+    }, MB_SLOW_FALLBACK_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [waitingAlbumKey]);
 
   const showReleasePlaceholder = ({ id, artist, title, albumArt, date, releaseType }) => {
     const placeholderArtist = { id: null, name: artist };
