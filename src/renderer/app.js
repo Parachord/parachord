@@ -1129,6 +1129,8 @@ const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_
 const { playlistListenbrainzMbid } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
+const { createConcertLimiters } = require('./lib/concert-limiters');
+const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
 const {
   libraryFilePaths,
   isStaleLocalSource,
@@ -21607,17 +21609,13 @@ ${trackListXml}
       }
 
       // Load artist data cache
-      // Cache version 2: Added release-group categorization (live, compilation)
-      const ARTIST_CACHE_VERSION = 2;
       if (artistData) {
-        // Filter out expired entries and entries from old cache versions
-        const validEntries = Object.entries(artistData).filter(
-          ([_, entry]) => entry.cacheVersion === ARTIST_CACHE_VERSION &&
-                         now - entry.timestamp < CACHE_TTL.artistData
-        );
-        artistDataCache.current = Object.fromEntries(validEntries);
-        const invalidated = Object.keys(artistData).length - validEntries.length;
-        console.log(`📦 Loaded ${validEntries.length} artist data entries from cache${invalidated > 0 ? ` (${invalidated} invalidated due to version change)` : ''}`);
+        // Full artist-page entries (cache version 2) and Fresh Drops' ID-only
+        // entries both survive; expired and old-version ones are dropped
+        // (src/renderer/lib/artist-data-cache.js).
+        const restored = restorableArtistDataEntries(artistData, now, CACHE_TTL.artistData);
+        artistDataCache.current = restored.entries;
+        console.log(`📦 Loaded ${restored.full + restored.idOnly} artist data entries from cache (${restored.full} full, ${restored.idOnly} ID-only${restored.dropped > 0 ? `, ${restored.dropped} expired or old version` : ''})`);
       }
 
       // Load track sources cache
@@ -21732,8 +21730,10 @@ ${trackListXml}
         }
       }
 
-      // Load concerts cache
-      const concertsData = d['cache_concerts'];
+      // Load concerts cache. It is in BIG_CACHE_KEYS, so it comes from
+      // dCaches; reading the critical batch (`d`) found nothing and every
+      // launch refetched from scratch (tests/ui/big-cache-restore.test.js).
+      const concertsData = dCaches['cache_concerts'];
       if (concertsData && concertsData.events && concertsData.events.length > 0) {
         const now2 = Date.now();
         if (concertsData.timestamp && (now2 - concertsData.timestamp) < CACHE_TTL.concerts) {
@@ -29383,59 +29383,38 @@ ${tracks}
         return true;
       };
 
-      // Run dedicated service queries and AI queries in parallel
-      // Use concurrency pool to avoid hammering APIs while keeping it fast
+      // Run dedicated service queries and AI queries in parallel.
+      // Each service has its own limiter (2 in flight, 400ms between starts,
+      // a cooldown after repeated 429s; Ticketmaster needs that pacing), and
+      // every artist lookup for a service is queued on it at once, so the
+      // services run side by side instead of sharing one queue
+      // (src/renderer/lib/concert-limiters.js).
       const dedicatedPromise = (async () => {
-        const dedicatedEvents = [];
-        // Ticketmaster allows 5 req/s and each artist lookup is 2 calls
-        // (attraction search, then events), so 5 parallel artists was a
-        // guaranteed burst of 429s and missing concerts. Gate every provider
-        // call through one limiter: 2 in flight, 400ms between starts, and a
-        // cooldown after repeated 429s. The pool just feeds the limiter.
-        if (!window.__concertsLimiter && window.createLimiter) {
-          window.__concertsLimiter = window.createLimiter({
-            name: 'concertsLimiter',
-            maxConcurrency: 2,
-            minGapMs: 400,
-            cooldownMs: 5000,
-            errorThreshold: 2,
-            isThrottleError: (err) => /\b429\b|rate.?limit|too many/i.test(String(err && err.message))
-          });
+        if (!window.__concertLimiters && window.createLimiter) {
+          window.__concertLimiters = createConcertLimiters(window.createLimiter);
         }
-        const concertsLimiter = window.__concertsLimiter;
-        const concurrency = 3; // artist workers feeding the limiter
-        let idx = 0;
-        const fetchArtist = async (artist) => {
-          const results = [];
-          for (const service of concertServices) {
-            try {
-              const rawConfig = metaServiceConfigs[service.id] || {};
-              // Map generic apiKey to the plugin's expected field (e.g. clientId, appId)
-              const authField = Object.keys(service.configurable || {}).find(k => k !== 'model');
-              const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
-                ? { ...rawConfig, [authField]: rawConfig.apiKey }
-                : rawConfig;
-              const events = concertsLimiter
-                ? await concertsLimiter.run(() => service.searchArtistEvents(artist.name, config))
-                : await service.searchArtistEvents(artist.name, config);
-              if (events && events.length > 0) {
-                results.push(...events.map(e => ({ event: e, artist: artist.name })));
-              }
-            } catch (e) {
-              console.log(`🎤 Error fetching concerts for ${artist.name} from ${service.id}:`, e.message);
-            }
-          }
-          return results;
-        };
-        const runNext = async () => {
-          while (idx < artistList.length) {
-            const i = idx++;
-            const results = await fetchArtist(artistList[i]);
-            dedicatedEvents.push(...results);
+        const fetchServiceArtist = async (service, limiter, artist) => {
+          try {
+            const rawConfig = metaServiceConfigs[service.id] || {};
+            // Map generic apiKey to the plugin's expected field (e.g. clientId, appId)
+            const authField = Object.keys(service.configurable || {}).find(k => k !== 'model');
+            const config = (authField && authField !== 'apiKey' && !rawConfig[authField] && rawConfig.apiKey)
+              ? { ...rawConfig, [authField]: rawConfig.apiKey }
+              : rawConfig;
+            const events = limiter
+              ? await limiter.run(() => service.searchArtistEvents(artist.name, config))
+              : await service.searchArtistEvents(artist.name, config);
+            return (events || []).map(e => ({ event: e, artist: artist.name }));
+          } catch (e) {
+            console.log(`🎤 Error fetching concerts for ${artist.name} from ${service.id}:`, e.message);
+            return [];
           }
         };
-        await Promise.all(Array.from({ length: Math.min(concurrency, artistList.length) }, () => runNext()));
-        return dedicatedEvents;
+        const perService = await Promise.all(concertServices.map((service) => {
+          const limiter = window.__concertLimiters ? window.__concertLimiters.forService(service.id) : null;
+          return Promise.all(artistList.map(artist => fetchServiceArtist(service, limiter, artist)));
+        }));
+        return perService.flat(2);
       })();
 
       // AI queries — batch artists in groups of 15, run all batches in parallel
