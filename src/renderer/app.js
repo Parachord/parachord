@@ -620,16 +620,20 @@ window.nativeMusicKitLimiter = window.createLimiter({
 // response as an empty result set. Rather than thread a limiter through ~55
 // call sites, install ONE fetch interceptor: every musicbrainz.org/ws/2/
 // request serializes through a single-permit limiter (>=1.1s gap) and retries
-// 429/503 with backoff (honoring Retry-After); every other request passes
-// straight through to the original fetch, untouched.
+// 429/503 and dropped connections with backoff (a longer Retry-After is
+// honored); every other request passes straight through to the original
+// fetch, untouched.
 window.musicbrainzLimiter = window.createLimiter({
   name: 'musicbrainzLimiter',
   maxConcurrency: 1,     // MB is 1 req/sec/IP — parallelism only buys throttling
   minGapMs: 1100,        // >= 1s between request starts, with margin
   cooldownMs: 5000,      // pause after repeated exhausted-retry throttles
   errorThreshold: 2,
-  isThrottleError: (err) => !!(err && err.mbThrottled)
+  // Throttled after every retry, or unreachable after every retry: either
+  // way MusicBrainz needs a pause.
+  isThrottleError: (err) => !!(err && (err.mbThrottled || err.mbUnreachable))
 });
+const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -651,43 +655,16 @@ window.musicbrainzLimiter = window.createLimiter({
   // never left the queue ("signal is aborted without reason"), silently
   // skipping artists. queuedTimeoutMs is armed per attempt once the request
   // actually starts. A caller-supplied signal is still honored.
+  // The retry loop (429/503 backoff, dropped-connection retries, the
+  // mbThrottled / mbUnreachable flags) is mbFetchWithRetries in
+  // src/renderer/lib/musicbrainz-fetch.js, the only MusicBrainz retry layer.
   window.fetch = function (input, init) {
     if (!isMbWs2(input)) return originalFetch(input, init);
     const { queuedTimeoutMs, mbBackground, ...fetchInit } = init || {};
-    const callerSignal = fetchInit.signal;
-    const hasQueuedTimeout = Number.isFinite(queuedTimeoutMs) && queuedTimeoutMs > 0;
-    return window.musicbrainzLimiter.run(async () => {
-      const MAX_ATTEMPTS = 3;
-      for (let attempt = 1; ; attempt++) {
-        if (callerSignal && callerSignal.aborted) throw new DOMException('Aborted', 'AbortError');
-        let attemptInit = fetchInit;
-        let timer = null;
-        if (hasQueuedTimeout) {
-          const controller = new AbortController();
-          if (callerSignal) callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
-          timer = setTimeout(() => controller.abort(), queuedTimeoutMs);
-          attemptInit = { ...fetchInit, signal: controller.signal };
-        }
-        let resp;
-        try {
-          resp = await originalFetch(input, attemptInit);
-        } finally {
-          if (timer) clearTimeout(timer);
-        }
-        if (resp.status !== 429 && resp.status !== 503) return resp;
-        if (attempt >= MAX_ATTEMPTS) {
-          const err = new Error(`MusicBrainz throttled (HTTP ${resp.status})`);
-          err.mbThrottled = true;
-          err.status = resp.status;
-          throw err; // counts toward the limiter cooldown
-        }
-        const retryAfter = parseInt((resp.headers && resp.headers.get('retry-after')) || '', 10);
-        const waitMs = Number.isFinite(retryAfter)
-          ? Math.min(retryAfter * 1000, 8000)
-          : Math.min(1000 * Math.pow(2, attempt - 1), 4000);
-        await new Promise(r => setTimeout(r, waitMs));
-      }
-    }, { background: !!mbBackground }); // mbBackground: bulk work queues behind user-initiated requests
+    return window.musicbrainzLimiter.run(
+      () => mbFetchWithRetries((attemptInit) => originalFetch(input, attemptInit), fetchInit, { queuedTimeoutMs }),
+      { background: !!mbBackground } // mbBackground: bulk work queues behind user-initiated requests
+    );
   };
 })();
 
@@ -23075,43 +23052,13 @@ ${trackListXml}
     }
 
     try {
-      // Step 1: Search for artist by name to get MBID
-      // Helper function to fetch with retry on rate limit and network errors
-      const fetchWithRetry = async (url, maxRetries = 3) => {
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-          try {
-            const response = await fetch(url, {
-              headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
-            });
-
-            if (response.ok) {
-              return response;
-            }
-
-            if (response.status === 503 || response.status === 429) {
-              const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 1s, 2s, 4s
-              console.log(`Rate limited (${response.status}), retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-              // Non-retryable HTTP error
-              return response;
-            }
-          } catch (networkError) {
-            // Network error (no connection, DNS failure, etc.)
-            if (attempt < maxRetries - 1) {
-              const delay = Math.pow(2, attempt) * 1000;
-              console.log(`Network error, retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries}):`, networkError.message);
-              await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-              throw networkError; // Re-throw on final attempt
-            }
-          }
-        }
-        // Return last response after all retries exhausted
-        return fetch(url, {
-          headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
-        });
-      };
+      // Step 1: Search for artist by name to get MBID. Plain fetch: the
+      // MusicBrainz interceptor retries throttles and dropped connections
+      // (src/renderer/lib/musicbrainz-fetch.js); a retry loop here stacked on
+      // top of it made up to nine attempts per lookup.
+      const mbFetch = (url) => fetch(url, {
+        headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
+      });
 
       // Fast path: try MBID mapper cache or live lookup to skip the slow MB artist search
       let mapperArtistMbid = getArtistMbidFromMapperCache(artistName);
@@ -23128,7 +23075,7 @@ ${trackListXml}
       let searchResponse;
       if (mapperArtistMbid) {
         // Direct MBID lookup (~2x faster than fuzzy search, no matching needed)
-        searchResponse = await fetchWithRetry(
+        searchResponse = await mbFetch(
           `https://musicbrainz.org/ws/2/artist/${mapperArtistMbid}?fmt=json`
         );
         if (!searchResponse.ok) {
@@ -23137,7 +23084,7 @@ ${trackListXml}
         }
       }
       if (!mapperArtistMbid) {
-        searchResponse = await fetchWithRetry(
+        searchResponse = await mbFetch(
           `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistName)}&fmt=json&limit=5`
         );
       }
@@ -23352,7 +23299,7 @@ ${trackListXml}
           await new Promise(resolve => setTimeout(resolve, index * 500));
         }
         try {
-          const releasesResponse = await fetchWithRetry(
+          const releasesResponse = await mbFetch(
             `https://musicbrainz.org/ws/2/release-group?artist=${artist.id}&type=${type}&fmt=json&limit=100`
           );
 
@@ -23451,17 +23398,13 @@ ${trackListXml}
       
     } catch (error) {
       console.error('Error fetching artist data:', error);
-      // Provide specific error message based on error type
-      let message = 'Failed to load artist data. Please try again.';
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        message = 'Network error - please check your internet connection.';
-      } else if (error.message) {
-        message = `Error: ${error.message}`;
-      }
+      // Name what failed. The old check called any TypeError mentioning
+      // "fetch" a network error and told the user to check their internet
+      // connection, which during a MusicBrainz outage was wrong.
       showConfirmDialog({
         type: 'error',
         title: 'Load Failed',
-        message
+        message: describeMusicBrainzError(error, { online: navigator.onLine })
       });
       setLoadingArtist(false);
     }
@@ -23502,36 +23445,21 @@ ${trackListXml}
     // Collapse header smoothly when opening a release
     setIsHeaderCollapsed(true);
 
-    // Helper to fetch with retry on rate limiting
-    const fetchWithRetry = async (url, options, maxRetries = 3) => {
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        const response = await fetch(url, options);
-        if (response.status === 503 || response.status === 429) {
-          // Rate limited - wait and retry
-          const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-          console.log(`Rate limited, retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-        return response;
-      }
-      // Final attempt
-      return fetch(url, options);
-    };
-
+    // Plain fetch below: the MusicBrainz interceptor already retries
+    // throttles and dropped connections (src/renderer/lib/musicbrainz-fetch.js).
     try {
       console.log('Fetching release data for:', release.title);
 
       // Try fetching as a direct release ID first (for artist discography)
       let releaseId = release.id;
-      let releaseDetailsResponse = await fetchReleaseDetails(releaseId, fetchWithRetry);
+      let releaseDetailsResponse = await fetchReleaseDetails(releaseId);
 
       // If that fails (404), it might be a release-group ID (from search)
       // Try converting release-group to release ID
       if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
         console.log('Not a release ID, trying as release-group...');
 
-        const releaseGroupResponse = await fetchWithRetry(
+        const releaseGroupResponse = await fetch(
           `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
           { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
         );
@@ -23552,7 +23480,7 @@ ${trackListXml}
         rememberReleaseGroupAlias(release.id, releaseId);
 
         // Fetch again with the converted ID
-        releaseDetailsResponse = await fetchReleaseDetails(releaseId, fetchWithRetry);
+        releaseDetailsResponse = await fetchReleaseDetails(releaseId);
       }
 
       if (!releaseDetailsResponse.ok) {
@@ -23728,12 +23656,9 @@ ${trackListXml}
       
     } catch (error) {
       console.error('Error fetching release data:', error);
-      showConfirmDialog({
-        type: 'error',
-        title: 'Load Failed',
-        message: 'Failed to load release data. Please try again.'
-      });
-      setLoadingRelease(false);
+      // The page used to keep its track skeleton forever behind a generic
+      // dialog; show the reason in place with a retry instead.
+      showReleaseLoadError(release.id, error, { kind: 'release', release, artist });
     }
   };
 
@@ -23985,6 +23910,28 @@ ${trackListXml}
   // that as "the click did nothing". fetchReleaseData replaces this partial
   // release once the lookup lands. Callers that fail after showing it must
   // clear it (setCurrentRelease(null) + setLoadingRelease(false)).
+  // A release that could not load stays on its page with the reason and a
+  // retry (ReleasePage renders _loadError in place of the track skeleton).
+  // It used to fall back to the artist page, which needs MusicBrainz too:
+  // during an outage the user landed somewhere they had not asked to go, with
+  // an error, after a second round of requests to the service that was down.
+  // Only the release still on screen is marked (the user may have moved on).
+  //   retry: { kind: 'chartsAlbum', album } | { kind: 'release', release, artist }
+  const showReleaseLoadError = (expectedId, error, retry) => {
+    const message = describeMusicBrainzError(error, { online: navigator.onLine });
+    setCurrentRelease(prev => (prev && prev.id === expectedId && !prev.tracks)
+      ? { ...prev, _loadError: message, _retry: retry }
+      : prev);
+    setLoadingRelease(false);
+  };
+
+  const retryReleaseLoad = () => {
+    const retry = currentRelease?._retry;
+    if (!retry) return;
+    if (retry.kind === 'chartsAlbum') openChartsAlbum(retry.album);
+    else fetchReleaseData(retry.release, retry.artist);
+  };
+
   const showReleasePlaceholder = ({ id, artist, title, albumArt, date, releaseType }) => {
     const placeholderArtist = { id: null, name: artist };
     openingReleaseRef.current = true;
@@ -28216,10 +28163,9 @@ ${tracks}
 
     } catch (error) {
       console.error('Error opening chart album:', error);
-      // Fallback: navigate to artist page
-      setCurrentRelease(null);
-      setLoadingRelease(false);
-      fetchArtistData(album.artist);
+      // Stay on the album page with the reason and a retry (not found, above,
+      // still goes to the artist page; this is a lookup that failed).
+      showReleaseLoadError(album.releaseGroupId || album.id, error, { kind: 'chartsAlbum', album });
     }
   };
 
@@ -37609,7 +37555,7 @@ useEffect(() => {
     addToQueue, copyParachordLink, fetchArtistData, fetchReleaseData, getArtistBio,
     getArtistTopTracks, getLastfmApiKey, getRelatedArtists, handlePlay,
     handlePlaylistDragEnd, handleSearchInput, loadArtistConcerts, prefetchReleaseTracks,
-    reprioritizeAlbumArtQueue, resolveRelatedArtistImages, setQueueWithContext,
+    reprioritizeAlbumArtQueue, resolveRelatedArtistImages, retryReleaseLoad, setQueueWithContext,
   });
 
   // Stable function props for the memo'd PlaylistViewPage (keys must match

@@ -42,6 +42,7 @@ const ARTIST_PAGE_HANDLERS = [
   'prefetchReleaseTracks',
   'reprioritizeAlbumArtQueue',
   'resolveRelatedArtistImages',
+  'retryReleaseLoad',
   'setQueueWithContext',
 ];
 
@@ -108,6 +109,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     reprioritizeAlbumArtQueue,
     resolveRelatedArtistImages,
     resolvers,
+    retryReleaseLoad,
     setAddToPlaylistPanel,
     setArtistBio,
     setArtistConcertsTicketFlyout,
@@ -613,6 +615,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
           // Two-column layout: album art + metadata on left, tracklist on right
           React.createElement(ReleasePage, {
             release: currentRelease,
+            onRetryLoad: retryReleaseLoad,
             handleSearch: handleSearchInput,
             handlePlay: handlePlay,
             onTrackPlay: (track, tracksAfter) => {
