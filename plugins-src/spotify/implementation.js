@@ -129,6 +129,64 @@ module.exports = {
       return null;
     }
   },
+  // Album search for the catalog fallback (docs/architecture/plugins.md,
+  // "searchAlbums"). Needs a signed-in token, like search. Each result's url
+  // is an open.spotify.com album URL, which lookupAlbum below accepts.
+  searchAlbums: async function (query, config) {
+    if (!config || !config.token) return [];
+    var q;
+    if (typeof query === 'string') {
+      q = query.trim();
+    } else {
+      var parts = [];
+      if (query && query.title) parts.push('album:"' + String(query.title).replace(/"/g, '') + '"');
+      if (query && query.artist) parts.push('artist:"' + String(query.artist).replace(/"/g, '') + '"');
+      q = parts.join(' ');
+    }
+    if (!q || q.length < 2) return [];
+    var doSearch = async function (token) {
+      var response = await fetch(
+        'https://api.spotify.com/v1/search?q=' + encodeURIComponent(q) + '&type=album&limit=10',
+        { headers: { Authorization: 'Bearer ' + token } },
+      );
+      if (!response.ok) return { ok: false, status: response.status };
+      var data = await response.json();
+      return { ok: true, items: (data && data.albums && data.albums.items) || [] };
+    };
+    try {
+      var result = await doSearch(config.token);
+      if (!result.ok && result.status === 401 && config.refreshToken) {
+        var newToken = await config.refreshToken();
+        if (newToken && newToken !== config.token) result = await doSearch(newToken);
+      }
+      if (!result.ok) {
+        console.warn('Spotify album search failed:', result.status);
+        return [];
+      }
+      return result.items
+        .filter(function (a) {
+          return a && a.id && a.name;
+        })
+        .map(function (a) {
+          return {
+            id: 'spotify-album-' + a.id,
+            name: a.name,
+            artist: (a.artists || [])
+              .map(function (x) {
+                return x.name;
+              })
+              .join(', '),
+            albumArt: a.images && a.images[0] ? a.images[0].url : null,
+            releaseDate: a.release_date || null,
+            trackCount: a.total_tracks || null,
+            url: (a.external_urls && a.external_urls.spotify) || 'https://open.spotify.com/album/' + a.id,
+          };
+        });
+    } catch (error) {
+      console.error('Spotify album search error:', error);
+      return [];
+    }
+  },
   lookupAlbum: async function (url, config) {
     if (!config.token) return null;
     try {

@@ -2,7 +2,7 @@
   "manifest": {
     "id": "localfiles",
     "name": "Local Files",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": "Parachord Team",
     "description": "Play music from your local library. Configure watch folders in settings.",
     "icon": "📁",
@@ -15,7 +15,8 @@
     "search": true,
     "stream": true,
     "browse": false,
-    "urlLookup": false
+    "urlLookup": false,
+    "albumSearch": true
   },
   "urlPatterns": [],
   "settings": {

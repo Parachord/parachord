@@ -5,7 +5,7 @@
     {
       "id": "spotify",
       "name": "Spotify",
-      "version": "1.1.4",
+      "version": "1.2.0",
       "author": "Parachord Team",
       "description": "Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.",
       "icon": "♫",
@@ -31,7 +31,7 @@
     {
       "id": "bandcamp",
       "name": "Bandcamp",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "author": "Parachord Team",
       "description": "Find and purchase music on Bandcamp. Opens tracks in browser for streaming.",
       "icon": "🎸",
@@ -112,7 +112,7 @@
     {
       "id": "applemusic",
       "name": "Apple Music",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "author": "Parachord Team",
       "description": "Stream music via Apple Music with MusicKit. Requires Apple Music subscription and MusicKit developer token.",
       "icon": "🍎",
@@ -167,7 +167,7 @@
     {
       "id": "localfiles",
       "name": "Local Files",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "Parachord Team",
       "description": "Play music from your local library. Configure watch folders in settings to index your music collection.",
       "icon": "📁",
@@ -568,7 +568,7 @@
     {
       "id": "subsonic",
       "name": "Subsonic",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": "Parachord Team",
       "description": "Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.",
       "icon": "📡",

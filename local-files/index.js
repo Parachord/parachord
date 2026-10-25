@@ -198,6 +198,21 @@ class LocalFilesService {
     return dbResults.map(track => this.formatTrackForRenderer(track));
   }
 
+  // Album search and an album's tracks, for the Local Files plugin's
+  // searchAlbums / lookupAlbum (the album-page catalog fallback).
+  searchAlbums(query) {
+    return this.db.searchAlbums(query).map(row => ({
+      album: row.album,
+      albumArtist: row.album_artist_name || '',
+      year: row.year || null,
+      trackCount: row.track_count || 0
+    }));
+  }
+
+  getAlbumTracks({ album, albumArtist } = {}) {
+    return this.db.getAlbumTracks(album, albumArtist).map(track => this.formatTrackForRenderer(track));
+  }
+
   async resolve({ artist, track, album }) {
     console.log(`[LocalFiles] Resolving: artist="${artist}", track="${track}", album="${album}"`);
     const dbResults = this.db.resolve(artist, track, album);

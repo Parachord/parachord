@@ -378,6 +378,8 @@ contextBridge.exposeInMainWorld('electron', {
     getAllTracks: () => ipcRenderer.invoke('localFiles:getAllTracks'),
     getTracksByPaths: (filePaths) => ipcRenderer.invoke('localFiles:getTracksByPaths', filePaths),
     search: (query) => ipcRenderer.invoke('localFiles:search', query),
+    searchAlbums: (query) => ipcRenderer.invoke('localFiles:searchAlbums', query),
+    getAlbumTracks: (params) => ipcRenderer.invoke('localFiles:getAlbumTracks', params),
     resolve: (params) => ipcRenderer.invoke('localFiles:resolve', params),
     resolveArt: (track) => ipcRenderer.invoke('localFiles:resolveArt', track),
     getStreamInfo: (filePath) => ipcRenderer.invoke('localFiles:stream-info', filePath),

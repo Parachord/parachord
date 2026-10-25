@@ -194,6 +194,20 @@ function registerLocalFilesIpc({ ipcMain, dialog, getMainWindow, waitForLocalFil
     return service.search(query);
   });
 
+  ipcMain.handle('localFiles:searchAlbums', async (event, query) => {
+    const service = await waitForLocalFilesService();
+    return service.searchAlbums(typeof query === 'string' ? query : '');
+  });
+
+  ipcMain.handle('localFiles:getAlbumTracks', async (event, params) => {
+    const service = await waitForLocalFilesService();
+    const p = params && typeof params === 'object' ? params : {};
+    return service.getAlbumTracks({
+      album: typeof p.album === 'string' ? p.album : '',
+      albumArtist: typeof p.albumArtist === 'string' ? p.albumArtist : ''
+    });
+  });
+
   ipcMain.handle('localFiles:resolve', async (event, params) => {
     const service = await waitForLocalFilesService();
     return service.resolve(params);

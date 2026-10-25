@@ -94,7 +94,7 @@ beforeEach(() => {
 describe('subsonic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('subsonic');
-    expect(axe.manifest.version).toBe('0.1.0');
+    expect(axe.manifest.version).toBe('0.2.0');
   });
 
   test('declares streaming capabilities with userpass auth', () => {
@@ -118,7 +118,7 @@ describe('subsonic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['cleanup', 'getStreamUrl', 'init', 'play', 'resolve', 'search'].sort()
+      ['cleanup', 'getStreamUrl', 'init', 'lookupAlbum', 'play', 'resolve', 'search', 'searchAlbums'].sort()
     );
   });
 });
@@ -396,5 +396,72 @@ describe('app.js integration', () => {
     const cfgIdx = appSrc.indexOf("metaConfigs?.subsonic");
     expect(idx).toBeGreaterThan(0);
     expect(cfgIdx).toBeGreaterThan(idx);
+  });
+});
+
+describe('subsonic album search (capabilities.albumSearch)', () => {
+  const subsonicOk = (body) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ 'subsonic-response': { status: 'ok', ...body } })
+  });
+
+  test('declares albumSearch', () => {
+    expect(axe.capabilities.albumSearch).toBe(true);
+  });
+
+  test('searchAlbums asks search3 for albums only and returns plugin-private urls', async () => {
+    const resolver = instantiate(axe);
+    const calls = mockFetch(() => subsonicOk({
+      searchResult3: { album: [{ id: 'al-1', name: 'Amnesiac', artist: 'Radiohead', year: 2001, songCount: 11, coverArt: 'al-1' }] }
+    }));
+    const albums = await resolver.searchAlbums({ artist: 'Radiohead', title: 'Amnesiac' }, CONFIG);
+    expect(calls[0]).toContain('/rest/search3.view?');
+    expect(calls[0]).toContain('songCount=0');
+    expect(calls[0]).toContain('albumCount=20');
+    expect(albums).toEqual([{
+      id: 'subsonic-album-al-1',
+      name: 'Amnesiac',
+      artist: 'Radiohead',
+      albumArt: null,
+      releaseDate: '2001',
+      trackCount: 11,
+      url: 'subsonic:album:al-1'
+    }]);
+    // no credentialed URL in what is returned
+    expect(JSON.stringify(albums)).not.toMatch(/[?&]t=|[?&]s=|password/);
+  });
+
+  test('lookupAlbum loads getAlbum songs in disc and track order', async () => {
+    const resolver = instantiate(axe);
+    const calls = mockFetch(() => subsonicOk({
+      album: {
+        id: 'al-1', name: 'Amnesiac', artist: 'Radiohead', year: 2001,
+        song: [
+          { id: 's2', title: 'Pyramid Song', artist: 'Radiohead', track: 2, discNumber: 1, duration: 288 },
+          { id: 's1', title: 'Packt Like Sardines in a Crushd Tin Box', artist: 'Radiohead', track: 1, discNumber: 1, duration: 240 }
+        ]
+      }
+    }));
+    const album = await resolver.lookupAlbum('subsonic:album:al-1', CONFIG);
+    expect(calls[0]).toContain('/rest/getAlbum.view?');
+    expect(calls[0]).toContain('id=al-1');
+    expect(album.name).toBe('Amnesiac');
+    expect(album.tracks.map(t => t.title)).toEqual(['Packt Like Sardines in a Crushd Tin Box', 'Pyramid Song']);
+    expect(album.tracks[0]).toMatchObject({ subsonicId: 's1', sources: ['subsonic'], trackNumber: 1, discNumber: 1, duration: 240 });
+    expect(album.tracks[0].streamUrl).toBeUndefined();
+  });
+
+  test('lookupAlbum ignores urls that are not its own', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => { throw new Error('should not fetch'); });
+    expect(await resolver.lookupAlbum('https://open.spotify.com/album/x', CONFIG)).toBe(null);
+  });
+
+  test('no server configured: no albums, no request', async () => {
+    const resolver = instantiate(axe);
+    const calls = mockFetch(() => subsonicOk({}));
+    expect(await resolver.searchAlbums({ artist: 'Radiohead', title: 'Amnesiac' }, {})).toEqual([]);
+    expect(calls).toHaveLength(0);
   });
 });

@@ -227,6 +227,84 @@ module.exports = {
       return null;
     }
   },
+  // Album search for the catalog fallback (docs/architecture/plugins.md,
+  // "searchAlbums"). The same two public endpoints as search, filtered to
+  // albums ('a'). Each result's url is the album page, which lookupAlbum
+  // below reads.
+  searchAlbums: async function (query, config) {
+    var term =
+      typeof query === 'string'
+        ? query
+        : [query && query.artist, query && query.title].filter(Boolean).join(' ');
+    term = (term || '').trim();
+    if (term.length < 2) return [];
+    var normalizeUrl = function (u) {
+      if (typeof u !== 'string' || !u) return null;
+      // app_autocomplete returns a doubled url; keep the last absolute URL.
+      var i = u.lastIndexOf('https://');
+      return i > 0 ? u.slice(i) : u;
+    };
+    var toAlbum = function (r) {
+      if (!r || !r.name) return null;
+      var url = normalizeUrl(r.item_url_path || r.url);
+      if (!url || url.indexOf('/album/') === -1) return null;
+      return {
+        id: 'bandcamp-album-' + (r.id || url),
+        name: r.name,
+        artist: r.band_name || '',
+        albumArt: r.img ? r.img.replace('_3.jpg', '_10.jpg') : null,
+        releaseDate: null,
+        trackCount: null,
+        url: url,
+      };
+    };
+    try {
+      var items = [];
+      try {
+        var resp = await fetch('https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            search_text: term,
+            search_filter: 'a',
+            full_page: false,
+            fan_id: null,
+          }),
+        });
+        if (resp.ok) {
+          var data = await resp.json();
+          items = (data && data.auto && data.auto.results) || [];
+        }
+      } catch (e) {
+        console.warn('Bandcamp album search API error:', e && e.message);
+      }
+      if (items.length === 0) {
+        try {
+          var resp2 = await fetch(
+            'https://bandcamp.com/api/fuzzysearch/1/app_autocomplete?q=' + encodeURIComponent(term),
+          );
+          if (resp2.ok) {
+            var data2 = await resp2.json();
+            items = ((data2 && data2.results) || []).filter(function (x) {
+              return x && x.type === 'a';
+            });
+          }
+        } catch (e2) {
+          console.warn('Bandcamp album autocomplete error:', e2 && e2.message);
+        }
+      }
+      var albums = [];
+      for (var j = 0; j < items.length && albums.length < 10; j++) {
+        if (items[j] && items[j].type && items[j].type !== 'a') continue;
+        var a = toAlbum(items[j]);
+        if (a) albums.push(a);
+      }
+      return albums;
+    } catch (error) {
+      console.error('Bandcamp album search error:', error);
+      return [];
+    }
+  },
   lookupAlbum: async function (url, config) {
     try {
       console.log('Bandcamp album lookup:', url);

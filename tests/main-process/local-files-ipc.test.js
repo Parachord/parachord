@@ -15,7 +15,7 @@ const CHANNELS = [
   'localFiles:rescanFolder', 'localFiles:getAllTracks', 'localFiles:search',
   'localFiles:resolve', 'localFiles:getStats', 'localFiles:saveId3Tags',
   'localFiles:file-status', 'localFiles:find-missing', 'localFiles:remove-missing',
-  'localFiles:getTracksByPaths',
+  'localFiles:getTracksByPaths', 'localFiles:searchAlbums', 'localFiles:getAlbumTracks',
 ];
 
 function makeHarness({ dialogResult, serviceImpl } = {}) {
