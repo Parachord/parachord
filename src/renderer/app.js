@@ -1130,6 +1130,7 @@ const { playlistListenbrainzMbid } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
+const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
 const {
   libraryFilePaths,
   isStaleLocalSource,
@@ -21608,17 +21609,13 @@ ${trackListXml}
       }
 
       // Load artist data cache
-      // Cache version 2: Added release-group categorization (live, compilation)
-      const ARTIST_CACHE_VERSION = 2;
       if (artistData) {
-        // Filter out expired entries and entries from old cache versions
-        const validEntries = Object.entries(artistData).filter(
-          ([_, entry]) => entry.cacheVersion === ARTIST_CACHE_VERSION &&
-                         now - entry.timestamp < CACHE_TTL.artistData
-        );
-        artistDataCache.current = Object.fromEntries(validEntries);
-        const invalidated = Object.keys(artistData).length - validEntries.length;
-        console.log(`📦 Loaded ${validEntries.length} artist data entries from cache${invalidated > 0 ? ` (${invalidated} invalidated due to version change)` : ''}`);
+        // Full artist-page entries (cache version 2) and Fresh Drops' ID-only
+        // entries both survive; expired and old-version ones are dropped
+        // (src/renderer/lib/artist-data-cache.js).
+        const restored = restorableArtistDataEntries(artistData, now, CACHE_TTL.artistData);
+        artistDataCache.current = restored.entries;
+        console.log(`📦 Loaded ${restored.full + restored.idOnly} artist data entries from cache (${restored.full} full, ${restored.idOnly} ID-only${restored.dropped > 0 ? `, ${restored.dropped} expired or old version` : ''})`);
       }
 
       // Load track sources cache
