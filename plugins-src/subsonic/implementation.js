@@ -1,4 +1,4 @@
-// Source of truth for plugins/subsonic.axe v0.1.0.
+// Source of truth for plugins/subsonic.axe v0.2.1
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -624,6 +624,11 @@ module.exports = {
     );
     return false;
   },
+  // The host asks this before flagging the resolver as "needs configuration".
+  isConfigured: function (config) {
+    return !!(config && config.serverUrl && config.username && config.password);
+  },
+
   init: async function (config) {
     console.log('Subsonic resolver initialized');
     return true;
