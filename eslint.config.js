@@ -112,6 +112,7 @@ const STRICT_FILES = [
   'main-process/**/*.js',
   'plugins-src/**/*.js',
   'src/renderer/components/**/*.js',
+  'src/renderer/hooks/**/*.js',
   'protocol-url.js',
   'stream-quality.js',
   'mbid-lookup.js',
@@ -146,10 +147,10 @@ module.exports = [
     rules: strictRules,
   },
 
-  // Renderer component modules get the vendor + React globals on top of the
-  // strict rules (scoped here — see RENDERER_COMPONENT_GLOBALS).
+  // Renderer component + hook modules get the vendor + React globals on
+  // top of the strict rules (scoped here — see RENDERER_COMPONENT_GLOBALS).
   {
-    files: ['src/renderer/components/**/*.js'],
+    files: ['src/renderer/components/**/*.js', 'src/renderer/hooks/**/*.js'],
     languageOptions: { globals: RENDERER_COMPONENT_GLOBALS },
   },
 
