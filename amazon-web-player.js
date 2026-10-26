@@ -1200,6 +1200,16 @@ const amazonWebPlayer = {
         }
         if (album && album.trackCount > album.tracks.length) {
           console.warn(`[Amazon] album lookup truncated: got ${album.tracks.length} of ${album.trackCount} tracks`);
+          if (album.tracks.length === 0) {
+            // Every edge failed to map: either the server carries no rows for
+            // this album (pre-order / delisted) or hornet changed the row
+            // shape. Say which — a future "0 of N" in the field log should
+            // not need a DevTools session to diagnose.
+            const tc = outcome.parsed && outcome.parsed.data && outcome.parsed.data.album && outcome.parsed.data.album.tracksConnection;
+            const edges = tc && tc.edges;
+            const first = Array.isArray(edges) && edges[0] && edges[0].node;
+            console.warn(`[Amazon] album lookup: 0 of ${album.trackCount} mapped — edges=${Array.isArray(edges) ? edges.length : 'absent'}${first ? `, first node keys=${Object.keys(first).join(',')}` : ', first node null'}`);
+          }
         }
         console.log(`[Amazon] album lookup returning ${album ? album.tracks.length : 0} tracks "${album ? album.name : ''}"`);
         return album;
