@@ -71,6 +71,8 @@ const {
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
+  amazonAlbumDetailCandidates,
+  albumTracksConnectionIn,
   searchTracksFromGql,
   searchAlbumsFromGql,
   albumDetailFromGql,
@@ -1119,14 +1121,20 @@ const amazonWebPlayer = {
 
   // Import an album page (music.amazon.com/albums/<ASIN>) via the page's own
   // GraphQL — the same capture-and-replay pattern as lookupPlaylist. The album
-  // page fires AlbumDetailPage with variables.id = the ASIN; that request is
-  // captured (URL, headers, APQ hash) and replayed verbatim from the page
-  // world. Unlike playlistDetail the tracksConnection carries no pageInfo at
-  // all (a 100-track album answers all 100 edges in one response —
-  // live-verified 2026-10), so there is no continuation to follow: a
-  // trackCount above the mapped rows is logged as a truncation. data.album
-  // null is a legitimate not-found (deleted / other region) and returns null;
-  // a response with no album field at all is a hornet rename and throws
+  // page fires AlbumDetailPage with variables.id = the ASIN — but it also
+  // fires OTHER reads whose variables carry the ASIN: AlbumSeo (a header-only
+  // op whose data.album has title/trackCount but no tracksConnection) arrives
+  // FIRST on a real page (live-verified 2026-10), so the winner is never
+  // name-matched alone: every captured candidate is replayed until one's
+  // response carries data.album.tracksConnection (amazonAlbumDetailCandidates
+  // ranks detail-named, then album-named, then — the hornet-rename hedge —
+  // any read holding the ASIN; albumTracksConnectionIn is the arbiter).
+  // Unlike playlistDetail the tracksConnection carries no pageInfo at all (a
+  // 100-track album answers all 100 edges in one response — live-verified),
+  // so there is no continuation to follow: a trackCount above the mapped
+  // rows is logged as a truncation. data.album null in the winning response
+  // is a legitimate not-found (deleted / other region) and returns null; a
+  // response with no album field at all is a hornet rename and throws
   // lookup-failed instead of masquerading as a miss. Runs on the search
   // chain: album lookups share the search view with the searches and playlist
   // imports, so they must not interleave page loads.
@@ -1152,48 +1160,95 @@ const amazonWebPlayer = {
       const { captured, detach } = this.attachGqlCapture();
       try {
         await loadURLBudgeted(win, url);
-        // Wait for the page's own album-detail request. Boot + query is
-        // ~2-4s on a cold view; the poll window covers a slow load. The
-        // entry must also have its headers (onBeforeSendHeaders fires
-        // milliseconds after onBeforeRequest — accepting the body alone
-        // races that) before we take it.
-        let entry = null;
-        for (let i = 0; i < 40; i++) {
+        const pageUrl = win.isDestroyed() ? '' : win.webContents.getURL();
+        if (!isAmazonMusicPage(pageUrl)) {
+          throw notReady('not-ready', 'Amazon album page left music.amazon.com before replay');
+        }
+
+        // Wait for the page's own album-detail request and replay candidates
+        // as they arrive. Boot + query is ~2-4s on a cold view; the poll
+        // window covers a slow load. The entry must have its headers
+        // (onBeforeSendHeaders fires milliseconds *after* onBeforeRequest —
+        // accepting the body alone races that). Candidates are deduped by
+        // operationName+variables and re-collected each poll: a same-burst
+        // sibling (AlbumSeo fires alongside the detail op on one page load)
+        // shows up a poll apart, so the settle rule waits two quiet polls
+        // after the last new candidate before giving up. Replays are capped —
+        // the common case is one (the detail op wins on the first try).
+        const reqKey = (request) => `${(request && request.operationName) || ''}:${JSON.stringify((request && request.variables) || {})}`;
+        const seen = new Set();
+        const newCandidates = (anyName) => {
+          const ready = captured.filter(r => r.headers);
+          return amazonAlbumDetailCandidates(ready.map(r => r.body), asin, { anyName })
+            .map((request) => ({
+              request,
+              entry: ready.find(r => amazonAlbumDetailCandidates([r.body], asin, { anyName: true })
+                .some(c => reqKey(c) === reqKey(request)))
+            }))
+            .filter(p => p.entry && !seen.has(reqKey(p.request)));
+        };
+        let winner = null;      // { request, entry, data } — the replay that carried a tracksConnection
+        let headerOnlyOp = null; // replayed op that had data.album but no tracksConnection (AlbumSeo)
+        let lastReplayError = null;
+        let replayCount = 0;
+        const tryNewCandidates = async (anyName) => {
+          for (const p of newCandidates(anyName)) {
+            if (winner || replayCount >= 4) return;
+            seen.add(reqKey(p.request));
+            replayCount += 1;
+            console.log(`[Amazon] album replaying ${p.request.operationName} via gql`);
+            const outcome = await this.replayGql(win, p.entry, p.request);
+            if (outcome.error) {
+              lastReplayError = outcome.error;
+              console.warn(`[Amazon] album replay of ${p.request.operationName} failed: ${outcome.error}`);
+              continue;
+            }
+            const data = outcome.parsed && outcome.parsed.data;
+            if (albumTracksConnectionIn(data)) {
+              winner = { ...p, data };
+              return;
+            }
+            if (data && data.album) {
+              if (!headerOnlyOp) headerOnlyOp = p.request.operationName;
+              console.log(`[Amazon] album replay of ${p.request.operationName} carried the header but no tracks connection`);
+            }
+          }
+        };
+        let lastNewCandidateAt = -1;
+        for (let i = 0; i < 40 && !winner; i++) {
           await new Promise(r => setTimeout(r, 500));
           const href = win.isDestroyed() ? '' : win.webContents.getURL();
           if (pageBlocksPlayback(href)) {
             console.warn(`[Amazon] album lookup blocked: ${href}`);
             throw notReady('not-signed-in', 'Choose an Amazon Music profile');
           }
-          entry = captured.find(r => r.headers && amazonAlbumDetailRequest([r.body], asin));
-          if (entry) break;
+          const before = seen.size;
+          await tryNewCandidates(false);
+          if (seen.size > before) lastNewCandidateAt = i;
+          if (seen.size > 0 && i - lastNewCandidateAt >= 2) break;
         }
-        if (!entry) {
-          // The album-named op never came. Hedge a hornet rename: accept any
-          // read request carrying our ASIN — a wrong-envelope replay then
-          // surfaces as lookup-failed (loud) instead of a bogus miss.
-          entry = captured.find(r => r.headers && amazonAlbumDetailRequest([r.body], asin, { anyName: true }));
+        if (!winner) {
+          // No winning replay from the album-named pool — either hornet
+          // renamed the detail op (hedge: any read carrying the ASIN, still
+          // judged by the tracks-connection response) or the page never
+          // fetched tracks for this album (a pre-order header, an error
+          // page). The same response check decides.
+          await tryNewCandidates(true);
         }
-        if (!entry) {
+        if (!winner) {
+          if (headerOnlyOp) {
+            console.warn(`[Amazon] album lookup: ${asin} header came from ${headerOnlyOp} but no operation exposed a tracks connection; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
+            return null;
+          }
+          if (lastReplayError) throw notReady('lookup-failed', lastReplayError);
           // The page loaded but never asked for this album: deleted, not
-          // available in the user's territory — or hornet renamed the
-          // operation. Log what the page did fire so a rename reads as a
-          // rename instead of "every album is gone".
+          // available in the user's territory — or hornet renamed everything.
+          // Log what the page did fire so a rename reads as a rename instead
+          // of "every album is gone".
           console.warn(`[Amazon] album lookup: page never requested the album detail for ${asin}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
           return null;
         }
-        const request = amazonAlbumDetailRequest([entry.body], asin);
-        if (!request || !request.variables || typeof request.variables !== 'object') {
-          throw notReady('lookup-failed', 'Unexpected Amazon album query shape');
-        }
-        const pageUrl = win.isDestroyed() ? '' : win.webContents.getURL();
-        if (!isAmazonMusicPage(pageUrl)) {
-          throw notReady('not-ready', 'Amazon album page left music.amazon.com before replay');
-        }
-        console.log(`[Amazon] album replaying album detail via gql`);
-        const outcome = await this.replayGql(win, entry, request);
-        if (outcome.error) throw notReady('lookup-failed', outcome.error);
-        const { album, envelope } = albumDetailFromGql(outcome.parsed && outcome.parsed.data);
+        const { album, envelope } = albumDetailFromGql(winner.data);
         if (!envelope) {
           console.warn(`[Amazon] album lookup: response was not an album detail envelope for ${asin}`);
           throw notReady('lookup-failed', 'Amazon album response was not an album detail envelope');
@@ -1205,7 +1260,7 @@ const amazonWebPlayer = {
             // this album (pre-order / delisted) or hornet changed the row
             // shape. Say which — a future "0 of N" in the field log should
             // not need a DevTools session to diagnose.
-            const tc = outcome.parsed && outcome.parsed.data && outcome.parsed.data.album && outcome.parsed.data.album.tracksConnection;
+            const tc = winner.data && winner.data.album && winner.data.album.tracksConnection;
             const edges = tc && tc.edges;
             const first = Array.isArray(edges) && edges[0] && edges[0].node;
             console.warn(`[Amazon] album lookup: 0 of ${album.trackCount} mapped — edges=${Array.isArray(edges) ? edges.length : 'absent'}${first ? `, first node keys=${Object.keys(first).join(',')}` : ', first node null'}`);

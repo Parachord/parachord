@@ -46,6 +46,8 @@ const {
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
+  amazonAlbumDetailCandidates,
+  albumTracksConnectionIn,
   albumFromGqlSearchNode,
   searchAlbumsFromGql,
   albumTrackFromGqlEdge,
@@ -1822,7 +1824,7 @@ describe('amazonSpecSearchRequest album spec', () => {
 // The album-detail request the album page fires (live-captured 2026-10):
 // AlbumDetailPage, variables.id = the ASIN, an APQ hash that renumbers per
 // hornet redeploy.
-describe('amazonAlbumDetailRequest', () => {
+describe('amazonAlbumDetailRequest / amazonAlbumDetailCandidates', () => {
   const detail = (asin, operationName = 'AlbumDetailPage') => JSON.stringify({
     operationName,
     variables: { id: asin, isAuthenticated: true, includeMerch: true, includeAlbumAbout: false },
@@ -1854,17 +1856,23 @@ describe('amazonAlbumDetailRequest', () => {
     expect(amazonAlbumDetailRequest([batch], 'B07558DQJL')).toBeNull();
   });
 
-  test('only an album-named read operation matches by default — first-arrival never wins it the replay', () => {
-    // The album page fires other read queries in parallel; one that happens
-    // to carry the ASIN in its variables must not be replayed as the album
-    // detail. Default matching accepts only album-named operations;
-    // { anyName: true } (the caller's rename hedge, taken only after the
-    // album-named op never came) still prefers the album-named one.
+  test('the detail op ranks first, then other album-named reads, then (with anyName) any read carrying the ASIN', () => {
+    // Live-captured 2026-10: the real album page fires AlbumSeo (header-only)
+    // with the same variables.id BEFORE AlbumDetailPage. First-arrival is
+    // never the winner: candidates come back detail-named first.
+    const seo = detail('B07558DQJL', 'AlbumSeo');
     const stray = JSON.stringify({ operationName: 'PlaybackContextSeed', variables: { id: 'B07558DQJL' } });
+    const bodies = [seo, detail('B07558DQJL'), stray];
+    expect(amazonAlbumDetailCandidates(bodies, 'B07558DQJL').map(r => r.operationName))
+      .toEqual(['AlbumDetailPage', 'AlbumSeo']);
+    // default excludes the stray entirely — an unrelated read that happens to
+    // carry the ASIN must not be replayed as the album detail
     expect(amazonAlbumDetailRequest([stray], 'B07558DQJL')).toBeNull();
+    // { anyName: true } appends it last (the caller's rename hedge) and the
+    // ranked detail op still leads
+    expect(amazonAlbumDetailCandidates(bodies, 'B07558DQJL', { anyName: true }).map(r => r.operationName))
+      .toEqual(['AlbumDetailPage', 'AlbumSeo', 'PlaybackContextSeed']);
     expect(amazonAlbumDetailRequest([stray], 'B07558DQJL', { anyName: true }).operationName).toBe('PlaybackContextSeed');
-    const bodies = [stray, detail('B07558DQJL')];
-    expect(amazonAlbumDetailRequest(bodies, 'B07558DQJL').operationName).toBe('AlbumDetailPage');
     expect(amazonAlbumDetailRequest(bodies, 'B07558DQJL', { anyName: true }).operationName).toBe('AlbumDetailPage');
   });
 
@@ -2176,5 +2184,27 @@ describe('assignDiscNumbers', () => {
     ];
     assignDiscNumbers(tracks);
     expect(tracks.map(t => t.discNumber)).toEqual([1, 1, 2, 2, null, 2]);
+  });
+});
+
+describe('albumTracksConnectionIn', () => {
+  // Live-captured 2026-10 (the Resodance capture): AlbumDetailPage's response
+  // carries data.album.tracksConnection.edges; AlbumSeo's carries data.album
+  // with title/trackCount and a bare `tracks` field — no tracksConnection.
+  test('the detail response passes, the header-only SEO response does not', () => {
+    expect(albumTracksConnectionIn({
+      album: { id: 'B07558DQJL', title: 'Master of Puppets (Remastered)', tracksConnection: { __typename: 'TrackConnection', edges: [] } }
+    })).toBe(true);
+    expect(albumTracksConnectionIn({
+      album: { id: 'B0H7NR1GWR', title: 'Resodance [Explicit]', trackCount: 12, tracks: { total: 12 } }
+    })).toBe(false);
+  });
+
+  test('nulls and wrong shapes do not pass', () => {
+    expect(albumTracksConnectionIn(null)).toBe(false);
+    expect(albumTracksConnectionIn({})).toBe(false);
+    expect(albumTracksConnectionIn({ album: null })).toBe(false);
+    expect(albumTracksConnectionIn({ album: { tracksConnection: null } })).toBe(false);
+    expect(albumTracksConnectionIn({ album: { tracksConnection: { edges: 'nope' } } })).toBe(false);
   });
 });

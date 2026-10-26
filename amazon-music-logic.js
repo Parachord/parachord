@@ -951,20 +951,22 @@ function amazonAlbumAsinFromUrl(url) {
 
 // The album-detail request the page fired for OUR album — the same
 // capture-and-replay pattern as playlistDetail. The album page fires it as
-// AlbumDetailPage with variables.id = the ASIN (live-captured 2026-10). Only
-// an album-named read operation matches by default: the page fires other read
-// queries in parallel, and an unrelated one that happens to carry the ASIN in
-// its variables must not win the replay by arriving first. With
-// { anyName: true } any read request whose variables.id is our ASIN is a
-// candidate (an album-named one still preferred) — the rename hedge the
-// caller accepts only after the album-named op never came; a wrong-envelope
-// replay from it surfaces as lookup-failed, loud, instead of a silent miss.
-// Write-shaped names (a replay would repeat the action on the user's
-// account) never are candidates.
-function amazonAlbumDetailRequest(bodies, asin, { anyName = false } = {}) {
+// AlbumDetailPage with variables.id = the ASIN (live-captured 2026-10), but
+// it also fires OTHER reads whose variables carry the ASIN: AlbumSeo (the
+// header-only op — its response has data.album with title/trackCount but no
+// tracksConnection) arrives FIRST on a real page, and an unrelated read that
+// happens to hold the ASIN may too. So first-arrival must not win: candidates
+// are ranked — detail-named, then album-named, then (with { anyName: true },
+// the hornet-rename hedge) any read carrying the ASIN — and the caller
+// verifies the REPLAY carries data.album.tracksConnection (albumTracksConnectionIn)
+// before accepting one. Write-shaped names (a replay would repeat the action
+// on the user's account) never are candidates.
+function amazonAlbumDetailCandidates(bodies, asin, { anyName = false } = {}) {
   const wanted = String(asin || '').toUpperCase();
-  if (!wanted || wanted === 'UNDEFINED' || wanted === 'NULL') return null;
-  let candidate = null;
+  if (!wanted || wanted === 'UNDEFINED' || wanted === 'NULL') return [];
+  const detail = [];
+  const named = [];
+  const other = [];
   for (const raw of (Array.isArray(bodies) ? bodies : [])) {
     let parsed;
     try { parsed = JSON.parse(raw); } catch (e) { continue; }
@@ -976,11 +978,26 @@ function amazonAlbumDetailRequest(bodies, asin, { anyName = false } = {}) {
       const vars = req && req.variables;
       if (!vars || typeof vars !== 'object') continue;
       if (String(vars.id || '').toUpperCase() !== wanted) continue;
-      if (/album/i.test(opName)) return req;
-      if (anyName && !candidate) candidate = req;
+      if (/detail/i.test(opName)) detail.push(req);
+      else if (/album/i.test(opName)) named.push(req);
+      else if (anyName) other.push(req);
     }
   }
-  return candidate;
+  return [...detail, ...named, ...other];
+}
+
+function amazonAlbumDetailRequest(bodies, asin, { anyName = false } = {}) {
+  return amazonAlbumDetailCandidates(bodies, asin, { anyName })[0] || null;
+}
+
+// Whether a replayed response IS the album detail: data.album carrying a
+// tracksConnection with an edges array (empty edges are fine — a pre-order /
+// fully-delisted album still comes from the detail op; the header-only
+// AlbumSeo response has data.album WITHOUT tracksConnection).
+function albumTracksConnectionIn(data) {
+  const album = data && data.album;
+  const tc = album && album.tracksConnection;
+  return !!(tc && Array.isArray(tc.edges));
 }
 
 // Headers to copy onto the replayed gql fetch. The request the page made is
@@ -1543,6 +1560,8 @@ module.exports = {
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
+  amazonAlbumDetailCandidates,
+  albumTracksConnectionIn,
   amazonGqlFetchHeaders,
   capturedOperationNames,
   searchTracksFromGql,
