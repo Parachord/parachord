@@ -6,6 +6,8 @@
  *   - search result mapping (bridge -> resolver track shape)
  *   - resolve() containment matching (best match, not just first result)
  *   - play() not-signed-in flow (sign-in prompt + retry)
+ *   - searchAlbums()/lookupAlbum() (the albumSearch capability: bridge mapping,
+ *     sign-in prompt, and miss vs notReady)
  *   - byte-identical FALLBACK_RESOLVERS copy in app.js (drift guard)
  *   - resolver-limiter does NOT skip amazonmusic (CDP fan-out + web search)
  */
@@ -36,15 +38,20 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.4.5');
+    expect(axe.manifest.version).toBe('1.5.0');
   });
 
   test('declares streaming capabilities without auth', () => {
     expect(axe.capabilities).toEqual(
-      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, mobile: false })
+      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, mobile: false })
     );
     expect(axe.settings.requiresAuth).toBe(false);
-    expect(axe.urlPatterns).toEqual(['music.amazon.com/playlists/*', 'music.amazon.com/my/playlists/*', 'music.amazon.com/user-playlists/*']);
+    expect(axe.urlPatterns).toEqual([
+      'music.amazon.com/playlists/*',
+      'music.amazon.com/my/playlists/*',
+      'music.amazon.com/user-playlists/*',
+      'music.amazon.com/albums/*'
+    ]);
   });
 
   test('implementation functions compile', () => {
@@ -53,7 +60,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['cleanup', 'init', 'lookupPlaylist', 'play', 'resolve', 'search'].sort()
+      ['cleanup', 'init', 'lookupAlbum', 'lookupPlaylist', 'play', 'resolve', 'search', 'searchAlbums'].sort()
     );
   });
 });
@@ -484,6 +491,219 @@ describe('amazonmusic lookupPlaylist', () => {
   });
 });
 
+describe('amazonmusic searchAlbums', () => {
+  // The bridge shape (amazon-web-player.searchAlbums -> searchAlbumsFromGql):
+  // asin/name/artist/albumArt/url/explicit. The album search spec carries no
+  // releaseDate or trackCount.
+  const bridgeAlbums = {
+    success: true,
+    engine: 'web',
+    albums: [
+      { asin: 'B0FMW6FYGN', name: 'Dulling The Horns (Deluxe Edition)', artist: 'Wild Pink', albumArt: 'https://m.media-amazon.com/images/I/91OrDh0ADYL.jpg', url: 'https://music.amazon.com/albums/B0FMW6FYGN', explicit: true },
+      { asin: 'B07CMLR17Z', name: 'Yolk in the Fur', artist: 'Wild Pink', albumArt: 'https://m.media-amazon.com/images/I/61t5hojNMAL.jpg', url: 'https://music.amazon.com/albums/B07CMLR17Z', explicit: false }
+    ]
+  };
+
+  beforeEach(() => {
+    global.window = {
+      electron: {
+        amazonMusic: {
+          searchAlbums: jest.fn().mockResolvedValue(bridgeAlbums)
+        }
+      }
+    };
+  });
+
+  afterEach(() => {
+    delete global.window;
+  });
+
+  test('maps bridge albums to the albumSearch contract shape', async () => {
+    const resolver = instantiate(axe);
+    const albums = await resolver.searchAlbums({ artist: 'Wild Pink', title: 'Dulling the Horns' }, {});
+    expect(albums).toEqual([
+      {
+        id: 'amazonmusic-album-B0FMW6FYGN',
+        name: 'Dulling The Horns (Deluxe Edition)',
+        artist: 'Wild Pink',
+        albumArt: 'https://m.media-amazon.com/images/I/91OrDh0ADYL.jpg',
+        releaseDate: null,
+        trackCount: null,
+        url: 'https://music.amazon.com/albums/B0FMW6FYGN',
+        explicit: true
+      },
+      {
+        id: 'amazonmusic-album-B07CMLR17Z',
+        name: 'Yolk in the Fur',
+        artist: 'Wild Pink',
+        albumArt: 'https://m.media-amazon.com/images/I/61t5hojNMAL.jpg',
+        releaseDate: null,
+        trackCount: null,
+        url: 'https://music.amazon.com/albums/B07CMLR17Z',
+        explicit: false
+      }
+    ]);
+    // the { artist, title } payload passes through to the bridge untouched
+    expect(global.window.electron.amazonMusic.searchAlbums)
+      .toHaveBeenCalledWith({ artist: 'Wild Pink', title: 'Dulling the Horns' });
+  });
+
+  test('free text from Search passes through trimmed', async () => {
+    const resolver = instantiate(axe);
+    await resolver.searchAlbums('  wild pink  ', {});
+    expect(global.window.electron.amazonMusic.searchAlbums).toHaveBeenCalledWith('wild pink');
+  });
+
+  test('too short or empty queries never reach the bridge', async () => {
+    const resolver = instantiate(axe);
+    expect(await resolver.searchAlbums('d', {})).toEqual([]);
+    expect(await resolver.searchAlbums('', {})).toEqual([]);
+    expect(await resolver.searchAlbums({}, {})).toEqual([]);
+    expect(global.window.electron.amazonMusic.searchAlbums).not.toHaveBeenCalled();
+  });
+
+  test('a plain miss returns [] and notReady failures throw, like search()', async () => {
+    const resolver = instantiate(axe);
+    global.window.electron.amazonMusic.searchAlbums.mockResolvedValue({ success: true, albums: [] });
+    expect(await resolver.searchAlbums('nothing anywhere', {})).toEqual([]);
+    for (const reason of ['not-ready', 'not-signed-in', 'no-cdm', 'load-failed']) {
+      global.window.electron.amazonMusic.searchAlbums.mockResolvedValue({ success: false, reason });
+      await expect(resolver.searchAlbums('wild pink', {})).rejects.toMatchObject({ notReady: true, code: reason });
+    }
+  });
+
+  test('no bridge returns []', async () => {
+    delete global.window.electron;
+    const resolver = instantiate(axe);
+    expect(await resolver.searchAlbums('wild pink', {})).toEqual([]);
+  });
+});
+
+describe('amazonmusic lookupAlbum', () => {
+  const albumUrl = 'https://music.amazon.com/albums/B07558DQJL';
+
+  const bridgeAlbum = {
+    success: true,
+    engine: 'web',
+    album: {
+      asin: 'B07558DQJL',
+      name: 'Master of Puppets (Remastered)',
+      artist: 'Metallica',
+      albumArt: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg',
+      releaseDate: '1986-02-21T00:00:00.000Z',
+      trackCount: 8,
+      url: albumUrl,
+      explicit: false,
+      tracks: [
+        { asin: 'B07554FHF5', title: 'Battery (Remastered)', artist: 'Metallica', duration: 312, trackNumber: 1, discNumber: 1, explicit: false },
+        { asin: 'B0755C8JX3', title: 'Master Of Puppets (Remastered)', artist: 'Metallica', duration: 515, trackNumber: 2, discNumber: 1, explicit: false }
+      ]
+    }
+  };
+
+  beforeEach(() => {
+    global.window = {
+      electron: {
+        amazonMusic: {
+          lookupAlbum: jest.fn().mockResolvedValue(bridgeAlbum)
+        }
+      }
+    };
+  });
+
+  afterEach(() => {
+    delete global.window;
+  });
+
+  test('maps the bridge album to the albumSearch contract shape', async () => {
+    const resolver = instantiate(axe);
+    const album = await resolver.lookupAlbum(albumUrl, {});
+    expect(album).toEqual(expect.objectContaining({
+      id: 'amazonmusic-album-B07558DQJL',
+      name: 'Master of Puppets (Remastered)',
+      artist: 'Metallica',
+      albumArt: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg',
+      releaseDate: '1986-02-21T00:00:00.000Z',
+      trackCount: 8,
+      url: albumUrl
+    }));
+    expect(album.tracks[0]).toEqual(expect.objectContaining({
+      id: 'amazonmusic-B07554FHF5',
+      title: 'Battery (Remastered)',
+      artist: 'Metallica',
+      album: 'Master of Puppets (Remastered)',
+      duration: 312,
+      sources: ['amazonmusic'],
+      amazonAsin: 'B07554FHF5',
+      albumAsin: 'B07558DQJL',
+      trackNumber: 1,
+      discNumber: 1,
+      explicit: false,
+      albumArt: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg'
+    }));
+    // trackCount stays the server's 8 even though only 2 rows mapped — a
+    // truncated load must be visible the way the playlist import's is.
+    expect(album.tracks).toHaveLength(2);
+    expect(global.window.electron.amazonMusic.lookupAlbum).toHaveBeenCalledWith(albumUrl);
+  });
+
+  describe('not signed in', () => {
+    let managePrompt;
+
+    const makeResolver = () => {
+      managePrompt = jest.fn().mockResolvedValue(true);
+      global.window.__parachordManageAmazonMusic = managePrompt;
+      return instantiate(axe);
+    };
+
+    test('prompts for sign-in and retries once, like lookupPlaylist', async () => {
+      const resolver = makeResolver();
+      global.window.electron.amazonMusic.lookupAlbum
+        .mockResolvedValueOnce({ success: false, reason: 'not-signed-in' })
+        .mockResolvedValueOnce(bridgeAlbum);
+      const album = await resolver.lookupAlbum(albumUrl, {});
+      expect(album.name).toBe('Master of Puppets (Remastered)');
+      expect(managePrompt).toHaveBeenCalledTimes(1);
+      expect(global.window.electron.amazonMusic.lookupAlbum).toHaveBeenCalledTimes(2);
+    });
+
+    test('declined sign-in throws notReady', async () => {
+      const resolver = makeResolver();
+      managePrompt.mockResolvedValue(false);
+      global.window.electron.amazonMusic.lookupAlbum.mockResolvedValue({
+        success: false, reason: 'not-signed-in'
+      });
+      await expect(resolver.lookupAlbum(albumUrl, {})).rejects.toMatchObject({
+        notReady: true,
+        code: 'not-signed-in'
+      });
+      expect(global.window.electron.amazonMusic.lookupAlbum).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test('a legitimate miss (deleted / other region) is null, not a throw', async () => {
+    global.window.electron.amazonMusic.lookupAlbum.mockResolvedValue({ success: true, album: null });
+    const resolver = instantiate(axe);
+    await expect(resolver.lookupAlbum(albumUrl, {})).resolves.toBeNull();
+  });
+
+  test('transient and structural failures throw notReady — never a bogus miss', async () => {
+    const resolver = instantiate(axe);
+    for (const reason of ['load-failed', 'no-cdm', 'not-ready', 'lookup-failed']) {
+      global.window.electron.amazonMusic.lookupAlbum.mockResolvedValue({
+        success: false, reason, error: reason + ' happened'
+      });
+      await expect(resolver.lookupAlbum(albumUrl, {})).rejects.toMatchObject({ notReady: true, code: reason });
+    }
+  });
+
+  test('a bridge rejection surfaces as null, not a throw', async () => {
+    global.window.electron.amazonMusic.lookupAlbum.mockRejectedValue(new Error('ipc broke'));
+    const resolver = instantiate(axe);
+    await expect(resolver.lookupAlbum(albumUrl, {})).resolves.toBeNull();
+  });
+});
+
 describe('app.js FALLBACK_RESOLVERS parity', () => {
   test('the inline amazonmusic fallback is byte-identical to plugins/amazonmusic.axe', () => {
     const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
@@ -539,11 +759,17 @@ describe('playlist URL routing', () => {
       .toBe('playlist');
   });
 
-  test('track pages do not match the playlist patterns (the resolver has no lookupUrl)', () => {
+  test('album pages route to amazonmusic as albums (dropping an album URL works)', () => {
+    const l = loader();
+    expect(l.findResolverForUrl('https://music.amazon.com/albums/B000031W1M')).toBe('amazonmusic');
+    expect(l.getUrlType('https://music.amazon.com/albums/B000031W1M')).toBe('album');
+    expect(l.findResolverForUrl('https://music.amazon.com/albums/B07558DQJL?ref=dm_sh')).toBe('amazonmusic');
+  });
+
+  test('track pages do not match the playlist or album patterns (the resolver has no lookupUrl)', () => {
     const l = loader();
     expect(l.findResolverForUrl('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
     expect(l.getUrlType('https://music.amazon.com/tracks/B000SNWG5Q')).toBe('track');
-    expect(l.getUrlType('https://music.amazon.com/albums/B000031W1M')).toBe('album');
   });
 });
 

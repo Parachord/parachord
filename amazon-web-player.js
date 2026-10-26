@@ -68,7 +68,12 @@ const {
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
   amazonSpecSearchRequest,
+  amazonAlbumSearchUrl,
+  amazonAlbumAsinFromUrl,
+  amazonAlbumDetailRequest,
   searchTracksFromGql,
+  searchAlbumsFromGql,
+  albumDetailFromGql,
   createSearchBreaker,
   paginatePlaylistTracks,
   amazonGqlFetchHeaders,
@@ -827,36 +832,29 @@ const amazonWebPlayer = {
     return { parsed };
   },
 
+  // Shared runner for the spec searches — the songs tab (/search/<q>/songs)
+  // fires the track-spec SpecSearchSeeMorePage, the albums tab (/search/<q>/
+  // albums) the album spec; everything else about the flow is identical.
   // Search runs over the page's own GraphQL — the same capture-and-replay
-  // pattern as lookupPlaylist. The songs page (/search/<q>/songs) fires
-  // SpecSearchSeeMorePage with our exact searchText; that request (URL,
-  // headers, APQ hash, variables) is captured while the page loads, its own
-  // RESPONSE is read from the preload's passive gql capture when present
-  // (no second request; replayed verbatim only as the fallback), and the
-  // result is parsed pure — no DOM scraping: no row-mount waits, no testid
-  // heuristics, no like-button ASIN exclusion dance, and the track rows carry
-  // cover art the DOM never exposed. The request is matched on
-  // variables.searchText, not the operation name, so a hornet rename of the
-  // operation cannot break it — and only the TRACK spec ever replays: an
-  // album/artist spec edge must never import as a track (an album ASIN in
-  // the track slot passes the confidence gate on self-titled releases).
+  // pattern as lookupPlaylist. The tab page fires SpecSearchSeeMorePage with
+  // our exact searchText; that request (URL, headers, APQ hash, variables) is
+  // captured while the page loads and replayed verbatim, and the result is
+  // parsed pure — no DOM scraping: no row-mount waits, no testid heuristics,
+  // no like-button ASIN exclusion dance, and the rows carry cover art the DOM
+  // never exposed. The request is matched on variables.searchText, not the
+  // operation name, so a hornet rename of the operation cannot break it — and
+  // only the requested spec is ever replayed: for tracks, an album/artist spec
+  // edge must never import as a track (an album ASIN in the track slot passes
+  // the confidence gate on self-titled releases).
   //
   // Structural failures (the page never searched, another spec searched but
-  // the track spec never came, or the response carried no spec search
-  // envelope) throw not-ready — never cached as a 30-day noMatch — and trip
-  // the search breaker so a rename fails fast instead of burning the capture
-  // window on every search of a resolution run. An envelope with empty edges
-  // IS a real miss and returns []. Runs on the search chain: lookupPlaylist
-  // and searchTracks share the search view, so they must not interleave page
-  // loads.
-  async searchTracks(input) {
-    const opts = typeof input === 'string' ? { query: input } : (input || {});
-    const spec = amazonSongSearchUrl(opts);
-    if (!spec) return [];
-    const { url, searchText } = spec;
-    if (!(await this.isSignedIn())) {
-      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
-    }
+  // ours never came, or the response carried no spec search envelope) throw
+  // not-ready — never cached as a 30-day noMatch — and trip the shared search
+  // breaker so a rename fails fast instead of burning the capture window on
+  // every search of a resolution run. An envelope with empty edges IS a real
+  // miss and returns []. Runs on the search chain: lookupPlaylist and the
+  // searches share the search view, so they must not interleave page loads.
+  async specSearch({ url, searchText, specType, parse, noun }) {
     if (this.searchBreaker && !this.searchBreaker.allows()) {
       const probe = this.searchBreaker.isProbe() ? ' (probing after cooldown)' : '';
       throw notReady('not-ready', `Amazon search is cooling down after repeated structural failures${probe}`);
@@ -881,7 +879,7 @@ const amazonWebPlayer = {
         // have its headers — onBeforeSendHeaders fires milliseconds *after*
         // onBeforeRequest, so accepting the body alone races it. ALL
         // header-complete bodies go to the matcher each poll — the matcher
-        // only ever accepts the track spec, so an album-spec request that
+        // only ever accepts the wanted spec, so a different-spec request that
         // arrives first cannot win by first-arrival.
         let request = null;
         let entry = null;
@@ -895,27 +893,27 @@ const amazonWebPlayer = {
           }
           const ready = captured.filter(r => r.headers);
           const bodies = ready.map(r => r.body);
-          request = amazonSpecSearchRequest(bodies, searchText);
+          request = amazonSpecSearchRequest(bodies, searchText, { spec: specType });
           if (request) {
-            entry = ready.find(r => amazonSpecSearchRequest([r.body], searchText));
+            entry = ready.find(r => amazonSpecSearchRequest([r.body], searchText, { spec: specType }));
             break;
           }
-          // Another spec searched our text but the track spec has not arrived:
-          // give it a short grace (the page may fire specs out of order), then
+          // Another spec searched our text but ours has not arrived: give it
+          // a short grace (the page may fire specs out of order), then
           // conclude structurally instead of burning the full window.
           if (otherSpecSeenAt < 0 && amazonSpecSearchRequest(bodies, searchText, { anySpec: true })) {
             otherSpecSeenAt = i;
-            console.warn(`[Amazon] search: a non-track spec searched for ${JSON.stringify(searchText)}; waiting briefly for the track spec`);
+            console.warn(`[Amazon] search: a non-${specType} spec searched for ${JSON.stringify(searchText)}; waiting briefly for the ${specType} spec`);
           }
           if (otherSpecSeenAt >= 0 && i - otherSpecSeenAt >= 8) break;
         }
         if (!request || !entry) {
-          // The page loaded but never ran our track search: a hornet rename of
-          // the operation (or the search page itself), or an SPA failure. Log
+          // The page loaded but never ran our search: a hornet rename of the
+          // operation (or the search page itself), or an SPA failure. Log
           // what the page did fire so a rename reads as a rename instead of a
           // silent run of empty searches each cached as a 30-day noMatch.
-          console.warn(`[Amazon] search: page never fired the track search for ${JSON.stringify(searchText)}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
-          throw structural('Amazon search page never issued its track search');
+          console.warn(`[Amazon] search: page never fired the ${specType} search for ${JSON.stringify(searchText)}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
+          throw structural(`Amazon search page never issued its ${specType} search`);
         }
         if (!request.variables || typeof request.variables !== 'object') {
           throw structural('Unexpected Amazon search query shape');
@@ -932,7 +930,7 @@ const amazonWebPlayer = {
         const outcome = await this.replayGql(win, entry, request);
         if (outcome.error) throw notReady('not-ready', outcome.error);
         const parsed = outcome.parsed;
-        const { tracks, envelope } = searchTracksFromGql(parsed && parsed.data);
+        const { rows, envelope } = parse(parsed && parsed.data);
         if (!envelope) {
           // The response carried no spec search envelope: hornet renamed the
           // response field. A rename must surface as not-ready, not as a
@@ -941,11 +939,52 @@ const amazonWebPlayer = {
           throw structural('Amazon search response was not a spec search envelope');
         }
         if (this.searchBreaker) this.searchBreaker.recordSuccess();
-        console.log(`[Amazon] search returning ${tracks.length} tracks for ${JSON.stringify(searchText)}`);
-        return tracks;
+        console.log(`[Amazon] search returning ${rows.length} ${noun} for ${JSON.stringify(searchText)}`);
+        return rows;
       } finally {
         detach();
         await this.parkSearchView();
+      }
+    });
+  },
+
+  async searchTracks(input) {
+    const opts = typeof input === 'string' ? { query: input } : (input || {});
+    const spec = amazonSongSearchUrl(opts);
+    if (!spec) return [];
+    if (!(await this.isSignedIn())) {
+      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    return this.specSearch({
+      url: spec.url,
+      searchText: spec.searchText,
+      specType: 'track',
+      noun: 'tracks',
+      parse: (data) => {
+        const { tracks, envelope } = searchTracksFromGql(data);
+        return { rows: tracks, envelope };
+      }
+    });
+  },
+
+  // Album search for the album-page catalog fallback (the plugin's
+  // capabilities.albumSearch): the albums tab of the same spec search, parsed
+  // by searchAlbumsFromGql.
+  async searchAlbums(input) {
+    const opts = typeof input === 'string' ? { query: input } : (input || {});
+    const spec = amazonAlbumSearchUrl(opts);
+    if (!spec) return [];
+    if (!(await this.isSignedIn())) {
+      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    return this.specSearch({
+      url: spec.url,
+      searchText: spec.searchText,
+      specType: 'album',
+      noun: 'albums',
+      parse: (data) => {
+        const { albums, envelope } = searchAlbumsFromGql(data);
+        return { rows: albums, envelope };
       }
     });
   },
@@ -1078,12 +1117,105 @@ const amazonWebPlayer = {
     });
   },
 
+  // Import an album page (music.amazon.com/albums/<ASIN>) via the page's own
+  // GraphQL — the same capture-and-replay pattern as lookupPlaylist. The album
+  // page fires AlbumDetailPage with variables.id = the ASIN; that request is
+  // captured (URL, headers, APQ hash) and replayed verbatim from the page
+  // world. Unlike playlistDetail the tracksConnection carries no pageInfo at
+  // all (a 100-track album answers all 100 edges in one response —
+  // live-verified 2026-10), so there is no continuation to follow: a
+  // trackCount above the mapped rows is logged as a truncation. data.album
+  // null is a legitimate not-found (deleted / other region) and returns null;
+  // a response with no album field at all is a hornet rename and throws
+  // lookup-failed instead of masquerading as a miss. Runs on the search
+  // chain: album lookups share the search view with the searches and playlist
+  // imports, so they must not interleave page loads.
+  async lookupAlbum(rawUrl) {
+    if (typeof rawUrl !== 'string' || !/^https:\/\/music\.amazon\.com\//i.test(rawUrl)) {
+      throw notReady('not-ready', 'Not an Amazon Music album URL');
+    }
+    const asin = amazonAlbumAsinFromUrl(rawUrl);
+    if (!asin) {
+      throw notReady('not-ready', 'Not an Amazon Music album URL');
+    }
+    if (!(await this.isSignedIn())) {
+      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    return this.enqueueSearch(async () => {
+      const win = await this.ensureWindow('search');
+      const mode = await this.layoutSearch(this.searchView);
+      const url = `https://music.amazon.com/albums/${asin}`;
+      console.log(`[Amazon] album lookup mode=${mode} ${url}`);
+
+      // Capture gql requests (bodies from onBeforeRequest, headers paired by
+      // request id) while the page loads and fires AlbumDetailPage itself.
+      const { captured, detach } = this.attachGqlCapture();
+      try {
+        await loadURLBudgeted(win, url);
+        // Wait for the page's own album-detail request. Boot + query is
+        // ~2-4s on a cold view; the poll window covers a slow load. The
+        // entry must also have its headers (onBeforeSendHeaders fires
+        // milliseconds after onBeforeRequest — accepting the body alone
+        // races that) before we take it.
+        let entry = null;
+        for (let i = 0; i < 40; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          const href = win.isDestroyed() ? '' : win.webContents.getURL();
+          if (pageBlocksPlayback(href)) {
+            console.warn(`[Amazon] album lookup blocked: ${href}`);
+            throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+          }
+          entry = captured.find(r => r.headers && amazonAlbumDetailRequest([r.body], asin));
+          if (entry) break;
+        }
+        if (!entry) {
+          // The album-named op never came. Hedge a hornet rename: accept any
+          // read request carrying our ASIN — a wrong-envelope replay then
+          // surfaces as lookup-failed (loud) instead of a bogus miss.
+          entry = captured.find(r => r.headers && amazonAlbumDetailRequest([r.body], asin, { anyName: true }));
+        }
+        if (!entry) {
+          // The page loaded but never asked for this album: deleted, not
+          // available in the user's territory — or hornet renamed the
+          // operation. Log what the page did fire so a rename reads as a
+          // rename instead of "every album is gone".
+          console.warn(`[Amazon] album lookup: page never requested the album detail for ${asin}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
+          return null;
+        }
+        const request = amazonAlbumDetailRequest([entry.body], asin);
+        if (!request || !request.variables || typeof request.variables !== 'object') {
+          throw notReady('lookup-failed', 'Unexpected Amazon album query shape');
+        }
+        const pageUrl = win.isDestroyed() ? '' : win.webContents.getURL();
+        if (!isAmazonMusicPage(pageUrl)) {
+          throw notReady('not-ready', 'Amazon album page left music.amazon.com before replay');
+        }
+        console.log(`[Amazon] album replaying album detail via gql`);
+        const outcome = await this.replayGql(win, entry, request);
+        if (outcome.error) throw notReady('lookup-failed', outcome.error);
+        const { album, envelope } = albumDetailFromGql(outcome.parsed && outcome.parsed.data);
+        if (!envelope) {
+          console.warn(`[Amazon] album lookup: response was not an album detail envelope for ${asin}`);
+          throw notReady('lookup-failed', 'Amazon album response was not an album detail envelope');
+        }
+        if (album && album.trackCount > album.tracks.length) {
+          console.warn(`[Amazon] album lookup truncated: got ${album.tracks.length} of ${album.trackCount} tracks`);
+        }
+        console.log(`[Amazon] album lookup returning ${album ? album.tracks.length : 0} tracks "${album ? album.name : ''}"`);
+        return album;
+      } finally {
+        detach();
+        await this.parkSearchView();
+      }
+    });
+  },
+
 
   // Diagnostic (a developer tool, no UI): load one Amazon Music album page
   // (/albums/<ASIN>) or search page (/search/<text>/<tab>) in the search view
-  // and record the gql operations it fires, for building the plugin's album
-  // search and album lookup, which need request and response shapes only a
-  // live signed-in session shows. Every operation is listed (name, endpoint,
+  // and record the gql operations it fires — the diagnostic the plugin's
+  // album search and album lookup were built from, since those shapes are
+  // only visible from a live signed-in session. Every operation is listed (name, endpoint,
   // redacted variables, header NAMES only: their values carry the session);
   // only the page's own read queries about its subject (gqlRequestIsAboutSubject)
   // are replayed once each, so their response shapes can be read, and those

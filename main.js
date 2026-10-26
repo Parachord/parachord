@@ -3835,6 +3835,40 @@ ipcMain.handle('amazonmusic-lookup-playlist', async (event, { url } = {}) => {
   }
 });
 
+ipcMain.handle('amazonmusic-search-albums', async (event, payload) => {
+  console.log(`[Amazon] IPC album search ${JSON.stringify(payload)}`);
+  try {
+    const albums = await amazonWebPlayer.searchAlbums(payload || {});
+    console.log(`[Amazon] IPC album search done ${(albums && albums.length) || 0} albums`);
+    return { success: true, engine: 'web', albums };
+  } catch (error) {
+    console.warn(`[Amazon] IPC album search failed: ${error && error.reason} ${error && error.message}`);
+    // Same reason passthrough as track search — the resolver decides which
+    // reasons are notReady and which are plain misses.
+    return {
+      success: false,
+      reason: error.reason,
+      error: error.message
+    };
+  }
+});
+
+ipcMain.handle('amazonmusic-lookup-album', async (event, { url } = {}) => {
+  console.log(`[Amazon] IPC album lookup ${url}`);
+  try {
+    const album = await amazonWebPlayer.lookupAlbum(url);
+    console.log(`[Amazon] IPC album done ${(album && album.tracks && album.tracks.length) || 0} tracks`);
+    return { success: true, engine: 'web', album };
+  } catch (error) {
+    console.warn(`[Amazon] IPC album lookup failed: ${error && error.reason} ${error && error.message}`);
+    return {
+      success: false,
+      reason: error.reason,
+      error: error.message
+    };
+  }
+});
+
 // Diagnostic, no UI: record the gql an Amazon Music album or search page
 // fires (amazonWebPlayer.debugCaptureGql) into a JSON file in userData, for
 // building the plugin's album search. Run from DevTools:

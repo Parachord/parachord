@@ -42,7 +42,7 @@ describe('contract', () => {
   const declaring = ids.filter(id => require(path.join(PLUGINS_SRC, id, 'manifest.json')).capabilities?.albumSearch);
 
   test('the album-search plugins are the ones this change covers', () => {
-    expect(declaring.sort()).toEqual(['applemusic', 'bandcamp', 'localfiles', 'spotify', 'subsonic']);
+    expect(declaring.sort()).toEqual(['amazonmusic', 'applemusic', 'bandcamp', 'localfiles', 'spotify', 'subsonic']);
   });
 
   test.each(declaring)('%s implements both searchAlbums and lookupAlbum', (id) => {
