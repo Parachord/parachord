@@ -143,6 +143,15 @@ contextBridge.exposeInMainWorld('electron', {
   // Proxy fetch - bypasses CORS for resolvers
   proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
 
+  // Plex talks to the user's own servers on the LAN (private IPs, *.plex.direct
+  // hosts, sometimes self-signed TLS). Renderer fetch is blocked by CORS and
+  // proxy-fetch refuses private IPs, so Plex requests go through a dedicated
+  // main-process handler scoped to Plex hosts and the user's saved servers
+  // (main-process/ipc/plex-fetch.js).
+  plex: {
+    fetch: (url, options) => ipcRenderer.invoke('plex-fetch', url, options)
+  },
+
   // Crypto utilities for scrobbling
   crypto: {
     md5: (input) => ipcRenderer.invoke('crypto-md5', input)
