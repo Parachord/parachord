@@ -124,4 +124,38 @@ describe('useVolume (Node render probe)', () => {
 
     expect(() => ReactDOMServer.renderToStaticMarkup(global.React.createElement(Probe))).not.toThrow();
   });
+  test('getEffectiveVolume is live to resolverVolumeOffsetsRef mutations (stale-offsets fix)', () => {
+    global.React = require('react');
+    global.ReactDOM = require('react-dom');
+    const ReactDOMServer = require('react-dom/server');
+
+    const ref = () => ({ current: null });
+    let out;
+    const Probe = () => {
+      out = useVolume({
+        cacheLoaded: false,
+        activeResolversRef: ref(),
+        resolverOrderRef: ref(),
+        spotifyTokenRef: ref(),
+        audioRef: ref(),
+        currentTrackRef: ref(),
+        isPlayingRef: ref(),
+        usesSharedAudio: () => false,
+      });
+      return out.volume;
+    };
+    ReactDOMServer.renderToStaticMarkup(global.React.createElement(Probe));
+
+    // Initial defaults: soundcloud offset is 0dB, so 100 passes through.
+    expect(out.getEffectiveVolume(100, 'soundcloud', null)).toBe(100);
+
+    // Mutating the offsets ref after render — exactly what the []-dep
+    // dispatch effects encounter after a Settings change — must apply
+    // immediately. Pre-fix this returned 100 (first-render state closure).
+    out.resolverVolumeOffsetsRef.current = { ...out.resolverVolumeOffsetsRef.current, soundcloud: -12 };
+    expect(out.getEffectiveVolume(100, 'soundcloud', null)).toBeCloseTo(
+      100 * Math.pow(10, -12 / 20),
+      4,
+    );
+  });
 });
