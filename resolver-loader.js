@@ -456,7 +456,9 @@ class ResolverLoader {
       // /user-playlists/<id> is the share-link shape for user-created playlists;
       // it does not contain the literal '/playlists/' substring.
       if (url.includes('/playlists/') || url.includes('/user-playlists/')) return 'playlist';
-      if (url.includes('/albums/')) return 'album';
+      // A song share link is the ALBUM page with ?trackAsin=<trackASIN> — like
+      // Apple Music's ?i=, it is one track, not the album.
+      if (url.includes('/albums/')) return url.includes('trackAsin=') ? 'track' : 'album';
       if (url.includes('/tracks/')) return 'track';
     }
     // Bandcamp

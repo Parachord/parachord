@@ -1050,6 +1050,17 @@ function stripAmazonTitleMarker(title) {
 }
 
 // are identical shapes), and the search flow additionally uses the art.
+// The joined artist credit for a contributingArtists connection: the
+// PRIMARY-role artists, else every named artist. Shared by the playlist and
+// search track mapper, the album search mapper, and the album detail mappers.
+function gqlPrimaryArtistNames(connection) {
+  const artists = (connection && Array.isArray(connection.edges)) ? connection.edges : [];
+  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
+  const all = artists.filter(a => a && a.node && a.node.name);
+  const chosen = primary.length ? primary : all;
+  return chosen.map(a => a.node.name).join(', ');
+}
+
 // Only Track entities import: the search response asks for __typename, and an
 // album/artist-spec edge (an Album node) must never become a track — an album
 // ASIN in the track slot passes the confidence gate on self-titled releases
@@ -1059,12 +1070,7 @@ function playlistTrackFromGqlEdge(edge) {
   const node = edge && edge.node;
   if (!node || !node.id || !node.title) return null;
   if (node.__typename && node.__typename !== 'Track') return null;
-  const artists = (node.contributingArtists && Array.isArray(node.contributingArtists.edges))
-    ? node.contributingArtists.edges : [];
-  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
-  const all = artists.filter(a => a && a.node && a.node.name);
-  const chosen = primary.length ? primary : all;
-  const artist = chosen.map(a => a.node.name).join(', ');
+  const artist = gqlPrimaryArtistNames(node.contributingArtists);
   if (!artist) return null;
   const cleaned = stripAmazonTitleMarker(node.title);
   if (!cleaned.title) return null;
@@ -1189,12 +1195,7 @@ function searchTracksFromGql(data) {
 // slot failure the track parser guards against, in reverse.
 function albumFromGqlSearchNode(node) {
   if (!node || node.__typename !== 'Album' || !node.id) return null;
-  const artists = (node.contributingArtists && Array.isArray(node.contributingArtists.edges))
-    ? node.contributingArtists.edges : [];
-  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
-  const all = artists.filter(a => a && a.node && a.node.name);
-  const chosen = primary.length ? primary : all;
-  const artist = chosen.map(a => a.node.name).join(', ');
+  const artist = gqlPrimaryArtistNames(node.contributingArtists);
   if (!artist) return null;
   const cleaned = stripAmazonTitleMarker(node.title || node.shortTitle || '');
   if (!cleaned.title) return null;
@@ -1243,12 +1244,7 @@ function albumTrackFromGqlEdge(edge) {
   const node = edge && edge.node;
   if (!node || !node.id || !node.title) return null;
   if (node.__typename && node.__typename !== 'Track') return null;
-  const artists = (node.contributingArtists && Array.isArray(node.contributingArtists.edges))
-    ? node.contributingArtists.edges : [];
-  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
-  const all = artists.filter(a => a && a.node && a.node.name);
-  const chosen = primary.length ? primary : all;
-  const artist = chosen.map(a => a.node.name).join(', ');
+  const artist = gqlPrimaryArtistNames(node.contributingArtists);
   if (!artist) return null;
   const cleaned = stripAmazonTitleMarker(node.title);
   if (!cleaned.title) return null;
@@ -1296,12 +1292,7 @@ function albumDetailFromGql(data) {
   }
   const album = data.album;
   if (!album || typeof album !== 'object') return { album: null, envelope: true };
-  const artists = (album.contributingArtists && Array.isArray(album.contributingArtists.edges))
-    ? album.contributingArtists.edges : [];
-  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
-  const all = artists.filter(a => a && a.node && a.node.name);
-  const chosen = primary.length ? primary : all;
-  const artist = chosen.map(a => a.node.name).join(', ');
+  const artist = gqlPrimaryArtistNames(album.contributingArtists);
   const cleaned = stripAmazonTitleMarker(album.title || album.shortTitle || '');
   const edges = (album.tracksConnection && Array.isArray(album.tracksConnection.edges))
     ? album.tracksConnection.edges : [];
@@ -1572,6 +1563,7 @@ module.exports = {
   albumDetailFromGql,
   createSearchBreaker,
   playlistTrackFromGqlEdge,
+  gqlPrimaryArtistNames,
   stripAmazonTitleMarker,
   playlistFromGql,
   playlistPageInfoFromGql,

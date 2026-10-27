@@ -766,6 +766,16 @@ describe('playlist URL routing', () => {
     expect(l.findResolverForUrl('https://music.amazon.com/albums/B07558DQJL?ref=dm_sh')).toBe('amazonmusic');
   });
 
+  test('a song share link (/albums/...?trackAsin=) types as track, not the album', () => {
+    const l = loader();
+    // Amazon's "copy link to song" shape. Typed album, a drop queued every
+    // track on the album; typed track it fails cleanly (the resolver has no
+    // lookupUrl for songs yet), like an unmatched /tracks/ URL.
+    expect(l.getUrlType('https://music.amazon.com/albums/B0H7NR1GWR?trackAsin=B0H7NZ97KH')).toBe('track');
+    expect(l.getUrlType('https://music.amazon.com/albums/B0H7NR1GWR')).toBe('album');
+    expect(l.findResolverForUrl('https://music.amazon.com/albums/B0H7NR1GWR?trackAsin=B0H7NZ97KH')).toBe('amazonmusic');
+  });
+
   test('track pages do not match the playlist or album patterns (the resolver has no lookupUrl)', () => {
     const l = loader();
     expect(l.findResolverForUrl('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();

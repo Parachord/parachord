@@ -259,6 +259,15 @@ function notReady(reason, message) {
 // which the resolver would cache as a 30-day noMatch.
 const LOAD_URL_TIMEOUT_MS = 30000;
 
+// The album catalog fallback on the renderer bounds each catalog step
+// (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js). An
+// album job that waits behind the shared Amazon search chain longer than
+// that budget has a caller that already moved on: skip its page load and
+// return the miss, so track resolution and playlist imports are not starved
+// behind catalog jobs during a MusicBrainz outage. Mirrors the host budget
+// on purpose — the web player cannot read the renderer constant.
+const ALBUM_JOB_STALE_MS = 8000;
+
 // How long quality reads/writes wait for the __r trap to capture the live
 // playbackController store. Live observation (2026-10, hornet 1.18x):
 // storeCaptured stays false on track pages — hornet's factories appear to use
@@ -856,12 +865,16 @@ const amazonWebPlayer = {
   // every search of a resolution run. An envelope with empty edges IS a real
   // miss and returns []. Runs on the search chain: lookupPlaylist and the
   // searches share the search view, so they must not interleave page loads.
-  async specSearch({ url, searchText, specType, parse, noun }) {
+  async specSearch({ url, searchText, specType, parse, noun, staleCheck = null }) {
     if (this.searchBreaker && !this.searchBreaker.allows()) {
       const probe = this.searchBreaker.isProbe() ? ' (probing after cooldown)' : '';
       throw notReady('not-ready', `Amazon search is cooling down after repeated structural failures${probe}`);
     }
     return this.enqueueSearch(async () => {
+      if (staleCheck && staleCheck()) {
+        console.log(`[Amazon] ${specType} search skipped: queued past the ${ALBUM_JOB_STALE_MS}ms catalog budget — the caller already moved on`);
+        return [];
+      }
       const win = await this.ensureWindow('search');
       const mode = await this.layoutSearch(this.searchView);
       console.log(`[Amazon] search mode=${mode} ${url}`);
@@ -979,11 +992,13 @@ const amazonWebPlayer = {
     if (!(await this.isSignedIn())) {
       throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
+    const queuedAt = Date.now();
     return this.specSearch({
       url: spec.url,
       searchText: spec.searchText,
       specType: 'album',
       noun: 'albums',
+      staleCheck: () => Date.now() - queuedAt > ALBUM_JOB_STALE_MS,
       parse: (data) => {
         const { albums, envelope } = searchAlbumsFromGql(data);
         return { rows: albums, envelope };
@@ -1149,7 +1164,12 @@ const amazonWebPlayer = {
     if (!(await this.isSignedIn())) {
       throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
+    const queuedAt = Date.now();
     return this.enqueueSearch(async () => {
+      if (Date.now() - queuedAt > ALBUM_JOB_STALE_MS) {
+        console.log(`[Amazon] album lookup skipped: queued past the ${ALBUM_JOB_STALE_MS}ms catalog budget — the caller already moved on`);
+        return null;
+      }
       const win = await this.ensureWindow('search');
       const mode = await this.layoutSearch(this.searchView);
       const url = `https://music.amazon.com/albums/${asin}`;
@@ -1170,11 +1190,10 @@ const amazonWebPlayer = {
         // window covers a slow load. The entry must have its headers
         // (onBeforeSendHeaders fires milliseconds *after* onBeforeRequest —
         // accepting the body alone races that). Candidates are deduped by
-        // operationName+variables and re-collected each poll: a same-burst
+        // operationName+variables and re-collected each poll, so a same-burst
         // sibling (AlbumSeo fires alongside the detail op on one page load)
-        // shows up a poll apart, so the settle rule waits two quiet polls
-        // after the last new candidate before giving up. Replays are capped —
-        // the common case is one (the detail op wins on the first try).
+        // is picked up whenever it lands. Replays are capped — the common
+        // case is one (the detail op wins on the first try).
         const reqKey = (request) => `${(request && request.operationName) || ''}:${JSON.stringify((request && request.variables) || {})}`;
         const seen = new Set();
         const newCandidates = (anyName) => {
@@ -1214,7 +1233,11 @@ const amazonWebPlayer = {
             }
           }
         };
-        let lastNewCandidateAt = -1;
+        // A replay that won (the loop condition) or errored ends the wait;
+        // while every replay so far was header-only, keep polling to the end
+        // of the window — on a slow load the detail op can lag its SEO
+        // sibling by more than a poll, and settling early here used to be a
+        // bogus miss with the detail op still on its way (review on #1135).
         for (let i = 0; i < 40 && !winner; i++) {
           await new Promise(r => setTimeout(r, 500));
           const href = win.isDestroyed() ? '' : win.webContents.getURL();
@@ -1222,10 +1245,8 @@ const amazonWebPlayer = {
             console.warn(`[Amazon] album lookup blocked: ${href}`);
             throw notReady('not-signed-in', 'Choose an Amazon Music profile');
           }
-          const before = seen.size;
           await tryNewCandidates(false);
-          if (seen.size > before) lastNewCandidateAt = i;
-          if (seen.size > 0 && i - lastNewCandidateAt >= 2) break;
+          if (lastReplayError) break;
         }
         if (!winner) {
           // No winning replay from the album-named pool — either hornet
