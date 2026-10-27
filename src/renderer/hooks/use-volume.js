@@ -8,9 +8,13 @@
 // IPC effects (embed set-volume bridge, macOS system volume/mute monitor).
 //
 // Extracted VERBATIM — every function body + effect body below is a byte-for-
-// byte move out of Parachord. Preserve order and semantics on any edit, and
-// see the latency note in useSpotifyVolumeDispatch below (one stale-closure
-// behavior is deliberately preserved; fixing it is a separate change).
+// byte move out of Parachord. Preserve order and semantics on any edit.
+// The one stale-closure behavior this file carried at extraction (the
+// []-dep embed + system-volume dispatch reading first-render resolver
+// offsets) is FIXED — getEffectiveVolume reads resolverVolumeOffsetsRef.
+// current — via the inline notes at the embed effect. The header used to
+// point at a "useSpotifyVolumeDispatch" note that never existed; the live
+// documentation is at the embed effect below.
 //
 // Rules for this file (the extracted-module rule for hooks):
 //   - React.-qualified hooks only (React.useState etc.) — never bare
