@@ -185,6 +185,11 @@ const FALLBACK_FILE_HEADER = [
 ];
 
 function expectedFallbackFile(plans) {
+  // Order is deliberately deterministic (plugins-src/ readdir order —
+  // alphabetical) rather than the old inline block's accident-of-history.
+  // Entries are byte-identical per id; only array ORDER differs from the
+  // pre-bucket-C block, which only affects the missing-builtins append
+  // order and the degraded-path entry listing.
   const lines = plans.filter((p) => p.fallbackLine).map((p) => p.fallbackLine);
   return FALLBACK_FILE_HEADER.concat(lines, ['];', '']).join('\n');
 }
@@ -248,15 +253,19 @@ async function runImport() {
     console.log(`✅ imported plugins-src/${id}/ (${entries.length} implementation fn${entries.length === 1 ? '' : 's'}${PRETTIFY && entries.length ? ', prettified' : ''})`);
   }
   if (migrated > 0) {
-    console.log(`\nNext: node scripts/build-axes.js${ONLY ? ' --plugin ' + ONLY : ''} regenerates plugins/, app.js and marketplace-manifest.json from the new sources.`);
+    console.log(`\nNext: node scripts/build-axes.js${ONLY ? ' --plugin ' + ONLY : ''} regenerates plugins/, the fallback-resolvers module, and marketplace-manifest.json from the new sources.`);
     console.log('Expect .axe churn only where prettify reformatted single-line strings — all whitespace/quote-level, verified by --check and the jest suite.');
   } else {
     console.log('Nothing to import.');
   }
 }
 
-function collectExpected() {
-  const sourceIds = listSourcePlugins().filter((id) => !ONLY || id === ONLY);
+function collectExpected({ ignoreOnly = false } = {}) {
+  // ignoreOnly: the fallback-resolvers module must ALWAYS describe the full
+  // bundled set — its degraded-path consumer doesn't know about --plugin.
+  // (Found in review: --plugin <id> truncated the module to one entry in
+  // write mode and false-failed a healthy full module in check mode.)
+  const sourceIds = listSourcePlugins().filter((id) => ignoreOnly || !ONLY || id === ONLY);
   const plans = [];
   for (const id of sourceIds) {
     const axe = buildAxe(id);
@@ -273,7 +282,6 @@ function runWrite() {
   // parachord#1099), so a fresh CI checkout doesn't have it at all;
   // writeFileSync(a missing dir) → ENOENT.
   fs.mkdirSync(PLUGINS_DIR, { recursive: true });
-  const fallbackEdits = [];
   const marketplace = readMarketplace();
   let marketplaceDirty = false;
 
@@ -302,7 +310,7 @@ function runWrite() {
     }
   }
 
-  const expectedFallback = expectedFallbackFile(plans);
+  const expectedFallback = expectedFallbackFile(collectExpected({ ignoreOnly: true }));
   const existingFallback = fs.existsSync(GENERATED_FALLBACK_PATH) ? fs.readFileSync(GENERATED_FALLBACK_PATH, 'utf8') : null;
   if (existingFallback !== expectedFallback) {
     fs.mkdirSync(path.dirname(GENERATED_FALLBACK_PATH), { recursive: true });
@@ -345,7 +353,7 @@ function runCheck() {
     }
   }
 
-  const expectedFallback = expectedFallbackFile(plans);
+  const expectedFallback = expectedFallbackFile(collectExpected({ ignoreOnly: true }));
   if (!fs.existsSync(GENERATED_FALLBACK_PATH)) {
     failures.push(`${path.relative(ROOT, GENERATED_FALLBACK_PATH)} missing — run the writer`);
   } else if (fs.readFileSync(GENERATED_FALLBACK_PATH, 'utf8') !== expectedFallback) {
