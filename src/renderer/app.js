@@ -1105,6 +1105,7 @@ const { trackSlug, slug } = require('./lib/track-slug');
 // is no longer in the local library.
 const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require('./lib/library-changes');
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
+const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
@@ -31147,56 +31148,76 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Fetch friend's most recent track (for on-air status)
+  // Fetch friend's most recent track (for on-air status).
+  // Returns { track, hidesListening }: track is null when there is none;
+  // hidesListening is true when the Last.fm profile hides its recent
+  // listening, false when the fetch succeeded, and null when unknown (an
+  // error, or ListenBrainz, which has no such setting).
   const fetchFriendRecentTrack = async (friend) => {
     try {
       if (friend.service === 'lastfm') {
         const apiKey = getLastfmApiKey();
-        if (!apiKey) return null;
+        if (!apiKey) return { track: null, hidesListening: null };
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=1`;
         const response = await lastfmFetch(url);
         recordFriendPollStatus(friend, response.status);
-        if (!response.ok) return null;
+        if (!response.ok) {
+          const body = response.status === 403 ? await response.json().catch(() => null) : null;
+          return { track: null, hidesListening: isLastfmHiddenListening(response.status, body) ? true : null };
+        }
 
         const data = await response.json();
         const track = data.recenttracks?.track?.[0];
-        if (!track) return null;
+        if (!track) return { track: null, hidesListening: false };
 
         // Check if currently playing (no date means currently playing)
         const isNowPlaying = track['@attr']?.nowplaying === 'true';
         const timestamp = isNowPlaying ? Date.now() : (track.date?.uts ? parseInt(track.date.uts) * 1000 : null);
 
         return {
-          name: track.name,
-          artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
-          album: track.album?.['#text'] || null,
-          timestamp: timestamp,
-          albumArt: track.image?.[2]?.['#text'] || track.image?.[1]?.['#text'] || null
+          track: {
+            name: track.name,
+            artist: track.artist?.['#text'] || track.artist?.name || 'Unknown Artist',
+            album: track.album?.['#text'] || null,
+            timestamp: timestamp,
+            albumArt: track.image?.[2]?.['#text'] || track.image?.[1]?.['#text'] || null
+          },
+          hidesListening: false
         };
       } else if (friend.service === 'listenbrainz') {
         const url = `https://api.listenbrainz.org/1/user/${encodeURIComponent(friend.username)}/listens?count=1`;
         const response = await fetch(url);
         recordFriendPollStatus(friend, response.status);
-        if (!response.ok) return null;
+        if (!response.ok) return { track: null, hidesListening: null };
 
         const data = await response.json();
         const listen = data.payload?.listens?.[0];
-        if (!listen) return null;
+        if (!listen) return { track: null, hidesListening: null };
 
         return {
-          name: listen.track_metadata?.track_name || 'Unknown Track',
-          artist: listen.track_metadata?.artist_name || 'Unknown Artist',
-          album: listen.track_metadata?.release_name || null,
-          timestamp: listen.listened_at ? listen.listened_at * 1000 : null,
-          albumArt: null // ListenBrainz doesn't provide album art in listens - will be fetched via getAlbumArt
+          track: {
+            name: listen.track_metadata?.track_name || 'Unknown Track',
+            artist: listen.track_metadata?.artist_name || 'Unknown Artist',
+            album: listen.track_metadata?.release_name || null,
+            timestamp: listen.listened_at ? listen.listened_at * 1000 : null,
+            albumArt: null // ListenBrainz doesn't provide album art in listens - will be fetched via getAlbumArt
+          },
+          hidesListening: null
         };
       }
-      return null;
+      return { track: null, hidesListening: null };
     } catch (error) {
       console.error(`Error fetching recent track for ${friend.username}:`, error);
-      return null;
+      return { track: null, hidesListening: null };
     }
+  };
+
+  // Record on the friend whether their Last.fm profile hides its recent
+  // listening (hidesListening from fetchFriendRecentTrack); null leaves it.
+  const updateFriendHidesListening = (friend, hidesListening) => {
+    if (hidesListening === null || hidesListening === !!friend.hidesListening) return;
+    setFriends(prev => prev.map(f => f.id === friend.id ? { ...f, hidesListening } : f));
   };
 
   // Fetch friend's weekly stats (top artists + tracks) for AI context caching
@@ -31576,7 +31597,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       };
 
       // Fetch recent track for initial on-air status
-      const recentTrack = await fetchFriendRecentTrack(newFriend);
+      const { track: recentTrack, hidesListening } = await fetchFriendRecentTrack(newFriend);
+      if (hidesListening) newFriend.hidesListening = true;
       if (recentTrack) {
         newFriend.cachedRecentTrack = recentTrack;
         // Resolve the track in background for instant playback
@@ -31815,7 +31837,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     for (const friend of friendsToCheck) {
       if (friendPollBackoffRef.current.shouldSkip(friend.id)) continue;
-      const recentTrack = await fetchFriendRecentTrack(friend);
+      const { track: recentTrack, hidesListening } = await fetchFriendRecentTrack(friend);
+      updateFriendHidesListening(friend, hidesListening);
       if (recentTrack) {
         // Check if track changed before updating
         const previousTrack = friend.cachedRecentTrack;
@@ -32168,7 +32191,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(friend.username)}&api_key=${apiKey}&format=json&limit=50`;
         const response = await lastfmFetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch recent tracks: ${response.status}`);
+        if (!response.ok) {
+          const body = response.status === 403 ? await response.json().catch(() => null) : null;
+          if (isLastfmHiddenListening(response.status, body)) {
+            // Not a failure: the profile hides its recent listening, and the
+            // Recent tab says so (the other tabs still load).
+            updateFriendHidesListening(friend, true);
+            setFriendHistoryData(prev => ({ ...prev, recent: [], recentHidden: true }));
+            return;
+          }
+          throw new Error(`Failed to fetch recent tracks: ${response.status}`);
+        }
+        updateFriendHidesListening(friend, false);
 
         const data = await response.json();
         const recentTracks = data.recenttracks?.track || [];
@@ -32204,7 +32238,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       // Resolution handled by scheduler via IntersectionObserver
-      setFriendHistoryData(prev => ({ ...prev, recent: tracks }));
+      setFriendHistoryData(prev => ({ ...prev, recent: tracks, recentHidden: false }));
     } catch (error) {
       console.error('Failed to load friend recent tracks:', error);
       showToast('Failed to load listening history', 'error');
@@ -44434,6 +44468,10 @@ useEffect(() => {
                 // Recent tab content - matching History page layout
                 !friendHistoryLoading && friendHistoryTab === 'recent' && (() => {
                   const sorted = sortFriendHistory(friendHistoryData.recent);
+                  if (sorted.length === 0 && friendHistoryData.recentHidden) {
+                    return React.createElement('p', { className: 'text-center text-gray-400 py-8' },
+                      `${currentFriend.displayName} hides their recent listening on Last.fm. Their top tracks, albums and artists are in the other tabs.`);
+                  }
                   if (sorted.length === 0) {
                     return React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No recent listens');
                   }
