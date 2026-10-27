@@ -15732,20 +15732,32 @@ ${trackListXml}
         // the old local duplicate had drifted from the canonical guard.
 
         // Helper to find best matching result from search results
-        const findBestMatch = (results, targetArtist, targetTitle) => {
+        const findBestMatch = (results, targetArtist, targetTitle, targetMbid, targetIsrc) => {
           if (!results || results.length === 0) return null;
+          // Tier 1: exact MusicBrainz recording MBID — a definitive identity
+          // match that's immune to artist/title formatting differences.
+          if (targetMbid) {
+            const m = results.find(r => (r.mbid || r.recordingMbid) && (r.mbid === targetMbid || r.recordingMbid === targetMbid));
+            if (m) return m;
+          }
+          // Tier 2: exact ISRC — also a definitive recording-identity match.
+          if (targetIsrc) {
+            const ti = String(targetIsrc).trim().toUpperCase();
+            const m = results.find(r => r.isrc && String(r.isrc).trim().toUpperCase() === ti);
+            if (m) return m;
+          }
           const normTargetArtist = normalizeStr(targetArtist);
           const normTargetTitle = normalizeStr(targetTitle);
-          // First pass: look for exact match (normalized)
+          // Tier 3: exact normalized name (artist + title)
           for (const r of results) {
             if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
               return r;
             }
           }
-          // Second pass: a contains match that is not another version (a
-          // cover, remix or live cut the target title doesn't name). Third
-          // pass: any contains match, so "Song - Remastered"-style catalog
-          // titles and variant-only results still resolve.
+          // Tier 4: a contains match that is not another version (a cover,
+          // remix or live cut the target title doesn't name). Tier 5: any
+          // contains match, so "Song - Remastered"-style catalog titles and
+          // variant-only results still resolve.
           for (const r of results) {
             if (!isOtherVersion(r, targetArtist, targetTitle) && validateResolvedTrack(r, targetArtist, targetTitle)) {
               return r;
@@ -15779,7 +15791,7 @@ ${trackListXml}
               const query = `${trackOrSource.artist} ${trackOrSource.title}`;
               const results = await resolver.search(query, config);
               if (results && results.length > 0) {
-                bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title);
+                bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title, trackOrSource.mbid || trackOrSource.recordingMbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                 if (!bestMatch) {
                   console.warn(`  ⚠️ ${resolver.id} returned ${results.length} results but none matched "${trackOrSource.title}" by "${trackOrSource.artist}"`);
                 }
@@ -15863,7 +15875,7 @@ ${trackListXml}
                   const query = `${canonicalArtist} ${canonicalTitle}`;
                   const results = await resolver.search(query, config);
                   if (results && results.length > 0) {
-                    bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle);
+                    bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle, mbidResult.recording_mbid || trackOrSource.mbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                   }
                 } else if (resolver.resolve) {
                   const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config);
