@@ -33617,7 +33617,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
     const musicKitAvailable = musicKitWeb?.isConfigured;
 
-    if (!spotifyToken && !musicKitAvailable) {
+    // Read the token from the ref, not the render's state. ChatCard is created
+    // once, on the first render, so its copy of this function sees that
+    // render's token state, which is always null: every Shuffleupagus artist
+    // card came back without a photo. The fallback covers the commit before
+    // the ref-sync effect runs.
+    const token = spotifyTokenRef.current || spotifyToken;
+
+    if (!token && !musicKitAvailable) {
       console.log('No music service connected, cannot fetch artist image');
       return null;
     }
@@ -33628,10 +33635,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         let imageUrl = null;
 
         // Try Spotify first if available
-        if (spotifyToken) {
+        if (token) {
           const searchUrl = `https://api.spotify.com/v1/search?q=artist:"${encodeURIComponent(artistName)}"&type=artist&limit=5`;
           const response = await fetch(searchUrl, {
-            headers: { 'Authorization': `Bearer ${spotifyToken}` }
+            headers: { 'Authorization': `Bearer ${token}` }
           });
 
           if (response.ok) {
