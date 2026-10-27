@@ -134,9 +134,17 @@ function useVolume({
     if ((track.youtubeUrl || track.youtubeId) && active.includes('youtube')) return 'youtube';
     if (track.subsonicId && active.includes('subsonic')) return 'subsonic';
     if ((track.filePath || track.fileUrl) && active.includes('localfiles')) return 'localfiles';
+    // A resolver result used directly as a track tags itself with
+    // `sources: ['<id>']` (every bundled .axe does) — no per-plugin field check.
+    if (Array.isArray(track.sources)) {
+      const tagged = track.sources.find(id => typeof id === 'string' && active.includes(id));
+      if (tagged) return tagged;
+    }
 
     // Last resort: return any resolver from sources (even if disabled) for display purposes
-    if (track.sources && typeof track.sources === 'object') {
+    if (Array.isArray(track.sources)) {
+      if (typeof track.sources[0] === 'string') return track.sources[0];
+    } else if (track.sources && typeof track.sources === 'object') {
       const allSources = Object.keys(track.sources).filter(id => !track.sources[id]?.noMatch);
       if (allSources.length > 0) return allSources[0];
     }

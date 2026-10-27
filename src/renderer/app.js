@@ -1879,7 +1879,7 @@ const discordPresenceStatusTone = (status) => {
   return status === 'connected' ? 'good' : 'warn';
 };
 
-const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'youtube'];
+const CANONICAL_RESOLVER_ORDER = ['spotify', 'applemusic', 'amazonmusic', 'bandcamp', 'soundcloud', 'localfiles', 'subsonic', 'plex', 'youtube'];
 
 // Insert a resolver ID into an order array at its canonical position
 function insertInCanonicalOrder(order, newId) {
@@ -1949,6 +1949,7 @@ const {
 const {
   ResolverCard, McpSettingsSection,
   ScrobblerSettingsCard, FriendMiniPlaybar,
+  PluginSettingsPanel,
 } = require('./components/settings-cards');
 // The Collection page (Track 2b state-domain split): a React.memo'd module
 // fed stable props, so it no longer re-renders on every Parachord setState.
@@ -7104,8 +7105,8 @@ const Parachord = () => {
 
   // Capability lookups for the shared HTML5 audio element. A resolver that
   // declares capabilities.html5Stream (with getStreamUrl in its .axe) plays an
-  // http(s) URL through that element without the host naming it: Subsonic
-  // today, any self-hosted server tomorrow. Local files and SoundCloud
+  // http(s) URL through that element without the host naming it: Subsonic and
+  // Plex today, any self-hosted server tomorrow. Local files and SoundCloud
   // share the element but have their own play paths.
   const findLoadedResolver = (id) => (id ? (loadedResolversRef.current || []).find(r => r.id === id) : undefined);
   // Display-name lookup for engine-side labels/toasts — id→name via the
@@ -12421,9 +12422,10 @@ ${trackListXml}
     };
     if (configs[resolverId]) return configs[resolverId];
     // Any other plugin: whatever its settings panel saved into
-    // meta_service_configs (Subsonic's server URL, username and password, for
-    // one). Read through the ref so search/play see the latest save, and from
-    // the store if the startup bulk load hasn't filled the ref yet.
+    // meta_service_configs (a plugin-rendered panel writes there through
+    // ctx.saveConfig — Plex's account token + library selection, for one).
+    // Read through the ref so search/play see the latest save, and from the
+    // store if the startup bulk load hasn't filled the ref yet.
     return savedPluginConfig(
       resolverId,
       metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId],
@@ -12677,7 +12679,7 @@ ${trackListXml}
     const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic' || activeResolver === 'amazonmusic';
     const isLocalFile = activeResolver === 'localfiles';
     const isEmbedPlayer = !!embedPlayerKind(activeResolver); // SoundCloud's widget, ... (capabilities.embedPlayer)
-    const isHtml5Stream = isHtml5StreamResolver(activeResolver); // Subsonic, ... (capabilities.html5Stream)
+    const isHtml5Stream = isHtml5StreamResolver(activeResolver); // Subsonic, Plex, ... (capabilities.html5Stream)
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
@@ -41923,7 +41925,7 @@ useEffect(() => {
                             needsConfiguration = true;
                           } else {
                             // A plugin that knows its own config shape (Subsonic,
-                            // ...) answers isConfigured(config) from its .axe.
+                            // Plex, ...) answers isConfigured(config) from its .axe.
                             const loadedForConfig = allResolvers.find(r => r.id === resolver.id);
                             if (typeof loadedForConfig?.isConfigured === 'function') {
                               try { needsConfiguration = !loadedForConfig.isConfigured(metaServiceConfigs[resolver.id] || {}); } catch (e) { /* treat as configured */ }
@@ -44075,7 +44077,8 @@ useEffect(() => {
                     amazonmusic: '#25D1DA',
                     subsonic: '#14b8a6'
                   };
-                  const currentIconColor = resolverIconColors[currentResolverId] || '#A855F7';
+                  // Plugins not in the map use their manifest colour.
+                  const currentIconColor = resolverIconColors[currentResolverId] || resolver.color || '#A855F7';
 
                   return React.createElement('div', { className: 'flex items-center gap-1.5' },
                     // Custom resolver selector with icon
@@ -46219,6 +46222,33 @@ useEffect(() => {
               })
             )
           ),
+
+          // Plugin-rendered settings (settings.authType 'custom' + renderSettings
+          // in the .axe — Plex is the first). The host supplies React and config
+          // read/write through ctx; the plugin owns the UI. See PluginSettingsPanel.
+          ((selectedResolver.settings?.authType === 'custom') || selectedResolver.authType === 'custom') && (() => {
+            const pluginId = selectedResolver.id;
+            const loaded = resolverLoaderRef.current?.getResolver(pluginId);
+            if (!loaded || typeof loaded.renderSettings !== 'function') return null;
+            const ctx = {
+              React,
+              resolver: loaded,
+              config: metaServiceConfigs[pluginId] || {},
+              saveConfig: async (next) => {
+                await saveMetaServiceConfig(pluginId, next);
+                delete resolverConfigCache.current[pluginId];
+              },
+              clearConfig: async () => {
+                await clearMetaServiceConfig(pluginId);
+                delete resolverConfigCache.current[pluginId];
+              },
+              isActive: activeResolvers.includes(pluginId),
+              setActive: (on) => { if (!!on !== activeResolvers.includes(pluginId)) toggleResolver(pluginId); },
+              showToast,
+              showConfirmDialog
+            };
+            return React.createElement(PluginSettingsPanel, { key: pluginId, resolver: loaded, ctx });
+          })(),
 
           // Authentication section (for services that require it)
           selectedResolver.id === 'spotify' && React.createElement('div', {

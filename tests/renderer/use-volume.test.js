@@ -169,3 +169,43 @@ describe('useVolume (Node render probe)', () => {
     );
   });
 });
+
+describe('determineResolverIdFromTrack with a resolver result as the track', () => {
+  // A plugin's search result tags itself with sources: ['<id>'], an array, where
+  // a resolved track's sources is an object keyed by resolver id.
+  function resolverIdFor(track, active) {
+    global.React = require('react');
+    global.ReactDOM = require('react-dom');
+    const ReactDOMServer = require('react-dom/server');
+    const ref = (current = null) => ({ current });
+    let out;
+    const Probe = () => {
+      out = useVolume({
+        cacheLoaded: false,
+        activeResolversRef: ref(active),
+        resolverOrderRef: ref([]),
+        spotifyTokenRef: ref(),
+        audioRef: ref(),
+        currentTrackRef: ref(),
+        isPlayingRef: ref(),
+        usesSharedAudio: () => false,
+      });
+      return out.volume;
+    };
+    ReactDOMServer.renderToStaticMarkup(global.React.createElement(Probe));
+    return out.determineResolverIdFromTrack(track);
+  }
+
+  test('an active tagged resolver is used', () => {
+    expect(resolverIdFor({ sources: ['plex'] }, ['spotify', 'plex'])).toBe('plex');
+  });
+
+  test('a disabled tagged resolver is still named for display, not its array index', () => {
+    expect(resolverIdFor({ sources: ['plex'] }, ['spotify'])).toBe('plex');
+  });
+
+  test('a sources object still works as before', () => {
+    expect(resolverIdFor({ sources: { subsonic: {} } }, ['subsonic'])).toBe('subsonic');
+    expect(resolverIdFor({ sources: { subsonic: {} } }, ['spotify'])).toBe('subsonic');
+  });
+});
