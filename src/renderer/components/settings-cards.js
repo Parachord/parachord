@@ -512,10 +512,26 @@ function SettingsSection({ title, description, children, ...rest }) {
     children);
 }
 
+// Settings panel for a plug-in that draws its own UI: settings.authType
+// 'custom' in the manifest and renderSettings(ctx) in the .axe (Plex is the
+// first). This wrapper is a real component, so the plug-in may call hooks
+// through ctx.React as long as it calls them unconditionally. A render error
+// shows in place instead of taking the settings dialog down.
+const PluginSettingsPanel = ({ resolver, ctx }) => {
+  try {
+    return resolver.renderSettings(ctx) || null;
+  } catch (e) {
+    console.error(`${resolver.id} renderSettings failed:`, e);
+    return React.createElement('p', { style: { padding: '16px 0', fontSize: '12px', color: 'var(--text-danger)' } },
+      `${resolver.name || resolver.id} couldn’t show its settings. Try reinstalling the plug-in.`);
+  }
+};
+
 module.exports = {
   SettingsSection,
   ResolverCard,
   McpSettingsSection,
   ScrobblerSettingsCard,
   FriendMiniPlaybar,
+  PluginSettingsPanel,
 };
