@@ -10,8 +10,10 @@
 //                     ▼  node scripts/build-axes.js
 //       plugins/<id>.axe                  (wire format — UNCHANGED; what the
 //                                         renderer AND the mobile runtime load)
-//       app.js FALLBACK_RESOLVERS entry   (compact one-line copy, replaced in place)
-//       marketplace-manifest.json         (entry version sync)
+//       src/renderer/lib/fallback-resolvers.generated.js
+//                                         (gitignored module — the FALLBACK_RESOLVERS
+//                                         array src/renderer/app.js requires)
+//       marketplace-manifest.json         (entry version sync; the ONLY tracked output)
 //
 // Modes:
 //   (default)      write all three artifacts for every plugins-src plugin
@@ -28,9 +30,11 @@
 // .axe is a generated, untracked artifact — verify it with `node
 // scripts/build-axes.js --check` locally instead of reading 4KB JSON string
 // lines. On every PR the gates live in .github/workflows/test.yml: the drift
-// gate (git diff --exit-code on the committed tracked outputs —
-// src/renderer/app.js FALLBACK block + marketplace-manifest.json versions)
-// and the PR-only version-bump gate (scripts/check-plugin-version-bumps.js).
+// gate (git diff --exit-code on the committed tracked output —
+// marketplace-manifest.json; the fallback module is byte-compared by
+// `build-axes --check` against plugins-src so it cannot drift against what
+// the PR committed) and the PR-only version-bump gate
+// (scripts/check-plugin-version-bumps.js).
 //
 // Version bumps: edit manifest.version in plugins-src/<id>/manifest.json, then
 // run the writer. It syncs the marketplace entry version and warns when .axe
