@@ -46,7 +46,7 @@ jobs:
         # without committing the regenerated FALLBACK_RESOLVERS block and
         # marketplace-manifest versions fails here.
         run: |
-          if ! git diff --exit-code -- src/renderer/app.js marketplace-manifest.json; then
-            echo "::error::build-axes rewrote committed files — run 'node scripts/build-axes.js' and commit src/renderer/app.js plus marketplace-manifest.json"
+          if ! git diff --exit-code -- src/renderer/app.js marketplace-manifest.json amazon-player-preload.js; then
+            echo "::error::a generator rewrote a committed file — run 'node scripts/build-axes.js' (+ 'node scripts/build-amazon-preload.js' for the Amazon preload) and commit"
             exit 1
           fi

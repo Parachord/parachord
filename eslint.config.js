@@ -129,6 +129,7 @@ const STRICT_FILES = [
   'scripts/build-axes.js',
   'scripts/build-renderer.js',
   'scripts/check-plugin-version-bumps.js',
+  'scripts/build-amazon-preload.js',
 ];
 
 module.exports = [
