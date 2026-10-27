@@ -383,9 +383,15 @@ describe('app.js integration', () => {
   });
 
   test('resolver volume offsets include subsonic (neutral)', () => {
-    const m = appSrc.match(/const \[resolverVolumeOffsets, setResolverVolumeOffsets\] = useState\(\{([\s\S]*?)\}\)/);
+    // The offsets map moved to the volume hook (Track 2b slice 1):
+    // src/renderer/hooks/use-volume.js owns the defaults now; app.js keeps
+    // only the hook destructure.
+    const hookSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-volume.js'), 'utf8');
+    const m = hookSrc.match(/function defaultResolverVolumeOffsets\(\) \{[\s\S]*?return \{([\s\S]*?)\};/);
     expect(m).toBeTruthy();
     expect(m[1]).toContain('subsonic');
+    expect(m[1]).toContain('subsonic: 0');
+    expect(appSrc).toContain('useVolume({');
   });
 
   test('shared HTML5 element is created once and every path uses it', () => {
