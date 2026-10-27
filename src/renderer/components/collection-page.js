@@ -1340,7 +1340,18 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       },
                         React.createElement('span', { style: { color: '#22c55e' } }, '\u266A '),
                         `${friend.cachedRecentTrack.name}`
-                      )
+                      ),
+                      // A Last.fm profile that hides its recent listening is never
+                      // on-air; say why instead of leaving the card blank.
+                      !onAir && friend.hidesListening && React.createElement('div', {
+                        title: 'This Last.fm profile hides its recent listening',
+                        style: {
+                          marginTop: '6px',
+                          fontSize: '11px',
+                          color: 'var(--text-tertiary)',
+                          textAlign: 'center'
+                        }
+                      }, 'Listening hidden')
                     );
                   })
                 )
