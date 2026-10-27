@@ -133,7 +133,7 @@ const STRICT_FILES = [
 ];
 
 module.exports = [
-  { ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'app.js', 'app.js.map', 'vendor/**', 'plugins/**', 'smart-links/**', 'parachord-extension/**', 'raycast-extension/**'] },
+  { ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'app.js', 'app.js.map', 'vendor/**', 'plugins/**', 'src/renderer/lib/fallback-resolvers.generated.js', 'smart-links/**', 'parachord-extension/**', 'raycast-extension/**'] },
 
   // Parse-level errors everywhere first (syntax only).
   {

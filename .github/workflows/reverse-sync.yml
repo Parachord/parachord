@@ -439,12 +439,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -b "$BRANCH"
-          # Stage the SOURCE + every regenerated artifact. plugins/
-          # disappears from this add once the artifacts are untracked
-          # (parachord#1099 PR A); until then it keeps the pre-A tracked
-          # state self-consistent. app.js carries the regenerated FALLBACK
-          # block whenever an adopted plugin's manifest changed.
-          git add plugins-src/ plugins/ marketplace-manifest.json src/renderer/app.js
+          # Stage the SOURCE + every tracked output. plugins/ is gitignored
+          # (directory arg silently no-ops); the fallback-resolvers module is
+          # gitignored too (bucket C), so the only generated writer outputs
+          # that ride along in a PR are plugins-src/ and marketplace-manifest.json.
+          git add plugins-src/ plugins/ marketplace-manifest.json
           git commit -m "Reverse sync: plugins repo → monorepo"
 
           # Push with the token inline (checkout is persist-credentials:

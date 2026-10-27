@@ -43,10 +43,14 @@ jobs:
       - name: Generated outputs are committed (plugin drift gate)
         # tests/plugins/axes-drift.test.js replacement: the writer must be a
         # no-op against what the PR committed. A PR that edits plugins-src/
-        # without committing the regenerated FALLBACK_RESOLVERS block and
-        # marketplace-manifest versions fails here.
+        # without committing the regenerated marketplace-manifest versions
+        # fails here. (The FALLBACK half of the old remit moved to bucket C:
+        # the array now lives in a gitignored generated module, byte-compared
+        # by `build-axes --check` against plugins-src, so it can no longer
+        # drift against what the PR committed — it isn't tracked at all.)
         run: |
-          if ! git diff --exit-code -- src/renderer/app.js marketplace-manifest.json amazon-player-preload.js; then
+          if ! git diff --exit-code -- marketplace-manifest.json amazon-player-preload.js; then
             echo "::error::a generator rewrote a committed file — run 'node scripts/build-axes.js' (+ 'node scripts/build-amazon-preload.js' for the Amazon preload) and commit"
+
             exit 1
           fi
