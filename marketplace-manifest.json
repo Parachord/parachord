@@ -568,7 +568,7 @@
     {
       "id": "subsonic",
       "name": "Subsonic",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "author": "Parachord Team",
       "description": "Stream music from your self-hosted Subsonic-compatible server (Navidrome, Subsonic, Airsonic, Gonic, ...). Configure the server URL, username and password in settings.",
       "icon": "📡",
