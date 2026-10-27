@@ -1,4 +1,4 @@
-// Source of truth for plugins/subsonic.axe v0.2.1
+// Source of truth for plugins/subsonic.axe v0.3.0
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -346,6 +346,59 @@ module.exports = {
     } catch (error) {
       console.error('Subsonic album search error:', error);
       return [];
+    }
+  },
+  // An artist photo from the user's own server (docs/architecture/plugins.md,
+  // "searchArtistImage"), for artists in the library: search3 for the artist,
+  // then the OpenSubsonic artistImageUrl or getArtistInfo2's image. Only a
+  // URL without credentials is returned: a getCoverArt URL bakes u=/t=/s=
+  // into it, and the host persists artist photos in its image cache.
+  // Navidrome's share links (/share/img/<id>) carry no account credentials.
+  searchArtistImage: async function (artistName, config) {
+    try {
+      var name = (artistName || '').trim();
+      if (name.length < 2 || !(config && config.serverUrl && config.username && config.password)) return null;
+      if (!window.__subsonicHelpers) await this.getStreamUrl({ subsonicId: 'init' }, config);
+      var h = window.__subsonicHelpers;
+      if (!h) return null;
+      var clean = function (u) {
+        if (typeof u !== 'string' || !/^https?:\/\//i.test(u)) return null;
+        if (/[?&](u|t|s|p|token|jwt|apikey|api_key)=/i.test(u)) return null;
+        // Last.fm's grey-star placeholder, relayed by servers that ask Last.fm.
+        if (u.indexOf('2a96cbd8b46e442fc41c2b86b821562f') !== -1) return null;
+        return u;
+      };
+      var call = async function (endpoint, extra) {
+        var url = h.apiUrl(config, endpoint, 'f=json&' + extra);
+        if (!url) return null;
+        var resp = await fetch(url);
+        if (!resp.ok) return null;
+        var data = await resp.json();
+        var sub = data && data['subsonic-response'];
+        return sub && sub.status === 'ok' ? sub : null;
+      };
+      var found = await call(
+        'search3',
+        'query=' + encodeURIComponent(name) + '&artistCount=5&albumCount=0&songCount=0',
+      );
+      var artists = (found && found.searchResult3 && found.searchResult3.artist) || [];
+      var wanted = name.toLowerCase();
+      var artist = null;
+      for (var i = 0; i < artists.length; i++) {
+        if (artists[i] && artists[i].name && artists[i].name.trim().toLowerCase() === wanted) {
+          artist = artists[i];
+          break;
+        }
+      }
+      if (!artist || !artist.id) return null;
+      var direct = clean(artist.artistImageUrl);
+      if (direct) return direct;
+      var info = await call('getArtistInfo2', 'id=' + encodeURIComponent(artist.id));
+      var ai = info && info.artistInfo2;
+      return (ai && (clean(ai.largeImageUrl) || clean(ai.mediumImageUrl))) || null;
+    } catch (error) {
+      console.error('Subsonic artist image error:', error);
+      return null;
     }
   },
   // An album's tracks (getAlbum), for a "subsonic:album:<id>" url from

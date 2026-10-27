@@ -94,7 +94,7 @@ beforeEach(() => {
 describe('subsonic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('subsonic');
-    expect(axe.manifest.version).toBe('0.2.1');
+    expect(axe.manifest.version).toBe('0.3.0');
   });
 
   test('declares streaming capabilities with userpass auth', () => {
@@ -118,7 +118,7 @@ describe('subsonic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['cleanup', 'getStreamUrl', 'init', 'isConfigured', 'lookupAlbum', 'play', 'resolve', 'search', 'searchAlbums'].sort()
+      ['cleanup', 'getStreamUrl', 'init', 'isConfigured', 'lookupAlbum', 'play', 'resolve', 'search', 'searchAlbums', 'searchArtistImage'].sort()
     );
   });
 });
@@ -483,6 +483,63 @@ describe('subsonic album search (capabilities.albumSearch)', () => {
     const resolver = instantiate(axe);
     const calls = mockFetch(() => subsonicOk({}));
     expect(await resolver.searchAlbums({ artist: 'Radiohead', title: 'Amnesiac' }, {})).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('subsonic artist images (capabilities.artistImage)', () => {
+  const subsonicOk = (body) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ 'subsonic-response': { status: 'ok', ...body } })
+  });
+
+  test('declares artistImage', () => {
+    expect(axe.capabilities.artistImage).toBe(true);
+  });
+
+  test('returns the OpenSubsonic artistImageUrl of the exact-name artist', async () => {
+    const resolver = instantiate(axe);
+    const calls = mockFetch(() => subsonicOk({
+      searchResult3: { artist: [
+        { id: 'ar-2', name: 'Radiohead Tribute Band', artistImageUrl: 'http://navidrome.local:4533/share/img/other' },
+        { id: 'ar-1', name: 'Radiohead', artistImageUrl: 'http://navidrome.local:4533/share/img/eyJhbGc?size=600' }
+      ] }
+    }));
+    expect(await resolver.searchArtistImage('radiohead', CONFIG)).toBe('http://navidrome.local:4533/share/img/eyJhbGc?size=600');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('/rest/search3.view?');
+    expect(calls[0]).toContain('artistCount=5');
+  });
+
+  test('falls back to getArtistInfo2, and never returns a credentialed URL', async () => {
+    const resolver = instantiate(axe);
+    const calls = mockFetch((url) => url.includes('/search3.view')
+      ? subsonicOk({ searchResult3: { artist: [{ id: 'ar-1', name: 'Radiohead', artistImageUrl: 'http://navidrome.local:4533/rest/getCoverArt.view?id=ar-1&u=alice&t=abc&s=def' }] } })
+      : subsonicOk({ artistInfo2: { largeImageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/abc.jpg' } }));
+    expect(await resolver.searchArtistImage('Radiohead', CONFIG)).toBe('https://lastfm.freetls.fastly.net/i/u/300x300/abc.jpg');
+    expect(calls[1]).toContain('/rest/getArtistInfo2.view?');
+    expect(calls[1]).toContain('id=ar-1');
+  });
+
+  test("Last.fm's placeholder star is a miss", async () => {
+    const resolver = instantiate(axe);
+    mockFetch((url) => url.includes('/search3.view')
+      ? subsonicOk({ searchResult3: { artist: [{ id: 'ar-1', name: 'Radiohead' }] } })
+      : subsonicOk({ artistInfo2: { largeImageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png' } }));
+    expect(await resolver.searchArtistImage('Radiohead', CONFIG)).toBe(null);
+  });
+
+  test('an artist not in the library is a miss', async () => {
+    const resolver = instantiate(axe);
+    mockFetch(() => subsonicOk({ searchResult3: { artist: [{ id: 'ar-9', name: 'Radiohead Tribute Band' }] } }));
+    expect(await resolver.searchArtistImage('Radiohead', CONFIG)).toBe(null);
+  });
+
+  test('no server configured: no request', async () => {
+    const resolver = instantiate(axe);
+    const calls = mockFetch(() => subsonicOk({}));
+    expect(await resolver.searchArtistImage('Radiohead', {})).toBe(null);
     expect(calls).toHaveLength(0);
   });
 });

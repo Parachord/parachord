@@ -17,7 +17,7 @@ const body = (startMarker, endMarker) => {
   return start === -1 || end === -1 ? '' : src.slice(start, end);
 };
 
-const getArtistImage = body('const getArtistImage = async (artistName) => {', '\n  };\n');
+const getArtistImage = body('const getArtistImage = async (artistName, { mbid = null } = {}) => {', '\n  };\n');
 const chatCard = body('chatCardRef.current = React.memo(', 'const ChatCard = chatCardRef.current;');
 
 describe('getArtistImage token', () => {

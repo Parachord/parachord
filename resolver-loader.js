@@ -374,6 +374,41 @@ class ResolverLoader {
   }
 
   /**
+   * Resolvers that can find a photo of an artist by name: they declare
+   * capabilities.artistImage and implement searchArtistImage
+   * (docs/architecture/plugins.md, "searchArtistImage"). getArtistImage asks
+   * the user's active ones after Spotify and Apple Music.
+   * @returns {object[]}
+   */
+  getArtistImageResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.artistImage &&
+      typeof r.searchArtistImage === 'function'
+    );
+  }
+
+  /**
+   * Ask one resolver for an artist photo.
+   * @param {string} resolverId
+   * @param {string} artistName
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<string|null>} an image URL; null on a miss or error
+   */
+  async searchArtistImage(resolverId, artistName, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.artistImage || typeof resolver.searchArtistImage !== 'function' || !artistName) {
+      return null;
+    }
+    try {
+      const url = await resolver.searchArtistImage(artistName, configOverride || resolver.config || {});
+      return typeof url === 'string' && url ? url : null;
+    } catch (error) {
+      console.error(`Artist image error for ${resolverId}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Load an album that searchAlbums returned, from the resolver that returned
    * it. Not routed by URL pattern: an album url can be private to its plugin
    * (subsonic:album:<id>, localfiles:album:...) and match no urlPatterns.
