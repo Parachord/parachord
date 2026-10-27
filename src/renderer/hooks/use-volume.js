@@ -19,6 +19,20 @@
 //   - No window access at module import time (the render-smoke test requires
 //     this file under plain Node).
 //   - Inputs arrive as refs/parameters, never component-state closures.
+//
+// Effect-order note (raised in review on #1137): React runs effects in
+// declaration order, so this hook's effects fire wherever Parachord CALLS
+// useVolume. The offsets re-apply effect previously ran after the
+// activeResolversRef/resolverOrderRef sync effect; it now runs before — in
+// the startup commit (cache load setting active resolvers + restored track
+// + cacheLoaded together) determineResolverIdFromTrack sees the initial
+// empty active list for a restored track without _activeResolver. In
+// practice this is inert (a restored current track normally CARRIES
+// _activeResolver, and there is no audio element at that moment), but later
+// slices move more effects: any effect moved into a hook runs at the
+// hook's call site, before every effect declared below it in app.js — a
+// regression here would only show as a runtime symptom, not a test
+// failure.
 
 /**
  * Pure effective-volume math: base volume + resolver offset + per-track

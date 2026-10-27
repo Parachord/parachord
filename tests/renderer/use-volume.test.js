@@ -14,6 +14,9 @@
  * the bundle hides but Node throws — surface here).
  */
 
+const fs = require('fs');
+const path = require('path');
+
 const { computeEffectiveVolume, useVolume } = require('../../src/renderer/hooks/use-volume.js');
 
 // Defaults mirroring defaultResolverVolumeOffsets() in the hook module.
@@ -71,27 +74,25 @@ describe('computeEffectiveVolume', () => {
   });
 });
 
-// Keep in sync with the destructure in src/renderer/app.js's useVolume call.
-const EXPECTED_KEYS = [
-  'volume',
-  'setVolume',
-  'isMuted',
-  'setIsMuted',
-  'volumeRef',
-  'isMutedRef',
-  'preMuteVolumeRef',
-  'resolverVolumeOffsets',
-  'setResolverVolumeOffsets',
-  'resolverVolumeOffsetsRef',
-  'trackVolumeAdjustments',
-  'spotifyVolumeTimeoutRef',
-  'amazonMusicVolumeTimeoutRef',
-  'getEffectiveVolume',
-  'setSpotifyVolume',
-  'setSpotifyVolumeDebounced',
-  'applyLocalFileVolume',
-  'determineResolverIdFromTrack',
-];
+// Read the names straight from app.js's useVolume destructure — NOT a
+// hand-kept copy. A hand list stays green when someone adds a name to the
+// destructure and forgets the hook's return (the #1061 class is then
+// invisible again): the destructure itself is the document.
+const appSrcForKeys = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+// Anchored to the 2-space component-scope 'const {' (module-level requires
+// at line ~1100 live at column 0 — an unanchored 'const {' would walk back
+// to them and capture their names).
+const destructureMatch = appSrcForKeys.match(
+  /^ {2}const \{\n([\s\S]*?)^ {2}\} = useVolume\(\{/m,
+);
+if (!destructureMatch) {
+  throw new Error('useVolume destructure not found in src/renderer/app.js — the hook call moved or changed shape');
+}
+const EXPECTED_KEYS = destructureMatch[1]
+  .split(',')
+  .map((s) => s.trim())
+  .filter((s) => /^\w+(\s+as\s+\w+)?$/.test(s))
+  .map((s) => s.split(/\s+as\s+/).pop());
 
 describe('useVolume (Node render probe)', () => {
   test('module loads under plain Node and renders in a probe component with stubbed globals', () => {
