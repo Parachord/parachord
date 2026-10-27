@@ -3002,6 +3002,11 @@ registerStoreIpc({ ipcMain, store, app, getPluginsCacheDir });
 const { registerAuthServerIpc } = require('./main-process/ipc/auth-server');
 registerAuthServerIpc({ ipcMain, store, getAuthServerState: () => authServerState });
 
+// Plex-scoped HTTP for the Plex resolver (plex.tv, *.plex.direct and the
+// user's saved server connections only; see main-process/ipc/plex-fetch.js).
+const { registerPlexFetchIpc } = require('./main-process/ipc/plex-fetch');
+registerPlexFetchIpc({ ipcMain, store });
+
 // ─── In-app announcements ────────────────────────────────────────────────────
 // Polls a public JSON file on achordion.xyz for product announcements
 // (banner notifications). The fetched payload is cached in electron-store
