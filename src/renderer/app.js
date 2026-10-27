@@ -20703,8 +20703,7 @@ ${trackListXml}
                       id: `spotify-${a.id}`,
                       name: a.name,
                       type: a.type === 'artist' ? 'Person' : 'Group',
-                      _source: 'spotify',
-                      _spotifyImage: a.images?.[0]?.url || null
+                      _source: 'spotify'
                     }));
                   } catch (e) {
                     if (e.name !== 'AbortError') console.warn('Spotify artist search supplement failed:', e);
