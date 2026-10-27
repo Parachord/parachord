@@ -43,6 +43,16 @@ const {
   amazonPlayGenerationStamp,
   amazonSpecSearchRequest,
   searchTracksFromGql,
+  amazonAlbumSearchUrl,
+  amazonAlbumAsinFromUrl,
+  amazonAlbumDetailRequest,
+  amazonAlbumDetailCandidates,
+  albumTracksConnectionIn,
+  albumFromGqlSearchNode,
+  searchAlbumsFromGql,
+  albumTrackFromGqlEdge,
+  assignDiscNumbers,
+  albumDetailFromGql,
   createSearchBreaker,
   isAmazonMusicPage
 } = require('../../amazon-music-logic');
@@ -1729,5 +1739,472 @@ describe('amazon halt pause guard', () => {
   test('the stamp is an integer assignment, not interpolated caller text', () => {
     expect(amazonPlayGenerationStamp(4)).toBe('window.__parachordPlayGen = 4;');
     expect(amazonPlayGenerationStamp(4.9)).toBe('window.__parachordPlayGen = 4;');
+  });
+});
+
+describe('amazonAlbumSearchUrl', () => {
+  test('the albums tab carries the same quoted-or query as the songs search', () => {
+    expect(amazonAlbumSearchUrl({ title: 'Dulling the Horns', artist: 'Wild Pink' })).toEqual({
+      url: 'https://music.amazon.com/search/' + encodeURIComponent('"Dulling the Horns" "Wild Pink" OR "Wild Pink" "Dulling the Horns"') + '/albums',
+      searchText: '"Dulling the Horns" "Wild Pink" OR "Wild Pink" "Dulling the Horns"'
+    });
+  });
+
+  test('free text passes through, onto the albums tab', () => {
+    expect(amazonAlbumSearchUrl('wild pink')).toEqual({
+      url: 'https://music.amazon.com/search/wild%20pink/albums',
+      searchText: 'wild pink'
+    });
+  });
+
+  test('a single artist term is still quoted', () => {
+    expect(amazonAlbumSearchUrl({ artist: 'Wild Pink' })).toEqual({
+      url: 'https://music.amazon.com/search/' + encodeURIComponent('"Wild Pink"') + '/albums',
+      searchText: '"Wild Pink"'
+    });
+  });
+
+  test('nothing to search returns null', () => {
+    expect(amazonAlbumSearchUrl({})).toBeNull();
+    expect(amazonAlbumSearchUrl({ title: '  ', artist: '' })).toBeNull();
+  });
+});
+
+describe('amazonAlbumAsinFromUrl', () => {
+  test('parses the canonical album URL', () => {
+    expect(amazonAlbumAsinFromUrl('https://music.amazon.com/albums/B07558DQJL')).toBe('B07558DQJL');
+  });
+
+  test('tolerates the ?ref= tracker the search response carries, trailing slashes and lowercase', () => {
+    expect(amazonAlbumAsinFromUrl('https://music.amazon.com/albums/B07558DQJL?ref=dm_ff_amazonmusic_greenhornet_web')).toBe('B07558DQJL');
+    expect(amazonAlbumAsinFromUrl('https://music.amazon.com/albums/b07558dqjl/')).toBe('B07558DQJL');
+  });
+
+  test('not an album URL — including a 9- or 11-char id — is null', () => {
+    expect(amazonAlbumAsinFromUrl('https://music.amazon.com/tracks/B07554FHF5')).toBeNull();
+    expect(amazonAlbumAsinFromUrl('https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A')).toBeNull();
+    expect(amazonAlbumAsinFromUrl('https://music.amazon.com/albums/B07558DQJ')).toBeNull();
+    expect(amazonAlbumAsinFromUrl('https://music.amazon.com/albums/B07558DQJLL')).toBeNull();
+    expect(amazonAlbumAsinFromUrl('https://example.com/albums/B07558DQJL')).toBeNull();
+    expect(amazonAlbumAsinFromUrl('')).toBeNull();
+    expect(amazonAlbumAsinFromUrl(null)).toBeNull();
+  });
+});
+
+describe('amazonSpecSearchRequest album spec', () => {
+  const search = (searchText, specType) => JSON.stringify({
+    operationName: 'SpecSearchSeeMorePage',
+    variables: {
+      searchText, specType, firstLimit: 30, isAuthenticated: true,
+      audiobooksEnabled: true, merchEnabled: true, categoryInEntityUnionEnabled: false
+    },
+    extensions: {
+      clientLibrary: { name: '@apollo/client', version: '4.1.6' },
+      persistedQuery: { version: 1, sha256Hash: '56f888fd039c581a348e8057e0d61b9495ce835870a2d1ab7b6f2c900e54e15c' }
+    }
+  });
+
+  test('the album spec is accepted only with { spec: "album" }', () => {
+    expect(amazonSpecSearchRequest([search('wild pink', 'album')], 'wild pink', { spec: 'album' }).variables.specType).toBe('album');
+    // Album mode must not accept the track spec — mirror of the track-side
+    // rule that an album ASIN never lands in the track slot.
+    expect(amazonSpecSearchRequest([search('wild pink', 'track')], 'wild pink', { spec: 'album' })).toBeNull();
+    // A body with no specType at all is still accepted (older deploys); the
+    // album parser itself drops any non-Album nodes in that response.
+    expect(amazonSpecSearchRequest([search('wild pink', undefined)], 'wild pink', { spec: 'album' })).not.toBeNull();
+  });
+
+  test('the default mode never matches the album spec no matter the order the page fired them', () => {
+    const bodies = [search('wild pink', 'album'), search('wild pink', 'track')];
+    expect(amazonSpecSearchRequest(bodies, 'wild pink').variables.specType).toBe('track');
+    expect(amazonSpecSearchRequest(bodies, 'wild pink', { spec: 'album' }).variables.specType).toBe('album');
+  });
+});
+
+// The album-detail request the album page fires (live-captured 2026-10):
+// AlbumDetailPage, variables.id = the ASIN, an APQ hash that renumbers per
+// hornet redeploy.
+describe('amazonAlbumDetailRequest / amazonAlbumDetailCandidates', () => {
+  const detail = (asin, operationName = 'AlbumDetailPage') => JSON.stringify({
+    operationName,
+    variables: { id: asin, isAuthenticated: true, includeMerch: true, includeAlbumAbout: false },
+    extensions: {
+      clientLibrary: { name: '@apollo/client', version: '4.1.6' },
+      persistedQuery: { version: 1, sha256Hash: 'f4920eac7f471a63a36f569ecee41972789a03b6342013f3a5781c78f6d7ce55' }
+    }
+  });
+
+  test('finds the album-detail request for our ASIN among everything the page fires', () => {
+    const bodies = [
+      JSON.stringify({ operationName: 'IdentityStoreSeed', variables: {} }),
+      JSON.stringify({ operationName: 'Transport', variables: { id: 'mrn:x' } }),
+      detail('B07558DQJL'),
+      '{not json'
+    ];
+    const req = amazonAlbumDetailRequest(bodies, 'b07558dqjl');
+    expect(req.operationName).toBe('AlbumDetailPage');
+    expect(req.variables.id).toBe('B07558DQJL');
+    expect(req.extensions.persistedQuery.sha256Hash).toBe('f4920eac7f471a63a36f569ecee41972789a03b6342013f3a5781c78f6d7ce55');
+  });
+
+  test('batch arrays are tolerated, and another album\'s detail is not ours', () => {
+    const batch = JSON.stringify([
+      { operationName: 'AppChromeHeaderLeft', variables: {} },
+      JSON.parse(detail('B07H76H4F1'))
+    ]);
+    expect(amazonAlbumDetailRequest([batch], 'B07H76H4F1')).not.toBeNull();
+    expect(amazonAlbumDetailRequest([batch], 'B07558DQJL')).toBeNull();
+  });
+
+  test('the detail op ranks first, then other album-named reads, then (with anyName) any read carrying the ASIN', () => {
+    // Live-captured 2026-10: the real album page fires AlbumSeo (header-only)
+    // with the same variables.id BEFORE AlbumDetailPage. First-arrival is
+    // never the winner: candidates come back detail-named first.
+    const seo = detail('B07558DQJL', 'AlbumSeo');
+    const stray = JSON.stringify({ operationName: 'PlaybackContextSeed', variables: { id: 'B07558DQJL' } });
+    const bodies = [seo, detail('B07558DQJL'), stray];
+    expect(amazonAlbumDetailCandidates(bodies, 'B07558DQJL').map(r => r.operationName))
+      .toEqual(['AlbumDetailPage', 'AlbumSeo']);
+    // default excludes the stray entirely — an unrelated read that happens to
+    // carry the ASIN must not be replayed as the album detail
+    expect(amazonAlbumDetailRequest([stray], 'B07558DQJL')).toBeNull();
+    // { anyName: true } appends it last (the caller's rename hedge) and the
+    // ranked detail op still leads
+    expect(amazonAlbumDetailCandidates(bodies, 'B07558DQJL', { anyName: true }).map(r => r.operationName))
+      .toEqual(['AlbumDetailPage', 'AlbumSeo', 'PlaybackContextSeed']);
+    expect(amazonAlbumDetailRequest([stray], 'B07558DQJL', { anyName: true }).operationName).toBe('PlaybackContextSeed');
+    expect(amazonAlbumDetailRequest(bodies, 'B07558DQJL', { anyName: true }).operationName).toBe('AlbumDetailPage');
+  });
+
+  test('write-shaped operations for the same ASIN are never replayed', () => {
+    expect(amazonAlbumDetailRequest([
+      JSON.stringify({ operationName: 'recordAlbumView', variables: { id: 'B07558DQJL' } })
+    ], 'B07558DQJL')).toBeNull();
+    expect(amazonAlbumDetailRequest([
+      JSON.stringify({ operationName: 'addToLibraryMutation', variables: { id: 'B07558DQJL' } })
+    ], 'B07558DQJL')).toBeNull();
+    expect(amazonAlbumDetailRequest([
+      JSON.stringify({ operationName: 'LibraryWrite', query: ' mutation AddToLibrary($id: ID!) { x }', variables: { id: 'B07558DQJL' } })
+    ], 'B07558DQJL')).toBeNull();
+  });
+
+  test('missing id and empty captures are null', () => {
+    expect(amazonAlbumDetailRequest([JSON.stringify({ operationName: 'AlbumDetailPage', variables: {} })], 'B07558DQJL')).toBeNull();
+    expect(amazonAlbumDetailRequest([], 'B07558DQJL')).toBeNull();
+    expect(amazonAlbumDetailRequest(null, 'B07558DQJL')).toBeNull();
+    expect(amazonAlbumDetailRequest([detail('B07558DQJL')], '')).toBeNull();
+    expect(amazonAlbumDetailRequest([detail('B07558DQJL')], undefined)).toBeNull();
+  });
+});
+
+// The album-spec SpecSearchSeeMorePage response (live-captured 2026-10, the
+// "wild pink" search): edges under data.specificationSearch.result[] whose
+// node is an ALBUM entity (id/title/shortTitle/contributingArtists/images/url
+// — no releaseDate or trackCount in the search spec).
+describe('searchAlbumsFromGql', () => {
+  const albumNode = (id, title, shortTitle, artists, images, explicit) => ({
+    __typename: 'Album',
+    id,
+    uri: 'mrn:1.0:catalog:album:asin:' + id + '?territory=US',
+    title,
+    shortTitle,
+    images: images.map(([url, width, height]) => ({ url, width, height, imageType: 'PRIMARY', __typename: 'Image' })),
+    playParams: {
+      id: 'mrn:1.0:catalog:album:asin:' + id + '?territory=US',
+      selections: ['PLAY', 'SHUFFLE', 'STATION'],
+      __typename: 'PlayParams'
+    },
+    parentalSettings: { hasExplicitLanguage: explicit, __typename: 'ParentalSettings' },
+    url: 'https://music.amazon.com/albums/' + id + '?ref=dm_ff_amazonmusic_greenhornet_web',
+    contributingArtists: {
+      edges: artists.map(a => ({ role: a[1], node: { name: a[0], __typename: 'Artist', id: a[2] || 'B00VNR8ILM' }, __typename: 'ArtistEdge' })),
+      __typename: 'ArtistConnection'
+    },
+    likesContext: { state: 'NEUTRAL', __typename: 'LikesContext' }
+  });
+  const response = (edges, extra = {}) => ({
+    specificationSearch: {
+      id: 'search_3c00ab130b',
+      searchText: 'wild pink',
+      result: [
+        {
+          __typename: 'SpecificationSearchResult',
+          pageInfo: { hasNextPage: !!edges.length, endCursor: null, token: edges.length ? '[redacted]' : null },
+          label: 'requiredButUnused',
+          edges: edges.map(node => ({ __typename: 'EntityEdge', node })),
+          ...extra
+        }
+      ]
+    }
+  });
+
+  test('maps the spec search album edges to the searchAlbums shape', () => {
+    const data = response([
+      albumNode('B0FMW6FYGN', 'Dulling The Horns (Deluxe Edition) [Explicit]', 'Dulling The Horns (Deluxe Edition)',
+        [['Wild Pink', 'PRIMARY']],
+        [['https://m.media-amazon.com/images/I/91OrDh0ADYL.jpg', 2560, 2560], ['https://m.media-amazon.com/images/I/51mBZqGZpnL.jpg', 500, 500]],
+        true),
+      albumNode('B0GZ59Z25F', 'Still Coming Down [Explicit]', 'Still Coming Down',
+        [['Wild Pink', 'PRIMARY']],
+        [['https://m.media-amazon.com/images/I/91KofyX81wL.jpg', 2560, 2560], ['https://m.media-amazon.com/images/I/41RHRLzSB4L.jpg', 500, 500]],
+        true),
+      albumNode('B07CMLR17Z', 'Yolk in the Fur', 'Yolk in the Fur',
+        [['Wild Pink', 'PRIMARY']],
+        [['https://m.media-amazon.com/images/I/61t5hojNMAL.jpg', 1400, 1400], ['https://m.media-amazon.com/images/I/41FQ1rARzML.jpg', 500, 500]],
+        false)
+    ]);
+    const out = searchAlbumsFromGql(data);
+    expect(out.envelope).toBe(true);
+    expect(out.albums).toEqual([
+      {
+        asin: 'B0FMW6FYGN',
+        name: 'Dulling The Horns (Deluxe Edition)',
+        artist: 'Wild Pink',
+        albumArt: 'https://m.media-amazon.com/images/I/91OrDh0ADYL.jpg',
+        url: 'https://music.amazon.com/albums/B0FMW6FYGN',
+        explicit: true
+      },
+      {
+        asin: 'B0GZ59Z25F',
+        name: 'Still Coming Down',
+        artist: 'Wild Pink',
+        albumArt: 'https://m.media-amazon.com/images/I/91KofyX81wL.jpg',
+        url: 'https://music.amazon.com/albums/B0GZ59Z25F',
+        explicit: true
+      },
+      {
+        asin: 'B07CMLR17Z',
+        name: 'Yolk in the Fur',
+        artist: 'Wild Pink',
+        albumArt: 'https://m.media-amazon.com/images/I/61t5hojNMAL.jpg',
+        url: 'https://music.amazon.com/albums/B07CMLR17Z',
+        explicit: false
+      }
+    ]);
+  });
+
+  test('a Track edge in the album spec is dropped — the ASIN-in-the-wrong-slot guard, in reverse', () => {
+    const track = {
+      __typename: 'Track',
+      id: 'B073N3R1KZ',
+      title: 'Eisenherz',
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'Juli', __typename: 'Artist' } }], __typename: 'ArtistConnection' },
+      album: { id: 'B073HX454H', __typename: 'Album', shortTitle: 'In Love' },
+      duration: 276
+    };
+    const out = searchAlbumsFromGql(response([track]));
+    expect(out.envelope).toBe(true);
+    expect(out.albums).toEqual([]);
+  });
+
+  test('a miss is a present envelope with empty edges; an absent envelope is structural', () => {
+    const miss = searchAlbumsFromGql(response([]));
+    expect(miss.envelope).toBe(true);
+    expect(miss.albums).toEqual([]);
+    expect(searchAlbumsFromGql({ somethingElse: {} })).toEqual({ albums: [], envelope: false });
+    expect(searchAlbumsFromGql(null)).toEqual({ albums: [], envelope: false });
+    expect(searchAlbumsFromGql(undefined)).toEqual({ albums: [], envelope: false });
+  });
+
+  test('an album node without an artist or a usable title is dropped', () => {
+    expect(albumFromGqlSearchNode({ __typename: 'Album', id: 'B0X1', title: 'X' })).toBeNull();
+    expect(albumFromGqlSearchNode({
+      __typename: 'Album', id: 'B0X1', title: ' [Explicit]',
+      contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'A' } }] }
+    })).toBeNull();
+    expect(albumFromGqlSearchNode(null)).toBeNull();
+    expect(albumFromGqlSearchNode({ __typename: 'Album', title: 'X', contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'A' } }] } })).toBeNull();
+  });
+});
+
+// The AlbumDetailPage response (live-captured 2026-10 for Master of Puppets /
+// S&M2 / Enema Of The State): data.album with the full title, trackCount,
+// releaseDate, images; tracksConnection.edges[] with NO pageInfo (a 100-track
+// album answered whole), per-disc trackNumbers (1..n, 1..m) and no discNumber
+// field anywhere.
+describe('albumDetailFromGql', () => {
+  const mopArtist = ['Metallica', 'PRIMARY'];
+  const detailTrack = (id, title, shortTitle, trackNumber, duration, artists, explicit = false) => ({
+    __typename: 'Track',
+    id,
+    uri: 'mrn:1.0:catalog:track:asin:' + id + '?territory=US',
+    mediaType: 'AUDIO',
+    title,
+    shortTitle,
+    images: [{ url: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg', width: 1200, height: 1200, imageType: 'PRIMARY', __typename: 'Image' }],
+    contributingArtists: {
+      edges: (artists || [mopArtist]).map(a => ({ role: a[1], node: { name: a[0], __typename: 'Artist' }, __typename: 'ArtistEdge' })),
+      __typename: 'ArtistConnection'
+    },
+    album: { artistNames: 'Metallica', __typename: 'Album' },
+    duration,
+    trackNumber,
+    parentalSettings: { hasExplicitLanguage: explicit, __typename: 'ParentalSettings' },
+    url: 'https://music.amazon.com/tracks/' + id + '/?ref=dm_ff_amazonmusic_greenhornet_web'
+  });
+  const detailAlbum = (edges, over = {}) => ({
+    __typename: 'Album',
+    id: 'B07558DQJL',
+    title: 'Master of Puppets (Remastered)',
+    shortTitle: 'Master of Puppets',
+    images: [
+      { url: 'https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg', width: 1200, height: 1200, imageType: 'PRIMARY', __typename: 'Image' },
+      { url: 'https://m.media-amazon.com/images/I/513OAf2edPL.jpg', width: 500, height: 500, imageType: 'PRIMARY', __typename: 'Image' }
+    ],
+    contributingArtists: {
+      edges: [{ role: 'PRIMARY', node: { name: 'Metallica', __typename: 'Artist', id: 'B000QJPIHU' }, __typename: 'ArtistEdge' }],
+      __typename: 'ArtistConnection'
+    },
+    trackCount: 8,
+    duration: 3284,
+    releaseDate: '1986-02-21T00:00:00.000Z',
+    url: 'https://music.amazon.com/albums/B07558DQJL?ref=dm_ff_amazonmusic_greenhornet_web',
+    parentalSettings: { hasExplicitLanguage: false, __typename: 'ParentalSettings' },
+    tracksConnection: { __typename: 'TrackConnection', edges: edges.map(node => ({ __typename: 'TrackEdge', node })) },
+    ...over
+  });
+
+  test('maps the album and its tracks, keeping the server trackCount over truncated edges', () => {
+    const data = {
+      album: detailAlbum([
+        detailTrack('B07554FHF5', 'Battery (Remastered)', 'Battery', 1, 312),
+        detailTrack('B0755C8JX3', 'Master Of Puppets (Remastered)', 'Master Of Puppets', 2, 515),
+        detailTrack('B07555PLZZ', 'The Thing That Should Not Be (Remastered)', 'The Thing That Should Not Be', 3, 396)
+      ])
+    };
+    const out = albumDetailFromGql(data);
+    expect(out.envelope).toBe(true);
+    expect(out.album.asin).toBe('B07558DQJL');
+    // The full title, not shortTitle: editions distinguish releases. The
+    // album URL is minted from the ASIN, dropping the ?ref= tracker.
+    expect(out.album.name).toBe('Master of Puppets (Remastered)');
+    expect(out.album.artist).toBe('Metallica');
+    expect(out.album.albumArt).toBe('https://m.media-amazon.com/images/I/71RlRk9uwIL.jpg');
+    expect(out.album.releaseDate).toBe('1986-02-21T00:00:00.000Z');
+    expect(out.album.url).toBe('https://music.amazon.com/albums/B07558DQJL');
+    expect(out.album.explicit).toBe(false);
+    // Three edges parsed but the album says eight — the shortfall stays
+    // visible for the caller to log, like a truncated playlist page.
+    expect(out.album.trackCount).toBe(8);
+    expect(out.album.tracks).toEqual([
+      { asin: 'B07554FHF5', title: 'Battery (Remastered)', artist: 'Metallica', duration: 312, trackNumber: 1, explicit: false, discNumber: 1 },
+      { asin: 'B0755C8JX3', title: 'Master Of Puppets (Remastered)', artist: 'Metallica', duration: 515, trackNumber: 2, explicit: false, discNumber: 1 },
+      { asin: 'B07555PLZZ', title: 'The Thing That Should Not Be (Remastered)', artist: 'Metallica', duration: 396, trackNumber: 3, explicit: false, discNumber: 1 }
+    ]);
+  });
+
+  test('disc numbers come from the trackNumber resets (S&M2: 1..10, 1..13)', () => {
+    const live = (id, title, tn, dur) => detailTrack(id, title, title, tn, dur, [['Metallica', 'PRIMARY'], ['San Francisco Symphony', 'PRIMARY']]);
+    const data = {
+      album: detailAlbum([
+        live('B0897X5B49', 'No Leaf Clover (Live)', 9, 330),
+        live('B0897YX5BS', 'Halo on Fire (Live)', 10, 497),
+        live('B0897X532Q', 'Intro to Scythian Suite (Live)', 1, 316),
+        live('B0897YFYZW', 'Scythian Suite, Opus 20 II: The Enemy God And The Dance Of The Dark Spirits (Live)', 2, 219),
+        live('B0897YDVKB', 'Intro to The Iron Foundry (Live)', 3, 62)
+      ], {
+        title: 'S&M2',
+        contributingArtists: {
+          edges: [
+            { role: 'PRIMARY', node: { name: 'Metallica', __typename: 'Artist' }, __typename: 'ArtistEdge' },
+            { role: 'PRIMARY', node: { name: 'San Francisco Symphony', __typename: 'Artist' }, __typename: 'ArtistEdge' }
+          ],
+          __typename: 'ArtistConnection'
+        }
+      })
+    };
+    const out = albumDetailFromGql(data);
+    expect(out.album.artist).toBe('Metallica, San Francisco Symphony');
+    expect(out.album.tracks.map(t => [t.trackNumber, t.discNumber])).toEqual([[9, 1], [10, 1], [1, 2], [2, 2], [3, 2]]);
+    // Per-track artists survive (compilations), joined like the search mapper.
+    expect(out.album.tracks[0].artist).toBe('Metallica, San Francisco Symphony');
+  });
+
+  test('the explicit flag comes from the title marker or parentalSettings (Enema Of The State)', () => {
+    const data = {
+      album: detailAlbum([
+        detailTrack('B07H734KCX', 'Dumpweed [Explicit]', 'Dumpweed', 1, 144, [['blink-182', 'PRIMARY']], true),
+        detailTrack('B07H7338V8', "Don't Leave Me", "Don't Leave Me", 2, 144, [['blink-182', 'PRIMARY']], false)
+      ], {
+        title: 'Enema Of The State [Explicit]',
+        shortTitle: 'Enema Of The State',
+        parentalSettings: { hasExplicitLanguage: true, __typename: 'ParentalSettings' }
+      })
+    };
+    const out = albumDetailFromGql(data);
+    expect(out.album.name).toBe('Enema Of The State');
+    expect(out.album.explicit).toBe(true);
+    expect(out.album.tracks[0].title).toBe('Dumpweed');
+    expect(out.album.tracks[0].explicit).toBe(true);
+    expect(out.album.tracks[1].explicit).toBe(false);
+  });
+
+  test('data.album null is the legitimate not-found, a missing album field is structural', () => {
+    expect(albumDetailFromGql({ album: null })).toEqual({ album: null, envelope: true });
+    expect(albumDetailFromGql({ somethingElse: {} })).toEqual({ album: null, envelope: false });
+    expect(albumDetailFromGql(null)).toEqual({ album: null, envelope: false });
+  });
+
+  test('an album with no tracksConnection still maps, with an empty track list', () => {
+    const album = detailAlbum([]);
+    delete album.tracksConnection;
+    const out = albumDetailFromGql({ album });
+    expect(out.envelope).toBe(true);
+    expect(out.album.tracks).toEqual([]);
+    expect(out.album.trackCount).toBe(8);
+  });
+});
+
+describe('albumTrackFromGqlEdge', () => {
+  test('drops rows that are not tracks or lack the import fields', () => {
+    expect(albumTrackFromGqlEdge(null)).toBeNull();
+    expect(albumTrackFromGqlEdge({ node: null })).toBeNull();
+    expect(albumTrackFromGqlEdge({ node: { __typename: 'Track', id: 'B0X1' } })).toBeNull();
+    expect(albumTrackFromGqlEdge({
+      node: {
+        __typename: 'Track', id: 'B0X1', title: 'Song',
+        contributingArtists: { edges: [{ role: 'FEATURED', node: {} }] }
+      }
+    })).toBeNull();
+    // A non-Track typename (a row hornet added for a podcast) never maps.
+    expect(albumTrackFromGqlEdge({
+      node: {
+        __typename: 'PodcastEpisode', id: 'B0X1', title: 'Song',
+        contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'A' } }] }
+      }
+    })).toBeNull();
+  });
+});
+
+describe('assignDiscNumbers', () => {
+  test('a trackNumber that does not advance starts a new disc; rows without one keep null', () => {
+    const tracks = [
+      { trackNumber: 1 }, { trackNumber: 2 }, { trackNumber: 1 }, { trackNumber: 2 },
+      { title: 'untagged' }, { trackNumber: 3 }
+    ];
+    assignDiscNumbers(tracks);
+    expect(tracks.map(t => t.discNumber)).toEqual([1, 1, 2, 2, null, 2]);
+  });
+});
+
+describe('albumTracksConnectionIn', () => {
+  // Live-captured 2026-10 (the Resodance capture): AlbumDetailPage's response
+  // carries data.album.tracksConnection.edges; AlbumSeo's carries data.album
+  // with title/trackCount and a bare `tracks` field — no tracksConnection.
+  test('the detail response passes, the header-only SEO response does not', () => {
+    expect(albumTracksConnectionIn({
+      album: { id: 'B07558DQJL', title: 'Master of Puppets (Remastered)', tracksConnection: { __typename: 'TrackConnection', edges: [] } }
+    })).toBe(true);
+    expect(albumTracksConnectionIn({
+      album: { id: 'B0H7NR1GWR', title: 'Resodance [Explicit]', trackCount: 12, tracks: { total: 12 } }
+    })).toBe(false);
+  });
+
+  test('nulls and wrong shapes do not pass', () => {
+    expect(albumTracksConnectionIn(null)).toBe(false);
+    expect(albumTracksConnectionIn({})).toBe(false);
+    expect(albumTracksConnectionIn({ album: null })).toBe(false);
+    expect(albumTracksConnectionIn({ album: { tracksConnection: null } })).toBe(false);
+    expect(albumTracksConnectionIn({ album: { tracksConnection: { edges: 'nope' } } })).toBe(false);
   });
 });

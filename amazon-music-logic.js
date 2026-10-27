@@ -898,16 +898,19 @@ function amazonPlaylistDetailRequest(bodies, playlistId) {
 // survives an operation rename, and the text is unique among the page's
 // requests (only the spec search carries it).
 //
-// Only the TRACK spec is ever accepted: an album/artist/playlist spec for
-// the same text is a different entity whose ASIN must never reach playback —
-// an album-shaped edge maps to { asin: <albumAsin>, title, artist } and a
-// self-titled release passes the confidence gate, which is exactly the
+// Only the TRACK spec is accepted by default: an album/artist/playlist spec
+// for the same text is a different entity whose ASIN must never reach
+// playback — an album-shaped edge maps to { asin: <albumAsin>, title, artist }
+// and a self-titled release passes the confidence gate, which is exactly the
 // album-ASIN failure the DOM-era exclusion dance existed to prevent. A body
-// with no specType at all is accepted (older deploys). With { anySpec: true }
-// the first searchText match of ANY spec is returned — used only to detect
-// "the page searched our text, but the track spec never came" (the grace
-// decision in searchTracks), never for replay.
-function amazonSpecSearchRequest(bodies, searchText, { anySpec = false } = {}) {
+// with no specType at all is accepted (older deploys). Pass { spec: 'album' }
+// from album search to accept the album spec instead — the album parser
+// rejects non-Album nodes, so a track-only response is a miss, never a
+// misfiled entity. With { anySpec: true } the first searchText match of ANY
+// spec is returned — used only to detect "the page searched our text, but
+// the wanted spec never came" (the grace decision in searchTracks), never
+// for replay.
+function amazonSpecSearchRequest(bodies, searchText, { anySpec = false, spec = 'track' } = {}) {
   const wanted = String(searchText || '').trim().toLowerCase();
   if (!wanted) return null;
   for (const raw of (Array.isArray(bodies) ? bodies : [])) {
@@ -918,10 +921,83 @@ function amazonSpecSearchRequest(bodies, searchText, { anySpec = false } = {}) {
       const vars = req && req.variables;
       if (!vars || typeof vars.searchText !== 'string') continue;
       if (String(vars.searchText).trim().toLowerCase() !== wanted) continue;
-      if (anySpec || vars.specType == null || vars.specType === 'track') return req;
+      if (anySpec || vars.specType == null || vars.specType === spec) return req;
     }
   }
   return null;
+}
+
+// The albums-tab search page — /search/<q>/albums fires the album-spec
+// SpecSearchSeeMorePage (specType: 'album', same operation and query as the
+// songs tab's track spec — live-verified 2026-10). The query string is built
+// exactly like the songs one: quoted terms OR'd in both orders, since
+// Amazon's matching is order-sensitive in both directions.
+function amazonAlbumSearchUrl(input) {
+  // Same input contract as the web player: a free-text string, or { title,
+  // artist, query } (the album pages send { artist, title }).
+  const opts = typeof input === 'string' ? { query: input } : input;
+  const spec = amazonSongSearchUrl(opts || {});
+  if (!spec) return null;
+  return { url: spec.url.replace(/\/songs$/, '/albums'), searchText: spec.searchText };
+}
+
+// The album page lives at /albums/<ASIN> — a 10-char uppercase ASIN, unlike
+// the long token playlist ids use. The gql search response carries node.url
+// with a ?ref= tracker; both that and the bare canonical form yield the ASIN.
+function amazonAlbumAsinFromUrl(url) {
+  const m = String(url || '').match(/music\.amazon\.com\/albums\/([A-Za-z0-9]{10})(?:[/?#]|$)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// The album-detail request the page fired for OUR album — the same
+// capture-and-replay pattern as playlistDetail. The album page fires it as
+// AlbumDetailPage with variables.id = the ASIN (live-captured 2026-10), but
+// it also fires OTHER reads whose variables carry the ASIN: AlbumSeo (the
+// header-only op — its response has data.album with title/trackCount but no
+// tracksConnection) arrives FIRST on a real page, and an unrelated read that
+// happens to hold the ASIN may too. So first-arrival must not win: candidates
+// are ranked — detail-named, then album-named, then (with { anyName: true },
+// the hornet-rename hedge) any read carrying the ASIN — and the caller
+// verifies the REPLAY carries data.album.tracksConnection (albumTracksConnectionIn)
+// before accepting one. Write-shaped names (a replay would repeat the action
+// on the user's account) never are candidates.
+function amazonAlbumDetailCandidates(bodies, asin, { anyName = false } = {}) {
+  const wanted = String(asin || '').toUpperCase();
+  if (!wanted || wanted === 'UNDEFINED' || wanted === 'NULL') return [];
+  const detail = [];
+  const named = [];
+  const other = [];
+  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { continue; }
+    const batch = Array.isArray(parsed) ? parsed : [parsed];
+    for (const req of batch) {
+      const opName = String((req && req.operationName) || '');
+      if (GQL_WRITE_OP.test(opName) || GQL_MUTATION_NAME.test(opName)) continue;
+      if (/^\s*mutation\b/.test(String((req && req.query) || ''))) continue;
+      const vars = req && req.variables;
+      if (!vars || typeof vars !== 'object') continue;
+      if (String(vars.id || '').toUpperCase() !== wanted) continue;
+      if (/detail/i.test(opName)) detail.push(req);
+      else if (/album/i.test(opName)) named.push(req);
+      else if (anyName) other.push(req);
+    }
+  }
+  return [...detail, ...named, ...other];
+}
+
+function amazonAlbumDetailRequest(bodies, asin, { anyName = false } = {}) {
+  return amazonAlbumDetailCandidates(bodies, asin, { anyName })[0] || null;
+}
+
+// Whether a replayed response IS the album detail: data.album carrying a
+// tracksConnection with an edges array (empty edges are fine — a pre-order /
+// fully-delisted album still comes from the detail op; the header-only
+// AlbumSeo response has data.album WITHOUT tracksConnection).
+function albumTracksConnectionIn(data) {
+  const album = data && data.album;
+  const tc = album && album.tracksConnection;
+  return !!(tc && Array.isArray(tc.edges));
 }
 
 // Headers to copy onto the replayed gql fetch. The request the page made is
@@ -974,6 +1050,17 @@ function stripAmazonTitleMarker(title) {
 }
 
 // are identical shapes), and the search flow additionally uses the art.
+// The joined artist credit for a contributingArtists connection: the
+// PRIMARY-role artists, else every named artist. Shared by the playlist and
+// search track mapper, the album search mapper, and the album detail mappers.
+function gqlPrimaryArtistNames(connection) {
+  const artists = (connection && Array.isArray(connection.edges)) ? connection.edges : [];
+  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
+  const all = artists.filter(a => a && a.node && a.node.name);
+  const chosen = primary.length ? primary : all;
+  return chosen.map(a => a.node.name).join(', ');
+}
+
 // Only Track entities import: the search response asks for __typename, and an
 // album/artist-spec edge (an Album node) must never become a track — an album
 // ASIN in the track slot passes the confidence gate on self-titled releases
@@ -983,12 +1070,7 @@ function playlistTrackFromGqlEdge(edge) {
   const node = edge && edge.node;
   if (!node || !node.id || !node.title) return null;
   if (node.__typename && node.__typename !== 'Track') return null;
-  const artists = (node.contributingArtists && Array.isArray(node.contributingArtists.edges))
-    ? node.contributingArtists.edges : [];
-  const primary = artists.filter(a => a && a.node && a.node.name && a.role === 'PRIMARY');
-  const all = artists.filter(a => a && a.node && a.node.name);
-  const chosen = primary.length ? primary : all;
-  const artist = chosen.map(a => a.node.name).join(', ');
+  const artist = gqlPrimaryArtistNames(node.contributingArtists);
   if (!artist) return null;
   const cleaned = stripAmazonTitleMarker(node.title);
   if (!cleaned.title) return null;
@@ -1097,6 +1179,139 @@ function searchTracksFromGql(data) {
     .map(playlistTrackFromGqlEdge)
     .filter(Boolean);
   return { tracks, envelope: true };
+}
+
+// --- Album search / lookup (capabilities.albumSearch in the plugin) -------
+// The album-spec SpecSearchSeeMorePage response and the AlbumDetailPage
+// response (both shapes live-verified 2026-10 via the page's own requests,
+// replayed verbatim like the track search and playlistDetail).
+//
+// Search: data.specificationSearch.result[] carries edges[] whose node is an
+// ALBUM entity this time: id (ASIN), title (may end in the bracketed explicit
+// marker, like track titles), shortTitle, contributingArtists, images and url
+// — the Album node has no releaseDate/trackCount in the search spec, so those
+// stay null in the mapped result (the plugin contract allows it). Only Album
+// nodes map: a Track edge in the album slot is the same ASIN-in-the-wrong-
+// slot failure the track parser guards against, in reverse.
+function albumFromGqlSearchNode(node) {
+  if (!node || node.__typename !== 'Album' || !node.id) return null;
+  const artist = gqlPrimaryArtistNames(node.contributingArtists);
+  if (!artist) return null;
+  const cleaned = stripAmazonTitleMarker(node.title || node.shortTitle || '');
+  if (!cleaned.title) return null;
+  return {
+    asin: node.id,
+    name: cleaned.title.slice(0, 200),
+    artist: artist.slice(0, 200),
+    albumArt: gqlPrimaryImageUrl(node.images) || null,
+    // node.url exists but carries a ?ref= tracker; the canonical album URL is
+    // the form lookupAlbum parses anyway, so mint it from the ASIN.
+    url: 'https://music.amazon.com/albums/' + node.id,
+    explicit: cleaned.explicit || !!(node.parentalSettings && node.parentalSettings.hasExplicitLanguage)
+  };
+}
+
+// The album-spec response -> the searchAlbums bridge shape. Same envelope
+// semantics as searchTracksFromGql: a miss is a present envelope with no
+// usable edges; an absent envelope (hornet renamed the field) is structural.
+function searchAlbumsFromGql(data) {
+  const search = data && data.specificationSearch;
+  if (!search || typeof search !== 'object') return { albums: [], envelope: false };
+  const results = Array.isArray(search.result) ? search.result : [];
+  let spec = null;
+  for (const r of results) {
+    if (r && Array.isArray(r.edges) && r.edges.length) { spec = r; break; }
+  }
+  if (!spec) {
+    for (const r of results) {
+      if (r && Array.isArray(r.edges)) { spec = r; break; }
+    }
+  }
+  const albums = ((spec && spec.edges) || [])
+    .map(e => albumFromGqlSearchNode(e && e.node))
+    .filter(Boolean);
+  return { albums, envelope: true };
+}
+
+// One AlbumDetailPage tracksConnection.edges[] entry -> the album track
+// shape. Like the playlist/search row (shared contributingArtists and
+// title-marker handling) plus trackNumber, and the explicit flag from
+// parentalSettings when the title carries no marker (the detail response
+// carries both — "Dumpweed [Explicit]" with hasExplicitLanguage true).
+// Per-track artists matter on compilations: a Various Artists row keeps its
+// own artists, not the album's.
+function albumTrackFromGqlEdge(edge) {
+  const node = edge && edge.node;
+  if (!node || !node.id || !node.title) return null;
+  if (node.__typename && node.__typename !== 'Track') return null;
+  const artist = gqlPrimaryArtistNames(node.contributingArtists);
+  if (!artist) return null;
+  const cleaned = stripAmazonTitleMarker(node.title);
+  if (!cleaned.title) return null;
+  return {
+    asin: node.id,
+    title: cleaned.title.slice(0, 200),
+    artist: artist.slice(0, 200),
+    duration: typeof node.duration === 'number' ? node.duration : 0,
+    trackNumber: typeof node.trackNumber === 'number' ? node.trackNumber : null,
+    explicit: cleaned.explicit || !!(node.parentalSettings && node.parentalSettings.hasExplicitLanguage)
+  };
+}
+
+// The album detail response numbers tracks per disc (1..n, 1..m — verified
+// on 2-disc, 3-disc and 100-track sets) but carries no discNumber field
+// anywhere: a trackNumber that does not advance past the previous one starts
+// a new disc. Rows without a trackNumber keep discNumber null (the plugin
+// contract has it "when known").
+function assignDiscNumbers(tracks) {
+  let disc = 1;
+  let prev = 0;
+  for (const t of tracks) {
+    if (typeof t.trackNumber === 'number') {
+      if (t.trackNumber <= prev) disc += 1;
+      prev = t.trackNumber;
+      t.discNumber = disc;
+    } else {
+      t.discNumber = null;
+    }
+  }
+  return tracks;
+}
+
+// The AlbumDetailPage response's data.album -> the lookupAlbum bridge shape.
+// The tracksConnection has no pageInfo at all (a 100-track album answers all
+// 100 edges in one response — live-verified), so unlike playlistDetail there
+// is no continuation to follow; trackCount above the edge count is logged by
+// the caller as a truncation, the way a short playlist page is. Returns
+// { album, envelope }: data.album null is a legitimate not-found (deleted /
+// other region), a data object with no 'album' field at all is a hornet
+// rename (structural — the caller throws instead of reporting a miss).
+function albumDetailFromGql(data) {
+  if (!data || typeof data !== 'object' || !('album' in data)) {
+    return { album: null, envelope: false };
+  }
+  const album = data.album;
+  if (!album || typeof album !== 'object') return { album: null, envelope: true };
+  const artist = gqlPrimaryArtistNames(album.contributingArtists);
+  const cleaned = stripAmazonTitleMarker(album.title || album.shortTitle || '');
+  const edges = (album.tracksConnection && Array.isArray(album.tracksConnection.edges))
+    ? album.tracksConnection.edges : [];
+  const tracks = assignDiscNumbers(edges.map(albumTrackFromGqlEdge).filter(Boolean));
+  return {
+    album: {
+      asin: album.id || null,
+      // The full title (editions distinguish releases), not shortTitle.
+      name: (cleaned.title || album.shortTitle || '').slice(0, 200),
+      artist: artist.slice(0, 200) || null,
+      albumArt: gqlPrimaryImageUrl(album.images) || null,
+      releaseDate: typeof album.releaseDate === 'string' ? album.releaseDate : null,
+      trackCount: typeof album.trackCount === 'number' ? album.trackCount : tracks.length,
+      url: album.id ? 'https://music.amazon.com/albums/' + album.id : null,
+      explicit: cleaned.explicit || !!(album.parentalSettings && album.parentalSettings.hasExplicitLanguage),
+      tracks
+    },
+    envelope: true
+  };
 }
 
 // Follow a playlist's own pagination to the end of the list. The gql server
@@ -1333,11 +1548,22 @@ module.exports = {
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
   amazonSpecSearchRequest,
+  amazonAlbumSearchUrl,
+  amazonAlbumAsinFromUrl,
+  amazonAlbumDetailRequest,
+  amazonAlbumDetailCandidates,
+  albumTracksConnectionIn,
   amazonGqlFetchHeaders,
   capturedOperationNames,
   searchTracksFromGql,
+  albumFromGqlSearchNode,
+  searchAlbumsFromGql,
+  albumTrackFromGqlEdge,
+  assignDiscNumbers,
+  albumDetailFromGql,
   createSearchBreaker,
   playlistTrackFromGqlEdge,
+  gqlPrimaryArtistNames,
   stripAmazonTitleMarker,
   playlistFromGql,
   playlistPageInfoFromGql,

@@ -1,4 +1,4 @@
-// Source of truth for plugins/amazonmusic.axe v1.4.2.
+// Source of truth for plugins/amazonmusic.axe v1.5.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -184,6 +184,175 @@ module.exports = {
         window.electron.amazonMusic.polling.stop();
       }
     } catch (e) {}
+  },
+  // capabilities.albumSearch (docs/architecture/plugins.md, "searchAlbums"):
+  // the album-page catalog fallback. searchAlbums finds an album by
+  // artist+title or free text over the albums tab of Amazon's spec search;
+  // lookupAlbum loads what searchAlbums returned (the host calls it on this
+  // plugin) by replaying the album page's own AlbumDetailPage gql request.
+  // Both ride the same IPC chain as the track search / playlist import.
+  searchAlbums: async function (query, config) {
+    try {
+      if (!window.electron || !window.electron.amazonMusic) {
+        console.warn('Amazon Music: bridge not available');
+        return [];
+      }
+      var payload = query;
+      if (typeof query === 'string') {
+        if (!query.trim() || query.trim().length < 2) return [];
+        payload = query.trim();
+      } else if (
+        !query ||
+        (!(query.title && String(query.title).trim()) &&
+          !(query.artist && String(query.artist).trim()))
+      ) {
+        return [];
+      }
+      const result = await window.electron.amazonMusic.searchAlbums(payload);
+      console.log(
+        '[Amazon] resolver album search',
+        payload,
+        result && result.success,
+        result && result.reason,
+        result && result.albums && result.albums.length,
+      );
+      if (!result || !result.success) {
+        var reason = result && result.reason;
+        if (
+          reason === 'not-ready' ||
+          reason === 'not-signed-in' ||
+          reason === 'no-cdm' ||
+          reason === 'load-failed'
+        ) {
+          var err = new Error('Amazon Music not ready');
+          err.notReady = true;
+          err.code = reason;
+          throw err;
+        }
+        return [];
+      }
+      return (result.albums || []).map(function (a) {
+        return {
+          id: 'amazonmusic-album-' + a.asin,
+          name: a.name,
+          artist: a.artist || null,
+          albumArt: a.albumArt || null,
+          // The album search spec carries no releaseDate or trackCount; the
+          // plugin contract allows both to be null.
+          releaseDate: null,
+          trackCount: null,
+          url: a.url,
+          explicit: !!a.explicit,
+        };
+      });
+    } catch (error) {
+      if (error && error.notReady) throw error;
+      console.error('Amazon Music album search error:', error);
+      return [];
+    }
+  },
+  lookupAlbum: async function (url, config) {
+    var mapAlbum = function (a) {
+      return {
+        id: 'amazonmusic-album-' + a.asin,
+        name: a.name,
+        artist: a.artist || null,
+        albumArt: a.albumArt || null,
+        releaseDate: a.releaseDate || null,
+        // The bridge reports the album's own trackCount; keep it so a
+        // server-truncated load is visible instead of silently complete.
+        trackCount: a.trackCount || a.tracks.length,
+        url: a.url || url,
+        tracks: a.tracks.map(function (t) {
+          return {
+            id: 'amazonmusic-' + t.asin,
+            title: t.title,
+            artist: t.artist || a.artist || '',
+            album: a.name,
+            duration: t.duration || 0,
+            sources: ['amazonmusic'],
+            amazonAsin: t.asin,
+            albumAsin: a.asin,
+            trackNumber: typeof t.trackNumber === 'number' ? t.trackNumber : null,
+            discNumber: typeof t.discNumber === 'number' ? t.discNumber : null,
+            explicit: !!t.explicit,
+            albumArt: a.albumArt || null,
+          };
+        }),
+      };
+    };
+    var loaded = function (result) {
+      return !!(
+        result &&
+        result.success &&
+        result.album &&
+        result.album.tracks &&
+        result.album.tracks.length > 0
+      );
+    };
+    var result = null;
+    try {
+      if (!window.electron || !window.electron.amazonMusic) {
+        console.warn('Amazon Music: bridge not available');
+        return null;
+      }
+      result = await window.electron.amazonMusic.lookupAlbum(url);
+      console.log(
+        '[Amazon] resolver album lookup',
+        url,
+        result && result.success,
+        result && result.reason,
+        result && result.album && result.album.tracks && result.album.tracks.length,
+      );
+      if (loaded(result)) return mapAlbum(result.album);
+      // Only a sign-in problem is fixed by sign-in — the same rule the
+      // playlist import follows.
+      if (result && result.reason === 'not-signed-in') {
+        console.log('Amazon Music: not signed in, asking you to sign in...');
+        var managed = false;
+        if (typeof window.__parachordManageAmazonMusic === 'function') {
+          managed = await window.__parachordManageAmazonMusic({
+            explicit: true,
+            reason: 'not-signed-in',
+          });
+        }
+        if (managed) {
+          result = await window.electron.amazonMusic.lookupAlbum(url);
+          if (loaded(result)) return mapAlbum(result.album);
+        }
+        var err = new Error(
+          'Amazon Music is not signed in - sign in from Settings to load albums',
+        );
+        err.notReady = true;
+        err.code = 'not-signed-in';
+        throw err;
+      }
+    } catch (error) {
+      if (error && error.notReady) throw error;
+      console.error('Amazon Music album lookup error:', error);
+      return null;
+    }
+    // Outside the try so the catch does not swallow these, the same pattern
+    // as lookupPlaylist: transient/wiring failures (a stalled load, a hornet
+    // rename) must not be reported as a missing album.
+    var reason = result && result.reason;
+    if (
+      reason === 'load-failed' ||
+      reason === 'no-cdm' ||
+      reason === 'not-ready' ||
+      reason === 'lookup-failed'
+    ) {
+      var transientErr = new Error(
+        'Amazon Music is not reachable right now - check your connection and try again',
+      );
+      transientErr.notReady = true;
+      transientErr.code = reason;
+      throw transientErr;
+    }
+    // success with album: null is the legitimate miss (deleted / other
+    // region); so is any other outcome — the catalog fallback moves on to
+    // the next service.
+    return null;
   },
   lookupPlaylist: async function (url, config) {
     var mapResult = function (p) {
