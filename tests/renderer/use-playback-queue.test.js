@@ -41,6 +41,13 @@ function destructureKeysFrom(src, marker) {
 
 const appSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
 const EXPECTED_KEYS = destructureKeysFrom(appSrc, '  } = usePlaybackQueue({');
+// Guard direction note (review nit): this checks hook-returns-everything-
+// destructure-expects — the direction that turned React module-scope
+// destructures into runtime #130s. A name dropped from the app.js
+// destructure shrinks the derived list, passes silently, and the runtime
+// caller ReferenceErrors — caught by the maintainer's live audit instead,
+// since the legacy tier carries no no-undef. Same accepted trade-off as the
+// useVolume probe; tightening it means parsing call sites, not worth it.
 
 describe('usePlaybackQueue (Node render probe)', () => {
   test('module loads under plain Node and returns every name app.js destructures', () => {
