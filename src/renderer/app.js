@@ -3192,18 +3192,9 @@ function playbackDurationSeconds(source, track) {
 }
 
 const Parachord = () => {
-  const [currentTrack, setCurrentTrack] = useState(null);
-  const [currentQueue, setCurrentQueue] = useState([]); // Current playing queue
-  // Playback context - tracks where the current track originated from
-  // Shape: { type: 'playlist' | 'album' | 'search' | 'library' | 'recommendations', id?, name?, artist? }
-  const [playbackContext, setPlaybackContext] = useState(null);
   // Spinoff mode - radio-like playback of similar tracks
   const [spinoffMode, setSpinoffMode] = useState(false);
   const spinoffModeRef = useRef(false); // Ref for spinoff mode to avoid stale closures in handleNext
-  // Shuffle mode - randomize queue order
-  const [shuffleMode, setShuffleMode] = useState(false);
-  const shuffleModeRef = useRef(false); // Ref for shuffle mode to avoid stale closures in callbacks
-  const originalQueueRef = useRef(null); // Store original queue order before shuffle for restore
   const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
   const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
   const [spinoffLoading, setSpinoffLoading] = useState(false);
@@ -5674,7 +5665,6 @@ const Parachord = () => {
   const [isDraggingUrl, setIsDraggingUrl] = useState(false);
   const [dropZoneTarget, setDropZoneTarget] = useState(null); // 'now-playing' | 'queue' | null
   const queueAnimationRef = useRef(null);
-  const [queueAnimating, setQueueAnimating] = useState(false);
   const queueContentRef = useRef(null); // Ref for queue content scrolling
   const resolverLoaderRef = useRef(null);
   // Resolves when initResolvers finishes (mount-effect). Hosted-playlist
@@ -5695,12 +5685,11 @@ const Parachord = () => {
   const spotifyPlaySentRef = useRef(false);
 
   // Refs to keep current values available in event handlers (avoids stale closure issues)
-  const currentQueueRef = useRef([]);
-  const currentTrackRef = useRef(null);
   const handleNextRef = useRef(null);
   const handlePreviousRef = useRef(null);
   const handlePlayPauseRef = useRef(null);
   const handlePlayRef = useRef(null);
+  const enrichTracksWithMbidsRef = useRef(null); // Ref bridge for usePlaybackQueue's addToQueue enrichment (enrichTracksWithMbids is declared below the hook call — TDZ-safe only as a ref)
   const startSpinoffRef = useRef(null); // Ref to startSpinoff for use in protocol handler
   const resolveTrackRef = useRef(null); // Ref to resolveTrack for use in ChatCard
   const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
@@ -5708,7 +5697,6 @@ const Parachord = () => {
   const handleStartCollectionStationRef = useRef(null); // Ref for protocol handler
   const fetchAlbumTracksByNameRef = useRef(null); // Ref to fetchAlbumTracksByName for use in ChatCard
   const getResolverConfigRef = useRef(null);
-  const playHistoryRef = useRef([]); // Stack of previously played tracks for "previous" navigation
   // Friend function refs (for use in early useEffects before functions are defined)
   const navigateToFriendRef = useRef(null);
   const pinFriendRef = useRef(null);
@@ -5909,11 +5897,10 @@ const Parachord = () => {
   }, [playbarSourceDropdownOpen]);
 
   // Keep refs in sync with state
-  useEffect(() => { currentQueueRef.current = currentQueue; }, [currentQueue]);
-  useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
+
   useEffect(() => { spotifyTokenRef.current = spotifyToken; }, [spotifyToken]);
   useEffect(() => { spinoffModeRef.current = spinoffMode; }, [spinoffMode]);
-  useEffect(() => { shuffleModeRef.current = shuffleMode; }, [shuffleMode]);
+
   useEffect(() => { spinoffSourceTrackRef.current = spinoffSourceTrack; }, [spinoffSourceTrack]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { playlistsRef.current = playlists; }, [playlists]);
@@ -5934,6 +5921,38 @@ const Parachord = () => {
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
   useEffect(() => { recommendationBlocklistRef.current = recommendationBlocklist; }, [recommendationBlocklist]);
   useEffect(() => { resolverBlocklistRef.current = resolverBlocklist; }, [resolverBlocklist]);
+
+  // Track when persistent cache is loaded — moved up beside the queue hook
+  // (the hook's saved-queue effect reads it; its old home sat BELOW
+  // deps-array uses of the hook's returned names).
+  const [cacheLoaded, setCacheLoaded] = useState(false);
+
+  // Playback-queue state domain — extracted to src/renderer/hooks/use-playback-queue
+  // (Track 2b slice 2, parachord#1098). The destructured names are identical
+  // to what lived here inline: no call site below changes. The hook owns the
+  // queue/track/context/shuffle state + refs, the shuffle/queue actions, the
+  // play history, and the queue-persistence memento effect. (Call position
+  // is set by the first render-time use below it, currentTrack?.albumArt in
+  // the crossfade effect's deps array.)
+  const {
+    currentTrack, setCurrentTrack,
+    currentQueue, setCurrentQueue,
+    playbackContext, setPlaybackContext,
+    shuffleMode, setShuffleMode,
+    shuffleModeRef, originalQueueRef,
+    currentQueueRef, currentTrackRef,
+    playHistoryRef,
+    queueAnimating, setQueueAnimating,
+    removeFromQueue, moveInQueue, clearQueue,
+    toggleShuffle, restoreOriginalOrder,
+    setQueueWithContext, addToQueueWithContext,
+    playTrackCollection, addToQueue,
+  } = usePlaybackQueue({
+    cacheLoaded,
+    rememberQueue,
+    handlePlayRef,
+    enrichTracksWithMbidsRef,
+  });
 
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
@@ -7104,7 +7123,6 @@ const Parachord = () => {
 
   // Cache for album art URLs (releaseId -> { url, timestamp })
   const albumArtCache = useRef({});
-  const [cacheLoaded, setCacheLoaded] = useState(false); // Track when persistent cache is loaded
 
   // Volume state domain — extracted to src/renderer/hooks/use-volume
   // (Track 2b slice 1, parachord#1098). The destructured names are identical
@@ -14584,40 +14602,6 @@ ${trackListXml}
     selectedPlaylistRef.current = selectedPlaylist;
   }, [selectedPlaylist]);
 
-  // Save queue when it changes (if remember queue is enabled)
-  // Include currentTrack so it can be restored as the playing track
-  useEffect(() => {
-    // Skip until cache is fully loaded to avoid overwriting saved queue with empty data.
-    // Previously used resolverSettingsLoaded ref, but that is set before queue restoration
-    // completes (especially with no resolvers configured), causing a race condition where
-    // the save effect fires with empty queue state and overwrites persisted data.
-    if (!cacheLoaded) return;
-    if (!rememberQueue) return;
-
-    // Debounce the save to avoid saving too frequently
-    const timeoutId = setTimeout(async () => {
-      if (window.electron?.store) {
-        // Save currentTrack + queue together so we restore the correct playing track.
-        // Keyed on the track's id, not the object: the playing track is re-created
-        // by in-place updates (Amazon's measured stream quality, duration repair,
-        // art backfill), and each one re-saved the whole queue. The ref still
-        // saves the latest version of it.
-        const currentTrack = currentTrackRef.current;
-        const fullQueue = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
-        await window.electron.store.set('saved_queue', fullQueue);
-        // Also save playback context
-        await window.electron.store.set('saved_playback_context', playbackContext);
-        // Save shuffle state and original queue for restore
-        await window.electron.store.set('saved_shuffle_state', {
-          shuffleMode: shuffleMode,
-          originalQueue: originalQueueRef.current
-        });
-        console.log(`💾 Saved queue: ${currentTrack ? `"${currentTrack.title}" playing + ` : ''}${currentQueue.length} tracks in queue${playbackContext ? ` (from ${playbackContext.type})` : ''}${shuffleMode ? ' (shuffled)' : ''}`);
-      }
-    }, 500);
-
-    return () => clearTimeout(timeoutId);
-  }, [currentTrack?.id, currentQueue, rememberQueue, playbackContext, shuffleMode]);
 
   // Persist friends to storage (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -18111,29 +18095,10 @@ ${trackListXml}
   useEffect(() => { handlePreviousRef.current = handlePrevious; });
   useEffect(() => { handlePlayPauseRef.current = handlePlayPause; });
   useEffect(() => { handlePlayRef.current = handlePlay; });
+  useEffect(() => { enrichTracksWithMbidsRef.current = enrichTracksWithMbids; });
   useEffect(() => { startSpinoffRef.current = startSpinoff; });
   useEffect(() => { getResolverConfigRef.current = getResolverConfig; });
 
-  // Queue management functions
-  const removeFromQueue = useCallback((trackId) => {
-    setCurrentQueue(prev => prev.filter(t => t.id !== trackId));
-    // Also remove from original queue if shuffle is active
-    if (shuffleMode && originalQueueRef.current) {
-      originalQueueRef.current = originalQueueRef.current.filter(t => t.id !== trackId);
-    }
-    console.log(`🗑️ Removed track ${trackId} from queue`);
-  }, [shuffleMode]);
-
-  const moveInQueue = useCallback((fromIndex, toIndex) => {
-    if (fromIndex === toIndex) return;
-    setCurrentQueue(prev => {
-      const newQueue = [...prev];
-      const [removed] = newQueue.splice(fromIndex, 1);
-      newQueue.splice(toIndex, 0, removed);
-      console.log(`🔀 Moved track from index ${fromIndex} to ${toIndex}`);
-      return newQueue;
-    });
-  }, []);
 
   const moveInPlaylist = (fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
@@ -18195,60 +18160,6 @@ ${trackListXml}
     ));
   };
 
-  const clearQueue = () => {
-    setCurrentQueue([]);
-    // Reset shuffle state when queue is cleared
-    setShuffleMode(false);
-    originalQueueRef.current = null;
-    // Preserve playback context if in spinoff or listen-along mode
-    // Only clear context for regular queue scenarios
-    if (playbackContext?.type !== 'spinoff' && playbackContext?.type !== 'listenAlong') {
-      setPlaybackContext(null);
-    }
-    console.log('🗑️ Cleared queue');
-  };
-
-  // Toggle shuffle mode - shuffles queue in place, stores original for restore
-  const toggleShuffle = () => {
-    if (shuffleMode) {
-      // Turn off shuffle - restore original order if available
-      if (originalQueueRef.current) {
-        // Filter to only include tracks that still exist in current queue
-        const currentIds = new Set(currentQueue.map(t => t.id));
-        const restoredQueue = originalQueueRef.current.filter(t => currentIds.has(t.id));
-        setCurrentQueue(restoredQueue);
-        console.log('🔀 Shuffle OFF - restored original order');
-      }
-      originalQueueRef.current = null;
-      setShuffleMode(false);
-    } else {
-      // Turn on shuffle - store original and shuffle
-      if (currentQueue.length > 1) {
-        originalQueueRef.current = [...currentQueue];
-        // Fisher-Yates shuffle
-        const shuffled = [...currentQueue];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        setCurrentQueue(shuffled);
-        console.log('🔀 Shuffle ON - queue randomized');
-      }
-      setShuffleMode(true);
-    }
-  };
-
-  // Restore original queue order (used from queue header button)
-  const restoreOriginalOrder = () => {
-    if (originalQueueRef.current && shuffleMode) {
-      const currentIds = new Set(currentQueue.map(t => t.id));
-      const restoredQueue = originalQueueRef.current.filter(t => currentIds.has(t.id));
-      setCurrentQueue(restoredQueue);
-      setShuffleMode(false);
-      originalQueueRef.current = null;
-      console.log('🔀 Restored original queue order');
-    }
-  };
 
   // Start Collection Station - shuffle and play all collection tracks
   const handleStartCollectionStation = () => {
@@ -18316,99 +18227,6 @@ ${trackListXml}
   // Keep handleStartCollectionStation ref in sync for protocol handler
   useEffect(() => { handleStartCollectionStationRef.current = handleStartCollectionStation; });
 
-  // Helper to set queue with playback context tagged on each track
-  // This allows the context to update when tracks from different sources come up
-  // respectShuffle: if true and shuffle is ON, shuffle the new queue (for "Play All" actions)
-  //                 if false (default) and shuffle is ON, turn off shuffle (for clicking specific tracks)
-  const setQueueWithContext = (tracks, context, respectShuffle = false) => {
-    const taggedTracks = tracks.map(track => ({
-      ...track,
-      _playbackContext: context
-    }));
-    console.log(`🏷️ Tagged ${taggedTracks.length} tracks with context:`, context.type);
-
-    if (respectShuffle && shuffleMode && taggedTracks.length > 1) {
-      // "Play All" action with shuffle ON - shuffle the new queue
-      originalQueueRef.current = [...taggedTracks];
-      // Fisher-Yates shuffle
-      const shuffled = [...taggedTracks];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      setCurrentQueue(shuffled);
-      console.log('🔀 Shuffle ON - new queue shuffled');
-    } else {
-      // Click specific track OR shuffle is off - set queue in order
-      setCurrentQueue(taggedTracks);
-      // Turn off shuffle when clicking a specific track (not respecting shuffle)
-      if (!respectShuffle && shuffleMode) {
-        setShuffleMode(false);
-        originalQueueRef.current = null;
-        console.log('🔀 Shuffle OFF - user selected specific track');
-      }
-    }
-    setPlaybackContext(context);
-  };
-
-  // Helper to add tracks to existing queue with context
-  const addToQueueWithContext = (tracks, context) => {
-    const taggedTracks = tracks.map(track => ({
-      ...track,
-      _playbackContext: context
-    }));
-    setCurrentQueue(prev => [...prev, ...taggedTracks]);
-  };
-
-  // Helper to play a collection of tracks, respecting shuffle mode
-  // If shuffle is on, picks a random first track and shuffles the rest
-  const playTrackCollection = (tracks, context = null) => {
-    if (!tracks || tracks.length === 0) return;
-
-    let tracksToPlay = [...tracks];
-
-    // Tag tracks with context if provided
-    if (context) {
-      tracksToPlay = tracksToPlay.map(track => ({
-        ...track,
-        _playbackContext: context
-      }));
-    }
-
-    let firstTrack;
-    let remainingTracks;
-
-    if (shuffleModeRef.current && tracksToPlay.length > 1) {
-      // Shuffle mode: pick random first track, shuffle the rest
-      const randomIndex = Math.floor(Math.random() * tracksToPlay.length);
-      firstTrack = tracksToPlay[randomIndex];
-
-      // Get remaining tracks (excluding the randomly picked one)
-      const remaining = [...tracksToPlay.slice(0, randomIndex), ...tracksToPlay.slice(randomIndex + 1)];
-
-      // Fisher-Yates shuffle the remaining tracks
-      for (let i = remaining.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
-      }
-      remainingTracks = remaining;
-
-      // Store original order for unshuffle
-      originalQueueRef.current = tracksToPlay.slice(1); // Original order minus first
-      console.log('🔀 Shuffle ON - playing random track first, queue shuffled');
-    } else {
-      // Normal mode: play first track, queue rest in order
-      firstTrack = tracksToPlay[0];
-      remainingTracks = tracksToPlay.slice(1);
-    }
-
-    // Set queue and play
-    setCurrentQueue(remainingTracks);
-    if (context) {
-      setPlaybackContext(context);
-    }
-    handlePlay(firstTrack);
-  };
 
   // Open save dialog for queue as playlist
   const handleSaveQueueAsPlaylist = () => {
@@ -20208,75 +20026,6 @@ ${trackListXml}
     }
   }, [resultsSidebar?.messages, resultsSidebar?.loading]);
 
-  const addToQueue = (tracks, context = null, options = {}) => {
-    const { skipAutoPlay = false } = options;
-    const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
-
-    // Tag tracks with context if provided
-    const taggedTracks = context
-      ? tracksArray.map(track => ({ ...track, _playbackContext: context }))
-      : tracksArray;
-
-    // Check if nothing is currently playing BEFORE updating queue
-    const nothingPlaying = !currentTrackRef.current;
-
-    // If shuffle mode is active, update the original queue ref (or initialize it)
-    if (shuffleMode) {
-      if (originalQueueRef.current) {
-        originalQueueRef.current = [...originalQueueRef.current, ...taggedTracks];
-      } else {
-        // Initialize original queue if shuffle was enabled before any tracks were added
-        originalQueueRef.current = [...currentQueue, ...taggedTracks];
-      }
-    }
-
-    // Append to queue (shuffle mode inserts at random positions)
-    if (shuffleMode) {
-      if (currentQueue.length > 0) {
-        // Insert new tracks at random positions in existing queue
-        setCurrentQueue(prev => {
-          const newQueue = [...prev];
-          taggedTracks.forEach(track => {
-            const randomIndex = Math.floor(Math.random() * (newQueue.length + 1));
-            newQueue.splice(randomIndex, 0, track);
-          });
-          return newQueue;
-        });
-      } else if (taggedTracks.length > 1) {
-        // Shuffle the new tracks before adding to empty queue
-        const shuffled = [...taggedTracks];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        setCurrentQueue(prev => [...prev, ...shuffled]);
-      } else {
-        // Single track, just append
-        setCurrentQueue(prev => [...prev, ...taggedTracks]);
-      }
-    } else {
-      // Normal append to end
-      setCurrentQueue(prev => [...prev, ...taggedTracks]);
-    }
-    // Trigger queue animation
-    setQueueAnimating(true);
-    setTimeout(() => setQueueAnimating(false), 600);
-    console.log(`➕ Added ${tracksArray.length} track(s) to queue${shuffleMode ? ' (shuffled)' : ''}`);
-
-    // Queue track resolution is now handled by ResolutionScheduler via queue context visibility
-
-    // Background-enrich queued tracks with MBIDs (so they're ready by playback/scrobble time)
-    enrichTracksWithMbids(taggedTracks);
-
-    // If nothing is playing, auto-start the first track (unless skipAutoPlay is set)
-    if (nothingPlaying && taggedTracks.length > 0 && !skipAutoPlay) {
-      const firstTrack = taggedTracks[0];
-      console.log(`▶️ Auto-starting playback: "${firstTrack.title}" by ${firstTrack.artist}`);
-      // Remove from queue and play
-      setCurrentQueue(prev => prev.slice(1));
-      handlePlay(firstTrack);
-    }
-  };
 
   // Instant local search (no debounce) for playlists and local files
   const performLocalSearch = async (query) => {

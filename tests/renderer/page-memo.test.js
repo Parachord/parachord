@@ -91,6 +91,14 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
     if (!def || def.node.type !== 'VariableDeclarator') return 'unknown';
     const { id, init } = def.node;
     if (id.type === 'ArrayPattern' && init?.callee?.name === 'useState') return 'state';
+    // State-domain hook destructures (Track 2b): `const { currentTrack } =
+    // usePlaybackQueue({...})` — the hook returns actual useState/setter
+    // bindings under the same names it carried in app.js pre-extraction, so
+    // the identity semantics of its keys match the ArrayPattern/useState
+    // case. Trust-by-convention (limited to use* hooks for now): if a hook
+    // ever RETURNS derived/new-per-render values that props depend on, the
+    // flag class returns and this rule must be tightened.
+    if (id.type === 'ObjectPattern' && init?.type === 'CallExpression' && /^use[A-Z]/.test(init.callee.name)) return 'state';
     if (init?.type === 'CallExpression' && ['useRef', 'useCallback', 'useMemo', 'useStableHandlers'].includes(init.callee.name)) return init.callee.name;
     // An alias of another stable value (allResolvers = loadedResolvers).
     if (init?.type === 'Identifier') return stability(resolve(init));

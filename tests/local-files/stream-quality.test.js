@@ -199,8 +199,13 @@ describe('Amazon quality updates and the queue save do not churn on every poll',
   });
 
   test('the saved-queue effect keys on the track id and saves the latest track', () => {
-    expect(app).toMatch(/\}, \[currentTrack\?\.id, currentQueue, rememberQueue, playbackContext, shuffleMode\]\);/);
-    const at = app.indexOf("await window.electron.store.set('saved_queue', fullQueue);");
-    expect(app.slice(at - 700, at)).toMatch(/const currentTrack = currentTrackRef\.current;/);
+    // The effect moved to the queue hook (Track 2b slice 2,
+    // src/renderer/hooks/use-playback-queue.js); app.js keeps only the
+    // usePlaybackQueue({...}) destructure.
+    const hook = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-queue.js'), 'utf8');
+    expect(hook).toMatch(/\}, \[currentTrack\?\.id, currentQueue, rememberQueue, playbackContext, shuffleMode\]\);/);
+    const at = hook.indexOf("await window.electron.store.set('saved_queue', fullQueue);");
+    expect(hook.slice(at - 700, at)).toMatch(/const currentTrack = currentTrackRef\.current;/);
+    expect(app).toContain('usePlaybackQueue({');
   });
 });
