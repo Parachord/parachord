@@ -1806,7 +1806,6 @@ const loadBuiltinResolvers = async () => {
 const FALLBACK_RESOLVERS = require('./lib/fallback-resolvers.generated.js');
 
 
-
 // Canonical priority order for content resolvers (determines insertion position when enabling)
 // Discord Rich Presence — settings-row copy for each connection state main
 // can report (see discord-presence-logic.js presenceStatus()). Kept at module
