@@ -5,7 +5,8 @@
  * throw or a non-string into a miss. getArtistImage asks the user's active
  * ones (src/renderer/lib/artist-image-chain.js).
  *
- * Subsonic's implementation is tested in subsonic-resolver.test.js.
+ * Subsonic's implementation is tested in subsonic-resolver.test.js,
+ * Amazon Music's in amazon-music-resolver.test.js.
  */
 
 const fs = require('fs');
@@ -22,8 +23,8 @@ describe('ResolverLoader artist images', () => {
   };
 
   test('getArtistImageResolvers lists only plugins that declare and implement it', async () => {
-    const loader = await loaderWith(['subsonic', 'bandcamp', 'youtube']);
-    expect(loader.getArtistImageResolvers().map(r => r.id)).toEqual(['subsonic']);
+    const loader = await loaderWith(['subsonic', 'amazonmusic', 'bandcamp', 'youtube']);
+    expect(loader.getArtistImageResolvers().map(r => r.id).sort()).toEqual(['amazonmusic', 'subsonic']);
   });
 
   test('searchArtistImage passes the config through, and a throw or non-string is a miss', async () => {

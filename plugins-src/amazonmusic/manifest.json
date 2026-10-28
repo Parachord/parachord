@@ -2,7 +2,7 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "author": "Parachord Team",
     "description": "Uses Amazon's web player and this app's Widevine CDM. Does not use the Amazon Music desktop app.",
     "icon": "🎵",
@@ -17,6 +17,7 @@
     "browse": false,
     "urlLookup": true,
     "albumSearch": true,
+    "artistImage": true,
     "mobile": false
   },
   "urlPatterns": [

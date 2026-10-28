@@ -1031,7 +1031,7 @@ const amazonWebPlayer = {
       const spec = amazonArtistSearchUrl(artistName);
       if (!spec) return null;
       if (!(await this.isSignedIn())) {
-        console.log(`[Amazon] artist image for ${JSON.stringify(artistName)} skipped: not signed in`);
+        console.log(`[Amazon] artist image for ${String(artistName)} skipped: not signed in`);
         return null;
       }
       const queuedAt = Date.now();
@@ -1050,7 +1050,7 @@ const amazonWebPlayer = {
       // Catches the runner's structural notReady (which trips the shared
       // breaker) and anything the URL builder or sign-in check throws: the
       // artist-image chain contracts a miss, never an exception.
-      console.warn(`[Amazon] artist image for ${JSON.stringify(artistName)} failed: ${error && error.reason} ${error && error.message}`);
+      console.warn(`[Amazon] artist image for ${String(artistName)} failed: ${error && error.reason} ${error && error.message}`);
       return null;
     }
     return (rows && rows[0]) || null;
