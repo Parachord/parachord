@@ -79,20 +79,30 @@ describe('computeEffectiveVolume', () => {
 // destructure and forgets the hook's return (the #1061 class is then
 // invisible again): the destructure itself is the document.
 const appSrcForKeys = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
-// Anchored to the 2-space component-scope 'const {' (module-level requires
-// at line ~1100 live at column 0 — an unanchored 'const {' would walk back
-// to them and capture their names).
-const destructureMatch = appSrcForKeys.match(
-  /^ {2}const \{\n([\s\S]*?)^ {2}\} = useVolume\(\{/m,
-);
-if (!destructureMatch) {
-  throw new Error('useVolume destructure not found in src/renderer/app.js — the hook call moved or changed shape');
+// Position-based derivation (NOT regex-forward matching): any other hook's
+// `} = useX({` may sit between the volume hook's const-{ and its closing
+// brace, so a forward `const \{ ... } = useVolume` regex would capture the
+// wrong block (this BitMe when usePlaybackQueue landed between them). Find
+// the closing marker, walk BACK to the nearest 2-space 'const {' opening,
+// and parse the entries between. Indent>=2 distinguishes the component-
+// scope hook call from column-0 module-scope requires/destructures.
+function destructureKeysFrom(src, marker) {
+  const closeIdx = src.indexOf(marker);
+  if (closeIdx === -1) {
+    throw new Error(marker + ' not found — the hook call moved or changed shape');
 }
-const EXPECTED_KEYS = destructureMatch[1]
-  .split(',')
-  .map((s) => s.trim())
-  .filter((s) => /^\w+(\s+as\s+\w+)?$/.test(s))
-  .map((s) => s.split(/\s+as\s+/).pop());
+  const openIdx = src.lastIndexOf('\n  const {\n', closeIdx);
+  if (openIdx === -1) {
+    throw new Error('useVolume destructure opening not found above ' + marker);
+  }
+  const body = src.slice(openIdx + '\n  const {\n'.length, closeIdx);
+  return body
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => /^\w+(\s+as\s+\w+)?$/.test(s))
+    .map((s) => s.split(/\s+as\s+/).pop());
+}
+const EXPECTED_KEYS = destructureKeysFrom(appSrcForKeys, '  } = useVolume({');
 
 describe('useVolume (Node render probe)', () => {
   test('module loads under plain Node and renders in a probe component with stubbed globals', () => {
