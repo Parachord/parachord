@@ -10,7 +10,8 @@
  *     sign-in prompt, and miss vs notReady)
  *   - searchArtistImage() (the artistImage capability: bridge mapping, the
  *     no-bridge no-op, and miss vs error — never a sign-in prompt)
- *   - byte-identical FALLBACK_RESOLVERS copy in app.js (drift guard)
+ *   - byte-identical FALLBACK_RESOLVERS copy in the generated module (drift guard)
+
  *   - resolver-limiter does NOT skip amazonmusic (CDP fan-out + web search)
  */
 
@@ -776,12 +777,15 @@ describe('amazonmusic lookupAlbum', () => {
 });
 
 describe('app.js FALLBACK_RESOLVERS parity', () => {
-  test('the inline amazonmusic fallback is byte-identical to plugins/amazonmusic.axe', () => {
-    const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-    const m = appSrc.match(/\{"manifest":\{"id":"amazonmusic"[\s\S]*?\}\},\n/);
-    expect(m).toBeTruthy();
-    const fallback = JSON.parse(m[0].replace(/,\n$/, ''));
+  test('the generated amazonmusic fallback is byte-identical to plugins/amazonmusic.axe', () => {
+    // The inline block moved to the gitignored generated module (bucket C),
+    // required by app.js.
+    const entries = require(path.join(__dirname, '../../src/renderer/lib/fallback-resolvers.generated.js'));
+    const fallback = entries.find((e) => e.manifest && e.manifest.id === 'amazonmusic');
+    expect(fallback).toBeTruthy();
     expect(fallback).toEqual(axe);
+    const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+    expect(appSrc).toContain("require('./lib/fallback-resolvers.generated.js')");
   });
 
   test('amazonmusic is in the canonical resolver order', () => {

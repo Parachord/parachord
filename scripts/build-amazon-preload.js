@@ -5,7 +5,7 @@
 //
 // Why this exists: amazon-player-preload.js runs sandboxed in Amazon's WebView
 // — a sandboxed preload can only require 'electron'/'events'/'timers'/'url',
-// never local files — so the three page-world functions
+// never local files — so the four page-world functions
 // (installAmazonRequireTrap + installAmazonStreamCapture from
 // amazon-music-logic.js, installMediaSessionHijack from embedded-player-kit.js)
 // must be INLINED as literal copies. They used to be maintained by hand with
@@ -22,7 +22,7 @@
 // regen must produce identical bytes, or the drift gate below would churn.
 //
 // Modes:
-//   (default)  write the three generated sections in place
+//   (default)  write the four generated sections in place
 //   --check    verify only — byte-compare against the sources, exit 1 with a
 //              report naming the drifted sections
 //

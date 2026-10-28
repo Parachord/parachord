@@ -10,7 +10,7 @@
  *   - auth (token = md5(password + salt)) against the real algorithm
  *   - server URL normalization (user-pasted variants: trailing slash, /rest)
  *   - play() is host-owned (returns false — handlePlay owns playback)
- *   - byte-identical FALLBACK_RESOLVERS copy in app.js (drift guard)
+ *   - byte-identical FALLBACK_RESOLVERS copy in the generated module (drift guard)
  *   - app.js integration: canonical order, volume offsets, transport routing
  */
 
@@ -329,11 +329,14 @@ describe('app.js integration', () => {
   const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
 
   test('FALLBACK_RESOLVERS copy is byte-identical to the .axe', () => {
-    const lines = appSrc.split('\n');
-    const start = lines.findIndex((l) => l.startsWith('const FALLBACK_RESOLVERS = ['));
-    const entry = lines.find((l, i) => i > start && l.includes('"id":"subsonic"'));
+    // The block moved to the gitignored generated module (bucket C); the
+    // generated-require hook only ▸ requires it. App-src assertion kept
+    // elsewhere; here the parity surface is the generated module.
+    const entries = require(path.join(__dirname, '../../src/renderer/lib/fallback-resolvers.generated.js'));
+    const entry = entries.find((e) => e.manifest && e.manifest.id === 'subsonic');
     expect(entry).toBeTruthy();
-    expect(JSON.parse(entry.trim().replace(/,$/, ''))).toEqual(axe);
+    expect(entry).toEqual(axe);
+    expect(appSrc).toContain("require('./lib/fallback-resolvers.generated.js')");
   });
 
   test('subsonic is in CANONICAL_RESOLVER_ORDER', () => {

@@ -68,3 +68,7 @@ resources/keys/*.p8
 # writes them, the pretest/prestart/predev/prebuild* hooks; published to
 # parachord-plugins by sync-repos.yml — parachord#1099)
 /plugins/*.axe
+
+# Generated fallback-resolvers module (parachord#1099 bucket C — built by
+# scripts/build-axes.js from plugins-src/, no longer inline in src/renderer/app.js)
+/src/renderer/lib/fallback-resolvers.generated.js
