@@ -75,6 +75,8 @@ const {
   albumTracksConnectionIn,
   searchTracksFromGql,
   searchAlbumsFromGql,
+  amazonArtistSearchUrl,
+  searchArtistImageFromGql,
   albumDetailFromGql,
   createSearchBreaker,
   paginatePlaylistTracks,
@@ -260,12 +262,16 @@ function notReady(reason, message) {
 const LOAD_URL_TIMEOUT_MS = 30000;
 
 // The album catalog fallback on the renderer bounds each catalog step
-// (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js). An
-// album job that waits behind the shared Amazon search chain longer than
-// that budget has a caller that already moved on: skip its page load and
-// return the miss, so track resolution and playlist imports are not starved
-// behind catalog jobs during a MusicBrainz outage. Mirrors the host budget
-// on purpose — the web player cannot read the renderer constant.
+// (withCatalogTimeout / CATALOG_STEP_TIMEOUT_MS in src/renderer/app.js), and
+// getArtistImage bounds each chain step the same way
+// (ARTIST_IMAGE_STEP_TIMEOUT_MS in src/renderer/lib/artist-image-chain.js —
+// a Home or Search page can ask for 5-20 artist photos at once). An album or
+// artist-image job that waits behind the shared Amazon search chain longer
+// than that budget has a caller that already moved on: skip its page load
+// and return the miss, so track resolution and playlist imports are not
+// starved behind catalog/image jobs during a MusicBrainz outage. Mirrors
+// the host budget on purpose — the web player cannot read the renderer
+// constant.
 const ALBUM_JOB_STALE_MS = 8000;
 
 // How long quality reads/writes wait for the __r trap to capture the live
@@ -1004,6 +1010,50 @@ const amazonWebPlayer = {
         return { rows: albums, envelope };
       }
     });
+  },
+
+  // Artist photos for the artist-image chain (the plugin's
+  // capabilities.artistImage; docs/architecture/plugins.md,
+  // "searchArtistImage"). The artists tab (/search/<q>/artists) of the same
+  // spec search the track and album searches use — the photo comes out of
+  // the Artist node in the response, so the whole lookup is the one page
+  // load + one replay the runner already does. Unlike the track/album
+  // searches this method never throws and never prompts for sign-in: not
+  // signed in is `null` without a request (the chain just moves on to
+  // Deezer), and the runner's structural notReady (which trips the shared
+  // breaker) degrades to `null` here too, since an artist photo is always
+  // optional. The name-match happens in the parser — only an exact
+  // (normalized) name's photo is returned, never the top hit's when Amazon
+  // ranks a different artist first.
+  async searchArtistImage(artistName) {
+    let rows;
+    try {
+      const spec = amazonArtistSearchUrl(artistName);
+      if (!spec) return null;
+      if (!(await this.isSignedIn())) {
+        console.log(`[Amazon] artist image for ${JSON.stringify(artistName)} skipped: not signed in`);
+        return null;
+      }
+      const queuedAt = Date.now();
+      rows = await this.specSearch({
+        url: spec.url,
+        searchText: spec.searchText,
+        specType: 'artist',
+        noun: 'artist image',
+        staleCheck: () => Date.now() - queuedAt > ALBUM_JOB_STALE_MS,
+        parse: (data) => {
+          const { url, envelope } = searchArtistImageFromGql(data, artistName);
+          return { rows: url ? [url] : [], envelope };
+        }
+      });
+    } catch (error) {
+      // Catches the runner's structural notReady (which trips the shared
+      // breaker) and anything the URL builder or sign-in check throws: the
+      // artist-image chain contracts a miss, never an exception.
+      console.warn(`[Amazon] artist image for ${JSON.stringify(artistName)} failed: ${error && error.reason} ${error && error.message}`);
+      return null;
+    }
+    return (rows && rows[0]) || null;
   },
 
   // Import a playlist page (music.amazon.com/playlists/<id>, /my/playlists/<id>

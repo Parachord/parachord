@@ -1233,6 +1233,109 @@ function searchAlbumsFromGql(data) {
   return { albums, envelope: true };
 }
 
+// --- Artist images (capabilities.artistImage in the plugin) ---------------
+// The artists tab (/search/<q>/artists — plural, like /songs and /albums;
+// the singular /artist path fires nothing matchable) fires the same
+// SpecSearchSeeMorePage operation as the track and album searches, with
+// variables.specType = 'artist' (live-verified 2026-10 via the in-app debug
+// capture and a specSearch probe). Its response bucket is labeled
+// 'requiredButUnused' — the SAME label the album see-more bucket uses — so
+// the parser never matches on label: it takes the first result with edges,
+// like the track and album parsers, and accepts only Artist nodes inside it.
+
+// The artists-tab URL for an artist NAME (the artist-image chain passes a
+// bare name, never the search object's title/artist pair). The name is
+// quoted like the single-artist album query: Amazon's matching is
+// order/phrase-sensitive, and a quoted name is the closest thing to an
+// exact-name search the page offers. Returns { url, searchText } (searchText
+// is what the page puts in variables.searchText, so the runner can find its
+// own request), null when there is nothing to search.
+function amazonArtistSearchUrl(artistName) {
+  // The name is track metadata, not typed text: control characters never
+  // belong in it. One surviving into searchText and being normalized
+  // differently by hornet would leave the runner waiting out its capture
+  // window for a request it can never match — one junk name tripping the
+  // shared search breaker.
+  const name = String(artistName || '').replace(/"/g, '').replace(/[\p{Cc}]+/gu, ' ').trim();
+  if (!name) return null;
+  const q = '"' + name + '"';
+  let url;
+  try {
+    url = 'https://music.amazon.com/search/' + encodeURIComponent(q) + '/artists';
+  } catch (e) {
+    // A lone surrogate in metadata makes encodeURIComponent throw; a name
+    // that malformed is garbage, not a search — miss, never an exception.
+    return null;
+  }
+  return { url, searchText: q };
+}
+
+// Mirrors normalizeArtistName in src/renderer/lib/album-catalog.js (the
+// normalization the Deezer step of the artist-image chain matches on): case,
+// diacritic marks, a leading "The", "&" and punctuation are folded away.
+// Kept as a local copy — this module must not depend on renderer sources.
+function amazonNormalizeArtistName(name) {
+  let out = String(name || '');
+  try { out = out.normalize('NFKD').replace(/\p{M}/gu, ''); } catch (e) { /* old engines */ }
+  return out.toLowerCase().replace(/^the\s+/, '').replace(/&/g, 'and').replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+// One artist-spec edges[] entry -> { asin, name, imageUrl }. Only Artist
+// nodes map: a Track/Album/Station edge in the artist slot is the
+// ASIN-in-the-wrong-slot failure the track and album parsers guard against,
+// and a misfiled entity here would pin the wrong photo on the artist for 90
+// days (CACHE_TTL.artistImage — the host persists artist images in its image
+// cache). The photo pick
+// is the widest PROFILE image (the square artist photo; BACKGROUND is a wide
+// banner — albums use PRIMARY, artists do not have one), else the widest
+// image overall. Only a bare https URL on
+// Amazon's m.media-amazon.com CDN qualifies: the photo goes into the
+// persisted cache, so anything else — another host (a third-party tracking
+// pixel would persist and load on every render) or a query string (Amazon
+// has never signed these; a '?' would be new, and a credential-bearing URL
+// must not be stored) — is skipped. imageUrl is null when the artist has no
+// usable photo at all — the caller reports a miss for that artist, never
+// another artist's photo.
+function artistFromGqlSearchNode(node) {
+  if (!node || node.__typename !== 'Artist' || !node.id || !node.name) return null;
+  const usable = (Array.isArray(node.images) ? node.images : [])
+    .filter(i => i && typeof i.url === 'string' && /^https:\/\/m\.media-amazon\.com\//i.test(i.url) && !i.url.includes('?'));
+  const widest = (l) => (l.length ? l.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
+  const picked = widest(usable.filter(i => i.imageType === 'PROFILE')) || widest(usable);
+  return { asin: node.id, name: String(node.name).slice(0, 200), imageUrl: picked ? picked.url : null };
+}
+
+// The artist-spec response -> the artist's photo URL, or null. Same envelope
+// semantics as searchAlbumsFromGql: a miss is a present envelope with no
+// usable match; an absent envelope (hornet renamed the field) is structural.
+//
+// The edges are ranked by Amazon and the top hit is not always the exact
+// name ('warning' leads with 'The Warning', and both fold to the same key
+// anyway). The photo comes only from the FIRST node whose normalized name
+// equals the requested one — never from another artist the search happened
+// to rank higher, however similar ('Fates Warning' is not 'Warning').
+function searchArtistImageFromGql(data, artistName) {
+  const search = data && data.specificationSearch;
+  if (!search || typeof search !== 'object') return { url: null, envelope: false };
+  const results = Array.isArray(search.result) ? search.result : [];
+  let spec = null;
+  for (const r of results) {
+    if (r && Array.isArray(r.edges) && r.edges.length) { spec = r; break; }
+  }
+  if (!spec) {
+    for (const r of results) {
+      if (r && Array.isArray(r.edges)) { spec = r; break; }
+    }
+  }
+  const artists = ((spec && spec.edges) || [])
+    .map(e => artistFromGqlSearchNode(e && e.node))
+    .filter(Boolean);
+  const wanted = amazonNormalizeArtistName(artistName);
+  if (!wanted) return { url: null, envelope: true };
+  const match = artists.find(a => amazonNormalizeArtistName(a.name) === wanted);
+  return { url: (match && match.imageUrl) || null, envelope: true };
+}
+
 // One AlbumDetailPage tracksConnection.edges[] entry -> the album track
 // shape. Like the playlist/search row (shared contributingArtists and
 // title-marker handling) plus trackNumber, and the explicit flag from
@@ -1558,6 +1661,10 @@ module.exports = {
   searchTracksFromGql,
   albumFromGqlSearchNode,
   searchAlbumsFromGql,
+  amazonArtistSearchUrl,
+  amazonNormalizeArtistName,
+  artistFromGqlSearchNode,
+  searchArtistImageFromGql,
   albumTrackFromGqlEdge,
   assignDiscNumbers,
   albumDetailFromGql,

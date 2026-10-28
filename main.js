@@ -3853,6 +3853,21 @@ ipcMain.handle('amazonmusic-search-albums', async (event, payload) => {
   }
 });
 
+// Artist photos for the artist-image chain (capabilities.artistImage in the
+// .axe). searchArtistImage resolves to a URL or null and never throws for a
+// miss — not-signed-in included (null without a request, unlike the searches
+// which prompt): an artist photo is always optional and the chain moves on.
+ipcMain.handle('amazonmusic-search-artist-image', async (event, { artistName } = {}) => {
+  try {
+    const imageUrl = await amazonWebPlayer.searchArtistImage(artistName);
+    console.log(`[Amazon] IPC artist image ${JSON.stringify(artistName)} -> ${imageUrl ? 'hit' : 'null'}`);
+    return { success: true, engine: 'web', imageUrl };
+  } catch (error) {
+    console.warn(`[Amazon] IPC artist image failed: ${error && error.reason} ${error && error.message}`);
+    return { success: false, reason: error.reason, error: error.message };
+  }
+});
+
 ipcMain.handle('amazonmusic-lookup-album', async (event, { url } = {}) => {
   console.log(`[Amazon] IPC album lookup ${url}`);
   try {

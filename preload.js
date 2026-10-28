@@ -621,6 +621,7 @@ contextBridge.exposeInMainWorld('electron', {
     searchAlbums: (query) => ipcRenderer.invoke('amazonmusic-search-albums',
       query && typeof query === 'object' ? query : { query }),
     lookupAlbum: (url) => ipcRenderer.invoke('amazonmusic-lookup-album', { url }),
+    searchArtistImage: (artistName) => ipcRenderer.invoke('amazonmusic-search-artist-image', { artistName }),
     // Diagnostic (DevTools only): record an album or search page's gql into a
     // file in userData. See main.js 'amazonmusic-debug-capture-gql'.
     debugCaptureGql: (url) => ipcRenderer.invoke('amazonmusic-debug-capture-gql', { url }),
