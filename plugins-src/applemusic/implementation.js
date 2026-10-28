@@ -168,9 +168,12 @@ module.exports = {
     }
   },
   // Album search for the catalog fallback (docs/architecture/plugins.md,
-  // "searchAlbums"). The public iTunes catalog, so it answers with no Apple
-  // Music account or sign-in. Each result's url is a music.apple.com album
-  // URL, which lookupAlbum below accepts.
+  // "searchAlbums"). Asks the host's appleMusicSearchAlbumsWithMusicKit for
+  // Apple's catalog first: iTunes Search lags new releases by days or weeks
+  // (and missed some albums for months). The hook returns null when it can't
+  // reach the catalog, and then the public iTunes catalog answers, with no
+  // Apple Music account or sign-in. Each result's url is a music.apple.com
+  // album URL, which lookupAlbum below accepts.
   searchAlbums: async function (query, config) {
     try {
       var term =
@@ -181,6 +184,10 @@ module.exports = {
       if (term.length < 2) return [];
       var storefront = (config && config.storefront) || 'us';
       var fetchAlbums = async function (t, limit) {
+        if (window.appleMusicSearchAlbumsWithMusicKit) {
+          var catalogAlbums = await window.appleMusicSearchAlbumsWithMusicKit(t, storefront, limit);
+          if (Array.isArray(catalogAlbums)) return catalogAlbums;
+        }
         var response = await window.iTunesRateLimiter.fetch(
           'https://itunes.apple.com/search?term=' +
             encodeURIComponent(t) +
@@ -194,29 +201,30 @@ module.exports = {
           return [];
         }
         var data = await response.json();
-        return (data && data.results) || [];
+        return ((data && data.results) || [])
+          .filter(function (a) {
+            return a && a.collectionId && a.collectionName && a.collectionViewUrl;
+          })
+          .map(function (a) {
+            return {
+              id: 'applemusic-album-' + a.collectionId,
+              name: a.collectionName,
+              artist: a.artistName || '',
+              albumArt: a.artworkUrl100 ? a.artworkUrl100.replace('100x100', '500x500') : null,
+              releaseDate: a.releaseDate || null,
+              trackCount: a.trackCount || null,
+              url: a.collectionViewUrl,
+            };
+          });
       };
       var results = await fetchAlbums(term, 10);
-      // iTunes matches combined artist + title terms poorly, so a miss is
-      // retried with the artist alone; the caller matches the title.
+      // A combined artist + title term can miss (iTunes matches it poorly),
+      // so a miss is retried with the artist alone; the caller matches the
+      // title.
       if (results.length === 0 && query && typeof query === 'object' && query.artist && query.title) {
         results = await fetchAlbums(String(query.artist).trim(), 50);
       }
-      return results
-        .filter(function (a) {
-          return a && a.collectionId && a.collectionName && a.collectionViewUrl;
-        })
-        .map(function (a) {
-          return {
-            id: 'applemusic-album-' + a.collectionId,
-            name: a.collectionName,
-            artist: a.artistName || '',
-            albumArt: a.artworkUrl100 ? a.artworkUrl100.replace('100x100', '500x500') : null,
-            releaseDate: a.releaseDate || null,
-            trackCount: a.trackCount || null,
-            url: a.collectionViewUrl,
-          };
-        });
+      return results;
     } catch (error) {
       console.error('Apple Music album search error:', error);
       return [];

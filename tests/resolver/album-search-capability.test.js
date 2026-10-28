@@ -96,6 +96,53 @@ describe('Apple Music', () => {
     global.window = { iTunesRateLimiter: { fetch: async () => json({}, false) } };
     expect(await instantiate(axe).searchAlbums('anything here', {})).toEqual([]);
   });
+
+  // The host's catalog hook (iTunes Search lags new releases).
+  const CATALOG_ALBUM = {
+    id: 'applemusic-album-6825987374',
+    name: 'Luh Leakyz Vol. 1',
+    artist: 'Yeat & Lyfestyle Corporation',
+    albumArt: 'https://is1-ssl.mzstatic.com/x/500x500bb.jpg',
+    releaseDate: '2026-10-23',
+    trackCount: 15,
+    url: 'https://music.apple.com/us/album/luh-leakyz-vol-1/6825987374',
+  };
+
+  test('searchAlbums asks the host catalog hook first, and iTunes is not called', async () => {
+    const calls = [];
+    const itunes = [];
+    global.window = {
+      appleMusicSearchAlbumsWithMusicKit: async (...args) => { calls.push(args); return [CATALOG_ALBUM]; },
+      iTunesRateLimiter: { fetch: async (u) => { itunes.push(u); return json({ results: [ITUNES_ALBUM] }); } },
+    };
+    const albums = await instantiate(axe).searchAlbums({ artist: 'Yeat', title: 'Luh Leakyz Vol. 1' }, { storefront: 'gb' });
+    expect(calls).toEqual([['Yeat Luh Leakyz Vol. 1', 'gb', 10]]);
+    expect(itunes).toHaveLength(0);
+    expect(albums).toEqual([CATALOG_ALBUM]);
+    expect(/\/album\/[^/]+\/(\d+)/.test(albums[0].url)).toBe(true);
+  });
+
+  test('an empty catalog answer is a miss: the artist-alone retry asks the catalog again', async () => {
+    const terms = [];
+    global.window = {
+      appleMusicSearchAlbumsWithMusicKit: async (t) => { terms.push(t); return terms.length === 1 ? [] : [CATALOG_ALBUM]; },
+      iTunesRateLimiter: { fetch: async () => { throw new Error('iTunes should not be asked'); } },
+    };
+    const albums = await instantiate(axe).searchAlbums({ artist: 'Yeat', title: 'Luh Leakyz Vol. 1' }, {});
+    expect(terms).toEqual(['Yeat Luh Leakyz Vol. 1', 'Yeat']);
+    expect(albums).toEqual([CATALOG_ALBUM]);
+  });
+
+  test('a null from the hook (catalog unreachable) falls back to iTunes', async () => {
+    const urls = [];
+    global.window = {
+      appleMusicSearchAlbumsWithMusicKit: async () => null,
+      iTunesRateLimiter: { fetch: async (u) => { urls.push(u); return json({ results: [ITUNES_ALBUM] }); } },
+    };
+    const albums = await instantiate(axe).searchAlbums({ artist: 'Wild Pink', title: 'Dulling the Horns' }, {});
+    expect(urls[0]).toContain('entity=album');
+    expect(albums.map(a => a.id)).toEqual(['applemusic-album-1755555555']);
+  });
 });
 
 describe('Spotify', () => {
