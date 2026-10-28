@@ -50,6 +50,10 @@ const {
   albumTracksConnectionIn,
   albumFromGqlSearchNode,
   searchAlbumsFromGql,
+  amazonArtistSearchUrl,
+  amazonNormalizeArtistName,
+  artistFromGqlSearchNode,
+  searchArtistImageFromGql,
   albumTrackFromGqlEdge,
   assignDiscNumbers,
   albumDetailFromGql,
@@ -2014,6 +2018,211 @@ describe('searchAlbumsFromGql', () => {
     })).toBeNull();
     expect(albumFromGqlSearchNode(null)).toBeNull();
     expect(albumFromGqlSearchNode({ __typename: 'Album', title: 'X', contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: 'A' } }] } })).toBeNull();
+  });
+});
+
+// The artists tab (/search/<q>/artists — plural; the singular /artist path
+// fires nothing matchable) fires SpecSearchSeeMorePage with
+// variables.specType 'artist' (live-verified 2026-10 via
+// amazonmusic-debug-capture-gql and a specSearch probe), and its bucket is
+// labeled 'requiredButUnused' — the same label the album bucket uses.
+describe('amazonArtistSearchUrl', () => {
+  test('the artists tab carries the quoted artist name', () => {
+    expect(amazonArtistSearchUrl('The Warning')).toEqual({
+      url: 'https://music.amazon.com/search/' + encodeURIComponent('"The Warning"') + '/artists',
+      searchText: '"The Warning"'
+    });
+    // An embedded quote is stripped, not escaped into a broken phrase.
+    expect(amazonArtistSearchUrl('The "Warning"').searchText).toBe('"The Warning"');
+  });
+
+  test('control characters in a metadata name fold to a space — a junk name must not wedge the matcher', () => {
+    // searchText is what the runner matches the page's own request on; a raw
+    // newline normalized differently by hornet would never match, and one
+    // junk name would wait out the capture window as a structural failure.
+    expect(amazonArtistSearchUrl('AC\nDC').searchText).toBe('"AC DC"');
+    expect(amazonArtistSearchUrl('a\tb').searchText).toBe('"a b"');
+    expect(amazonArtistSearchUrl('\n\r')).toBeNull();
+  });
+
+  test('a lone surrogate in metadata is a miss, not an encodeURIComponent exception', () => {
+    expect(amazonArtistSearchUrl('AC\uD83DDC')).toBeNull();
+    expect(amazonArtistSearchUrl('\uD800')).toBeNull();
+    // A well-formed surrogate pair (an actual emoji) still searches.
+    expect(amazonArtistSearchUrl('AC\uD83D\uDE00DC')).not.toBeNull();
+  });
+
+  test('nothing to search returns null', () => {
+    expect(amazonArtistSearchUrl('')).toBeNull();
+    expect(amazonArtistSearchUrl('  ')).toBeNull();
+    expect(amazonArtistSearchUrl(null)).toBeNull();
+    expect(amazonArtistSearchUrl(undefined)).toBeNull();
+  });
+});
+
+describe('amazonSpecSearchRequest artist spec', () => {
+  const search = (searchText, specType) => JSON.stringify({
+    operationName: 'SpecSearchSeeMorePage',
+    variables: {
+      searchText, specType, firstLimit: 30, isAuthenticated: true,
+      audiobooksEnabled: true, merchEnabled: true, categoryInEntityUnionEnabled: false
+    },
+    extensions: {
+      clientLibrary: { name: '@apollo/client', version: '4.1.6' },
+      persistedQuery: { version: 1, sha256Hash: '19e7571fa4ccb97a7e70bacbf8877ad9f63ba23359131807300ac6eb8616b083' }
+    }
+  });
+
+  test('the artist spec is accepted only with { spec: "artist" }', () => {
+    expect(amazonSpecSearchRequest([search('warning', 'artist')], 'warning', { spec: 'artist' }).variables.specType).toBe('artist');
+    // Artist mode must not accept the track or album spec — the same
+    // entity-in-the-wrong-slot rule, for photos this time.
+    expect(amazonSpecSearchRequest([search('warning', 'track')], 'warning', { spec: 'artist' })).toBeNull();
+    expect(amazonSpecSearchRequest([search('warning', 'album')], 'warning', { spec: 'artist' })).toBeNull();
+    // The default (track) mode never matches the artist spec either.
+    expect(amazonSpecSearchRequest([search('warning', 'artist')], 'warning')).toBeNull();
+  });
+});
+
+// The artist-spec SpecSearchSeeMorePage response (shape live-verified
+// 2026-10, the "warning" search): edges[].node = Artist with id/name/images
+// (imageType PROFILE or BACKGROUND — artists have no PRIMARY) /url — and the
+// ranking is Amazon's: 'warning' leads with 'The Warning'.
+describe('searchArtistImageFromGql', () => {
+  const img = (id, width, height, imageType) => ({
+    id: id + (imageType ? ':' + imageType : ''),
+    url: 'https://m.media-amazon.com/images/I/' + id + '.jpg',
+    width, height, imageType: imageType || null, __typename: 'Image'
+  });
+  const artistNode = (id, name, images) => ({
+    __typename: 'Artist',
+    id,
+    name,
+    images,
+    uri: 'mrn:1.0:catalog:artist:asin:' + id + '?territory=US',
+    url: 'https://music.amazon.com/artists/' + id + '?ref=dm_ff_amazonmusic_greenhornet_web'
+  });
+  const response = (edges) => ({
+    specificationSearch: {
+      id: 'search_0179e2c66e',
+      searchText: '"warning"',
+      result: [
+        {
+          __typename: 'SpecificationSearchResult',
+          label: 'requiredButUnused',
+          edges: edges.map(node => ({ __typename: 'EntityEdge', node }))
+        }
+      ]
+    }
+  });
+
+  test('finds the exact artist even when Amazon ranks a namesake first, and picks the widest PROFILE photo', () => {
+    const data = response([
+      artistNode('B000U7ZTW2', 'Fates Warning', [img('81fjIzayUYL', 2560, 1920, 'BACKGROUND'), img('71rGf-BOhvL', 2560, 1701, 'PROFILE'), img('418N-wFRGiL', 500, 332, 'PROFILE')]),
+      artistNode('B00V07PBMY', 'The Warning', [img('9160a4z-YNL', 2549, 1912, 'BACKGROUND'), img('41mVLfnDeyL', 500, 500, 'PROFILE'), img('71KKtoQJVeL', 1366, 1366, 'PROFILE')]),
+      artistNode('B000RHPPF6', 'Warning', [img('81BePqr9D6L', 1448, 1448, 'PROFILE'), img('41L8NFlJ3vL', 500, 500, 'PROFILE')])
+    ]);
+    expect(searchArtistImageFromGql(data, 'The Warning')).toEqual({ url: 'https://m.media-amazon.com/images/I/71KKtoQJVeL.jpg', envelope: true });
+    // Fates Warning leads this fixture's ranking and is a different artist —
+    // a rank-based pick would pin its photo on The/Warning.
+    expect(searchArtistImageFromGql(data, 'Fates Warning')).toEqual({ url: 'https://m.media-amazon.com/images/I/71rGf-BOhvL.jpg', envelope: true });
+  });
+
+  test('a leading-The alias folds to the same key; Amazon\'s ranking breaks the tie', () => {
+    // normalizeArtistName strips a leading "The", so 'The Warning' and
+    // 'Warning' are the same key — the same collision the Deezer and Subsonic
+    // chain steps have. The first ranked node with the key wins (live
+    // ranking for 'warning': The Warning above Warning).
+    const data = response([
+      artistNode('B00V07PBMY', 'The Warning', [img('71KKtoQJVeL', 1366, 1366, 'PROFILE')]),
+      artistNode('B000RHPPF6', 'Warning', [img('81BePqr9D6L', 1448, 1448, 'PROFILE')])
+    ]);
+    expect(searchArtistImageFromGql(data, 'Warning')).toEqual({ url: 'https://m.media-amazon.com/images/I/71KKtoQJVeL.jpg', envelope: true });
+  });
+
+  test('falls back to the widest image of any type when there is no PROFILE', () => {
+    const data = response([
+      artistNode('B000S2JA4W', 'Eminem', [img('41ARdb+TI0L', 500, 375, 'BACKGROUND'), img('810cSt8jgfL', 2560, 1920, 'BACKGROUND')])
+    ]);
+    expect(searchArtistImageFromGql(data, 'Eminem')).toEqual({ url: 'https://m.media-amazon.com/images/I/810cSt8jgfL.jpg', envelope: true });
+  });
+
+  test('an image URL with a query string is skipped — never a credential in the persisted cache', () => {
+    const signed = img('x1', 2400, 2400, 'PROFILE');
+    signed.url = 'https://m.media-amazon.com/images/I/x1.jpg?token=abc';
+    const photo = img('x2', 500, 500, 'PROFILE');
+    const data = response([artistNode('B0X1', 'Xtc', [signed, photo])]);
+    expect(searchArtistImageFromGql(data, 'XTC')).toEqual({ url: 'https://m.media-amazon.com/images/I/x2.jpg', envelope: true });
+    // And when every URL is query-bearing the artist reports no photo.
+    const onlySigned = response([artistNode('B0X1', 'Xtc', [signed])]);
+    expect(searchArtistImageFromGql(onlySigned, 'XTC')).toEqual({ url: null, envelope: true });
+  });
+
+  test('an image URL off m.media-amazon.com is skipped — a third-party host must not persist', () => {
+    const offHost = img('y1', 2400, 2400, 'PROFILE');
+    offHost.url = 'https://tracker.example.com/pixel.jpg';
+    const siblingHost = img('y2', 1200, 1200, 'PROFILE');
+    siblingHost.url = 'https://m.media-amazon.com.evil.example/images/I/y2.jpg';
+    const photo = img('y3', 500, 500, 'PROFILE');
+    const data = response([artistNode('B0X1', 'Xtc', [offHost, siblingHost, photo])]);
+    expect(searchArtistImageFromGql(data, 'XTC')).toEqual({ url: 'https://m.media-amazon.com/images/I/y3.jpg', envelope: true });
+    expect(searchArtistImageFromGql(response([artistNode('B0X1', 'Xtc', [offHost])]), 'XTC')).toEqual({ url: null, envelope: true });
+  });
+
+  test('the matched artist with no usable photo is a miss — never another artist\'s photo', () => {
+    const data = response([
+      artistNode('B0N01', 'Photoless', []),
+      artistNode('B000RHPPF6', 'Warning', [img('81BePqr9D6L', 1448, 1448, 'PROFILE')])
+    ]);
+    expect(searchArtistImageFromGql(data, 'Photoless')).toEqual({ url: null, envelope: true });
+  });
+
+  test('no exact-normalized name in the spec is a miss', () => {
+    const data = response([
+      artistNode('B000U7ZTW2', 'Fates Warning', [img('71rGf-BOhvL', 2560, 1701, 'PROFILE')]),
+      artistNode('B00V07PBMY', 'The Warning', [img('71KKtoQJVeL', 1366, 1366, 'PROFILE')])
+    ]);
+    expect(searchArtistImageFromGql(data, 'Warrant')).toEqual({ url: null, envelope: true });
+  });
+
+  test('normalization matches the chain: case, marks, leading The, & and punctuation fold away', () => {
+    const data = response([artistNode('B0B1', 'Björk', [img('p1', 500, 500, 'PROFILE')])]);
+    expect(searchArtistImageFromGql(data, 'bjork')).toEqual({ url: 'https://m.media-amazon.com/images/I/p1.jpg', envelope: true });
+    const amp = response([artistNode('B0B2', 'Simon & Garfunkel', [img('p2', 500, 500, 'PROFILE')])]);
+    expect(searchArtistImageFromGql(amp, 'Simon and Garfunkel')).toEqual({ url: 'https://m.media-amazon.com/images/I/p2.jpg', envelope: true });
+  });
+
+  test('a Track/Album edge in the artist spec is dropped', () => {
+    const track = { __typename: 'Track', id: 'B0FBVD5MW3', title: 'Warning', images: [img('t1', 1448, 1448, 'PRIMARY')] };
+    const album = { __typename: 'Album', id: 'B001227N6E', title: 'Warning', images: [img('a1', 1450, 1450, 'PRIMARY')] };
+    const out = searchArtistImageFromGql(response([track, album]), 'Warning');
+    expect(out).toEqual({ url: null, envelope: true });
+    expect(artistFromGqlSearchNode(track)).toBeNull();
+    expect(artistFromGqlSearchNode(null)).toBeNull();
+    expect(artistFromGqlSearchNode({ __typename: 'Artist', name: 'X' })).toBeNull(); // no id
+    expect(artistFromGqlSearchNode({ __typename: 'Artist', id: 'B0X1' })).toBeNull(); // no name
+  });
+
+  test('a missing name is a miss, not an error; an absent envelope is structural', () => {
+    const data = response([artistNode('B000RHPPF6', 'Warning', [img('81BePqr9D6L', 1448, 1448, 'PROFILE')])]);
+    expect(searchArtistImageFromGql(data, '')).toEqual({ url: null, envelope: true });
+    expect(searchArtistImageFromGql({ somethingElse: {} })).toEqual({ url: null, envelope: false });
+    expect(searchArtistImageFromGql(null)).toEqual({ url: null, envelope: false });
+    expect(searchArtistImageFromGql(undefined)).toEqual({ url: null, envelope: false });
+  });
+
+  test('empty edges in a present envelope is a real miss', () => {
+    const out = searchArtistImageFromGql(response([]), 'Warning');
+    expect(out).toEqual({ url: null, envelope: true });
+  });
+});
+
+describe('amazonNormalizeArtistName', () => {
+  test('mirrors normalizeArtistName in src/renderer/lib/album-catalog.js', () => {
+    const { normalizeArtistName } = require('../../src/renderer/lib/album-catalog');
+    for (const name of ['The Warning', 'Fates Warning', 'Björk', 'Simon & Garfunkel', 'ХЛЕБ', 'The Notorious B.I.G.', 'Guns N\' Roses', '']) {
+      expect(amazonNormalizeArtistName(name)).toBe(normalizeArtistName(name));
+    }
   });
 });
 

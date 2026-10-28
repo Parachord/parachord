@@ -1,4 +1,4 @@
-// Source of truth for plugins/amazonmusic.axe v1.5.0.
+// Source of truth for plugins/amazonmusic.axe v1.6.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -249,6 +249,44 @@ module.exports = {
       if (error && error.notReady) throw error;
       console.error('Amazon Music album search error:', error);
       return [];
+    }
+  },
+  // capabilities.artistImage (docs/architecture/plugins.md,
+  // "searchArtistImage"): a photo of an artist by name, from the artists tab
+  // of the same spec search the track and album searches use
+  // (docs/architecture/amazon-music.md). The bridge returns the photo URL or
+  // null: not signed in is null WITHOUT a request — the artist-image chain
+  // just asks the next source (Deezer needs no account) — a miss is null,
+  // and the exact-name check happens main-side, so a wrong artist's photo
+  // can never reach the persisted image cache. A host whose bridge predates
+  // this capability is a quiet no-op.
+  searchArtistImage: async function (artistName, config) {
+    try {
+      if (
+        !window.electron ||
+        !window.electron.amazonMusic ||
+        typeof window.electron.amazonMusic.searchArtistImage !== 'function'
+      ) {
+        return null;
+      }
+      var name = (artistName || '').trim();
+      if (name.length < 2) return null;
+      var result = await window.electron.amazonMusic.searchArtistImage(name);
+      console.log(
+        '[Amazon] resolver artist image',
+        name,
+        result && result.success ? 'ok' : result && result.reason,
+        result && result.imageUrl ? 'hit' : 'miss',
+      );
+      if (!result || !result.success || !result.imageUrl) return null;
+      var url = result.imageUrl;
+      // The bridge only returns credential-free https CDN URLs, but this URL
+      // is persisted in the image cache — check before trusting.
+      if (typeof url !== 'string' || !/^https:\/\//i.test(url) || url.indexOf('?') !== -1) return null;
+      return url;
+    } catch (error) {
+      console.error('Amazon Music artist image error:', error);
+      return null;
     }
   },
   lookupAlbum: async function (url, config) {

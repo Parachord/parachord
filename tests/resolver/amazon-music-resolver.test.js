@@ -8,6 +8,8 @@
  *   - play() not-signed-in flow (sign-in prompt + retry)
  *   - searchAlbums()/lookupAlbum() (the albumSearch capability: bridge mapping,
  *     sign-in prompt, and miss vs notReady)
+ *   - searchArtistImage() (the artistImage capability: bridge mapping, the
+ *     no-bridge no-op, and miss vs error — never a sign-in prompt)
  *   - byte-identical FALLBACK_RESOLVERS copy in app.js (drift guard)
  *   - resolver-limiter does NOT skip amazonmusic (CDP fan-out + web search)
  */
@@ -38,12 +40,12 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.5.0');
+    expect(axe.manifest.version).toBe('1.6.0');
   });
 
   test('declares streaming capabilities without auth', () => {
     expect(axe.capabilities).toEqual(
-      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, mobile: false })
+      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, artistImage: true, mobile: false })
     );
     expect(axe.settings.requiresAuth).toBe(false);
     expect(axe.urlPatterns).toEqual([
@@ -60,7 +62,7 @@ describe('amazonmusic .axe structure', () => {
       expect(typeof new Function('return ' + src)()).toBe('function');
     }
     expect(Object.keys(axe.implementation).sort()).toEqual(
-      ['cleanup', 'init', 'lookupAlbum', 'lookupPlaylist', 'play', 'resolve', 'search', 'searchAlbums'].sort()
+      ['cleanup', 'init', 'lookupAlbum', 'lookupPlaylist', 'play', 'resolve', 'search', 'searchAlbums', 'searchArtistImage'].sort()
     );
   });
 });
@@ -576,6 +578,75 @@ describe('amazonmusic searchAlbums', () => {
     delete global.window.electron;
     const resolver = instantiate(axe);
     expect(await resolver.searchAlbums('wild pink', {})).toEqual([]);
+  });
+});
+
+describe('amazonmusic searchArtistImage', () => {
+  // The bridge shape (amazon-web-player.searchArtistImage ->
+  // searchArtistImageFromGql): success + imageUrl (an https m.media-amazon
+  // CDN URL) on a hit, success + imageUrl null on a miss — including
+  // not-signed-in, which is null WITHOUT a request: unlike the searches, an
+  // artist photo never prompts for sign-in (the chain moves on to Deezer).
+  const photo = 'https://m.media-amazon.com/images/I/71KKtoQJVeL.jpg';
+
+  beforeEach(() => {
+    global.window = {
+      electron: {
+        amazonMusic: {
+          searchArtistImage: jest.fn().mockResolvedValue({ success: true, engine: 'web', imageUrl: photo })
+        }
+      }
+    };
+  });
+
+  afterEach(() => {
+    delete global.window;
+  });
+
+  test('returns the bridge photo URL for a hit', async () => {
+    const resolver = instantiate(axe);
+    expect(await resolver.searchArtistImage('The Warning', {})).toBe(photo);
+    expect(global.window.electron.amazonMusic.searchArtistImage).toHaveBeenCalledWith('The Warning');
+  });
+
+  test('too short or empty names never reach the bridge', async () => {
+    const resolver = instantiate(axe);
+    expect(await resolver.searchArtistImage('x', {})).toBeNull();
+    expect(await resolver.searchArtistImage('', {})).toBeNull();
+    expect(await resolver.searchArtistImage('   ', {})).toBeNull();
+    expect(await resolver.searchArtistImage(null, {})).toBeNull();
+    expect(global.window.electron.amazonMusic.searchArtistImage).not.toHaveBeenCalled();
+  });
+
+  test('a miss (imageUrl null, not-signed-in included) is null, never a throw', async () => {
+    const resolver = instantiate(axe);
+    global.window.electron.amazonMusic.searchArtistImage.mockResolvedValue({ success: true, engine: 'web', imageUrl: null });
+    expect(await resolver.searchArtistImage('Nobody', {})).toBeNull();
+    global.window.electron.amazonMusic.searchArtistImage.mockResolvedValue({ success: false, reason: 'not-ready' });
+    expect(await resolver.searchArtistImage('Nobody', {})).toBeNull();
+    global.window.electron.amazonMusic.searchArtistImage.mockRejectedValue(new Error('boom'));
+    expect(await resolver.searchArtistImage('Nobody', {})).toBeNull();
+  });
+
+  test('a URL that is not a bare https URL never leaves this plugin — the cache persists it', async () => {
+    const resolver = instantiate(axe);
+    for (const bad of [
+      'http://m.media-amazon.com/images/I/x.jpg',
+      'https://m.media-amazon.com/images/I/x.jpg?token=abc',
+      'data:image/png;base64,AAAA',
+      42
+    ]) {
+      global.window.electron.amazonMusic.searchArtistImage.mockResolvedValue({ success: true, engine: 'web', imageUrl: bad });
+      expect(await resolver.searchArtistImage('The Warning', {})).toBeNull();
+    }
+  });
+
+  test('a host whose bridge predates the capability is a quiet no-op', async () => {
+    delete global.window.electron.amazonMusic.searchArtistImage;
+    const resolver = instantiate(axe);
+    expect(await resolver.searchArtistImage('The Warning', {})).toBeNull();
+    delete global.window.electron;
+    expect(await resolver.searchArtistImage('The Warning', {})).toBeNull();
   });
 });
 
