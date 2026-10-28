@@ -8,9 +8,13 @@
 // IPC effects (embed set-volume bridge, macOS system volume/mute monitor).
 //
 // Extracted VERBATIM — every function body + effect body below is a byte-for-
-// byte move out of Parachord. Preserve order and semantics on any edit, and
-// see the latency note in useSpotifyVolumeDispatch below (one stale-closure
-// behavior is deliberately preserved; fixing it is a separate change).
+// byte move out of Parachord. Preserve order and semantics on any edit.
+// The one stale-closure behavior this file carried at extraction (the
+// []-dep embed + system-volume dispatch reading first-render resolver
+// offsets) is FIXED — getEffectiveVolume reads resolverVolumeOffsetsRef.
+// current — via the inline notes at the embed effect. The header used to
+// point at a "useSpotifyVolumeDispatch" note that never existed; the live
+// documentation is at the embed effect below.
 //
 // Rules for this file (the extracted-module rule for hooks):
 //   - React.-qualified hooks only (React.useState etc.) — never bare
@@ -145,9 +149,15 @@ function useVolume({
   // Calculate effective volume with resolver offset and per-track adjustment
   // Returns volume as 0-100 percentage
   // Math lives in the exported pure computeEffectiveVolume; this wrapper
-  // passes the current state + track-adjustments ref contents.
+  // passes the CURRENT offsets ref + track-adjustments ref contents.
+  // Reading resolverVolumeOffsetsRef.current (not the render's
+  // resolverVolumeOffsets) is the stale-offsets fix (parachord#1137 review):
+  // the []-dep embed + system-volume dispatch effects capture first-render
+  // closures, so reading state there served Settings-changed offsets stale
+  // until restart; the ref is synced by the offsets effect below, so the
+  // same dispatch paths are live with zero listener re-registration.
   const getEffectiveVolume = (baseVolume, resolverId, trackId) =>
-    computeEffectiveVolume(baseVolume, resolverId, trackId, resolverVolumeOffsets, trackVolumeAdjustments.current);
+    computeEffectiveVolume(baseVolume, resolverId, trackId, resolverVolumeOffsetsRef.current, trackVolumeAdjustments.current);
 
   // Set Spotify playback volume via API (with normalization)
   const setSpotifyVolume = async (volumePercent, applyNormalization = true) => {
@@ -227,15 +237,15 @@ function useVolume({
     }
   }, [resolverVolumeOffsets, cacheLoaded]);
 
-  // Handle volume requests from embed players. NOTE (preserved latency):
-  // this registration has an empty dep array, matching app.js today — the
-  // handler closes over the FIRST render's setSpotifyVolumeDebounced →
-  // getEffectiveVolume closures, so a resolver-offsets change in Settings is
-  // not picked up by this dispatch path until restart. The same staleness
-  // reaches the system-volume monitor below. The offsets-reapply effect
-  // above covers the current-track compensation; do NOT "fix" this as part
-  // of the extraction — a fresh-reference fix changes runtime behavior and
-  // belongs in its own PR with verification.
+  // Handle volume requests from embed players. NOTE: this registration
+  // keeps its empty dep array (dispatch semantics must not change), but the
+  // stale-offsets latency it used to carry is gone — getEffectiveVolume
+  // reads resolverVolumeOffsetsRef.current, so Settings changes are live in
+  // this dispatch path and the system-volume monitor below without any
+  // listener re-registration. (History: the first-captured closure shipped
+  // in #1137 as a preserved-not-fixed behavior; fixed via the ref read.)
+  // The offsets-reapply effect above still covers the current-track
+  // compensation when offsets themselves change.
   React.useEffect(() => {
     if (!window.electron?.embed?.onSetVolume) return;
     // Handle volume requests from embed
