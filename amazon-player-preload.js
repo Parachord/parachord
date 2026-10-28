@@ -25,8 +25,12 @@
 // trap, no visibility stub, with the localStorage quality fallback masking the
 // damage (verified live on Electron 39 +wvcus). So installAmazonRequireTrap
 // and installAmazonStreamCapture are inlined below as literal copies of the
-// ones in amazon-music-logic.js, installMediaSessionHijack of the one in
-// embedded-player-kit.js, and
+// ones in amazon-music-logic.js, installMediaSessionHijack + the
+// applyMediaSessionMirror relay of the ones in embedded-player-kit.js —
+// and the four copies are GENERATOR-OWNED (scripts/build-amazon-preload.js
+// regenerates the GENERATED-BEGIN/END blocks from .toString() of the
+// sources, prettier-canonicalized; the parity test + CI drift gate are the
+// guards now, no hand-edits), and
 // tests/resolver/amazon-player-preload.test.js fails the build if the copies
 // drift or if a local require ever comes back. Do not require local modules
 // from this file.
@@ -35,6 +39,7 @@
 // document here would not affect Amazon's scripts, so the stub is evaluated in
 // the page world (isolated world 0).
 
+// GENERATED-BEGIN installAmazonRequireTrap
 function installAmazonRequireTrap(scope) {
   if (scope.__parachordRequireTrap) return;
   scope.__parachordRequireTrap = true;
@@ -57,8 +62,12 @@ function installAmazonRequireTrap(scope) {
     };
     // Keep require's own properties (e.g. metro's require.async) reachable
     // through the wrapper.
-    try { Object.setPrototypeOf(wrapped, require); } catch (e) {}
-    try { Object.defineProperty(wrapped, '__parachordWrapped', { value: true }); } catch (e) {}
+    try {
+      Object.setPrototypeOf(wrapped, require);
+    } catch (e) {}
+    try {
+      Object.defineProperty(wrapped, '__parachordWrapped', { value: true });
+    } catch (e) {}
     return wrapped;
   };
   try {
@@ -68,12 +77,18 @@ function installAmazonRequireTrap(scope) {
     if (typeof scope.__r === 'function') current = wrap(scope.__r);
     Object.defineProperty(scope, '__r', {
       configurable: true,
-      get() { return current; },
-      set(v) { current = wrap(v); return current; }
+      get() {
+        return current;
+      },
+      set(v) {
+        current = wrap(v);
+        return current;
+      },
     });
   } catch (e) {}
 }
-
+// GENERATED-END installAmazonRequireTrap
+// GENERATED-BEGIN installAmazonStreamCapture
 function installAmazonStreamCapture(scope) {
   if (!scope || scope.__parachordStreamCapture) return;
   scope.__parachordStreamCapture = true;
@@ -84,7 +99,8 @@ function installAmazonStreamCapture(scope) {
   const MAX_INITS = 8;
   const MAX_INIT_BYTES = 65536;
   const isManifest = (url) => /\.mpd(?:[?#]|$)/i.test(String(url || ''));
-  const isInitCandidate = (url) => /\.(?:mp4|m4s|cmfv|cmfa|cmf|dash)(?:[?#]|$)/i.test(String(url || ''));
+  const isInitCandidate = (url) =>
+    /\.(?:mp4|m4s|cmfv|cmfa|cmf|dash)(?:[?#]|$)/i.test(String(url || ''));
   const recordManifest = (url, text) => {
     try {
       if (!text || caps.manifests.length >= MAX_MANIFESTS) return;
@@ -102,10 +118,24 @@ function installAmazonStreamCapture(scope) {
     try {
       if (!res || typeof res.clone !== 'function') return;
       if (isManifest(url)) {
-        res.clone().text().then((t) => recordManifest(url, t), () => {});
+        res
+          .clone()
+          .text()
+          .then(
+            (t) => recordManifest(url, t),
+            () => {},
+          );
       } else if (isInitCandidate(url)) {
-        const len = Number(res.headers && res.headers.get && res.headers.get('content-length')) || 0;
-        if (!len || len <= MAX_INIT_BYTES) res.clone().arrayBuffer().then((b) => recordInit(url, b), () => {});
+        const len =
+          Number(res.headers && res.headers.get && res.headers.get('content-length')) || 0;
+        if (!len || len <= MAX_INIT_BYTES)
+          res
+            .clone()
+            .arrayBuffer()
+            .then(
+              (b) => recordInit(url, b),
+              () => {},
+            );
       }
     } catch (e) {}
   };
@@ -124,13 +154,23 @@ function installAmazonStreamCapture(scope) {
         const p = origFetch.apply(this, arguments);
         try {
           if (p && typeof p.then === 'function' && (isManifest(url) || isInitCandidate(url))) {
-            p.then((res) => { observeResponse(url, res); return res; }, () => {});
+            p.then(
+              (res) => {
+                observeResponse(url, res);
+                return res;
+              },
+              () => {},
+            );
           }
         } catch (e) {}
         return p;
       };
-      try { Object.setPrototypeOf(wrappedFetch, origFetch); } catch (e) {}
-      try { Object.defineProperty(wrappedFetch, '__parachordWrapped', { value: true }); } catch (e) {}
+      try {
+        Object.setPrototypeOf(wrappedFetch, origFetch);
+      } catch (e) {}
+      try {
+        Object.defineProperty(wrappedFetch, '__parachordWrapped', { value: true });
+      } catch (e) {}
       scope.fetch = wrappedFetch;
     }
   } catch (e) {}
@@ -144,7 +184,9 @@ function installAmazonStreamCapture(scope) {
           const openOrig = xhr.open;
           if (typeof openOrig === 'function') {
             xhr.open = function () {
-              try { reqUrl = String(arguments[1] || ''); } catch (e) {}
+              try {
+                reqUrl = String(arguments[1] || '');
+              } catch (e) {}
               return openOrig.apply(this, arguments);
             };
           }
@@ -163,18 +205,25 @@ function installAmazonStreamCapture(scope) {
         } catch (e) {}
         return xhr;
       };
-      try { WrappedXHR.prototype = OrigXHR.prototype; } catch (e) {}
+      try {
+        WrappedXHR.prototype = OrigXHR.prototype;
+      } catch (e) {}
       try {
         Object.keys(OrigXHR).forEach((k) => {
-          try { if (!(k in WrappedXHR)) WrappedXHR[k] = OrigXHR[k]; } catch (e) {}
+          try {
+            if (!(k in WrappedXHR)) WrappedXHR[k] = OrigXHR[k];
+          } catch (e) {}
         });
       } catch (e) {}
-      try { Object.defineProperty(WrappedXHR, '__parachordWrapped', { value: true }); } catch (e) {}
+      try {
+        Object.defineProperty(WrappedXHR, '__parachordWrapped', { value: true });
+      } catch (e) {}
       scope.XMLHttpRequest = WrappedXHR;
     }
   } catch (e) {}
 }
-
+// GENERATED-END installAmazonStreamCapture
+// GENERATED-BEGIN installMediaSessionHijack
 function installMediaSessionHijack(scope, onAction) {
   if (!scope || !scope.navigator || scope.__parachordMediaSessionHijack) return null;
   const real = scope.navigator.mediaSession;
@@ -208,17 +257,21 @@ function installMediaSessionHijack(scope, onAction) {
     setActionHandler() {},
     setPositionState() {},
     setCameraActive() {},
-    setMicrophoneActive() {}
+    setMicrophoneActive() {},
   };
   try {
     Object.defineProperty(scope.navigator, 'mediaSession', {
       configurable: true,
-      get() { return facade; }
+      get() {
+        return facade;
+      },
     });
   } catch {}
   return real;
 }
+// GENERATED-END installMediaSessionHijack
 
+// GENERATED-BEGIN applyMediaSessionMirror
 function applyMediaSessionMirror(real, data, MediaMetadataCtor) {
   if (!real || !data || typeof data !== 'object') return;
   try {
@@ -230,20 +283,35 @@ function applyMediaSessionMirror(real, data, MediaMetadataCtor) {
         const base = {
           title: String(m.title || ''),
           artist: String(m.artist || ''),
-          album: String(m.album || '')
+          album: String(m.album || ''),
         };
         const art = m.artwork && typeof m.artwork === 'string' && /^https:/i.test(m.artwork);
         try {
-          real.metadata = new MediaMetadataCtor(art
-            ? { title: base.title, artist: base.artist, album: base.album, artwork: [{ src: m.artwork, sizes: '512x512' }] }
-            : base);
+          real.metadata = new MediaMetadataCtor(
+            art
+              ? {
+                  title: base.title,
+                  artist: base.artist,
+                  album: base.album,
+                  artwork: [{ src: m.artwork, sizes: '512x512' }],
+                }
+              : base,
+          );
         } catch {
-          try { real.metadata = new MediaMetadataCtor(base); } catch {}
+          try {
+            real.metadata = new MediaMetadataCtor(base);
+          } catch {}
         }
       }
     }
-    if (data.playbackState === 'playing' || data.playbackState === 'paused' || data.playbackState === 'none') {
-      try { real.playbackState = data.playbackState; } catch {}
+    if (
+      data.playbackState === 'playing' ||
+      data.playbackState === 'paused' ||
+      data.playbackState === 'none'
+    ) {
+      try {
+        real.playbackState = data.playbackState;
+      } catch {}
     }
     if (data.position && Number(data.position.duration) > 0) {
       const duration = Number(data.position.duration);
@@ -252,12 +320,13 @@ function applyMediaSessionMirror(real, data, MediaMetadataCtor) {
         real.setPositionState({
           duration,
           position,
-          playbackRate: data.position.rate === 0 ? 0 : 1
+          playbackRate: data.position.rate === 0 ? 0 : 1,
         });
       } catch {}
     }
   } catch {}
 }
+// GENERATED-END applyMediaSessionMirror
 
 const PAGE_STUB = `(function () {
   const installAmazonRequireTrap = ${installAmazonRequireTrap.toString()};
