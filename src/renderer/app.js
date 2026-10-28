@@ -54776,7 +54776,7 @@ useEffect(() => {
             style: itemStyle,
             onMouseEnter: (e) => { e.currentTarget.style.opacity = '0.85'; },
             onMouseLeave: (e) => { e.currentTarget.style.opacity = '1'; }
-          }, copyIcon(), 'Copy link')
+          }, copyIcon(), 'Copy Link')
         );
         if (parachordLinkMenu.achordionShare.runView) {
           items.push(
@@ -54820,7 +54820,7 @@ useEffect(() => {
           style: itemStyle,
           onMouseEnter: (e) => { e.currentTarget.style.opacity = '0.85'; },
           onMouseLeave: (e) => { e.currentTarget.style.opacity = '1'; }
-        }, copyIcon(), 'Copy parachord:// link')
+        }, copyIcon(), 'Copy parachord:// Link')
       );
       return React.createElement('div', {
         className: 'fixed inset-0 z-[70]',

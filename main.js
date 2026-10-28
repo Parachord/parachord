@@ -5129,7 +5129,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
     if (data.type === 'track') {
       // Single track smart link
       menuItems.push({
-        label: 'Copy link',
+        label: 'Copy Link',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
             action: 'publish-smart-link',
@@ -5149,7 +5149,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 
     } else if (data.type === 'artist') {
       menuItems.push({
-        label: 'Copy link',
+        label: 'Copy Link',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
             action: 'publish-artist-smart-link',
@@ -5207,7 +5207,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       };
 
       menuItems.push({
-        label: 'Copy link',
+        label: 'Copy Link',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
             action: 'publish-collection-smart-link',
