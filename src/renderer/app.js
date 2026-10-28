@@ -642,6 +642,7 @@ const {
 const {
   deezerArtistImageFromSearch, firstArtistImage, createArtistImageMissCache
 } = require('./lib/artist-image-chain');
+const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -7320,6 +7321,11 @@ const Parachord = () => {
   // Uses ListenBrainz MBID Mapper v2.0 for fast metadata-to-MBID resolution (~4ms)
   const mbidMapperCache = useRef({});
   const releaseDetailsCache = useRef({}); // MB release details (tracklist + artist credits) by release ID; persisted as cache_release_details
+  // The MusicBrainz release group each album lookup settled on, by artist and
+  // album, for the session: opening an album that was just queued needs no
+  // search (src/renderer/lib/release-open.js).
+  const releaseGroupPicksRef = useRef(null);
+  if (!releaseGroupPicksRef.current) releaseGroupPicksRef.current = createReleaseGroupPicks();
 
   // Cache for playlist cover art (playlistId -> { covers: [url1, url2, url3, url4], timestamp })
   const playlistCoverCache = useRef({});
@@ -23213,13 +23219,18 @@ ${trackListXml}
       }
     }
 
+    // The opener's placeholder for this album may already show a cover (the
+    // playing track's, the Collection card's): keep it rather than blanking
+    // the page when the id-keyed caches miss.
+    const shownRelease = currentReleaseRef.current;
+    const onScreenArt = carriedReleaseArt(shownRelease, { title: release.title, artist: artistNameForPartial });
     const partialRelease = {
       id: release.id,
       title: release.title,
       artist: artist,
       date: release.date,
       releaseType: release.releaseType,
-      albumArt: release.albumArt || albumArtCache.current[release.id]?.url || partialCachedArt || null,
+      albumArt: release.albumArt || albumArtCache.current[release.id]?.url || partialCachedArt || onScreenArt || null,
       tracks: null, // null indicates tracks are loading
       _isPartial: true
     };
@@ -23227,7 +23238,6 @@ ${trackListXml}
     // MusicBrainz fallback filled the page while the opener's lookup was
     // queued) stays up until MusicBrainz answers; blanking it back to the
     // skeleton would undo the fallback. Success below replaces it.
-    const shownRelease = currentReleaseRef.current;
     const keepCatalogList = !!(shownRelease && shownRelease._catalogSource && shownRelease.tracks
       && sameAlbumIdentity(shownRelease, { title: release.title, artist: artistNameForPartial }));
     if (!keepCatalogList) {
@@ -23274,13 +23284,17 @@ ${trackListXml}
         return;
       }
 
-      // Try fetching as a direct release ID first (for artist discography)
+      // Try fetching as a direct release ID first (for artist discography).
+      // An opener that got the id from a release-group search says so
+      // (isReleaseGroup): unless the group's release is already known, that
+      // lookup is a guaranteed 404 costing a MusicBrainz slot, so skip it.
       let releaseId = release.id;
-      let releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+      const skipReleaseProbe = !!release.isReleaseGroup && !releaseDetailsCache.current[release.id]?.alias;
+      let releaseDetailsResponse = skipReleaseProbe ? null : await fetchReleaseDetails(releaseId);
 
       // If that fails (404), it might be a release-group ID (from search)
       // Try converting release-group to release ID
-      if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
+      if (!releaseDetailsResponse || (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404)) {
         console.log('Not a release ID, trying as release-group...');
 
         const releaseGroupResponse = await fetch(
@@ -23362,7 +23376,8 @@ ${trackListXml}
         date: releaseData.date || release.date,
         releaseType: release.releaseType,
         tracks: tracks,
-        albumArt: release.albumArt || albumArtCache.current[release.id]?.url || cachedLookupArt || null,
+        albumArt: release.albumArt || albumArtCache.current[release.id]?.url || cachedLookupArt
+          || carriedReleaseArt(currentReleaseRef.current, { title: release.title, artist: artistNameForLookup }) || onScreenArt || null,
         barcode: releaseData.barcode,
         country: releaseData.country,
         label: releaseData['label-info']?.[0]?.label?.name
@@ -23414,8 +23429,10 @@ ${trackListXml}
             if (frontCover) {
               const albumArt = frontCover.thumbnails?.['500'] || frontCover.image;
 
-              // Update the current release with album art
-              setCurrentRelease(prev => prev && prev.id === releaseData.id ? { ...prev, albumArt } : prev);
+              // Fill the page's cover if it has none. One already showing stays:
+              // the header image is keyed on its URL, so swapping in this copy
+              // of the same cover blanked it until archive.org delivered.
+              setCurrentRelease(prev => withArchiveCover(prev, releaseData.id, albumArt));
 
               // Cache the album art using the release-group ID so artist page can use it
               // Use a smaller thumbnail (250) for the cache like fetchAlbumArtLazy does
@@ -23534,6 +23551,12 @@ ${trackListXml}
 
         releaseId = releaseGroupData.releases[0].id;
         rememberReleaseGroupAlias(release.id, releaseId);
+        releaseGroupPicksRef.current.set(artist?.name, release.title, {
+          id: release.id,
+          title: release.title,
+          'primary-type': release.releaseType,
+          'artist-credit': [{ name: artist?.name, artist: { id: artist?.id || null } }]
+        });
         releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
       }
 
@@ -23614,6 +23637,9 @@ ${trackListXml}
       if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return;
 
       const releaseId = releaseGroupData.releases[0].id;
+      // Opening this album later reuses the lookup (fetchReleaseData).
+      rememberReleaseGroupAlias(album.id, releaseId);
+      releaseGroupPicksRef.current.set(artistName, album.title, album);
 
       // Fetch the release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
@@ -23692,6 +23718,9 @@ ${trackListXml}
       if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return null;
 
       const releaseId = releaseGroupData.releases[0].id;
+      // Opening this album later reuses the lookup (fetchReleaseData).
+      rememberReleaseGroupAlias(album.id, releaseId);
+      releaseGroupPicksRef.current.set(artistName, album.title, album);
 
       // Fetch the release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
@@ -23945,7 +23974,13 @@ ${trackListXml}
     const mbHeaders = { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' };
     let albumName = window.pickAlbumNameForTrack(track, null);
     let releaseMbid = track.releaseMbid || null;
-    if ((!albumName || !releaseMbid) && track.title) {
+    // The mapper supplies a missing album name, and a release id for when the
+    // name search finds nothing. With a name in hand it waits until then:
+    // asking it first held every open from the playbar for a round trip.
+    let mapperAsked = false;
+    const askMapper = async () => {
+      if (mapperAsked || !track.title) return;
+      mapperAsked = true;
       try {
         const mapped = await lookupMbidMapper(track.artist, track.title, albumName || null);
         if (mapped) {
@@ -23953,7 +23988,8 @@ ${trackListXml}
           if (!releaseMbid && mapped.release_mbid) releaseMbid = mapped.release_mbid;
         }
       } catch (e) { /* mapper down: carry on with what we have */ }
-    }
+    };
+    if (!albumName) await askMapper();
 
     // With a name or a release id in hand, show the release page now; the
     // MusicBrainz lookups below wait in the limiter. Without either there is
@@ -23995,6 +24031,9 @@ ${trackListXml}
 
     try {
       if (albumName) {
+        // Queued or opened earlier this session: no search needed.
+        const known = releaseGroupPicksRef.current.get(track.artist, albumName);
+        if (known) return handleAlbumClick({ ...known, isReleaseGroup: true });
         const query = encodeURIComponent(`"${albumName}" AND artist:"${track.artist}"`);
         const response = await fetch(
           `https://musicbrainz.org/ws/2/release-group?query=${query}&fmt=json&limit=5`,
@@ -24003,9 +24042,13 @@ ${trackListXml}
         if (response.ok) {
           const data = await response.json();
           const album = window.pickReleaseGroupForAlbum(data['release-groups'], track.artist);
-          if (album) return handleAlbumClick(album);
+          if (album) {
+            releaseGroupPicksRef.current.set(track.artist, albumName, album);
+            return handleAlbumClick({ ...album, isReleaseGroup: true });
+          }
         }
       }
+      if (!releaseMbid) await askMapper();
       if (releaseMbid) {
         const response = await fetch(
           `https://musicbrainz.org/ws/2/release/${releaseMbid}?inc=release-groups+artist-credits&fmt=json`,
@@ -24020,7 +24063,8 @@ ${trackListXml}
               id: rg.id,
               title: rg.title || release.title,
               'primary-type': rg['primary-type'],
-              'artist-credit': release['artist-credit'] || [{ name: track.artist }]
+              'artist-credit': release['artist-credit'] || [{ name: track.artist }],
+              isReleaseGroup: true
             });
           }
         }
@@ -24083,7 +24127,10 @@ ${trackListXml}
         albumArt: album.albumArt || undefined,
         // A catalog search result carries where it came from, so it loads
         // from that service without searching again.
-        _catalog: album._catalog || undefined
+        _catalog: album._catalog || undefined,
+        // The id came from a release-group search (fetchReleaseData skips
+        // the release-id probe).
+        isReleaseGroup: !!album.isReleaseGroup
       }, artist);
       navigateTo('artist');
     } catch (error) {
@@ -24167,6 +24214,18 @@ ${trackListXml}
 
       navigateTo('artist');
 
+      // Queued or opened earlier this session: no search needed.
+      const known = releaseGroupPicksRef.current.get(album.artist, album.title);
+      if (known) {
+        fetchReleaseData({
+          id: known.id,
+          title: known.title,
+          releaseType: known['primary-type']?.toLowerCase() || 'album',
+          isReleaseGroup: true
+        }, artist);
+        return;
+      }
+
       // Search MusicBrainz for the album
       const searchQuery = encodeURIComponent(`${album.artist} ${album.title}`);
       const response = await fetch(
@@ -24207,11 +24266,13 @@ ${trackListXml}
         || results.find(isStudioAlbum)
         || results[0];
 
+      releaseGroupPicksRef.current.set(album.artist, album.title, match);
       // Fetch release data (don't call handleAlbumClick to avoid duplicate state setting)
       fetchReleaseData({
         id: match.id,
         title: match.title,
-        releaseType: match['primary-type']?.toLowerCase() || 'album'
+        releaseType: match['primary-type']?.toLowerCase() || 'album',
+        isReleaseGroup: true
       }, artist);
     } catch (error) {
       console.error('Error loading collection album:', error);
@@ -30450,6 +30511,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const relData = await relResp.json();
       const release = relData.releases?.[0];
       if (!release) return [];
+      // Opening this album later reuses both lookups (openAlbumForTrack,
+      // handleCollectionAlbumClick, fetchReleaseData).
+      releaseGroupPicksRef.current.set(artistName, albumTitle, match);
+      rememberReleaseGroupAlias(match.id, release.id);
 
       // Fetch full release with recordings
       const detailResp = await fetchReleaseDetails(release.id);
@@ -32692,6 +32757,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       const release = releases[0];
       const releaseId = release.id;
+      // Opening this album later reuses the lookup (openAlbumForTrack,
+      // handleCollectionAlbumClick, fetchReleaseData).
+      const releaseGroup = release['release-group'];
+      if (releaseGroup?.id) {
+        releaseGroupPicksRef.current.set(artistName, albumName, {
+          id: releaseGroup.id,
+          title: releaseGroup.title || release.title,
+          'primary-type': releaseGroup['primary-type'],
+          'artist-credit': release['artist-credit'] || [{ name: artistName }]
+        });
+        rememberReleaseGroupAlias(releaseGroup.id, releaseId);
+      }
 
       // Fetch the release details with tracks
       const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
