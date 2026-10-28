@@ -43,6 +43,12 @@ const {
   amazonPlayGenerationStamp,
   amazonSpecSearchRequest,
   searchTracksFromGql,
+  SPEC_TEMPLATE_MAX_AGE_MS,
+  makeSpecSearchTemplate,
+  specTemplateIsFresh,
+  specBodyWithVars,
+  bodyMatchesTemplate,
+  createReplayGate,
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
@@ -60,6 +66,125 @@ const {
   createSearchBreaker,
   isAmazonMusicPage
 } = require('../../amazon-music-logic');
+
+// The replay-first template: one captured spec-search request serves every
+// later search with patched variables (see "Spec-search request templates"
+// in amazon-music-logic.js). The template and the gate are what let gql
+// searches run without a page load and in parallel.
+describe('spec-search templates', () => {
+  const capture = (over = {}) => ({
+    url: 'https://gql.music.amazon.com/',
+    headers: { 'x-api-key': 'key', 'csrf-token': 'tok', Cookie: 'session' },
+    body: {
+      operationName: 'SpecSearchSeeMorePage',
+      variables: { searchText: '"daft punk"', specType: 'track', firstLimit: 30, isAuthenticated: true },
+      extensions: { clientLibrary: { name: '@apollo/client' }, persistedQuery: { version: 1, sha256Hash: 'abc123' } }
+    },
+    ...over
+  });
+
+  test('makeSpecSearchTemplate keeps url/headers/body/capturedAt, deep-cloned', () => {
+    const { url, headers, body } = capture();
+    const t = makeSpecSearchTemplate({ url, headers, body, capturedAt: 123 });
+    expect(t.capturedAt).toBe(123);
+    expect(t.url).toBe(url);
+    expect(t.body).toEqual(body);
+    // Deep clone: mutating the capture cannot alias into the stored template.
+    body.variables.searchText = 'MUTATED';
+    headers['x-api-key'] = 'MUTATED';
+    expect(t.body.variables.searchText).toBe('"daft punk"');
+    expect(t.headers['x-api-key']).toBe('key');
+  });
+
+  test('makeSpecSearchTemplate refuses request shapes a replay cannot use', () => {
+    expect(makeSpecSearchTemplate({ url: null, headers: {}, body: {} })).toBeNull();
+    expect(makeSpecSearchTemplate({ url: 'https://x', headers: {}, body: {} })).toBeNull();
+    const noHash = capture().body;
+    delete noHash.extensions.persistedQuery;
+    expect(makeSpecSearchTemplate({ url: 'https://x', headers: {}, body: noHash })).toBeNull();
+    const noVars = capture().body;
+    noVars.variables = 'nope';
+    expect(makeSpecSearchTemplate({ url: 'https://x', headers: {}, body: noVars })).toBeNull();
+  });
+
+  test('specTemplateIsFresh gates on shape and the age cap', () => {
+    const { url, headers, body } = capture();
+    const t = makeSpecSearchTemplate({ url, headers, body, capturedAt: 1_000_000 });
+    expect(specTemplateIsFresh(t, 1_000_000 + 1000)).toBe(true);
+    expect(specTemplateIsFresh(t, 1_000_000 + SPEC_TEMPLATE_MAX_AGE_MS - 1)).toBe(true);
+    expect(specTemplateIsFresh(t, 1_000_000 + SPEC_TEMPLATE_MAX_AGE_MS)).toBe(false);
+    expect(specTemplateIsFresh(null)).toBe(false);
+    expect(specTemplateIsFresh({})).toBe(false);
+    expect(specTemplateIsFresh({ ...t, url: '' })).toBe(false);
+    expect(specTemplateIsFresh({ ...t, headers: null })).toBe(false);
+    expect(specTemplateIsFresh({ ...t, body: null })).toBe(false);
+  });
+
+  test('specBodyWithVars patches searchText and specType, keeps hash and flags, never mutates', () => {
+    const { body } = capture();
+    const before = JSON.parse(JSON.stringify(body));
+    const out = specBodyWithVars(body, { searchText: '"metallica"', specType: 'album' });
+    expect(out.variables.searchText).toBe('"metallica"');
+    expect(out.variables.specType).toBe('album');
+    expect(out.variables.firstLimit).toBe(30);
+    expect(out.variables.isAuthenticated).toBe(true);
+    expect(out.extensions.persistedQuery.sha256Hash).toBe('abc123');
+    expect(out.operationName).toBe('SpecSearchSeeMorePage');
+    // The template is untouched — later searches patch their own copy.
+    expect(body).toEqual(before);
+    // searchText alone (specType left as captured) and vice versa.
+    expect(specBodyWithVars(body, { searchText: 'x' }).variables.specType).toBe('track');
+    expect(specBodyWithVars(body, { specType: 'artist' }).variables.searchText).toBe('"daft punk"');
+  });
+
+  test('bodyMatchesTemplate spots our own replay echoing into the capture', () => {
+    const { url, headers, body } = capture();
+    const t = makeSpecSearchTemplate({ url, headers, body, capturedAt: 1 });
+    // What a replay for "metallica"/album would emit — byte-identical.
+    const echo = specBodyWithVars(body, { searchText: '"metallica"', specType: 'album' });
+    expect(bodyMatchesTemplate(t, echo, { searchText: '"metallica"', specType: 'album' })).toBe(true);
+    // Wrong variables on either side is not our replay.
+    expect(bodyMatchesTemplate(t, echo, { searchText: '"other"', specType: 'album' })).toBe(false);
+    expect(bodyMatchesTemplate(t, echo, { searchText: '"metallica"', specType: 'track' })).toBe(false);
+    // The page's own request (same variables shape, independently produced) is not ours unless identical.
+    expect(bodyMatchesTemplate(t, body, { searchText: '"daft punk"', specType: 'track' })).toBe(true);
+    const pageOwn = JSON.parse(JSON.stringify({ ...body, extensions: { ...body.extensions, clientLibrary: { name: '@apollo/client', version: '4.1.7' } } }));
+    expect(bodyMatchesTemplate(t, pageOwn, { searchText: '"daft punk"', specType: 'track' })).toBe(false);
+    expect(bodyMatchesTemplate(null, echo, { searchText: 'x', specType: 'track' })).toBe(false);
+    expect(bodyMatchesTemplate(t, null, { searchText: 'x', specType: 'track' })).toBe(false);
+  });
+});
+
+describe('createReplayGate', () => {
+  test('readers run in parallel; a writer refuses new readers and waits out the ones in flight', async () => {
+    const gate = createReplayGate();
+    expect(gate.tryEnterReplay()).toBe(true);
+    expect(gate.tryEnterReplay()).toBe(true);
+    expect(gate.state()).toEqual({ readers: 2, writing: false });
+    let navigated = false;
+    const nav = gate.beginNavigation().then(() => { navigated = true; });
+    // The writer is queued: new readers are refused rather than queued.
+    expect(gate.tryEnterReplay()).toBe(false);
+    await new Promise(r => setTimeout(r, 20));
+    expect(navigated).toBe(false);
+    gate.exitReplay();
+    await new Promise(r => setTimeout(r, 20));
+    expect(navigated).toBe(false);
+    gate.exitReplay();
+    await nav;
+    expect(navigated).toBe(true);
+    gate.endNavigation();
+    expect(gate.tryEnterReplay()).toBe(true);
+    expect(gate.state()).toEqual({ readers: 1, writing: false });
+  });
+
+  test('exitReplay never drives the counter negative', () => {
+    const gate = createReplayGate();
+    gate.exitReplay();
+    gate.exitReplay();
+    expect(gate.state().readers).toBe(0);
+  });
+});
 
 describe('reportedPlaybackAsin', () => {
   test('the page URL wins over a disagreeing mini player', () => {

@@ -3775,7 +3775,16 @@ ipcMain.handle('amazonmusic-get-status', async () => {
       web: { cdm, signedIn },
       // Live proof the preload is alive in the player page: stub false on a
       // loaded page = the sandboxed-preload failure mode came back.
-      preload
+      preload,
+      // Replay-first template state (specSearch): whether the fast path is
+      // armed, and how fresh the captured request is. Metadata only — the
+      // captured headers and APQ hash never leave the main process.
+      specSearchTemplate: amazonWebPlayer.specSearchTemplate
+        ? {
+            capturedAt: new Date(amazonWebPlayer.specSearchTemplate.capturedAt).toISOString(),
+            ageMs: Date.now() - amazonWebPlayer.specSearchTemplate.capturedAt
+          }
+        : null
     };
   } catch (error) {
     return { success: false, error: error.message };
