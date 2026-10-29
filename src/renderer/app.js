@@ -1915,6 +1915,7 @@ const {
 // fed stable props, so it no longer re-renders on every Parachord setState.
 const { CollectionPage } = require('./components/collection-page');
 const { useVolume } = require('./hooks/use-volume');
+const { usePlaybackQueue } = require('./hooks/use-playback-queue');
 const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
@@ -8547,7 +8548,7 @@ const Parachord = () => {
       const firstTrack = tracks[0];
       setPlaybackContext(context);
       setCurrentTrack(firstTrack);
-      setPlaybackSource(null);
+      setPlaybackSource(null); // eslint-disable-line no-undef -- pre-existing: no playbackSource state exists — throws when queueing into an idle player
     }
 
     showToast(`Added ${tracks.length} tracks from "${playlistName}"`, 'success');
@@ -8665,7 +8666,7 @@ const Parachord = () => {
         const firstTrack = tracks[0];
         setPlaybackContext(albumContext);
         setCurrentTrack(firstTrack);
-        setPlaybackSource(null);
+        setPlaybackSource(null); // eslint-disable-line no-undef -- pre-existing: no playbackSource state exists — throws when queueing into an idle player
       }
 
       showToast(`Added ${tracks.length} tracks from "${albumTitle}"`, 'success');
@@ -11335,7 +11336,7 @@ const Parachord = () => {
                 f.name?.toLowerCase() === friendId.toLowerCase()
               );
               if (friend) {
-                setSelectedFriend(friend);
+                setSelectedFriend(friend); // eslint-disable-line no-undef -- pre-existing: no selectedFriend state — parachord://friend/<id> throws here
                 setActiveView('friendHistory');
                 if (tab) {
                   const tabMap = {
@@ -11396,7 +11397,7 @@ const Parachord = () => {
             if (playlistId) {
               const playlist = playlists.find(p => p.id === playlistId || p.name === playlistId);
               if (playlist) {
-                setCurrentPlaylist(playlist);
+                setCurrentPlaylist(playlist); // eslint-disable-line no-undef -- pre-existing: no currentPlaylist state — parachord://playlist/<id> throws here
                 setActiveView('playlist-view');
               } else {
                 showToast(`Playlist not found: ${playlistId}`);
@@ -19631,7 +19632,7 @@ ${trackListXml}
                         if (segments[0]) {
                           const playlist = playlists.find(p => p.id === segments[0] || p.name === segments[0]);
                           if (playlist) {
-                            setCurrentPlaylist(playlist);
+                            setCurrentPlaylist(playlist); // eslint-disable-line no-undef -- pre-existing: no currentPlaylist state — parachord://playlist/<id> throws here
                             setActiveView('playlist-view');
                           }
                         }
@@ -23447,7 +23448,7 @@ ${trackListXml}
             medium.tracks.forEach(track => {
               const trackId = trackSlug(artistName, track.title || 'untitled', album.title || 'noalbum');
               // Get album art - could be on album.albumArt (quick search) or in searchAlbumArt state (detail view)
-              const albumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null;
+              const albumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null; // eslint-disable-line no-undef -- typeof-guarded, never throws; searchAlbumArt is not declared anywhere (dead branch)
               tracks.push({
                 id: trackId,
                 position: track.position,
@@ -23465,7 +23466,7 @@ ${trackListXml}
       }
 
       // Get album art - could be on album.albumArt (quick search) or in searchAlbumArt state (detail view)
-      const cachedAlbumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null;
+      const cachedAlbumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null; // eslint-disable-line no-undef -- typeof-guarded, never throws; searchAlbumArt is not declared anywhere (dead branch)
 
       // Cache the prefetched tracks using the release-group ID
       setPrefetchedReleases(prev => ({

@@ -171,4 +171,33 @@ module.exports = [
     ignores: [...STRICT_FILES, "eslint.config.js"],
     rules: off,
   },
+
+  // src/renderer/app.js: no-undef ONLY (after the parse-only block so it
+  // wins). The failure class (#1143): an extraction moved usePlaybackQueue
+  // into src/renderer/hooks/ but the squash dropped the require — esbuild
+  // bundles an unresolved identifier without complaint, jest never renders
+  // Parachord, and the window boots blank with "usePlaybackQueue is not
+  // defined". Every symbol a Track 2b slice moves out of app.js must come
+  // back via require; this is the gate that notices when it doesn't.
+  // Globals = sharedGlobals + the renderer vendor globals + the index.html
+  // script-tag globals app.js reads + a few browser APIs not in
+  // sharedGlobals. A genuinely new browser/vendor global goes here; anything
+  // else this flags is a missing require or a dead setter.
+  {
+    files: ['src/renderer/app.js'],
+    languageOptions: {
+      globals: {
+        ...RENDERER_COMPONENT_GLOBALS,
+        ResolverLoader: 'readonly', // resolver-loader.js script tag
+        Fuse: 'readonly', // vendor/fuse.min.js script tag
+        FaceDetector: 'readonly', // Chromium shape-detection API ('FaceDetector' in window guarded)
+        IntersectionObserver: 'readonly',
+        MediaMetadata: 'readonly',
+        MediaError: 'readonly',
+        alert: 'readonly',
+        confirm: 'readonly',
+      },
+    },
+    rules: { 'no-undef': 'error' },
+  },
 ];
