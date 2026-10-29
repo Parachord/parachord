@@ -16,12 +16,12 @@ const RENDERER = path.join(ROOT, 'src', 'renderer');
 const componentFiles = fs.readdirSync(path.join(RENDERER, 'components'))
   .filter((f) => f.endsWith('.js'))
   .map((f) => path.join(RENDERER, 'components', f));
-// FALLBACK_RESOLVERS embeds every bundled plugin's source, so strip those
-// lines: the assertions are about the host, not the plugins it ships.
+// (The FALLBACK_RESOLVERS embed moved to the gitignored generated module —
+// nothing to strip from app.js anymore; the assertions are about the host,
+// and app.js no longer contains minified plugin implementation lines.)
 const appSrc = [path.join(RENDERER, 'app.js'), ...componentFiles]
   .map((f) => fs.readFileSync(f, 'utf8'))
-  .join('\n')
-  .split('\n').filter((l) => !l.startsWith('  {"manifest"')).join('\n');
+  .join('\n');
 const readAxe = (id) => JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', `${id}.axe`), 'utf8'));
 const subsonic = readAxe('subsonic');
 
