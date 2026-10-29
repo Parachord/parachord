@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<!-- Spike: native Amazon playback in our own process (street player-b).
+     Loads only our bundled Shaka; the DASH manifest arrives over IPC as text
+     (main fetched it from dmls), and license bytes round-trip through main
+     via registerScheme('parachord-license'). No Amazon page anywhere in the
+     audio path. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>player-b</title>
+<script src="./node_modules/shaka-player/dist/shaka-player.compiled.js"></script>
+<style>body { background: #111; color: #9f9; font: 12px monospace; }</style>
+</head>
+<body>
+<audio id="a"></audio>
+<pre id="log"></pre>
+<script>
+(() => {
+  const audio = document.getElementById('a');
+  const log = (...args) => {
+    const line = '[pb] ' + args.join(' ');
+    document.getElementById('log').textContent += line + '\n';
+    console.log(line); // forwarded to main via console-message
+  };
+  window.__pbState = () => ({
+    position: audio.currentTime, duration: audio.duration,
+    paused: audio.paused, ended: audio.ended, readyState: audio.readyState,
+    buffered: audio.buffered.length ? audio.buffered.end(audio.buffered.length - 1) : 0
+  });
+  window.__pbEvents = [];
+  const stamp = (name) => { window.__pbEvents.push({ name, at: performance.now(), t: audio.currentTime }); log(name, 't=' + audio.currentTime.toFixed(3)); };
+  for (const ev of ['loadedmetadata', 'canplay', 'playing', 'seeking', 'seeked', 'stalled', 'waiting']) audio.addEventListener(ev, () => stamp(ev));
+
+  const b64 = (buf) => { let s = ''; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+  const unb64 = (str) => { const bin = atob(str); const b = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); return b.buffer; };
+
+  let player = null;
+  async function load(mpdText, meta) {
+    const t0 = performance.now();
+    shaka.polyfill.installAll();
+    if (!player) player = new shaka.Player();
+    await player.attach(audio);
+    // License relay: anything Shaka POSTs to this scheme goes to main, main
+    // relays the CDM's challenge bytes to dmls getLicenseForPlaybackV2.
+    // registerScheme is STATIC (global scheme registry); the compiled build
+    // has no instance method.
+    shaka.net.NetworkingEngine.registerScheme('parachord-license', async (uri, request, requestType, progressUpdated) => {
+      const license = await window.__playerB.relayLicense(b64(request.body));
+      log('license relay ok', license.length, 'chars');
+      return { uri, data: unb64(license), headers: {}, originalRequest: request };
+    });
+    player.configure({
+      drm: { servers: { 'com.widevine.alpha': 'parachord-license://widevine' } },
+      streaming: { rebufferingGoal: 2, bufferingGoal: 10 }
+    });
+    player.addEventListener('error', (e) => log('SHAKA ERROR', JSON.stringify(e.detail || e)));
+    const uri = 'data:application/dash+xml;charset=utf-8,' + encodeURIComponent(mpdText);
+    await player.load(uri);
+    log('manifest loaded in', Math.round(performance.now() - t0) + 'ms', 'tracks:', JSON.stringify(player.getVariantTracks().map(t => ({ id: t.id, bw: t.bandwidth, codecs: t.codecs }))));
+    // Precise-start experiment: seek to exact 0 after load, then play, and let
+    // the event log show the real canplay->seeked->playing timeline.
+    audio.currentTime = 0;
+    await audio.play();
+    window.__pbPlayer = player;
+    window.__pbAudio = audio;
+    log('playing:', meta && meta.asin);
+  }
+  window.__playerB_load = load;
+  window.addEventListener('player-b-load', (e) => { const p = e.detail; load(p.mpd, p).catch((err) => log('LOAD FAILED', String(err && err.stack || err).slice(0, 400))); });
+  window.addEventListener('unhandledrejection', (e) => log('UNHANDLED', String(e.reason && e.reason.stack || e.reason).slice(0, 400)));
+  log('page ready, shaka', shaka.Player.version);
+})();
+</script>
+</body>
+</html>

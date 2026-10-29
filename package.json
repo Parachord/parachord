@@ -62,6 +62,7 @@
     "prettier": "^3.9.10",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "shaka-player": "^4.16.55",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
     "web-ext": "^10.8.0"
