@@ -83,6 +83,17 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Auto-Updates** - Automatic update checking with GitHub Releases
 - **Configurable Media Keys** - Choose whether Parachord captures media keys always, only when you're not using Spotify, or never (Spotify may capture them too)
 
+## Subscriptions and copy protection
+
+Parachord is a player for people who already subscribe to the services it plays from, plus their own files and servers. It brings those services together in one app. It is not a way to get music without paying for it, or to keep copies of it.
+
+- **Your account, the service's own player.** Each service plays through your own account, using that service's own player or its official API. Where a service needs a subscription for full tracks, so does Parachord.
+- **No ripping.** Parachord doesn't decrypt, record, download or save protected streams. It doesn't extract decryption keys, and it doesn't unlock tiers or content your subscription doesn't include.
+- **Decryption stays with the service.** Spotify plays in Spotify's own app through Spotify Connect. Apple Music on macOS plays through Apple's MusicKit. Amazon Music, and Apple Music on Windows and Linux, are decrypted inside Google's Widevine module, using a license the service issues to your account. Parachord never sees the decryption keys and never saves the audio.
+- **Plug-ins follow the same rules.** A plug-in that tries to get around a service's protections isn't accepted into the Parachord marketplace, and is removed if one slips through (see the [plug-in guidelines](https://github.com/Parachord/parachord-plugins#guidelines)). Plug-ins installed from anywhere else aren't reviewed, so Parachord can't vouch for them.
+
+If you work for a music service and have a concern about how Parachord plays your catalog, please [open an issue](https://github.com/Parachord/parachord/issues).
+
 ## System Requirements
 
 ### macOS
