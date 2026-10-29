@@ -927,6 +927,146 @@ function amazonSpecSearchRequest(bodies, searchText, { anySpec = false, spec = '
   return null;
 }
 
+// --- Spec-search request templates (replay-first) -------------------------
+// A page load per search is what mints a fresh capture: the APQ hash
+// renumbers on every hornet redeploy, and the csrf/session headers rotate
+// with the session. But within a deploy+session the page's own request is
+// reusable — the album search was discovered by replaying the captured
+// track-spec request with the album spec swapped, and playlist pagination
+// replays one capture up to 40 times. So a search that comes in while a
+// captured template is still fresh skips its page load entirely: patch the
+// template's variables (searchText + specType — one slot serves track,
+// album and artist searches, exactly the swap that live-verified album
+// search) and replay from the still-warm search view. A replay error (stale
+// hash, rotated headers, network) discards the template and falls back to
+// the full page flow, which recaptures — the fallback IS the page load, so
+// nothing about the failure semantics changes; only the happy path gets
+// cheaper. See "specSearch" in amazon-web-player.js.
+
+// Hard cap on template age, past which the page flow runs anyway: session
+// headers (csrf-ts rotation) have no verified TTL, and a hopeless replay
+// costs one round trip anyway, so fresh means low-risk rather than exactly
+// right. The capture timestamp rides along inside the template.
+const SPEC_TEMPLATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+// Build the reusable template from one capture of the page's own spec
+// search request: entry { url, headers } (verbatim — amazonGqlFetchHeaders
+// still filters browser-managed headers at replay time) and the matched
+// request body. Everything is deep-cloned (JSON: the capture is pure JSON)
+// so a later capture's mutation cannot alias into the stored template.
+function makeSpecSearchTemplate({ url, headers, body, capturedAt }) {
+  if (!url || !headers || !body || typeof body !== 'object') return null;
+  if (!(body.extensions && body.extensions.persistedQuery && body.extensions.persistedQuery.sha256Hash)) return null;
+  if (!(body.variables && typeof body.variables === 'object')) return null;
+  return JSON.parse(JSON.stringify({
+    url,
+    headers,
+    body,
+    capturedAt: typeof capturedAt === 'number' ? capturedAt : Date.now()
+  }));
+}
+
+// Whether the template can drive a replay-first search: present, shaped
+// right, and not older than the freshness cap.
+function specTemplateIsFresh(template, now) {
+  if (!template || typeof template !== 'object') return false;
+  if (typeof template.url !== 'string' || !template.url) return false;
+  if (!template.headers || typeof template.headers !== 'object') return false;
+  if (!(template.body && template.body.variables && template.body.extensions)) return false;
+  const at = typeof template.capturedAt === 'number' ? template.capturedAt : 0;
+  return (typeof now === 'number' ? now : Date.now()) - at < SPEC_TEMPLATE_MAX_AGE_MS;
+}
+
+// A deep clone of the template's request body with the search variables
+// patched — searchText and, when given, specType (the track/album/artist
+// swap the template shares). Everything else — firstLimit, feature flags,
+// extensions with the APQ hash — stays byte-identical to the capture.
+function specBodyWithVars(body, { searchText, specType } = {}) {
+  const out = JSON.parse(JSON.stringify(body || {}));
+  if (!out.variables || typeof out.variables !== 'object') out.variables = {};
+  if (searchText != null) out.variables.searchText = searchText;
+  if (specType != null) out.variables.specType = specType;
+  return out;
+}
+
+// Whether a request a page flow matched is byte-identical to a replay of
+// the CURRENT template (specBodyWithVars with the same variables) — i.e.
+// it is not the page's own request but OUR replay echoing into the
+// session-wide capture. Minting from it would re-store the template's own
+// recycled (session-aged) headers with a fresh capturedAt, keeping a stale
+// header set certified-fresh indefinitely; the page flow skips the re-mint
+// then and lets the real page capture renew the template next time. The
+// comparison is exact (JSON key order round-trips through specBodyWithVars
+// and the replay script's own JSON.stringify without reordering).
+function bodyMatchesTemplate(template, request, { searchText, specType } = {}) {
+  if (!(template && template.body) || !request) return false;
+  try {
+    return JSON.stringify(specBodyWithVars(template.body, { searchText, specType })) === JSON.stringify(request);
+  } catch (e) {
+    return false;
+  }
+}
+
+// Reader/writer gate in front of the shared search view. Template replays
+// are READERS: they only evaluate fetch() in the page world — no navigation,
+// no webRequest listener — so any number run in parallel. A real page load
+// is the WRITER: executeJavaScript during a navigation races frame teardown,
+// so a navigation waits for in-flight readers to drain. Readers arriving
+// while the writer is active do not wait — they turn away (their caller
+// falls back to the chained page flow, which re-checks the template after
+// the writer refreshes it), so the writer is never starved and readers
+// never queue behind a writer. All transitions are synchronous counter/flag
+// flips — safe under JS's single thread; every reader exit runs in a finally
+// so a thrown replay cannot leak the count. A reader is bounded by the
+// caller's own replay timeout, so the writer's drain wait is bounded too.
+function createReplayGate() {
+  let readers = 0;
+  let writing = false;
+  let drainWaiters = [];
+  const wake = () => {
+    const waiters = drainWaiters;
+    drainWaiters = [];
+    for (const resolve of waiters) resolve();
+  };
+  return {
+    // Become a reader, or refuse (navigation in progress). Sync on purpose:
+    // the check and the increment must interleave with nothing.
+    tryEnterReplay() {
+      if (writing) return false;
+      readers++;
+      return true;
+    },
+    exitReplay() {
+      if (readers > 0) {
+        readers--;
+      } else {
+        // An unmatched exit would otherwise STEAL a live reader's slot (the
+        // writer proceeds while a genuine reader is still in flight). All
+        // call sites pair enter/exit via finally; warn loudly if that ever
+        // breaks instead of silently corrupting the counts.
+        console.warn('[Amazon] replayGate: exitReplay with no readers');
+      }
+      if (readers === 0) wake();
+    },
+    // Before navigating the shared view: no new readers, wait out the ones
+    // in flight. Sync flag flip first, then drain. Writers are serialized by
+    // the caller (the search chain); a second begin while one is held breaks
+    // the flag — say so rather than clearing it from under the first.
+    async beginNavigation() {
+      if (writing) console.warn('[Amazon] replayGate: overlapping navigations');
+      writing = true;
+      while (readers > 0) await new Promise(resolve => drainWaiters.push(resolve));
+    },
+    endNavigation() {
+      writing = false;
+    },
+    // Diagnostics only (getStatus): counters are the whole state.
+    state() {
+      return { readers, writing };
+    }
+  };
+}
+
 // The albums-tab search page — /search/<q>/albums fires the album-spec
 // SpecSearchSeeMorePage (specType: 'album', same operation and query as the
 // songs tab's track spec — live-verified 2026-10). The query string is built
@@ -1651,6 +1791,12 @@ module.exports = {
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
   amazonSpecSearchRequest,
+  SPEC_TEMPLATE_MAX_AGE_MS,
+  makeSpecSearchTemplate,
+  specTemplateIsFresh,
+  specBodyWithVars,
+  bodyMatchesTemplate,
+  createReplayGate,
   amazonAlbumSearchUrl,
   amazonAlbumAsinFromUrl,
   amazonAlbumDetailRequest,
