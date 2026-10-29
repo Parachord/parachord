@@ -210,11 +210,46 @@ describe('specSearch template replay', () => {
     expect(attachGqlCapture).not.toHaveBeenCalled();
   });
 
-  test('a replay response without the spec envelope is structural (breaker), never a miss', async () => {
-    replayGql.mockResolvedValue({ parsed: { data: { somethingElse: {} } } });
+  test('a replay response without the spec envelope defers structure to the page flow (stale-template loop fix)', async () => {
+    // 200 with data but no specificationSearch envelope — the auth-failed-
+    // field shape of rotated session headers (#1152 review). The fast path
+    // must NOT throw structural on its own template: it drops it and the
+    // chained page flow makes the structural call with a fresh capture.
+    const oldTemplate = amazonWebPlayer.specSearchTemplate;
+    const { win } = pageFlowCapture();
+    // Both the template replay AND the page flow's own replay lack the envelope.
+    replayGql.mockResolvedValue({ parsed: { data: { specificationSearch: null } } });
     await expect(run()).rejects.toMatchObject({ reason: 'not-ready' });
-    expect(amazonWebPlayer.searchBreaker.recordFailure).toHaveBeenCalled();
+    // Two replays: the failed template replay, then the page flow's own.
+    expect(replayGql).toHaveBeenCalledTimes(2);
+    expect(attachGqlCapture).toHaveBeenCalled();
+    expect(win.loadURL).toHaveBeenCalled();
+    // The breaker heard it ONCE — from the page flow, not the fast path.
+    expect(amazonWebPlayer.searchBreaker.recordFailure).toHaveBeenCalledTimes(1);
     expect(amazonWebPlayer.searchBreaker.recordSuccess).not.toHaveBeenCalled();
+    // The stale template was dropped (the page flow then minted its own capture).
+    expect(amazonWebPlayer.specSearchTemplate).not.toBe(oldTemplate);
+  });
+
+  test('a template that answers without an envelope heals through the page flow (rotated session headers)', async () => {
+    const { win } = pageFlowCapture();
+    replayGql
+      .mockResolvedValueOnce({ parsed: { data: { specificationSearch: null } } }) // the template went bad
+      .mockResolvedValueOnce({ parsed: { data: specEnvelope([trackEdge]) } }); // the page flow's fresh capture
+    const rows = await run();
+    expect(rows).toEqual([trackEdge.node]);
+    expect(win.loadURL).toHaveBeenCalled();
+    expect(amazonWebPlayer.specSearchTemplate.body.variables.searchText).toBe('"daft punk"');
+    // The NEXT search replays the freshly minted template — no page flow.
+    replayGql.mockClear();
+    win.loadURL.mockClear();
+    attachGqlCapture.mockClear();
+    replayGql.mockResolvedValueOnce({ parsed: { data: specEnvelope([trackEdge]) } });
+    const rows2 = await run({ searchText: '"daft punk two"', url: 'https://music.amazon.com/search/q2/songs' });
+    expect(rows2).toEqual([trackEdge.node]);
+    expect(replayGql).toHaveBeenCalledTimes(1);
+    expect(win.loadURL).not.toHaveBeenCalled();
+    expect(attachGqlCapture).not.toHaveBeenCalled();
   });
 
   test('a cooling breaker fails fast before any replay', async () => {

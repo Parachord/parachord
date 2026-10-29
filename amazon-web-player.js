@@ -1022,9 +1022,17 @@ const amazonWebPlayer = {
   // specSearch's fast path: replay the cached request with fresh searchText/
   // specType from the warm view. Returns the parsed rows, or null for any
   // template-miss (the caller then queues the page flow, which re-mints the
-  // template). Throws not-signed-in on a wall URL and not-ready on a
-  // structural envelope failure, exactly like the page flow — the failure
-  // contract of specSearch does not depend on the path taken.
+  // template). Throws not-signed-in on a wall URL, exactly like the page
+  // flow. A structural-looking response (200 with data but no spec search
+  // envelope) is NOT judged here: on the page flow that can only mean a
+  // hornet rename (its request was captured seconds earlier), but on the
+  // fast path it can equally mean the template went bad (a partial GraphQL
+  // error — the auth-failed-field shape of rotated session headers — leaves
+  // data.specificationSearch null). Replay-and-throw here made every later
+  // search fail identically, probe included, with nothing able to heal the
+  // template for 24h (review on #1152). So a missing envelope drops the
+  // template and defers to the chained page flow, which makes the
+  // structural call with a fresh capture.
   async trySpecReplay({ searchText, specType, parse, noun }) {
     const template = this.specSearchTemplate;
     if (!specTemplateIsFresh(template, Date.now())) return null;
@@ -1078,11 +1086,17 @@ const amazonWebPlayer = {
       const parsed = outcome.parsed;
       const { rows, envelope } = parse(parsed && parsed.data);
       if (!envelope) {
-        console.warn(`[Amazon] ${specType} template replay was not a spec search envelope for ${JSON.stringify(searchText)}`);
-        throw this.specStructuralError('Amazon search response was not a spec search envelope');
+        // Defer structure to the page flow (see the method comment): the
+        // template may be stale, and only a fresh capture can prove a hornet
+        // rename. The breaker gets involved only if the page flow also
+        // fails structurally.
+        console.warn(`[Amazon] ${specType} template replay was not a spec search envelope for ${JSON.stringify(searchText)}; dropping the template`);
+        if (this.specSearchTemplate === template) this.specSearchTemplate = null;
+        return null;
       }
       if (this.searchBreaker) this.searchBreaker.recordSuccess();
-      console.log(`[Amazon] ${specType} replay returning ${rows.length} ${noun} for ${JSON.stringify(searchText)}`);
+      const fromSpec = template.body && template.body.variables && template.body.variables.specType;
+      console.log(`[Amazon] ${specType} replay${fromSpec && fromSpec !== specType ? ` (${fromSpec} template)` : ''} returning ${rows.length} ${noun} for ${JSON.stringify(searchText)}`);
       return rows;
     } finally {
       this.searchViewBusy--;
@@ -1190,6 +1204,9 @@ const amazonWebPlayer = {
       if (!agedTemplate && bodyMatchesTemplate(this.specSearchTemplate, request, { searchText, specType })) {
         console.log('[Amazon] search matched our own replay in the capture; keeping the existing template');
       } else {
+        // Mint BEFORE this flow's own replay runs: the template captures the
+        // page's own fresh request, which is valid whether or not the replay
+        // that follows answers well — a replay error drops it again anyway.
         const template = makeSpecSearchTemplate({ url: entry.url, headers: entry.headers, body: request, capturedAt: Date.now() });
         if (template) this.specSearchTemplate = template;
         else console.warn('[Amazon] spec search captured a request that is not template-shaped; staying page-load-per-search');
