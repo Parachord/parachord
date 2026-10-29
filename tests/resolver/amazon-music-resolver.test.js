@@ -11,7 +11,6 @@
  *   - searchArtistImage() (the artistImage capability: bridge mapping, the
  *     no-bridge no-op, and miss vs error — never a sign-in prompt)
  *   - byte-identical FALLBACK_RESOLVERS copy in the generated module (drift guard)
-
  *   - resolver-limiter does NOT skip amazonmusic (CDP fan-out + web search)
  */
 
@@ -776,7 +775,7 @@ describe('amazonmusic lookupAlbum', () => {
   });
 });
 
-describe('app.js FALLBACK_RESOLVERS parity', () => {
+describe('FALLBACK_RESOLVERS parity (generated module)', () => {
   test('the generated amazonmusic fallback is byte-identical to plugins/amazonmusic.axe', () => {
     // The inline block moved to the gitignored generated module (bucket C),
     // required by app.js.

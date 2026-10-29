@@ -51,6 +51,5 @@ jobs:
         run: |
           if ! git diff --exit-code -- marketplace-manifest.json amazon-player-preload.js; then
             echo "::error::a generator rewrote a committed file — run 'node scripts/build-axes.js' (+ 'node scripts/build-amazon-preload.js' for the Amazon preload) and commit"
-
             exit 1
           fi

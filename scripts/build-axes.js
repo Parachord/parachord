@@ -314,12 +314,13 @@ function runWrite() {
     }
   }
 
-  const expectedFallback = expectedFallbackFile(collectExpected({ ignoreOnly: true }));
+  const fallbackPlans = collectExpected({ ignoreOnly: true });
+  const expectedFallback = expectedFallbackFile(fallbackPlans);
   const existingFallback = fs.existsSync(GENERATED_FALLBACK_PATH) ? fs.readFileSync(GENERATED_FALLBACK_PATH, 'utf8') : null;
   if (existingFallback !== expectedFallback) {
     fs.mkdirSync(path.dirname(GENERATED_FALLBACK_PATH), { recursive: true });
     fs.writeFileSync(GENERATED_FALLBACK_PATH, expectedFallback);
-    console.log(`✅ ${path.relative(ROOT, GENERATED_FALLBACK_PATH)} regenerated (${plans.filter((p) => p.fallbackLine).length} entries)`);
+    console.log(`✅ ${path.relative(ROOT, GENERATED_FALLBACK_PATH)} regenerated (${fallbackPlans.filter((p) => p.fallbackLine).length} entries)`);
   }
 
   if (marketplaceDirty) {
