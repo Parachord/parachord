@@ -621,11 +621,26 @@ function cdmStatusHealthy(status) {
 // Amazon's web player is not usable for search or play while it is still
 // on the account sign-in page or the post-login profile picker. Cookies can
 // already exist at that point; the URL is the signal that selection finished.
+// The sign-in portal is every /ap/ path on an Amazon account host, not only
+// /ap/signin: 2FA (/ap/mfa), push approval and verification (/ap/cvf/...),
+// challenges and account fixes all come before the session is usable.
 function pageBlocksPlayback(url) {
   const value = url || '';
   if (/\/identity\/who-is-listening/i.test(value)) return 'not-signed-in';
   if (/\/ap\/signin/i.test(value)) return 'not-signed-in';
+  if (/^https?:\/\/[^/?#]*amazon\.[^/?#]+\/ap\//i.test(value)) return 'not-signed-in';
   return null;
+}
+
+// The Amazon Music web player's own host. A URL is on the player only when
+// its HOST is this: the sign-in portal's URLs carry music.amazon.com in their
+// return_to query, so a substring match passes them.
+function onMusicHost(url) {
+  try {
+    return new URL(url).hostname.toLowerCase() === 'music.amazon.com';
+  } catch (e) {
+    return false;
+  }
 }
 
 // openLogin's completion gate. "The URL is not a known wall" alone fails
@@ -636,9 +651,12 @@ function pageBlocksPlayback(url) {
 // that has been stable for two consecutive ticks AND at least one of (an
 // auth cookie is present, the page has moved off the bare home path, or three
 // stable ticks — the fallback for Amazon rotating its cookie names, at the
-// cost of a ~3s wait when a signed-in landing page really is /).
+// cost of a ~3s wait when a signed-in landing page really is /). The URL must
+// be ON the music host: the 2FA page's query carries music.amazon.com as its
+// return address, and a substring match closed the window two seconds into
+// the code prompt, reporting a sign-in that never happened.
 function signInLanded({ url, lastUrl = null, stableTicks = 0, hasCookie = false } = {}) {
-  const okUrl = !!url && /music\.amazon\.com/i.test(url) && !pageBlocksPlayback(url);
+  const okUrl = !!url && onMusicHost(url) && !pageBlocksPlayback(url);
   const ticks = okUrl ? (lastUrl === url ? stableTicks + 1 : 1) : 0;
   let landed = false;
   if (ticks >= 2) {
