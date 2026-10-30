@@ -644,7 +644,6 @@ const {
 } = require('./lib/artist-image-chain');
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
-const { resolverHints } = require('./lib/resolver-hints');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
@@ -6554,7 +6553,7 @@ const Parachord = () => {
         if (track.sources[resolver.id]) return;
         try {
           const config = await getResolverConfig(resolver.id);
-          const result = await resolver.resolve(track.artist, track.title, track.album, config, resolverHints(track));
+          const result = await resolver.resolve(track.artist, track.title, track.album, config);
           if (result) {
             // Score before stamping. Wrong-artist matches collapse to 0.50
             // and the source-selection floor will drop them — but skip the
@@ -6587,7 +6586,7 @@ const Parachord = () => {
           if (Object.keys(track.sources).length >= enabledResolvers.length) continue;
           try {
             const config = await getResolverConfig(resolver.id);
-            const result = await resolver.resolve(track.artist, track.title, track.album, config, resolverHints(track));
+            const result = await resolver.resolve(track.artist, track.title, track.album, config);
             if (result) {
               const confidence = calculateConfidence(track, result);
               if (confidence < MIN_CONFIDENCE_THRESHOLD) {
@@ -6701,7 +6700,7 @@ const Parachord = () => {
       const resolvePromises = enabledResolvers.map(async (resolver) => {
         try {
           const config = await getResolverConfig(resolver.id);
-          const result = await resolver.resolve(trackMeta.artist, trackMeta.title, trackMeta.album, config, resolverHints(trackMeta));
+          const result = await resolver.resolve(trackMeta.artist, trackMeta.title, trackMeta.album, config);
           if (result) {
             const confidence = calculateConfidence(trackMeta, result);
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
@@ -15622,7 +15621,7 @@ ${trackListXml}
             // Prefer search() to get all results and find best match
             if (resolver.search && typeof resolver.search === 'function') {
               const query = `${trackOrSource.artist} ${trackOrSource.title}`;
-              const results = await resolver.search(query, config, resolverHints(trackOrSource));
+              const results = await resolver.search(query, config);
               if (results && results.length > 0) {
                 bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title, trackOrSource.mbid || trackOrSource.recordingMbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                 if (!bestMatch) {
@@ -15631,7 +15630,7 @@ ${trackListXml}
               }
             } else {
               // Fallback to resolve() for resolvers without search
-              const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config, resolverHints(trackOrSource));
+              const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config);
               if (result && validateResolvedTrack(result, trackOrSource.artist, trackOrSource.title)) {
                 bestMatch = result;
               } else if (result) {
@@ -15706,12 +15705,12 @@ ${trackListXml}
                 let bestMatch = null;
                 if (resolver.search && typeof resolver.search === 'function') {
                   const query = `${canonicalArtist} ${canonicalTitle}`;
-                  const results = await resolver.search(query, config, resolverHints(trackOrSource));
+                  const results = await resolver.search(query, config);
                   if (results && results.length > 0) {
                     bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle, mbidResult.recording_mbid || trackOrSource.mbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                   }
                 } else if (resolver.resolve) {
-                  const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config, resolverHints(trackOrSource));
+                  const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config);
                   if (result && validateResolvedTrack(result, canonicalArtist, canonicalTitle)) {
                     bestMatch = result;
                   }
@@ -20335,7 +20334,7 @@ ${trackListXml}
 
       try {
         const config = await getResolverConfig(resolver.id);
-        const result = await resolver.resolve(track.artist, track.title, track.album, config, resolverHints(track));
+        const result = await resolver.resolve(track.artist, track.title, track.album, config);
 
         if (result) {
           const confidence = calculateConfidence(track, result);
@@ -24121,7 +24120,7 @@ ${trackListXml}
 
       try {
         const config = await getResolverConfig(resolver.id);
-        const result = await resolver.resolve(artistName, track.title, track.album || null, config, resolverHints(track));
+        const result = await resolver.resolve(artistName, track.title, track.album || null, config);
 
         if (result) {
           // Use the canonical (artistName, track.title) we asked for as the
@@ -24492,7 +24491,7 @@ ${trackListXml}
           if (signal?.aborted) return;
 
           console.log(`  🔎 Trying ${resolver.id}...`);
-          const result = await resolver.resolve(artistName, track.title, track.album || null, config, resolverHints(track));
+          const result = await resolver.resolve(artistName, track.title, track.album || null, config);
 
           if (signal?.aborted) return;
 
@@ -24585,7 +24584,7 @@ ${trackListXml}
               bandcampUrl: track.sourceUrl
             };
           } else {
-            result = await resolver.resolve(artistName, track.title, track.album || null, config, resolverHints(track));
+            result = await resolver.resolve(artistName, track.title, track.album || null, config);
           }
 
           // Check abort before processing result
@@ -24726,7 +24725,7 @@ ${trackListXml}
             bandcampUrl: track.sourceUrl
           };
         } else {
-          result = await resolver.resolve(artistName, track.title, track.album || null, config, resolverHints(track));
+          result = await resolver.resolve(artistName, track.title, track.album || null, config);
         }
 
         // Check abort before processing result
@@ -24741,7 +24740,7 @@ ${trackListXml}
           // Fall back to search() to find a non-blocklisted alternative
           if (resolver.search) {
             try {
-              const searchResults = await resolver.search(`${artistName} ${track.title}`, config, resolverHints(track));
+              const searchResults = await resolver.search(`${artistName} ${track.title}`, config);
               if (signal?.aborted) return;
               if (Array.isArray(searchResults)) {
                 result = searchResults.find(r => !blockedIds.includes(getSourceId(r))) || null;
@@ -31633,7 +31632,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       try {
         const config = await getResolverConfig(resolverId);
-        const resolved = await resolver.resolve(track.artist, track.name, null, config, resolverHints(track));
+        const resolved = await resolver.resolve(track.artist, track.name, null, config);
 
         if (resolved) {
           // Score the result the same way the rest of the resolution paths do.

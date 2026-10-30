@@ -1,10 +1,10 @@
-// Source of truth for plugins/amazonmusic.axe v1.6.1.
+// Source of truth for plugins/amazonmusic.axe v1.6.2.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
 // new Function) — no shared scope between them; helpers must be embedded per function.
 module.exports = {
-  search: async function (query, config, hints) {
+  search: async function (query, config) {
     try {
       if (!window.electron || !window.electron.amazonMusic) {
         console.warn('Amazon Music: bridge not available');
@@ -45,23 +45,6 @@ module.exports = {
         return [];
       }
       var tracks = result.tracks || [];
-      // Resolving one track (the app passes hints; a user search does not):
-      // drop a candidate whose length is clearly another recording. An ASIN
-      // carrying the requested artist and title but 3:12 against a 4:04
-      // track played unrelated audio (Amazon's auto-play from a track page
-      // that could not play its own track), and nothing else could tell. A
-      // candidate or target with no known length is kept.
-      var wanted = hints && typeof hints.duration === 'number' && hints.duration > 0 ? hints.duration : 0;
-      if (wanted) {
-        var tolerance = Math.max(15, wanted * 0.1);
-        var kept = tracks.filter(function (t) {
-          return !(t.duration > 0) || Math.abs(t.duration - wanted) <= tolerance;
-        });
-        if (kept.length !== tracks.length) {
-          console.log('[Amazon] resolver dropped', tracks.length - kept.length, 'candidate(s) whose length is not near', wanted + 's');
-        }
-        tracks = kept;
-      }
       return tracks.map(function (t) {
         return {
           id: 'amazonmusic-' + t.asin,
@@ -85,7 +68,7 @@ module.exports = {
       return [];
     }
   },
-  resolve: async function (artist, track, album, config, hints) {
+  resolve: async function (artist, track, album, config) {
     var norm = function (s) {
       s = (s || '').toString().toLowerCase();
       try {
@@ -99,7 +82,7 @@ module.exports = {
     var targetArtist = norm(artist);
     var targetTitle = norm(track);
     console.log('[Amazon] resolver resolve', artist, track, 'norm', targetArtist, targetTitle);
-    var results = await this.search({ title: track, artist: artist }, config, hints);
+    var results = await this.search({ title: track, artist: artist }, config);
     console.log(
       '[Amazon] resolver hits',
       results.length,
@@ -137,22 +120,6 @@ module.exports = {
     var containing = results.filter(function (r) {
       return contains(norm(r.artist), targetArtist) && contains(norm(r.title), targetTitle);
     });
-    // Every pass below prefers a candidate on the requested album (stable:
-    // Amazon's order is kept within each group). A same-titled single or a
-    // mislabeled ASIN on another release no longer beats the album track.
-    var wantAlbum = norm(stripFeat(album));
-    if (wantAlbum) {
-      var onAlbum = containing.filter(function (r) {
-        return norm(stripFeat(r.album)) === wantAlbum;
-      });
-      if (onAlbum.length) {
-        containing = onAlbum.concat(
-          containing.filter(function (r) {
-            return onAlbum.indexOf(r) === -1;
-          }),
-        );
-      }
-    }
     if (exactArtist && exactTitle) {
       for (var i = 0; i < containing.length; i++) {
         if (
