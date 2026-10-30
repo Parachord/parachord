@@ -644,6 +644,8 @@ const {
 } = require('./lib/artist-image-chain');
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
+const { resolverHints } = require('./lib/resolver-hints');
+const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -6552,7 +6554,7 @@ const Parachord = () => {
         if (track.sources[resolver.id]) return;
         try {
           const config = await getResolverConfig(resolver.id);
-          const result = await resolver.resolve(track.artist, track.title, track.album, config);
+          const result = await resolver.resolve(track.artist, track.title, track.album, config, resolverHints(track));
           if (result) {
             // Score before stamping. Wrong-artist matches collapse to 0.50
             // and the source-selection floor will drop them — but skip the
@@ -6585,7 +6587,7 @@ const Parachord = () => {
           if (Object.keys(track.sources).length >= enabledResolvers.length) continue;
           try {
             const config = await getResolverConfig(resolver.id);
-            const result = await resolver.resolve(track.artist, track.title, track.album, config);
+            const result = await resolver.resolve(track.artist, track.title, track.album, config, resolverHints(track));
             if (result) {
               const confidence = calculateConfidence(track, result);
               if (confidence < MIN_CONFIDENCE_THRESHOLD) {
@@ -6699,7 +6701,7 @@ const Parachord = () => {
       const resolvePromises = enabledResolvers.map(async (resolver) => {
         try {
           const config = await getResolverConfig(resolver.id);
-          const result = await resolver.resolve(trackMeta.artist, trackMeta.title, trackMeta.album, config);
+          const result = await resolver.resolve(trackMeta.artist, trackMeta.title, trackMeta.album, config, resolverHints(trackMeta));
           if (result) {
             const confidence = calculateConfidence(trackMeta, result);
             if (confidence < MIN_CONFIDENCE_THRESHOLD) {
@@ -12060,15 +12062,10 @@ ${trackListXml}
           const title = (data.track.title || '').toLowerCase().trim();
           if (!artist || !title) return;
 
-          // Extract the specific source ID to blocklist the result, not the whole resolver
-          const trackSourceKey = Object.keys(trackSources).find(key => {
-            const src = trackSources[key];
-            return src && src[data.resolverId];
-          });
-          const source = trackSourceKey ? trackSources[trackSourceKey][data.resolverId] : null;
-          const sourceId = source
-            ? (source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.filePath || source.id || null)
-            : null;
+          // The reported track's own source id, sent with the menu payload
+          // (this effect's trackSources is a mount-time copy, so it cannot be
+          // looked up here). Blocklist that one result, not the whole resolver.
+          const sourceId = data.track.sourceId || null;
 
           // Check if this exact source is already blocklisted
           const existing = resolverBlocklistRef.current.find(entry =>
@@ -12089,18 +12086,10 @@ ${trackListXml}
           };
           setResolverBlocklist(prev => [...prev, newEntry]);
 
-          // Remove the blocklisted source from trackSources so UI updates immediately
+          // Remove the blocklisted source from this track's trackSources so the
+          // UI updates immediately. Only this track: other tracks keep theirs.
           flushTrackSources(); // queued writes first, so none re-adds the source after this
-          setTrackSources(prev => {
-            const updated = { ...prev };
-            for (const key of Object.keys(updated)) {
-              if (updated[key] && updated[key][data.resolverId]) {
-                const { [data.resolverId]: removed, ...rest } = updated[key];
-                updated[key] = rest;
-              }
-            }
-            return updated;
-          });
+          setTrackSources(prev => withoutTrackSource(prev, data.track.id, data.resolverId));
 
           // Clear from in-memory cache so re-resolution will find an alternative
           const cacheKey = `${artist}|${title}`;
@@ -15633,7 +15622,7 @@ ${trackListXml}
             // Prefer search() to get all results and find best match
             if (resolver.search && typeof resolver.search === 'function') {
               const query = `${trackOrSource.artist} ${trackOrSource.title}`;
-              const results = await resolver.search(query, config);
+              const results = await resolver.search(query, config, resolverHints(trackOrSource));
               if (results && results.length > 0) {
                 bestMatch = findBestMatch(results, trackOrSource.artist, trackOrSource.title, trackOrSource.mbid || trackOrSource.recordingMbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                 if (!bestMatch) {
@@ -15642,7 +15631,7 @@ ${trackListXml}
               }
             } else {
               // Fallback to resolve() for resolvers without search
-              const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config);
+              const result = await resolver.resolve(trackOrSource.artist, trackOrSource.title, trackOrSource.album, config, resolverHints(trackOrSource));
               if (result && validateResolvedTrack(result, trackOrSource.artist, trackOrSource.title)) {
                 bestMatch = result;
               } else if (result) {
@@ -15717,12 +15706,12 @@ ${trackListXml}
                 let bestMatch = null;
                 if (resolver.search && typeof resolver.search === 'function') {
                   const query = `${canonicalArtist} ${canonicalTitle}`;
-                  const results = await resolver.search(query, config);
+                  const results = await resolver.search(query, config, resolverHints(trackOrSource));
                   if (results && results.length > 0) {
                     bestMatch = findBestMatch(results, canonicalArtist, canonicalTitle, mbidResult.recording_mbid || trackOrSource.mbid, (window.pickTrackIsrc && window.pickTrackIsrc(trackOrSource)) || trackOrSource.isrc);
                   }
                 } else if (resolver.resolve) {
-                  const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config);
+                  const result = await resolver.resolve(canonicalArtist, canonicalTitle, mbidResult.release_name, config, resolverHints(trackOrSource));
                   if (result && validateResolvedTrack(result, canonicalArtist, canonicalTitle)) {
                     bestMatch = result;
                   }
@@ -15811,8 +15800,7 @@ ${trackListXml}
       // Mirrors Android's ResolverScoring.MIN_CONFIDENCE_THRESHOLD.
       .filter(s => s.confidence >= MIN_CONFIDENCE_THRESHOLD)
       .filter(s => {  // Filter blocklisted specific source results
-        const src = s.source;
-        const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.filePath || src.id || null) : null;
+        const srcId = sourceBlockId(s.source);
         return !currentBlocklist.some(entry =>
           entry.resolverId === s.resolverId &&
           entry.artist === trackArtistNorm &&
@@ -20347,7 +20335,7 @@ ${trackListXml}
 
       try {
         const config = await getResolverConfig(resolver.id);
-        const result = await resolver.resolve(track.artist, track.title, track.album, config);
+        const result = await resolver.resolve(track.artist, track.title, track.album, config, resolverHints(track));
 
         if (result) {
           const confidence = calculateConfidence(track, result);
@@ -24133,7 +24121,7 @@ ${trackListXml}
 
       try {
         const config = await getResolverConfig(resolver.id);
-        const result = await resolver.resolve(artistName, track.title, track.album || null, config);
+        const result = await resolver.resolve(artistName, track.title, track.album || null, config, resolverHints(track));
 
         if (result) {
           // Use the canonical (artistName, track.title) we asked for as the
@@ -24504,7 +24492,7 @@ ${trackListXml}
           if (signal?.aborted) return;
 
           console.log(`  🔎 Trying ${resolver.id}...`);
-          const result = await resolver.resolve(artistName, track.title, track.album || null, config);
+          const result = await resolver.resolve(artistName, track.title, track.album || null, config, resolverHints(track));
 
           if (signal?.aborted) return;
 
@@ -24597,7 +24585,7 @@ ${trackListXml}
               bandcampUrl: track.sourceUrl
             };
           } else {
-            result = await resolver.resolve(artistName, track.title, track.album || null, config);
+            result = await resolver.resolve(artistName, track.title, track.album || null, config, resolverHints(track));
           }
 
           // Check abort before processing result
@@ -24690,10 +24678,7 @@ ${trackListXml}
     console.log(`  📋 Enabled resolvers: ${enabledResolvers.map(r => r.id).join(', ')}`);
 
     // Helper to extract a stable source identifier for blocklist matching
-    const getSourceId = (source) => {
-      if (!source) return null;
-      return source.youtubeId || source.spotifyUri || source.spotifyId || source.bandcampUrl || source.soundcloudId || source.appleMusicId || source.filePath || source.id || null;
-    };
+    const getSourceId = sourceBlockId;
 
     // Get blocklisted source IDs for this track
     const currentBlocklist = resolverBlocklistRef.current;
@@ -24741,7 +24726,7 @@ ${trackListXml}
             bandcampUrl: track.sourceUrl
           };
         } else {
-          result = await resolver.resolve(artistName, track.title, track.album || null, config);
+          result = await resolver.resolve(artistName, track.title, track.album || null, config, resolverHints(track));
         }
 
         // Check abort before processing result
@@ -24756,7 +24741,7 @@ ${trackListXml}
           // Fall back to search() to find a non-blocklisted alternative
           if (resolver.search) {
             try {
-              const searchResults = await resolver.search(`${artistName} ${track.title}`, config);
+              const searchResults = await resolver.search(`${artistName} ${track.title}`, config, resolverHints(track));
               if (signal?.aborted) return;
               if (Array.isArray(searchResults)) {
                 result = searchResults.find(r => !blockedIds.includes(getSourceId(r))) || null;
@@ -31648,7 +31633,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       try {
         const config = await getResolverConfig(resolverId);
-        const resolved = await resolver.resolve(track.artist, track.name, null, config);
+        const resolved = await resolver.resolve(track.artist, track.name, null, config, resolverHints(track));
 
         if (resolved) {
           // Score the result the same way the rest of the resolution paths do.
@@ -47372,7 +47357,12 @@ useEffect(() => {
                           if (window.electron?.playbarSourceMenu?.show) {
                             window.electron.playbarSourceMenu.show({
                               resolverId: currentResolverId,
-                              track: { artist: currentTrack.artist, title: currentTrack.title }
+                              track: {
+                                id: currentTrack.id,
+                                artist: currentTrack.artist,
+                                title: currentTrack.title,
+                                sourceId: sourceBlockId((currentTrack.sources || {})[currentResolverId] || (trackSources[currentTrack.id] || {})[currentResolverId])
+                              }
                             });
                           }
                         },
@@ -47452,7 +47442,12 @@ useEffect(() => {
                               if (window.electron?.playbarSourceMenu?.show) {
                                 window.electron.playbarSourceMenu.show({
                                   resolverId: resId,
-                                  track: { artist: currentTrack.artist, title: currentTrack.title }
+                                  track: {
+                                    id: currentTrack.id,
+                                    artist: currentTrack.artist,
+                                    title: currentTrack.title,
+                                    sourceId: sourceBlockId((currentTrack.sources || {})[resId] || (trackSources[currentTrack.id] || {})[resId])
+                                  }
                                 });
                               }
                             },
