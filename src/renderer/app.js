@@ -7687,6 +7687,14 @@ const Parachord = () => {
       isHtml5StreamResolver,
       findLoadedResolver,
       usesSharedAudio,
+      resolveTracksInBackground,
+      buildProtocolFetchHeaders,
+      lastfmFetch,
+      getLastfmApiKey,
+      getArtistTopTracksRef,
+      keyForSpinoffDedupRef,
+      refreshSpotifyTokenRef,
+      startAutoAdvancePollingRef,
     },
     enrichment: {
       trackSources,
@@ -7704,6 +7712,7 @@ const Parachord = () => {
       showConfirmDialog,
       setActiveView,
       setSettingsTab,
+      setProgress,
     },
     scheduling: {
       updateSchedulerVisibilityRef,

@@ -76,6 +76,23 @@ describe('engine ctx literal ordering (TDZ guards)', () => {
     },
   );
 
+  // B3-class guard: every expected slot must be PRESENT inside the ctx
+  // literal — declared-above alone lets a member slip silently out of the
+  // literal (the B3 class from review round 1).
+  const ctxOpen = appSrc.indexOf('  const ctx = {');
+  const ctxClose = appSrc.indexOf('  };', ctxOpen);
+  const ctxBody = appSrc.slice(ctxOpen, ctxClose);
+  const ALL_SLOTS = Object.values(DIRECT_SLOTS).flat().concat([
+    'getResolverConfigRef', 'resolveTrackRef', 'confidenceForSourceRef',
+    'getAlbumArtRef', 'getCachedAlbumArtRef', 'showExternalTrackPromptUIRef',
+    'showToastRef', 'updateSchedulerVisibilityRef', 'abortSchedulerContextRef',
+    'registerPoolContextRef', 'setSchedulerPlaybackIndexRef',
+    'getArtistTopTracksRef', 'keyForSpinoffDedupRef', 'refreshSpotifyTokenRef', 'startAutoAdvancePollingRef',
+  ]);
+  test.each(ALL_SLOTS.map((n) => [n]))('%s is present in the ctx literal', (name) => {
+    expect(ctxBody).toContain(name + ',');
+  });
+
   // The REF-bridge members (`...Ref` — refs synced post-declaration by design)
   // must each have a useRef declaration ANYWHERE (shape never positions).
   const REF_SLOTS = [
