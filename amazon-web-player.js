@@ -852,6 +852,8 @@ const amazonWebPlayer = {
     win.show();
     win.focus();
 
+    this._signInTracePage = null;
+    this._signInTraceCookies = null;
     return new Promise((resolve) => {
       let settled = false;
       let lastUrl = null;
@@ -871,10 +873,12 @@ const amazonWebPlayer = {
         // rotating the cookie names must not leave this timer waiting forever;
         // a path off / or a third stable tick stands in for it.
         const hasCookie = await this.hasAuthCookie().catch(() => false);
+        await this.traceSignIn(url).catch(() => {});
         const verdict = signInLanded({ url, lastUrl, stableTicks, hasCookie });
         lastUrl = url;
         stableTicks = verdict.stableTicks;
         if (!verdict.landed) return;
+        console.log(`[Amazon] sign-in landed on ${this.signInTraceUrl(url)} (cookie: ${hasCookie}, stable ticks: ${verdict.stableTicks})`);
         clearInterval(timer);
         setTimeout(() => {
           if (win && !win.isDestroyed()) win.close();
@@ -883,6 +887,33 @@ const amazonWebPlayer = {
       }, 1000);
       win.on('closed', () => finish(false));
     });
+  },
+
+  // Sign-in trace: each page the sign-in window visits (host + path only; the
+  // query can carry tokens) and the Amazon session cookie NAMES as they
+  // appear (never values), so a sign-in that closes too early or never
+  // finishes can be read from the log.
+  signInTraceUrl(url) {
+    try {
+      const u = new URL(url);
+      return `${u.host}${u.pathname}`;
+    } catch {
+      return String(url || '').split('?')[0];
+    }
+  },
+
+  async traceSignIn(url) {
+    const page = this.signInTraceUrl(url);
+    if (page !== this._signInTracePage) {
+      this._signInTracePage = page;
+      console.log(`[Amazon] sign-in page: ${page}`);
+    }
+    const cookies = await this.session().cookies.get({});
+    const names = [...new Set(cookies.filter(c => /^(at-|sess-at-|x-main|session-token)/.test(c.name)).map(c => c.name))].sort().join(',');
+    if (names !== this._signInTraceCookies) {
+      this._signInTraceCookies = names;
+      console.log(`[Amazon] sign-in cookies: ${names || '(none)'}`);
+    }
   },
 
   // Serializes real page navigation: fallback spec searches, playlist
