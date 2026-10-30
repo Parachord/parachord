@@ -8,11 +8,14 @@
 // in to neither, so their suggestions were all placeholders (2026-10-27).
 // Only the artist page had its own Wikipedia → Discogs fallback.
 //
-// The chain is now, first photo wins: Spotify, Apple Music, the user's
-// active resolvers that declare capabilities.artistImage (searchArtistImage;
-// docs/architecture/plugins.md), Deezer's public artist search (no account),
+// The chain is now, first photo wins: Spotify, Apple Music, Deezer's public
+// artist search (no account), the user's active resolvers that declare
+// capabilities.artistImage (searchArtistImage; docs/architecture/plugins.md),
 // Wikipedia through Wikidata when the caller knows the MusicBrainz id, and
-// Discogs when the user has a Discogs token. This module is the pure part:
+// Discogs when the user has a Discogs token. Deezer goes before the
+// resolvers because it is one cheap request, and a resolver's lookup can be
+// a full page load on a queue that track resolution shares (Amazon Music):
+// the resolvers fill Deezer's gaps. This module is the pure part:
 // reading Deezer's answer, refusing unusable URLs, running the steps, and
 // remembering misses.
 //

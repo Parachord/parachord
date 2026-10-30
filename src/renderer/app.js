@@ -33266,10 +33266,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // related artists, Search, top artists, friends, chat cards, the artist
   // page), with caching and face detection. The sources, first photo wins
   // (src/renderer/lib/artist-image-chain.js has the reasons):
-  //   Spotify (signed in) → Apple Music (MusicKit configured) → the active
-  //   resolvers that declare capabilities.artistImage, in priority order →
-  //   Deezer's public artist search → Wikipedia via Wikidata (options.mbid)
-  //   → Discogs (with the user's Discogs token).
+  //   Spotify (signed in) → Apple Music (MusicKit configured) → Deezer's
+  //   public artist search → the active resolvers that declare
+  //   capabilities.artistImage, in priority order → Wikipedia via Wikidata
+  //   (options.mbid) → Discogs (with the user's Discogs token).
   // It used to ask only Spotify and Apple Music, and returned nothing for a
   // user signed in to neither. A miss is remembered for a few hours when
   // every source answered; a thrown or timed-out source isn't cached.
@@ -33335,6 +33335,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     if (musicKitAvailable) {
       steps.push({ id: 'applemusic', run: async () => (await musicKitWeb.getArtistImage(artistName))?.url || null });
     }
+    // Deezer before the plugin resolvers: it is one request with no account,
+    // and covers most artists. A resolver's lookup can cost far more (Amazon
+    // Music's is a full page load on the queue its track resolution uses, so
+    // a Home page of 10-20 suggestions held up playback for 8s and timed most
+    // of them out before Deezer was asked). The resolvers fill Deezer's gaps.
+    steps.push({ id: 'deezer', run: () => deezerArtistImage(artistName) });
     const loader = resolverLoaderRef.current;
     if (loader?.getArtistImageResolvers) {
       const activeIds = activeResolversRef.current || [];
@@ -33346,7 +33352,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         steps.push({ id: resolver.id, run: async () => loader.searchArtistImage(resolver.id, artistName, await getResolverConfig(resolver.id)) });
       }
     }
-    steps.push({ id: 'deezer', run: () => deezerArtistImage(artistName) });
     if (mbid) steps.push({ id: 'wikipedia', run: () => getWikipediaArtistImage(mbid) });
     if (discogsToken) steps.push({ id: 'discogs', run: () => getDiscogsArtistImage(mbid, artistName) });
 
