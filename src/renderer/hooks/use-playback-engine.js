@@ -54,11 +54,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   setSpinoffLoading,
   spinoffModeRef,
   spinoffSourceTrackRef,
-  handleNextRef,
-  handlePreviousRef,
-  handlePlayPauseRef,
-  handlePlayRef,
-  startSpinoffRef,
   playbackPollerRef,
   pollingRecoveryRef,
   externalTrackTimeoutRef,
@@ -224,10 +219,18 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   const spinoffRefillLastFetchAtRef = React.useRef(0); // Timestamp of last refill attempt for 5s rate-limit
 
   // ---------------------------------------------------------------
-  // Handler refs — INPUTS this slice: Parachord-owned shared refs (queue and
-  // volume hooks consume them first; this hook writes them every render via
-  // the syncs below). The collapse of the ref-dance class is the follow-up.)
+  // Handler refs — ENGINE-owned since the dance-collapse slice: declared
+  // here, synced to latest handlers every render, returned for the external
+  // consumers (protocol handler, embed players, the AI-chat/MCP tool
+  // contexts). Engine-internal call sites are plain hook-scope calls now:
+  // the five refs exist for the outside, not for the engine's own
+  // cross-handler invocations anymore.
   // ---------------------------------------------------------------
+  const handleNextRef = React.useRef(null);
+  const handlePreviousRef = React.useRef(null);
+  const handlePlayPauseRef = React.useRef(null);
+  const handlePlayRef = React.useRef(null);
+  const startSpinoffRef = React.useRef(null);
 
   // Keep state-bound refs in sync (each was a one-line entry in the old
   // Parachord ref-sync cluster; they move with the state they mirror).
@@ -318,7 +321,7 @@ function playbackDurationSeconds(source, track) {
       if (playing?.id) {
         setCurrentQueue(prev => prev.map(t => t.id === playing.id ? { ...t, status: 'error' } : t));
       }
-      setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
+      setTimeout(() => { handleNext(); }, 600);
       return true;
     };
 
@@ -440,7 +443,7 @@ function playbackDurationSeconds(source, track) {
             if (otherSources.length > 0 && !localFileFallbackInProgressRef.current && handlePlayRef.current) {
               console.log('🔄 Local file still failing after retry — falling back to next available source...');
               localFileFallbackInProgressRef.current = true;
-              handlePlayRef.current({
+              handlePlay({
                 ...failedTrack,
                 sources: Object.fromEntries(Object.entries(failedTrack.sources).filter(([id]) => id !== 'localfiles'))
               });
@@ -536,7 +539,7 @@ function playbackDurationSeconds(source, track) {
       if (trackOrSource?.id) {
         setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
       }
-      setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
+      setTimeout(() => { handleNext(); }, 600);
       return true;
     };
 
@@ -3259,6 +3262,11 @@ function playbackDurationSeconds(source, track) {
     handleNext,
     handlePrevious,
     handlePlayPause,
+    handleNextRef,
+    handlePreviousRef,
+    handlePlayPauseRef,
+    handlePlayRef,
+    startSpinoffRef,
     startSpinoff,
     exitSpinoff,
     // handler refs (protocol handler + embed + tool contexts)
