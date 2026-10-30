@@ -41,7 +41,8 @@ describe('withoutTrackSource', () => {
 });
 
 describe('app.js', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const src = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8') +
+  fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
   const start = src.indexOf("data.action === 'report-bad-match'");
   const handler = src.slice(start, src.indexOf('setPlaybarSourceDropdownOpen(false);', start));
 
