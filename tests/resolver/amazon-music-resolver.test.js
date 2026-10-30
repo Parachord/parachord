@@ -40,7 +40,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.6.0');
+    expect(axe.manifest.version).toBe('1.6.1');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -248,6 +248,56 @@ describe('amazonmusic resolve', () => {
       ['R', 'Shakey Graves', 'Ready or Not (Live)'],
       ['E', 'Shakey Graves', 'Ready or Not (feat. Sierra Ferrell)'],
     ], 'Shakey Graves feat. Sierra Ferrell', 'Ready or Not')).toBe('E');
+  });
+
+  // The live report: "Ready or Not" by Shakey Graves feat. Sierra Ferrell
+  // (4:04, Movie of the Week) resolved to an ASIN Amazon labels "Ready or Not"
+  // by Shakey Graves (3:12, album "Ready or Not"), whose track page played
+  // unrelated audio every time. The length is the one field that disagreed.
+  const shakey = [
+    { asin: 'B09R9RR8HY', uniqueId: 'u1', title: 'Ready or Not', artist: 'Shakey Graves', album: 'Ready or Not', duration: 192 },
+    { asin: 'DUET', uniqueId: 'u2', title: 'Ready or Not (feat. Sierra Ferrell)', artist: 'Shakey Graves', album: 'Movie of the Week', duration: 244 },
+  ];
+  const resolveWith = async (tracks, args) => {
+    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({ success: true, tracks });
+    return (await instantiate(axe).resolve(...args))?.amazonAsin || null;
+  };
+
+  test('drops a candidate whose length is another recording when the caller knows the length', async () => {
+    expect(await resolveWith(shakey, ['Shakey Graves feat. Sierra Ferrell', 'Ready or Not', 'Movie of the Week', {}, { duration: 244 }])).toBe('DUET');
+    // Only the mismatched ASIN carries the label: no wrong song, no Amazon source.
+    expect(await resolveWith([shakey[0]], ['Shakey Graves feat. Sierra Ferrell', 'Ready or Not', 'Movie of the Week', {}, { duration: 244 }])).toBeNull();
+  });
+
+  test('without hints (an older app, a plain search) nothing is filtered', async () => {
+    expect(await resolveWith([shakey[0]], ['Shakey Graves feat. Sierra Ferrell', 'Ready or Not', 'Movie of the Week', {}])).toBe('B09R9RR8HY');
+    expect(await resolveWith([shakey[0]], ['Shakey Graves feat. Sierra Ferrell', 'Ready or Not', null, {}, { duration: null }])).toBe('B09R9RR8HY');
+  });
+
+  test('tolerance is 10% or 15s, whichever is larger; an unknown length is kept', async () => {
+    const at = (duration) => [{ asin: 'A', uniqueId: 'a', title: 'Song', artist: 'Band', album: 'X', duration }];
+    expect(await resolveWith(at(115), ['Band', 'Song', null, {}, { duration: 100 }])).toBe('A');  // 15s floor (10% would be 10s)
+    expect(await resolveWith(at(116), ['Band', 'Song', null, {}, { duration: 100 }])).toBeNull();
+    expect(await resolveWith(at(540), ['Band', 'Song', null, {}, { duration: 600 }])).toBe('A');  // 10% of 600
+    expect(await resolveWith(at(539), ['Band', 'Song', null, {}, { duration: 600 }])).toBeNull();
+    expect(await resolveWith(at(0), ['Band', 'Song', null, {}, { duration: 600 }])).toBe('A');
+  });
+
+  test('search filters by length only when given hints', async () => {
+    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({ success: true, tracks: shakey });
+    const resolver = instantiate(axe);
+    expect((await resolver.search('Shakey Graves Ready or Not', {})).map(t => t.amazonAsin)).toEqual(['B09R9RR8HY', 'DUET']);
+    expect((await resolver.search('Shakey Graves Ready or Not', {}, { duration: 244 })).map(t => t.amazonAsin)).toEqual(['DUET']);
+  });
+
+  test('prefers the candidate on the requested album, even ranked below an exact match elsewhere', async () => {
+    const tracks = [
+      { asin: 'SINGLE', uniqueId: 's', title: 'Around the World', artist: 'Daft Punk', album: 'Around the World - Single', duration: 430 },
+      { asin: 'ALBUM', uniqueId: 'h', title: 'Around the World', artist: 'Daft Punk', album: 'Homework', duration: 430 },
+    ];
+    expect(await resolveWith(tracks, ['Daft Punk', 'Around the World', 'Homework', {}])).toBe('ALBUM');
+    expect(await resolveWith(tracks, ['Daft Punk', 'Around the World', null, {}])).toBe('SINGLE'); // no album: Amazon's order
+    expect(await resolveWith(tracks, ['Daft Punk', 'Around the World', 'Discovery', {}])).toBe('SINGLE'); // no album match: unchanged
   });
 
   test('the version word list matches the renderer\'s', () => {
