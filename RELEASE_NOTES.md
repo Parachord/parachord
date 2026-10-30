@@ -1,3 +1,94 @@
+# Parachord v0.9.10
+
+**Release date:** 2026-10-30
+
+> A faster, steadier Parachord. The pinwheel and the freezes many of you hit are fixed: the app no longer rewrites one big file on every save, pages only redraw when their own content changes, and big local libraries (especially on spinning hard drives) no longer lock the window. Plus Discord Rich Presence, Amazon Music playlists of any length, Bandcamp links that point at the right song, and covers that come back when a cached image goes dead.
+
+---
+
+## Speed and freezes
+
+- **No more pinwheel on save.** Parachord kept its caches and playlists in one settings file and rewrote the whole thing on every save, which locked the app for a moment each time. Big caches and playlists now live in their own files. Your data moves over automatically on first launch.
+- **Pages redraw only when their own content changes.** Collection, Home, playlists, artist pages and Search used to redraw on every change anywhere in the app, such as a track resolving in the background. The Songs list in Collection is no longer rebuilt on each redraw either, which mattered for libraries in the tens of thousands.
+- **Local libraries on slow disks.** Checking your music folder for changes held up the app while it worked, and on Windows that froze the whole window. The app also re-read the whole folder every time its window lost and regained focus. It now works in the background in small steps, and only switches to its slower background check after two minutes away.
+- **Big local libraries load faster.** Artwork checks run in one batch, a changed file updates just that row instead of reloading the whole library, and the five-minute background check only reloads when something actually changed. Artwork lookup now runs for libraries over 10,000 tracks too, one album at a time, where it used to be skipped.
+- **Album and artist pages no longer wait behind a background job.** Filling in missing album track counts used to compete with the pages you open for MusicBrainz lookups (one per second), and it started over at every launch. It now runs in the background lane, saves in batches, and remembers albums MusicBrainz doesn't have.
+- **Concerts and Fresh Drops open from what they found last time**, then update in the background. Right after launch, both used to start from scratch: Concerts showed its loading state and fetched everything again, and Fresh Drops ran its full MusicBrainz scan at every start. Saved results that had gone stale were also never refreshed until you pressed refresh. Concerts also refreshes faster, because each concert service (SeatGeek, Ticketmaster and the rest) now has its own queue instead of waiting behind the others, and Fresh Drops no longer looks up every one of your artists on MusicBrainz again at each launch.
+- **When MusicBrainz is down, Parachord says so.** Opening an album during a MusicBrainz outage used to jump to the artist's page with "Network error - please check your internet connection", even though your connection was fine. Now the album page stays open, says MusicBrainz couldn't be reached (or is busy), and offers Try Again. Parachord also waits properly between retries instead of firing them back to back, and no longer repeats the same lookup up to nine times.
+- **Albums open even when MusicBrainz can't help.** When MusicBrainz is down or doesn't know an album, Parachord now gets the track list from Apple Music's public catalog (no account needed), Spotify, Amazon Music, Bandcamp, your own local files or your Subsonic server, and the album page says where it came from. If MusicBrainz is just slow, the album shows that track list after a few seconds instead of waiting, and MusicBrainz's list takes over once it arrives. Search also shows albums from these during an outage. Albums found on Spotify or Apple Music in search, and some albums on artist pages, used to never open at all; they do now.
+- **Albums opened from the playbar or your Collection keep their cover while they load**, and open faster when you've just queued them.
+- **Artist bios load even when MusicBrainz is down.** Parachord used to find an artist's Wikipedia article through MusicBrainz, so during an outage the Biography tab spun and then came up empty. It now asks Wikidata directly. A bio the player has already loaded also opens instantly on the artist page instead of being fetched again. And when a Wikipedia article opens with just a sentence or two, the bio now includes the article's history, without its member lists, discography or reference sections.
+- **Amazon Music playback no longer churns the UI.** Small bitrate changes during a track were re-rendering the app every few seconds.
+- **Amazon Music searches are much faster.** Every Amazon search used to load a full page of Amazon's web player, one at a time, so resolving a playlist paid that cost for every track. Parachord now reuses the search request Amazon's page already made, and runs several at once, so a burst of searches shares a single page load. Resolving a playlist, opening albums and finding artist photos on Amazon all speed up.
+
+## Discord Rich Presence
+
+Turn it on in **Settings → General → Discord Presence** and your Discord profile shows what you're listening to: title, artist, album, the cover, and a progress bar. It only shows while a track is playing, and covers are only sent when Discord can fetch them publicly. A cover from a server that puts a password or token in its address (Plex, Subsonic) is never sent; you get the Parachord logo instead.
+
+## Amazon Music
+
+- **Playlists of any length.** Imports used to stop at the first 100 tracks; a 977-track playlist now comes in whole. Tracks Amazon has delisted are skipped, and the count shows the difference.
+- **Share links work**, including `music.amazon.com/user-playlists/…` links for playlists you made yourself.
+- **Better search.** Search reads Amazon's own search results instead of scraping the page, and tries both word orders, so songs Amazon only finds with the artist first (or only with the title first) now resolve.
+- **Clean titles.** Amazon puts "[Explicit]" inside track titles. It's removed now, so those tracks match other services and scrobble under their real name.
+- **The version you asked for.** When Amazon listed a live cut, remix or karaoke version above the original, that's what played. Parachord now picks the exact track first, and only falls back to another version of it when that's all Amazon has.
+- **Your OS shows the right track.** During Amazon playback, Control Center on macOS and the media flyout on Windows showed "Amazon Music" instead of the song, and media keys could pause Amazon's player behind Parachord's back. Both are fixed. On Linux there's now one media player entry instead of two.
+
+## Playback and matching
+
+- **Bandcamp links point at the song you're playing.** Bandcamp's search ranks covers, fan remixes and live versions alongside the original, and Parachord often took the first one: the Buy button could send you to a cover by someone else. Parachord now prefers the exact track, skips other versions unless you asked for one, and the Buy button won't link to them.
+- **Same recording, same match.** When a result has the same ISRC or MusicBrainz recording ID as the track you asked for, Parachord treats it as an exact match, even when the service spells the title or artist differently.
+- **Releases in non-Latin scripts.** On a Cyrillic, Chinese, Japanese or Arabic release, every track got the same internal id, so they all showed as playing and could play the wrong song. Each track is distinct now.
+- **Deleted local files.** A track whose file is gone now plays from another service if it can, or says the file wasn't found, instead of claiming the file "could not be decoded".
+- **Hi-res audio.** When a local file failed to play, the error told you to downsample hi-res FLAC or WAV. That advice was wrong: they play fine. It's gone.
+
+## Local files
+
+- **Remove Missing Files.** In **Settings → Local Files**, or from a track's right-click menu, you can remove files that are no longer on disk. A folder that can't be read (an unplugged drive, an offline share) is skipped and named, never treated as empty.
+- **Library-only tracks** in the Collection's Songs tab offered "Remove from Collection" and then failed. They now offer Show in Finder/Folder instead.
+
+## Album art
+
+- **Dead covers come back.** When a cached cover image stops loading, Parachord looks it up again instead of showing a blank square. This covers album pages, Fresh Drops, Pop of the Tops and Critical Darlings.
+- **Critical Darlings and charts** find covers for albums MusicBrainz doesn't know, by asking your services, iTunes and Deezer.
+- **Fresh Drops** checks that a cover exists before using it, instead of remembering a guessed address for 90 days.
+- **Loading skeletons** on Recommendations, and Critical Darlings' placeholders are now the same size as the cards that replace them.
+- **Amazon Music and Subsonic logos** in plugin settings and on track badges.
+
+## Artist pages
+
+- **Discogs biographies read properly.** Bios from Discogs showed their raw markup: band members as `[a17632854]` and headings wrapped in `[b]` tags. Members, labels and releases now appear by name, and bold, italic, underline and links display as formatting.
+- **Artist photos without a Spotify or Apple Music sign-in.** Artist photos on Home, Recommendations, Search, friends and in chat only came from Spotify or Apple Music, so without either you saw placeholders. Parachord now also asks your other services that have artist photos (Amazon Music among them), Deezer, Wikipedia and Discogs.
+
+## Recommendations and sharing
+
+- **Recommendations are recommendations.** When ListenBrainz hadn't made you a recommendation playlist yet (common for new accounts), the Recommendations page showed your own most-played tracks instead. Now it shows Last.fm's picks if you've connected it, or says that ListenBrainz needs a few weeks of listens first.
+- **Last.fm friends who hide their listening.** A friend whose Last.fm profile hides recent listening looked broken: their card went quietly stale, and their Recent tab said it failed to load. Parachord now says they've hidden it.
+- **Copy Link works for playlists.** Share → Copy Link on a playlist, and Copy link from a playlist's right-click menu, always said to sync the playlist to ListenBrainz first, even when it was. Synced playlists now copy their link.
+
+## Settings
+
+- **Local Server Port** (**Settings → General**). Spotify and SoundCloud sign-in, and the `parachord://` bridge used by Raycast, listen on port 8888. If something else on your computer already uses it, you can now pick another port (it takes effect after a restart), and Parachord tells you when it couldn't start on the one you chose. SoundCloud only accepts 8888 unless you use your own SoundCloud app credentials.
+
+## Shuffleupagus
+
+- **ChatGPT works with GPT-5 and the o-series**, and the Home page's Refresh button works with ChatGPT and Gemini again. A Refresh that fails now says so instead of quietly keeping the old suggestions.
+- **Artists Shuffleupagus recommends in chat show their photos.** Artist cards in the chat only had a photo if Parachord had already loaded that artist's picture somewhere else; the rest showed a placeholder.
+
+## Under the hood
+
+- Electron 44 (castlabs, up from 39) and current versions of the app's dependencies.
+- Two errors at startup fixed.
+- ListenBrainz listens now record which Parachord version sent them (e.g. "0.9.10 (desktop)"), so a listen from the desktop app can be told apart from one sent by Parachord on your phone.
+- Removed leftover code: the old Qobuz integration, an unused location lookup, and a Spotify permission Parachord never used.
+- A large internal reorganization: the main process is split into modules, the interface is split into components, and plugins are generated from source in CI.
+
+## Thanks
+
+@theli-ua did a large share of this release again: Discord Rich Presence, Amazon Music playlist pagination, search and title cleanup, the OS now-playing fix for Amazon, the fix for non-Latin releases, the Electron update, and most of the internal reorganization. Thank you. Thanks also to @jphastings, whose Plex work is where the ISRC matching came from.
+
+---
+
 # Parachord v0.9.9
 
 **Release date:** 2026-10-17
