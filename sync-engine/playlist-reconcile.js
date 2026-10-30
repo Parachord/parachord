@@ -22,7 +22,7 @@
 
 const { mergePlaylist, canonicalTrackKey } = require('./playlist-merge');
 const { unifyTrackKeys, trackTiers } = require('./playlist-key-unify');
-const { computeMaterializeDiff, materializeToProvider } = require('./playlist-materialize');
+const { computeMaterializeDiff, materializeToProvider, canonicalTracksOnRemote } = require('./playlist-materialize');
 const { buildBaselineTiers } = require('./playlist-sync-state');
 
 // ── small set helpers ───────────────────────────────────────────────
@@ -52,40 +52,52 @@ function distinct(arr) {
  * Is a baseline key that a CHANGED provider copy is missing a PENDING add
  * (protect — never read its absence as a deletion) or a genuine deletion?
  *
- * The negative cache is the only evidence: no entry, or an entry with a null
- * resolvedId, means the track was never successfully materialized onto this
- * provider (catalog gap / un-hydratable) → its absence is pending, NOT a
- * delete. A non-null resolvedId means it genuinely landed there once and is
- * gone now → a real deletion. A missing track object is treated as pending
- * (defensive — we'd rather over-protect than risk a false drop).
+ * The hydration cache is the only evidence. PENDING = no entry, no fetch has
+ * ever SEEN the track on this provider (`lastSeenAt` unset), OR it was seen
+ * there but its absence has not yet streak-escalated. A non-null `resolvedId`
+ * is NOT evidence: it only proves a search found the id, and an add that
+ * resolved but never landed would otherwise escalate into deleting the user's
+ * own track everywhere (parachord#1163). A seen track stays protected until it
+ * has been omitted from the provider's COMPLETE fetch for
+ * MISSING_STREAK_THRESHOLD consecutive cycles, so a single transient omission
+ * (region-filtered, or silently-short-but-count-matching) is not a deletion.
+ * A missing track object is treated as pending (defensive).
  *
- * KNOWN SHARED-DESIGN LIMITATION (parachord#911 — DO NOT patch desktop-only).
- * A non-null resolvedId proves the track was materialized ONCE, not that the
- * provider DELETED it. If an already-materialized track is transiently absent
- * from an otherwise-complete fetch (region-restricted/unavailable track
- * silently filtered, a single paging glitch the trackCount floor can't catch
- * because the count still matches), this reads its absence as a real deletion.
- * The robust fix is a `missingStreak >= 2 consecutive complete fetches` /
- * `lastSeenAt` gate before escalating to a deletion — but this rule is
- * BYTE-SHARED with the Kotlin engine (SyncEngine.runNwayPropagation /
- * NwayMaterializeTest) and the shared fixtures, so per the cross-engine
- * parity contract it must change in LOCKSTEP on both engines with a shared
- * fixture. Flagged to the human; tracked for a coordinated change before
- * `nway_propagate` is ever armed. Surfaced by the PR-4a adversarial review.
+ * This rule is shared with the Kotlin engine (SyncEngine.isProviderPendingForKey,
+ * parachord-mobile#469); per the #911 parity contract it changes on both
+ * engines together, with the shared test vectors.
  */
 // Number of CONSECUTIVE complete-fetch omissions before a materialized track's
 // absence escalates from "transient" to "real deletion".
 const MISSING_STREAK_THRESHOLD = 2;
+
+// Change token stored for a provider while the reconcile HOLDS keys on it (an
+// omission whose streak is building). It never equals a real snapshot, and
+// change-detection treats it as changed, so the provider is fetched again next
+// cycle even when its snapshot or trackCount reads as unchanged.
+const NWAY_HELD_TOKEN = 'nway-held';
 
 function isProviderPendingForKey(cache, providerId, reprKey, keyToTrack) {
   const track = keyToTrack[reprKey];
   if (!track) return true; // defensive: protect
   const cacheKey = canonicalTrackKey(track);
   const entry = cache.select(cacheKey, providerId);
-  if (!entry || !entry.resolvedId) return true; // never materialized → pending
+  if (!entry || entry.lastSeenAt == null) return true; // never seen there → pending
   // Materialized: still PENDING (protected) until it has been omitted from the
   // provider's complete fetch for MISSING_STREAK_THRESHOLD consecutive cycles.
   return (entry.missingStreak || 0) < MISSING_STREAK_THRESHOLD;
+}
+
+// True when a fetch has SEEN the track behind reprKey on providerId, so an
+// omission there is counting toward the missingStreak gate. While the streak
+// builds, the reconcile HOLDS the key: it stays in canonical but is not pushed
+// back to that provider. Pushing it back would make the next fetch see it again
+// and reset the streak, so a deletion there could never reach the threshold.
+function seenOnProvider(cache, providerId, reprKey, keyToTrack) {
+  const track = keyToTrack[reprKey];
+  if (!track) return false;
+  const entry = cache.select(canonicalTrackKey(track), providerId);
+  return !!entry && entry.lastSeenAt != null;
 }
 
 // True when a materialized track's absence has cleared the missingStreak gate
@@ -95,8 +107,28 @@ function streakEscalated(cache, providerId, reprKey, keyToTrack) {
   const track = keyToTrack[reprKey];
   if (!track) return false; // can't key it → don't escalate (protect)
   const entry = cache.select(canonicalTrackKey(track), providerId);
-  if (!entry || !entry.resolvedId) return false; // never materialized → not a deletion
+  if (!entry || entry.lastSeenAt == null) return false; // never seen there → not a deletion
   return (entry.missingStreak || 0) >= MISSING_STREAK_THRESHOLD;
+}
+
+// Mark every canonical track the provider's remote holds as SEEN there. With
+// `reread` the remote is fetched again (the materialize just added tracks, and
+// a resolved id is not proof the add landed); otherwise `remote`, the copy
+// fetched before materializing, is used. A failed re-read records nothing:
+// unseen tracks stay pending, the safe direction.
+async function recordCanonicalOnRemote({ cache, provider, externalId, canonical, remote, reread, now, log }) {
+  let observed = remote;
+  if (reread) {
+    try {
+      observed = await provider.fetchPlaylistTracks(externalId);
+    } catch (e) {
+      log.info('[nway-reconcile] re-read after materialize failed', { providerId: provider.id, error: e && e.message });
+      return;
+    }
+  }
+  for (const { track, nativeId } of canonicalTracksOnRemote(provider, canonical, Array.isArray(observed) ? observed : [])) {
+    cache.recordPresent(canonicalTrackKey(track), provider.id, nativeId, now);
+  }
 }
 
 /**
@@ -188,6 +220,8 @@ async function reconcilePlaylist(ctx) {
     let changed;
     if (listEntry == null) {
       changed = false;
+    } else if (storedToken === NWAY_HELD_TOKEN) {
+      changed = true; // re-check a held omission
     } else {
       const snapMismatch = listEntry.snapshotId != null && listEntry.snapshotId !== storedToken;
       const countMismatch = listEntry.trackCount != null && listEntry.trackCount !== baselineTiers.length;
@@ -273,26 +307,36 @@ async function reconcilePlaylist(ctx) {
 
   // A5.5 — PRESENCE TRACKING for the missingStreak gate. Every CHANGED (=>
   // COMPLETE, post partial-fetch floor) provider copy is fresh evidence of
-  // what that provider currently holds: reset the streak for each baseline key
-  // it shows, increment it for each baseline key it omits. Only complete
-  // fetches vote, so a truncated/unchanged copy never moves a streak. This is
-  // the persisted memory that lets a SINGLE transient complete-fetch omission
-  // stay protected (a region-filtered/silently-short-but-count-matching fetch),
-  // while a genuine deletion — omitted for >= 2 consecutive cycles — still
-  // escalates. (parachord#911 shared-root fix; mobile mirrors the same rule.)
+  // what that provider currently holds: record every key it shows as SEEN
+  // (recordPresent creates the entry if needed: a track whose native id was
+  // already on the row never gets a hydration entry, and without one its later
+  // omission could never count), and step the streak for each baseline key it
+  // omits. Only complete fetches vote, so a truncated/unchanged copy never
+  // moves a streak. This is the persisted memory that lets a SINGLE transient
+  // complete-fetch omission stay protected, while a genuine deletion, omitted
+  // for >= 2 consecutive cycles, still escalates. (parachord#911 / #1163; mobile
+  // mirrors the same rule.)
   // Gated off in shadow: streak escalation is a REAL-propagation mechanism, and
   // shadow must stay side-effect-free. While dryRun, streaks never advance, so
   // a materialized track transiently absent is always protected (safe).
   if (!dryRun) {
     for (const copy of copies) {
       if (copy.id === 'local' || !copy.changed) continue;
+      const provider = providerById[copy.id];
+      if (!provider) continue;
       const present = new Set(copy.keys);
+      copy.keys.forEach((k, j) => {
+        const track = keyToTrack[k];
+        if (!track) return;
+        const fetchedTrack = copy.tracks[j];
+        const nativeId = fetchedTrack && typeof provider.nativeIdOf === 'function' ? provider.nativeIdOf(fetchedTrack) : null;
+        cache.recordPresent(canonicalTrackKey(track), copy.id, nativeId || null, now);
+      });
       for (const k of baselineRepr) {
+        if (present.has(k)) continue;
         const track = keyToTrack[k];
         if (!track) continue;
-        const cacheKey = canonicalTrackKey(track);
-        if (present.has(k)) cache.recordSeen(cacheKey, copy.id, now);
-        else cache.recordMissing(cacheKey, copy.id);
+        cache.recordMissing(canonicalTrackKey(track), copy.id);
       }
     }
   }
@@ -361,22 +405,48 @@ async function reconcilePlaylist(ctx) {
   //     immediate-authority source (followed / hosted / mirrorOnly) ALL lacked
   //     keys are in authoritativeDropped, so its rotate-out drops at once.
   //   - other mirror copies: re-add a lacked key only if the source didn't drop
-  //     it AND it's pending for this provider (never-materialized, OR
-  //     materialized but not yet missing for >= 2 consecutive complete fetches).
+  //     it AND it's pending for this provider (never seen there, OR seen but
+  //     not yet missing for >= 2 consecutive complete fetches).
+  //   - an add-only pull source: re-add every lacked key (Refinement A above).
+  //   - a mirror of a ONE-WAY playlist (hosted XSPF, followed source,
+  //     user-flagged mirrorOnly): re-add every lacked key the source didn't
+  //     drop. The playlist takes no edits back from its mirrors, so a mirror's
+  //     omission is restored from the source, never gated toward a deletion.
+  //
+  // HOLD: a re-added key the provider was SEEN holding is an omission the
+  // streak is counting. It stays in canonical (protected everywhere else) but
+  // is NOT materialized back onto that provider (heldByCopy, used by A9/A13).
+  const oneWay = immediateAuthority && (authoritativeCopyId != null || addOnlyPullSourceId != null);
+  const heldByCopy = {};
   const augmentedCopies = copies.map((copy) => {
     if (copy.id === 'local' || !copy.changed) return copy;
     const present = new Set(copy.keys);
     const lacked = baselineRepr.filter((k) => !present.has(k));
     if (lacked.length === 0) return copy;
-    const toReadd = copy.id === authoritativeCopyId
-      ? lacked.filter((k) => !authoritativeDropped.has(k))
-      : copy.id === addOnlyPullSourceId
-        // Refinement A — a non-removal-capable PULL SOURCE (AM) is AUGMENT-ALL:
-        // re-add EVERY lacked key, no streak gate. Its absence is never a delete.
-        ? lacked
-        : lacked.filter(
-          (k) => !authoritativeDropped.has(k) && isProviderPendingForKey(cache, copy.id, k, keyToTrack)
-        );
+    // gated = these re-adds wait on the missingStreak gate, so the seen ones are HELD
+    let toReadd;
+    let gated;
+    if (copy.id === authoritativeCopyId) {
+      toReadd = lacked.filter((k) => !authoritativeDropped.has(k));
+      gated = !immediateAuthority;
+    } else if (copy.id === addOnlyPullSourceId) {
+      // Refinement A — a non-removal-capable PULL SOURCE (AM) is AUGMENT-ALL:
+      // re-add EVERY lacked key, no streak gate. Its absence is never a delete.
+      toReadd = lacked;
+      gated = false;
+    } else if (oneWay) {
+      toReadd = lacked.filter((k) => !authoritativeDropped.has(k));
+      gated = false;
+    } else {
+      toReadd = lacked.filter(
+        (k) => !authoritativeDropped.has(k) && isProviderPendingForKey(cache, copy.id, k, keyToTrack)
+      );
+      gated = true;
+    }
+    if (gated) {
+      const held = new Set(toReadd.filter((k) => seenOnProvider(cache, copy.id, k, keyToTrack)));
+      if (held.size) heldByCopy[copy.id] = held;
+    }
     return toReadd.length ? { ...copy, keys: copy.keys.concat(toReadd) } : copy;
   });
 
@@ -389,16 +459,41 @@ async function reconcilePlaylist(ctx) {
 
   // A8 — merged repr (baseline stands if nothing changed).
   const mergedRepr = plan ? plan.merged : baselineRepr;
-  const mergedSet = new Set(mergedRepr);
 
   // A9 — materialize targets from UN-AUGMENTED keys (recover lag). A writable
   // copy whose real keys differ from the merge (set OR length) is a push
-  // target — including an empty mirror (keys:[]) and a lagging mirror.
+  // target — including an empty mirror (keys:[]) and a lagging mirror. A
+  // copy's target list is the merge minus the keys HELD for it, so a provider
+  // lagging only by a held key isn't a target at all.
+  const reprFor = (copyId) => {
+    const held = heldByCopy[copyId];
+    return held ? mergedRepr.filter((k) => !held.has(k)) : mergedRepr;
+  };
   const pushTargets = copies
-    .filter((c) =>
-      writableById[c.id] !== false
-      && (!setEqual(new Set(c.keys), mergedSet) || c.keys.length !== mergedRepr.length))
+    .filter((c) => {
+      const expected = reprFor(c.id);
+      return writableById[c.id] !== false
+        && (!setEqual(new Set(c.keys), new Set(expected)) || c.keys.length !== expected.length);
+    })
     .map((c) => c.id);
+
+  // Held providers get the sentinel token so next cycle fetches them again and
+  // the streak can grow (or reset). A provider that held keys last cycle but
+  // holds none now, and isn't a push target (whose token A13 refreshes), gets
+  // the snapshot this cycle observed instead. Written before the A10
+  // short-circuit, since a cycle that only holds returns there.
+  if (!dryRun) {
+    for (const c of copies) {
+      if (c.id === 'local') continue;
+      const stored = storedTokens && storedTokens[c.id] ? storedTokens[c.id].changeToken : undefined;
+      if (heldByCopy[c.id]) {
+        effects.setProviderToken(localId, c.id, NWAY_HELD_TOKEN, now);
+      } else if (stored === NWAY_HELD_TOKEN && c.changed && !pushTargets.includes(c.id)) {
+        const listEntry = remoteLists && remoteLists[c.id] ? remoteLists[c.id][mirrorMap[c.id]] : null;
+        effects.setProviderToken(localId, c.id, listEntry && listEntry.snapshotId != null ? listEntry.snapshotId : null, now);
+      }
+    }
+  }
 
   // A10 — pure no-op short-circuit.
   if (!plan && pushTargets.every((t) => t === 'local')) return null;
@@ -414,6 +509,13 @@ async function reconcilePlaylist(ctx) {
   });
 
   const providerTargets = pushTargets.filter((t) => t !== 'local');
+
+  // The migration preview's view of one provider: the merge minus its held
+  // keys, so it doesn't list a held track as an add the real run won't make.
+  const canonicalFor = (providerId) => {
+    const held = heldByCopy[providerId];
+    return held ? mergedTracks.filter((_, i) => !held.has(mergedRepr[i])) : mergedTracks;
+  };
 
   // A12 — SHADOW stop. Compute the per-target would-be diff EXACTLY the way the
   // real push (A13) would, so the migration preview (#911) shows precisely what
@@ -444,9 +546,10 @@ async function reconcilePlaylist(ctx) {
           log.warn('[nway-shadow] preview name-fetch failed', { localId, id, error: e && e.message });
         }
       }
-      const diff = computeMaterializeDiff(mergedTracks, remote);
+      const canonical = canonicalFor(id);
+      const diff = computeMaterializeDiff(canonical, remote);
       const keyToCanonical = {};
-      diff.canonicalKeys.forEach((k, i) => { if (!(k in keyToCanonical)) keyToCanonical[k] = mergedTracks[i]; });
+      diff.canonicalKeys.forEach((k, i) => { if (!(k in keyToCanonical)) keyToCanonical[k] = canonical[i]; });
       const keyToRemote = {};
       diff.remoteKeys.forEach((k, i) => { if (!(k in keyToRemote)) keyToRemote[k] = remote[i]; });
       perTarget.push({
@@ -476,16 +579,30 @@ async function reconcilePlaylist(ctx) {
     const provider = providerById[targetId];
     if (!provider || !externalId) continue;
     try {
-      const remote = await provider.fetchPlaylistTracks(externalId);
+      const fetchedRemote = await provider.fetchPlaylistTracks(externalId);
+      const remote = Array.isArray(fetchedRemote) ? fetchedRemote : [];
+      // The diff runs against the FULL canonical, so a held track the user put
+      // back in the meantime is never removed; a held track only has its ADD
+      // suppressed (it counts as pending while its streak builds).
+      const held = heldByCopy[targetId];
+      const heldCacheKeys = new Set(
+        held ? [...held].map((k) => keyToTrack[k]).filter(Boolean).map((t) => canonicalTrackKey(t)) : []
+      );
       const res = await materializeToProvider({
         provider,
         externalId,
         canonical: mergedTracks,
-        remote: Array.isArray(remote) ? remote : [],
-        resolveNativeId: (track) => coordinator.resolve(provider, track),
+        remote,
+        resolveNativeId: (track) => (heldCacheKeys.has(canonicalTrackKey(track)) ? null : coordinator.resolve(provider, track)),
       });
       pendingAdds += res.pendingAdds || 0;
       unsupportedRemoves += res.unsupportedRemoves || 0;
+      // Record what the provider now holds, so a later removal there can count
+      // toward the missingStreak gate. When something was added, re-read the
+      // remote: a resolved id is not proof the add landed.
+      await recordCanonicalOnRemote({
+        cache, provider, externalId, canonical: mergedTracks, remote, reread: (res.added || 0) > 0, now, log,
+      });
       // ECHO-SUPPRESSION: capture the post-push snapshot so next cycle's
       // change-detection doesn't read our OWN write as a foreign change. A
       // FAILED read means "no fresh anchor", NOT "the anchor is null" — writing
@@ -495,15 +612,19 @@ async function reconcilePlaylist(ctx) {
       // non-null snapshot; otherwise keep the prior stored token (a stale token
       // just means the source re-detects changed next cycle and re-converges
       // non-destructively — the safe direction).
-      let token2;
-      let captured = true;
-      try {
-        token2 = await provider.getPlaylistSnapshot(externalId);
-      } catch {
-        captured = false;
-      }
-      if (captured && token2 != null) {
-        effects.setProviderToken(localId, targetId, token2, now);
+      // A provider with HELD keys keeps the NWAY_HELD_TOKEN written after A9, so
+      // the next cycle fetches it again and the omission's streak can grow (or reset).
+      if (!held) {
+        let token2;
+        let captured = true;
+        try {
+          token2 = await provider.getPlaylistSnapshot(externalId);
+        } catch {
+          captured = false;
+        }
+        if (captured && token2 != null) {
+          effects.setProviderToken(localId, targetId, token2, now);
+        }
       }
       pushedTo.push(targetId);
     } catch (e) {
@@ -543,4 +664,5 @@ module.exports = {
   reconcilePlaylist,
   computeNwayPropagationPlan,
   isProviderPendingForKey,
+  NWAY_HELD_TOKEN,
 };

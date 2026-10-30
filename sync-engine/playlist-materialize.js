@@ -199,4 +199,33 @@ async function materializeToProvider({ provider, externalId, canonical, remote, 
   return { added, removed, pendingAdds, unsupportedRemoves };
 }
 
-module.exports = { materializeToProvider, computeMaterializeDiff };
+/**
+ * The `canonical` tracks a fetched `remote` actually holds, each paired with
+ * the provider's native id read off the remote copy. Matched in the same
+ * unified keyspace materializeToProvider diffs in, so a remote track that
+ * carries an MBID still matches a canonical row that only has artist|title.
+ * The reconcile records these as SEEN on the provider (the missingStreak
+ * gate's proof of materialization). Kotlin: canonicalTracksOnRemote in
+ * PlaylistMaterializeExecutor.kt.
+ *
+ * @returns {{track:object, nativeId:string|null}[]}
+ */
+function canonicalTracksOnRemote(provider, canonical, remote) {
+  const can = Array.isArray(canonical) ? canonical : [];
+  const rem = Array.isArray(remote) ? remote : [];
+  const diff = computeMaterializeDiff(can, rem);
+  const keyToRemote = {};
+  diff.remoteKeys.forEach((k, i) => {
+    if (!(k in keyToRemote)) keyToRemote[k] = rem[i];
+  });
+  const out = [];
+  diff.canonicalKeys.forEach((k, i) => {
+    const r = keyToRemote[k];
+    if (!r) return;
+    const nativeId = typeof provider.nativeIdOf === 'function' ? provider.nativeIdOf(r) : null;
+    out.push({ track: can[i], nativeId: nativeId || null });
+  });
+  return out;
+}
+
+module.exports = { materializeToProvider, computeMaterializeDiff, canonicalTracksOnRemote };

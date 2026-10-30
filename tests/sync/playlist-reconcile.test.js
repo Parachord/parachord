@@ -16,7 +16,7 @@
  *   #10 hydration cooldown
  */
 
-const { reconcilePlaylist } = require('../../sync-engine/playlist-reconcile');
+const { reconcilePlaylist, NWAY_HELD_TOKEN } = require('../../sync-engine/playlist-reconcile');
 const { createHydrationCache } = require('../../sync-engine/nway-hydration-cache');
 const { createHydrationCoordinator } = require('../../sync-engine/hydration-coordinator');
 const { buildBaselineTiers } = require('../../sync-engine/playlist-sync-state');
@@ -51,6 +51,15 @@ class FakeProvider {
     // page) while the harness still reports the full trackCount — modelling a
     // silently-short fetch the PARTIAL-FETCH FLOOR must treat as fill, not delete.
     this.truncateFetchTo = null;
+    // Recording mbids whose add the provider ACCEPTS but never stores: an add
+    // that resolved to a native id yet never landed (a hydrated id is not proof
+    // the track is on the playlist).
+    this.dropAddsFor = new Set();
+    // Runs before every fetchPlaylistTracks with its 1-based call number, so a
+    // test can change the remote between the reconcile's fetches (a user edit
+    // landing mid-cycle).
+    this.beforeFetch = null;
+    this.fetchCount = 0;
     this.remote = [];
     this.snap = 0;
     this.searchCalls = 0;
@@ -73,13 +82,18 @@ class FakeProvider {
     return { recordingMbid: mbid, title: `recon-${mbid}`, artist: `recon-${mbid}` };
   }
   async fetchPlaylistTracks() {
+    this.fetchCount += 1;
+    if (this.beforeFetch) this.beforeFetch(this.fetchCount);
     const rows = this.truncateFetchTo != null ? this.remote.slice(0, this.truncateFetchTo) : this.remote;
     return rows.map((t) => ({ ...t }));
   }
   async addPlaylistTracks(_ext, nativeIds) {
     if (this.throwOnWrite) throw new Error(`${this.id} add throwOnWrite`);
     this.addCalls.push(nativeIds.slice());
-    for (const nid of nativeIds) this.remote.push(this._recon(nid));
+    for (const nid of nativeIds) {
+      const track = this._recon(nid);
+      if (!this.dropAddsFor.has(track.recordingMbid)) this.remote.push(track);
+    }
     this.snap += 1;
   }
   async removePlaylistTracksByNativeId(_ext, nativeIds) {
@@ -197,11 +211,16 @@ class Harness {
   provider(id) {
     return this.providers.find((p) => p.id === id);
   }
-  // Mark a track as already-materialized on a provider (non-null resolvedId),
-  // so isProviderPendingForKey returns false — i.e. defeat the augmentation
-  // guard, isolating whether a LATER guard catches a transient absence.
-  warmCache(providerId, mbid) {
-    this.cache.upsert(`mbid-${mbid}`, providerId, `nid:${mbid}`, this.time, 1);
+  // Mark a track as already-materialized on a provider — a past fetch has
+  // SEEN it there (lastSeenAt), with `missingStreak` omissions already
+  // recorded — so isProviderPendingForKey consults its streak. Models a track a
+  // past cycle observed on the provider; a test that starts from a fresh link
+  // must warm it to make it droppable. Mirrors mobile's Harness.warmCache.
+  warmCache(providerId, mbid, missingStreak = 0) {
+    const key = `mbid-${mbid}`;
+    this.cache.upsert(key, providerId, `nid:${mbid}`, this.time, 1);
+    this.cache.recordSeen(key, providerId, this.time);
+    for (let i = 0; i < missingStreak; i++) this.cache.recordMissing(key, providerId);
   }
 }
 
@@ -579,5 +598,239 @@ describe('reconcile — shadow (dryRun) mode', () => {
     await h.cycle();
     expect(lb.removeByPositionCalls.length).toBe(1);  // a real source delete DOES propagate
     expect(mbidsOf(lb.remote).has('m2')).toBe(false);
+  });
+});
+
+// parachord#1163 (port of parachord-mobile#469, the shared NwaySourceAuthorityTest
+// vectors). The cycle that counts an omission must NOT put the track back on that
+// provider, or the streak never grows; "materialized" means a fetch SAW the track
+// there (lastSeenAt), never that a search resolved its id.
+describe('reconcile — the missingStreak gate reaches its threshold (#1163)', () => {
+  test('mirror deletion is held one cycle then propagates — never re-added', async () => {
+    const h = new Harness();
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    h.warmCache('spotify', 'm2');
+
+    h.drift(sp, [mk('m0'), mk('m1')]); // the user deletes m2 on Spotify
+    sp.resetRecorders();
+    await h.cycle();
+    expect(mbidsOf(sp.remote)).toEqual(new Set(['m0', 'm1'])); // held: NOT re-added
+    expect(sp.addCalls).toEqual([]);
+    expect(h.playlist.tracks.length).toBe(3); // still protected locally
+    expect(lb.remote.length).toBe(3); // LB untouched
+    expect(h.cache.select('mbid-m2', 'spotify').missingStreak).toBe(1);
+    expect(h.state.providers.spotify.changeToken).toBe(NWAY_HELD_TOKEN); // re-fetch next cycle
+
+    await h.cycle(); // streak 2 → a real deletion
+    expect(mbidsOf(h.playlist.tracks)).toEqual(new Set(['m0', 'm1']));
+    expect(mbidsOf(lb.remote)).toEqual(new Set(['m0', 'm1']));
+    expect(mbidsOf(sp.remote)).toEqual(new Set(['m0', 'm1']));
+    expect(h.state.providers.spotify.changeToken).not.toBe(NWAY_HELD_TOKEN);
+
+    await h.cycle();
+    await h.cycle();
+    expect(h.playlist.tracks.length).toBe(2); // stable: nothing resurrects m2
+    expect(sp.remote.length).toBe(2);
+    expect(lb.remote.length).toBe(2);
+  });
+
+  test('a held track put back mid-cycle is never removed by the materialize', async () => {
+    // Spotify omits m2 (held) while a local add makes Spotify a push target the
+    // same cycle. Between the change fetch and the push-loop fetch the user puts
+    // m2 back on Spotify. The executor must diff against the FULL canonical.
+    const h = new Harness();
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    h.warmCache('spotify', 'm2');
+    h.drift(sp, [mk('m0'), mk('m1')]);
+    h.editLocal([mk('m0'), mk('m1'), mk('m2'), mk('x')]);
+    sp.fetchCount = 0;
+    sp.beforeFetch = (call) => {
+      if (call === 2) sp.remote = [mk('m0'), mk('m1'), mk('m2')];
+    };
+    sp.resetRecorders();
+    await h.cycle();
+    expect(sp.removeByNativeIdCalls).toEqual([]);
+    expect(mbidsOf(sp.remote)).toEqual(new Set(['m0', 'm1', 'm2', 'x']));
+    expect(h.playlist.tracks.length).toBe(4);
+  });
+
+  test('transient mirror omission that recovers next cycle drops nothing', async () => {
+    const h = new Harness();
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    h.warmCache('spotify', 'm2');
+
+    h.drift(sp, [mk('m0'), mk('m1')]);
+    await h.cycle();
+    h.drift(sp, [mk('m0'), mk('m1'), mk('m2')]); // a region filter / API hiccup, not a delete
+    await h.cycle();
+    await h.cycle();
+
+    expect(h.playlist.tracks.length).toBe(3);
+    expect(lb.remote.length).toBe(3);
+    expect(sp.remote.length).toBe(3); // m2 exactly once (no duplicate re-add)
+    expect(h.cache.select('mbid-m2', 'spotify').missingStreak).toBe(0);
+    expect(h.state.providers.spotify.changeToken).not.toBe(NWAY_HELD_TOKEN);
+  });
+
+  test('owned pull source deletion propagates once the source copy has been observed', async () => {
+    // No pre-warmed cache. The user first ADDS on Spotify: that complete fetch
+    // is the reconcile's first look at the source and records every track it
+    // holds. Later the user removes m2 there: held one cycle, then dropped.
+    const h = new Harness('spotify-pl');
+    h.playlist.writable = true; // OWNED source
+    h.pullSource = { providerId: 'spotify', externalId: 'ext-spotify' };
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'), 'ext-spotify');
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+
+    h.drift(sp, [mk('m0'), mk('m1'), mk('m2'), mk('new3')]);
+    await h.cycle();
+    expect(h.playlist.tracks.length).toBe(4); // the Spotify add was pulled
+
+    h.drift(sp, [mk('m0'), mk('m1'), mk('new3')]);
+    sp.resetRecorders();
+    await h.cycle();
+    expect(sp.addCalls).toEqual([]); // held: m2 not pushed back to the source
+    expect(h.playlist.tracks.length).toBe(4); // held: still in canonical
+
+    await h.cycle();
+    expect(mbidsOf(h.playlist.tracks)).toEqual(new Set(['m0', 'm1', 'new3']));
+    expect(mbidsOf(lb.remote)).toEqual(new Set(['m0', 'm1', 'new3']));
+    expect(sp.remote.length).toBe(3);
+  });
+
+  test('a track Parachord added to a mirror can later be deleted there', async () => {
+    const h = new Harness();
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+
+    h.editLocal([mk('m0'), mk('m1'), mk('m2'), mk('x')]);
+    await h.cycle();
+    expect(sp.remote.length).toBe(4);
+    expect(lb.remote.length).toBe(4);
+
+    h.drift(sp, [mk('m0'), mk('m1'), mk('m2')]); // the user removes x on Spotify
+    await h.cycle();
+    await h.cycle();
+    await h.cycle();
+
+    expect(h.playlist.tracks.length).toBe(3);
+    expect(mbidsOf(h.playlist.tracks).has('x')).toBe(false);
+    expect(lb.remote.length).toBe(3);
+    expect(sp.remote.length).toBe(3); // not re-added
+  });
+
+  test('an add that resolved but never landed is never treated as a deletion', async () => {
+    // The add has no native id on the row, so the coordinator SEARCHES and
+    // caches a resolvedId; Spotify accepts the add but never stores it. Its
+    // absence must stay PENDING, never escalate into deleting the user's own
+    // local add (pre-fix this dropped it on the third cycle).
+    const h = new Harness();
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId', {
+      hydrate: ({ title }) => (title === 'X Song' ? 'nid:x' : null),
+    }));
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    sp.dropAddsFor = new Set(['x']);
+
+    h.editLocal([mk('m0'), mk('m1'), mk('m2'), noMbid('X Song')]);
+    for (let i = 0; i < 4; i++) await h.cycle();
+
+    // The search DID resolve an id (the evidence the old gate trusted)…
+    const resolved = [...h.cache.entries().values()].filter((e) => e.resolvedId === 'nid:x');
+    expect(resolved.length).toBe(1);
+    expect(resolved[0].lastSeenAt).toBeUndefined(); // …but no fetch ever saw it
+    expect(h.playlist.tracks.map((t) => t.title)).toContain('X Song');
+    expect(h.playlist.tracks.length).toBe(4);
+    expect(lb.removeByPositionCalls).toEqual([]);
+    expect(sp.removeByNativeIdCalls).toEqual([]);
+  });
+
+  test('add-only pull source omission never deletes (augment-all, Refinement A)', async () => {
+    // Even a track SEEN on Apple Music and omitted for many cycles stays.
+    const h = new Harness('applemusic-pl');
+    const am = h.add(new FakeProvider('applemusic', 'Unsupported'));
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    h.pullSource = { providerId: 'applemusic', externalId: am._ext };
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    h.warmCache('applemusic', 'm2');
+
+    for (let i = 0; i < 4; i++) {
+      h.drift(am, [mk('m0'), mk('m1')]);
+      await h.cycle();
+    }
+
+    expect(h.playlist.tracks.length).toBe(3);
+    expect(sp.remote.length).toBe(3);
+  });
+
+  test('hosted XSPF mirror deletion is restored from the XSPF, never propagated', async () => {
+    const h = new Harness();
+    h.playlist.sourceUrl = 'https://example.com/p.xspf';
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    h.warmCache('spotify', 'm2');
+
+    h.drift(sp, [mk('m0'), mk('m1')]);
+    for (let i = 0; i < 3; i++) await h.cycle();
+
+    expect(h.playlist.tracks.length).toBe(3);
+    expect(lb.remote.length).toBe(3);
+    expect(sp.remote.length).toBe(3); // the mirror is restored
+  });
+
+  test('followed source mirror deletion is restored, never propagated', async () => {
+    const h = new Harness('spotify-pl');
+    h.playlist.writable = false; // FOLLOWED (read-only) source → one-way
+    h.pullSource = { providerId: 'spotify', externalId: 'ext-spotify' };
+    h.add(new FakeProvider('spotify', 'ByNativeId'), 'ext-spotify');
+    const lb = h.add(new FakeProvider('listenbrainz', 'ByPosition'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    h.warmCache('listenbrainz', 'm2');
+
+    h.drift(lb, [mk('m0'), mk('m1')]);
+    // Checked EVERY cycle: a wrong drop self-heals the cycle after (the followed
+    // source re-asserts m2), so an end-state check alone would miss it.
+    for (let i = 0; i < 3; i++) {
+      await h.cycle();
+      expect(h.playlist.tracks.length).toBe(3);
+    }
+    expect(lb.remote.length).toBe(3); // the mirror is restored
+  });
+
+  test('the migration preview never lists a held track as an add', async () => {
+    const h = new Harness();
+    const sp = h.add(new FakeProvider('spotify', 'ByNativeId'));
+    h.seed([mk('m0'), mk('m1'), mk('m2')]);
+    h.warmCache('spotify', 'm2');
+    h.drift(sp, [mk('m0'), mk('m1')]); // m2 held on Spotify
+    h.editLocal([mk('m0'), mk('m1'), mk('m2'), mk('x')]); // …while a local add targets it
+    const r = await h.cycle({ dryRun: true });
+    const spotify = r.perTarget.find((p) => p.providerId === 'spotify');
+    expect(spotify.addTracks).toEqual([{ artist: 'artist-x', title: 'title-x' }]);
+    expect(spotify.removeTracks).toEqual([]);
+    expect(h.state.providers.spotify.changeToken).toBe('snap-spotify-0'); // dry run writes no token
+  });
+
+  test('cache recordPresent creates a seen entry, fills a missing id, never overwrites one', () => {
+    const c = createHydrationCache();
+    c.recordPresent('mbid-new', 'spotify', 'sp:new', 7);
+    expect(c.select('mbid-new', 'spotify')).toMatchObject({ lastSeenAt: 7, resolvedId: 'sp:new', lastAttemptAt: 0, missingStreak: 0 });
+
+    // A prior hydration MISS (null id, streak stepped) that a fetch now shows.
+    c.upsert('mbid-miss', 'spotify', null, 5, 2);
+    c.recordMissing('mbid-miss', 'spotify');
+    c.recordPresent('mbid-miss', 'spotify', 'sp:miss', 9);
+    expect(c.select('mbid-miss', 'spotify')).toMatchObject({ resolvedId: 'sp:miss', missingStreak: 0, lastSeenAt: 9, attempts: 2 });
+
+    c.recordPresent('mbid-new', 'spotify', 'sp:other', 11);
+    expect(c.select('mbid-new', 'spotify').resolvedId).toBe('sp:new');
   });
 });
