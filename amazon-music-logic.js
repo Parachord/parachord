@@ -1791,6 +1791,36 @@ function amazonPlayGenerationStamp(generation) {
   return `window.__parachordPlayGen = ${generation | 0};`;
 }
 
+// Does Amazon's page say it is playing a different song than the one
+// requested? Parachord loads /tracks/<ASIN>?do=play, and for a track the
+// account can only start as a STATION, Amazon's player starts a station
+// seeded from it instead (live 2026-10: "Ready or Not" by Shakey Graves played
+// Mumford & Sons, then another Shakey Graves song). The poller cannot see that
+// (it reads the ASIN from the URL it loaded), but the page reports its real
+// now-playing through navigator.mediaSession.metadata, which the media-session
+// hijack keeps (embedded-player-kit.js).
+//
+// Conservative on purpose: only a clear TITLE mismatch counts. Unknown or
+// empty metadata is never a mismatch, and titles are compared after dropping
+// the explicit marker, bracketed suffixes ("(feat. ...)", "[Remastered]") and
+// a " - ..." suffix, by containment either way, so a station is caught while
+// a track whose page title is spelled a little differently is not.
+// expectedTitle is Amazon's own label for the ASIN (what the plugin passes).
+function amazonNowPlayingMismatch(expectedTitle, nowPlaying) {
+  const core = (value) => stripAmazonTitleMarker(value).title
+    .replace(/\s*[[(][^\])]*[\])]/g, ' ')
+    .replace(/\s+-\s+.*$/, '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}]/gu, '');
+  if (!nowPlaying || typeof nowPlaying.title !== 'string' || !expectedTitle) return false;
+  const want = core(expectedTitle);
+  const got = core(nowPlaying.title);
+  if (!want || !got) return false;
+  return !(want.includes(got) || got.includes(want));
+}
+
 module.exports = {
   gqlCaptureSubject,
   gqlRequestsIn,
@@ -1817,6 +1847,7 @@ module.exports = {
   cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
+  amazonNowPlayingMismatch,
   amazonAuthCookieState,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
