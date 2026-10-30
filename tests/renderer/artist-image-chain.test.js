@@ -144,10 +144,8 @@ describe('getArtistImage wiring', () => {
     expect(getArtistImage).not.toContain('No music service connected');
   });
 
-  // Deezer before the resolvers: one cheap request, where a resolver's lookup
-  // can be a page load on the queue its track resolution uses (Amazon Music).
-  test('the chain runs Spotify, Apple Music, Deezer, active resolvers, Wikipedia, Discogs in that order', () => {
-    const order = ["id: 'spotify'", "id: 'applemusic'", "id: 'deezer'", 'loader.getArtistImageResolvers()', "id: 'wikipedia'", "id: 'discogs'"]
+  test('the chain runs Spotify, Apple Music, active resolvers, Deezer, Wikipedia, Discogs in that order', () => {
+    const order = ["id: 'spotify'", "id: 'applemusic'", 'loader.getArtistImageResolvers()', "id: 'deezer'", "id: 'wikipedia'", "id: 'discogs'"]
       .map(marker => getArtistImage.indexOf(marker));
     expect(order.every(i => i !== -1)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
