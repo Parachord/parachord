@@ -5726,11 +5726,7 @@ const Parachord = () => {
   const fetchAlbumTracksByNameRef = useRef(null); // Ref to fetchAlbumTracksByName for use in ChatCard
   const isPlayingRef = useRef(false); // Ref for isPlaying; engine-synced every render (isPlaying state is engine-owned)
   const localFileSeekTargetRef = useRef(null); // Last local-file seek (shared: UI seek handler + engine network-retry chain)
-  const handleNextRef = useRef(null);
-  const handlePreviousRef = useRef(null);
-  const handlePlayPauseRef = useRef(null);
-  const handlePlayRef = useRef(null);
-  const startSpinoffRef = useRef(null); // Ref to startSpinoff for use in protocol handler
+  // (handler refs now ENGINE-owned inside use-playback-engine and returned — dance-collapse slice)
   const getResolverConfigRef = useRef(null);
   // Friend function refs (for use in early useEffects before functions are defined)
   const navigateToFriendRef = useRef(null);
@@ -5987,8 +5983,7 @@ const Parachord = () => {
   const queueDomain = usePlaybackQueue({
     cacheLoaded,
     rememberQueue,
-    handlePlayRef,
-    enrichTracksWithMbidsRef,
+      enrichTracksWithMbidsRef,
   });
   const {
     currentTrack, setCurrentTrack,
@@ -7786,8 +7781,13 @@ const Parachord = () => {
     handlePlay,
     handleNext,
     handlePrevious,
-    handlePlayPause,
+    handleNextRef,
+    handlePreviousRef,
+    handlePlayPauseRef,
+    handlePlayRef,
+    startSpinoffRef,
     startSpinoff,
+    handlePlayPause,
     exitSpinoff,
     isPlaying,
     setIsPlaying,
@@ -7830,12 +7830,8 @@ const Parachord = () => {
     spotifyProgressBaselineRef,
     isPlayingRef,
     streamingPlaybackActiveRef,
-    handleNextRef,
-    handlePreviousRef,
-    handlePlayPauseRef,
-    handlePlayRef,
-    startSpinoffRef,
-    spotifyToken,
+          handlePlayRef,
+      spotifyToken,
     extensionConnected,
     audioContext,
     spinoffMode,
