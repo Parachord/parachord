@@ -59,6 +59,7 @@ const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
 const {
   pageBlocksPlayback,
   signInLanded,
+  amazonNowPlayingMismatch,
   amazonAuthCookieState,
   cdmStatusHealthy,
   AMAZON_QUALITY_OPTIONS,
@@ -153,7 +154,19 @@ const HOOK_SCRIPT = `(() => {
       if (!playingAsin) root.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) walkLinks(el.shadowRoot); });
     };
     walkLinks(document);
+    // What Amazon's page says it is playing (its navigator.mediaSession
+    // metadata; the hijack keeps the page's last write on its facade). For a
+    // track the account can only start as a station, this names the
+    // station's song, not the one Parachord asked for.
+    let nowPlaying = null;
+    try {
+      const md = navigator.mediaSession && navigator.mediaSession.metadata;
+      if (md && (md.title || md.artist)) {
+        nowPlaying = { title: String(md.title || ''), artist: String(md.artist || ''), album: String(md.album || '') };
+      }
+    } catch (e) { nowPlaying = null; }
     return {
+      nowPlaying,
       positionMs: Math.round((m.currentTime || 0) * 1000),
       durationMs: d > 0 ? Math.round(d * 1000) : 0,
       paused: !!m.paused,
@@ -1822,6 +1835,29 @@ const amazonWebPlayer = {
       if (advancing) {
         if (!playingSince) playingSince = Date.now();
         if (Date.now() - playingSince >= 1500 && ownsPlay()) {
+          // Is the page playing the track we asked for? Amazon reports its
+          // now-playing a moment after the element starts, so give it up to
+          // ~3s; no metadata by then is not a failure (unknown is accepted).
+          let nowPlaying = state.nowPlaying || null;
+          for (let w = 0; !nowPlaying && w < 8; w++) {
+            await new Promise(r => setTimeout(r, 400));
+            if (!ownsPlay()) return { success: false, reason: 'superseded' };
+            const again = await read();
+            nowPlaying = (again && again.nowPlaying) || null;
+          }
+          console.log(`[Amazon] play ${asin}: asked for "${title || ''}"; page now playing ${nowPlaying ? `"${nowPlaying.title}" by "${nowPlaying.artist}"` : 'unknown (no metadata)'}`);
+          if (amazonNowPlayingMismatch(title, nowPlaying)) {
+            // A station, not the track: Amazon can only start this ASIN as a
+            // station for this account. Fail the play so the next source is
+            // tried, instead of playing other music under this track's name.
+            await this.haltPlayback(generation);
+            return {
+              success: false,
+              reason: 'playback-failed',
+              playGeneration: generation,
+              error: `Amazon played "${nowPlaying.title}" by ${nowPlaying.artist} instead of "${title}" (it can only start this track as a station)`
+            };
+          }
           // Kick (never await) the manifest/init capture that upgrades the
           // measured-bitrate streamQuality record with codec / sample rate /
           // bit depth / channels / tier. Playback is already confirmed; a
@@ -1880,8 +1916,8 @@ const amazonWebPlayer = {
     return {
       state: state.state,
       asin: reportedPlaybackAsin(state),
-      title: null,
-      artist: null,
+      title: (state.nowPlaying && state.nowPlaying.title) || null,
+      artist: (state.nowPlaying && state.nowPlaying.artist) || null,
       positionMs: state.positionMs || 0,
       durationMs: state.durationMs || 0,
       audioDecodedBytes: (typeof state.audioDecodedBytes === 'number' && Number.isFinite(state.audioDecodedBytes))
