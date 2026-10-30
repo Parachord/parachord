@@ -3511,6 +3511,9 @@ const Parachord = () => {
   const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
   const activeResolversRef = useRef(activeResolvers);  // Ref to avoid stale closure in save
+  // resolverConfigCache hoisted from its old 12.2k spot (needs to exist above
+  // the engine-hook ctx literal at ~7.6k; mount-position-agnostic by design).
+  const resolverConfigCache = useRef({});
   const resolverOrderRef = useRef(resolverOrder);  // Ref to avoid stale closure in save
   const savedResolverOrderRef = useRef(null);  // Persisted order from storage — used to restore priority position when re-enabling
   const savedActiveResolversRef = useRef(null);  // Persisted active_resolvers from storage — used to distinguish auth-gated removal from user-disabled
@@ -5716,6 +5719,15 @@ const Parachord = () => {
   const getAlbumArtRef = useRef(null);
   const getCachedAlbumArtRef = useRef(null);
   const showExternalTrackPromptUIRef = useRef(null);
+  const showToastRef = useRef(null);
+  const updateSchedulerVisibilityRef = useRef(null);
+  const abortSchedulerContextRef = useRef(null);
+  const registerPoolContextRef = useRef(null);
+  const setSchedulerPlaybackIndexRef = useRef(null);
+  const getArtistTopTracksRef = useRef(null);
+  const keyForSpinoffDedupRef = useRef(null);
+  const refreshSpotifyTokenRef = useRef(null);
+  const startAutoAdvancePollingRef = useRef(null);
   const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
   const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
   const handleStartCollectionStationRef = useRef(null); // Ref for protocol handler
@@ -7146,6 +7158,7 @@ const Parachord = () => {
     spotifyTokenRef,
     audioRef,
     currentTrackRef,
+    isPlayingRef,
     usesSharedAudio,
   });
   const {
@@ -7687,16 +7700,16 @@ const Parachord = () => {
       showExternalTrackPromptUIRef,
     },
     ui: {
-      showToast,
+      showToastRef,
       showConfirmDialog,
       setActiveView,
       setSettingsTab,
     },
     scheduling: {
-      updateSchedulerVisibility,
-      abortSchedulerContext,
-      registerPoolContext,
-      setSchedulerPlaybackIndex,
+      updateSchedulerVisibilityRef,
+      abortSchedulerContextRef,
+      registerPoolContextRef,
+      setSchedulerPlaybackIndexRef,
     },
   };
   const {
@@ -7747,17 +7760,21 @@ const Parachord = () => {
     spotifyProgressBaselineRef,
     amazonMusicProgressBaselineRef,
     isPlayingRef,
+    streamingPlaybackActiveRef,
     handleNextRef,
     handlePreviousRef,
     handlePlayPauseRef,
     handlePlayRef,
     startSpinoffRef,
+    spotifyToken,
+    extensionConnected,
+    audioContext,
     spinoffMode,
     setSpinoffMode,
     spinoffModeRef,
     spinoffSourceTrack,
     setSpinoffSourceTrack,
-  setSpinoffLoading,
+    setSpinoffLoading,
     spinoffSourceTrackRef,
     listenAlongFriend,
     setListenAlongFriend,
@@ -12251,7 +12268,7 @@ ${trackListXml}
   // Helper function to get resolver config (async for Spotify to ensure fresh token)
   // Cache for getResolverConfig to coalesce concurrent IPC calls
   // Each entry: { promise, timestamp }
-  const resolverConfigCache = useRef({});
+
   const RESOLVER_CONFIG_CACHE_TTL = 10000; // 10s — tokens don't change that fast
   // Deduplicates concurrent force-refresh calls (e.g. when many tracks get 400 at once)
   const spotifyRefreshPromise = useRef(null);
@@ -15616,7 +15633,6 @@ ${trackListXml}
 
 
   // Keep handleNextRef in sync so event handlers always call the latest version
-  useEffect(() => { handleNextRef.current = handleNext; });
 
 
   // Keep handler refs in sync for embed player callbacks (the engine-owned
@@ -15627,6 +15643,15 @@ ${trackListXml}
   useEffect(() => { getAlbumArtRef.current = getAlbumArt; });
   useEffect(() => { getCachedAlbumArtRef.current = getCachedAlbumArt; });
   useEffect(() => { showExternalTrackPromptUIRef.current = showExternalTrackPromptUI; });
+  useEffect(() => { showToastRef.current = showToast; });
+  useEffect(() => { updateSchedulerVisibilityRef.current = updateSchedulerVisibility; });
+  useEffect(() => { abortSchedulerContextRef.current = abortSchedulerContext; });
+  useEffect(() => { registerPoolContextRef.current = registerPoolContext; });
+  useEffect(() => { setSchedulerPlaybackIndexRef.current = setSchedulerPlaybackIndex; });
+  useEffect(() => { getArtistTopTracksRef.current = getArtistTopTracks; });
+  useEffect(() => { keyForSpinoffDedupRef.current = keyForSpinoffDedup; });
+  useEffect(() => { refreshSpotifyTokenRef.current = refreshSpotifyToken; });
+  useEffect(() => { startAutoAdvancePollingRef.current = startAutoAdvancePolling; });
 
 
   const moveInPlaylist = (fromIndex, toIndex) => {

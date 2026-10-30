@@ -156,7 +156,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   const startAutoAdvancePolling = (...args) => startAutoAdvancePollingRef.current.apply(null, args);
 
   const {
-    showToast,
+    showToastRef,
     showConfirmDialog,
     setActiveView,
     setSettingsTab,
@@ -164,11 +164,19 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   } = ctx.ui;
 
   const {
-    updateSchedulerVisibility,
-    abortSchedulerContext,
-    registerPoolContext,
-    setSchedulerPlaybackIndex,
+    updateSchedulerVisibilityRef,
+    abortSchedulerContextRef,
+    registerPoolContextRef,
+    setSchedulerPlaybackIndexRef,
   } = ctx.scheduling;
+
+  // showToast/scheduling are declared below the ctx literal too — same
+  // late-function bridge idiom as the art-cluster refs.
+  const showToast = (...args) => showToastRef.current.apply(null, args);
+  const updateSchedulerVisibility = (...args) => updateSchedulerVisibilityRef.current.apply(null, args);
+  const abortSchedulerContext = (...args) => abortSchedulerContextRef.current.apply(null, args);
+  const registerPoolContext = (...args) => registerPoolContextRef.current.apply(null, args);
+  const setSchedulerPlaybackIndex = (...args) => setSchedulerPlaybackIndexRef.current.apply(null, args);
 
   // ---------------------------------------------------------------
   // Engine-owned state — returned under the same names Parachord destructures
@@ -1885,7 +1893,7 @@ function playbackDurationSeconds(source, track) {
 
           // Mark as retried to prevent infinite loop
           const retrySource = { ...sourceToPlay, _spotifyRetried: true };
-          const _retryTrackNote = trackOrSource.sources ? {
+          const _retryTrack = trackOrSource.sources ? {
             ...trackOrSource,
             sources: { ...trackOrSource.sources, spotify: retrySource }
           } : retrySource;
@@ -3284,8 +3292,7 @@ function playbackDurationSeconds(source, track) {
     spinoffSourceTrack,
     setSpinoffSourceTrack,
     spinoffSourceTrackRef,
-    // shared-avail helpers some app-side callers kept (协议 advisories)
-  };
+      };
 }
 
 module.exports = { usePlaybackEngine };
