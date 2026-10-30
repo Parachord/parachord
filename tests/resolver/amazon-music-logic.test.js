@@ -7,6 +7,7 @@ const {
   cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
+  amazonAuthCookieState,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   amazonSongSearchUrl,
@@ -318,6 +319,19 @@ describe('pageBlocksPlayback', () => {
     expect(pageBlocksPlayback('https://music.amazon.com/')).toBeNull();
     expect(pageBlocksPlayback('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
   });
+
+  test('every step of the Amazon sign-in portal is a wall, 2FA included', () => {
+    // 2FA (OTP), push approval, verification and account-fix pages sit under
+    // /ap/ on the account host, and their query carries the music.amazon.com
+    // return address. None of them is a finished session.
+    const rt = '?openid.return_to=https%3A%2F%2Fmusic.amazon.com%2F';
+    for (const path of ['/ap/mfa', '/ap/cvf/approval', '/ap/cvf/request', '/ap/challenge', '/ap/accountfixup']) {
+      expect(pageBlocksPlayback(`https://www.amazon.com${path}${rt}`)).toBe('not-signed-in');
+    }
+    expect(pageBlocksPlayback('https://www.amazon.co.uk/ap/mfa?arb=x')).toBe('not-signed-in');
+    // A music path that merely contains "ap" is not the portal.
+    expect(pageBlocksPlayback('https://music.amazon.com/albums/B0AP123')).toBeNull();
+  });
 });
 
 describe('cdmStatusHealthy', () => {
@@ -350,6 +364,28 @@ describe('cdmStatusHealthy', () => {
     const cyclic = { widevine: { status: 'ok' } };
     cyclic.self = cyclic;
     expect(cdmStatusHealthy(cyclic)).toBe(true);
+  });
+});
+
+describe('amazonAuthCookieState', () => {
+  test('the auth cookies isSignedIn has always keyed on are known', () => {
+    expect(amazonAuthCookieState(['session-id', 'at-main', 'sess-at-main', 'x-main'])).toBe('known');
+    expect(amazonAuthCookieState(['at-main-music'])).toBe('known');
+    expect(amazonAuthCookieState(['at-acbuk'])).toBe('known');
+  });
+
+  test('other auth-shaped names are a session under rotated names', () => {
+    expect(amazonAuthCookieState(['session-id', 'x-main'])).toBe('rotated');
+    expect(amazonAuthCookieState(['at-main2', 'session-id'])).toBe('known'); // still the at-main prefix
+    expect(amazonAuthCookieState(['at-v2', 'sess-at-v2'])).toBe('rotated');
+  });
+
+  test('a logged-out jar is signed out (the old page-based hedge said signed in)', () => {
+    // What a logged-out session held, before and during a sign-in (2026-10).
+    expect(amazonAuthCookieState(['session-id', 'session-id-time', 'ubid-main', 'i18n-prefs', 'csm-hit', 'cwr_u'])).toBe('none');
+    expect(amazonAuthCookieState(['session-token'])).toBe('none'); // not auth-shaped on its own
+    expect(amazonAuthCookieState([])).toBe('none');
+    expect(amazonAuthCookieState(null)).toBe('none');
   });
 });
 
@@ -395,6 +431,26 @@ describe('signInLanded', () => {
     // A URL that changed this tick is not stable yet.
     expect(signInLanded({ url: track, lastUrl: home, stableTicks: 3, hasCookie: true }))
       .toEqual({ landed: false, stableTicks: 1 });
+  });
+
+  test('the 2FA page never lands, however long the user takes', () => {
+    // The old gate matched "music.amazon.com" anywhere in the URL, so the
+    // 2FA page's return_to query passed it, and the window closed itself two
+    // seconds into the code prompt, reporting a sign-in that never happened.
+    for (const url of [
+      'https://www.amazon.com/ap/mfa?openid.return_to=https%3A%2F%2Fmusic.amazon.com%2F&arb=x',
+      'https://www.amazon.com/ap/cvf/approval?openid.return_to=https%3A%2F%2Fmusic.amazon.com%2F',
+      // Not the portal, but still not the music host: never a landing.
+      'https://www.amazon.com/gp/redirect?to=https%3A%2F%2Fmusic.amazon.com%2F'
+    ]) {
+      let v = { stableTicks: 0 };
+      let last = null;
+      for (let i = 0; i < 10; i++) {
+        v = signInLanded({ url, lastUrl: last, stableTicks: v.stableTicks, hasCookie: true });
+        last = url;
+        expect(v.landed).toBe(false);
+      }
+    }
   });
 });
 

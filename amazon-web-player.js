@@ -17,9 +17,12 @@
 //                   /search/{q}/songs (quoted terms; a loose combined query
 //                   misses songs), /tracks/{asin}?do=play is what actually
 //                   starts Widevine — a bare page's Play-button click() does not
-//   Sign-in walls   /ap/signin, /identity/who-is-listening (pageBlocksPlayback)
-//   Cookies         at-main|sess-at-main|at-acb — fast path only; the rendered
-//                   page is ground truth (see isSignedIn)
+//   Sign-in walls   every /ap/ page on an account host (signin, 2FA, approval),
+//                   /identity/who-is-listening (pageBlocksPlayback)
+//   Cookies         at-main|sess-at-main|at-acb; any x-main / at-* / sess-at-*
+//                   if Amazon renames them (amazonAuthCookieState, isSignedIn).
+//                   A page is never proof of a session: the logged-out home
+//                   page is a non-wall music.amazon.com page too
 //   Media element   the Widevine <video>; the page also has an empty <audio>
 //                   decoy — HOOK_SCRIPT scores elements by paused/currentSrc/
 //                   tagName so last-wins cannot latch onto it. The element's
@@ -56,6 +59,7 @@ const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
 const {
   pageBlocksPlayback,
   signInLanded,
+  amazonAuthCookieState,
   cdmStatusHealthy,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
@@ -419,52 +423,48 @@ const amazonWebPlayer = {
     return ses;
   },
 
-  async hasAuthCookie() {
+  // 'known' | 'rotated' | 'none' (amazonAuthCookieState). Empty-valued
+  // cookies are deletions in flight, not a session.
+  async authCookieState() {
     try {
       const cookies = await this.session().cookies.get({});
-      return cookies.some(c => c.value && /^(at-main|sess-at-main|at-acb)/.test(c.name));
+      return amazonAuthCookieState(cookies.filter(c => c.value).map(c => c.name));
     } catch {
-      return false;
+      return 'none';
     }
+  },
+
+  async hasAuthCookie() {
+    return (await this.authCookieState()) !== 'none';
   },
 
   // Ready means signed in AND a profile has been chosen. A window still on
   // the profile picker or the sign-in page is not ready, even if a cookie
   // from an earlier step is already set.
   async isSignedIn() {
-    if (await this.hasAuthCookie()) {
-      // Only the sign-in window's URL is authoritative here. The player and
-      // search views keep whatever URL their last navigation left behind — a
-      // view that redirected to /ap/signin during an earlier failed search
-      // stays there (nothing navigates it until a search/play runs, and those
-      // refuse to while this returns false), so consulting them locked the
-      // account out right after a successful sign-in. A genuinely dead
-      // session is still caught mid-flight: search, lookup and play re-check
-      // the URL after every load and throw not-signed-in on a redirect.
-      const auth = this.authWindow;
-      if (this.alive(auth) && pageBlocksPlayback(auth.webContents.getURL())) return false;
-      return true;
+    const cookies = await this.authCookieState();
+    if (cookies === 'none') return false;
+    // The auth-cookie names are an implementation detail Amazon can rotate.
+    // A jar with no known name but another auth-shaped one (x-main, at-*,
+    // sess-at-*) is a live session under new names: trust it, and say so
+    // once. This hedge used to trust any rendered non-wall music.amazon.com
+    // page instead, which Amazon Music's logged-out home page is: the app
+    // reported signed in before the user had signed in at all.
+    if (cookies === 'rotated' && !this.cookieWarned) {
+      this.cookieWarned = true;
+      console.warn('[Amazon] no auth cookie matched (at-main|sess-at-main|at-acb) but other Amazon session cookies are set — Amazon may have rotated cookie names');
     }
-    // The auth-cookie names are an implementation detail Amazon can rotate;
-    // when they do, hasAuthCookie matches nothing and every call looks
-    // signed-out forever — including the sign-in flow's own completion gate,
-    // which would strand openLogin. A rendered, non-sign-in music.amazon.com
-    // page means the session is live: trust the page over the cookie list. A
-    // stale-page false positive self-corrects on the next load — search and
-    // play re-check the URL mid-flight and throw not-signed-in when Amazon
-    // redirects to sign-in.
-    for (const target of [this.authWindow, this.playerView, this.searchView]) {
-      if (!this.alive(target)) continue;
-      const url = target.webContents.getURL();
-      if (/^https:\/\/music\.amazon\.com\//i.test(url) && !pageBlocksPlayback(url)) {
-        if (!this.cookieWarned) {
-          this.cookieWarned = true;
-          console.warn('[Amazon] no auth cookie matched (at-main|sess-at-main|at-acb) but the page is signed in — Amazon may have rotated cookie names');
-        }
-        return true;
-      }
-    }
-    return false;
+    // Only the sign-in window's URL is authoritative here. The player and
+    // search views keep whatever URL their last navigation left behind — a
+    // view that redirected to /ap/signin during an earlier failed search
+    // stays there (nothing navigates it until a search/play runs, and those
+    // refuse to while this returns false), so consulting them locked the
+    // account out right after a successful sign-in. A genuinely dead
+    // session is still caught mid-flight: search, lookup and play re-check
+    // the URL after every load and throw not-signed-in on a redirect.
+    const auth = this.authWindow;
+    if (this.alive(auth) && pageBlocksPlayback(auth.webContents.getURL())) return false;
+    return true;
   },
 
   setHost(win) {
@@ -852,6 +852,8 @@ const amazonWebPlayer = {
     win.show();
     win.focus();
 
+    this._signInTracePage = null;
+    this._signInTraceCookies = null;
     return new Promise((resolve) => {
       let settled = false;
       let lastUrl = null;
@@ -871,10 +873,12 @@ const amazonWebPlayer = {
         // rotating the cookie names must not leave this timer waiting forever;
         // a path off / or a third stable tick stands in for it.
         const hasCookie = await this.hasAuthCookie().catch(() => false);
+        await this.traceSignIn(url).catch(() => {});
         const verdict = signInLanded({ url, lastUrl, stableTicks, hasCookie });
         lastUrl = url;
         stableTicks = verdict.stableTicks;
         if (!verdict.landed) return;
+        console.log(`[Amazon] sign-in landed on ${this.signInTraceUrl(url)} (cookie: ${hasCookie}, stable ticks: ${verdict.stableTicks})`);
         clearInterval(timer);
         setTimeout(() => {
           if (win && !win.isDestroyed()) win.close();
@@ -883,6 +887,33 @@ const amazonWebPlayer = {
       }, 1000);
       win.on('closed', () => finish(false));
     });
+  },
+
+  // Sign-in trace: each page the sign-in window visits (host + path only; the
+  // query can carry tokens) and the Amazon session cookie NAMES as they
+  // appear (never values), so a sign-in that closes too early or never
+  // finishes can be read from the log.
+  signInTraceUrl(url) {
+    try {
+      const u = new URL(url);
+      return `${u.host}${u.pathname}`;
+    } catch {
+      return String(url || '').split('?')[0];
+    }
+  },
+
+  async traceSignIn(url) {
+    const page = this.signInTraceUrl(url);
+    if (page !== this._signInTracePage) {
+      this._signInTracePage = page;
+      console.log(`[Amazon] sign-in page: ${page}`);
+    }
+    const cookies = await this.session().cookies.get({});
+    const names = [...new Set(cookies.filter(c => /^(at-|sess-at-|x-main|session-token)/.test(c.name)).map(c => c.name))].sort().join(',');
+    if (names !== this._signInTraceCookies) {
+      this._signInTraceCookies = names;
+      console.log(`[Amazon] sign-in cookies: ${names || '(none)'}`);
+    }
   },
 
   // Serializes real page navigation: fallback spec searches, playlist

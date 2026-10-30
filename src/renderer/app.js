@@ -7112,11 +7112,16 @@ const Parachord = () => {
       setAmazonManageDialog({ show: true, onResolve: null, relaunching: true });
       const login = await window.electron.amazonMusic.openLogin();
       setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
+      refreshAmazonMusicStatus();
       if (login && login.signedIn) {
         showToast('Signed in to Amazon Music', 'success');
         if (typeof window.__parachordClearAmazonNoMatch === 'function') window.__parachordClearAmazonNoMatch();
         return true;
       }
+      // The sign-in window closed without a session: the same quiet period as
+      // declining the prompt. Without it the next background search's
+      // not-signed-in reopened the prompt at once, and again after every close.
+      amazonManageDeclinedUntilRef.current = Date.now() + 10 * 60 * 1000;
       if (login && login.reason === 'no-cdm') {
         showToast(login.error || 'Widevine CDM not available', 'error');
       }
@@ -7136,6 +7141,24 @@ const Parachord = () => {
     }
   };
   window.__parachordManageAmazonMusic = manageAmazonMusic;
+
+  // Amazon's sign-in state for the resolver grid's "Setup required" badge (the
+  // same treatment Spotify and Apple Music get when not connected). Refreshed
+  // after every sign-in attempt, on enable, and each time Settings opens, so
+  // a session that expired since is caught too. manageAmazonMusic above calls
+  // it at run time, after this render has defined it.
+  const refreshAmazonMusicStatus = () => {
+    if (!window.electron?.amazonMusic?.getStatus) return;
+    window.electron.amazonMusic.getStatus()
+      .then((s) => setAmazonMusicStatus(s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } }))
+      .catch(() => {});
+  };
+  const amazonMusicEnabled = activeResolvers.includes('amazonmusic');
+  useEffect(() => {
+    if (!cacheLoaded || !amazonMusicEnabled) return;
+    if (activeView !== 'settings' && amazonMusicStatus) return;
+    refreshAmazonMusicStatus();
+  }, [cacheLoaded, amazonMusicEnabled, activeView]);
 
   // Leaving an Amazon track must blank the player view, not just pause it -
   // the module's own invariant ("pause is not enough": Amazon can start the
@@ -45245,6 +45268,9 @@ useEffect(() => {
                           } else if (resolver.id === 'applemusic' && !appleMusicConnected) {
                             needsConfiguration = true;
                           } else if (resolver.id === 'soundcloud' && !soundcloudConnected) {
+                            needsConfiguration = true;
+                          } else if (resolver.id === 'amazonmusic' && amazonMusicStatus && !amazonMusicStatus.web?.signedIn) {
+                            // Unknown status (not fetched yet) is not flagged.
                             needsConfiguration = true;
                           } else if (resolver.id === 'localfiles' && watchFolders.length === 0) {
                             needsConfiguration = true;

@@ -107,3 +107,56 @@ describe('amazonWebPlayer.searchArtistImage', () => {
     expect(specSearch).not.toHaveBeenCalled();
   });
 });
+
+// isSignedIn reads the session's cookie NAMES (amazonAuthCookieState) and the
+// sign-in window's URL. A page is never proof of a session: the old hedge for
+// renamed cookies trusted any non-wall music.amazon.com page, and Amazon
+// Music's logged-out home page is one, so the app reported signed in before
+// the user had signed in at all.
+describe('amazonWebPlayer.isSignedIn', () => {
+  let sessionSpy;
+  let jar;
+  const page = (url) => ({ webContents: { isDestroyed: () => false, getURL: () => url } });
+
+  beforeEach(() => {
+    jar = [];
+    sessionSpy = jest.spyOn(amazonWebPlayer, 'session').mockReturnValue({ cookies: { get: async () => jar } });
+    amazonWebPlayer.authWindow = null;
+    amazonWebPlayer.searchView = null;
+    amazonWebPlayer.playerView = null;
+    amazonWebPlayer.cookieWarned = true; // keep the rotation warning out of test output
+  });
+
+  afterEach(() => {
+    sessionSpy.mockRestore();
+    amazonWebPlayer.authWindow = null;
+    amazonWebPlayer.searchView = null;
+    amazonWebPlayer.cookieWarned = false;
+  });
+
+  test('the logged-out home page with no auth cookie is signed out', async () => {
+    jar = [{ name: 'session-id', value: '1' }, { name: 'ubid-main', value: '2' }];
+    amazonWebPlayer.authWindow = page('https://music.amazon.com/');
+    amazonWebPlayer.searchView = page('https://music.amazon.com/search/x/songs');
+    await expect(amazonWebPlayer.isSignedIn()).resolves.toBe(false);
+  });
+
+  test('known auth cookies are signed in, unless the sign-in window is still on a wall', async () => {
+    jar = [{ name: 'at-main', value: 'a' }, { name: 'sess-at-main', value: 'b' }];
+    await expect(amazonWebPlayer.isSignedIn()).resolves.toBe(true);
+    amazonWebPlayer.authWindow = page('https://www.amazon.com/ap/mfa?arb=x');
+    await expect(amazonWebPlayer.isSignedIn()).resolves.toBe(false);
+    amazonWebPlayer.authWindow = page('https://music.amazon.com/identity/who-is-listening');
+    await expect(amazonWebPlayer.isSignedIn()).resolves.toBe(false);
+  });
+
+  test('renamed auth cookies still count as a session', async () => {
+    jar = [{ name: 'x-main', value: 'a' }, { name: 'at-v2', value: 'b' }];
+    await expect(amazonWebPlayer.isSignedIn()).resolves.toBe(true);
+  });
+
+  test('an emptied auth cookie (a deletion in flight) is not a session', async () => {
+    jar = [{ name: 'at-main', value: '' }];
+    await expect(amazonWebPlayer.isSignedIn()).resolves.toBe(false);
+  });
+});
