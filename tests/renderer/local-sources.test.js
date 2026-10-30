@@ -117,7 +117,8 @@ describe('LocalFilesService.fileStatus', () => {
 });
 
 describe('app.js wiring', () => {
-  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8') +
+  fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
 
   test('the library paths come only from a successful load', () => {
     // The catch path and a null IPC result also call setLibrary([]); building

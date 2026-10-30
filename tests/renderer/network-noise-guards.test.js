@@ -15,7 +15,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8') +
+  fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
 
 describe('Spotify pause on track change', () => {
   const sites = app.split('\n').filter((l) => l.includes("_activeResolver === 'spotify'") && l.includes('spotifyToken &&'));

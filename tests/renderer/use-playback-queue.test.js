@@ -40,7 +40,7 @@ function destructureKeysFrom(src, marker) {
 }
 
 const appSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
-const EXPECTED_KEYS = destructureKeysFrom(appSrc, '  } = usePlaybackQueue({');
+const EXPECTED_KEYS = destructureKeysFrom(appSrc, '  } = queueDomain;');
 // Guard direction note (review nit): this checks hook-returns-everything-
 // destructure-expects — the direction that turned React module-scope
 // destructures into runtime #130s. A name dropped from the app.js

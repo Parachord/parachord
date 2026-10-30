@@ -326,7 +326,8 @@ describe('subsonic play is host-owned', () => {
 });
 
 describe('app.js integration', () => {
-  const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8') +
+    fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
 
   test('FALLBACK_RESOLVERS copy is byte-identical to the .axe', () => {
     // The block moved to the gitignored generated module (bucket C); the

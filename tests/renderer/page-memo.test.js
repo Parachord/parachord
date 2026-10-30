@@ -88,7 +88,7 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
   // Extracted state-domain hooks whose ObjectPattern destructures are
   // state-classified (see below). Review nit: the set is the allowlist;
   // adding a hook here is an explicit step in its extraction PR.
-  const EXTRACTED_STATE_DOMAIN_HOOKS = new Set(['useVolume', 'usePlaybackQueue']);
+  const EXTRACTED_STATE_DOMAIN_HOOKS = new Set(['useVolume', 'usePlaybackQueue', 'usePlaybackEngine']);
 
   // How a value prop's variable is declared, as far as identity goes.
   const stability = (variable) => {
@@ -104,7 +104,11 @@ describe.each(PAGES)('$component: the app.js call site keeps every prop stable',
     // bare /^use[A-Z]/ match would silence the flag for any FUTURE hook that
     // returns per-render functions a memo page consumes; new extracted
     // state-domain hooks join the set explicitly when they're added.
-    if (id.type === 'ObjectPattern' && init?.type === 'CallExpression' && EXTRACTED_STATE_DOMAIN_HOOKS.has(init.callee.name)) return 'state';
+    // Applies identically to the hook-object era (slice 3): the object
+    // itself (`queueDomain = usePlaybackQueue({...})`) classifies state,
+    // and destructured keys remain state through the alias branch below,
+    // which resolves them back here to this CallExpression recheck.
+    if (init?.type === 'CallExpression' && EXTRACTED_STATE_DOMAIN_HOOKS.has(init.callee.name)) return 'state';
     if (init?.type === 'CallExpression' && ['useRef', 'useCallback', 'useMemo', 'useStableHandlers'].includes(init.callee.name)) return init.callee.name;
     // An alias of another stable value (allResolvers = loadedResolvers).
     if (init?.type === 'Identifier') return stability(resolve(init));

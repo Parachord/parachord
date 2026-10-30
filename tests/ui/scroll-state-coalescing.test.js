@@ -10,6 +10,12 @@ const fs = require('fs');
 const path = require('path');
 
 const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+// Track-source callers now span two files: handlePlay/client-side resolution
+// code moved into the playback-engine hook (slice 3). Any count-shaped rule
+// below evaluates against the union, or the moved call sites disappear from
+// the guard.
+const engine = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
+const appAll = app + '\n' + engine;
 
 function extract(startMarker, endMarker) {
   const s = app.indexOf(startMarker);
@@ -104,12 +110,12 @@ describe('the pages use the mitigations', () => {
   test('no per-track whole-entry setTrackSources write remains in the resolution paths', () => {
     expect(app).not.toMatch(/setTrackSources\(prev => \(\{\s*\.\.\.prev,\s*\[trackKey\]/);
     expect(app).not.toMatch(/setTrackSources\(prev => \(\{\s*\.\.\.prev,\s*\[trackOrSource\.id\]/);
-    expect((app.match(/queueTrackSources\(/g) || []).length).toBeGreaterThanOrEqual(10);
+    expect((appAll.match(/queueTrackSources\(/g) || []).length).toBeGreaterThanOrEqual(10);
   });
 
   test('bulk trackSources rewrites flush the queue first', () => {
-    const bulk = app.match(/setTrackSources\(prev => \{/g) || [];
-    const flushes = app.match(/flushTrackSources\(\); \/\//g) || [];
+    const bulk = appAll.match(/setTrackSources\(prev => \{/g) || [];
+    const flushes = appAll.match(/flushTrackSources\(\); \/\//g) || [];
     expect(bulk.length).toBeGreaterThanOrEqual(4);
     // 4th: the stale local-source reconcile after a library load (#1002).
     expect(flushes.length).toBe(4);

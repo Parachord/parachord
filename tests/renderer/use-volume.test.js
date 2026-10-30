@@ -83,7 +83,7 @@ const appSrcForKeys = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'r
 // `} = useX({` may sit between the volume hook's const-{ and its closing
 // brace, so a forward `const \{ ... } = useVolume` regex would capture the
 // wrong block (this BitMe when usePlaybackQueue landed between them). Find
-// the closing marker, walk BACK to the nearest 2-space 'const {' opening,
+// the closing marker, walk BACK to the 2-space 'const {' opening (hook-object era: the destructure closes on the OBJECT alias, so the backward-walk anchor is the alias, not the call),
 // and parse the entries between. Indent>=2 distinguishes the component-
 // scope hook call from column-0 module-scope requires/destructures.
 function destructureKeysFrom(src, marker) {
@@ -102,7 +102,7 @@ function destructureKeysFrom(src, marker) {
     .filter((s) => /^\w+(\s+as\s+\w+)?$/.test(s))
     .map((s) => s.split(/\s+as\s+/).pop());
 }
-const EXPECTED_KEYS = destructureKeysFrom(appSrcForKeys, '  } = useVolume({');
+const EXPECTED_KEYS = destructureKeysFrom(appSrcForKeys, '  } = volumeDomain;');
 
 describe('useVolume (Node render probe)', () => {
   test('module loads under plain Node and renders in a probe component with stubbed globals', () => {
