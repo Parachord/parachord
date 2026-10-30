@@ -1,3 +1,17 @@
+# Parachord v0.9.11
+
+**Release date:** 2026-10-30
+
+> Fixes the unstyled window in 0.9.10. If you're coming from 0.9.9, everything in 0.9.10 below is new to you as well.
+
+---
+
+## Fixed
+
+- **The window is styled again.** 0.9.10 shipped with almost all of its styling missing, so icons filled the window and nothing was laid out. The app itself worked; the stylesheet built for the release was nearly empty. Thanks to @prcutler for reporting it within minutes.
+
+---
+
 # Parachord v0.9.10
 
 **Release date:** 2026-10-30
