@@ -7,6 +7,7 @@ const {
   cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
+  amazonAuthCookieState,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   amazonSongSearchUrl,
@@ -363,6 +364,28 @@ describe('cdmStatusHealthy', () => {
     const cyclic = { widevine: { status: 'ok' } };
     cyclic.self = cyclic;
     expect(cdmStatusHealthy(cyclic)).toBe(true);
+  });
+});
+
+describe('amazonAuthCookieState', () => {
+  test('the auth cookies isSignedIn has always keyed on are known', () => {
+    expect(amazonAuthCookieState(['session-id', 'at-main', 'sess-at-main', 'x-main'])).toBe('known');
+    expect(amazonAuthCookieState(['at-main-music'])).toBe('known');
+    expect(amazonAuthCookieState(['at-acbuk'])).toBe('known');
+  });
+
+  test('other auth-shaped names are a session under rotated names', () => {
+    expect(amazonAuthCookieState(['session-id', 'x-main'])).toBe('rotated');
+    expect(amazonAuthCookieState(['at-main2', 'session-id'])).toBe('known'); // still the at-main prefix
+    expect(amazonAuthCookieState(['at-v2', 'sess-at-v2'])).toBe('rotated');
+  });
+
+  test('a logged-out jar is signed out (the old page-based hedge said signed in)', () => {
+    // What a logged-out session held, before and during a sign-in (2026-10).
+    expect(amazonAuthCookieState(['session-id', 'session-id-time', 'ubid-main', 'i18n-prefs', 'csm-hit', 'cwr_u'])).toBe('none');
+    expect(amazonAuthCookieState(['session-token'])).toBe('none'); // not auth-shaped on its own
+    expect(amazonAuthCookieState([])).toBe('none');
+    expect(amazonAuthCookieState(null)).toBe('none');
   });
 });
 

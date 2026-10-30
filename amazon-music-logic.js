@@ -632,6 +632,25 @@ function pageBlocksPlayback(url) {
   return null;
 }
 
+// Which Amazon session cookies a cookie jar holds, by NAME:
+//   'known'   — the auth cookies isSignedIn has always keyed on
+//               (at-main / sess-at-main / at-acb, prefix-matched);
+//   'rotated' — none of those, but another auth-shaped cookie (x-main, or
+//               any at-* / sess-at-*): Amazon renamed its cookies, and the
+//               session is still live;
+//   'none'    — signed out.
+// A logged-out jar holds only session-id / session-id-time / ubid-main and
+// the like (observed 2026-10, before and during a sign-in), never an
+// auth-shaped name, so 'none' is safe to read as signed out. The old hedge
+// trusted any non-wall music.amazon.com page instead, and Amazon Music's
+// logged-out home page is exactly that.
+function amazonAuthCookieState(names) {
+  const list = Array.isArray(names) ? names.filter(n => typeof n === 'string') : [];
+  if (list.some(n => /^(at-main|sess-at-main|at-acb)/.test(n))) return 'known';
+  if (list.some(n => /^(x-main|at-|sess-at-)/.test(n))) return 'rotated';
+  return 'none';
+}
+
 // The Amazon Music web player's own host. A URL is on the player only when
 // its HOST is this: the sign-in portal's URLs carry music.amazon.com in their
 // return_to query, so a substring match passes them.
@@ -1798,6 +1817,7 @@ module.exports = {
   cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
+  amazonAuthCookieState,
   AMAZON_QUALITY_OPTIONS,
   normalizeStreamingQuality,
   installAmazonRequireTrap,
