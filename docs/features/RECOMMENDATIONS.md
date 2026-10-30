@@ -60,7 +60,7 @@ Code: `loadWeeklyPlaylists`, `loadWeeklyJamTracks`.
 
 Code: `loadAiRecommendations` (src/renderer/app.js); rendered by `HomePage` in `src/renderer/components/home-page.js`.
 
-Runs only when the view is Home, at least one AI plugin with the `chat` capability is enabled, and "Share my data" (`ai_include_history`) is on. It refreshes on every Home visit and has a Refresh button. It calls the selected chat provider (or the first enabled one) with no tools and asks for 12 albums and 20 artists as JSON.
+Runs only when the view is Home, at least one AI plugin with the `chat` capability is enabled, and "Share my data" (`ai_include_history`) is on. By default the suggestions stay until the user presses Refresh (the button on the Album Suggestions row); Home fetches on its own only when it has no albums to show. Settings › General › Discover › "Refresh Home suggestions on every visit" (`home_suggestions_auto_refresh`, off by default) fetches a new batch on each Home visit instead. The decision is `shouldAutoRefreshHomeSuggestions` in `src/renderer/lib/home-suggestions-refresh.js`. It calls the selected chat provider (or the first enabled one) with no tools and asks for 12 albums and 20 artists as JSON.
 
 Prompt context:
 - `fetchListeningContext()` output: recently played (15), top artists (25), top tracks (20), top albums (15).

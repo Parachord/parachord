@@ -643,6 +643,7 @@ const {
   deezerArtistImageFromSearch, firstArtistImage, createArtistImageMissCache
 } = require('./lib/artist-image-chain');
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
+const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -3573,6 +3574,8 @@ const Parachord = () => {
   const [pendingUnpinFriend, setPendingUnpinFriend] = useState(null); // Friend being unpinned (for warning dialog)
   const [rememberQueue, setRememberQueue] = useState(false); // Remember queue on app close/reopen
   const [showDiscoveryBadges, setShowDiscoveryBadges] = useState(true); // Show unread badges on discovery features
+  const [homeSuggestionsAutoRefresh, setHomeSuggestionsAutoRefresh] = useState(false); // New AI suggestions on every Home visit (off: only on Refresh)
+  const homeSuggestionsAutoRefreshRef = useRef(false);
   const externalTrackTimeoutRef = useRef(null);
   const externalTrackIntervalRef = useRef(null);
   const playbackPollerRef = useRef(null);
@@ -21112,7 +21115,7 @@ ${trackListXml}
         'autoPinnedFriendIds', 'hidden_friend_keys', 'resolver_volume_offsets', 'saved_volume',
         'preferred_spotify_device_id', 'skip_external_prompt',
         'auto_launch_spotify', 'skip_unsaved_friend_warning', 'remember_queue',
-        'show_discovery_badges', 'playlists_view_mode', 'ai_include_history',
+        'show_discovery_badges', 'home_suggestions_auto_refresh', 'playlists_view_mode', 'ai_include_history',
         'recommendation_blocklist', 'resolver_blocklist', 'ai_chat_histories',
         'selected_chat_provider', 'discovery_seen_recommendations', 'discovery_seen_criticsPicks',
         'discovery_seen_charts', 'discovery_seen_newReleases', 'discovery_seen_concerts',
@@ -21594,6 +21597,7 @@ ${trackListXml}
       const savedSkipUnsavedFriendWarning = d['skip_unsaved_friend_warning'];
       const savedRememberQueue = d['remember_queue'];
       const savedShowDiscoveryBadges = d['show_discovery_badges'];
+      const savedHomeSuggestionsAutoRefresh = d['home_suggestions_auto_refresh'];
       const savedPlaylistsViewMode = d['playlists_view_mode'];
       const savedPlaylistsSort = d['playlists_sort'];
       const savedAiIncludeHistory = d['ai_include_history'];
@@ -21792,6 +21796,12 @@ ${trackListXml}
       if (savedShowDiscoveryBadges !== undefined) {
         setShowDiscoveryBadges(savedShowDiscoveryBadges);
         console.log('📦 Loaded show discovery badges preference:', savedShowDiscoveryBadges);
+      }
+      if (typeof savedHomeSuggestionsAutoRefresh === 'boolean') {
+        // Ref first: the Home suggestions effect runs on the render that
+        // setCacheLoaded(true) triggers and reads the ref, not the state.
+        homeSuggestionsAutoRefreshRef.current = savedHomeSuggestionsAutoRefresh;
+        setHomeSuggestionsAutoRefresh(savedHomeSuggestionsAutoRefresh);
       }
 
       // Load playlists view mode preference
@@ -30338,12 +30348,19 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Load AI recommendations when HOME is active and an AI plugin is enabled
-  // Always refreshes on each visit, but shows cached/previous results until fresh ones arrive
+  // Load AI recommendations when HOME is active and an AI plugin is enabled.
+  // By default the suggestions on screen stay until the user presses Refresh;
+  // with "Refresh Home suggestions on every visit" on, each visit fetches a
+  // new batch, keeping cached/previous results visible until it arrives.
+  // Either way Home fetches when it has no albums to show (no Refresh button).
   useEffect(() => {
     const fetchAiRecommendations = async () => {
       if (activeView !== 'home' || !cacheLoaded) return;
       if (aiSuggestionsRefreshing.current) return; // Already fetching
+      if (!shouldAutoRefreshHomeSuggestions({
+        autoRefresh: homeSuggestionsAutoRefreshRef.current,
+        suggestions: homeData.aiRecommendations
+      })) return;
 
       const chatServices = getChatServices();
       const hasEnabledChat = chatServices.some(isServiceEnabled);
@@ -46416,6 +46433,32 @@ useEffect(() => {
                     },
                       React.createElement('span', {
                         className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${showDiscoveryBadges ? 'translate-x-5' : 'translate-x-0'}`
+                      })
+                    )
+                  ),
+                  // Refresh Home's AI suggestions on every visit toggle
+                  React.createElement('div', { className: 'flex items-center justify-between py-3' },
+                    React.createElement('div', null,
+                      React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
+                        'Refresh Home suggestions on every visit'
+                      ),
+                      React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
+                        'Ask Shuffleupagus for new Album and Artist Suggestions each time you open Home. When off, they stay until you press Refresh'
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: async () => {
+                        const newValue = !homeSuggestionsAutoRefresh;
+                        homeSuggestionsAutoRefreshRef.current = newValue;
+                        setHomeSuggestionsAutoRefresh(newValue);
+                        if (window.electron?.store) {
+                          await window.electron.store.set('home_suggestions_auto_refresh', newValue);
+                        }
+                      },
+                      className: `relative w-11 h-6 rounded-full transition-colors ${homeSuggestionsAutoRefresh ? 'bg-purple-600' : 'bg-gray-300'}`
+                    },
+                      React.createElement('span', {
+                        className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${homeSuggestionsAutoRefresh ? 'translate-x-5' : 'translate-x-0'}`
                       })
                     )
                   )
