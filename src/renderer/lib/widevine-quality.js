@@ -7,36 +7,60 @@
 // list through selectShakaVariant / shakaPlaybackConfig and gets the same
 // behavior. License handling and manifest fetching stay per-resolver (the
 // widevine bridge, main-process side); quality is NOT per-resolver — the
-// user sets it once here and every stream source honors it.
+// user sets it once and every stream source honors it.
 //
-// Tiers (store key 'playback_quality', abr toggle 'playback_abr'):
-//   max       the best playable audio the manifest offers (lossless preferred)
-//   high      the best LOSSY audio (FLAC-capped — quality without lossless data)
-//   balanced  ≈256 kbps ceiling (highest variant at or below it)
-//   low       the lowest-bitrate variant (data saver)
-// With 'playback_abr' on, the player adapts to network at or below the
-// tier's bandwidth (cap + start at tier); off, it locks the tier's variant.
+// Tiers are BANDWIDTH ceilings — nothing else. Codec is irrelevant to the
+// tier choice (aside from the explicit spatial exclusion below):
+//
+//   saver    ≤ 100 kbps
+//   standard ≤ 200 kbps
+//   high     ≤ 500 kbps
+//   max      best available (Ultra/HD/lossless when the build's codecs and
+//              the content protection conditions allow)
+//
+// With adaptive playback the player starts at the tier ceiling and lets the
+// network roam at or below it; locked = strictly the tier's rung. Stored
+// values from earlier builds normalize: {low→saver, balanced→standard,
+// standard→high, BEST_AVAILABLE|HD→max, DATA_SAVER→saver, high, max}.
+//
+// Spatial/immersive codecs (mha1 = Dolby AC-4 Atmos, mhm1 = MPEG-H) ride
+// Amazon manifests at the top of the bandwidth ladder (up to 1.6 Mbps) but
+// nothing in Chromium decodes them, so they're excluded by name — that is a
+// decompressability filter, not a tier rule. Everything else is bps-driven.
 //
 // Pure, module-global safe (tests run under bare node; the renderer loads
-// this through the app bundle). Codec inputs look like Shaka's variant
-// tracks ({ codecs }) or parsed manifest reps ({ codec }) — both are read
-// defensively from either property name.
+// this through the app bundle).
 
 'use strict';
 
-const PLAYBACK_QUALITY_TIERS = ['max', 'high', 'balanced', 'low'];
+// Ordered top→bottom exactly for the Settings card's select order.
+const PLAYBACK_QUALITY_TIERS = ['max', 'high', 'standard', 'saver'];
 
-const TIER_BANDWIDTH_CEILING = {
-  balanced: 256000
+// Ceiling bits-per-second for each tier. max has no ceiling.
+const TIER_CEILING_BPS = {
+  saver: 100000,
+  standard: 200000,
+  high: 500000
+};
+
+const LEGACY_TIER_MAP = {
+  low: 'saver',
+  balanced: 'standard',
+  best_available: 'max',
+  best: 'max',
+  data_saver: 'saver',
+  hd: 'max'
 };
 
 function normalizePlaybackQuality(value) {
-  const v = String(value || '').toLowerCase();
-  return PLAYBACK_QUALITY_TIERS.includes(v) ? v : null;
+  const v = String(value || '').trim().toLowerCase();
+  if (!v) return null;
+  if (PLAYBACK_QUALITY_TIERS.includes(v)) return v;
+  return LEGACY_TIER_MAP[v] || null;
 }
 
-// Codec bucket from a codec string. Shaka reports e.g. 'flac', 'opus',
-// 'mp4a.40.2'; manifest reps report raw DASH codecs — both shapes work.
+// Codec bucket from a codec string, only used to EXCLUDE spatial codecs
+// from the playable roster (they carry spatial content, not a tier).
 function widevineCodecFamily(codec) {
   const c = String(codec || '').toLowerCase();
   if (c.startsWith('flac')) return 'flac';
@@ -48,7 +72,8 @@ function widevineCodecFamily(codec) {
 // Chromium (and Shaka on it) cannot decode spatial/immersive codecs — Dolby
 // AC-4 (mha1, Atmos JOC) and MPEG-H (mhm1) ride Amazon manifests alongside
 // the stereo tiers (live-verified: Get Lucky's manifest has 5 spatial reps
-// out of 16). The web player filters them silently; so do we, always.
+// out of 16, up to 1.6 Mbps). The web player filters them silently; so do
+// we, always.
 const WIDEVINE_PLAYABLE_FAMILIES = new Set(['flac', 'opus', 'aac']);
 
 function variantCodec(variant) {
@@ -74,9 +99,14 @@ function variantsSorted(variants) {
   });
 }
 
-// The tier FIRST variant of the manifest's playable audio, or null when the
-// manifest has nothing playable or the tier is unknown (callers treat null
-// as playback-failed).
+// The tier's variant from the manifest's playable audio (spatial excluded,
+// everything else bandwidth-ordered). Rules:
+//   max      the highest-bandwidth playable variant overall
+//   other    the highest-bandwidth playable variant AT OR BELOW the tier
+//            ceiling; if nothing is under it, the lowest-bandwidth playable
+//            variant overall (flooring, never a ceiling break)
+// Unknown tier (normalize fails) or empty list → null (the engine reports
+// playback-failed).
 function selectShakaVariant(variants, tier) {
   if (!Array.isArray(variants) || variants.length === 0) return null;
   const t = normalizePlaybackQuality(tier) || 'max';
@@ -84,56 +114,35 @@ function selectShakaVariant(variants, tier) {
   if (!playable.length) return null;
   const sorted = variantsSorted(playable);
   if (t === 'max') return sorted[0];
-  if (t === 'low') {
-    // Cheapest audio; on bandwidth ties the first in order (deterministic).
-    const lowest = sorted[sorted.length - 1];
-    return sorted.find((v) => (Number(v.bandwidth) || 0) === (Number(lowest.bandwidth) || 0)) || lowest;
-  }
-  if (t === 'high') {
-    // Best lossy. FLAC-only manifests answer the cheapest FLAC rather than
-    // fail — the tier's data intent still holds.
-    const lossy = sorted.filter((v) => widevineCodecFamily(variantCodec(v)) !== 'flac');
-    if (lossy.length) return lossy[0];
-    const lowest = sorted[sorted.length - 1];
-    return sorted.find((v) => (Number(v.bandwidth) || 0) === (Number(lowest.bandwidth) || 0)) || lowest;
-  }
-  // balanced: highest variant at or below the ceiling; floor at the cheapest.
-  const ceiling = TIER_BANDWIDTH_CEILING.balanced;
+  const ceiling = TIER_CEILING_BPS[t];
+  if (!ceiling) return null;
   const under = sorted.filter((v) => (Number(v.bandwidth) || 0) <= ceiling);
   return under.length ? under[0] : sorted[sorted.length - 1];
 }
 
-// The player's Shaka configuration for (tier, adaptive). Locked stays on the
-// tier's rung (exact variant, no roaming). Adaptive: ABR capped at the tier
-// ceiling — and the family influence is expressed as a PREFERENCE ORDER never
-// a whitelist. preferredAudioCodecs filters Shaka's getVariantTracks into a
-// closed-family roster, which broke live family switching (start max with
-// ['flac'] pinned: asking for 'high' mid-play found ONLY the flac rungs
-// left, observed as stage2 flac-1062 instead of the opus the tier means).
-// Order, never close: ['flac','opus','mp4a'] means prefer-lossless-then-lossy
-// but Shaka still sees the full variant catalog, and an explicit selection
-// (or a later mid-play tier change) can always swap families.
-const PREFERRED_ORDER_BY_FAMILY = {
-  flac: ['flac', 'opus', 'mp4a'],
-  opus: ['opus', 'mp4a'],
-  aac: ['mp4a']
-};
-
+// The player's Shaka configuration for (tier, adaptive): locked strictly to
+// the tier's rung; adaptive starts at the tier ceiling and roams below it.
+// NO codec preference: tiers are bandwidth corridors across the full roster
+// (the cross-family roster always visible — preference lists filtered
+// getVariantTracks in an earlier iteration and are deleted on purpose).
+// Codec family is reported for observability only, never for configuration.
 function shakaPlaybackConfig(variants, tier, adaptive) {
   const variant = selectShakaVariant(variants, tier);
   if (!variant) return null;
   const bandwidth = Number(variant.bandwidth) || null;
-  if (!adaptive) {
-    return { abrEnabled: false, variantId: variant.id, variantBandwidth: bandwidth, preferredCodecs: [] };
-  }
   const family = widevineCodecFamily(variantCodec(variant));
+  if (!adaptive) {
+    return { abrEnabled: false, variantId: variant.id, variantBandwidth: bandwidth, codecFamily: family, preferredCodecs: [] };
+  }
+  const t = normalizePlaybackQuality(tier) || 'max';
+  const ceiling = t === 'max' ? null : TIER_CEILING_BPS[t];
   return {
     abrEnabled: true,
     codecFamily: family,
-    preferredCodecs: PREFERRED_ORDER_BY_FAMILY[family] || [],
     variantId: variant.id,
     variantBandwidth: bandwidth,
-    maxBandwidth: bandwidth
+    maxBandwidth: ceiling,
+    preferredCodecs: []
   };
 }
 
@@ -141,14 +150,14 @@ function shakaPlaybackConfig(variants, tier, adaptive) {
 // require the module directly).
 const api = {
   PLAYBACK_QUALITY_TIERS,
+  TIER_CEILING_BPS,
   normalizePlaybackQuality,
   widevineCodecFamily,
   WIDEVINE_PLAYABLE_FAMILIES,
   variantPlayable,
   variantsSorted,
   selectShakaVariant,
-  shakaPlaybackConfig,
-  PREFERRED_ORDER_BY_FAMILY
+  shakaPlaybackConfig
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof globalThis !== 'undefined') globalThis.ParachordWidevineQuality = api;
