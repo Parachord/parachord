@@ -78,6 +78,7 @@ const sharedGlobals = {
   MessageChannel: 'readonly',
   EventSource: 'readonly',
   MediaSource: 'readonly',
+  MediaError: 'readonly',
   Blob: 'readonly',
   File: 'readonly',
   FormData: 'readonly',
