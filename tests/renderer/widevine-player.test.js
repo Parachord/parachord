@@ -256,8 +256,9 @@ describe('applyConfig shaping', () => {
     const p = sh.playerInstances[0];
     const adaptive = p.configureCalls.find((c) => c.abr && c.abr.enabled === true);
     expect(adaptive).toBeDefined();
-    // preferredAudioCodecs is TOP-LEVEL — never nested under streaming
-    expect(adaptive.preferredAudioCodecs).toEqual(['flac']);
+    // preferredAudioCodecs is TOP-LEVEL (never nested under streaming)
+    // and a PREFERENCE ORDER, never a closed whitelist
+    expect(adaptive.preferredAudioCodecs).toEqual(['flac', 'opus', 'mp4a']);
     expect(adaptive.streaming && adaptive.streaming.preferredAudioCodecs).toBeUndefined();
     expect(adaptive.abr.restrictions.maxBandwidth).toBe(1902230);
     expect(adaptive.abr.defaultBandwidthEstimate).toBe(1902230);

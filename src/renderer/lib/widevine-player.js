@@ -213,14 +213,17 @@ function applyConfig(config) {
     // it. Instead of selectVariantTrack (which trips Shaka's "selected track
     // will be overridden" advisory when ABR is enabled), the manager starts
     // at the tier's rung via defaultBandwidthEstimate and roams ≤ ceiling.
+    // Order never closes: preferredAudioCodecs as a RANKED preference keeps
+    // Shaka's full roster selectable (a closed-family list filters
+    // getVariantTracks and stranded family switches mid-play).
     player.configure({
-      // Shaka's preferredAudioCodecs expects codec PREFIXES ('mp4a' not 'aac').
-      preferredAudioCodecs: config.codecFamily ? [config.codecFamily === 'aac' ? 'mp4a' : config.codecFamily] : [],
+      preferredAudioCodecs: config.preferredCodecs || [],
       abr: { enabled: true, restrictions, defaultBandwidthEstimate: config.variantBandwidth || undefined }
     });
     return;
   }
-  // Top-level key here too (see the adaptive branch — nested it warns and no-ops).
+  // Locked mode: unrestricted variant selection by bandwidth; cross-family
+  // switching happens via explicit selectVariantTrack with clearBuffer.
   player.configure({ abr: { enabled: false }, preferredAudioCodecs: [] });
   if (config.variantBandwidth == null) return;
   let best = null;

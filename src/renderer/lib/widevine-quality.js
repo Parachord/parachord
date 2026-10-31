@@ -103,23 +103,34 @@ function selectShakaVariant(variants, tier) {
   return under.length ? under[0] : sorted[sorted.length - 1];
 }
 
-// The player's Shaka configuration for (tier, adaptive): a locked variant, or
-// ABR within the tier's CODEC FAMILY capped at its bandwidth. The family pin
-// is deliberate: Shaka's ABR never crosses opus↔FLAC boundaries mid-stream
-// (a codec switch needs a SourceBuffer reload, which its smooth-switch ABR
-// won't do), so without it ABR parks on the top rung of whatever family the
-// initial estimate picked (observed live: 'max' stuck at 325k opus with a
-// 163 Mbps estimate). Returns null when nothing is playable.
+// The player's Shaka configuration for (tier, adaptive). Locked stays on the
+// tier's rung (exact variant, no roaming). Adaptive: ABR capped at the tier
+// ceiling — and the family influence is expressed as a PREFERENCE ORDER never
+// a whitelist. preferredAudioCodecs filters Shaka's getVariantTracks into a
+// closed-family roster, which broke live family switching (start max with
+// ['flac'] pinned: asking for 'high' mid-play found ONLY the flac rungs
+// left, observed as stage2 flac-1062 instead of the opus the tier means).
+// Order, never close: ['flac','opus','mp4a'] means prefer-lossless-then-lossy
+// but Shaka still sees the full variant catalog, and an explicit selection
+// (or a later mid-play tier change) can always swap families.
+const PREFERRED_ORDER_BY_FAMILY = {
+  flac: ['flac', 'opus', 'mp4a'],
+  opus: ['opus', 'mp4a'],
+  aac: ['mp4a']
+};
+
 function shakaPlaybackConfig(variants, tier, adaptive) {
   const variant = selectShakaVariant(variants, tier);
   if (!variant) return null;
   const bandwidth = Number(variant.bandwidth) || null;
   if (!adaptive) {
-    return { abrEnabled: false, variantId: variant.id, variantBandwidth: bandwidth };
+    return { abrEnabled: false, variantId: variant.id, variantBandwidth: bandwidth, preferredCodecs: [] };
   }
+  const family = widevineCodecFamily(variantCodec(variant));
   return {
     abrEnabled: true,
-    codecFamily: widevineCodecFamily(variantCodec(variant)),
+    codecFamily: family,
+    preferredCodecs: PREFERRED_ORDER_BY_FAMILY[family] || [],
     variantId: variant.id,
     variantBandwidth: bandwidth,
     maxBandwidth: bandwidth
@@ -136,7 +147,8 @@ const api = {
   variantPlayable,
   variantsSorted,
   selectShakaVariant,
-  shakaPlaybackConfig
+  shakaPlaybackConfig,
+  PREFERRED_ORDER_BY_FAMILY
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof globalThis !== 'undefined') globalThis.ParachordWidevineQuality = api;
