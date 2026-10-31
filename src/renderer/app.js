@@ -645,6 +645,7 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
+const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -3294,6 +3295,7 @@ const Parachord = () => {
   });
   const amazonManageInFlightRef = useRef(null);
   const amazonManageDeclinedUntilRef = useRef(0);
+  const amazonSignInHiccupRef = useRef({ firstAt: 0, lastAt: 0 }); // not-signed-in while the cookies say signed in (amazon-signin-prompt.js)
   const [preferredSpotifyDeviceId, setPreferredSpotifyDeviceId] = useState(null);
   const preferredSpotifyDeviceIdRef = useRef(null);
 
@@ -7103,6 +7105,25 @@ const Parachord = () => {
         showToast('This Parachord build has no Widevine CDM, so Amazon Music cannot play.', 'error');
         return false;
       }
+      // A not-signed-in while the auth cookies say the session is live is
+      // usually Amazon's periodic session-token refresh catching a page load:
+      // retry quietly instead of prompting. Only a streak lasting a minute
+      // (most likely the profile picker) prompts. Settings' Sign in button
+      // passes forcePrompt and always gets the window.
+      if (!opts.forcePrompt) {
+        const verdict = amazonSignInPromptDecision({
+          reason: opts.reason,
+          cookiesSignedIn: !!(status && status.web && status.web.signedIn),
+          streak: amazonSignInHiccupRef.current,
+          now: Date.now()
+        });
+        amazonSignInHiccupRef.current = verdict.streak;
+        if (!verdict.prompt) {
+          console.log('[Amazon] not signed in, but the session cookies are live: retrying quietly instead of prompting');
+          await new Promise(r => setTimeout(r, 2000));
+          return true;
+        }
+      }
       const granted = await new Promise((resolve) => {
         setAmazonManageDialog({ show: true, onResolve: resolve, relaunching: false });
       });
@@ -7115,6 +7136,7 @@ const Parachord = () => {
       setAmazonManageDialog({ show: false, onResolve: null, relaunching: false });
       refreshAmazonMusicStatus();
       if (login && login.signedIn) {
+        amazonSignInHiccupRef.current = { firstAt: 0, lastAt: 0 };
         showToast('Signed in to Amazon Music', 'success');
         if (typeof window.__parachordClearAmazonNoMatch === 'function') window.__parachordClearAmazonNoMatch();
         return true;
@@ -52008,7 +52030,7 @@ useEffect(() => {
                   }, 'Sign out')
                 : React.createElement('button', {
                     onClick: async () => {
-                      const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in' });
+                      const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true });
                       if (ok) {
                         const s = await window.electron.amazonMusic.getStatus().catch(() => null);
                         if (s && s.success) setAmazonMusicStatus(s);
