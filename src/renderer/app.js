@@ -3213,6 +3213,13 @@ const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) =>
 
 const Parachord = () => {
   // Spinoff mode - radio-like playback of similar tracks
+  const [spinoffMode, setSpinoffMode] = useState(false);
+  const spinoffModeRef = useRef(false); // Ref for spinoff mode to avoid stale closures in handleNext
+  const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
+  const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
+  const [spinoffLoading, setSpinoffLoading] = useState(false);
+  const [spinoffAvailable, setSpinoffAvailable] = useState(null); // null = unchecked, true/false = checked
+  // Spinoff mode - radio-like playback of similar tracks
   // (playback engine states + spinoff cluster moved into
   // src/renderer/hooks/use-playback-engine.js — slice 3)
   // Album art crossfade state for smooth transitions in playbar
@@ -7160,12 +7167,7 @@ const Parachord = () => {
   // Cache for album art URLs (releaseId -> { url, timestamp })
   const albumArtCache = useRef({});
 
-  const [spinoffMode, setSpinoffMode] = useState(false);
-  const spinoffModeRef = useRef(false); // Ref for spinoff mode to avoid stale closures in handleNext
-  const [spinoffSourceTrack, setSpinoffSourceTrack] = useState(null); // { title, artist } of original track
-  const spinoffSourceTrackRef = useRef(null); // Ref for source track to avoid stale closures
-  const [spinoffLoading, setSpinoffLoading] = useState(false);
-  const [spinoffAvailable, setSpinoffAvailable] = useState(null); // null = unchecked, true/false = checked
+
 
   // Volume state domain — extracted to src/renderer/hooks/use-volume
   // (Track 2b slice 1, parachord#1098). The destructured names are identical
