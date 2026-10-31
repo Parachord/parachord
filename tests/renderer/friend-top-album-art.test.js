@@ -9,11 +9,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { listenBrainzStatsCoverUrl } = require('../../src/renderer/lib/listenbrainz-cover');
+const { listenBrainzCoverUrl } = require('../../src/renderer/lib/listenbrainz-cover');
 
-describe('listenBrainzStatsCoverUrl', () => {
+describe('listenBrainzCoverUrl', () => {
   test('builds the Cover Art Archive URL for the release ListenBrainz counted', () => {
-    expect(listenBrainzStatsCoverUrl({
+    expect(listenBrainzCoverUrl({
       release_name: '(What’s the Story) Morning Glory?',
       caa_id: 39250165476,
       caa_release_mbid: 'ed286309-6e64-48e3-835b-61aaf86cdb86'
@@ -21,10 +21,10 @@ describe('listenBrainzStatsCoverUrl', () => {
   });
 
   test('no caa_id means no known front image, so no URL', () => {
-    expect(listenBrainzStatsCoverUrl({ caa_id: null, caa_release_mbid: 'ed286309-6e64-48e3-835b-61aaf86cdb86' })).toBeNull();
-    expect(listenBrainzStatsCoverUrl({ caa_id: 39250165476, caa_release_mbid: null })).toBeNull();
-    expect(listenBrainzStatsCoverUrl({})).toBeNull();
-    expect(listenBrainzStatsCoverUrl(undefined)).toBeNull();
+    expect(listenBrainzCoverUrl({ caa_id: null, caa_release_mbid: 'ed286309-6e64-48e3-835b-61aaf86cdb86' })).toBeNull();
+    expect(listenBrainzCoverUrl({ caa_id: 39250165476, caa_release_mbid: null })).toBeNull();
+    expect(listenBrainzCoverUrl({})).toBeNull();
+    expect(listenBrainzCoverUrl(undefined)).toBeNull();
   });
 });
 
@@ -38,7 +38,7 @@ describe('app.js wiring', () => {
 
   test('the ListenBrainz branch takes its cover from the stats payload', () => {
     const body = sliceFrom('const loadFriendTopAlbums = async', 'const FRIEND_TOP_ALBUM_ART_CONCURRENCY');
-    expect(body).toMatch(/image: listenBrainzStatsCoverUrl\(release\)/);
+    expect(body).toMatch(/image: listenBrainzCoverUrl\(release\)/);
     expect(body).not.toMatch(/image: null/);
   });
 
