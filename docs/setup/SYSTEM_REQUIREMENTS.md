@@ -77,7 +77,7 @@ Building Parachord from source has the following additional requirements on all 
 |---|---|
 | **Node.js** | v22 or newer to build and run; v24.9 or newer to run the test suite (CI builds on 22, tests on 24) |
 | **npm** | Bundled with Node.js |
-| **C/C++ toolchain** | Required for `better-sqlite3` native addon compilation |
+| **C/C++ toolchain** | Not needed. `better-sqlite3`, the only native module, ships prebuilt binaries (Linux x64/arm64 glibc and musl, macOS, Windows). macOS release builds need the Xcode Command Line Tools for the Swift MusicKit helper |
 | **Electron** | Package fetched by `npm install` from [castlabs' GitHub releases](https://github.com/castlabs/electron-releases) (not the npm registry); the ~100 MB binary downloads on the first `npm start`. See the README for why stock Electron is not a substitute |
 | **Python 3 + `castlabs-evs`** | Only to VMP-sign a local build; CI does this for releases |
 
@@ -86,20 +86,7 @@ Building Parachord from source has the following additional requirements on all 
 **macOS:**
 - Xcode Command Line Tools (`xcode-select --install`); they also provide the Swift toolchain that `npm run build:mac` uses to compile the MusicKit helper in `native/musickit-helper/`
 
-**Windows:**
-- Visual Studio Build Tools with the "Desktop development with C++" workload, or `npm install -g windows-build-tools`
-- Python 3 (usually bundled with Visual Studio Build Tools)
-
-**Linux (Debian/Ubuntu):**
-```bash
-sudo apt install build-essential python3
-```
-
-**Linux (Fedora/RHEL):**
-```bash
-sudo dnf groupinstall "Development Tools"
-sudo dnf install python3
-```
+**Windows and Linux:** none. Nothing is compiled; see the C/C++ toolchain row above. Packaging for a Linux distribution is covered in [LINUX_PACKAGING.md](LINUX_PACKAGING.md).
 
 ## Network Requirements
 
