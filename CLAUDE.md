@@ -103,6 +103,8 @@ This applies to issue triage, PR review, RFC discussion, and any other contribut
 
 ## Mobile parity — proactively file the Android ticket
 
+**Every bug fix or behavior change ends with the question.** Before you call one done, ask whether the mobile app may need the same fix or change, and if it might, ask the user whether to write a mobile ticket. Check the mobile code first when you can (a bug desktop just fixed is often still live there), and say what you found. Don't skip the question because the change looks desktop-sized; the exclusions below are the only reasons not to ask.
+
 When desktop ships a new feature or architectural change that the Android client at [Parachord/parachord-mobile](https://github.com/Parachord/parachord-mobile) needs for parity, **offer to file a mobile ticket as part of the same workflow**. Don't wait to be asked; surface the question proactively, then file once the user confirms (or just file it if they've already said "and write a mobile issue" / similar). The Android side has its own agent operating in a separate repo — the issue is the handoff.
 
 ### When this applies
