@@ -349,34 +349,12 @@ const DEBUG_RESOLUTION = false;
 // downsample with ffmpeg, which was wrong advice: a FLAC or WAV that fails
 // here is damaged, truncated, or an unusual variant, not "too hi-res".
 // AIFF, WMA, ALAC, APE and DSD genuinely have no decoder.
-const unsupportedAudioMessage = (ext) => {
-  const e = (ext || '').toLowerCase();
-  if (e === 'flac' || e === 'wav') {
-    return `This ${e.toUpperCase()} file could not be decoded. It may be damaged, incompletely downloaded, or an unusual variant of the format. Hi-res files (24-bit, up to 192 kHz) are supported, so there is no need to downsample; try re-ripping or re-downloading it.`;
-  }
-  if (e === 'mp3') {
-    return 'This MP3 file appears corrupted or uses an unsupported variant. Try re-encoding it with a standard MP3 encoder.';
-  }
-  if (e === 'ogg' || e === 'oga' || e === 'opus' || e === 'aac' || e === 'm4a') {
-    return `This ${e.toUpperCase()} file is corrupted or uses an unsupported variant. Try converting it to FLAC or MP3.`;
-  }
-  if (e === 'wma' || e === 'aiff' || e === 'aif' || e === 'alac' || e === 'ape' || e === 'dsf' || e === 'dff') {
-    return `${e.toUpperCase()} is not supported by the built-in player. Convert it to FLAC (lossless) or MP3.`;
-  }
-  return `This ${e ? e.toUpperCase() : 'audio'} file uses an unsupported format. Try converting it to FLAC or MP3.`;
-};
 
 // Subsonic auth is a token+salt in the query string, replayable until the
 // password changes. Search must not return those URLs. This drops any an
 // older resolve already wrote onto a track or source record so a play does
 // not copy them onto the saved queue.
-function dropSubsonicSecrets(record) {
-  if (!record || typeof record !== 'object') return;
-  delete record.subsonicStreamUrl;
-  if (typeof record.albumArt === 'string' && record.albumArt.includes('/rest/getCoverArt')) {
-    delete record.albumArt;
-  }
-}
+
 
 // Exact ISRC → recording-MBID lookup via MusicBrainz core (/ws/2/isrc/{isrc}).
 // Mobile parity (parachord-mobile@51c6cc1, design doc
@@ -1161,6 +1139,7 @@ const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
+const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds } = require('./lib/playback-helpers');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistListenbrainzMbid } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
@@ -3231,12 +3210,7 @@ const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) =>
 // Album rows from MusicBrainz carry `length` in milliseconds and no
 // `duration`. The playbar and the Amazon poller both want seconds. A resolver
 // duration of 0 must not wipe that length.
-function playbackDurationSeconds(source, track) {
-  const direct = Number(source && source.duration) || Number(track && track.duration) || 0;
-  if (direct > 0) return direct;
-  const length = Number(track && track.length) || Number(source && source.length) || 0;
-  return length > 0 ? Math.max(1, Math.round(length / 1000)) : 0;
-}
+
 
 const Parachord = () => {
   // Spinoff mode - radio-like playback of similar tracks
@@ -7770,6 +7744,16 @@ const Parachord = () => {
       setSchedulerPlaybackIndexRef,
     },
   };
+  // Smooth progress interpolation for Spotify tracks
+  // API polling happens every 5 seconds, but we want smooth 1-second visual updates
+  // The baseline is ONLY set by API polls (in getCurrentPlaybackState), not by this effect
+  const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
+
+  // Amazon Music polling interpolation baseline
+  // The Amazon Music poller (main process) reports position every 2s; interpolate
+  // between polls for a smooth progress bar (same pattern as Spotify/Apple Music).
+  const amazonMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
+
   const {
     handlePlay,
     handleNext,
@@ -12694,20 +12678,12 @@ ${trackListXml}
     }
   }, [isPlaying, audioContext, currentTrack, startTime, browserPlaybackActive, isExternalPlayback]);
 
-  // Smooth progress interpolation for Spotify tracks
-  // API polling happens every 5 seconds, but we want smooth 1-second visual updates
-  // The baseline is ONLY set by API polls (in getCurrentPlaybackState), not by this effect
-  const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
 
   // Apple Music native MusicKit polling interpolation baseline
   // Native MusicKit polls every 5 seconds from the main process. This baseline allows
   // smooth 1-second interpolation between polls (same pattern as Spotify).
   const appleMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
 
-  // Amazon Music polling interpolation baseline
-  // The Amazon Music poller (main process) reports position every 2s; interpolate
-  // between polls for a smooth progress bar (same pattern as Spotify/Apple Music).
-  const amazonMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
 
   useEffect(() => {
     // Only run interpolation if we're actually playing via Spotify

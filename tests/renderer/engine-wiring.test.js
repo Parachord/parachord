@@ -126,3 +126,118 @@ describe('engine + volume call-surface completeness', () => {
     expect(volumeArgs).toContain('isPlayingRef,');
   });
 });
+
+
+describe('every engine-call argument is declared above the call (the spotifyProgressBaselineRef boot crash, maintained)', () => {
+  const espree = require('espree');
+  const fsAst = require('fs');
+  const pathAst = require('path');
+  const appSource = fsAst.readFileSync(pathAst.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+
+  function parseApp() {
+    return espree.parse(appSource, { ecmaVersion: 2022, sourceType: 'script', loc: true });
+  }
+
+  function findCallNode(program) {
+    let found = null;
+    function walk(node) {
+      if (!node || typeof node !== 'object' || found) return;
+      if (Array.isArray(node)) { for (const n of node) walk(n); return; }
+      if (node.type === 'VariableDeclarator' && node.init && node.init.type === 'CallExpression'
+          && node.init.callee && node.init.callee.name === 'usePlaybackEngine') {
+        found = node;
+        return;
+      }
+      for (const k of Object.keys(node)) walk(node[k]);
+    }
+    walk(program);
+    return found;
+  }
+
+  function topLevelDeclPositions(program) {
+    // map: name → line of the top-level (module-body or Parachord-body) declaration
+    const decls = new Map();
+    const body = program.body;
+    const parachord = body.find((n) => n.type === 'VariableDeclaration'
+      && n.declarations.some((d) => d.id.type === 'Identifier' && d.id.name === 'Parachord'));
+    const innerBody = (parachord && parachord.declarations[0].init && parachord.declarations[0].init.body && parachord.declarations[0].init.body.body) || [];
+    const scanTargets = [body, innerBody];
+    for (const stmts of scanTargets) {
+      if (!Array.isArray(stmts)) continue;
+      for (const stmt of stmts) {
+        if (stmt.type === 'VariableDeclaration') {
+          for (const d of stmt.declarations) {
+            if (d.id.type === 'Identifier' && !decls.has(d.id.name)) decls.set(d.id.name, stmt.loc.start.line);
+            else if (d.id.type === 'ObjectPattern' || d.id.type === 'ArrayPattern') {
+              const entries = d.id.properties || d.id.elements || [];
+              for (const p of entries) {
+                const key = p && (p.value ? p.value.name : p.name);
+                if (key && !decls.has(key)) decls.set(key, stmt.loc.start.line);
+              }
+            }
+          }
+        } else if (stmt.type === 'FunctionDeclaration' && stmt.id && !decls.has(stmt.id.name)) {
+          decls.set(stmt.id.name, stmt.loc.start.line);
+        }
+      }
+    }
+    return decls;
+  }
+
+  const GLOBALS = new Set(['window', 'document', 'console', 'Object', 'Array', 'Map', 'Set', 'Promise', 'JSON', 'Math', 'Date',
+    'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'URL', 'URLSearchParams', 'undefined', 'null', 'true', 'false', 'window_electron']);
+
+  test('AST audit: every identifier referenced by ctx and the call args is declared above the call', () => {
+    const program = parseApp();
+    const callNode = findCallNode(program);
+    expect(callNode).not.toBeNull();
+    const decls = topLevelDeclPositions(program);
+    const callLine = callNode.init.loc.start.line;
+    const argObject = callNode.init.arguments[0];
+    expect(argObject && argObject.type).toBe('ObjectExpression');
+
+    // identifiers referenced in ctx's inner object + the outer call args, VALUES only
+    const scopes = [];
+    for (const prop of argObject.properties) {
+      if (prop.type !== 'Property') continue;
+      if (prop.key.name === 'ctx' && prop.value.type === 'ObjectExpression') {
+        for (const slot of prop.value.properties) {
+          if (slot.value.type === 'ObjectExpression') scopes.push(...slot.value.properties);
+          else scopes.push(slot);
+        }
+      } else {
+        scopes.push(prop);
+      }
+    }
+
+    const offenders = [];
+    for (const prop of scopes) {
+      const stack = [prop.value];
+      // include shorthand's key-name binding too
+      if (prop.shorthand && prop.key.type === 'Identifier') {
+        const name = prop.key.name;
+        const line = decls.get(name);
+        if (line === undefined && !GLOBALS.has(name)) offenders.push(`${name} (unresolved in Parachord top level)`);
+        else if (line !== undefined && line >= callLine) offenders.push(`${name} (decl line ${line} >= call line ${callLine})`);
+      }
+      while (stack.length) {
+        const node = stack.pop();
+        if (!node || typeof node !== 'object') continue;
+        if (Array.isArray(node)) { stack.push(...node); continue; }
+        if (node.type === 'Identifier') {
+          const name = node.name;
+          const line = decls.get(name);
+          if (line === undefined) {
+            if (!GLOBALS.has(name)) offenders.push(`${name} (unresolved in Parachord top level)`);
+          } else if (line >= callLine) {
+            offenders.push(`${name} (decl line ${line} >= call line ${callLine})`);
+          }
+        } else if (node.type === 'MemberExpression') { stack.push(node.object); } // skip property paths
+        else if (node.type === 'ObjectExpression') { /* keys irrelevant */ for (const p of node.properties) stack.push(p.value); }
+        else { for (const k of Object.keys(node)) { if (k !== 'parent') stack.push(node[k]); } }
+      }
+    }
+
+    expect([...new Set(offenders)]).toEqual([]);
+  });
+});

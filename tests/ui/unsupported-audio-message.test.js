@@ -7,15 +7,7 @@
  * people off to throw away resolution. This extracts and runs the real source.
  */
 
-const fs = require('fs');
-const path = require('path');
-
-const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8') +
-  fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
-
-const start = app.indexOf('const unsupportedAudioMessage = ');
-const end = app.indexOf('\n};\n', start);
-const unsupportedAudioMessage = new Function(`${app.slice(start, end + 3)}\nreturn unsupportedAudioMessage;`)();
+const { unsupportedAudioMessage } = require('../../src/renderer/lib/playback-helpers');
 
 const FALSE_LIMITS = [/16-bit/i, /44\.1/, /48 ?kHz/i, /sample_fmt/, /-ar \d/, /high sample rate/i];
 

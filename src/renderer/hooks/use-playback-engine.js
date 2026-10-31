@@ -31,6 +31,7 @@
 
 const { isOtherVersion } = require('../lib/track-variants');
 const { sourceBlockId } = require('../lib/bad-match-report');
+const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds } = require('../lib/playback-helpers');
 
 function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   volume,        // useVolume's return object
@@ -172,6 +173,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
   // showToast/scheduling are declared below the ctx literal too — same
   // late-function bridge idiom as the art-cluster refs.
+  // NOTE: the bridge refs below are Parachord-owned and start `null` —
+  // they're synced by the app-side effect block (~L15685), which runs on
+  // first commit AFTER the engine's own effects. Nothing engine-internal
+  // calls through them on mount today, but an app-side effect added between
+  // the engine call and that block that synchronously invokes one of these
+  // would hit `null.apply`. Keep engine effect-time calls going through the
+  // wrappers only where the call happens post-commit.
   const showToast = (...args) => showToastRef.current.apply(null, args);
   const updateSchedulerVisibility = (...args) => updateSchedulerVisibilityRef.current.apply(null, args);
   const abortSchedulerContext = (...args) => abortSchedulerContextRef.current.apply(null, args);
@@ -937,8 +945,7 @@ function playbackDurationSeconds(source, track) {
       // Mirrors Android's ResolverScoring.MIN_CONFIDENCE_THRESHOLD.
       .filter(s => s.confidence >= MIN_CONFIDENCE_THRESHOLD)
       .filter(s => {  // Filter blocklisted specific source results
-        const src = s.source;
-        const srcId = sourceBlockId(s.source);
+              const srcId = sourceBlockId(s.source);
         return !currentBlocklist.some(entry =>
           entry.resolverId === s.resolverId &&
           entry.artist === trackArtistNorm &&
@@ -3286,12 +3293,6 @@ function playbackDurationSeconds(source, track) {
     insertedTrackId: insertedTrackIdState[0],
     setInsertedTrackId,
     resolveSpinoffSeed,
-    spinoffMode,
-    setSpinoffMode,
-    spinoffModeRef,
-    spinoffSourceTrack,
-    setSpinoffSourceTrack,
-    spinoffSourceTrackRef,
       };
 }
 
