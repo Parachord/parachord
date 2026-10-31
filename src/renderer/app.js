@@ -625,7 +625,7 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
-const { listenBrainzStatsCoverUrl } = require('./lib/listenbrainz-cover');
+const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -27457,10 +27457,7 @@ Return ONLY the JSON array, no other text.`;
       return tracks.map((track, index) => {
         const ext = track.extension?.['https://musicbrainz.org/doc/jspf#track'];
         const addlMeta = ext?.additional_metadata || {};
-        const caaReleaseMbid = addlMeta.caa_release_mbid;
-        const albumArt = caaReleaseMbid
-          ? `https://coverartarchive.org/release/${caaReleaseMbid}/front-250`
-          : null;
+        const albumArt = listenBrainzCoverUrl(addlMeta);
         return {
           id: track.identifier?.[0]?.split('/').pop() || `weekly-jam-${playlistId}-${index}`,
           title: track.title || 'Unknown Track',
@@ -28580,7 +28577,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             artist: listen.track_metadata?.artist_name || 'Unknown Artist',
             album: listen.track_metadata?.release_name || null,
             timestamp: listen.listened_at ? listen.listened_at * 1000 : null,
-            albumArt: null // ListenBrainz doesn't provide album art in listens - will be fetched via getAlbumArt
+            // The cover ListenBrainz matched; without one, fetched via getAlbumArt
+            albumArt: listenBrainzCoverUrl(listen.track_metadata?.mbid_mapping)
           },
           hidesListening: null
         };
@@ -29609,7 +29607,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           title: listen.track_metadata?.track_name || 'Unknown Track',
           artist: listen.track_metadata?.artist_name || 'Unknown Artist',
           album: listen.track_metadata?.release_name || null,
-          albumArt: null,
+          albumArt: listenBrainzCoverUrl(listen.track_metadata?.mbid_mapping),
           timestamp: listen.listened_at ? listen.listened_at * 1000 : Date.now(),
           nowPlaying: false,
           sources: {}
@@ -29839,7 +29837,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           id: `friend-top-album-${index}-${release.release_name}`.replace(/\s+/g, '-'),
           name: release.release_name || 'Unknown Album',
           artist: release.artist_name || 'Unknown Artist',
-          image: listenBrainzStatsCoverUrl(release),
+          image: listenBrainzCoverUrl(release),
           playCount: release.listen_count || 0,
           rank: index + 1
         }));
@@ -29973,7 +29971,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       title: listen.track_metadata?.track_name || 'Unknown Track',
       artist: listen.track_metadata?.artist_name || 'Unknown Artist',
       album: listen.track_metadata?.release_name || null,
-      albumArt: null, // ListenBrainz doesn't provide album art directly
+      albumArt: listenBrainzCoverUrl(listen.track_metadata?.mbid_mapping), // null → filled via getAlbumArt
       playedAt: listen.listened_at ? listen.listened_at * 1000 : null, // Convert to ms
       nowPlaying: listen.playing_now || false,
       sources: {},
