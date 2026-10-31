@@ -5749,6 +5749,7 @@ const Parachord = () => {
   const getResolverConfigRef = useRef(null);
   // Friend function refs (for use in early useEffects before functions are defined)
   const navigateToFriendRef = useRef(null);
+  const loadPlaylistRef = useRef(null);
   const pinFriendRef = useRef(null);
   const unpinFriendRef = useRef(null);
   const removeFriendRef = useRef(null);
@@ -8597,7 +8598,6 @@ const Parachord = () => {
       const firstTrack = tracks[0];
       setPlaybackContext(context);
       setCurrentTrack(firstTrack);
-      setPlaybackSource(null); // eslint-disable-line no-undef -- pre-existing: no playbackSource state exists — throws when queueing into an idle player
     }
 
     showToast(`Added ${tracks.length} tracks from "${playlistName}"`, 'success');
@@ -8715,7 +8715,6 @@ const Parachord = () => {
         const firstTrack = tracks[0];
         setPlaybackContext(albumContext);
         setCurrentTrack(firstTrack);
-        setPlaybackSource(null); // eslint-disable-line no-undef -- pre-existing: no playbackSource state exists — throws when queueing into an idle player
       }
 
       showToast(`Added ${tracks.length} tracks from "${albumTitle}"`, 'success');
@@ -11385,16 +11384,14 @@ const Parachord = () => {
                 f.name?.toLowerCase() === friendId.toLowerCase()
               );
               if (friend) {
-                setSelectedFriend(friend); // eslint-disable-line no-undef -- pre-existing: no selectedFriend state — parachord://friend/<id> throws here
-                setActiveView('friendHistory');
-                if (tab) {
-                  const tabMap = {
-                    'top-tracks': 'topTracks',
-                    'top-artists': 'topArtists',
-                    'recent': 'recent'
-                  };
-                  if (tabMap[tab]) setFriendHistoryTab(tabMap[tab]);
-                }
+                // Same path as clicking the friend in the UI — navigateToFriend
+                // sets the tab and loads that tab's data. Unknown tab → 'recent'.
+                const tabMap = {
+                  'top-tracks': 'topTracks',
+                  'top-artists': 'topArtists',
+                  'recent': 'recent'
+                };
+                navigateToFriendRef.current(friend, tab ? tabMap[tab] : undefined);
               } else {
                 showToast(`Friend not found: ${friendId}`);
               }
@@ -11446,8 +11443,7 @@ const Parachord = () => {
             if (playlistId) {
               const playlist = playlists.find(p => p.id === playlistId || p.name === playlistId);
               if (playlist) {
-                setCurrentPlaylist(playlist); // eslint-disable-line no-undef -- pre-existing: no currentPlaylist state — parachord://playlist/<id> throws here
-                setActiveView('playlist-view');
+                loadPlaylistRef.current(playlist); // same path as a sidebar click
               } else {
                 showToast(`Playlist not found: ${playlistId}`);
               }
@@ -19667,8 +19663,7 @@ ${trackListXml}
                         if (segments[0]) {
                           const playlist = playlists.find(p => p.id === segments[0] || p.name === segments[0]);
                           if (playlist) {
-                            setCurrentPlaylist(playlist); // eslint-disable-line no-undef -- pre-existing: no currentPlaylist state — parachord://playlist/<id> throws here
-                            setActiveView('playlist-view');
+                            loadPlaylistRef.current(playlist); // same path as a sidebar click
                           }
                         }
                         break;
@@ -23489,8 +23484,7 @@ ${trackListXml}
           if (medium.tracks) {
             medium.tracks.forEach(track => {
               const trackId = trackSlug(artistName, track.title || 'untitled', album.title || 'noalbum');
-              // Get album art - could be on album.albumArt (quick search) or in searchAlbumArt state (detail view)
-              const albumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null; // eslint-disable-line no-undef -- typeof-guarded, never throws; searchAlbumArt is not declared anywhere (dead branch)
+              const albumArt = album.albumArt || null;
               tracks.push({
                 id: trackId,
                 position: track.position,
@@ -23507,8 +23501,7 @@ ${trackListXml}
         });
       }
 
-      // Get album art - could be on album.albumArt (quick search) or in searchAlbumArt state (detail view)
-      const cachedAlbumArt = album.albumArt || (typeof searchAlbumArt !== 'undefined' ? searchAlbumArt[album.id] : null) || null; // eslint-disable-line no-undef -- typeof-guarded, never throws; searchAlbumArt is not declared anywhere (dead branch)
+      const cachedAlbumArt = album.albumArt || null;
 
       // Cache the prefetched tracks using the release-group ID
       setPrefetchedReleases(prev => ({
@@ -32413,13 +32406,20 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Navigate to friend's history view
-  const navigateToFriend = (friend) => {
+  // Navigate to friend's history view. tabKey mirrors the tab bar of that
+  // view ('recent' | 'topTracks' | 'topAlbums' | 'topArtists'); anything
+  // else falls back to 'recent'. Loads the selected tab's data, same as a
+  // tab click in the UI.
+  const navigateToFriend = (friend, tabKey = 'recent') => {
+    const tab = ['recent', 'topTracks', 'topAlbums', 'topArtists'].includes(tabKey) ? tabKey : 'recent';
     setCurrentFriend(friend);
-    setFriendHistoryTab('recent');
+    setFriendHistoryTab(tab);
     setFriendHistoryData({ recent: [], topTracks: [], topAlbums: [], topArtists: [] });
     navigateTo('friendHistory');
-    loadFriendRecentTracks(friend);
+    if (tab === 'recent') loadFriendRecentTracks(friend);
+    else if (tab === 'topTracks') loadFriendTopTracks(friend);
+    else if (tab === 'topAlbums') loadFriendTopAlbums(friend);
+    else loadFriendTopArtists(friend);
   };
   navigateToFriendRef.current = navigateToFriend;
 
@@ -34855,6 +34855,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setPlaylistTracks([]);
     }
   };
+  loadPlaylistRef.current = loadPlaylist;
 
   // Keep queue in sync with playlistTracks as they get resolved
   // This ensures queue items get their sources updated without re-setting the entire queue
