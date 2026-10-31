@@ -66,6 +66,14 @@ done
 
 echo "PNG icons generated."
 
+# Linux icon set (package.json build.linux.icon). electron-builder reads only
+# NxN.png names from an icon directory; with none it ships Electron's icon.
+mkdir -p "$ICONS_DIR/linux"
+for size in 16 32 48 128 256 512 1024; do
+    cp "$ICONS_DIR/icon${size}.png" "$ICONS_DIR/linux/${size}x${size}.png"
+done
+echo "Linux icon set copied to $ICONS_DIR/linux."
+
 # Generate .icns file for macOS
 echo "Generating icon.icns..."
 

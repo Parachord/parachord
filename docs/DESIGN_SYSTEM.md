@@ -358,6 +358,7 @@ Large service logos are stored in the `SERVICE_LOGOS` object (`ui-atoms.js`), si
 Located in `assets/icons/`:
 - `icon.icns` (macOS), `icon.ico` (Windows), `icon-square.svg`
 - PNG sizes: 16, 32, 48, 128, 256, 512, 1024
+- `linux/` — the same PNGs named `16x16.png` … `1024x1024.png`, the Linux package icon set (`build.linux.icon`); `scripts/generate-icons-from-svg.sh` refreshes it
 - `logo-wordmark-white.png` — White wordmark for dark backgrounds
 
 ---
