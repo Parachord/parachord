@@ -1139,7 +1139,6 @@ const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
-const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds } = require('./lib/playback-helpers');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistListenbrainzMbid } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
