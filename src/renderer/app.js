@@ -624,6 +624,7 @@ const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
+const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -11499,13 +11500,10 @@ const Parachord = () => {
               );
               if (friend) {
                 // Same path as clicking the friend in the UI — navigateToFriend
-                // sets the tab and loads that tab's data. Unknown tab → 'recent'.
-                const tabMap = {
-                  'top-tracks': 'topTracks',
-                  'top-artists': 'topArtists',
-                  'recent': 'recent'
-                };
-                navigateToFriendRef.current(friend, tab ? tabMap[tab] : undefined);
+                // sets the tab and period and loads that tab's data. Unknown
+                // tab → 'recent'; ?period= applies to the top tabs only.
+                const link = parseFriendLink(tab, params.period);
+                navigateToFriendRef.current(friend, link.tabKey, link.period);
               } else {
                 showToast(`Friend not found: ${friendId}`);
               }
@@ -29924,17 +29922,21 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Navigate to friend's history view. tabKey mirrors the tab bar of that
   // view ('recent' | 'topTracks' | 'topAlbums' | 'topArtists'); anything
   // else falls back to 'recent'. Loads the selected tab's data, same as a
-  // tab click in the UI.
-  const navigateToFriend = (friend, tabKey = 'recent') => {
+  // tab click in the UI. A period (from a deep link) is set and passed to the
+  // loader explicitly, as the period dropdown does: the loader's default
+  // would read the state from before the update.
+  const navigateToFriend = (friend, tabKey = 'recent', period = null) => {
     const tab = ['recent', 'topTracks', 'topAlbums', 'topArtists'].includes(tabKey) ? tabKey : 'recent';
+    const topPeriod = period || friendHistoryPeriod;
+    if (period) setFriendHistoryPeriod(period);
     setCurrentFriend(friend);
     setFriendHistoryTab(tab);
     setFriendHistoryData({ recent: [], topTracks: [], topAlbums: [], topArtists: [] });
     navigateTo('friendHistory');
     if (tab === 'recent') loadFriendRecentTracks(friend);
-    else if (tab === 'topTracks') loadFriendTopTracks(friend);
-    else if (tab === 'topAlbums') loadFriendTopAlbums(friend);
-    else loadFriendTopArtists(friend);
+    else if (tab === 'topTracks') loadFriendTopTracks(friend, topPeriod);
+    else if (tab === 'topAlbums') loadFriendTopAlbums(friend, topPeriod);
+    else loadFriendTopArtists(friend, topPeriod);
   };
   navigateToFriendRef.current = navigateToFriend;
 
@@ -32138,9 +32140,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       case 'friendHistory': {
         if (currentFriend) {
           const id = currentFriend.username || currentFriend.id || currentFriend.name;
-          const tabMap = { topTracks: 'top-tracks', topArtists: 'top-artists', recent: 'recent' };
-          const seg = tabMap[friendHistoryTab] || '';
-          return `parachord://friend/${encodeURIComponent(id)}${seg ? '/' + seg : ''}`;
+          return buildFriendLink(id, friendHistoryTab, friendHistoryPeriod);
         }
         return 'parachord://home';
       }
