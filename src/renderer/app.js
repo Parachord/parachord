@@ -42596,7 +42596,7 @@ useEffect(() => {
                     }, 'Playback Quality'),
                     React.createElement('p', {
                       style: { fontSize: '12px', color: 'var(--text-secondary)' }
-                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Space/immersive-only variants are never selected.')
+                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/immersive-only variants are never selected.')
                   ),
                   React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '10px', gap: '12px' } },
                     React.createElement('div', null,
@@ -42615,10 +42615,10 @@ useEffect(() => {
                         fontSize: '12px'
                       }
                     },
-                      React.createElement('option', { value: 'max' }, 'Max (lossless when available)'),
-                      React.createElement('option', { value: 'high' }, 'High (best lossy)'),
-                      React.createElement('option', { value: 'balanced' }, 'Balanced (~256 kbps)'),
-                      React.createElement('option', { value: 'low' }, 'Data saver')
+                      React.createElement('option', { value: 'max' }, 'Max (best available, lossless where playable)'),
+                      React.createElement('option', { value: 'high' }, 'High (up to 500 kbps)'),
+                      React.createElement('option', { value: 'standard' }, 'Standard (up to 200 kbps)'),
+                      React.createElement('option', { value: 'saver' }, 'Data saver (up to 100 kbps)')
                     )
                   ),
                   React.createElement('div', { className: 'flex items-center justify-between', style: { gap: '12px' } },
