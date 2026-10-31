@@ -443,14 +443,17 @@ parachord://friend/{id}/{tab?}?period={range}
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `id` | Yes | Friend ID or username |
-| `tab` | No | Tab: `recent`, `top-tracks`, `top-artists` |
-| `period` | No | Time range: `7day`, `1month`, `3month`, `6month`, `12month`, `overall` |
+| `tab` | No | Tab: `recent`, `top-tracks`, `top-albums`, `top-artists` |
+| `period` | No | Time range for the top tabs: `7day`, `1month`, `3month`, `6month`, `12month`, `overall`. Ignored for `recent`, which always shows the latest plays. Without it, the view keeps the period last picked. |
+
+Copy Link on a friend's top tab always includes `period`, so the link reopens at the same range.
 
 **Examples:**
 ```
 parachord://friend/john_doe
 parachord://friend/john_doe/top-tracks
 parachord://friend/jane123/top-artists?period=1month
+parachord://friend/jane123/top-albums?period=overall
 ```
 
 ### Recommendations
