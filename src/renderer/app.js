@@ -625,6 +625,7 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
+const { listenBrainzStatsCoverUrl } = require('./lib/listenbrainz-cover');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -29838,15 +29839,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           id: `friend-top-album-${index}-${release.release_name}`.replace(/\s+/g, '-'),
           name: release.release_name || 'Unknown Album',
           artist: release.artist_name || 'Unknown Artist',
-          image: null,
+          image: listenBrainzStatsCoverUrl(release),
           playCount: release.listen_count || 0,
           rank: index + 1
         }));
       }
 
-      setFriendHistoryData(prev => ({ ...prev, topAlbums: albums }));
+      setFriendHistoryData(prev => ({
+        ...prev,
+        topAlbums: albums.map(a => (a.image ? { ...a, imageLoaded: true } : a))
+      }));
 
-      // Fetch album images in background
+      // Covers for the albums that came without one, in the background
       if (albums.length > 0) {
         resolveFriendTopAlbumImages(albums);
       }
@@ -29858,65 +29862,51 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Resolve friend top album images from Cover Art Archive
-  const resolveFriendTopAlbumImages = async (albums) => {
-    for (const album of albums) {
-      // Skip if already has an image from Last.fm
-      if (album.image) {
-        setFriendHistoryData(prev => ({
-          ...prev,
-          topAlbums: prev.topAlbums.map(a =>
-            a.id === album.id ? { ...a, imageLoaded: true } : a
-          )
-        }));
-        continue;
-      }
+  // Covers for a friend's top albums that arrived without one (Last.fm had
+  // none, or ListenBrainz named no cover). They go through getAlbumArt, THE
+  // album-art pipeline, four albums in flight, and land in state in 250ms
+  // batches. This used to be its own MusicBrainz name search plus a HEAD
+  // request per album, with a full render per album (#1179). A newer load
+  // (another friend or period) bumps the generation, and results from the
+  // older one are dropped: album ids are rank+name, so they can repeat.
+  const FRIEND_TOP_ALBUM_ART_CONCURRENCY = 4;
+  const friendTopAlbumArtGenerationRef = useRef(0);
+  const friendTopAlbumArtWriterRef = useRef(null);
+  if (!friendTopAlbumArtWriterRef.current) {
+    friendTopAlbumArtWriterRef.current = window.createCoalescedUpdater((batch) => {
+      setFriendHistoryData(prev => ({
+        ...prev,
+        topAlbums: prev.topAlbums.map(a => {
+          const ops = batch.get(a.id);
+          if (!ops) return a;
+          const result = window.applyCoalescedOps(undefined, ops);
+          if (result.generation !== friendTopAlbumArtGenerationRef.current) return a;
+          return { ...a, image: result.image || a.image, imageLoaded: true };
+        })
+      }));
+    }, 250);
+  }
 
-      try {
-        // Try to get album art from Cover Art Archive via MusicBrainz
-        const searchUrl = `https://musicbrainz.org/ws/2/release-group?query=release:${encodeURIComponent(album.name)}%20AND%20artist:${encodeURIComponent(album.artist)}&fmt=json&limit=1`;
-        const searchResponse = await fetch(searchUrl, {
-          headers: { 'User-Agent': 'Parachord/1.0 (support@parachord.com)' }
-        });
-
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          const releaseGroup = searchData['release-groups']?.[0];
-
-          if (releaseGroup?.id) {
-            const coverUrl = `https://coverartarchive.org/release-group/${releaseGroup.id}/front-250`;
-            // Check if cover exists
-            const coverResponse = await fetch(coverUrl, { method: 'HEAD' });
-            if (coverResponse.ok) {
-              setFriendHistoryData(prev => ({
-                ...prev,
-                topAlbums: prev.topAlbums.map(a =>
-                  a.id === album.id ? { ...a, image: coverUrl, imageLoaded: true } : a
-                )
-              }));
-              continue;
-            }
-          }
+  const resolveFriendTopAlbumImages = (albums) => {
+    const generation = ++friendTopAlbumArtGenerationRef.current;
+    const writer = friendTopAlbumArtWriterRef.current;
+    const queue = albums.filter(a => !a.image);
+    const worker = async () => {
+      while (queue.length > 0) {
+        if (friendTopAlbumArtGenerationRef.current !== generation) return;
+        const album = queue.shift();
+        let image = null;
+        try {
+          image = await getAlbumArt(album.artist, album.name);
+        } catch (err) {
+          console.error(`Error fetching image for album ${album.name}:`, err);
         }
-
-        // No image found
-        setFriendHistoryData(prev => ({
-          ...prev,
-          topAlbums: prev.topAlbums.map(a =>
-            a.id === album.id ? { ...a, imageLoaded: true } : a
-          )
-        }));
-      } catch (err) {
-        console.error(`Error fetching image for album ${album.name}:`, err);
-        // Mark as loaded even on error so we show the pattern fallback
-        setFriendHistoryData(prev => ({
-          ...prev,
-          topAlbums: prev.topAlbums.map(a =>
-            a.id === album.id ? { ...a, imageLoaded: true } : a
-          )
-        }));
+        // Queued even without a cover, so the card stops shimmering
+        writer.queue(album.id, { generation, image });
       }
-    }
+    };
+    Promise.all(Array.from({ length: Math.min(FRIEND_TOP_ALBUM_ART_CONCURRENCY, queue.length) }, worker))
+      .then(() => writer.flush());
   };
 
   // Navigate to friend's history view. tabKey mirrors the tab bar of that
@@ -41806,13 +41796,22 @@ useEffect(() => {
                               }, albumPattern.initials)
                             ),
                             album.image && React.createElement('img', {
+                              key: album.image,
                               src: album.image,
                               alt: album.name,
                               className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
                               style: { opacity: 0 },
                               ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                               onLoad: (e) => { e.target.style.opacity = '1'; },
-                              onError: (e) => { e.target.style.display = 'none'; }
+                              onError: (e) => {
+                                e.target.style.display = 'none';
+                                retryBrokenListArt(album.image, { artist: album.artist, album: album.name, id: album.id }, (id, fresh) => {
+                                  setFriendHistoryData(prev => ({
+                                    ...prev,
+                                    topAlbums: prev.topAlbums.map(a => (a.id === id ? { ...a, image: fresh } : a))
+                                  }));
+                                });
+                              }
                             }),
                             React.createElement('div', {
                               className: 'absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded text-xs text-white font-medium z-10'
