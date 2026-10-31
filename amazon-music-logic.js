@@ -1,102 +1,11 @@
 // Pure helpers for the Amazon Music resolver. Kept out of main.js so the
-// review fixes (wrong-ASIN play, empty-string match, seek-vs-end, duration
-// units, sign-in page detection) can be tested without Electron.
-
-// The <video> element reports duration in seconds; the poller stores
-// milliseconds. Search-result duration is seconds and is converted by the
-// poller (`duration * 1000`), not here. Do not guess: a "< 1000 means
-// seconds" heuristic turns a 20-minute track reported in seconds into 1.2s,
-// and a short ms value into a multi-minute one.
-function playerDurationMs(raw) {
-  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return 0;
-  return raw;
-}
-
-// Advance only in the last poll window, not 4s early. The app's own
-// autoplay wraps position to ~0; a backward seek does not.
-const NEAR_END_MS = 700;
-const WRAP_POSITION_MS = 2500;
-const FAST_POLL_REMAINING_MS = 8000;
-// A page torn down while paused (element removed after the user paused via
-// media keys and the page idled out) polls EMPTY with lastState PAUSED — dead,
-// unresumable, and previously stuck in {action:'track'} forever. Give the
-// pause a generous grace window (~60s at the 2s cadence), then treat it like
-// any other dead player.
-const EMPTY_WHILE_PAUSED_POLL_LIMIT = 30;
-
-function decidePollAdvance({
-  state,
-  positionMs = 0,
-  durationMs = 0,
-  lastPositionMs = 0,
-  lastState = null,
-  expectedAsin = null,
-  actualAsin = null,
-  pollCount = 0,
-  seekSuppress = false,
-  emptyWhilePausedPolls = 0
-} = {}) {
-  if (actualAsin && expectedAsin && actualAsin !== expectedAsin) {
-    if (pollCount <= 2) return { action: 'wait' };
-    return { action: 'advance', reason: 'track-changed' };
-  }
-
-  if (state === 'PLAYING') {
-    const remaining = durationMs > 0 ? durationMs - positionMs : Infinity;
-    if (!seekSuppress && durationMs > 0 && remaining <= NEAR_END_MS && remaining >= 0) {
-      return { action: 'advance', reason: 'near-end' };
-    }
-    const lastPercent = durationMs > 0 ? (lastPositionMs / durationMs) * 100 : 0;
-    if (!seekSuppress && lastPositionMs > 5000 && positionMs < WRAP_POSITION_MS && lastPercent >= 80) {
-      return { action: 'advance', reason: 'finished' };
-    }
-    return { action: 'continue', updateLast: true };
-  }
-
-  if (lastState === 'PLAYING' && (state === 'STOPPED' || state === 'EMPTY' || state === 'FINISHED')) {
-    const lastPercent = durationMs > 0 ? (lastPositionMs / durationMs) * 100 : 0;
-    const percent = durationMs > 0 ? (positionMs / durationMs) * 100 : lastPercent;
-    if (lastPercent >= 90 || percent >= 90) return { action: 'advance', reason: 'finished' };
-    return { action: 'advance', reason: 'stopped' };
-  }
-
-  // A page torn down while paused: EMPTY with lastState PAUSED is dead and
-  // cannot be resumed. The caller latches the pause-death (the 'track' action
-  // overwrites lastState with the dead value on the first such poll, so
-  // gating on lastState === 'PAUSED' here used to make the grace window
-  // unreachable — the counter could never be spent). The count is only ever
-  // nonzero when the caller saw PAUSED before the death, so it is the
-  // authority here. A never-alive player sends 0 and never advances.
-  if ((state === 'EMPTY' || state === 'STOPPED' || state === 'FINISHED') &&
-      emptyWhilePausedPolls >= EMPTY_WHILE_PAUSED_POLL_LIMIT) {
-    return { action: 'advance', reason: 'stopped' };
-  }
-
-  return { action: 'track' };
-}
-
-function shouldPollFaster(durationMs, positionMs) {
-  if (!durationMs || durationMs <= 0) return false;
-  return durationMs - positionMs <= FAST_POLL_REMAINING_MS && durationMs - positionMs >= 0;
-}
-
-// ── Measured stream bitrate ──────────────────────────────────────────────────
-// The poller pairs consecutive PLAYING reads of the media element's audio
-// decode counter (webkitAudioDecodedByteCount — demuxed compressed stream
-// bytes, so this measures the delivered stream, not PCM) and takes the median
-// of the per-pair rates. A whole-file average (bytes / position) is wrong
-// twice over: the decoder runs ahead of the playhead while its buffers fill,
-// and a seek never resets the counter. Steady pairs — playhead advancing in
-// step with the wall clock, no seek, no pause — converge on the true bitrate,
-// and the median window shrugs off the startup overshoot and stall dips.
-const QUALITY_PAIR_WINDOW = 8;     // pair rates kept in the median window
-const QUALITY_MIN_PAIRS = 6;       // steady pairs before a measurement reports
+       // steady pairs before a measurement reports
 const QUALITY_MIN_PAIR_MS = 250;   // a shorter pair (jittery/duplicate read) means nothing
 const QUALITY_MAX_PAIR_MS = 4000;  // a longer pair spans a dropped poll — skip it
 const QUALITY_MAX_DRIFT_MS = 400;  // |playheadΔ − wallΔ| beyond this is a seek or pause
 const QUALITY_MIN_KBPS = 16;       // sanity bounds — outside is a transient, not the stream
 const QUALITY_MAX_KBPS = 10000;
-const QUALITY_SHIFT_RATIO = 0.35;  // recent median this far from the track median = a real quality change
+  // recent median this far from the track median = a real quality change
 const QUALITY_TRACK_RATES_MAX = 2000; // ~66 min of 2s pairs; older rates drop first
 
 // The kbps of one pair of consecutive samples, or null when the pair is not
@@ -119,59 +28,6 @@ function medianKbps(rates) {
   const sorted = rates.slice().sort((a, b) => a - b);
   const mid = sorted.length >> 1;
   return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
-}
-
-// samples: [{ wallMs, positionMs, bytes }] as recorded by the poller (bytes
-// may be null on reads where the element exposed no counter — those just never
-// form pairs). Returns the median of the last QUALITY_PAIR_WINDOW pair rates
-// (~16s at the 2s cadence), or null while too few steady pairs exist.
-function measuredStreamKbps(samples) {
-  const list = Array.isArray(samples) ? samples : [];
-  const rates = [];
-  for (let i = 1; i < list.length; i++) {
-    const kbps = streamPairKbps(list[i - 1], list[i]);
-    if (kbps !== null) rates.push(kbps);
-  }
-  if (rates.length < QUALITY_MIN_PAIRS) return null;
-  return medianKbps(rates.slice(-QUALITY_PAIR_WINDOW));
-}
-
-// The bitrate the poller reports: the median of every steady pair rate of the
-// track, so a VBR stream (every Amazon tier above 160 kbps) settles on its
-// average instead of following a 16s window (review on #1100). A median, not
-// a running mean, because the first pairs read 3-5x high while the decoder's
-// buffers fill, and a mean carries that for minutes. The recent window still
-// matters for one thing: when its median is more than QUALITY_SHIFT_RATIO
-// away from the track's, the stream changed tier (Amazon's auto adjust), and
-// the track's rates restart from the recent window so the report follows it.
-// One meter per track (the poller makes a new one in start()).
-function createStreamBitrateMeter() {
-  let last = null;
-  let trackRates = [];
-  const recent = [];
-  return {
-    addSample(sample) {
-      const kbps = streamPairKbps(last, sample);
-      last = sample;
-      if (kbps === null) return;
-      trackRates.push(kbps);
-      if (trackRates.length > QUALITY_TRACK_RATES_MAX) trackRates.shift();
-      recent.push(kbps);
-      if (recent.length > QUALITY_PAIR_WINDOW) recent.shift();
-    },
-    kbps() {
-      if (trackRates.length < QUALITY_MIN_PAIRS) return null;
-      const track = medianKbps(trackRates);
-      if (recent.length >= QUALITY_MIN_PAIRS) {
-        const now = medianKbps(recent);
-        if (Math.abs(now - track) / track > QUALITY_SHIFT_RATIO) {
-          trackRates = recent.slice();
-          return now;
-        }
-      }
-      return track;
-    },
-  };
 }
 
 // ── DASH manifest → stream parameters ────────────────────────────────────────
@@ -220,83 +76,6 @@ function mpdBitDepthHint(attrs, repText) {
   return null;
 }
 
-// MPD text → audio representations: [{ id, codec, mimeType, container,
-// bandwidth, sampleRate, channels, bitDepth, initializationUrl }]. Video sets
-// are excluded; audio attributes inherit from the AdaptationSet when the
-// Representation omits them (per DASH). The initialization URL is the
-// SegmentTemplate/SegmentList entry with $RepresentationID$/$Bandwidth$
-// substituted, resolved against BaseURL — it is how the captured init
-// segments pair back to representations.
-function mpdAudioRepresentations(xml, mpdUrl) {
-  const text = String(xml || '');
-  if (!text || !/<Representation/i.test(text)) return [];
-  let base = String(mpdUrl || '');
-  const baseMatch = text.match(/<BaseURL[^>]*>([^<]*)<\/BaseURL>/i);
-  if (baseMatch) {
-    try { base = new URL(decodeXmlEntities(baseMatch[1].trim()), mpdUrl || undefined).toString(); } catch (e) { /* keep the mpd url */ }
-  }
-  const resolve = (rel, from) => {
-    try { return new URL(rel, from || undefined).toString(); } catch (e) { return null; }
-  };
-  const reps = [];
-  for (const set of text.split(/<AdaptationSet\b/i).slice(1)) {
-    const setTagEnd = set.indexOf('>');
-    if (setTagEnd === -1) continue;
-    const setAttrs = xmlAttrMap(set.slice(0, setTagEnd));
-    const firstRepAt = set.indexOf('<Representation');
-    const setScope = firstRepAt === -1 ? set : set.slice(0, firstRepAt);
-    // AdaptationSet-level SegmentTemplate initialization / SegmentList
-    // Initialization / AudioChannelConfiguration apply to every rep in the set.
-    const setInitTemplate =
-      decodeXmlEntities((setScope.match(/<SegmentTemplate[^>]*\binitialization\s*=\s*"([^"]*)"/i) || [])[1] || '') ||
-      decodeXmlEntities((setScope.match(/<Initialization[^>]*\bsourceURL\s*=\s*"([^"]*)"/i) || [])[1] || '') ||
-      null;
-    const setChannels = Number((setScope.match(/<AudioChannelConfiguration[^>]*\bvalue\s*=\s*"(\d+)"/i) || [])[1]) || null;
-    for (const part of set.split(/<Representation\b/i).slice(1)) {
-      const tagEnd = part.indexOf('>');
-      if (tagEnd === -1) continue;
-      const attrs = xmlAttrMap(part.slice(0, tagEnd));
-      const repClose = part.indexOf('</Representation>');
-      const repScope = repClose === -1 ? part : part.slice(0, repClose);
-      const mimeType = attrs.mimeType || setAttrs.mimeType || null;
-      const codec = attrs.codecs || setAttrs.codecs || null;
-      const isVideo = /^video\//i.test(String(mimeType || '')) || /^(avc|hev|hvc|av01)/i.test(String(codec || ''));
-      if (isVideo) continue;
-      if (mimeType && !/^audio\//i.test(mimeType)) continue;
-      const repBaseMatch = repScope.match(/<BaseURL[^>]*>([^<]*)<\/BaseURL>/i);
-      let repBase = base;
-      if (repBaseMatch) {
-        const resolved = resolve(decodeXmlEntities(repBaseMatch[1].trim()), base);
-        if (resolved) repBase = resolved;
-      }
-      const initTemplate =
-        decodeXmlEntities((repScope.match(/<SegmentTemplate[^>]*\binitialization\s*=\s*"([^"]*)"/i) || [])[1] || '') ||
-        decodeXmlEntities((repScope.match(/<Initialization[^>]*\bsourceURL\s*=\s*"([^"]*)"/i) || [])[1] || '') ||
-        setInitTemplate;
-      let initializationUrl = null;
-      if (initTemplate && repBase) {
-        const substituted = String(initTemplate)
-          .replace(/\$RepresentationID\$/g, String(attrs.id || ''))
-          .replace(/\$Bandwidth\$/g, String(attrs.bandwidth || ''));
-        initializationUrl = resolve(substituted, repBase);
-      }
-      const channels = Number((repScope.match(/<AudioChannelConfiguration[^>]*\bvalue\s*=\s*"(\d+)"/i) || [])[1]) || setChannels;
-      reps.push({
-        id: attrs.id || null,
-        codec: codec || null,
-        mimeType: mimeType || null,
-        container: mimeType ? String(mimeType.split('/')[1] || '').toLowerCase() || null : null,
-        bandwidth: Number(attrs.bandwidth) || null,
-        sampleRate: Number(attrs.audioSamplingRate) || Number(setAttrs.audioSamplingRate) || null,
-        channels: channels || null,
-        bitDepth: mpdBitDepthHint(attrs, repScope) || mpdBitDepthHint(setAttrs, setScope),
-        initializationUrl
-      });
-    }
-  }
-  return reps;
-}
-
 // FLAC-in-ISOBMFF init segments carry STREAMINFO in a `dfla` box — the same
 // bytes the decoder reads, so this is the authoritative sample rate / bit
 // depth / channels for the delivered stream. ISOBMFF boxes nest, so scan for
@@ -311,32 +90,6 @@ function flacStreamInfo(s) {
   if (channels >= 1 && channels <= 8) info.channels = channels;
   if (bits >= 8 && bits <= 32) info.bitDepth = bits;
   return (info.sampleRate && info.bitDepth) ? info : null;
-}
-
-function flacStreamInfoFromInit(data) {
-  try {
-    const b = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    if (!b || b.length < 42 || b.length > 262144) return null;
-    // The FLAC specific box is 'dfla' per the FLAC-in-ISOBMFF spec, but
-    // Amazon's muxer writes 'dfLa' (observed live, 2026-10-15: an enca entry
-    // whose frma is 'fLaC' carrying the box as 64 66 4C 61). Scan both
-    // spellings — the box nests inside stsd/enca, so scan for the fourcc
-    // rather than walking the box tree, and let the STREAMINFO sanity checks
-    // reject a coincidental byte sequence.
-    for (const fourcc of ['dfla', 'dfLa']) {
-      let pos = 0;
-      while (pos < b.length) {
-        const at = b.indexOf(fourcc, pos, 'utf8');
-        if (at === -1) break;
-        pos = at + 1;
-        const info = flacStreamInfoAt(b, at);
-        if (info) return info;
-      }
-    }
-    return null;
-  } catch (e) {
-    return null;
-  }
 }
 
 // dfla is a FullBox: 4 version/flags bytes, then the FLAC metadata block
@@ -356,97 +109,6 @@ function flacStreamInfoAt(b, at) {
     }
   }
   return null;
-}
-
-// Pair captured init segments with representations: exact URL match first (a
-// URL-matched init read the actual init segment for that representation, so
-// its STREAMINFO is authoritative over MPD attributes); otherwise the common
-// single-representation pairing fills only missing fields.
-function attachInitStreamInfo(reps, inits) {
-  const list = (Array.isArray(reps) ? reps : []).map(r => ({ ...r }));
-  const initList = (Array.isArray(inits) ? inits : []).filter(i => i && i.sampleRate);
-  if (!initList.length) return list;
-  const used = new Set();
-  const apply = (rep, init, authoritative) => {
-    used.add(init);
-    if (authoritative) {
-      if (init.sampleRate) rep.sampleRate = init.sampleRate;
-      if (init.bitDepth) rep.bitDepth = init.bitDepth;
-      if (init.channels) rep.channels = init.channels;
-    } else {
-      rep.sampleRate = rep.sampleRate || init.sampleRate;
-      rep.bitDepth = rep.bitDepth || init.bitDepth || null;
-      rep.channels = rep.channels || init.channels || null;
-    }
-    if (!rep.codec && init.codec) rep.codec = init.codec;
-  };
-  const sameUrl = (a, b) => {
-    if (!a || !b) return false;
-    if (a === b) return true;
-    try { return new URL(a).origin + new URL(a).pathname === new URL(b).origin + new URL(b).pathname; } catch (e) { return false; }
-  };
-  for (const rep of list) {
-    if (!rep.initializationUrl) continue;
-    const hit = initList.find(i => !used.has(i) && i.url && sameUrl(i.url, rep.initializationUrl));
-    if (hit) apply(rep, hit, true);
-  }
-  const unused = initList.filter(i => !used.has(i));
-  if (unused.length === 1) {
-    const flacReps = list.filter(r => !r.bitDepth && /flac/i.test(String(r.codec || '')));
-    if (flacReps.length === 1) apply(flacReps[0], unused[0], false);
-    else if (list.length === 1) apply(list[0], unused[0], false);
-  }
-  return list;
-}
-
-// Which representation is playing? The one whose bandwidth best matches the
-// measured bitrate when there is a ladder to choose from; otherwise the
-// single/richest one.
-function pickMpdRepresentation(reps, kbps) {
-  const list = (Array.isArray(reps) ? reps : []).filter(r => r && (r.codec || r.sampleRate || r.bitDepth));
-  if (!list.length) return null;
-  const withBw = (kbps > 0) ? list.filter(r => typeof r.bandwidth === 'number' && r.bandwidth > 0) : [];
-  if (withBw.length) {
-    // @bandwidth is bits per second; the measured kbps is kilobits.
-    let best = withBw[0];
-    let bestDist = Infinity;
-    for (const r of withBw) {
-      const d = Math.abs(Math.log((r.bandwidth / 1000) / kbps));
-      if (d < bestDist) { bestDist = d; best = r; }
-    }
-    return best;
-  }
-  const score = (r) => (r.bitDepth ? 2 : 0) + (r.sampleRate ? 1 : 0);
-  return list.reduce((a, b) => (score(b) > score(a) ? b : a));
-}
-
-// Amazon's tier vocabulary, derived from the stream's measured facts: lossy →
-// SD, FLAC (or ALAC) up to 16-bit/48 kHz → HD, anything above → Ultra HD.
-function amazonStreamTier({ codec, sampleRate, bitDepth } = {}) {
-  const c = String(codec || '').toLowerCase();
-  if (!c) return null;
-  const lossless = c.includes('flac') || c.includes('alac');
-  if (!lossless) return 'SD';
-  if ((bitDepth && bitDepth >= 24) || (sampleRate && sampleRate > 48000)) return 'Ultra HD';
-  return 'HD';
-}
-
-// The final stream-quality record (stream-quality.js contract): the measured
-// bitrate plus whatever the captured manifest/init segment could prove. Fields
-// are attached only when present — no fabricated FLAC/HD labels.
-function amazonStreamQualityRecord(kbps, info) {
-  const bitrate = Math.round(Number(kbps)) || null;
-  if (!bitrate) return null;
-  const rec = { bitrate, origin: 'measured' };
-  const i = info || {};
-  if (i.codec) rec.codec = i.codec;
-  if (i.container) rec.container = i.container;
-  if (i.sampleRate) rec.sampleRate = i.sampleRate;
-  if (i.bitDepth) rec.bitDepth = i.bitDepth;
-  if (i.channels) rec.channels = i.channels;
-  const tier = amazonStreamTier(i);
-  if (tier) rec.tier = tier;
-  return rec;
 }
 
 // Circuit breaker for search's structural failures. A hornet rename of the
@@ -475,120 +137,6 @@ function createSearchBreaker({ threshold = 3, cooldownMs = 10 * 60 * 1000, now =
     },
     state: () => ({ failures, openUntil, open: open() })
   };
-}
-
-// Passive network capture for the DASH manifest and the init segments,
-// installed in the page world at document-start (before hornet's scripts),
-// covering both the fetch and XHR paths whichever loader the player uses. It
-// must never alter request behavior: wrappers call straight through, all
-// observation is wrapped in try/catch, and responses are only ever cloned.
-// The captured caps are read by the main process after playback confirms —
-// no webRequest listeners (they are single-slot per method and would clobber
-// the playlist gql capture), no refetch of signed CDN URLs.
-//
-// Self-contained by design: serialized with .toString() and evaluated inside
-// the Amazon page (world 0), so it must not close over anything in this
-// module. A literal copy lives in amazon-player-preload.js; the preload test
-// enforces behavioral parity between the copies.
-function installAmazonStreamCapture(scope) {
-  if (!scope || scope.__parachordStreamCapture) return;
-  scope.__parachordStreamCapture = true;
-  const caps = { manifests: [], inits: [] };
-  scope.__parachordStreamCaps = caps;
-  const MAX_MANIFESTS = 4;
-  const MAX_MANIFEST_CHARS = 524288;
-  const MAX_INITS = 8;
-  const MAX_INIT_BYTES = 65536;
-  const isManifest = (url) => /\.mpd(?:[?#]|$)/i.test(String(url || ''));
-  const isInitCandidate = (url) => /\.(?:mp4|m4s|cmfv|cmfa|cmf|dash)(?:[?#]|$)/i.test(String(url || ''));
-  const recordManifest = (url, text) => {
-    try {
-      if (!text || caps.manifests.length >= MAX_MANIFESTS) return;
-      caps.manifests.push({ url: String(url), text: String(text).slice(0, MAX_MANIFEST_CHARS) });
-    } catch (e) {}
-  };
-  const recordInit = (url, buf) => {
-    try {
-      const n = (buf && (buf.byteLength || buf.size)) || 0;
-      if (!n || n > MAX_INIT_BYTES || caps.inits.length >= MAX_INITS) return;
-      caps.inits.push({ url: String(url), bytes: buf });
-    } catch (e) {}
-  };
-  const observeResponse = (url, res) => {
-    try {
-      if (!res || typeof res.clone !== 'function') return;
-      if (isManifest(url)) {
-        res.clone().text().then((t) => recordManifest(url, t), () => {});
-      } else if (isInitCandidate(url)) {
-        const len = Number(res.headers && res.headers.get && res.headers.get('content-length')) || 0;
-        if (!len || len <= MAX_INIT_BYTES) res.clone().arrayBuffer().then((b) => recordInit(url, b), () => {});
-      }
-    } catch (e) {}
-  };
-  const urlOf = (input) => {
-    try {
-      if (typeof input === 'string') return input;
-      if (input && typeof input.url === 'string') return input.url;
-    } catch (e) {}
-    return '';
-  };
-  try {
-    const origFetch = scope.fetch;
-    if (typeof origFetch === 'function' && !origFetch.__parachordWrapped) {
-      const wrappedFetch = function () {
-        const url = urlOf(arguments[0]);
-        const p = origFetch.apply(this, arguments);
-        try {
-          if (p && typeof p.then === 'function' && (isManifest(url) || isInitCandidate(url))) {
-            p.then((res) => { observeResponse(url, res); return res; }, () => {});
-          }
-        } catch (e) {}
-        return p;
-      };
-      try { Object.setPrototypeOf(wrappedFetch, origFetch); } catch (e) {}
-      try { Object.defineProperty(wrappedFetch, '__parachordWrapped', { value: true }); } catch (e) {}
-      scope.fetch = wrappedFetch;
-    }
-  } catch (e) {}
-  try {
-    const OrigXHR = scope.XMLHttpRequest;
-    if (typeof OrigXHR === 'function' && !OrigXHR.__parachordWrapped) {
-      const WrappedXHR = function () {
-        const xhr = new OrigXHR();
-        let reqUrl = '';
-        try {
-          const openOrig = xhr.open;
-          if (typeof openOrig === 'function') {
-            xhr.open = function () {
-              try { reqUrl = String(arguments[1] || ''); } catch (e) {}
-              return openOrig.apply(this, arguments);
-            };
-          }
-        } catch (e) {}
-        try {
-          xhr.addEventListener('load', function () {
-            try {
-              const rt = xhr.responseType;
-              if (rt === '' || rt === 'text') {
-                if (isManifest(reqUrl)) recordManifest(reqUrl, xhr.responseText);
-              } else if (rt === 'arraybuffer' || rt === 'blob') {
-                if (isInitCandidate(reqUrl)) recordInit(reqUrl, xhr.response);
-              }
-            } catch (e) {}
-          });
-        } catch (e) {}
-        return xhr;
-      };
-      try { WrappedXHR.prototype = OrigXHR.prototype; } catch (e) {}
-      try {
-        Object.keys(OrigXHR).forEach((k) => {
-          try { if (!(k in WrappedXHR)) WrappedXHR[k] = OrigXHR[k]; } catch (e) {}
-        });
-      } catch (e) {}
-      try { Object.defineProperty(WrappedXHR, '__parachordWrapped', { value: true }); } catch (e) {}
-      scope.XMLHttpRequest = WrappedXHR;
-    }
-  } catch (e) {}
 }
 
 // castlabs components.status() shape is not a documented contract. Read only
@@ -621,13 +169,13 @@ function cdmStatusHealthy(status) {
 // Amazon's web player is not usable for search or play while it is still
 // on the account sign-in page or the post-login profile picker. Cookies can
 // already exist at that point; the URL is the signal that selection finished.
-// The sign-in portal is every /ap/ path on an Amazon account host, not only
-// /ap/signin: 2FA (/ap/mfa), push approval and verification (/ap/cvf/...),
-// challenges and account fixes all come before the session is usable.
 function pageBlocksPlayback(url) {
   const value = url || '';
   if (/\/identity\/who-is-listening/i.test(value)) return 'not-signed-in';
   if (/\/ap\/signin/i.test(value)) return 'not-signed-in';
+  // The sign-in portal is every /ap/ path on an Amazon account host, not only
+  // /ap/signin: 2FA (/ap/mfa), push approval and verification (/ap/cvf/...),
+  // challenges and account fixes all come before the session is usable (#1166).
   if (/^https?:\/\/[^/?#]*amazon\.[^/?#]+\/ap\//i.test(value)) return 'not-signed-in';
   return null;
 }
@@ -662,6 +210,7 @@ function onMusicHost(url) {
   }
 }
 
+
 // openLogin's completion gate. "The URL is not a known wall" alone fails
 // open: music.amazon.com/ itself is not a wall, and a logged-out first paint
 // can sit there (or redirect slowly) for a second or more — the old timer
@@ -670,10 +219,7 @@ function onMusicHost(url) {
 // that has been stable for two consecutive ticks AND at least one of (an
 // auth cookie is present, the page has moved off the bare home path, or three
 // stable ticks — the fallback for Amazon rotating its cookie names, at the
-// cost of a ~3s wait when a signed-in landing page really is /). The URL must
-// be ON the music host: the 2FA page's query carries music.amazon.com as its
-// return address, and a substring match closed the window two seconds into
-// the code prompt, reporting a sign-in that never happened.
+// cost of a ~3s wait when a signed-in landing page really is /).
 function signInLanded({ url, lastUrl = null, stableTicks = 0, hasCookie = false } = {}) {
   const okUrl = !!url && onMusicHost(url) && !pageBlocksPlayback(url);
   const ticks = okUrl ? (lastUrl === url ? stableTicks + 1 : 1) : 0;
@@ -684,127 +230,6 @@ function signInLanded({ url, lastUrl = null, stableTicks = 0, hasCookie = false 
     landed = !!hasCookie || path !== '/' || ticks >= 3;
   }
   return { landed, stableTicks: ticks };
-}
-
-// Hornet's Audio Quality modal. HD and BEST_AVAILABLE both mean the
-// "HD/Ultra HD" radio; the modal writes BEST_AVAILABLE. Data Saver and
-// Standard are the other two radios. Auto-adjust is abrEnabled, separate
-// from the radio.
-const AMAZON_QUALITY_OPTIONS = [
-  { value: 'BEST_AVAILABLE', label: 'HD/Ultra HD' },
-  { value: 'STANDARD', label: 'Standard' },
-  { value: 'DATA_SAVER', label: 'Data Saver' }
-];
-
-function normalizeStreamingQuality(value) {
-  if (value === 'BEST_AVAILABLE' || value === 'HD') return 'BEST_AVAILABLE';
-  if (value === 'STANDARD' || value === 'DATA_SAVER') return value;
-  return null;
-}
-
-// Hornet keeps the playbackController in a Metro module; window.__r is the
-// only handle, and Amazon redeploys hornet continuously, renumbering modules
-// on every bundle change. Executing module factories to find it (require-by-
-// id scans) runs Amazon's code out of order and can wedge the whole page —
-// observed live: a renderer pegged in V8 churn with every Amazon call hanging.
-// So never call __r ourselves. Instead install a trap before the bundle runs:
-// when Amazon's own code requires the module, the wrapper observes the exports
-// and captures the store. Self-contained by design — serialized with
-// .toString() and evaluated inside the Amazon page (world 0), so it must not
-// close over anything in this module.
-function installAmazonRequireTrap(scope) {
-  if (scope.__parachordRequireTrap) return;
-  scope.__parachordRequireTrap = true;
-  let current = null;
-  const consider = (mod, id) => {
-    try {
-      const pc = mod && mod.playbackController;
-      if (pc && pc.audioQualitySettings) {
-        scope.__parachordAmazonPlayback = pc;
-        scope.__parachordAmazonPlaybackModuleId = id;
-      }
-    } catch (e) {}
-  };
-  const wrap = (require) => {
-    if (typeof require !== 'function' || require.__parachordWrapped) return require;
-    const wrapped = function () {
-      const mod = require.apply(this, arguments);
-      consider(mod, arguments[0]);
-      return mod;
-    };
-    // Keep require's own properties (e.g. metro's require.async) reachable
-    // through the wrapper.
-    try { Object.setPrototypeOf(wrapped, require); } catch (e) {}
-    try { Object.defineProperty(wrapped, '__parachordWrapped', { value: true }); } catch (e) {}
-    return wrapped;
-  };
-  try {
-    // The bundle exposes __r as a global assignment, which routes through the
-    // setter; a var declaration in a later script leaves the property alone.
-    // If __r was already assigned before the trap installs, wrap that value.
-    if (typeof scope.__r === 'function') current = wrap(scope.__r);
-    Object.defineProperty(scope, '__r', {
-      configurable: true,
-      get() { return current; },
-      set(v) { current = wrap(v); return current; }
-    });
-  } catch (e) {}
-}
-
-// Hornet persists the playbackController store to a localStorage entry whose
-// key contains 'playback-controller' and rehydrates audioQualitySettings from
-// it at boot — its persistence reaction misses nested changes while nothing
-// plays, so quality writes go to both the live store and this entry. Both
-// helpers take the page's localStorage so they can run inside the page world
-// and be unit tested against a plain object. Self-contained by design, same
-// as installAmazonRequireTrap.
-function readPersistedQuality(storage) {
-  try {
-    const key = Object.keys(storage).find(k => k.indexOf('playback-controller') !== -1);
-    if (!key) return null;
-    const parsed = JSON.parse(storage.getItem(key));
-    const s = parsed && parsed.data && parsed.data.audioQualitySettings;
-    if (!s) return null;
-    return { streamingQuality: s.streamingQuality || null, abrEnabled: !!s.abrEnabled };
-  } catch (e) { return null; }
-}
-
-// A settings read must not persist. The live store can exist before abrEnabled
-// is materialized; !!undefined is false, and writePersistedQuality treats
-// false as a real patch. Opening the quality panel used to write that into
-// the entry hornet rehydrates at boot, turning Auto-adjust off.
-// persist is null on a read, and when a write has no concrete fields yet.
-function amazonQualityFromStore(storeSettings, apply) {
-  if (!storeSettings || typeof storeSettings !== 'object') return null;
-  if (apply) {
-    if (apply.streamingQuality) storeSettings.streamingQuality = apply.streamingQuality;
-    if (apply.abrEnabled != null) storeSettings.abrEnabled = !!apply.abrEnabled;
-  }
-  const report = {
-    streamingQuality: storeSettings.streamingQuality || null,
-    abrEnabled: storeSettings.abrEnabled != null ? !!storeSettings.abrEnabled : true
-  };
-  if (!apply) return { report, persist: null };
-  const persist = {};
-  if (storeSettings.streamingQuality != null) persist.streamingQuality = storeSettings.streamingQuality;
-  if (storeSettings.abrEnabled != null) persist.abrEnabled = !!storeSettings.abrEnabled;
-  if (persist.streamingQuality == null && persist.abrEnabled == null) return { report, persist: null };
-  return { report, persist };
-}
-
-function writePersistedQuality(storage, settings) {
-  try {
-    const key = Object.keys(storage).find(k => k.indexOf('playback-controller') !== -1);
-    if (!key) return false;
-    const parsed = JSON.parse(storage.getItem(key));
-    if (!parsed || !parsed.data) return false;
-    const patch = {};
-    if (settings && settings.streamingQuality != null) patch.streamingQuality = settings.streamingQuality;
-    if (settings && settings.abrEnabled != null) patch.abrEnabled = !!settings.abrEnabled;
-    parsed.data.audioQualitySettings = Object.assign({}, parsed.data.audioQualitySettings, patch);
-    storage.setItem(key, JSON.stringify(parsed));
-    return true;
-  } catch (e) { return false; }
 }
 
 // Search pages also render the mini player. Its title is a /tracks/ link
@@ -1791,6 +1216,234 @@ function amazonPlayGenerationStamp(generation) {
   return `window.__parachordPlayGen = ${generation | 0};`;
 }
 
+// ── Native playback (dmls client + DASH variant selection) ─────────────────
+//
+// The native engine (amazon-native-player.js) plays a track without the
+// hornet page in the audio path: main fetches the DASH manifest from the
+// Digital Music Locator Service (dmls) and a bundled Shaka in our own window
+// decrypts it (the license bytes round-trip through dmls opaquely, relayed by
+// main). These are the pure pieces: request bodies, the region segment, and
+// the mapping from the user's quality setting to one manifest variant.
+
+const AMAZON_DEVICE_TYPE_ID = 'A16ZV8BU3SN1N3';
+const DML_TARGET_PREFIX = 'com.amazon.digitalmusiclocator.DigitalMusicLocatorServiceExternal.';
+// An empty Widevine challenge the hornet page sends before its first real
+// per-track license exchange (session/cert init). Mimic it once per session.
+const WIDEVINE_CERT_CHALLENGE = 'CAQ=';
+
+// Region segment in the dmls URL, derived from the session territory.
+const AMAZON_FE_TERRITORIES = new Set(['JP', 'AU', 'NZ', 'SG', 'MY', 'ID', 'TH', 'PH', 'KR', 'TW', 'IN', 'HK']);
+const AMAZON_EU_TERRITORIES = new Set(['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'SE', 'DK', 'NO', 'FI', 'PL', 'PT', 'CH', 'CZ', 'GR', 'HU', 'RO', 'TR']);
+function amazonDmlsRegion(territoryId) {
+  const t = String(territoryId || '').toUpperCase();
+  if (AMAZON_FE_TERRITORIES.has(t)) return 'FE';
+  if (AMAZON_EU_TERRITORIES.has(t)) return 'EU';
+  return 'NA';
+}
+
+function amazonDmlsManifestBody({ asin, customerId, marketplaceId, territoryId, deviceId, musicAgent, dashVersions } = {}) {
+  if (!asin || !customerId || !deviceId) return null;
+  return {
+    appInfo: { musicAgent: String(musicAgent || '') },
+    customerId,
+    customerInfo: {
+      marketplaceId: String(marketplaceId || 'ATVPDKIKX0DER'),
+      territoryId: String(territoryId || 'US')
+    },
+    contentIdList: [{ identifier: String(asin), identifierType: 'ASIN' }],
+    deviceToken: { deviceTypeId: AMAZON_DEVICE_TYPE_ID, deviceId: String(deviceId) },
+    musicDashVersionList: Array.isArray(dashVersions) && dashVersions.length ? dashVersions.map(String) : ['SIREN_KATANA'],
+    contentProtectionList: ['TRACK_PSSH'],
+    tryAsinSubstitution: true
+  };
+}
+
+function amazonDmlsLicenseBody({ challenge, customerId, deviceId, musicAgent } = {}) {
+  if (!challenge || !customerId || !deviceId) return null;
+  return {
+    DrmType: 'WIDEVINE',
+    licenseChallenge: String(challenge),
+    customerId,
+    deviceToken: { deviceTypeId: AMAZON_DEVICE_TYPE_ID, deviceId: String(deviceId) },
+    appInfo: { musicAgent: String(musicAgent || '') }
+  };
+}
+
+// Codec bucket of a DASH codec string (mpdAudioRepresentations rep.codec).
+function dashCodecFamily(codec) {
+  const c = String(codec || '').toLowerCase();
+  if (c.startsWith('flac')) return 'flac';
+  if (c.startsWith('opus')) return 'opus';
+  if (c.startsWith('mp4a') || c.startsWith('aac')) return 'aac';
+  return c || null;
+}
+
+// Deterministic order inside a tier: bandwidth desc, then sampleRate desc,
+// then bitDepth desc, then id (stable). Used for both picking and ABR caps.
+function compareDashReps(a, b) {
+  const bw = (b.bandwidth || 0) - (a.bandwidth || 0);
+  if (bw) return bw;
+  const sr = (b.sampleRate || 0) - (a.sampleRate || 0);
+  if (sr) return sr;
+  const bd = (b.bitDepth || 0) - (a.bitDepth || 0);
+  if (bd) return bd;
+  return String(a.id || '').localeCompare(String(b.id || ''));
+}
+
+// GET https://music.amazon.com/config.json answers the session facts the
+// native engine needs in one shot (cookies only, no CSRF): customer,
+// marketplace, territory, and the dmls region segment itself (siteRegion).
+// Parse defensively — every field degrades to null.
+function amazonNativeSessionFromConfig(json) {
+  const j = json && typeof json === 'object' ? json : {};
+  const str = (v) => (typeof v === 'string' && v ? v : null);
+  return {
+    customerId: str(j.customerId),
+    marketplaceId: str(j.marketplaceId),
+    territoryId: str(j.musicTerritory),
+    region: str(j.siteRegion),
+    deviceId: str(j.deviceId),
+    deviceType: str(j.deviceType),
+    tier: typeof j.tier === 'string' ? j.tier : (j.tier && typeof j.tier === 'object' ? (str(j.tier.name) || str(j.tier.tier) || null) : null)
+  };
+}
+
+// ── Streaming telemetry (the hornet /telemetry/v1/events vocabulary) ────────
+// Live-captured 2026-10: the web player reports streamingInitiated on play
+// start, streamingTerminated at seek/pause/teardown/end, and trackStreamed
+// paired with the FINAL terminated (carrying the accumulated
+// durationSecondsSum). terminationReason: trackScrub (seek), userStop
+// (pause), systemStop (teardown/advance), trackFinished (natural end).
+// These builders produce clientActionList entries in that exact shape; the
+// reporter (main-process/amazon-telemetry.js) owns session ids and sums.
+// All fields are strings, mirroring hornet's serialization.
+
+const AMAZON_TELEMETRY_CONSTANTS = Object.freeze({
+  appVersion: '1.0.1458',
+  productId: '803',
+  productVersion: 'GREENHORNET',
+  platformName: 'WebPlayer',
+  mediaPlayerName: 'VINYL',
+  playbackSourceType: 'stream',
+  playbackCurrentSpeed: 'ONE',
+  pageType: 'trackDetail',
+  streamOrDRMTech: 'DASH_DRM',
+  cacheHitStatus: 'NONE',
+  enqueueState: 'audio',
+  offlineMode: 'ONLINE_MODE',
+  isOnDemandQueue: 'true',
+  isDirectedPlay: 'true',
+  isShufflePlay: 'false',
+  isVoiceInitiated: 'false',
+  isAugmentedTrack: 'false',
+  isExplicitLanguageFilterOn: 'false',
+  isCustomerSelectedEntity: 'true',
+  source: 'WIFI',
+  deviceConnectivity: 'WiFi',
+  locale: 'en_US'
+});
+
+const TELEMETRY_TERMINATION = Object.freeze({
+  scrub: 'trackScrub',
+  userStop: 'userStop',
+  systemStop: 'systemStop',
+  finished: 'trackFinished'
+});
+
+// Amazon's bitrate-tier labels (from captured UHD48 for 24/48 FLAC). The
+// ladder below is approximate — conservative family+rate naming.
+function amazonTelemetryBitrateLabel({ codec, sampleRate, bitDepth } = {}) {
+  const family = dashCodecFamily(codec);
+  const rate = Number(sampleRate) || 44.1;
+  const depth = Number(bitDepth) || 16;
+  if (family === 'flac') return depth >= 24 ? (rate > 44.1 ? 'UHD48' : 'UHD44') : (rate > 44.1 ? 'HD48' : 'HD44');
+  return 'SD';
+}
+
+function amazonClientAction(actionName, details, { timestampSeconds, sdkEventId } = {}) {
+  if (!actionName || !details) return null;
+  return {
+    actionName: String(actionName),
+    timestamp: Number(timestampSeconds) || 0,
+    contentInfo: [],
+    additionalDetails: {
+      ...details,
+      ...(sdkEventId ? { sdkEventId: String(sdkEventId) } : {})
+    }
+  };
+}
+
+// Streaming facts shared by all three event kinds (mirroring the captured
+// blocks; every undefined input simply drops out).
+function amazonStreamingDetails({
+  asin, albumAsin, territory, tier, playbackInstanceId, playQueueId,
+  subscriptionMode, resourceType, bitrates, durationSeconds, durationSecondsSum,
+  terminationReason, trackProgress, trackCount, initialPlaybackDelaySeconds,
+  rebufferCount, transferSpeedBPS, cdnType, customSessionId, csrf, deviceTimeZone,
+  appVersion
+} = {}) {
+  const d = {
+    customSessionId,
+    customSessionType: 'foreground_session',
+    asin,
+    appVersion: appVersion || AMAZON_TELEMETRY_CONSTANTS.appVersion,
+    deviceTimeZone,
+    isDirectedPlay: AMAZON_TELEMETRY_CONSTANTS.isDirectedPlay,
+    isExplicitLanguageFilterOn: AMAZON_TELEMETRY_CONSTANTS.isExplicitLanguageFilterOn,
+    isShufflePlay: AMAZON_TELEMETRY_CONSTANTS.isShufflePlay,
+    isVoiceInitiated: AMAZON_TELEMETRY_CONSTANTS.isVoiceInitiated,
+    ...(albumAsin ? {
+      selectionSourceId: albumAsin,
+      selectionSourceSessionId: playQueueId,
+      selectionSourceType: 'ALBUM',
+      fulfillmentSourceId: albumAsin,
+      fulfillmentSourceType: 'ALBUM'
+    } : {}),
+    contentSubscriptionMode: subscriptionMode || tier,
+    subContentSubscriptionMode: subscriptionMode || tier,
+    pageType: AMAZON_TELEMETRY_CONSTANTS.pageType,
+    playbackCurrentSpeed: AMAZON_TELEMETRY_CONSTANTS.playbackCurrentSpeed,
+    playbackInstanceId,
+    playbackSourceType: AMAZON_TELEMETRY_CONSTANTS.playbackSourceType,
+    platformName: AMAZON_TELEMETRY_CONSTANTS.platformName,
+    isOnDemandQueue: AMAZON_TELEMETRY_CONSTANTS.isOnDemandQueue,
+    mediaPlayerName: AMAZON_TELEMETRY_CONSTANTS.mediaPlayerName,
+    playQueueId,
+    isCustomerSelectedEntity: AMAZON_TELEMETRY_CONSTANTS.isCustomerSelectedEntity,
+    productVersion: AMAZON_TELEMETRY_CONSTANTS.productVersion,
+    mrn: asin ? `mrn:1.0:catalog:track:asin:${asin}?territory=${territory || 'US'}` : undefined,
+    isAugmentedTrack: AMAZON_TELEMETRY_CONSTANTS.isAugmentedTrack,
+    source: AMAZON_TELEMETRY_CONSTANTS.source,
+    enqueueState: AMAZON_TELEMETRY_CONSTANTS.enqueueState,
+    deviceConnectivity: AMAZON_TELEMETRY_CONSTANTS.deviceConnectivity,
+    offlineMode: AMAZON_TELEMETRY_CONSTANTS.offlineMode,
+    productId: AMAZON_TELEMETRY_CONSTANTS.productId,
+    locale: AMAZON_TELEMETRY_CONSTANTS.locale
+  };
+  // event-specific fields only when meaningful
+  if (bitrates != null) d.bitrates = String(bitrates);
+  if (durationSeconds != null) d.durationSeconds = String(Number(durationSeconds.toFixed ? durationSeconds.toFixed(3) : durationSeconds));
+  if (durationSecondsSum != null) d.durationSecondsSum = String(Number(durationSecondsSum.toFixed ? durationSecondsSum.toFixed(3) : durationSecondsSum));
+  if (terminationReason != null) d.terminationReason = String(terminationReason);
+  if (trackProgress != null) d.trackProgress = String(Math.round(trackProgress));
+  if (trackCount != null) d.trackCount = String(trackCount);
+  if (initialPlaybackDelaySeconds != null) d.initialPlaybackDelaySeconds = String(initialPlaybackDelaySeconds);
+  if (rebufferCount != null) d.rebufferCount = String(rebufferCount);
+  if (transferSpeedBPS != null) d.transferSpeedBPS = String(Math.round(transferSpeedBPS));
+  if (cdnType != null) d.cdnType = String(cdnType);
+  if (resourceType != null) d.resourceType = String(resourceType);
+  if (csrf && csrf.csrfToken) {
+    d.csrf = JSON.stringify({ token: csrf.csrfToken, rnd: csrf.csrfRnd, ts: csrf.csrfTs });
+  }
+  // hornet serializes everything as strings; undefined never survives
+  const out = {};
+  for (const [k, v] of Object.entries(d)) {
+    if (v === undefined || v === null) continue;
+    out[k] = typeof v === 'string' ? v : String(v);
+  }
+  return out;
+}
+
 // Does Amazon's page say it is playing a different song than the one
 // requested? Parachord loads /tracks/<ASIN>?do=play, and for a track the
 // account can only start as a STATION, Amazon's player starts a station
@@ -1822,6 +1475,7 @@ function amazonNowPlayingMismatch(expectedTitle, nowPlaying) {
 }
 
 module.exports = {
+  amazonNativeSessionFromConfig,
   gqlCaptureSubject,
   gqlRequestsIn,
   gqlRequestIsAboutSubject,
@@ -1832,29 +1486,12 @@ module.exports = {
   amazonPlayGenerationStamp,
   isAmazonMusicPage,
   shouldRevealPlayerOnFailure,
-  playerDurationMs,
-  decidePollAdvance,
-  shouldPollFaster,
-  measuredStreamKbps,
-  createStreamBitrateMeter,
-  mpdAudioRepresentations,
-  flacStreamInfoFromInit,
-  attachInitStreamInfo,
-  pickMpdRepresentation,
-  amazonStreamTier,
-  amazonStreamQualityRecord,
-  installAmazonStreamCapture,
   cdmStatusHealthy,
   pageBlocksPlayback,
-  signInLanded,
-  amazonNowPlayingMismatch,
   amazonAuthCookieState,
-  AMAZON_QUALITY_OPTIONS,
-  normalizeStreamingQuality,
-  installAmazonRequireTrap,
-  readPersistedQuality,
-  writePersistedQuality,
-  amazonQualityFromStore,
+  onMusicHost,
+  amazonNowPlayingMismatch,
+  signInLanded,
   amazonSongSearchUrl,
   asinFromPlayerUrl,
   amazonPlaylistIdFromUrl,
@@ -1891,11 +1528,17 @@ module.exports = {
   playlistPageInfoFromGql,
   paginatePlaylistTracks,
   playlistEdgesFromGql,
-  NEAR_END_MS,
-  WRAP_POSITION_MS,
-  FAST_POLL_REMAINING_MS,
-  EMPTY_WHILE_PAUSED_POLL_LIMIT,
-  QUALITY_PAIR_WINDOW,
-  QUALITY_SHIFT_RATIO,
-  QUALITY_MIN_PAIRS
+  AMAZON_DEVICE_TYPE_ID,
+  DML_TARGET_PREFIX,
+  WIDEVINE_CERT_CHALLENGE,
+  AMAZON_TELEMETRY_CONSTANTS,
+  TELEMETRY_TERMINATION,
+  amazonTelemetryBitrateLabel,
+  amazonClientAction,
+  amazonStreamingDetails,
+  amazonDmlsRegion,
+  amazonDmlsManifestBody,
+  amazonDmlsLicenseBody,
+  dashCodecFamily,
+
 };

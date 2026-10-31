@@ -18,7 +18,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 ### Supported Sources
 - **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
 - **Apple Music** - Full playback via native MusicKit on macOS or MusicKit JS on Windows and Linux (subscription required). Windows and Linux playback needs the Widevine CDM, which Parachord downloads on first launch (see [System Requirements](#system-requirements))
-- **Amazon Music** - Plays through Amazon's web player inside Parachord, decrypted by the Widevine CDM on every platform (Amazon Music account required; you sign in once in a Parachord window). It does not use the Amazon Music desktop app
+- **Amazon Music** - Plays in Parachord's own player, using the same streams and licenses Amazon's web player uses, decrypted by the Widevine CDM on every platform (Amazon Music account required; you sign in once in a Parachord window). It does not use the Amazon Music desktop app
 - **YouTube** - Stream audio from YouTube videos
 - **Bandcamp** - Browse, play, and purchase from independent artists
 - **SoundCloud** - Stream from SoundCloud's catalog

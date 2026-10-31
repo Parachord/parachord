@@ -189,13 +189,19 @@ describe('isStreamQualityChange', () => {
 describe('Amazon quality updates and the queue save do not churn on every poll', () => {
   const fs = require('fs');
   const path = require('path');
-  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
+  // Two files in play after the hook extraction: the engine hook carries the
+  // stream-quality attach (below); app.js still consolidates the hook calls.
+  const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
+  const appJs = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
 
-  test('the Amazon progress handler gates on isStreamQualityChange', () => {
-    const at = app.indexOf('const measuredQuality = data.streamQuality;');
+  test('the widevine stream-quality attach gates on isStreamQualityChange', () => {
+    const at = app.indexOf('const attachStreamQuality = () => {');
+    expect(at).toBeGreaterThan(-1);
     const block = app.slice(at, at + 1600);
-    expect(block).toMatch(/if \(!window\.isStreamQualityChange\(existing, measuredQuality\)\) return prev;/);
+    expect(block).toMatch(/if \(!window\.isStreamQualityChange\(existing, facts\)\) return prev;/);
     expect(block).not.toMatch(/JSON\.stringify\(existing\)/);
+    // and the variant listener refreshes the record on ABR switches
+    expect(app).toContain('window.__parachordWidevineSetVariantListener(attachStreamQuality)');
   });
 
   test('the saved-queue effect keys on the track id and saves the latest track', () => {
@@ -206,6 +212,6 @@ describe('Amazon quality updates and the queue save do not churn on every poll',
     expect(hook).toMatch(/\}, \[currentTrack\?\.id, currentQueue, rememberQueue, playbackContext, shuffleMode\]\);/);
     const at = hook.indexOf("await window.electron.store.set('saved_queue', fullQueue);");
     expect(hook.slice(at - 700, at)).toMatch(/const currentTrack = currentTrackRef\.current;/);
-    expect(app).toContain('usePlaybackQueue({');
+    expect(appJs).toContain('usePlaybackQueue({');
   });
 });

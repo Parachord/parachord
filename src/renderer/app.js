@@ -5935,7 +5935,6 @@ const Parachord = () => {
   // Amazon Music sign-in status from the in-app player:
   // { success, engine: 'web', web: { cdm, signedIn } }
   const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
-  const [amazonMusicQuality, setAmazonMusicQuality] = useState(null);
   // Re-fetch Amazon Music status and audio quality when its detail modal opens.
   useEffect(() => {
     if (selectedResolver?.id !== 'amazonmusic') return;
@@ -5944,16 +5943,10 @@ const Parachord = () => {
       try {
         const s = await window.electron.amazonMusic.getStatus();
         if (cancelled) return;
-        const status = s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } };
+        const status = s && s.success ? s : { success: true, engine: 'widevine', web: { cdm: false, signedIn: false } };
         setAmazonMusicStatus(status);
-        if (!status.web?.signedIn) {
-          setAmazonMusicQuality(null);
-          return;
-        }
-        const q = await window.electron.amazonMusic.getQuality();
-        if (!cancelled && q && q.success) setAmazonMusicQuality(q);
       } catch (e) {
-        if (!cancelled) setAmazonMusicStatus({ success: true, engine: 'web', web: { cdm: false, signedIn: false } });
+        if (!cancelled) setAmazonMusicStatus({ success: true, engine: 'widevine', web: { cdm: false, signedIn: false } });
       }
     })();
     return () => { cancelled = true; };
@@ -6005,6 +5998,37 @@ const Parachord = () => {
   // (the hook's saved-queue effect reads it; its old home sat BELOW
   // deps-array uses of the hook's returned names).
   const [cacheLoaded, setCacheLoaded] = useState(false);
+
+  // Global stream playback quality (Widevine/DASH resolvers: Amazon Music
+  // today). Store keys playback_quality/playback_abr drive lib/widevine-player's
+  // variant selection; changes apply live to the current stream.
+  const [playbackQuality, setPlaybackQuality] = useState('max');
+  const [playbackAbr, setPlaybackAbr] = useState(true);
+  useEffect(() => {
+    if (!cacheLoaded || !window.electron?.store) return;
+    (async () => {
+      const [q, a] = await Promise.all([
+        window.electron.store.get('playback_quality').catch(() => null),
+        window.electron.store.get('playback_abr').catch(() => null)
+      ]);
+      if (typeof q === 'string' && q) setPlaybackQuality(q);
+      if (typeof a === 'boolean') setPlaybackAbr(a);
+    })();
+  }, [cacheLoaded]);
+  useEffect(() => {
+    if (!cacheLoaded || !window.electron?.store) return;
+    // Write before apply: applyQuality reads the store back — a fire-and-
+    // forget set in a fast toggle used to apply the previous tier.
+    (async () => {
+      await Promise.all([
+        window.electron.store.set('playback_quality', playbackQuality),
+        window.electron.store.set('playback_abr', playbackAbr)
+      ]);
+      if (window.__parachordWidevine && typeof window.__parachordWidevine.applyQuality === 'function') {
+        window.__parachordWidevine.applyQuality();
+      }
+    })();
+  }, [playbackQuality, playbackAbr, cacheLoaded]);
 
   // Playback-queue state domain — extracted to src/renderer/hooks/use-playback-queue
   // (Track 2b slice 2, parachord#1098). The destructured names are identical
@@ -7042,7 +7066,11 @@ const Parachord = () => {
   // share the element but have their own play paths.
   const findLoadedResolver = (id) => (id ? (loadedResolversRef.current || []).find(r => r.id === id) : undefined);
   const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;
-  const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id);
+  // Widevine resolvers (capabilities.widevine: Amazon Music today) play
+  // encrypted adaptive streams through Shaka on the SAME shared element —
+  // manifest/license bytes come from main via window.electron.widevine.
+  const isWidevineResolver = (id) => !!findLoadedResolver(id)?.capabilities?.widevine;
+  const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id) || isWidevineResolver(id);
 
   // Cleanup polling interval, external track timeout, and stop playback on unmount
   useEffect(() => {
@@ -7264,7 +7292,7 @@ const Parachord = () => {
     volumeRef, isMutedRef, preMuteVolumeRef,
     resolverVolumeOffsets, setResolverVolumeOffsets, resolverVolumeOffsetsRef,
     trackVolumeAdjustments,
-    spotifyVolumeTimeoutRef, amazonMusicVolumeTimeoutRef,
+    spotifyVolumeTimeoutRef,
     getEffectiveVolume, setSpotifyVolume, setSpotifyVolumeDebounced,
     applyLocalFileVolume, determineResolverIdFromTrack,
   } = volumeDomain;
@@ -7782,6 +7810,7 @@ const Parachord = () => {
       resolveTrackRef,
       confidenceForSourceRef,
       isHtml5StreamResolver,
+      isWidevineResolver,
       findLoadedResolver,
       usesSharedAudio,
       resolveTracksInBackground,
@@ -7822,8 +7851,6 @@ const Parachord = () => {
   // API polling happens every 5 seconds, but we want smooth 1-second visual updates
   // The baseline is ONLY set by API polls (in getCurrentPlaybackState), not by this effect
   const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
-
-  // Amazon Music polling interpolation baseline
   // The Amazon Music poller (main process) reports position every 2s; interpolate
   // between polls for a smooth progress bar (same pattern as Spotify/Apple Music).
   const amazonMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
@@ -7874,7 +7901,6 @@ const Parachord = () => {
     pendingCloseTabIdRef,
     trackNeedsExplicitStart,
     spotifyProgressBaselineRef,
-    amazonMusicProgressBaselineRef,
     isPlayingRef,
     streamingPlaybackActiveRef,
     handleNextRef,
@@ -11979,109 +12005,6 @@ ${trackListXml}
     }
   }, []);
 
-  // Main process Amazon Music polling event handlers
-  // This polling runs in main process and is not affected by OS timer throttling
-  useEffect(() => {
-    if (window.electron?.amazonMusic?.polling) {
-      // Handle advance signal from main process polling
-      window.electron.amazonMusic.polling.onAdvance((data) => {
-        console.log('🎵 [Main→Renderer] Amazon Music advance signal received:', data.reason);
-        if (handleNextRef.current) {
-          handleNextRef.current();
-        }
-      });
-
-      // Handle progress updates from the Amazon Music app (2s polls)
-      window.electron.amazonMusic.polling.onProgress((data) => {
-        const track = currentTrackRef.current;
-        // Only apply progress when Amazon Music is the active resolver and the
-        // user isn't dragging the progress bar
-        if (track?._activeResolver === 'amazonmusic' && data && typeof data.positionMs === 'number') {
-          const positionSec = data.positionMs / 1000;
-          if (data.durationMs > 1000 && (!track.duration || Math.abs(track.duration - data.durationMs / 1000) > 2)) {
-            const secs = data.durationMs / 1000;
-            setCurrentTrack(prev => (prev && prev.id === track.id) ? { ...prev, duration: secs } : prev);
-            // The scrobble manager holds its own reference to the track object
-            // (the setState above does not reach it). Without this, a search-
-            // resolved Amazon track (duration 0 from the row scrape) never
-            // scrobbles — onProgressUpdate bails on a falsy duration.
-            if (window.scrobbleManager) window.scrobbleManager.updateTrackDuration(secs);
-          }
-          if (!seekingRef.current) {
-            setProgress(positionSec);
-          }
-          // Always update interpolation baseline for smooth progress between polls
-          const isPlayingState = data.state === 'PLAYING';
-          amazonMusicProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: isPlayingState };
-          // Measured stream quality (stream-quality.js contract): the main-
-          // process poller pairs consecutive reads of the media element's
-          // audio decode counter and reports the converged median bitrate —
-          // in-memory only, never persisted (it can be re-measured every
-          // play). ASIN-gated so an in-flight stale poll (the previous track's
-          // emit landing after this track started — poll() has no generation
-          // re-check between the read and this emit) cannot attach the
-          // previous track's measurement.
-          const measuredQuality = data.streamQuality;
-          if (measuredQuality && measuredQuality.bitrate) {
-            const playingAsin = track.sources?.amazonmusic?.amazonAsin || track.amazonAsin || track.asin;
-            if (!data.asin || !playingAsin || data.asin === playingAsin) {
-              setCurrentTrack(prev => {
-                if (!prev || prev.id !== track.id) return prev;
-                // VBR wobble is not a change (isStreamQualityChange): replacing
-                // currentTrack every 2 s poll re-rendered every memoized page and
-                // re-saved the queue for the whole of an Amazon track.
-                const existing = prev.sources?.amazonmusic?.streamQuality;
-                if (!window.isStreamQualityChange(existing, measuredQuality)) return prev;
-                return {
-                  ...prev,
-                  sources: {
-                    ...(prev.sources || {}),
-                    amazonmusic: {
-                      ...(prev.sources?.amazonmusic || {}),
-                      streamQuality: measuredQuality
-                    }
-                  }
-                };
-              });
-            }
-          }
-          // Notify scrobble manager of progress for scrobble threshold checking
-          if (window.scrobbleManager && isPlayingState) {
-            window.scrobbleManager.onProgressUpdate(positionSec);
-          }
-        }
-      });
-    }
-  }, []);
-
-  // Amazon Music smooth progress interpolation
-  // The Amazon Music poller reports position every 2 seconds from the main
-  // process. This effect interpolates between polls for smooth 1-second
-  // progress bar updates (same pattern as Spotify/Apple Music).
-  useEffect(() => {
-    const isAmazonMusicActive = currentTrack?._activeResolver === 'amazonmusic';
-    const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
-
-    if (isPlaying && isAmazonMusicActive && hasValidDuration) {
-      const interval = setInterval(() => {
-        const baseline = amazonMusicProgressBaselineRef.current;
-        if (baseline.timestamp > 0 && baseline.isPlaying && !seekingRef.current) {
-          const elapsed = (Date.now() - baseline.timestamp) / 1000;
-          const interpolatedProgress = baseline.progress + elapsed;
-
-          if (interpolatedProgress < currentTrack.duration && interpolatedProgress >= 0) {
-            setProgress(interpolatedProgress);
-            if (window.scrobbleManager) {
-              window.scrobbleManager.onProgressUpdate(interpolatedProgress);
-            }
-          }
-        }
-      }, 1000);
-
-      return () => clearInterval(interval);
-    }
-  }, [isPlaying, currentTrack]);
-
   // Listen for MusicKit JS time updates (web-based Apple Music playback)
   // MusicKit JS fires playbackTimeDidChange events which we need to capture for progress updates
   useEffect(() => {
@@ -15382,27 +15305,6 @@ ${trackListXml}
         });
       } else {
         console.warn('⚠️ Apple Music main process polling not available');
-      }
-    } else if (resolverId === 'amazonmusic' && window.electron?.amazonMusic) {
-      // Amazon Music app control — poll playerModel via main process for
-      // auto-advance + progress (renderer intervals throttle when backgrounded)
-      console.log(`🔄 Starting Amazon Music playback polling via main process...`);
-      console.log(`   Track: ${track.title} by ${track.artist}`);
-      console.log(`   ASIN: ${track.amazonAsin || (track.sources && track.sources.amazonmusic && track.sources.amazonmusic.amazonAsin)}`);
-      const asin = track.amazonAsin || (track.sources && track.sources.amazonmusic && track.sources.amazonmusic.amazonAsin) || track.asin;
-      if (asin) {
-        window.electron.amazonMusic.polling.start({
-          asin,
-          trackTitle: track.title,
-          trackArtist: track.artist,
-          duration: track.duration || 0
-        }).then(() => {
-          console.log('✅ Amazon Music main process polling started');
-        }).catch((err) => {
-          console.error('❌ Failed to start Amazon Music polling:', err);
-        });
-      } else {
-        console.warn('⚠️ No ASIN on Amazon Music track, auto-advance may not work');
       }
     }
     // For future HTML5 audio resolvers, add event listener logic here
@@ -34369,8 +34271,6 @@ useEffect(() => {
     }
     // Amazon Music (remote-controlled app; seek position is in seconds)
     if (activeResolver === 'amazonmusic' && window.electron?.amazonMusic) {
-      amazonMusicProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: true };
-      try { await window.electron.amazonMusic.seek(newPosition * 1000); } catch (err) { console.warn('[Seek] Amazon Music seek failed:', err); }
     }
     if (seekTimeoutRef.current) clearTimeout(seekTimeoutRef.current);
     seekTimeoutRef.current = setTimeout(() => {
@@ -42681,6 +42581,69 @@ useEffect(() => {
                   )
                 ),
 
+                // Playback Quality Section (global for Widevine/stream resolvers)
+                React.createElement('div', {
+                  key: 'playback-quality-section',
+                  style: {
+                    padding: '20px',
+                    backgroundColor: 'var(--hover-bg-default)',
+                    borderRadius: '12px'
+                  }
+                },
+                  React.createElement('div', { style: { marginBottom: '16px' } },
+                    React.createElement('h3', {
+                      style: { fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }
+                    }, 'Playback Quality'),
+                    React.createElement('p', {
+                      style: { fontSize: '12px', color: 'var(--text-secondary)' }
+                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Space/immersive-only variants are never selected.')
+                  ),
+                  React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '10px', gap: '12px' } },
+                    React.createElement('div', null,
+                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Quality'),
+                      React.createElement('p', { style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' } }, 'Applies to the current stream immediately.')
+                    ),
+                    React.createElement('select', {
+                      value: playbackQuality,
+                      onChange: (e) => setPlaybackQuality(e.target.value),
+                      style: {
+                        backgroundColor: 'var(--card-bg)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '8px',
+                        padding: '6px 8px',
+                        fontSize: '12px'
+                      }
+                    },
+                      React.createElement('option', { value: 'max' }, 'Max (lossless when available)'),
+                      React.createElement('option', { value: 'high' }, 'High (best lossy)'),
+                      React.createElement('option', { value: 'balanced' }, 'Balanced (~256 kbps)'),
+                      React.createElement('option', { value: 'low' }, 'Data saver')
+                    )
+                  ),
+                  React.createElement('div', { className: 'flex items-center justify-between', style: { gap: '12px' } },
+                    React.createElement('div', null,
+                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Auto adjust quality'),
+                      React.createElement('p', { style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' } }, 'Adapt to current network speed at or below the chosen tier.')
+                    ),
+                    React.createElement('select', {
+                      value: playbackAbr ? 'on' : 'off',
+                      onChange: (e) => setPlaybackAbr(e.target.value === 'on'),
+                      style: {
+                        backgroundColor: 'var(--card-bg)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '8px',
+                        padding: '6px 8px',
+                        fontSize: '12px'
+                      }
+                    },
+                      React.createElement('option', { value: 'on' }, 'On'),
+                      React.createElement('option', { value: 'off' }, 'Off')
+                    )
+                  )
+                ),
+
                 // Volume Normalization Section - refined card
                 React.createElement('div', {
                   style: {
@@ -44689,7 +44652,7 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || usesSharedAudio(currentResolverId) || currentResolverId === 'amazonmusic' || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || usesSharedAudio(currentResolverId) || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -44714,10 +44677,6 @@ useEffect(() => {
                   const effectiveVol = getEffectiveVolume(restoredVolume, 'applemusic', currentTrackRef.current?.id);
                   window._appleMusicPreviewAudio.volume = effectiveVol / 100;
                 }
-                if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
-                  const effectiveVol = getEffectiveVolume(restoredVolume, 'amazonmusic', currentTrackRef.current?.id);
-                  window.electron.amazonMusic.setVolume(effectiveVol / 100).catch(() => {});
-                }
               } else {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
@@ -44730,9 +44689,6 @@ useEffect(() => {
                 }
                 if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
                   window._appleMusicPreviewAudio.volume = 0;
-                }
-                if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
-                  window.electron.amazonMusic.setVolume(0).catch(() => {});
                 }
               }
             };
@@ -44814,14 +44770,6 @@ useEffect(() => {
                     if (activeResolverId === 'applemusic' && window._appleMusicPreviewAudio) {
                       const effectiveVol = getEffectiveVolume(newVolume, 'applemusic', currentTrackRef.current?.id);
                       window._appleMusicPreviewAudio.volume = effectiveVol / 100;
-                    }
-                    // Amazon Music: debounced setVolume through the CDP bridge
-                    if (activeResolverId === 'amazonmusic' && window.electron?.amazonMusic) {
-                      if (amazonMusicVolumeTimeoutRef.current) clearTimeout(amazonMusicVolumeTimeoutRef.current);
-                      amazonMusicVolumeTimeoutRef.current = setTimeout(() => {
-                        const effectiveVol = getEffectiveVolume(newVolume, 'amazonmusic', currentTrackRef.current?.id);
-                        window.electron.amazonMusic.setVolume(effectiveVol / 100).catch(() => {});
-                      }, 150);
                     }
                   },
                 className: `volume-slider w-20 h-1 rounded-full ${isDisabled ? 'disabled cursor-not-allowed opacity-50' : 'cursor-pointer'}`
@@ -48896,10 +48844,20 @@ useEffect(() => {
               amazonMusicStatus?.web?.signedIn
                 ? React.createElement('button', {
                     onClick: async () => {
+                      // Stop the shared engine BEFORE the session dies — the
+                      // shaka session (license + buffered signed URLs) must
+                      // not keep playing a signed-out account's content, and
+                      // the dmls side needs a live session for the FINAL
+                      // trackStreamed pair.
+                      if (window.__parachordWidevine && typeof window.__parachordWidevine.stop === 'function') {
+                        await window.__parachordWidevine.stop().catch(() => {});
+                        if (audioRef.current && currentTrackRef.current?._activeResolver === 'amazonmusic') {
+                          setIsPlaying(false);
+                        }
+                      }
                       const r = await window.electron.amazonMusic.signOut();
                       if (r && r.success) {
-                        setAmazonMusicStatus({ success: true, engine: 'web', web: { cdm: !!(amazonMusicStatus && amazonMusicStatus.web && amazonMusicStatus.web.cdm), signedIn: false } });
-                        setAmazonMusicQuality(null);
+                        setAmazonMusicStatus({ success: true, engine: 'widevine', web: { cdm: !!(amazonMusicStatus && amazonMusicStatus.web && amazonMusicStatus.web.cdm), signedIn: false } });
                         showToast('Signed out of Amazon Music', 'success');
                       } else {
                         showToast((r && r.error) || 'Could not sign out of Amazon Music', 'error');
@@ -48917,8 +48875,6 @@ useEffect(() => {
                       if (ok) {
                         const s = await window.electron.amazonMusic.getStatus().catch(() => null);
                         if (s && s.success) setAmazonMusicStatus(s);
-                        const q = await window.electron.amazonMusic.getQuality().catch(() => null);
-                        if (q && q.success) setAmazonMusicQuality(q);
                       }
                     },
                     style: {
@@ -48928,101 +48884,6 @@ useEffect(() => {
                     }
                   }, 'Sign in')
             ),
-            React.createElement('div', {
-              style: {
-                padding: '12px',
-                backgroundColor: 'var(--hover-bg-default)',
-                borderRadius: '8px'
-              }
-            },
-              React.createElement('div', {
-                className: 'flex items-center justify-between',
-                style: { marginBottom: '10px', gap: '12px' }
-              },
-                React.createElement('div', null,
-                  React.createElement('p', {
-                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
-                  }, 'Audio quality'),
-                  React.createElement('p', {
-                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
-                  }, amazonMusicStatus?.web?.signedIn
-                    ? 'Same choices as Amazon\'s Audio Quality menu. Applies on the next track.'
-                    : 'Sign in to change audio quality')
-                ),
-                React.createElement('select', {
-                  value: amazonMusicQuality?.streamingQuality || 'STANDARD',
-                  disabled: !amazonMusicStatus?.web?.signedIn || !amazonMusicQuality,
-                  onChange: async (e) => {
-                    const result = await window.electron.amazonMusic.setQuality({
-                      streamingQuality: e.target.value,
-                      abrEnabled: amazonMusicQuality?.abrEnabled !== false
-                    });
-                    if (result && result.success) setAmazonMusicQuality(result);
-                    else showToast(result?.error || 'Could not change Amazon Music audio quality', 'error');
-                  },
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '6px 8px',
-                    fontSize: '12px'
-                  }
-                },
-                  (() => {
-                    const known = amazonMusicQuality?.options || [
-                      { value: 'BEST_AVAILABLE', label: 'HD/Ultra HD' },
-                      { value: 'STANDARD', label: 'Standard' },
-                      { value: 'DATA_SAVER', label: 'Data Saver' }
-                    ];
-                    const current = amazonMusicQuality?.streamingQuality;
-                    const options = current && !known.some(o => o.value === current)
-                      ? [{ value: current, label: current }, ...known]
-                      : known;
-                    return options;
-                  })().map(option => React.createElement('option', {
-                    key: option.value,
-                    value: option.value
-                  }, option.label))
-                )
-              ),
-              React.createElement('div', {
-                className: 'flex items-center justify-between',
-                style: { gap: '12px' }
-              },
-                React.createElement('div', null,
-                  React.createElement('p', {
-                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
-                  }, 'Auto adjust quality'),
-                  React.createElement('p', {
-                    style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
-                  }, 'Choose the best audio quality for the current network speed.')
-                ),
-                React.createElement('select', {
-                  value: amazonMusicQuality?.abrEnabled === false ? 'off' : 'on',
-                  disabled: !amazonMusicStatus?.web?.signedIn || !amazonMusicQuality,
-                  onChange: async (e) => {
-                    const result = await window.electron.amazonMusic.setQuality({
-                      streamingQuality: amazonMusicQuality?.streamingQuality,
-                      abrEnabled: e.target.value === 'on'
-                    });
-                    if (result && result.success) setAmazonMusicQuality(result);
-                    else showToast(result?.error || 'Could not change Amazon Music audio quality', 'error');
-                  },
-                  style: {
-                    backgroundColor: 'var(--card-bg)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '8px',
-                    padding: '6px 8px',
-                    fontSize: '12px'
-                  }
-                },
-                  React.createElement('option', { value: 'on' }, 'On'),
-                  React.createElement('option', { value: 'off' }, 'Off')
-                )
-              )
-            )
           ),
 
           // Local Files settings section
