@@ -72,7 +72,21 @@ Parachord is built and tested only on [castlabs Electron for Content Security](h
 
 ## Desktop integration
 
-- **`parachord://` links.** At every launch the app registers itself as the handler with Electron's `setAsDefaultProtocolClient`. On Linux that goes through `xdg-settings` and a `.desktop` file. A distribution package should declare the scheme itself: `MimeType=x-scheme-handler/parachord;`, with `%u` in `Exec`.
+- **`parachord://` links.** The official deb, rpm and AppImage declare the scheme in their `.desktop` file (`MimeType=x-scheme-handler/parachord;`, generated from `build.protocols` in `package.json`), so installing the package registers the handler. The app also registers itself at every launch with Electron's `setAsDefaultProtocolClient`, which on Linux goes through `xdg-settings` and a `.desktop` file. A distribution package that writes its own `.desktop` file should declare the scheme the same way, with `%u` or `%U` in `Exec`. The app reads the link from its arguments, both on first launch and when an instance is already running. The entry the deb ships, as a template:
+
+  ```ini
+  [Desktop Entry]
+  Name=Parachord
+  Exec=/opt/Parachord/parachord-desktop %U
+  Terminal=false
+  Type=Application
+  Icon=parachord-desktop
+  StartupWMClass=parachord-desktop
+  MimeType=x-scheme-handler/parachord;
+  Categories=AudioVideo;
+  ```
+
+  Name the file `parachord-desktop.desktop` and keep `StartupWMClass=parachord-desktop`. Electron takes the window's app_id / WM_CLASS from `desktopName` in `package.json`, and desktops match running windows to the entry by that name.
 - **Browser extension.** At every launch the app writes a native-messaging manifest into `~/.config/{google-chrome,chromium,microsoft-edge,BraveSoftware/Brave-Browser}/NativeMessagingHosts/`. The manifest points at a launcher script that runs the app's own Electron binary with `ELECTRON_RUN_AS_NODE=1`. Keep Electron's `RunAsNode` fuse enabled (the default), or the extension can't connect.
 - **MCP bridge.** At every launch the app copies `mcp-stdio.js` into the profile, so the AI-assistant integration has a stable path.
 
