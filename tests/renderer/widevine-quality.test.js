@@ -96,19 +96,23 @@ describe('selectShakaVariant', () => {
 describe('shakaPlaybackConfig', () => {
   test('locked variant when adaptive is off', () => {
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'high', false)).toEqual({
-      abrEnabled: false, variantId: '3', variantBandwidth: 325595
+      abrEnabled: false, variantId: '3', variantBandwidth: 325595, preferredCodecs: []
     });
   });
-  test('ABR is family-scoped and capped at tier when adaptive is on', () => {
-    // codecFamily pins the Shaka ladder: smooth switching forbids crossing
-    // opus↔FLAC mid-stream, which is what parked 'max' at 325k opus live.
+  test('adaptive config is a PREFERENCE ORDER (never a closed whitelist)', () => {
+    // Preferred order ranks; getVariantTracks must never see a closed
+    // family — that breaks live family switching (observed: mid-play pinned
+    // flac even after switching tier to high).
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'low', true)).toEqual({
-      abrEnabled: true, codecFamily: 'opus', variantId: '1', variantBandwidth: 53059, maxBandwidth: 53059
+      abrEnabled: true, codecFamily: 'opus', preferredCodecs: ['opus', 'mp4a'], variantId: '1', variantBandwidth: 53059, maxBandwidth: 53059
     });
     const maxCfg = shakaPlaybackConfig(LIVE_VARIANTS, 'max', true);
     expect(maxCfg.codecFamily).toBe('flac');
     expect(maxCfg.maxBandwidth).toBe(1902230);
-    expect(shakaPlaybackConfig(LIVE_VARIANTS, 'high', true).codecFamily).toBe('opus');
+    expect(maxCfg.preferredCodecs).toEqual(['flac', 'opus', 'mp4a']);
+    const highCfg = shakaPlaybackConfig(LIVE_VARIANTS, 'high', true);
+    expect(highCfg.codecFamily).toBe('opus');
+    expect(highCfg.preferredCodecs).toEqual(['opus', 'mp4a']);
   });
   test('null when nothing playable', () => {
     expect(shakaPlaybackConfig([], 'max', true)).toBeNull();
