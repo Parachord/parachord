@@ -75,14 +75,24 @@ function makeElectron({ manifestManifest = '<MPD/>', manifestOk = true, licenseO
   return { bridge, store, playerEvents };
 }
 
-function load({ shaka, electron } = {}) {
+function load({ shaka, electron, codecSupport } = {}) {
   jest.resetModules();
   const sh = shaka || makeShaka();
   const el = electron || makeElectron();
+  const full = { flac: true, opus: true, aac: true };
+  const support = codecSupport ? { ...full, ...codecSupport } : full;
   global.window = {
     shaka: sh,
     electron: { widevine: el.bridge, store: el.store },
-    __parachordWidevineError: undefined
+    __parachordWidevineError: undefined,
+    MediaSource: {
+      isTypeSupported: (type) => {
+        if (/flac/.test(type)) return !!support.flac;
+        if (/opus/.test(type)) return !!support.opus;
+        if (/mp4a/.test(type)) return !!support.aac;
+        return false;
+      }
+    }
   };
   global.URL.createObjectURL = jest.fn(() => 'blob:mock-mpd');
   global.URL.revokeObjectURL = jest.fn();
@@ -253,6 +263,30 @@ describe('applyConfig shaping', () => {
     // ABR branch — cover it through shakaPlaybackConfig → applyConfig by
     // driving a play with an aac-only variant list; indirect but end-to-end:
     expect(true).toBe(true); // covered by the configure-shape tests above + the family note
+  });
+});
+
+describe('codec support probing (the Linux FLAC-only-on-paper regression)', () => {
+  test('tier selection falls to the top supported variant when FLAC is unsupported', async () => {
+    const { sh, player } = load({
+      codecSupport: { flac: false },
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected && p.selected.codecs).toBe('opus');
+    expect(p.selected.bandwidth).toBe(325595); // top lossy fallback, not the un-decodable FLAC rung
+  });
+
+  test('all variants unsupported → honest playback-failed, not a stall', async () => {
+    const { player } = load({
+      codecSupport: { flac: false, opus: false, aac: false },
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    const audio = makeAudio();
+    await expect(player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } }))
+      .rejects.toMatchObject({ reason: 'playback-failed', message: expect.stringContaining('this build can play') });
   });
 });
 
