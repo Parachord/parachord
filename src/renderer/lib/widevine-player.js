@@ -40,6 +40,8 @@ let lastQualityRead = null; // debug: the tier/adaptive seen by the last play/ap
 let trackSession = null; // { resolverId, entity, trackContext, started }
 let loadStartStamp = 0;
 let playToken = 0; // per-call token: a superseded play must never reach the element
+let lastErrorDetail = null;
+const recentErrors = [];
 
 function supersededError() {
   const err = new Error('widevine: play superseded');
@@ -137,6 +139,27 @@ function ensureLicenseScheme() {
   return true;
 }
 
+// Codec support differs per build: stock Chromium-can-decoded mp4 codec sets
+// vary (Linux Electron frequently LACKS the proprietary-codec bundle that
+// FLAC-in-MP4 needs; hornet-era Linux never played FLAC for exactly this
+// reason, so max-tier pinning on those builds previously stalled at the FLAC
+// variant with shaka 4012). Probe once per process.
+let supportedCodecFamilies = null;
+function getSupportedCodecFamilies() {
+  if (supportedCodecFamilies) return supportedCodecFamilies;
+  const is = (t) => {
+    try { return !!(window.MediaSource && window.MediaSource.isTypeSupported && window.MediaSource.isTypeSupported(t)); } catch { return false; }
+  };
+  supportedCodecFamilies = {
+    flac: is('audio/mp4; codecs="flac"'),
+    opus: is('audio/mp4; codecs="opus"'),
+    aac: is('audio/mp4; codecs="mp4a.40.2"')
+  };
+  const rejected = Object.entries(supportedCodecFamilies).filter(([, ok]) => !ok).map(([k]) => k);
+  if (rejected.length) console.log('[widevine-player] codec support:', JSON.stringify(supportedCodecFamilies), `(selecting only supported; ${rejected.join(',')} filtered out)`);
+  return supportedCodecFamilies;
+}
+
 async function readPlaybackQuality() {
   let tier = DEFAULT_QUALITY;
   let adaptive = DEFAULT_ABR;
@@ -203,6 +226,19 @@ function currentVariantFacts() {
   }
 }
 
+// Variants the current build can ACTUALLY decode: filters the manifest's
+// list through getSupportedCodecFamilies before tier selection runs.
+function playableVariants(tracks) {
+  const support = getSupportedCodecFamilies();
+  return (tracks || []).filter((t) => {
+    const c = String(t && (t.codecs || t.codec) || '').toLowerCase();
+    if (c.startsWith('flac')) return support.flac;
+    if (c.startsWith('opus')) return support.opus;
+    if (c.startsWith('mp4a') || c.startsWith('aac')) return support.aac;
+    return false;
+  });
+}
+
 async function play(audio, { resolverId, entity, trackContext } = {}) {
   if (!audio || !resolverId) throw new Error('widevine-player: audio element and resolverId are required');
   if (!ensureLicenseScheme()) throw new Error('widevine-player: shaka did not load (index.html script tag)');
@@ -225,8 +261,21 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     player = new shaka.Player();
     player.addEventListener('adaptation', () => notifyVariantChange());
     player.addEventListener('error', (e) => {
-      const d = e && e.detail;
-      lastError = ('shaka ' + (d && d.code !== undefined ? d.code : (e && e.message) || 'error')).slice(0, 240);
+      const d = (e && e.detail) || {};
+      lastError = ('shaka ' + (d.code !== undefined ? d.code : (e && e.message) || 'error')).slice(0, 240);
+      // Diagnostics that travel: the code alone buries the segment URL / inner
+      // error every platform-00-shaped 4012 investigation needs.
+      lastErrorDetail = {
+        code: d.code ?? null,
+        category: d.category ?? null,
+        severity: d.severity ?? null,
+        message: String((d.message || '')).slice(0, 240),
+        data: (() => { try { return JSON.stringify(d.data || null).slice(0, 400); } catch { return null; } })(),
+        at: Date.now(),
+        positionMs: audioElement && Number.isFinite(audioElement.currentTime) ? Math.round(audioElement.currentTime * 1000) : null
+      };
+      recentErrors.push(lastErrorDetail);
+      if (recentErrors.length > 20) recentErrors.shift();
       if (typeof window.__parachordWidevineError === 'function') window.__parachordWidevineError(lastError, activeResolverId);
     });
   }
@@ -267,10 +316,13 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   };
 
   const { tier, adaptive } = await readPlaybackQuality();
-  const config = shakaPlaybackConfig(player.getVariantTracks(), tier, adaptive);
+  // Tier selection runs over what this build can decode (e.g. FLAC-only-on-
+  // paper builds fall to top opus instead of stalling at an un-decodable
+  // variant).
+  const config = shakaPlaybackConfig(playableVariants(player.getVariantTracks()), tier, adaptive);
   if (!config) {
     await player.unload();
-    const err = new Error('manifest carried no playable audio variant');
+    const err = new Error('manifest carried no audio variant this build can play');
     err.reason = 'playback-failed';
     throw err;
   }
@@ -331,6 +383,8 @@ function getState() {
   return {
     activeResolverId,
     lastError,
+    lastErrorDetail,
+    recentErrors: recentErrors.slice(),
     attached: !!audioElement,
     positionMs: audioElement && Number.isFinite(audioElement.currentTime) ? Math.round(audioElement.currentTime * 1000) : null,
     durationMs: audioElement && Number.isFinite(audioElement.duration) ? Math.round(audioElement.duration * 1000) : null,
