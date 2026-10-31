@@ -85,6 +85,13 @@ function load({ shaka, electron, codecSupport } = {}) {
     shaka: sh,
     electron: { widevine: el.bridge, store: el.store },
     __parachordWidevineError: undefined,
+    navigator: {
+      requestMediaKeySystemAccess: async (_sys, configs) => {
+        if (support.emeFlacReject) throw new Error('NotSupportedError');
+        if (support.emeFlacEmpty) return null;
+        return { getConfiguration: () => configs };
+      }
+    },
     MediaSource: {
       isTypeSupported: (type) => {
         if (/flac/.test(type)) return !!support.flac;
@@ -267,9 +274,9 @@ describe('applyConfig shaping', () => {
 });
 
 describe('codec support probing (the Linux FLAC-only-on-paper regression)', () => {
-  test('tier selection falls to the top supported variant when FLAC is unsupported', async () => {
+  test('tier selection falls to the top supported variant when the EME key system rejects FLAC', async () => {
     const { sh, player } = load({
-      codecSupport: { flac: false },
+      codecSupport: { flac: true, emeFlacReject: true },
       electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
     });
     const audio = makeAudio();

@@ -139,22 +139,45 @@ function ensureLicenseScheme() {
   return true;
 }
 
-// Codec support differs per build: stock Chromium-can-decoded mp4 codec sets
-// vary (Linux Electron frequently LACKS the proprietary-codec bundle that
-// FLAC-in-MP4 needs; hornet-era Linux never played FLAC for exactly this
-// reason, so max-tier pinning on those builds previously stalled at the FLAC
-// variant with shaka 4012). Probe once per process.
+// Codec support differs per build AND per protection tier: some builds
+// decode a codec but their Widevine key system refuses playback conditions
+// for its higher rungs (output-restriction / robustness gates — the FLAC
+// tier fails shaka 4012 (RESTRICTIONS_CANNOT_BE_MET) there even though
+// MediaSource is fine everywhere. Hornet-era Linux never played FLAC for the
+// same underlying reason). Probe both layers once per process.
 let supportedCodecFamilies = null;
-function getSupportedCodecFamilies() {
+async function getSupportedCodecFamilies() {
   if (supportedCodecFamilies) return supportedCodecFamilies;
   const is = (t) => {
     try { return !!(window.MediaSource && window.MediaSource.isTypeSupported && window.MediaSource.isTypeSupported(t)); } catch { return false; }
   };
-  supportedCodecFamilies = {
+  const codecTypes = {
     flac: is('audio/mp4; codecs="flac"'),
     opus: is('audio/mp4; codecs="opus"'),
     aac: is('audio/mp4; codecs="mp4a.40.2"')
   };
+  const emeFamilies = { ...codecTypes };
+  // Deeper EME probe: FLAC's premium tier typically carries stronger
+  // output-protection requirements; when the key system rejects the AUDIO
+  // robustness conditions that tier needs, treat the family as unsupported on
+  // this build entirely rather than stalling at its first segment. (A failed
+  // requestMediaKeySystemAccess = the CDM won't accept even basic playback
+  // for that codec — treat unsupported.)
+  if (codecTypes.flac) {
+    try {
+      const nav = (typeof window !== 'undefined' && window.navigator) || (typeof navigator !== 'undefined' && navigator);
+      const access = await nav.requestMediaKeySystemAccess('com.widevine.alpha', [{
+        initDataTypes: ['cenc'],
+        distinctiveIdentifier: 'use',
+        audioCapabilities: [{ contentType: 'audio/mp4; codecs="flac"', encryptionScheme: 'cenc' }]
+      }]);
+      if (!access) emeFamilies.flac = false;
+    } catch (e) {
+      console.log('[widevine-player] flac key-system probe rejected:', String(e && e.name || e), e && e.message);
+      emeFamilies.flac = false;
+    }
+  }
+  supportedCodecFamilies = emeFamilies;
   const rejected = Object.entries(supportedCodecFamilies).filter(([, ok]) => !ok).map(([k]) => k);
   if (rejected.length) console.log('[widevine-player] codec support:', JSON.stringify(supportedCodecFamilies), `(selecting only supported; ${rejected.join(',')} filtered out)`);
   return supportedCodecFamilies;
@@ -229,7 +252,8 @@ function currentVariantFacts() {
 // Variants the current build can ACTUALLY decode: filters the manifest's
 // list through getSupportedCodecFamilies before tier selection runs.
 function playableVariants(tracks) {
-  const support = getSupportedCodecFamilies();
+  // Callers: await getSupportedCodecFamilies() once before selection.
+  const support = supportedCodecFamilies || { flac: true, opus: true, aac: true };
   return (tracks || []).filter((t) => {
     const c = String(t && (t.codecs || t.codec) || '').toLowerCase();
     if (c.startsWith('flac')) return support.flac;
@@ -265,7 +289,14 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
       lastError = ('shaka ' + (d.code !== undefined ? d.code : (e && e.message) || 'error')).slice(0, 240);
       // Diagnostics that travel: the code alone buries the segment URL / inner
       // error every platform-00-shaped 4012 investigation needs.
+      const active = currentVariantFacts();
+      const activeFamily = active && active.codec ? String(active.codec).split('.')[0].toLowerCase() : null;
+      const kidForActive = trackSession && trackSession.kidGroupsByFamily && activeFamily
+        ? trackSession.kidGroupsByFamily[activeFamily.startsWith('mp4a') || activeFamily.startsWith('aac') ? 'aac' : activeFamily] || null
+        : null;
       lastErrorDetail = {
+        kidForActiveVariant: trackSession && trackSession.kidGroupsByFamily && kidForActive ? kidForActive : null,
+        kidGroups: trackSession && trackSession.kidGroupsByFamily ? { ...trackSession.kidGroupsByFamily } : null,
         code: d.code ?? null,
         category: d.category ?? null,
         severity: d.severity ?? null,
@@ -304,9 +335,14 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   }
   if (playToken !== mine) throw supersededError();
   bindElementEvents(audio);
+  const kidGroupsByFamily = {};
+  for (const group of (result.protectionSets || [])) {
+    if (group && group.kid) kidGroupsByFamily[group.family || 'unknown'] = group.kid;
+  }
   trackSession = {
     resolverId,
     sessionId: result.sessionId || null,
+    kidGroupsByFamily,
     // Telemetry/stats attribute the SERVED pressing: Amazon's substitution
     // maps a catalog ASIN to a deliverable one (identical track, different id).
     entity: { ...(entity || {}), ...(result.substituteAsin ? { asin: result.substituteAsin, requestedAsin: entity && entity.asin } : {}) },
@@ -316,6 +352,7 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   };
 
   const { tier, adaptive } = await readPlaybackQuality();
+  await getSupportedCodecFamilies();
   // Tier selection runs over what this build can decode (e.g. FLAC-only-on-
   // paper builds fall to top opus instead of stalling at an un-decodable
   // variant).

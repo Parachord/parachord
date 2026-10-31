@@ -38,6 +38,7 @@ const {
   amazonDmlsRegion,
   amazonNativeSessionFromConfig,
   amazonAuthCookieState,
+  mpdContentProtectionSets,
   DML_TARGET_PREFIX,
   WIDEVINE_CERT_CHALLENGE
 } = require('./amazon-music-logic');
@@ -262,9 +263,10 @@ const adapter = {
       err.reason = 'playback-failed';
       throw err;
     }
-    console.log(`[Amazon dmls] manifest ${asin}${entry.substituteAsin ? ` → substitute ${entry.substituteAsin}` : ''} (${Math.round(entry.manifest.length / 1024)}KB)`);
+    const protectionSets = mpdContentProtectionSets(entry.manifest);
+    console.log(`[Amazon dmls] manifest ${asin}${entry.substituteAsin ? ` → substitute ${entry.substituteAsin}` : ''} (${Math.round(entry.manifest.length / 1024)}KB, ${protectionSets.map((g) => `${g.family}:KID-${(g.kid || '?').slice(0, 6)}`).join(' ')})`);
     this.kickCertWarm();
-    return { manifest: entry.manifest, substituteAsin: entry.substituteAsin || null, musicDashVersion: entry.musicDashVersion || null, cdnType: entry.cdnType || null };
+    return { manifest: entry.manifest, substituteAsin: entry.substituteAsin || null, musicDashVersion: entry.musicDashVersion || null, cdnType: entry.cdnType || null, protectionSets };
   },
 
   async relayLicense(challengeB64) {
