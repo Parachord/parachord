@@ -363,14 +363,15 @@ describe('app.js integration', () => {
     // through usesSharedAudio / isHtml5StreamResolver.
     expect(axe.capabilities.html5Stream).toBe(true);
     expect(appSrc).toContain("const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;");
-    expect(appSrc).toContain("const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id);");
+    expect(appSrc).toContain("const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id) || isWidevineResolver(id);");
     // play/pause toggle
     expect(appSrc).toContain('audioRef.current && usesSharedAudio(currentTrack?._activeResolver)');
     // seek keys off the resolver actually playing, not "has a subsonic source"
     expect(appSrc).toContain('usesSharedAudio(activeResolver) && audioRef.current');
     expect(appSrc).not.toContain('currentTrack?.sources?.subsonic');
-    // volume slider support
-    expect(appSrc).toContain('usesSharedAudio(currentResolverId) || currentResolverId === \'amazonmusic\'');
+    // volume slider support — widevine resolvers (Amazon) share the element,
+    // so they need no special case here anymore
+    expect(appSrc).toContain('usesSharedAudio(currentResolverId) || (isSpotify && spotifyVolumeSupported)');
     // and no id list is left behind
     expect(appSrc).not.toMatch(/activeResolver(?:Id)? === 'subsonic'|resolverId === 'subsonic'/);
   });

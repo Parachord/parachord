@@ -716,19 +716,22 @@ const appleMusicPoller = {
 };
 
 const amazonWebPlayer = require('./amazon-web-player');
-const { createAmazonMusicPoller } = require('./amazon-music-poller');
+const { registerWidevineProvider, registerWidevineBridgeIpc } = require('./main-process/widevine-bridge');
+const { registerAmazonDmlsProvider, amazonDmls } = require('./amazon-dmls');
 
-// Amazon Music playback poller — signals track-finished and streams progress to
-// the renderer (same pattern as the Spotify / Apple Music main-process pollers;
-// renderer intervals throttle when the app is backgrounded). The state machine
-// (single-flight polls, generation-bound advance halt, pause-death latch) lives
-// in amazon-music-poller.js where it is unit-tested.
-const amazonMusicPoller = createAmazonMusicPoller({
-  player: amazonWebPlayer,
-  send: (channel, data) => {
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send(channel, data);
-    }
+// Widevine playback runs in the renderer (Shaka on the shared HTMLAudioElement);
+// the bridge relays manifest/license operations to main-side providers per
+// resolver. amazon-dmls is the Amazon Music provider; amazon-web-player
+// keeps its search/sign-in/session role (the hornet audio engine is gone).
+// Sender gate for the license-oracle surface: only the main window's top
+// frame may call at all (relay gating rules in widevine-bridge.js).
+registerWidevineBridgeIpc({
+  ipcMain,
+  isAllowedSender: (event) => {
+    if (!event || !event.sender || !mainWindow || mainWindow.isDestroyed()) return false;
+    if (event.sender.id !== mainWindow.webContents.id) return false;
+    const frame = event.senderFrame;
+    return !!frame && frame.top === frame;
   }
 });
 
@@ -902,6 +905,7 @@ function createWindow() {
   });
 
   amazonWebPlayer.setHost(mainWindow);
+  registerAmazonDmlsProvider({ registerWidevineProvider, store });
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -1024,10 +1028,6 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
-    // setHost destroys the views but does not own the poller. Without this
-    // the interval keeps reading EMPTY for the rest of the run (macOS keeps
-    // the app alive with no window).
-    try { amazonMusicPoller.stop(); } catch { /* not started */ }
     amazonWebPlayer.setHost(null);
     mainWindow = null;
   });
@@ -2292,13 +2292,9 @@ app.whenReady().then(async () => {
     safeSendToRenderer,
     mediaKeysEnabled: () => (store.get('media-key-handling') || 'always') !== 'never'
   });
-  const { createEmbeddedPlayerMirror, sendMirrorToEmbeddedPlayer } = require('./main-process/ipc/embedded-player');
-  embeddedPlayerMirror = createEmbeddedPlayerMirror({
-    sendMirror: (payload) => sendMirrorToEmbeddedPlayer('amazonmusic', payload),
-    // currentAsin is non-null exactly while the Amazon player owns playback.
-    isOwned: () => !!amazonWebPlayer.currentAsin,
-    enabled: () => process.platform !== 'linux'
-  });
+  // Widevine audio plays in the MAIN window now — its mediaSession is the
+  // app's own (#976 feed), so no embedded-player mirror is bound for Amazon.
+  // The kit stays registered above for future third-party embedders.
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -2390,7 +2386,6 @@ let mprisPlayer = null;
 // process-wide there (the disable-features block at the top of this file),
 // so there is no entry to mirror into — the native player is the single
 // surface.
-let embeddedPlayerMirror = null;
 
 const registerMediaKeys = () => {
   if (mediaKeysRegistered) return;
@@ -2452,17 +2447,14 @@ ipcMain.handle('media-keys-update-playback-source', (event, source) => {
 // has media-key-handling set to 'never').
 ipcMain.handle('mpris:update-track', (event, track) => {
   if (mprisPlayer) mprisPlayer.updateTrack(track);
-  if (embeddedPlayerMirror) embeddedPlayerMirror.updateTrack(track);
 });
 
 ipcMain.handle('mpris:update-playback-state', (event, state) => {
   if (mprisPlayer) mprisPlayer.updatePlaybackState(state);
-  if (embeddedPlayerMirror) embeddedPlayerMirror.updatePlaybackState(state);
 });
 
 ipcMain.handle('mpris:update-position', (event, positionSeconds) => {
   if (mprisPlayer) mprisPlayer.updatePosition(positionSeconds);
-  if (embeddedPlayerMirror) embeddedPlayerMirror.updatePosition(positionSeconds);
 });
 
 ipcMain.handle('mpris:update-shuffle', (event, shuffle) => {
@@ -3760,7 +3752,9 @@ ipcMain.handle('applemusic-polling-status', async () => {
   };
 });
 
-// Amazon Music IPC. Playback is the in-app web player (castlabs Widevine).
+// Amazon Music IPC. Playback runs through the widevine bridge (Shaka in the renderer;
+// amazon-dmls is the provider). Search/sign-in/session mints stay on the
+// hidden search view.
 // Errors come back as { success: false, error|reason } rather than thrown IPC
 // rejections so the resolver can branch (not-ready must not be cached as noMatch).
 ipcMain.handle('amazonmusic-get-status', async () => {
@@ -3771,10 +3765,12 @@ ipcMain.handle('amazonmusic-get-status', async () => {
     return {
       success: true,
       platform: process.platform,
-      engine: 'web',
+      engine: 'widevine',
+      // The settings UI reads web.{cdm,signedIn} — the shape is kept; audio
+      // plays in the main renderer through the widevine bridge.
       web: { cdm, signedIn },
-      // Live proof the preload is alive in the player page: stub false on a
-      // loaded page = the sandboxed-preload failure mode came back.
+      // Live proof the search-view preload is alive (sandboxed-preload
+      // failure surface).
       preload,
       // Replay-first template state (specSearch): whether the fast path is
       // armed, and how fresh the captured request is. Metadata only — the
@@ -3784,7 +3780,9 @@ ipcMain.handle('amazonmusic-get-status', async () => {
             capturedAt: new Date(amazonWebPlayer.specSearchTemplate.capturedAt).toISOString(),
             ageMs: Date.now() - amazonWebPlayer.specSearchTemplate.capturedAt
           }
-        : null
+        : null,
+      // The dmls provider's session internals.
+      native: amazonDmls.debugState()
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -3801,8 +3799,7 @@ ipcMain.handle('amazonmusic-open-login', async () => {
 
 ipcMain.handle('amazonmusic-sign-out', async () => {
   try {
-    // The poller reads a view that signOut is about to destroy.
-    amazonMusicPoller.stop();
+    amazonDmls.onSignOut();
     return await amazonWebPlayer.signOut();
   } catch (error) {
     return { success: false, error: error.message };
@@ -3915,118 +3912,6 @@ ipcMain.handle('amazonmusic-debug-capture-gql', async (event, { url } = {}) => {
   }
 });
 
-ipcMain.handle('amazonmusic-play-track', async (event, { asin, title, artist }) => {
-  try {
-    const result = await amazonWebPlayer.playByAsin({ asin, title, artist });
-    if (!result || !result.success) {
-      // Halt only the play that failed, by the generation it returned.
-      // An unscoped halt blanks whatever claimed the view while this call
-      // was in flight. 'superseded' already means a newer play owns it.
-      if (result && result.reason !== 'superseded' && Number.isFinite(result.playGeneration)) {
-        await amazonWebPlayer.haltPlayback(result.playGeneration).catch(() => {});
-      }
-      return { success: false, engine: 'web', reason: result && result.reason, error: result && result.error };
-    }
-    return { success: true, engine: 'web', ...result };
-  } catch (error) {
-    try {
-      if (Number.isFinite(error && error.playGeneration)) await amazonWebPlayer.haltPlayback(error.playGeneration);
-    } catch { /* already stopped */ }
-    return { success: false, error: error.message, reason: error.reason };
-  }
-});
-
-ipcMain.handle('amazonmusic-pause', async () => {
-  try {
-    const r = await amazonWebPlayer.pause();
-    // No media element (view blanked by haltPlayback) is not a successful
-    // pause — callers deciding from the result need the truth.
-    if (r && r.ok === false) return { success: false, reason: 'no-media', error: 'Amazon Music has no media element right now' };
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-resume', async () => {
-  try {
-    const r = await amazonWebPlayer.resume();
-    if (r && r.ok === false) return { success: false, reason: 'no-media', error: 'Amazon Music has no media element right now' };
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-stop', async () => {
-  try {
-    await amazonWebPlayer.stop();
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-seek', async (event, { positionMs }) => {
-  try {
-    amazonMusicPoller.noteUserSeek(positionMs);
-    await amazonWebPlayer.seek(positionMs);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-set-volume', async (event, { volume }) => {
-  try {
-    await amazonWebPlayer.setVolume(volume);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-get-playback-state', async () => {
-  try {
-    const state = await amazonWebPlayer.getPlaybackState();
-    return { success: true, state };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-get-quality', async () => {
-  try {
-    return await amazonWebPlayer.getQuality();
-  } catch (error) {
-    return { success: false, reason: error.reason, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-set-quality', async (event, settings) => {
-  try {
-    return await amazonWebPlayer.setQuality(settings || {});
-  } catch (error) {
-    return { success: false, reason: error.reason, error: error.message };
-  }
-});
-
-ipcMain.handle('amazonmusic-polling-start', async (event, { asin, trackTitle, trackArtist, duration }) => {
-  await amazonMusicPoller.start({ asin, trackTitle, trackArtist, duration });
-  return { success: true };
-});
-
-ipcMain.handle('amazonmusic-polling-stop', async () => {
-  amazonMusicPoller.stop();
-  return { success: true };
-});
-
-ipcMain.handle('amazonmusic-polling-status', async () => {
-  return {
-    active: amazonMusicPoller.interval !== null,
-    expectedAsin: amazonMusicPoller.expectedAsin
-  };
-});
 
 // Playback window for external content (Bandcamp, etc.) with autoplay enabled
 let playbackWindow = null;

@@ -139,9 +139,9 @@
     {
       "id": "amazonmusic",
       "name": "Amazon Music",
-      "version": "1.6.2",
+      "version": "1.7.0",
       "author": "Parachord Team",
-      "description": "Uses Amazon's web player and this app's Widevine CDM. Does not use the Amazon Music desktop app.",
+      "description": "Plays Amazon Music through the shared Widevine player (DASH + license via Amazon session). Does not use the Amazon Music desktop app.",
       "icon": "🎵",
       "color": "#25D1DA",
       "homepage": "https://music.amazon.com",

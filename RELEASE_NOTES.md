@@ -1,3 +1,11 @@
+# Parachord (unreleased — next release)
+
+## Amazon Music
+
+- **Amazon Music plays in Parachord's own player now** — the same streams and licenses Amazon's web player uses, decrypted by the Widevine CDM on every platform, no embedded Amazon web page in the audio path. Audio quality moved to a global setting (Settings → General → Playback Quality: max/high/balanced/low + auto adjust); **the old per-service Amazon quality setting is reset and removed** (your previous choice does not carry over — everyone starts on max + auto adjust). Plays are reported to Amazon the same way the web player reports them.
+
+---
+
 # Parachord v0.9.11
 
 **Release date:** 2026-10-30
