@@ -1474,8 +1474,43 @@ function amazonNowPlayingMismatch(expectedTitle, nowPlaying) {
   return !(want.includes(got) || got.includes(want));
 }
 
+// The manifest already says which playback tier carries which protection:
+// every adaptation set's ContentProtection@default_KID. Amazon issues
+// DIFFERENT Widevine keys per rendition group (lossy sets, FLAC set,
+// spatial sets) — shaka 4012 (RESTRICTIONS_CANNOT_BE_MET) usually means a
+// specific KID is missing output-absolution in the license, and the tier to
+// blame is exactly the one named by its KID group. Pure parse from the MPD
+// (defensive about malformed input).
+function mpdContentProtectionSets(xml) {
+  const text = String(xml || '');
+  const sets = [];
+  if (!text) return sets;
+  const attr = (name, tag) => {
+    const m = (tag || '').match(new RegExp(name + '="([^"]*)"'));
+    return m ? m[1] : null;
+  };
+  for (const match of text.matchAll(/<AdaptationSet[\s\S]*?<\/AdaptationSet>/g)) {
+    const set = match[0];
+    const setTag = set.slice(0, set.indexOf('>') + 1);
+    const kids = [...set.matchAll(/cenc:default_KID="([^"]+)"/g)].map((m) => m[1]);
+    const kid = kids.length ? kids[0] : null;
+    const reps = [];
+    for (const rep of set.matchAll(/<Representation ([^>]*)>>?/g)) {
+      reps.push({
+        id: attr('id', rep[1]),
+        codecs: attr('codecs', rep[1]),
+        bandwidth: Number(attr('bandwidth', rep[1])) || null
+      });
+    }
+    const family = reps.length ? dashCodecFamily(reps[0].codecs) : null;
+    sets.push({ kid, family, reps });
+  }
+  return sets;
+}
+
 module.exports = {
   amazonNativeSessionFromConfig,
+  mpdContentProtectionSets,
   gqlCaptureSubject,
   gqlRequestsIn,
   gqlRequestIsAboutSubject,
