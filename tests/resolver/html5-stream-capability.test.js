@@ -34,7 +34,7 @@ describe('capabilities.html5Stream', () => {
 
   test('the host routes the shared element by capability, never by id', () => {
     expect(appSrc).toContain("const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;");
-    expect(appSrc).toContain("const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id);");
+    expect(appSrc).toContain("const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id) || isWidevineResolver(id);");
     // the play branch, the progress-tracker skip and the element's error dialog
     expect(appSrc).toContain('if (isHtml5StreamResolver(resolverId)) {');
     expect(appSrc).toContain('const isHtml5Stream = isHtml5StreamResolver(activeResolver);');
