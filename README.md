@@ -114,13 +114,10 @@ If you work for a music service and have a concern about how Parachord plays you
 
 ### Building from Source
 - **Node.js 22 or newer** to build and run; **24.9 or newer** to run the test suite (jest loads the ESM-only packages through `require(esm)`, which it supports from Node 24.9). CI builds on 22 and tests on 24; the app itself runs on the Node 24 inside Electron 44.
-- A C/C++ toolchain for native addon compilation (`better-sqlite3`):
-  - macOS: Xcode Command Line Tools (also provides the Swift toolchain that `npm run build:mac` uses for the MusicKit helper)
-  - Windows: Visual Studio Build Tools with C++ workload
-  - Linux: `build-essential` and `python3`
+- On macOS, the Xcode Command Line Tools: `npm run build:mac` compiles the MusicKit helper in Swift. Nothing else needs a compiler. The one native module, `better-sqlite3`, ships prebuilt binaries for every platform Parachord builds on.
 - To VMP-sign a local build (optional, see below): Python 3 with `pip install castlabs-evs`
 
-See [docs/setup/SYSTEM_REQUIREMENTS.md](docs/setup/SYSTEM_REQUIREMENTS.md) for full details including network requirements and Linux sandbox dependencies.
+See [docs/setup/SYSTEM_REQUIREMENTS.md](docs/setup/SYSTEM_REQUIREMENTS.md) for full details including network requirements and Linux sandbox dependencies. Packaging for a Linux distribution? See [docs/setup/LINUX_PACKAGING.md](docs/setup/LINUX_PACKAGING.md): what the build downloads and compiles, how to build without electron-builder's packages, castlabs versus stock Electron, and what the app expects at runtime.
 
 ## Installation
 
