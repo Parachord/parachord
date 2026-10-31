@@ -19,7 +19,7 @@ const componentFiles = fs.readdirSync(path.join(RENDERER, 'components'))
 // (The FALLBACK_RESOLVERS embed moved to the gitignored generated module —
 // nothing to strip from app.js anymore; the assertions are about the host,
 // and app.js no longer contains minified plugin implementation lines.)
-const appSrc = [path.join(RENDERER, 'app.js'), ...componentFiles]
+const appSrc = [path.join(RENDERER, 'app.js'), path.join(RENDERER, 'hooks', 'use-playback-engine.js'), ...componentFiles]
   .map((f) => fs.readFileSync(f, 'utf8'))
   .join('\n');
 const readAxe = (id) => JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', `${id}.axe`), 'utf8'));
