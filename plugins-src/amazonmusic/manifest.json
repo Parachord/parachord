@@ -2,10 +2,10 @@
   "manifest": {
     "id": "amazonmusic",
     "name": "Amazon Music",
-    "version": "1.6.2",
+    "version": "1.7.0",
     "author": "Parachord Team",
-    "description": "Uses Amazon's web player and this app's Widevine CDM. Does not use the Amazon Music desktop app.",
-    "icon": "🎵",
+    "description": "Plays Amazon Music through the shared Widevine player (DASH + license via Amazon session). Does not use the Amazon Music desktop app.",
+    "icon": "\ud83c\udfb5",
     "color": "#25D1DA",
     "homepage": "https://music.amazon.com",
     "email": "support@parachord.dev"
@@ -18,6 +18,7 @@
     "urlLookup": true,
     "albumSearch": true,
     "artistImage": true,
+    "widevine": true,
     "mobile": false
   },
   "urlPatterns": [

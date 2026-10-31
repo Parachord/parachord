@@ -15,30 +15,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { installAmazonRequireTrap, installAmazonStreamCapture } = require('../../amazon-music-logic');
 const { installMediaSessionHijack, applyMediaSessionMirror } = require('../../embedded-player-kit');
 
 const src = fs.readFileSync(path.join(__dirname, '../../amazon-player-preload.js'), 'utf8');
 
-function inlinedTrapSource() {
-  const m = src.match(/function installAmazonRequireTrap\(scope\) \{[\s\S]*?\n\}/);
-  return m ? m[0] : null;
-}
 
-function inlinedCaptureSource() {
-  const m = src.match(/function installAmazonStreamCapture\(scope\) \{[\s\S]*?\n\}/);
-  return m ? m[0] : null;
-}
 
-function inlinedCapture() {
-  const text = inlinedCaptureSource();
-  return text ? new Function(`return (${text})`)() : null;
-}
 
-function inlinedTrap() {
-  const text = inlinedTrapSource();
-  return text ? new Function(`return (${text})`)() : null;
-}
 
 function inlinedHijackSource() {
   // Signature-agnostic param match, same lesson as inlinedMirrorSource: a
@@ -78,68 +61,6 @@ function makeMetroScope() {
   };
 }
 
-function runTrapScenarios(trap) {
-  const out = [];
-
-  // 1. captures the playbackController when Amazon requires its module
-  {
-    const scope = makeMetroScope();
-    trap(scope);
-    scope.__r = scope.require;
-    scope.__r(456);
-    out.push(['capture-pre-miss', scope.__parachordAmazonPlayback]);
-    scope.__r(123);
-    out.push(['capture', scope.__parachordAmazonPlayback.audioQualitySettings.streamingQuality,
-      scope.__parachordAmazonPlaybackModuleId]);
-  }
-
-  // 2. wraps a require that was already assigned before the trap
-  {
-    const scope = makeMetroScope();
-    scope.__r = scope.require;
-    trap(scope);
-    scope.__r(123);
-    out.push(['pre-assigned', scope.__parachordAmazonPlaybackModuleId]);
-  }
-
-  // 3. passes through calls and require's own properties
-  {
-    const scope = makeMetroScope();
-    trap(scope);
-    const asyncChunk = () => {};
-    scope.require.async = asyncChunk;
-    scope.__r = scope.require;
-    out.push(['passthrough', scope.__r !== scope.require, scope.__r.async === asyncChunk,
-      JSON.stringify(scope.__r(456))]);
-  }
-
-  // 4. re-assignment re-wraps; install is idempotent
-  {
-    const scope = makeMetroScope();
-    trap(scope);
-    scope.__r = scope.require;
-    const first = scope.__r;
-    scope.__r = scope.require;
-    scope.__r(123);
-    out.push(['re-wrap', scope.__r !== first, scope.__parachordAmazonPlaybackModuleId]);
-    trap(scope);
-    out.push(['idempotent', scope.__r === scope.__r]);
-  }
-
-  // 5. a throwing module export does not break the require
-  {
-    const scope = {};
-    const hostile = { get playbackController() { throw new Error('getter'); } };
-    scope.require = (id) => (id === 7 ? hostile : { ok: 1 });
-    trap(scope);
-    scope.__r = scope.require;
-    let threw = false;
-    try { scope.__r(7); } catch (e) { threw = true; }
-    out.push(['hostile', threw, JSON.stringify(scope.__r(8)), scope.__parachordAmazonPlayback]);
-  }
-
-  return out;
-}
 
 // Scenario battery for installMediaSessionHijack, same pattern as the trap
 // battery above: each scenario returns observable state so the kit module's
@@ -337,46 +258,11 @@ describe('amazon-player-preload', () => {
     }
   });
 
-  test('the inlined trap is behaviorally identical to amazon-music-logic.js', () => {
-    const inlined = inlinedTrap();
-    expect(inlined).toBeInstanceOf(Function);
-    expect(runTrapScenarios(inlined)).toEqual(runTrapScenarios(installAmazonRequireTrap));
-  });
-
-  test('the inlined trap still captures the store on its own', () => {
-    const scope = {};
-    const store = { playbackController: { audioQualitySettings: { streamingQuality: 'HD' } } };
-    const require = (id) => (id === 123 ? store : { other: true });
-    inlinedTrap()(scope);
-    scope.__r = require;
-    expect(scope.__r(123)).toBe(store);
-    expect(scope.__r(456)).toEqual({ other: true });
-    expect(scope.__parachordAmazonPlayback).toBe(store.playbackController);
-    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
-  });
-
-  test('the inlined stream capture is behaviorally identical to amazon-music-logic.js', async () => {
-    // Same rationale as the trap: Function.prototype.toString normalizes under
-    // the test transform, so parity is enforced behaviorally — the module's
-    // function and the inlined copy run the same scenario battery and must
-    // leave identical observable state.
-    const inlined = inlinedCapture();
-    expect(inlined).toBeInstanceOf(Function);
-    expect(await runCaptureScenarios(inlined)).toEqual(await runCaptureScenarios(installAmazonStreamCapture));
-  });
 
 
 
-  test('the inlined stream capture still records on its own', async () => {
-    const scope = {};
-    scope.fetch = async () => ({ clone: () => ({ text: () => Promise.resolve('<MPD/>') }), headers: { get: () => null } });
-    inlinedCapture()(scope);
-    await scope.fetch('https://cdn.example.com/manifest.mpd');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(scope.__parachordStreamCaps.manifests).toEqual([
-      { url: 'https://cdn.example.com/manifest.mpd', text: '<MPD/>' }
-    ]);
-  });
+
+
 
   test('the inlined mediaSession hijack is behaviorally identical to embedded-player-kit.js', () => {
     // Same rationale as the trap: Function.prototype.toString normalizes under
@@ -457,8 +343,6 @@ describe('amazon-player-preload', () => {
     // page stub against exactly what ships in the preload is the parity
     // net that catches an inlined drift the module batteries could miss.
     const stubBody = m[1]
-      .replace('${installAmazonRequireTrap.toString()}', installAmazonRequireTrap.toString())
-      .replace('${installAmazonStreamCapture.toString()}', installAmazonStreamCapture.toString())
       .replace('${installMediaSessionHijack.toString()}', inlinedHijackSource())
       .replace('${applyMediaSessionMirror.toString()}', inlinedMirrorSource());
     const logs = [];
@@ -484,10 +368,10 @@ describe('amazon-player-preload', () => {
     const Document = function Document() {};
     const run = new Function(
       'window', 'document', 'Document', 'console', 'realSession',
-      `${stubBody}\nreturn [window.__parachordRequireTrap, typeof window.__r, typeof document.hidden === 'boolean', window.__parachordStreamCapture === true, !!window.__parachordStreamCaps, window.__parachordMediaSessionHijack === true, window.navigator.mediaSession !== realSession, typeof window.navigator.mediaSession.setActionHandler === 'function'];`
+      `${stubBody}\nreturn [typeof document.hidden === 'boolean', window.__parachordMediaSessionHijack === true, window.navigator.mediaSession !== realSession, typeof window.navigator.mediaSession.setActionHandler === 'function'];`
     );
     const result = run(fakeWindow, fakeDocument, Document, { log: logs.push.bind(logs) }, realSession);
-    expect(result).toEqual([true, 'object', true, true, true, true, true, true]);
+    expect(result).toEqual([true, true, true, true]);
     expect(logs).toEqual(['[Amazon] Parachord preload stub active']);
     // Our handler on the real session bridges through postMessage — the
     // preload world listens for exactly this shape and forwards it to the

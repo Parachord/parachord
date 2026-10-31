@@ -7,6 +7,13 @@
 // a render-scoped services object ctx — Option A from the census comment).
 //
 // STRAIGHT MOVE, per the maintainer's slice-3 constraint: every function below
+
+// WIDEVINE LAYER ADDENDUM (post-slice): this file now also hosts the
+// capabilities.widevine play branch (Shaka on the shared element via the
+// widevine bridge), the Widevine-aware ownerOf fallback (src-less MSE), the
+// widevine play-token teardown, and the __parachordWidevine family registrations.
+// Those are NEW behaviors written FOR the hook, not byte-for-byte moves —
+// everything around them still is.
 // is a byte-for-byte move out of Parachord; only their inputs now come from
 // destructuring the three input objects at the hook's top (the destructure
 // header is the whole "wiring" — bodies below it are verbatim, and a normalized
@@ -32,6 +39,11 @@
 const { isOtherVersion } = require('../lib/track-variants');
 const { sourceBlockId } = require('../lib/bad-match-report');
 const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds } = require('../lib/playback-helpers');
+// The shared Widevine player (Shaka on audioRef's element; manifest + license
+// via the main-process bridge). Registered on window for resolvers/cleanup;
+// the error hook installs inside the engine's component so it can showToast.
+const __widevinePlayer = require('../lib/widevine-player');
+if (typeof window !== 'undefined') window.__parachordWidevine = __widevinePlayer;
 
 function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   volume,        // useVolume's return object
@@ -116,6 +128,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     resolveTrackRef,
     confidenceForSourceRef,
     isHtml5StreamResolver,
+    isWidevineResolver,
     findLoadedResolver,
     usesSharedAudio,
     resolveTracksInBackground,
@@ -274,12 +287,21 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     if (audioRef.current) return audioRef.current;
 
     const ownerOf = (el) => {
-      const src = el?.src || '';
+      if (!el) return null;
+      const src = el.src || '';
       if (src.startsWith('local-audio:')) return 'localfiles';
-      if (src.startsWith('blob:')) return 'soundcloud';
-      // Every html5Stream resolver loads an http(s) URL; the play path tags the
-      // track it hands this element with the owning resolver id.
+      // blob: can be SoundCloud's direct blob OR Shaka's MediaSource attach —
+      // the _streamOwner tag decides, with soundcloud as the historical fallback.
+      if (src.startsWith('blob:')) return html5AudioTrackRef.current?._streamOwner || html5AudioTrackRef.current?._activeResolver || 'soundcloud';
       if (/^https?:/i.test(src)) return html5AudioTrackRef.current?._streamOwner || html5AudioTrackRef.current?._activeResolver || null;
+      // MSE playback (Shaka's Widevine/DASH on the shared element) attaches
+      // through MediaSource with NO readable src or srcObject exposed here —
+      // observed live: el.src === '' and el.srcObject == null while decoding.
+      // These listeners only ever listen on THIS element, so the tagged
+      // owner (set when the element was loaded) IS the attribution.
+      if (html5AudioTrackRef.current && (html5AudioTrackRef.current._streamOwner || html5AudioTrackRef.current._activeResolver)) {
+        return html5AudioTrackRef.current._streamOwner || html5AudioTrackRef.current._activeResolver;
+      }
       return null;
     };
 
@@ -301,6 +323,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     console.log('🎵 Creating shared HTML5 audio element');
     const audio = new Audio();
     audioRef.current = audio;
+    // Read-only debug accessors (CDP/console) — diagnosing progress/owner
+    // issues has repeatedly required reaching this element.
+    if (typeof window !== 'undefined') {
+      window.__parachordSharedAudioElement = () => audioRef.current;
+      window.__parachordHtml5AudioTrack = () => html5AudioTrackRef.current;
+    }
 
     audio.addEventListener('timeupdate', () => {
       if (!ownerOf(audioRef.current)) return;
@@ -1510,6 +1538,206 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // built by the resolver's getStreamUrl), so no proxy or blob hop is
     // needed — the media element fetches cross-origin without CORS and the
     // server supports Range requests, so seeking works natively.
+    // Widevine resolvers (capabilities.widevine: Amazon Music today): the
+    // host plays the shared element through Shaka — manifest from the
+    // resolver's main-side provider (window.electron.widevine.getManifest),
+    // license bytes relayed the same way, variant per the global quality
+    // setting. The .axe never touches audio (same host-owned shape as
+    // html5Stream above it).
+    if (isWidevineResolver(resolverId)) {
+      const streamLabel = resolver.name || resolverId;
+      console.log(`🔐 Playing ${streamLabel} track via Widevine:`, sourceToPlay.title);
+
+      // Stop Spotify polling when switching
+      if (playbackPollerRef.current) {
+        clearInterval(playbackPollerRef.current);
+        playbackPollerRef.current = null;
+      }
+      if (pollingRecoveryRef.current) {
+        clearInterval(pollingRecoveryRef.current);
+        pollingRecoveryRef.current = null;
+      }
+      if (window.electron?.spotify?.polling) {
+        window.electron.spotify.polling.stop();
+      }
+
+      // Stop Apple Music preview audio if playing
+      if (window._appleMusicPreviewAudio) {
+        window._appleMusicPreviewAudio.pause();
+        window._appleMusicPreviewAudio.currentTime = 0;
+      }
+
+      // Stop native MusicKit if playing
+      if (window.electron?.musicKit?.pause) {
+        window.electron.musicKit.pause().catch(() => {});
+      }
+
+      // Pause Spotify if it's playing
+      if (spotifyToken && streamingPlaybackActiveRef.current) {
+        try {
+          await fetch('https://api.spotify.com/v1/me/player/pause', {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${spotifyToken}` }
+          });
+        } catch (e) {
+          console.log('Could not pause Spotify:', e.message);
+        }
+      }
+
+      const asin = trackOrSource.amazonAsin
+        || trackOrSource.sources?.[resolverId]?.amazonAsin
+        || trackOrSource.sources?.amazonmusic?.amazonAsin
+        || trackOrSource.asin;
+      if (!asin) {
+        console.error(`❌ ${streamLabel}: track carries no playable identifier`);
+        if (autoSkipIfAdvancing(`${streamLabel}: no stream identifier`)) return;
+        setTrackLoading(false);
+        return;
+      }
+
+      let widevinePlayToken = null;
+      const startWidevine = async () => {
+        // Tag the stream owner like html5Stream does (error dialogs key on it).
+        ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId });
+        const wvResult = await window.__parachordWidevine.play(audioRef.current, {
+          resolverId,
+          entity: { asin },
+          trackContext: {
+            albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
+            durationMs: (sourceToPlay.duration || trackOrSource.duration || 0) * 1000
+          }
+        });
+        widevinePlayToken = (wvResult && wvResult.token) || null;
+        const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
+        const effectiveVolume = getEffectiveVolume(volumeToApply, resolverId, sourceToPlay.id || trackOrSource.id);
+        audioRef.current.volume = effectiveVolume / 100;
+        console.log(`🔊 Applied ${streamLabel} volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
+        audioRef.current.currentTime = 0;
+        await audioRef.current.play();
+      };
+
+      try {
+        await startWidevine();
+      } catch (error) {
+        // Sign-in prompts are the resolver's UX (the .axe's old play path did
+        // prompt-then-retry-once — mirrored here so the widevine branch keeps
+        // that contract).
+        // Superseded is not a failure: the newer play owns the element. No
+        // toast, no auto-skip (autoSkipIfAdvancing does not generation-check).
+        if (error && error.reason === 'superseded') {
+          setTrackLoading(false);
+          return;
+        }
+        if (error && error.reason === 'not-signed-in' && window.__parachordManageAmazonMusic) {
+          const ok = await window.__parachordManageAmazonMusic({ explicit: true });
+          if (ok && playbackGenerationRef.current === thisGeneration) {
+            try {
+              await startWidevine();
+            } catch (retryError) {
+              if (retryError && retryError.reason === 'superseded') {
+                setTrackLoading(false);
+                return;
+              }
+              console.error(`❌ ${streamLabel} retry after sign-in failed:`, retryError);
+              if (autoSkipIfAdvancing(`${streamLabel} playback: ${retryError.message}`)) return;
+              setTrackLoading(false);
+              showConfirmDialog({
+                type: 'error',
+                title: 'Playback Error',
+                message: `Failed to play this ${streamLabel} track: ` + retryError.message
+              });
+              return;
+            }
+          } else if (!ok) {
+            setTrackLoading(false);
+            return;
+          }
+        } else {
+          console.error(`❌ ${streamLabel} playback error:`, error);
+          if (autoSkipIfAdvancing(`${streamLabel} playback: ${error.message}`)) return;
+          setTrackLoading(false);
+          showConfirmDialog({
+            type: 'error',
+            title: 'Playback Error',
+            message: `Failed to play this ${streamLabel} track: ` + error.message
+          });
+          return;
+        }
+      }
+
+      // Check if another play request superseded this one while loading —
+      // and tear the engine down so a late Shaka load cannot keep playing
+      // behind the newer track (in-flight plays are token-invalidated).
+      if (playbackGenerationRef.current !== thisGeneration) {
+        console.log('⏹️ Playback request superseded during Widevine load, aborting');
+        // Conditional teardown: only if the engine hasn't MOVED ON since our
+        // play (a newer widevine play already handles its own unload — a blind
+        // stop() here would cancel it AND close its license session).
+        if (window.__parachordWidevine) await window.__parachordWidevine.stop({ token: widevinePlayToken }).catch(() => {});
+        return;
+      }
+
+      const duration = sourceToPlay.duration || trackOrSource.duration || 0;
+      const trackToSet = trackOrSource.sources ? {
+        ...sourceToPlay,
+        id: trackOrSource.id,
+        artist: trackOrSource.artist,
+        title: trackOrSource.title,
+        album: trackOrSource.album,
+        duration: duration,
+        albumArt: getCachedAlbumArt(trackOrSource.artist, trackOrSource.album) || sourceToPlay.albumArt || trackOrSource.albumArt,
+        sources: trackOrSource.sources,
+        _playbackContext: trackOrSource._playbackContext,
+        _activeResolver: resolverId
+      } : { ...sourceToPlay, duration: duration, _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
+
+      setCurrentTrack(trackToSet);
+      setIsPlaying(true);
+      setProgress(0);
+      setTrackLoading(false);
+      streamingPlaybackActiveRef.current = false;
+      setBrowserPlaybackActive(false);
+      setIsExternalPlayback(false);
+      trackNeedsExplicitStart.current = false;
+
+      console.log(`✅ ${streamLabel} playing via Widevine (shared element)`);
+
+      // Attach the initial stream-quality record (codec/rate/channels from the
+      // active variant; ABR changes refresh it through the variant listener).
+      const attachStreamQuality = () => {
+        try {
+          const facts = window.__parachordWidevine.currentVariantFacts();
+          if (facts && facts.bitrate) {
+            setCurrentTrack(prev => {
+              if (!prev || prev.id !== trackToSet.id) return prev;
+              const existing = prev.sources?.[resolverId]?.streamQuality;
+              if (!window.isStreamQualityChange(existing, facts)) return prev;
+              return {
+                ...prev,
+                sources: {
+                  ...(prev.sources || {}),
+                  [resolverId]: {
+                    ...(prev.sources?.[resolverId] || {}),
+                    streamQuality: facts
+                  }
+                }
+              };
+            });
+          }
+        } catch { /* quality facts are best-effort */ }
+      };
+      attachStreamQuality();
+      if (window.__parachordWidevineSetVariantListener) {
+        window.__parachordWidevineSetVariantListener(attachStreamQuality);
+      }
+
+      // Notify scrobble manager of track start
+      if (window.scrobbleManager) {
+        window.scrobbleManager.onTrackStart(trackToSet);
+      }
+      return;
+    }
+
     // HTML5 stream resolvers (capabilities.html5Stream: Subsonic, or any
     // self-hosted server): the .axe's getStreamUrl builds a direct stream URL
     // from the saved config (never from the track) and the shared element
@@ -2869,13 +3097,31 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     }
   };
 
+  // Stops the shared widevine engine when Amazon Music owns it (the shared
+  // element otherwise tears down on the next play the way any html5 source
+  // does — engine unload, element pause). No-op otherwise: a generation that
+  // already lost the shared element cannot touch the replacement track.
   const stopAmazonIfActive = (reason) => {
-    if (!window.electron?.amazonMusic) return Promise.resolve();
-    try { window.electron.amazonMusic.polling.stop(); } catch (_e) {}
     if (!(activeResolversRef.current || []).includes('amazonmusic')) return Promise.resolve();
+    if (!window.__parachordWidevine) return Promise.resolve();
     if (reason) console.log(reason);
-    return window.electron.amazonMusic.stop().catch(() => {});
+    return window.__parachordWidevine.stop().catch(() => {});
   };
+
+  // Shaka's async error channel (segment 404s mid-play, license expiry): log
+  // through the ring buffer; at most one toast per 30s so failing segments
+  // don't storm the UI. showToast is component-scope.
+  if (typeof window !== 'undefined') {
+    let widevineErrorToastAt = 0;
+    window.__parachordWidevineError = (message, resolverId) => {
+      console.error(`[Widevine] ${resolverId || 'player'} stream error:`, message);
+      if (Date.now() - widevineErrorToastAt > 30000) {
+        widevineErrorToastAt = Date.now();
+        showToast(`${resolverId === 'amazonmusic' ? 'Amazon Music' : (resolverId || 'Stream')} stream error — playback may stall`, 'error');
+      }
+    };
+    window.__parachordWidevineSetVariantListener = (cb) => __widevinePlayer.setVariantListener(cb);
+  }
 
   const fetchSimilarTracks = async (artistName, trackName) => {
     if (!artistName || !trackName) return [];

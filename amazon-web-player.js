@@ -52,7 +52,6 @@
 //                   signature refused (development certificate)
 
 const path = require('path');
-const { registerEmbeddedPlayer } = require('./main-process/ipc/embedded-player');
 const HOME_URL = 'https://music.amazon.com/';
 const PARTITION = 'persist:amazon-music';
 const PRELOAD = path.join(__dirname, 'amazon-player-preload.js');
@@ -62,13 +61,6 @@ const {
   amazonNowPlayingMismatch,
   amazonAuthCookieState,
   cdmStatusHealthy,
-  AMAZON_QUALITY_OPTIONS,
-  normalizeStreamingQuality,
-  readPersistedQuality,
-  writePersistedQuality,
-  amazonQualityFromStore,
-  reportedPlaybackAsin,
-  shouldRevealPlayerOnFailure,
   amazonSongSearchUrl,
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
@@ -92,12 +84,6 @@ const {
   paginatePlaylistTracks,
   amazonGqlFetchHeaders,
   capturedOperationNames,
-  mpdAudioRepresentations,
-  flacStreamInfoFromInit,
-  attachInitStreamInfo,
-  pickMpdRepresentation,
-  amazonMediaPauseExpr,
-  amazonPlayGenerationStamp,
   isAmazonMusicPage,
   gqlCaptureSubject,
   gqlRequestsIn,
@@ -105,109 +91,6 @@ const {
   redactGqlSample,
   summarizeGqlRequest
 } = require('./amazon-music-logic');
-
-const HOOK_SCRIPT = `(() => {
-  if (window.__parachordAmazonHook) return true;
-  window.__parachordAmazonHook = true;
-  window.__parachordAmazonMedia = null;
-  const score = (m) => (!m ? 0 : (!m.paused ? 4 : 0) + (m.currentSrc ? 2 : 0) + (m.tagName === 'VIDEO' ? 1 : 0));
-  const consider = (el) => {
-    if (!el || (el.tagName !== 'VIDEO' && el.tagName !== 'AUDIO')) return;
-    // The page also has an empty <audio>. Last-wins would latch onto that
-    // and report PAUSED while the Widevine <video> is actually playing.
-    if (score(el) >= score(window.__parachordAmazonMedia)) window.__parachordAmazonMedia = el;
-  };
-  document.addEventListener('play', (e) => consider(e.target), true);
-  document.addEventListener('playing', (e) => consider(e.target), true);
-  document.addEventListener('timeupdate', (e) => consider(e.target), true);
-  const scan = (root) => {
-    if (!root || !root.querySelectorAll) return;
-    root.querySelectorAll('video, audio').forEach(consider);
-    root.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) scan(el.shadowRoot); });
-  };
-  window.__parachordAmazonScan = () => scan(document);
-  window.__parachordAmazonRead = () => {
-    scan(document);
-    const m = window.__parachordAmazonMedia;
-    if (!m) return null;
-    const d = Number.isFinite(m.duration) ? m.duration : 0;
-    const asinOf = (href) => {
-      const match = String(href || '').match(new RegExp('/tracks/([A-Z0-9]{10})', 'i'));
-      return match ? match[1].toUpperCase() : null;
-    };
-    let playingAsin = null;
-    const walkLinks = (root) => {
-      if (!root || !root.querySelectorAll || playingAsin) return;
-      root.querySelectorAll('a[href*="/tracks/"]').forEach((a) => {
-        if (playingAsin) return;
-        const ids = [];
-        let el = a;
-        for (let i = 0; el && i < 8; i++) {
-          const id = el.getAttribute && el.getAttribute('data-testid');
-          if (id) ids.push(id);
-          el = el.parentElement || (el.getRootNode && el.getRootNode().host);
-        }
-        if (/miniplayer|nowplaying/i.test(ids.join(' '))) {
-          playingAsin = asinOf(a.href || a.getAttribute('href'));
-        }
-      });
-      if (!playingAsin) root.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) walkLinks(el.shadowRoot); });
-    };
-    walkLinks(document);
-    // What Amazon's page says it is playing (its navigator.mediaSession
-    // metadata; the hijack keeps the page's last write on its facade). For a
-    // track the account can only start as a station, this names the
-    // station's song, not the one Parachord asked for.
-    let nowPlaying = null;
-    try {
-      const md = navigator.mediaSession && navigator.mediaSession.metadata;
-      if (md && (md.title || md.artist)) {
-        nowPlaying = { title: String(md.title || ''), artist: String(md.artist || ''), album: String(md.album || '') };
-      }
-    } catch (e) { nowPlaying = null; }
-    return {
-      nowPlaying,
-      positionMs: Math.round((m.currentTime || 0) * 1000),
-      durationMs: d > 0 ? Math.round(d * 1000) : 0,
-      paused: !!m.paused,
-      ended: !!m.ended,
-      state: m.ended ? 'FINISHED' : (m.paused ? 'PAUSED' : 'PLAYING'),
-      href: location.href,
-      playingAsin,
-      // Demuxed compressed audio bytes (webkitAudioDecodedByteCount) — the
-      // poller pairs consecutive reads of this counter to measure the actual
-      // stream bitrate (stream-quality.js contract). Null when the element
-      // exposes no counter, so those reads just never form pairs.
-      audioDecodedBytes: (typeof m.webkitAudioDecodedByteCount === 'number' && m.webkitAudioDecodedByteCount >= 0)
-        ? m.webkitAudioDecodedByteCount
-        : null
-    };
-  };
-  window.__parachordAmazonClickPlay = () => {
-    const labelOf = (el) => (
-      (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('icon-name'))) ||
-      el.textContent ||
-      ''
-    );
-    const buttons = [];
-    const walk = (root) => {
-      if (!root || !root.querySelectorAll) return;
-      root.querySelectorAll('button, music-button, music-playback-button, [role="button"], [icon-name="play"]').forEach((el) => buttons.push(el));
-      root.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) walk(el.shadowRoot); });
-    };
-    walk(document);
-    const play = buttons.find((el) => /^play\\b/i.test(labelOf(el).trim()) && !/playlist/i.test(labelOf(el)));
-    if (play) { play.click(); return 'clicked'; }
-    const m = window.__parachordAmazonMedia;
-    if (m && m.paused) {
-      const p = m.play();
-      if (p && p.catch) p.catch(() => {});
-      return 'media';
-    }
-    return false;
-  };
-  return true;
-})()`;
 
 // Replay fetch, evaluated in the page world of the search view. The page
 // context supplies cookies (credentials: 'include') and the headers we copied
@@ -228,27 +111,6 @@ const GQL_FETCH_SCRIPT = (url, headers, body) => `(async () => {
   } catch (e) {
     return { error: String(e && (e.message || e)) };
   }
-})()`;
-
-// Read the preload net hook's captured manifests + init segments from the
-// player page. Init bytes are base64'd in the page world (executeJavaScript
-// results must be JSON-serializable); manifests come back as text.
-const READ_STREAM_CAPS_SCRIPT = `(() => {
-  const caps = window.__parachordStreamCaps;
-  if (!caps) return null;
-  const b64 = (buf) => {
-    const bytes = new Uint8Array(buf);
-    let binary = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
-  };
-  return {
-    manifests: (caps.manifests || []).map((m) => ({ url: m.url, text: m.text })),
-    inits: (caps.inits || []).map((i) => ({ url: i.url, b64: b64(i.bytes) }))
-  };
 })()`;
 
 function electron() {
@@ -321,7 +183,6 @@ const REPLAY_TIMEOUT_MS = 12000;
 // "applies on the next track"); the live-store write is an opportunistic
 // upgrade if a hornet deploy ever routes requires through the global __r.
 // Keep this short so the settings panel does not spin on a first read.
-const QUALITY_WAIT_MS = 3000;
 async function loadURLBudgeted(page, url, timeoutMs = LOAD_URL_TIMEOUT_MS) {
   const loaded = page.loadURL(url);
   loaded.catch(() => {}); // a late rejection after the race lost must not be unhandled
@@ -339,14 +200,12 @@ async function loadURLBudgeted(page, url, timeoutMs = LOAD_URL_TIMEOUT_MS) {
 }
 
 const amazonWebPlayer = {
-  playerView: null,
+
   searchView: null,
   authWindow: null,
   host: null,
   searchChain: Promise.resolve(),
-  emeProbed: null,
-  currentAsin: null,
-  playGeneration: 0,
+
   cookieWarned: false,
   // Circuit breaker for search's structural failures — a hornet rename of the
   // search operation makes every search burn the full capture window before
@@ -387,7 +246,7 @@ const amazonWebPlayer = {
   // claims the player, filled asynchronously by readStreamRepresentations,
   // keyed to that play's generation + ASIN so a late capture from a superseded
   // play cannot land on the new track.
-  streamRepresentations: null,
+
 
   // castlabs Electron exposes electron.components. Stock Electron does not,
   // and the old --widevine-cdm-path switch does nothing there. EME probe is
@@ -487,24 +346,20 @@ const amazonWebPlayer = {
     this.host = win && !win.isDestroyed() ? win : null;
     this._onHostClosed = null;
     if (!this.host) {
-      this.destroyView(this.playerView);
       this.destroyView(this.searchView);
-      this.playerView = null;
       this.searchView = null;
       return;
     }
     this._onHostClosed = () => this.setHost(null);
     this.host.on('closed', this._onHostClosed);
-    this.collapse(this.playerView);
     this.collapse(this.searchView);
   },
 
-  // The hidden player/search views get the full treatment: the preload's
-  // visibility stub + __r trap, and the media-element HOOK_SCRIPT. The
-  // sign-in window gets neither — it is the one visible Amazon page and must
-  // behave like a normal browser window (real focus events, real
-  // document.hidden, no tampering that Amazon's sign-in flows or bot
-  // heuristics could trip over).
+  // The hidden search view gets the full treatment: the preload's
+  // visibility stub + __r trap. The sign-in window gets neither — it is the
+  // one visible Amazon page and must behave like a normal browser window
+  // (real focus events, real document.hidden, no tampering that Amazon's
+  // sign-in flows or bot heuristics could trip over).
   webPreferences({ preload = PRELOAD } = {}) {
     return {
       partition: PARTITION,
@@ -534,7 +389,7 @@ const amazonWebPlayer = {
     return !!(target && target.webContents && !target.webContents.isDestroyed());
   },
 
-  attachContents(wc, { hook = true } = {}) {
+  attachContents(wc) {
     const harden = () => {
       try { wc.setUserAgent(chromeUserAgent()); } catch { /* destroyed */ }
     };
@@ -545,17 +400,11 @@ const amazonWebPlayer = {
     // session cookies without the preload or the UA mask.
     try { wc.setWindowOpenHandler(() => ({ action: 'deny' })); } catch { /* destroyed */ }
     wc.on('did-start-navigation', harden);
-    if (hook) {
-      wc.on('dom-ready', () => {
-        wc.executeJavaScript(HOOK_SCRIPT).catch(() => {});
-      });
-    }
     return wc;
   },
 
   attachWindow(win) {
-    // No media hook on the sign-in window: nothing plays there.
-    this.attachContents(win.webContents, { hook: false });
+    this.attachContents(win.webContents);
     win.on('closed', () => {
       if (this.authWindow === win) this.authWindow = null;
     });
@@ -675,31 +524,20 @@ const amazonWebPlayer = {
 
   ensureView(which) {
     const { WebContentsView } = electron();
-    const key = which === 'search' ? 'searchView' : 'playerView';
+    // Audio plays through the shared renderer player (widevine path) now —
+    // the only Amazon view left is the SEARCH view, host for sign-in state,
+    // spec searches/lookups and the session-header mint.
+    const key = 'searchView';
     if (this.alive(this[key])) {
       this.collapse(this[key]);
       return this.pageOf(this[key]);
     }
     if (!this.host || this.host.isDestroyed()) {
-      throw notReady('not-ready', 'Amazon Music player has no host window');
+      throw notReady('not-ready', 'Amazon Music has no host window');
     }
     this.session();
     const view = new WebContentsView({ webPreferences: this.webPreferences() });
     this.attachContents(view.webContents);
-    // Only the PLAYER view joins the embedded-player registry: it is the view
-    // that plays, so it is the only view whose hijacked media keys and
-    // now-playing mirror are legitimate. The SEARCH view also runs live
-    // Amazon pages (background resolution, playlist import) while another
-    // resolver may be playing — a script there must not reach Parachord's
-    // transport or the mirror. The isOwned gate further accepts keys only
-    // while this player owns playback (currentAsin is non-null exactly
-    // then).
-    if (which !== 'search') {
-      registerEmbeddedPlayer(view.webContents, {
-        resolverId: 'amazonmusic',
-        isOwned: () => !!this.currentAsin
-      });
-    }
     this.host.contentView.addChildView(view);
     this.collapse(view);
     this[key] = view;
@@ -709,103 +547,13 @@ const amazonWebPlayer = {
     return this.pageOf(view);
   },
 
-  // Pause is not enough on a confirm timeout: the <video> may not exist yet,
-  // then Amazon starts a few hundred ms later on top of the next resolver.
-  // Blanking the document kills that late start.
-  //
-  // Generation-guarded. Pass the playGeneration you decided to stop. A halt
-  // that captures this.playGeneration itself cannot fail that check — nothing
-  // awaits between the read and the compare — so a skip that already claimed
-  // the view made the old halt null currentAsin, pause, and blank the new
-  // track. Omit expectedGeneration only for an explicit stop of whatever is
-  // playing right now. The pause script still refuses a token mismatch, in
-  // case a newer play claims during the await.
-  async haltPlayback(expectedGeneration) {
-    const scoped = Number.isFinite(expectedGeneration);
-    if (scoped && this.playGeneration !== expectedGeneration) {
-      return { ok: false, superseded: true };
-    }
-    const genAtStart = this.playGeneration;
-    this.currentAsin = null;
-    await this.pause(genAtStart).catch(() => {});
-    const view = this.playerView;
-    if (!this.alive(view)) return { ok: false };
-    if (this.playGeneration !== genAtStart) return { ok: false, superseded: true };
-    this.collapse(view);
-    try {
-      const url = view.webContents.getURL();
-      if (url && url !== 'about:blank') await view.webContents.loadURL('about:blank');
-    } catch { /* gone */ }
-    return { ok: true };
-  },
-
-  async ensureWindow(kind) {
-    return this.ensureView(kind === 'search' ? 'search' : 'player');
+  async ensureWindow() {
+    return this.ensureView('search');
   },
 
   async evalOn(win, script) {
     if (!this.alive(win)) throw new Error('Amazon Music web player window is closed');
     return win.webContents.executeJavaScript(script);
-  },
-
-  async probeEme() {
-    if (!this.cdmAvailable()) return false;
-    if (this.emeProbed === true) return true;
-    try {
-      const win = await this.ensureWindow('player');
-      // The home page can start its own media — autoplay is allowed and the page
-      // is told it is visible — so a probe load is MUTED and parked again
-      // afterward. A probe is a capability check, never an audible event, and
-      // the page must not sit there mid-autoplay if the play aborts after us.
-      let loadedHome = false;
-      const genAtStart = this.playGeneration;
-      try {
-        const url = win.webContents.getURL();
-        if (!url || url === 'about:blank') {
-          try { win.webContents.setAudioMuted(true); } catch { /* gone */ }
-          loadedHome = true;
-          await loadURLBudgeted(win, HOME_URL);
-        }
-        this.emeProbed = await this.evalOn(win, `(async () => {
-        if (!navigator.requestMediaKeySystemAccess) return false;
-        try {
-          await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
-            initDataTypes: ['cenc'],
-            audioCapabilities: [
-              { contentType: 'audio/mp4; codecs="mp4a.40.2"' },
-              { contentType: 'audio/webm; codecs="opus"' }
-            ]
-          }]);
-          return true;
-        } catch (e) {
-          return false;
-        }
-      })()`);
-      } catch (error) {
-        // A page that never loaded is a network condition, not a missing CDM —
-        // let it surface as load-failed instead of "Widevine is not usable".
-        if (error && error.reason === 'load-failed') throw error;
-        this.emeProbed = false;
-      } finally {
-        if (loadedHome) {
-          // Skip the park if a newer play claimed the player mid-probe (its
-          // loadURL owns the view now); always restore the mute state.
-          if (this.playGeneration === genAtStart) {
-            try {
-              const u = win.webContents.getURL();
-              if (u && u !== 'about:blank') await win.webContents.loadURL('about:blank');
-            } catch { /* gone */ }
-          }
-          try { win.webContents.setAudioMuted(false); } catch { /* gone */ }
-        }
-      }
-    } catch (error) {
-      // A page that never loaded is a network condition, not a missing CDM —
-      // surface load-failed instead of caching "Widevine is not usable".
-      if (error && error.reason === 'load-failed') throw error;
-      this.emeProbed = false;
-    }
-    return this.emeProbed;
   },
 
   // Diagnostic for the preload: did the stub/trap/hijack actually run in the
@@ -819,23 +567,20 @@ const amazonWebPlayer = {
   // navigator.mediaSession hijack (embedded-player-kit.js) — on a loaded track
   // page it must be true, or the page's session is driving the OS media
   // surface again.
+  // The sandboxed-preload canary. The hornet's trap/store probes are gone
+  // with its player; the hijack install is what the preload provably DID.
   async preloadProbe() {
-    const view = this.playerView;
-    if (!this.alive(view)) return { stub: null, storeCaptured: null, mediaSessionShim: null };
+    const view = this.searchView;
+    if (!this.alive(view)) return { stub: null };
     let url = '';
     try { url = view.webContents.getURL(); } catch { /* destroyed */ }
-    if (!url || url === 'about:blank') return { stub: null, storeCaptured: null, mediaSessionShim: null };
+    if (!url || url === 'about:blank') return { stub: null };
     try {
       return await this.evalOn(view, `(() => ({
-        stub: window.__parachordRequireTrap === true,
-        storeCaptured: !!window.__parachordAmazonPlayback,
-        mediaSessionShim: window.__parachordMediaSessionHijack === true,
-        streamCapture: window.__parachordStreamCapture === true,
-        streamManifests: (window.__parachordStreamCaps && window.__parachordStreamCaps.manifests || []).length,
-        streamInits: (window.__parachordStreamCaps && window.__parachordStreamCaps.inits || []).length
+        stub: window.__parachordMediaSessionHijack === true
       }))()`);
     } catch {
-      return { stub: null, storeCaptured: null, mediaSessionShim: null };
+      return { stub: null };
     }
   },
 
@@ -946,6 +691,88 @@ const amazonWebPlayer = {
     const run = this.searchChain.then(busy, busy);
     this.searchChain = run.then(() => {}, () => {});
     return run;
+  },
+
+  // One-shot session-header capture for the native playback engine
+  // and the CSRF triplet that ride
+  // every Amazon API request. The capture lens is the gql host (the page's
+  // specSearch request always carries them), and the trigger page is a
+  // search view load of a BENIGN query the caller supplies (the user's own
+  // most recent search — it is already in their Amazon history, so the mint
+  // adds nothing new). Rides enqueueSearch: webRequest has a single listener
+  // slot per method per session, and the chain is what serializes this
+  // against an in-flight search's own capture registration.
+  async mintSessionHeaders({ query } = {}) {
+    if (!(await this.isSignedIn())) {
+      const err = new Error('Sign in to Amazon Music first');
+      err.reason = 'not-signed-in';
+      throw err;
+    }
+    // Fast path since the search template landed (#1152): the captured
+    // spec-search request already carries exactly these headers from a real
+    // page flow — the replay's freshness check is the mint's too.
+    const t = this.specSearchTemplate;
+    if (t && t.headers && typeof t.headers['csrf-token'] === 'string' &&
+        t.headers['csrf-token'].length >= 20 &&
+        /^\d+$/.test(String(t.headers['csrf-rnd'] || '')) &&
+        /^\d+$/.test(String(t.headers['csrf-ts'] || ''))) {
+      return {
+        csrfToken: t.headers['csrf-token'],
+        csrfRnd: t.headers['csrf-rnd'] || null,
+        csrfTs: t.headers['csrf-ts'] || null,
+        deviceId: t.headers['x-amzn-device-id'] || null
+      };
+    }
+    return this.enqueueSearch(async () => {
+      const ses = this.session();
+      const win = await this.ensureWindow('search');
+      const q = String(query || 'the').slice(0, 120);
+      console.log(`[Amazon] session-headers mint: page flow for "${q}"`);
+      const headers = await new Promise((resolve) => {
+        const filter = { urls: ['https://gql.music.amazon.com/*', 'https://music.amazon.com/api/*', 'https://music.amazon.com/*/api/*'] };
+        let done = false;
+        const finish = (value) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          try { ses.webRequest.onBeforeSendHeaders(filter, null); } catch { /* none */ }
+          resolve(value);
+        };
+        const timer = setTimeout(() => finish(null), 10000);
+        // The page emits PLACEHOLDER csrf values (literally foo/bar) on
+        // requests that do not need them — only the real spec-search-class
+        // requests carry live ones. A dmls call made with placeholders fails
+        // server-side (its "REQUIRED_COOKIES_MISSING" is the bad-csrf
+        // symptom, live-verified 2026-10), so keep listening until values
+        // that look real arrive.
+        const tokenLooksReal = (h) =>
+          typeof h['csrf-token'] === 'string' && h['csrf-token'].length >= 20 &&
+          /^\d+$/.test(String(h['csrf-rnd'] || '')) && /^\d+$/.test(String(h['csrf-ts'] || ''));
+        ses.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+          const h = details.requestHeaders || {};
+          if (h['csrf-token'] && tokenLooksReal(h)) {
+            finish({
+              csrfToken: h['csrf-token'],
+              csrfRnd: h['csrf-rnd'] || null,
+              csrfTs: h['csrf-ts'] || null,
+              deviceId: h['x-amzn-device-id'] || null
+            });
+          }
+          callback({});
+        });
+        loadURLBudgeted(win, `https://music.amazon.com/search/${encodeURIComponent(q)}/songs`).catch(() => finish(null));
+      });
+      // Park on the warm fuse (template replays need an Amazon-origin page
+      // world; parkSearchView's immediate blank only happens on real restarts).
+      if (typeof this.scheduleParkSearchView === 'function') this.scheduleParkSearchView();
+      if (!headers || !headers.csrfToken) {
+        const err = new Error('session headers: the page fired no captured request');
+        err.reason = 'load-failed'; // transient/network — never a sign-in prompt
+        throw err;
+      }
+      console.log('[Amazon] session-headers mint ok');
+      return headers;
+    });
   },
 
   // Capture gql requests (bodies from onBeforeRequest, headers paired by
@@ -1739,233 +1566,17 @@ const amazonWebPlayer = {
     });
   },
 
-  async playByAsin({ asin, title, artist } = {}) {
-    if (!asin) throw new Error('Amazon Music: no ASIN to play');
-    if (!this.cdmAvailable()) {
-      return { success: false, reason: 'no-cdm', error: 'This Parachord build has no Widevine CDM' };
-    }
-    if (!(await this.isSignedIn())) {
-      return { success: false, reason: 'not-signed-in', error: 'Sign in and choose an Amazon Music profile' };
-    }
-    const eme = await this.probeEme();
-    if (!eme) {
-      // Not not-signed-in: prompting for login will not install a CDM.
-      return {
-        success: false,
-        reason: 'playback-failed',
-        error: 'Widevine is not usable yet. The CDM may still be downloading, or this build is not VMP-signed for Amazon.'
-      };
-    }
-    const generation = ++this.playGeneration;
-    const ownsPlay = () => this.playGeneration === generation && this.currentAsin === asin;
-    const win = await this.ensureWindow('player');
-    // A newer playByAsin may have started during ensureWindow. Do not claim
-    // the player or its license listener if so — haltPlayback would blank the
-    // track that just replaced us, and detaching the filter would drop theirs.
-    if (this.playGeneration !== generation) return { success: false, reason: 'superseded' };
-    this.collapse(this.playerView);
-    this.currentAsin = asin;
-    this.streamRepresentations = null;
-    // Everything from here on is post-claim: if a newer playByAsin started
-    // (our loadURL aborted by its loadURL, our confirm loop reading its media
-    // element), that is supersession, not failure — report it instead of
-    // throwing so the IPC wrapper does not halt the newer play.
-    // A 400 from the license endpoint is Amazon refusing this build's
-    // Widevine certificate (development VMP). Detect it instead of waiting
-    // out a generic timeout. Region segment is NA/EU/FE, not only NA.
-    // Detach only if this play still owns the listener.
-    let licenseDenied = false;
-    const ses = this.session();
-    const licenseFilter = { urls: ['https://music.amazon.com/*/api/dmls/*'] };
-    const onLicense = (details) => {
-      if (details.statusCode === 400 && ownsPlay()) licenseDenied = true;
-    };
-    const detachLicense = () => {
-      if (this.playGeneration !== generation) return;
-      try { ses.webRequest.onCompleted(licenseFilter, null); } catch { /* none */ }
-    };
-    try { ses.webRequest.onCompleted(licenseFilter, onLicense); } catch { /* a second registration replaces; generation guards the detach */ }
-    try {
-    // Amazon's own result links use ?do=play. A bare /tracks/{asin} page
-    // renders a Play button whose click() does not start Widevine; the query
-    // does, once the document is attached (0×0 bounds — it must not cover the app).
-    await loadURLBudgeted(win, `https://music.amazon.com/tracks/${encodeURIComponent(asin)}?do=play`);
-    if (!ownsPlay()) return { success: false, reason: 'superseded' };
-    const landed = win.webContents.getURL();
-    if (pageBlocksPlayback(landed)) {
-      await this.haltPlayback(generation);
-      return { success: false, reason: 'not-signed-in', playGeneration: generation, error: 'Choose an Amazon Music profile, then try again' };
-    }
-    await this.evalOn(win, HOOK_SCRIPT).catch(() => {});
-    // Stamp only if this play still owns the view. A newer play's document
-    // must not be tagged with our generation — that is what lets a stale
-    // halt's pause no-op instead of pausing the replacement.
-    if (!ownsPlay()) return { success: false, reason: 'superseded' };
-    await this.evalOn(win, amazonPlayGenerationStamp(generation)).catch(() => {});
-    const read = async () => {
-      try {
-        return await this.evalOn(win, `(() => {
-          if (window.__parachordAmazonRead) {
-            const s = window.__parachordAmazonRead();
-            if (s && s.state === 'PLAYING') return s;
-          }
-          const v = document.querySelector('video');
-          if (!v) return null;
-          const d = Number.isFinite(v.duration) ? v.duration : 0;
-          return {
-            positionMs: Math.round((v.currentTime || 0) * 1000),
-            durationMs: d > 0 ? Math.round(d * 1000) : 0,
-            state: v.ended ? 'FINISHED' : (v.paused ? 'PAUSED' : 'PLAYING')
-          };
-        })()`);
-      } catch { return null; }
-    };
-    // A development certificate still starts the element, then Amazon's
-    // license 400 tears it down a few hundred milliseconds later. Don't
-    // report success until playback has survived that window.
-    let playingSince = 0;
-    for (let i = 0; i < 20; i++) {
-      await new Promise(r => setTimeout(r, 400));
-      // Clicking B while A is still in this loop used to read B's media element
-      // and report success for A. The superseded branch then paused B.
-      if (!ownsPlay()) return { success: false, reason: 'superseded' };
-      if (licenseDenied) break;
-      const state = await read();
-      const advancing = state && state.state === 'PLAYING' && state.positionMs > 0;
-      if (advancing) {
-        if (!playingSince) playingSince = Date.now();
-        if (Date.now() - playingSince >= 1500 && ownsPlay()) {
-          // Is the page playing the track we asked for? Amazon reports its
-          // now-playing a moment after the element starts, so give it up to
-          // ~3s; no metadata by then is not a failure (unknown is accepted).
-          let nowPlaying = state.nowPlaying || null;
-          for (let w = 0; !nowPlaying && w < 8; w++) {
-            await new Promise(r => setTimeout(r, 400));
-            if (!ownsPlay()) return { success: false, reason: 'superseded' };
-            const again = await read();
-            nowPlaying = (again && again.nowPlaying) || null;
-          }
-          console.log(`[Amazon] play ${asin}: asked for "${title || ''}"; page now playing ${nowPlaying ? `"${nowPlaying.title}" by "${nowPlaying.artist}"` : 'unknown (no metadata)'}`);
-          if (amazonNowPlayingMismatch(title, nowPlaying)) {
-            // A station, not the track: Amazon can only start this ASIN as a
-            // station for this account. Fail the play so the next source is
-            // tried, instead of playing other music under this track's name.
-            await this.haltPlayback(generation);
-            return {
-              success: false,
-              reason: 'playback-failed',
-              playGeneration: generation,
-              error: `Amazon played "${nowPlaying.title}" by ${nowPlaying.artist} instead of "${title}" (it can only start this track as a station)`
-            };
-          }
-          // Kick (never await) the manifest/init capture that upgrades the
-          // measured-bitrate streamQuality record with codec / sample rate /
-          // bit depth / channels / tier. Playback is already confirmed; a
-          // capture miss just leaves the bitrate-only record.
-          void this.readStreamRepresentations({ generation, asin }).catch(() => {});
-          return { success: true, confirmed: true, asin, engine: 'web' };
-        }
-      } else {
-        playingSince = 0;
-      }
-    }
-    if (!ownsPlay()) return { success: false, reason: 'superseded' };
-    // Always false by design: playback failure must never reveal the hidden
-    // player (a run of unplayable radio tracks used to show and focus it).
-    // shouldRevealPlayerOnFailure + this throw is the regression guard — the
-    // function is tested to stay false.
-    if (shouldRevealPlayerOnFailure()) {
-      throw new Error('Amazon playback failure must not reveal the player');
-    }
-    await this.haltPlayback(generation);
-    if (licenseDenied) {
-      return {
-        success: false,
-        reason: 'playback-failed',
-        playGeneration: generation,
-        error: 'Amazon refused the Widevine license. This build needs a production VMP signature.'
-      };
-    }
-    return {
-      success: false,
-      reason: 'playback-failed',
-      playGeneration: generation,
-      error: `In-app playback did not start for ${title || asin}${artist ? ' by ' + artist : ''}`
-    };
-    } catch (error) {
-      if (!ownsPlay()) return { success: false, reason: 'superseded', error: error && error.message };
-      await this.haltPlayback(generation).catch(() => {});
-      error.playGeneration = generation;
-      throw error;
-    } finally {
-      detachLicense();
-    }
-  },
-
-  async readState() {
-    const win = this.playerView;
-    if (!this.alive(win)) {
-      return { state: 'EMPTY', asin: null, title: null, artist: null, positionMs: 0, durationMs: 0, audioDecodedBytes: null };
-    }
-    let state = null;
-    try { state = await this.evalOn(win, 'window.__parachordAmazonRead ? window.__parachordAmazonRead() : null'); }
-    catch { state = null; }
-    if (!state) {
-      return { state: 'EMPTY', asin: null, title: null, artist: null, positionMs: 0, durationMs: 0, audioDecodedBytes: null };
-    }
-    return {
-      state: state.state,
-      asin: reportedPlaybackAsin(state),
-      title: (state.nowPlaying && state.nowPlaying.title) || null,
-      artist: (state.nowPlaying && state.nowPlaying.artist) || null,
-      positionMs: state.positionMs || 0,
-      durationMs: state.durationMs || 0,
-      audioDecodedBytes: (typeof state.audioDecodedBytes === 'number' && Number.isFinite(state.audioDecodedBytes))
-        ? state.audioDecodedBytes
-        : null
-    };
-  },
-
-  async withMedia(expr) {
-    const win = this.playerView;
-    if (!this.alive(win)) return { ok: false };
-    return this.evalOn(win, `(() => {
-      const m = window.__parachordAmazonMedia;
-      if (!m) return { ok: false };
-      ${expr}
-      return { ok: true };
-    })()`);
-  },
-
-  // expectedGeneration scopes the pause to the play that requested it (halt).
-  // Omit it for a user pause — that should always hit the current element.
-  async pause(expectedGeneration) {
-    return this.withMedia(amazonMediaPauseExpr(expectedGeneration));
-  },
-
-  async resume() {
-    return this.withMedia('const p = m.play(); if (p && p.catch) p.catch(() => {});');
-  },
-
-  async stop() {
-    return this.haltPlayback();
-  },
-
   // Full sign-out. The partition (persist:amazon-music) is Amazon-only, so a
   // whole-session clear is correctly scoped - no partial cookie-clear guessing
   // like the Apple flow needs. In-flight plays are superseded by the
   // generation bump instead of fighting the teardown.
   async signOut() {
-    try { this.destroyView(this.playerView); } catch { /* gone */ }
     try { this.destroyView(this.searchView); } catch { /* gone */ }
-    this.playerView = null;
     this.searchView = null;
     if (this.alive(this.authWindow)) {
       try { this.authWindow.close(); } catch { /* gone */ }
     }
     this.authWindow = null;
-    this.currentAsin = null;
-    this.playGeneration++;
     this.cookieWarned = false;
     this.searchChain = Promise.resolve();
     // The captured request template embeds the signed-out session's headers
@@ -1979,231 +1590,6 @@ const amazonWebPlayer = {
     }
     return { success: true };
   },
-
-  async seek(positionMs) {
-    const seconds = Math.max(0, Number(positionMs) || 0) / 1000;
-    return this.withMedia(`try { m.currentTime = ${seconds}; } catch (e) {}`);
-  },
-
-  async setVolume(volume01) {
-    const v = Math.max(0, Math.min(1, Number(volume01) || 0));
-    return this.withMedia(`m.volume = ${v};`);
-  },
-
-  async getPlaybackState() {
-    return this.readState();
-  },
-
-  // Parse what the preload's net hook captured during playback startup — the
-  // DASH manifest text and the small init segment responses — into audio
-  // representations (codec / sample rate / bit depth / channels / bandwidth).
-  // Fire-and-forget from playByAsin once playback is confirmed; generation-
-  // and ASIN-guarded so a late read from a superseded play cannot land on the
-  // new track. Every failure degrades to the bitrate-only quality record.
-  async readStreamRepresentations({ generation, asin } = {}) {
-    const view = this.playerView;
-    if (!this.alive(view)) return;
-    let caps = null;
-    // The manifest is fetched before playback can advance, so it is already
-    // captured by now; one short retry covers a clone().text() still settling.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try { caps = await this.evalOn(view, READ_STREAM_CAPS_SCRIPT); } catch { caps = null; }
-      if (caps && ((caps.manifests && caps.manifests.length) || (caps.inits && caps.inits.length))) break;
-      if (attempt === 0) await new Promise(r => setTimeout(r, 1000));
-    }
-    if (!caps || !((caps.manifests && caps.manifests.length) || (caps.inits && caps.inits.length))) {
-      console.log('[Amazon] stream quality: no manifest or init captured (no stream traffic, or the net hook did not run)');
-      return;
-    }
-    const inits = [];
-    for (const init of (caps.inits || [])) {
-      let info = null;
-      try { info = flacStreamInfoFromInit(Buffer.from(init.b64 || '', 'base64')); } catch { info = null; }
-      if (info) inits.push({ url: init.url, ...info });
-    }
-    let reps = [];
-    for (const m of (caps.manifests || [])) {
-      try { reps = reps.concat(mpdAudioRepresentations(m.text, m.url)); } catch { /* keep what parsed */ }
-    }
-    // The same manifest can be captured more than once (Amazon's own autoplay
-    // refetches it) — dedupe before pairing so one representation stays one.
-    const seenRep = new Set();
-    reps = reps.filter((r) => {
-      const key = [r.id, r.bandwidth, r.sampleRate, r.bitDepth, r.codec].join('|');
-      if (seenRep.has(key)) return false;
-      seenRep.add(key);
-      return true;
-    });
-    if (!reps.length && inits.length) {
-      // No manifest (or an unrecognized one) but the init segments still carry
-      // the FLAC facts — a dfla box is proof of codec and parameters on its own.
-      reps = inits.map(i => ({
-        id: null,
-        codec: i.codec || null,
-        mimeType: null,
-        container: 'mp4',
-        bandwidth: null,
-        sampleRate: i.sampleRate || null,
-        channels: i.channels || null,
-        bitDepth: i.bitDepth || null,
-        initializationUrl: i.url
-      }));
-    }
-    // A manifest that yields no audio representations is a hornet/packager
-    // change worth noticing in the field log — the first 160 chars say which.
-    if (reps.length === 0 && caps.manifests && caps.manifests.length) {
-      const sample = String(caps.manifests[caps.manifests.length - 1].text || '').slice(0, 160);
-      console.warn(`[Amazon] stream quality: ${caps.manifests.length} manifest(s) captured but no audio representation parsed — head: ${sample}`);
-      return;
-    }
-    const merged = attachInitStreamInfo(reps, inits);
-    if (this.playGeneration === generation && this.currentAsin === asin) {
-      this.streamRepresentations = merged;
-      const summary = merged.map(r => `${r.codec || '?'}${r.sampleRate ? ' ' + r.sampleRate + 'Hz' : ''}${r.bitDepth ? ' ' + r.bitDepth + '-bit' : ''}${r.bandwidth ? ' ' + Math.round(r.bandwidth / 1000) + 'kbps' : ''}`);
-      console.log(`[Amazon] stream quality: ${merged.length} representation(s) [${summary.join(' | ')}]`);
-    }
-  },
-
-  // Stream parameters for the representation actually playing, keyed to the
-  // measured bitrate (the poller passes its converged median). Read by the
-  // poller when it builds the streamQuality record for progress events.
-  streamInfo(kbps) {
-    const reps = this.streamRepresentations;
-    if (!reps || !reps.length) return null;
-    const chosen = pickMpdRepresentation(reps, Number(kbps) || 0);
-    if (!chosen) return null;
-    const out = {};
-    if (chosen.codec) out.codec = chosen.codec;
-    if (chosen.container) out.container = chosen.container;
-    if (chosen.sampleRate) out.sampleRate = chosen.sampleRate;
-    if (chosen.bitDepth) out.bitDepth = chosen.bitDepth;
-    if (chosen.channels) out.channels = chosen.channels;
-    return out;
-  },
-
-  // Hornet keeps Audio Quality on playbackController (metro module, not a
-  // window global). The player view is 0×0, so Amazon's own modal
-  // is unreachable. Read and write the same store the modal writes.
-  //
-  // The store is never found by requiring modules — executing hornet module
-  // factories out of order wedges the page (observed live). The preload's
-  // passive __r trap would capture it if Amazon's code routed requires through
-  // the global — live observation says it does not on track pages, so the
-  // persisted playback-controller localStorage entry (which hornet rehydrates
-  // from at boot — "applies on the next track") is the working mechanism, and
-  // the trap is an opportunistic upgrade. getStatus's `preload.storeCaptured`
-  // reports which path a page is on.
-  //
-  // `apply` is null for reads, or the quality fields to write.
-  async withQualityController(apply) {
-    // Do not expand the view here. Settings must not cover the app.
-    const win = await this.ensureWindow('player');
-    // Quality reads need a music.amazon.com document (localStorage is
-    // origin-scoped). When the player is parked, the home page is loaded
-    // MUTED — autoplay is allowed and the page is told it is visible, so an
-    // unmuted home load could start audible playback from a settings read —
-    // and parked again afterward. A real playback page is used as-is.
-    let loadedHome = false;
-    const genAtStart = this.playGeneration;
-    try {
-      let url = win.webContents.getURL();
-      if (pageBlocksPlayback(url)) {
-        throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
-      }
-      if (!url || url === 'about:blank') {
-        try { win.webContents.setAudioMuted(true); } catch { /* gone */ }
-        loadedHome = true;
-        await loadURLBudgeted(win, HOME_URL);
-        url = win.webContents.getURL();
-        if (pageBlocksPlayback(url)) {
-          throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
-        }
-      }
-      const script = `(() => {
-      const readPersistedQuality = ${readPersistedQuality.toString()};
-      const writePersistedQuality = ${writePersistedQuality.toString()};
-      const amazonQualityFromStore = ${amazonQualityFromStore.toString()};
-      const apply = ${apply ? JSON.stringify(apply) : 'null'};
-      const store = window.__parachordAmazonPlayback;
-      const s = store && store.audioQualitySettings;
-      if (s) {
-        const step = amazonQualityFromStore(s, apply);
-        // Persist only on a write, and only fields that are actually set.
-        // A read used to mirror !!abrEnabled, which is false when the field
-        // has not materialized, and that false was rehydrated at next boot.
-        if (step && step.persist) writePersistedQuality(localStorage, step.persist);
-        return step && step.report;
-      }
-      const persisted = readPersistedQuality(localStorage);
-      if (apply) {
-        const wrote = writePersistedQuality(localStorage, apply);
-        if (wrote) return readPersistedQuality(localStorage) || persisted;
-      }
-      return persisted || { streamingQuality: null, abrEnabled: true };
-    })()`;
-      const deadline = Date.now() + QUALITY_WAIT_MS;
-      let last = null;
-      while (Date.now() < deadline) {
-        try { last = await this.evalOn(win, script); } catch { last = null; }
-        if (last && last.streamingQuality) return last;
-        await new Promise(r => setTimeout(r, 250));
-      }
-      return last;
-    } finally {
-      if (loadedHome) {
-        // Skip the park if a newer play claimed the player while we read (its
-        // loadURL owns the view now); always restore the mute state.
-        if (this.playGeneration === genAtStart) {
-          try {
-            const u = win.webContents.getURL();
-            if (u && u !== 'about:blank') await win.webContents.loadURL('about:blank');
-          } catch { /* gone */ }
-        }
-        try { win.webContents.setAudioMuted(false); } catch { /* gone */ }
-      }
-    }
-  },
-
-  async getQuality() {
-    const current = await this.withQualityController(null);
-    if (!current) return { success: false, reason: 'not-ready', error: 'Amazon Music quality settings are not available yet' };
-    return {
-      success: true,
-      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || current.streamingQuality || null,
-      abrEnabled: !!current.abrEnabled,
-      options: AMAZON_QUALITY_OPTIONS
-    };
-  },
-
-  async setQuality({ streamingQuality, abrEnabled } = {}) {
-    // Validate before writing anything into hornet's store: a bogus tier
-    // written here is rehydrated from the persisted entry on every boot until
-    // Amazon's own modal overwrites it. 'HD' maps to the tier the modal writes.
-    const normalized = streamingQuality ? normalizeStreamingQuality(streamingQuality) : null;
-    if (streamingQuality && !normalized) {
-      return { success: false, reason: 'invalid', error: `Unknown Amazon Music audio quality: ${streamingQuality}` };
-    }
-    const apply = {};
-    if (normalized) apply.streamingQuality = normalized;
-    if (abrEnabled !== undefined) apply.abrEnabled = !!abrEnabled;
-    if (!apply.streamingQuality && abrEnabled === undefined) {
-      return { success: false, reason: 'invalid', error: 'Unknown Amazon Music audio quality' };
-    }
-    const current = await this.withQualityController(apply);
-    if (!current) return { success: false, reason: 'not-ready', error: 'Amazon Music quality settings are not available yet' };
-    return {
-      success: true,
-      streamingQuality: normalizeStreamingQuality(current.streamingQuality) || current.streamingQuality || apply.streamingQuality || null,
-      abrEnabled: !!current.abrEnabled,
-      options: AMAZON_QUALITY_OPTIONS
-    };
-  }
 };
-
-// Exposed for tests: the page scripts serialize logic-module helpers with
-// .toString(), and a helper that gains a closure (or a stray backtick in the
-// template) breaks only inside the Amazon page. The smoke test evaluates them
-// against a bare DOM stub so serialization breakage fails CI instead.
-amazonWebPlayer._scripts = { HOOK_SCRIPT, READ_STREAM_CAPS_SCRIPT };
 
 module.exports = amazonWebPlayer;

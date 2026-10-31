@@ -36,29 +36,11 @@ describe('amazonNowPlayingMismatch', () => {
   });
 });
 
-describe('amazon-web-player.js wiring', () => {
-  const src = fs.readFileSync(path.join(__dirname, '../../amazon-web-player.js'), 'utf8');
 
-  test('the page read reports the page\'s own now-playing', () => {
-    const hook = src.slice(src.indexOf('window.__parachordAmazonRead = () =>'), src.indexOf('window.__parachordAmazonRead = () =>') + 4000);
-    expect(hook).toMatch(/navigator\.mediaSession && navigator\.mediaSession\.metadata/);
-    expect(hook).toMatch(/return \{\s*nowPlaying,/);
-  });
 
-  test('a play checks the page\'s now-playing before reporting success', () => {
-    const play = src.slice(src.indexOf('async playByAsin('), src.indexOf('async readState('));
-    const check = play.indexOf('amazonNowPlayingMismatch(title, nowPlaying)');
-    const success = play.indexOf("return { success: true, confirmed: true, asin, engine: 'web' }");
-    expect(check).toBeGreaterThan(-1);
-    expect(success).toBeGreaterThan(check);
-    // A mismatch halts the page and fails the play (so the next source plays).
-    const branch = play.slice(check, success);
-    expect(branch).toMatch(/await this\.haltPlayback\(generation\)/);
-    expect(branch).toMatch(/reason: 'playback-failed'/);
-  });
-
-  test('readState fills title/artist from the page\'s now-playing', () => {
-    expect(src).toMatch(/title: \(state\.nowPlaying && state\.nowPlaying\.title\) \|\| null,/);
-    expect(src).toMatch(/artist: \(state\.nowPlaying && state\.nowPlaying\.artist\) \|\| null,/);
-  });
-});
+// The hornet-player wiring this used to assert (HOOK_SCRIPT's now-playing
+// read, playByAsin's mismatch check, readState's title fill) died with the
+// hornet audio path: native playback never lands on a page that could
+// silently substitute a station — the dmls manifest is fetched per ASIN and
+// the served pressing rides `substituteAsin` in daylight. The pure matcher
+// stays because a dmls-level substitution check may reuse it someday.

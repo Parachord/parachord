@@ -19,7 +19,7 @@ Subsystem detail lives in `docs/architecture/`, moved there verbatim from this f
 | Area | Read first | Main code |
 |---|---|---|
 | Playback, resolvers, source selection, match confidence, cross-resolver enrichment, volume, Spotify Connect devices | [playback.md](docs/architecture/playback.md) | `handlePlay` / `handleNext` in `src/renderer/app.js`, `resolver-loader.js`, `sync-providers/confidence-scoring.js` |
-| Amazon Music resolver; embedded web players and the OS media-surface hijack | [amazon-music.md](docs/architecture/amazon-music.md) | `amazon-web-player.js`, `amazon-music-logic.js`, `amazon-music-poller.js`, `amazon-player-preload.js`, `embedded-player-kit.js`, `plugins-src/amazonmusic/` |
+| Amazon Music resolver; native Widevine playback (shared renderer player, dmls bridge, streaming telemetry) and the OS media-surface hijack for future embedders | [amazon-music.md](docs/architecture/amazon-music.md) | `amazon-dmls.js`, `amazon-web-player.js` (search/sign-in/session mint), `amazon-music-logic.js`, `amazon-player-preload.js` (search-view preload), `main-process/widevine-bridge.js`, `main-process/amazon-telemetry.js`, `src/renderer/lib/widevine-player.js`, `src/renderer/lib/widevine-quality.js`, `plugins-src/amazonmusic/` |
 | Now playing: Discord Rich Presence, MPRIS, `navigator.mediaSession` | [now-playing.md](docs/architecture/now-playing.md) | `discord-presence*.js`, `main-process/ipc/discord-presence.js`, `mpris-player.js` |
 | Widevine / castlabs Electron, VMP signing; the local server port (OAuth callbacks, `/protocol`) | [platform.md](docs/architecture/platform.md) | `main.js`, `scripts/vmp-sign.js`, `main-process/auth-port.js` |
 | Album art | [album-art.md](docs/architecture/album-art.md) | `getAlbumArt` in `src/renderer/app.js`, `album-art-catalog.js`, `src/renderer/lib/broken-art.js` |
@@ -55,7 +55,7 @@ One line each; the linked doc has the reasons and the incidents behind them.
 - **A DJ tool needs its registry entry, its `executeDjTool` case, and its context method**, or it is advertised but unimplemented. ([ai-chat.md](docs/architecture/ai-chat.md))
 - **The renderer never talks to Discord**; the main process owns the socket, and only https art without credential-shaped query parameters is sent. ([now-playing.md](docs/architecture/now-playing.md))
 - **Redirect URIs use the bound auth-server port**, never a hard-coded 8888. ([platform.md](docs/architecture/platform.md))
-- **Leaving an Amazon track halts it, never only pauses it.** ([amazon-music.md](docs/architecture/amazon-music.md))
+- **Widevine playback is shared infrastructure, never per-resolver engine code.** New stream services implement `getManifest`/`relayLicense` on the widevine bridge (`main-process/widevine-bridge.js`); quality stays global (`playback_quality`/`playback_abr`), telemetry flows through `widevine:player-event`, and codec-family-scoped ABR selects variants — never per-resolver quality vocabularies. Leaving an Amazon track stops/unloads the engine, never only pauses. ([amazon-music.md](docs/architecture/amazon-music.md), [plugins.md](docs/architecture/plugins.md))
 
 ## Renderer patterns
 
