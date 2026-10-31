@@ -87,6 +87,10 @@ function load({ shaka, electron, codecSupport } = {}) {
     __parachordWidevineError: undefined,
     navigator: {
       requestMediaKeySystemAccess: async (_sys, configs) => {
+        // Enforce the minimal-probe invariant: no distinctiveIdentifier ever.
+        if (JSON.stringify(configs).includes('distinctiveIdentifier')) {
+          throw new Error('TypeError: Failed to read distinctiveIdentifier property');
+        }
         if (support.emeFlacReject) throw new Error('NotSupportedError');
         if (support.emeFlacEmpty) return null;
         return { getConfiguration: () => configs };

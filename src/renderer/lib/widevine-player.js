@@ -166,10 +166,13 @@ async function getSupportedCodecFamilies() {
   if (codecTypes.flac) {
     try {
       const nav = (typeof window !== 'undefined' && window.navigator) || (typeof navigator !== 'undefined' && navigator);
+      // Minimal probe only — matches what Shaka's own setup asks. Anything
+      // stricter (distinctiveIdentifier/robustness attributes) yields false
+      // negatives on perfectly working L3 CDMs (observed on macOS, mac-build
+      // FLAC regression reverted by this).
       const access = await nav.requestMediaKeySystemAccess('com.widevine.alpha', [{
         initDataTypes: ['cenc'],
-        distinctiveIdentifier: 'use',
-        audioCapabilities: [{ contentType: 'audio/mp4; codecs="flac"', encryptionScheme: 'cenc' }]
+        audioCapabilities: [{ contentType: 'audio/mp4; codecs="flac"' }]
       }]);
       if (!access) emeFamilies.flac = false;
     } catch (e) {
