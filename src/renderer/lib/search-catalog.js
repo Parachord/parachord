@@ -96,7 +96,7 @@ function mergeTrackResults(baseRows, catalogLists, { calculateConfidence, thresh
       if (key && !localByKey.has(key)) localByKey.set(key, base);
       continue;
     }
-    const row = { ...base, sources: { ...(base.sources || {}) } };
+    const row = { ...base, sources: { ...(base.sources || {}) }, _aliases: [base.id] };
     rows.push(row);
     if (key) baseByKey.set(key, [...(baseByKey.get(key) || []), row]);
   }
@@ -110,11 +110,14 @@ function mergeTrackResults(baseRows, catalogLists, { calculateConfidence, thresh
       if (key && localByKey.has(key)) continue;
       const match = key ? (baseMatch(key, hit) || catalogByKey.get(key)) : null;
       if (!match) {
-        const row = { ...hit, sources: { ...hit.sources } };
+        const row = { ...hit, sources: { ...hit.sources }, _aliases: [hit.id] };
         rows.push(row);
         if (key) catalogByKey.set(key, row);
         continue;
       }
+      // The row now stands for the hit too: if the hit's own row was on
+      // screen, stabilizeRows keeps this one in its place (no remount).
+      if (!match._aliases.includes(hit.id)) match._aliases.push(hit.id);
       let joined = false;
       for (const [resolverId, source] of Object.entries(hit.sources || {})) {
         if (match.sources[resolverId]) continue;
@@ -162,10 +165,11 @@ function mergeAlbumResults(mbAlbums, catalogLists) {
     const existing = key ? byKey.get(key) : null;
     if (existing) {
       if (!existing.albumArt && !existing._serviceArt && album.albumArt) existing._serviceArt = album.albumArt;
+      if (!existing._aliases.includes(album.id)) existing._aliases.push(album.id);
       return;
     }
     if (!key && !keepUnkeyed) return;
-    const row = { ...album };
+    const row = { ...album, _aliases: [album.id] };
     if (key) byKey.set(key, row);
     rows.push(row);
   };
@@ -181,11 +185,13 @@ function mergeAlbumResults(mbAlbums, catalogLists) {
 // row's sources that carries one (sources join in priority order). Search
 // shows it when the album-art pipeline is slow or finds nothing; it is the
 // image the pipeline's resolver step would find, without searching again.
-function serviceArtFor(row) {
+// skip: URLs known not to load (a Set), passed over.
+function serviceArtFor(row, skip) {
   if (!row) return null;
-  if (row._serviceArt) return row._serviceArt;
+  const usable = (u) => typeof u === 'string' && u && !(skip && skip.has(u));
+  if (usable(row._serviceArt)) return row._serviceArt;
   for (const source of Object.values(row.sources || {})) {
-    if (source && typeof source.albumArt === 'string' && source.albumArt) return source.albumArt;
+    if (source && usable(source.albumArt)) return source.albumArt;
   }
   return null;
 }
@@ -238,7 +244,48 @@ function catalogArtistsFromResults({ query, trackLists = [], albumLists = [], mb
   return artists;
 }
 
+// Search re-publishes each category whenever another source answers, and a
+// re-ranked list moved rows on screen: the card in each slot changed, and a
+// service row absorbed by a MusicBrainz match came back as a new row (new id,
+// new React key), so covers faded out and back in (2026-11-01). stabilizeRows
+// keeps what is already on screen in place:
+//   - a row that stands for a row shown before (any of identityKeys(row)
+//     matches) keeps that row's display key, _rowKey, and its position;
+//   - rows new to the list follow, in the order they were ranked.
+// The row's real id still changes (a MusicBrainz match wins identity); only
+// the display key and the order are held. previous is the last call's
+// returned `shown`; returns { rows, shown }.
+function stabilizeRows(rows, previous, identityKeys) {
+  const owner = new Map();
+  for (const p of previous || []) {
+    for (const k of p.keys) if (!owner.has(k)) owner.set(k, p.rowKey);
+  }
+  const placed = new Map();
+  const fresh = [];
+  for (const row of rows || []) {
+    const keys = identityKeys(row);
+    const rowKey = keys.map(k => owner.get(k)).find(rk => rk && !placed.has(rk));
+    if (rowKey) placed.set(rowKey, { ...row, _rowKey: rowKey });
+    else fresh.push({ ...row, _rowKey: row.id });
+  }
+  const ordered = [
+    ...(previous || []).map(p => placed.get(p.rowKey)).filter(Boolean),
+    ...fresh,
+  ];
+  const shown = ordered.map(r => ({ rowKey: r._rowKey, keys: [...new Set([r._rowKey, ...identityKeys(r)])] }));
+  return { rows: ordered, shown };
+}
+
+// Identity keys for stabilizeRows: the ids a track or album row stands for,
+// and for an artist its normalized name (a service-named artist and the
+// MusicBrainz artist that replaces it share it).
+const rowIdentityKeys = (row) => (Array.isArray(row._aliases) && row._aliases.length ? row._aliases : [row.id]);
+const artistIdentityKeys = (row) => [row.id, `name:${normalizeArtistName(row.name || '')}`];
+
 module.exports = {
+  stabilizeRows,
+  rowIdentityKeys,
+  artistIdentityKeys,
   CATALOG_RESULTS_PER_RESOLVER,
   TRACK_RANK_KEY,
   searchResolversFor,

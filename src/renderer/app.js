@@ -630,7 +630,7 @@ const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates,
-  TRACK_RANK_KEY, serviceArtFor
+  TRACK_RANK_KEY, serviceArtFor, stabilizeRows, rowIdentityKeys, artistIdentityKeys
 } = require('./lib/search-catalog');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
@@ -18048,19 +18048,31 @@ ${trackListXml}
     const albumLists = () => [...albumResolvers, ...fallbackAlbumResolvers]
       .map(r => catalogAlbums.get(r.id)).filter(Boolean);
 
+    // What each category has on screen so far (stabilizeRows): rows already
+    // shown keep their place and display key as later sources answer, so
+    // nothing reshuffles or remounts under the user.
+    const shown = { artists: [], albums: [], tracks: [] };
+    const stable = (category, ranked, identityKeys) => {
+      const next = stabilizeRows(ranked, shown[category], identityKeys);
+      shown[category] = next.shown;
+      return next.rows;
+    };
+
     const publishArtists = () => {
       if (!isCurrent()) return;
       const derived = catalogArtistsFromResults({
         query, trackLists: trackLists(), albumLists: albumLists(), mbArtists: mb.artists || []
       });
-      const rows = reRankResults([...(mb.artists || []), ...derived], query, 'name');
+      const rows = stable('artists', reRankResults([...(mb.artists || []), ...derived], query, 'name'), artistIdentityKeys);
       setSearchResults(prev => ({ ...prev, artists: rows }));
       if (mbOk.artists) cacheCategory('artists', rows);
     };
 
     const publishAlbums = () => {
       if (!isCurrent()) return;
-      const rows = reRankResults(mergeAlbumResults(mb.albums || [], albumLists()), query, 'title');
+      const rows = withSearchArt(
+        stable('albums', reRankResults(mergeAlbumResults(mb.albums || [], albumLists()), query, 'title'), rowIdentityKeys),
+        'album');
       setSearchResults(prev => ({ ...prev, albums: rows }));
       fetchSearchAlbumArt(rows, []);
       if (mbOk.albums) cacheCategory('albums', rows);
@@ -18068,7 +18080,9 @@ ${trackListXml}
 
     const publishTracks = () => {
       if (!isCurrent()) return;
-      const rows = reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, TRACK_RANK_KEY);
+      const rows = withSearchArt(
+        stable('tracks', reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, TRACK_RANK_KEY), rowIdentityKeys),
+        'track');
       // Local files' rows stay first; a service row that only repeats one goes.
       setSearchResults(prev => {
         const localTracks = prev.tracks.filter(t => t.isLocal);
@@ -18256,12 +18270,16 @@ ${trackListXml}
   const SEARCH_ART_LIMIT = 10;
   const SEARCH_ART_CONCURRENCY = 4;
   const SEARCH_ART_FALLBACK_MS = 2000;
-  const searchArtJobsRef = useRef({ query: null, queue: [], seen: new Set(), settled: new Set(), workers: 0 });
+  // art: covers settled for this query by display key, re-applied when a
+  // re-published row arrives without one (a MusicBrainz row replacing the
+  // service row the cover was written onto).
+  // bad: cover URLs that failed to load this query (handleSearchArtBroken).
+  const searchArtJobsRef = useRef({ query: null, queue: [], seen: new Set(), settled: new Set(), art: new Map(), bad: new Set(), workers: 0 });
   const searchArtWriterRef = useRef(null);
   if (!searchArtWriterRef.current) {
     searchArtWriterRef.current = window.createCoalescedUpdater((batch) => {
       const patch = (list, kind) => list.map(item => {
-        const ops = batch.get(`${kind}:${item.id}`);
+        const ops = batch.get(`${kind}:${item._rowKey || item.id}`);
         if (!ops || item.albumArt) return item;
         return { ...item, albumArt: window.applyCoalescedOps(undefined, ops) };
       });
@@ -18273,39 +18291,65 @@ ${trackListXml}
     }, 250);
   }
 
-  const fetchSearchAlbumArt = (albums, tracks) => {
-    const query = searchQueryRef.current;
+  // The cover jobs for a query, reset when the query changes.
+  const searchArtJobsFor = (query) => {
     const jobs = searchArtJobsRef.current;
-    const writer = searchArtWriterRef.current;
     if (jobs.query !== query) {
       jobs.query = query;
       jobs.queue = [];
       jobs.seen = new Set();
       jobs.settled = new Set();
+      jobs.art = new Map();
+      jobs.bad = new Set();
     }
+    return jobs;
+  };
+
+  // The first cover shown for a display key stays: a re-published row takes
+  // it, whether its own cover changed (a higher-priority service answered
+  // later and its hit now leads the merged row) or it arrived without one (a
+  // MusicBrainz row replacing the service row the cover was written onto).
+  const withSearchArt = (rows, kind) => {
+    const jobs = searchArtJobsFor(searchQueryRef.current);
+    return rows.map(row => {
+      const r = row.albumArt && jobs.bad.has(row.albumArt) ? { ...row, albumArt: undefined } : row;
+      const key = `${kind}:${r._rowKey || r.id}`;
+      const shownUrl = jobs.art.get(key);
+      if (shownUrl) return r.albumArt === shownUrl ? r : { ...r, albumArt: shownUrl };
+      if (r.albumArt) jobs.art.set(key, r.albumArt);
+      return r;
+    });
+  };
+
+  const fetchSearchAlbumArt = (albums, tracks) => {
+    const query = searchQueryRef.current;
+    const jobs = searchArtJobsFor(query);
+    const writer = searchArtWriterRef.current;
     // The first cover to arrive for a row wins: the pipeline's, or the
     // service's once the deadline passes. A row never swaps covers under the user.
     const settle = (key, url) => {
-      if (!url || jobs.query !== query || jobs.settled.has(key)) return;
+      if (!url || jobs.bad.has(url) || jobs.query !== query || jobs.settled.has(key)) return;
       jobs.settled.add(key);
+      jobs.art.set(key, url);
       writer.queue(key, url);
     };
     let cachedHits = 0;
     const enqueue = (kind, item, artist, album, ids) => {
-      const key = `${kind}:${item.id}`;
+      const key = `${kind}:${item._rowKey || item.id}`;
       const title = kind === 'track' ? item.title : null;
-      if (item.albumArt || !artist || !(album || title) || jobs.seen.has(key)) return;
+      const ownArt = item.albumArt && !jobs.bad.has(item.albumArt) ? item.albumArt : null;
+      if (ownArt || !artist || !(album || title) || jobs.seen.has(key)) return;
       jobs.seen.add(key);
       const cached = !album ? null : (ids.releaseGroupId || ids.releaseId)
         ? ((ids.releaseGroupId && albumArtCache.current[ids.releaseGroupId]?.url) ||
            (ids.releaseId && albumArtCache.current[ids.releaseId]?.url))
         : getCachedAlbumArt(artist, album);
-      if (cached) {
+      if (cached && !jobs.bad.has(cached)) {
         settle(key, cached);
         cachedHits++;
         return;
       }
-      const fallback = serviceArtFor(item);
+      const fallback = serviceArtFor(item, jobs.bad);
       if (fallback) setTimeout(() => settle(key, fallback), SEARCH_ART_FALLBACK_MS);
       jobs.queue.push({ key, artist, album, title, ids, fallback });
     };
@@ -18330,7 +18374,7 @@ ${trackListXml}
           } catch (error) {
             // Art is optional
           }
-          settle(job.key, url || job.fallback);
+          settle(job.key, [url, job.fallback].find(u => u && !jobs.bad.has(u)));
         }
       } finally {
         jobs.workers--;
@@ -18339,6 +18383,35 @@ ${trackListXml}
     };
     const idle = Math.min(SEARCH_ART_CONCURRENCY - jobs.workers, jobs.queue.length);
     for (let i = 0; i < idle; i++) worker();
+  };
+
+  // A Search cover that fails to load doesn't stick. A slot keeps its first
+  // cover, so a dead first cover stayed for good: Bandcamp answers first, and
+  // its search API's image URLs 404ed (2026-11-01). The URL is marked bad for
+  // the query, the slot gives it up, reportBrokenAlbumArt drops it from the
+  // shared caches, and the row takes another source's cover or asks the
+  // pipeline again.
+  const handleSearchArtBroken = (kind, item, url) => {
+    const jobs = searchArtJobsFor(searchQueryRef.current);
+    if (!url || jobs.bad.has(url)) return;
+    jobs.bad.add(url);
+    const key = `${kind}:${item._rowKey || item.id}`;
+    if (jobs.art.get(key) === url) jobs.art.delete(key);
+    jobs.settled.delete(key);
+    jobs.seen.delete(key);
+    const listKey = kind === 'album' ? 'albums' : 'tracks';
+    const sameRow = (r) => (r._rowKey || r.id) === (item._rowKey || item.id);
+    setSearchResults(prev => ({
+      ...prev,
+      [listKey]: prev[listKey].map(r => (sameRow(r) && r.albumArt === url ? { ...r, albumArt: undefined } : r))
+    }));
+    const artist = kind === 'album' ? (item['artist-credit']?.[0]?.name || item.artist) : item.artist;
+    const album = kind === 'album' ? item.title : item.album;
+    if (globalThis.reportBrokenAlbumArt && artist && album) {
+      globalThis.reportBrokenAlbumArt(url, { artist, album, releaseId: item.id }).catch(() => {});
+    }
+    const row = { ...item, albumArt: undefined };
+    fetchSearchAlbumArt(kind === 'album' ? [row] : [], kind === 'album' ? [] : [row]);
   };
 
   // Cache utility functions
@@ -34326,7 +34399,7 @@ useEffect(() => {
     addToQueue, clearSearchHistory, fetchArtistData, fetchSearchAlbumTracksAsync,
     getArtistImage, getArtistTopTracks, getCachedAlbumArt, getItemsPerRow,
     handleAlbumClick, handlePlay, handlePlaylistClick, handlePlaylistDragEnd,
-    handleSearchInput, navigateBack, openChartsAlbum, prefetchSearchAlbumTracks,
+    handleSearchArtBroken, handleSearchInput, navigateBack, openChartsAlbum, prefetchSearchAlbumTracks,
     saveSearchHistory, setQueueWithContext,
   });
 
