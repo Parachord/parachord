@@ -626,6 +626,11 @@ const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
+const {
+  searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
+  catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates,
+  TRACK_RANK_KEY
+} = require('./lib/search-catalog');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
   const originalFetch = window.fetch.bind(window);
@@ -655,7 +660,9 @@ const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
     const { queuedTimeoutMs, mbBackground, ...fetchInit } = init || {};
     return window.musicbrainzLimiter.run(
       () => mbFetchWithRetries((attemptInit) => originalFetch(input, attemptInit), fetchInit, { queuedTimeoutMs }),
-      { background: !!mbBackground } // mbBackground: bulk work queues behind user-initiated requests
+      // mbBackground: bulk work queues behind user-initiated requests.
+      // signal: an aborted request leaves the queue without using a slot.
+      { background: !!mbBackground, signal: fetchInit.signal }
     );
   };
 })();
@@ -17718,6 +17725,10 @@ ${trackListXml}
           tracks: [...(prev.tracks.filter(t => t.isLocal) || []), ...(cachedResults.tracks || [])],
           playlists: prev.playlists
         }));
+      } else {
+        // The page shows whatever has arrived while a search runs, so the
+        // previous query's rows must not stay on screen under the new one.
+        setSearchResults({ artists: [], albums: [], tracks: [], playlists: [] });
       }
 
       setIsSearching(true);
@@ -17729,9 +17740,14 @@ ${trackListXml}
           setSearchResults(prev => ({
             ...prev,
             playlists: matchingPlaylists,
-            // Replace local tracks with new search results (filtered by query)
-            tracks: [...localTracks, ...prev.tracks.filter(t => !t.isLocal)]
+            // Replace local tracks with new search results (filtered by query),
+            // dropping service rows that only repeat one of them
+            tracks: [
+              ...localTracks,
+              ...withoutLocalDuplicates(prev.tracks.filter(t => !t.isLocal), localTracks, { normalize: normalizeStr })
+            ]
           }));
+          fetchSearchAlbumArt([], localTracks);
         }
       });
     } else {
@@ -17798,7 +17814,8 @@ ${trackListXml}
     }));
   };
 
-  // Re-rank search results using fuzzy matching + MusicBrainz popularity score
+  // Re-rank search results using fuzzy matching + MusicBrainz popularity score.
+  // nameKey: a field name, or a Fuse key object (TRACK_RANK_KEY).
   const reRankResults = (items, query, nameKey = 'name') => {
     if (!items || items.length === 0 || !query) return items;
 
@@ -17948,6 +17965,18 @@ ${trackListXml}
     return processed;
   };
 
+  // Search runs two sides at once and merges what each has returned so far:
+  //   - MusicBrainz: artists, albums (release groups) and tracks (recordings),
+  //     three requests in the 1 req/s queue, so they land seconds apart;
+  //   - the user's own services, in their priority order (search-catalog.js):
+  //     each active resolver's track search and album search, which answer in
+  //     a few hundred milliseconds, plus the artists those results name.
+  // Each answer re-publishes its category. MusicBrainz rows are canonical (a
+  // service hit for the same track adds its source to the MusicBrainz row);
+  // rows only a service found are kept. Every list is re-ranked by fuzzy
+  // relevance blended with the source's own ranking (reRankResults).
+  // MusicBrainz used to be the only source, with Spotify and Apple Music
+  // hard-wired in only when it returned fewer than three results.
   const performSearch = async (query) => {
     // Cancel any in-flight request
     if (abortControllerRef.current) {
@@ -17962,648 +17991,311 @@ ${trackListXml}
       headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' },
       signal
     };
+    const isCurrent = () => query === searchQueryRef.current;
+    const cacheKey = query.toLowerCase();
+    const cacheCategory = (category, rows) => {
+      searchResultsCache.current[cacheKey] = {
+        ...searchResultsCache.current[cacheKey],
+        [category]: rows,
+        timestamp: Date.now()
+      };
+    };
+    const scorer = { calculateConfidence, threshold: MIN_CONFIDENCE_THRESHOLD, normalize: normalizeStr };
 
-    // Track which categories are still loading for progressive display
-    let pendingCategories = 3; // artists, albums, tracks
+    // What each side has returned so far for this query. A MusicBrainz list
+    // stays null until it answers. mbOk: the category's MusicBrainz request
+    // succeeded, so its merged rows may be cached (after an outage the next
+    // search should ask MusicBrainz again, not reuse catalog-only rows).
+    const mb = { artists: null, albums: null, tracks: null };
+    const mbOk = { artists: false, albums: false, tracks: false };
+    const catalogTracks = new Map(); // resolverId -> rows
+    const catalogAlbums = new Map(); // resolverId -> rows
 
-    const decrementPending = () => {
-      pendingCategories--;
-      if (pendingCategories === 0 && query === searchQueryRef.current) {
-        setIsSearching(false);
+    const activeIds = activeResolversRef.current || [];
+    const order = resolverOrderRef.current || [];
+    const albumLoader = resolverLoaderRef.current;
+    const trackResolvers = searchResolversFor(loadedResolversRef.current, {
+      activeIds, order, capability: 'search', fn: 'search'
+    }).filter(r => typeof r.play === 'function'); // a row must be playable
+    const albumResolvers = albumLoader?.getAlbumSearchResolvers
+      ? searchResolversFor(albumLoader.getAlbumSearchResolvers(), {
+          activeIds, order, capability: 'albumSearch', fn: 'searchAlbums'
+        })
+      : [];
+    // Inactive albumSearch resolvers join when MusicBrainz returns fewer than
+    // three albums (an outage included); Apple Music needs no account for it.
+    let fallbackAlbumResolvers = [];
+
+    const trackLists = () => trackResolvers.map(r => catalogTracks.get(r.id)).filter(Boolean);
+    const albumLists = () => [...albumResolvers, ...fallbackAlbumResolvers]
+      .map(r => catalogAlbums.get(r.id)).filter(Boolean);
+
+    const publishArtists = () => {
+      if (!isCurrent()) return;
+      const derived = catalogArtistsFromResults({
+        query, trackLists: trackLists(), albumLists: albumLists(), mbArtists: mb.artists || []
+      });
+      const rows = reRankResults([...(mb.artists || []), ...derived], query, 'name');
+      setSearchResults(prev => ({ ...prev, artists: rows }));
+      if (mbOk.artists) cacheCategory('artists', rows);
+    };
+
+    const publishAlbums = () => {
+      if (!isCurrent()) return;
+      const rows = reRankResults(mergeAlbumResults(mb.albums || [], albumLists()), query, 'title');
+      setSearchResults(prev => ({ ...prev, albums: rows }));
+      fetchSearchAlbumArt(rows, []);
+      if (mbOk.albums) cacheCategory('albums', rows);
+    };
+
+    const publishTracks = () => {
+      if (!isCurrent()) return;
+      const rows = reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, TRACK_RANK_KEY);
+      // Local files' rows stay first; a service row that only repeats one goes.
+      setSearchResults(prev => {
+        const localTracks = prev.tracks.filter(t => t.isLocal);
+        return { ...prev, tracks: [...localTracks, ...withoutLocalDuplicates(rows, localTracks, scorer)] };
+      });
+      fetchSearchAlbumArt([], rows);
+      if (mbOk.tracks) cacheCategory('tracks', rows);
+    };
+
+    const searchCatalog = async (resolver, kind) => {
+      try {
+        const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
+        if (kind === 'tracks') {
+          const found = await withCatalogTimeout(resolver.search(query, config));
+          if (!isCurrent()) return;
+          const priority = trackResolvers.indexOf(resolver);
+          catalogTracks.set(resolver.id, catalogTracksToSearchResults(Array.isArray(found) ? found : [], resolver.id, priority));
+          publishTracks();
+        } else {
+          const found = await withCatalogTimeout(albumLoader.searchAlbums(resolver.id, query, config));
+          if (!isCurrent()) return;
+          const priority = [...albumResolvers, ...fallbackAlbumResolvers].indexOf(resolver);
+          catalogAlbums.set(resolver.id, catalogAlbumsToSearchResults(Array.isArray(found) ? found : [], resolver.id, priority));
+          publishAlbums();
+        }
+        publishArtists();
+      } catch (e) {
+        console.warn(`${resolver.id} ${kind} search failed:`, e);
       }
     };
 
-    try {
-      // Launch all three searches in parallel for maximum speed
-      // Each updates results progressively as it completes
+    // Search artists
+    const artistPromise = (async () => {
+      try {
+        const artistQuery = preprocessQuery(query, 'artist');
+        const artistResponse = await fetch(
+          `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistQuery)}&fmt=json&limit=25`,
+          fetchOptions
+        );
+        if (!isCurrent()) return;
+        mbOk.artists = artistResponse.ok;
+        const data = artistResponse.ok ? await artistResponse.json() : {};
 
-      // Search artists
-      const artistPromise = (async () => {
-        try {
-          const artistQuery = preprocessQuery(query, 'artist');
-          const artistResponse = await fetch(
-            `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistQuery)}&fmt=json&limit=25`,
-            fetchOptions
-          );
-          if (artistResponse.ok && query === searchQueryRef.current) {
-            const data = await artistResponse.json();
-            const rawArtists = data.artists || [];
-
-            // Deduplicate artists by name (case-insensitive)
-            const seenArtists = new Set();
-            let artists = rawArtists.filter(artist => {
-              const name = artist.name?.toLowerCase() || '';
-              if (seenArtists.has(name)) return false;
-              seenArtists.add(name);
-              return true;
-            });
-
-            // Show raw results immediately (MusicBrainz already sorts by relevance)
-            setSearchResults(prev => ({ ...prev, artists }));
-
-            // Cache raw results
-            const cacheKey = query.toLowerCase();
-            searchResultsCache.current[cacheKey] = {
-              ...searchResultsCache.current[cacheKey],
-              artists,
-              timestamp: Date.now()
-            };
-
-            // Defer Fuse.js re-ranking to idle time for smoother UI
-            const scheduleRerank = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
-            scheduleRerank(() => {
-              if (query === searchQueryRef.current) {
-                const rerankedArtists = reRankResults(artists, query, 'name');
-                setSearchResults(prev => ({ ...prev, artists: rerankedArtists }));
-                // Update cache with re-ranked results
-                searchResultsCache.current[cacheKey] = {
-                  ...searchResultsCache.current[cacheKey],
-                  artists: rerankedArtists,
-                  timestamp: Date.now()
-                };
-              }
-            });
-
-            // Supplement with resolver results if MusicBrainz returned few/no artists
-            if (artists.length < 3 && query === searchQueryRef.current) {
-              const activeIds = activeResolversRef.current || [];
-              const supplementSearches = [];
-
-              // Spotify artist search
-              if (activeIds.includes('spotify')) {
-                supplementSearches.push((async () => {
-                  try {
-                    const config = getResolverConfigRef.current ? await getResolverConfigRef.current('spotify') : {};
-                    if (!config.token) return [];
-                    const spUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=10`;
-                    const spResponse = await fetch(spUrl, {
-                      headers: { 'Authorization': `Bearer ${config.token}` },
-                      signal
-                    });
-                    if (!spResponse.ok) return [];
-                    const spData = await spResponse.json();
-                    return (spData.artists?.items || []).map(a => ({
-                      id: `spotify-${a.id}`,
-                      name: a.name,
-                      type: a.type === 'artist' ? 'Person' : 'Group',
-                      _source: 'spotify'
-                    }));
-                  } catch (e) {
-                    if (e.name !== 'AbortError') console.warn('Spotify artist search supplement failed:', e);
-                    return [];
-                  }
-                })());
-              }
-
-              // Apple Music artist search
-              const mkWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-              if (activeIds.includes('applemusic') && mkWeb?.musicKit?.api) {
-                supplementSearches.push((async () => {
-                  try {
-                    const results = await mkWeb.musicKit.api.music(`/v1/catalog/us/search`, {
-                      term: query,
-                      types: 'artists',
-                      limit: 10
-                    });
-                    return (results.data.results.artists?.data || []).map(a => ({
-                      id: `applemusic-${a.id}`,
-                      name: a.attributes.name,
-                      type: 'Group',
-                      _source: 'applemusic'
-                    }));
-                  } catch (e) {
-                    if (e.name !== 'AbortError') console.warn('Apple Music artist search supplement failed:', e);
-                    return [];
-                  }
-                })());
-              }
-
-              if (supplementSearches.length > 0) {
-                try {
-                  const allResults = await Promise.all(supplementSearches);
-                  if (query !== searchQueryRef.current) return;
-                  const newArtists = allResults.flat().filter(a => {
-                    const name = a.name?.toLowerCase();
-                    if (seenArtists.has(name)) return false;
-                    seenArtists.add(name);
-                    return true;
-                  });
-                  if (newArtists.length > 0) {
-                    console.log(`🔍 Resolvers supplemented ${newArtists.length} artist(s) for search: "${query}"`);
-                    const merged = [...artists, ...newArtists];
-                    setSearchResults(prev => ({ ...prev, artists: merged }));
-                    searchResultsCache.current[cacheKey] = {
-                      ...searchResultsCache.current[cacheKey],
-                      artists: merged,
-                      timestamp: Date.now()
-                    };
-                  }
-                } catch (e) {
-                  if (e.name !== 'AbortError') console.warn('Resolver artist search supplement failed:', e);
-                }
-              }
-            }
-          }
-        } catch (error) {
-          if (error.name !== 'AbortError') {
-            console.error('Artist search error:', error);
-          }
-        } finally {
-          decrementPending();
+        // Deduplicate artists by name (case-insensitive)
+        const seenArtists = new Set();
+        mb.artists = (data.artists || []).filter(artist => {
+          const name = artist.name?.toLowerCase() || '';
+          if (seenArtists.has(name)) return false;
+          seenArtists.add(name);
+          return true;
+        });
+        publishArtists();
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Artist search error:', error);
+          mb.artists = [];
+          publishArtists();
         }
-      })();
-
-      // Search albums
-      const albumPromise = (async () => {
-        try {
-          const albumQuery = preprocessQuery(query, 'release-group');
-          // A MusicBrainz failure (an outage) falls through to the catalog
-          // supplement below with no albums, instead of skipping it.
-          let albumResponse = null;
-          try {
-            albumResponse = await fetch(
-              `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(albumQuery)}&fmt=json&limit=30`,
-              fetchOptions
-            );
-          } catch (mbError) {
-            if (mbError.name === 'AbortError') throw mbError;
-            console.warn('MusicBrainz album search failed; trying the catalogs:', mbError.message);
-          }
-          const mbOk = !!(albumResponse && albumResponse.ok);
-          if (query === searchQueryRef.current) {
-            const data = mbOk ? await albumResponse.json() : {};
-            const rawAlbums = data['release-groups'] || [];
-
-            // Deduplicate albums by artist + title (case-insensitive)
-            const seen = new Set();
-            let albums = rawAlbums.filter(album => {
-              const artist = album['artist-credit']?.[0]?.name?.toLowerCase() || '';
-              const title = album.title?.toLowerCase() || '';
-              const key = `${artist}|${title}`;
-              if (seen.has(key)) return false;
-              seen.add(key);
-              return true;
-            });
-
-            // Show raw results immediately (MusicBrainz already sorts by relevance)
-            setSearchResults(prev => {
-              fetchSearchAlbumArt(albums, prev.tracks);
-              return { ...prev, albums };
-            });
-
-            // Cache raw results. Not after a MusicBrainz failure: the next
-            // search should ask MusicBrainz again, not reuse outage results.
-            const cacheKey = query.toLowerCase();
-            const cacheAlbums = (list) => {
-              if (!mbOk) return;
-              searchResultsCache.current[cacheKey] = {
-                ...searchResultsCache.current[cacheKey],
-                albums: list,
-                timestamp: Date.now()
-              };
-            };
-            cacheAlbums(albums);
-
-            // Defer Fuse.js re-ranking to idle time for smoother UI
-            const scheduleRerank = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
-            scheduleRerank(() => {
-              if (query === searchQueryRef.current) {
-                const rerankedAlbums = reRankResults(albums, query, 'title');
-                setSearchResults(prev => ({ ...prev, albums: rerankedAlbums }));
-                // Update cache with re-ranked results
-                cacheAlbums(rerankedAlbums);
-              }
-            });
-
-            // Supplement with resolver results if MusicBrainz returned few/no albums
-            if (albums.length < 3 && query === searchQueryRef.current) {
-              // Every plugin that declares albumSearch (the user's active
-              // services first), the same catalogs the album pages fall back
-              // to. A result carries _catalog, so a click loads it from that
-              // service. Replaces a hard-wired Spotify + Apple Music pair.
-              const albumLoader = resolverLoaderRef.current;
-              const catalogResolvers = albumLoader?.getAlbumSearchResolvers
-                ? orderCatalogResolvers(albumLoader.getAlbumSearchResolvers(), {
-                    activeIds: activeResolversRef.current || [],
-                    order: resolverOrderRef.current || []
-                  })
-                : [];
-              const supplementSearches = catalogResolvers.map(resolver => (async () => {
-                try {
-                  const config = getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {};
-                  const found = (await withCatalogTimeout(albumLoader.searchAlbums(resolver.id, query, config))) || [];
-                  return found.slice(0, 10).map(a => catalogAlbumToSearchResult(a, resolver.id));
-                } catch (e) {
-                  console.warn(`${resolver.id} album search supplement failed:`, e);
-                  return [];
-                }
-              })());
-
-              if (supplementSearches.length > 0) {
-                try {
-                  const allResults = await Promise.all(supplementSearches);
-                  if (query !== searchQueryRef.current) return;
-                  const newAlbums = allResults.flat().filter(a => {
-                    const artist = a['artist-credit']?.[0]?.name?.toLowerCase() || '';
-                    const title = a.title?.toLowerCase() || '';
-                    const key = `${artist}|${title}`;
-                    if (seen.has(key)) return false;
-                    seen.add(key);
-                    return true;
-                  });
-                  if (newAlbums.length > 0) {
-                    console.log(`🔍 Resolvers supplemented ${newAlbums.length} album(s) for search: "${query}"`);
-                    const merged = [...albums, ...newAlbums];
-                    setSearchResults(prev => {
-                      fetchSearchAlbumArt(newAlbums, prev.tracks);
-                      return { ...prev, albums: merged };
-                    });
-                    cacheAlbums(merged);
-                  }
-                } catch (e) {
-                  if (e.name !== 'AbortError') console.warn('Resolver album search supplement failed:', e);
-                }
-              }
-            }
-          }
-        } catch (error) {
-          if (error.name !== 'AbortError') {
-            console.error('Album search error:', error);
-          }
-        } finally {
-          decrementPending();
-        }
-      })();
-
-      // Search tracks
-      const trackPromise = (async () => {
-        try {
-          const trackQuery = preprocessQuery(query, 'recording');
-          const trackResponse = await fetch(
-            `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(trackQuery)}&fmt=json&limit=50`,
-            fetchOptions
-          );
-          if (trackResponse.ok && query === searchQueryRef.current) {
-            const data = await trackResponse.json();
-            const recordings = data.recordings || [];
-
-            // Create all tracks as unresolved initially (resolve on-demand when played)
-            // recording.id IS the MusicBrainz recording MBID — store it as mbid for downstream enrichment
-            let tracks = recordings.map(recording => ({
-              id: recording.id,
-              mbid: recording.id,
-              artistMbids: recording['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
-              releaseMbid: recording.releases?.[0]?.id || null,
-              title: recording.title,
-              artist: recording['artist-credit']?.[0]?.name || 'Unknown',
-              duration: Math.floor((recording.length || 180000) / 1000),
-              album: recording.releases?.[0]?.title || '',
-              releaseId: recording.releases?.[0]?.id || null,
-              releaseGroupId: recording.releases?.[0]?.['release-group']?.id || null, // For cache lookup
-              length: recording.length,
-              sources: {},
-              _needsResolution: true
-            }));
-
-            // Show raw results immediately (MusicBrainz already sorts by relevance)
-            // Merge with any local tracks that were found instantly
-            setSearchResults(prev => {
-              const localTracks = prev.tracks.filter(t => t.isLocal);
-              const mergedTracks = [...localTracks, ...tracks];
-              fetchSearchAlbumArt(prev.albums, tracks);
-              return { ...prev, tracks: mergedTracks };
-            });
-
-            // Cache raw results
-            const cacheKey = query.toLowerCase();
-            searchResultsCache.current[cacheKey] = {
-              ...searchResultsCache.current[cacheKey],
-              tracks,
-              timestamp: Date.now()
-            };
-
-            // Background-enrich tracks with MBID mapper data (populates cache for future lookups)
-            enrichTracksWithMbids(tracks);
-
-            // Defer Fuse.js re-ranking to idle time for smoother UI
-            const scheduleRerank = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
-            scheduleRerank(() => {
-              if (query === searchQueryRef.current) {
-                const rerankedTracks = reRankResults(tracks, query, 'title');
-                setSearchResults(prev => {
-                  const localTracks = prev.tracks.filter(t => t.isLocal);
-                  return { ...prev, tracks: [...localTracks, ...rerankedTracks] };
-                });
-                // Update cache with re-ranked results
-                searchResultsCache.current[cacheKey] = {
-                  ...searchResultsCache.current[cacheKey],
-                  tracks: rerankedTracks,
-                  timestamp: Date.now()
-                };
-              }
-            });
-
-            // Supplement with resolver results if MusicBrainz returned few/no tracks
-            if (tracks.length < 3 && query === searchQueryRef.current) {
-              const activeIds = activeResolversRef.current || [];
-              const seenTracks = new Set(tracks.map(t => `${t.artist?.toLowerCase()}|${t.title?.toLowerCase()}`));
-              const supplementSearches = [];
-
-              if (activeIds.includes('spotify')) {
-                supplementSearches.push((async () => {
-                  try {
-                    const config = getResolverConfigRef.current ? await getResolverConfigRef.current('spotify') : {};
-                    if (!config.token) return [];
-                    const spUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=15`;
-                    const spResponse = await fetch(spUrl, {
-                      headers: { 'Authorization': `Bearer ${config.token}` },
-                      signal
-                    });
-                    if (!spResponse.ok) return [];
-                    const spData = await spResponse.json();
-                    return (spData.tracks?.items || []).map(t => ({
-                      id: `spotify-${t.id}`,
-                      title: t.name,
-                      artist: t.artists?.[0]?.name || 'Unknown',
-                      duration: Math.floor((t.duration_ms || 180000) / 1000),
-                      album: t.album?.name || '',
-                      sources: { spotify: { url: t.external_urls?.spotify, id: t.id } },
-                      _needsResolution: false,
-                      _source: 'spotify'
-                    }));
-                  } catch (e) {
-                    if (e.name !== 'AbortError') console.warn('Spotify track search supplement failed:', e);
-                    return [];
-                  }
-                })());
-              }
-
-              const mkWebTrack = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-              if (activeIds.includes('applemusic') && mkWebTrack?.musicKit?.api) {
-                supplementSearches.push((async () => {
-                  try {
-                    const results = await mkWebTrack.musicKit.api.music(`/v1/catalog/us/search`, {
-                      term: query,
-                      types: 'songs',
-                      limit: 15
-                    });
-                    return (results.data.results.songs?.data || []).map(t => ({
-                      id: `applemusic-${t.id}`,
-                      title: t.attributes.name,
-                      artist: t.attributes.artistName || 'Unknown',
-                      duration: Math.floor((t.attributes.durationInMillis || 180000) / 1000),
-                      album: t.attributes.albumName || '',
-                      sources: {},
-                      _needsResolution: true,
-                      _source: 'applemusic'
-                    }));
-                  } catch (e) {
-                    if (e.name !== 'AbortError') console.warn('Apple Music track search supplement failed:', e);
-                    return [];
-                  }
-                })());
-              }
-
-              if (supplementSearches.length > 0) {
-                try {
-                  const allResults = await Promise.all(supplementSearches);
-                  if (query !== searchQueryRef.current) return;
-                  const newTracks = allResults.flat().filter(t => {
-                    const key = `${t.artist?.toLowerCase()}|${t.title?.toLowerCase()}`;
-                    if (seenTracks.has(key)) return false;
-                    seenTracks.add(key);
-                    return true;
-                  });
-                  if (newTracks.length > 0) {
-                    console.log(`🔍 Resolvers supplemented ${newTracks.length} track(s) for search: "${query}"`);
-                    setSearchResults(prev => {
-                      const localTracks = prev.tracks.filter(t => t.isLocal);
-                      const mbTracks = prev.tracks.filter(t => !t.isLocal);
-                      return { ...prev, tracks: [...localTracks, ...mbTracks, ...newTracks] };
-                    });
-                    searchResultsCache.current[cacheKey] = {
-                      ...searchResultsCache.current[cacheKey],
-                      tracks: [...tracks, ...newTracks],
-                      timestamp: Date.now()
-                    };
-                  }
-                } catch (e) {
-                  if (e.name !== 'AbortError') console.warn('Resolver track search supplement failed:', e);
-                }
-              }
-            }
-          }
-        } catch (error) {
-          if (error.name !== 'AbortError') {
-            console.error('Track search error:', error);
-          }
-        } finally {
-          decrementPending();
-        }
-      })();
-
-      // Wait for all to complete (they update progressively)
-      await Promise.all([artistPromise, albumPromise, trackPromise]);
-
-      console.log('🔍 Search complete for:', query);
-    } catch (error) {
-      // Ignore abort errors - these are expected when cancelling stale requests
-      if (error.name === 'AbortError') {
-        console.log('🔍 Search request cancelled (newer query in progress)');
-        return;
       }
-      console.error('Search error:', error);
-      setIsSearching(false);
+    })();
+
+    // Search albums
+    const albumPromise = (async () => {
+      try {
+        const albumQuery = preprocessQuery(query, 'release-group');
+        // A MusicBrainz failure (an outage) leaves the catalogs' albums, and
+        // brings in the inactive catalogs below.
+        let albumResponse = null;
+        try {
+          albumResponse = await fetch(
+            `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(albumQuery)}&fmt=json&limit=30`,
+            fetchOptions
+          );
+        } catch (mbError) {
+          if (mbError.name === 'AbortError') throw mbError;
+          console.warn('MusicBrainz album search failed; trying the catalogs:', mbError.message);
+        }
+        if (!isCurrent()) return;
+        mbOk.albums = !!(albumResponse && albumResponse.ok);
+        const data = mbOk.albums ? await albumResponse.json() : {};
+
+        // Deduplicate albums by artist + title (case-insensitive)
+        const seen = new Set();
+        mb.albums = (data['release-groups'] || []).filter(album => {
+          const artist = album['artist-credit']?.[0]?.name?.toLowerCase() || '';
+          const title = album.title?.toLowerCase() || '';
+          const key = `${artist}|${title}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        publishAlbums();
+
+        if (mb.albums.length < 3 && albumLoader?.getAlbumSearchResolvers) {
+          const asked = new Set(albumResolvers.map(r => r.id));
+          fallbackAlbumResolvers = orderCatalogResolvers(albumLoader.getAlbumSearchResolvers(), { activeIds, order })
+            .filter(r => !asked.has(r.id));
+          await Promise.all(fallbackAlbumResolvers.map(r => searchCatalog(r, 'albums')));
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Album search error:', error);
+        }
+      }
+    })();
+
+    // Search tracks
+    const trackPromise = (async () => {
+      try {
+        const trackQuery = preprocessQuery(query, 'recording');
+        const trackResponse = await fetch(
+          `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(trackQuery)}&fmt=json&limit=50`,
+          fetchOptions
+        );
+        if (!isCurrent()) return;
+        mbOk.tracks = trackResponse.ok;
+        const data = trackResponse.ok ? await trackResponse.json() : {};
+
+        // Tracks start unresolved; the visible ones resolve on the search-tracks
+        // scheduler. recording.id IS the MusicBrainz recording MBID: stored as
+        // mbid for downstream enrichment. score is MusicBrainz's relevance.
+        mb.tracks = (data.recordings || []).map(recording => ({
+          id: recording.id,
+          mbid: recording.id,
+          artistMbids: recording['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
+          releaseMbid: recording.releases?.[0]?.id || null,
+          title: recording.title,
+          artist: recording['artist-credit']?.[0]?.name || 'Unknown',
+          duration: Math.floor((recording.length || 180000) / 1000),
+          album: recording.releases?.[0]?.title || '',
+          releaseId: recording.releases?.[0]?.id || null,
+          releaseGroupId: recording.releases?.[0]?.['release-group']?.id || null, // For cache lookup
+          length: recording.length,
+          score: recording.score,
+          sources: {},
+          _needsResolution: true
+        }));
+        publishTracks();
+
+        // Background-enrich tracks with MBID mapper data (populates cache for future lookups)
+        enrichTracksWithMbids(mb.tracks);
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Track search error:', error);
+          mb.tracks = [];
+          publishTracks();
+        }
+      }
+    })();
+
+    const catalogPromise = Promise.all([
+      ...trackResolvers.map(r => searchCatalog(r, 'tracks')),
+      ...albumResolvers.map(r => searchCatalog(r, 'albums'))
+    ]);
+
+    await Promise.all([artistPromise, albumPromise, trackPromise, catalogPromise]);
+    if (signal.aborted) {
+      console.log('🔍 Search request cancelled (newer query in progress)');
+      return;
     }
+    if (isCurrent()) setIsSearching(false);
+    console.log('🔍 Search complete for:', query);
   };
 
-  // Track in-flight cover art requests to prevent duplicate fetches
-  const inFlightArtRequests = useRef(new Set());
+  // Covers for search results (the first ten albums and ten tracks). Each one
+  // goes through getAlbumArt, THE album-art pipeline, with its MusicBrainz
+  // search in the background lane, four in flight. A MusicBrainz result
+  // passes its ids, so its cover costs a Cover Art Archive request and no
+  // MusicBrainz search. This used to be a fetcher of its own: a MusicBrainz
+  // release search per local track in the foreground queue (up to ten per
+  // search at one a second, ahead of the user's next search or click), no
+  // resolver or catalog fallback, and a full render per cover. Cached covers
+  // land at once; fetched ones in 250ms batches, keyed by kind and id. A
+  // newer search drops the work still queued for an older one.
+  const SEARCH_ART_LIMIT = 10;
+  const SEARCH_ART_CONCURRENCY = 4;
+  const searchArtJobsRef = useRef({ query: null, queue: [], seen: new Set(), workers: 0 });
+  const searchArtWriterRef = useRef(null);
+  if (!searchArtWriterRef.current) {
+    searchArtWriterRef.current = window.createCoalescedUpdater((batch) => {
+      const patch = (list, kind) => list.map(item => {
+        const ops = batch.get(`${kind}:${item.id}`);
+        if (!ops || item.albumArt) return item;
+        return { ...item, albumArt: window.applyCoalescedOps(undefined, ops) };
+      });
+      setSearchResults(prev => ({
+        ...prev,
+        albums: patch(prev.albums, 'album'),
+        tracks: patch(prev.tracks, 'track')
+      }));
+    }, 250);
+  }
 
-  // Fetch album art for search results (albums and tracks) - leverages albumArtCache
-  const fetchSearchAlbumArt = async (albums, tracks) => {
-    // Fetch album art for albums - use release-group endpoint directly (faster, one less API call)
-    const albumPromises = albums.slice(0, 10).map(async (album) => {
-      if (album.albumArt) return; // Skip if already has art
-
-      const albumId = album.id;
-      const artistName = album['artist-credit']?.[0]?.name || album.artist;
-      const albumTitle = album.title;
-
-      // Check albumArtCache first (keyed by release-group ID)
-      let cachedArt = albumArtCache.current[albumId];
-
-      // Also check albumToReleaseIdCache by artist+album name
-      if (!cachedArt?.url && artistName && albumTitle) {
-        const lookupKey = `${artistName}-${albumTitle}`.toLowerCase();
-        const cachedLookup = albumToReleaseIdCache.current[lookupKey];
-        if (cachedLookup) {
-          if (typeof cachedLookup === 'object') {
-            cachedArt = (cachedLookup.releaseGroupId && albumArtCache.current[cachedLookup.releaseGroupId]) ||
-                        (cachedLookup.releaseId && albumArtCache.current[cachedLookup.releaseId]);
-          } else if (typeof cachedLookup === 'string') {
-            cachedArt = albumArtCache.current[cachedLookup];
-          }
-        }
-      }
-
-      if (cachedArt?.url) {
-        setSearchResults(prev => ({
-          ...prev,
-          albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: cachedArt.url } : a)
-        }));
+  const fetchSearchAlbumArt = (albums, tracks) => {
+    const query = searchQueryRef.current;
+    const jobs = searchArtJobsRef.current;
+    const writer = searchArtWriterRef.current;
+    if (jobs.query !== query) {
+      jobs.query = query;
+      jobs.queue = [];
+      jobs.seen = new Set();
+    }
+    let cachedHits = 0;
+    const enqueue = (kind, item, artist, album, ids) => {
+      const key = `${kind}:${item.id}`;
+      if (item.albumArt || !artist || !album || jobs.seen.has(key)) return;
+      jobs.seen.add(key);
+      const cached = (ids.releaseGroupId || ids.releaseId)
+        ? ((ids.releaseGroupId && albumArtCache.current[ids.releaseGroupId]?.url) ||
+           (ids.releaseId && albumArtCache.current[ids.releaseId]?.url))
+        : getCachedAlbumArt(artist, album);
+      if (cached) {
+        writer.queue(key, cached);
+        cachedHits++;
         return;
       }
+      jobs.queue.push({ key, artist, album, ids });
+    };
+    (albums || []).slice(0, SEARCH_ART_LIMIT).forEach(a => enqueue('album', a,
+      a['artist-credit']?.[0]?.name || a.artist, a.title,
+      isMusicBrainzId(a.id) ? { releaseGroupId: a.id } : {}));
+    (tracks || []).slice(0, SEARCH_ART_LIMIT).forEach(t => enqueue('track', t, t.artist, t.album,
+      { releaseGroupId: t.releaseGroupId || null, releaseId: t.releaseId || null }));
+    if (cachedHits > 0) writer.flush();
 
-      // Skip if already fetching this ID
-      const requestKey = `rg:${albumId}`;
-      if (inFlightArtRequests.current.has(requestKey)) return;
-      inFlightArtRequests.current.add(requestKey);
-
+    const worker = async () => {
+      jobs.workers++;
       try {
-        // Use release-group endpoint directly (Cover Art Archive supports it)
-        const artResponse = await fetch(
-          `https://coverartarchive.org/release-group/${albumId}`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-        );
-
-        if (artResponse.ok) {
-          const artData = await artResponse.json();
-          const frontCover = artData.images.find(img => img.front);
-          if (frontCover) {
-            const artUrl = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
-
-            // Cache under release-group ID
-            const cacheEntry = { url: artUrl, timestamp: Date.now() };
-            albumArtCache.current[albumId] = cacheEntry;
-
-            // Update search results with new album art
-            setSearchResults(prev => ({
-              ...prev,
-              albums: prev.albums.map(a => a.id === albumId ? { ...a, albumArt: artUrl } : a)
-            }));
+        while (jobs.queue.length > 0 && jobs.query === searchQueryRef.current) {
+          const job = jobs.queue.shift();
+          let url = null;
+          try {
+            url = await getAlbumArt(job.artist, job.album, { ...job.ids, background: true });
+          } catch (error) {
+            // Art is optional
           }
+          if (url) writer.queue(job.key, url);
         }
-      } catch (error) {
-        // Silently fail - album art is optional
       } finally {
-        inFlightArtRequests.current.delete(requestKey);
+        jobs.workers--;
+        if (jobs.workers === 0) writer.flush();
       }
-    });
-
-    // Fetch album art for tracks - prefer release-group ID for cache consistency
-    // Local files without embedded art should still try MusicBrainz lookup
-    const trackPromises = tracks.slice(0, 10).map(async (track) => {
-      if (track.albumArt) return; // Skip if already has art
-
-      const trackId = track.id;
-      const releaseId = track.releaseId;
-      const releaseGroupId = track.releaseGroupId;
-
-      // Check albumArtCache first - prefer releaseGroupId (consistent with album/artist pages)
-      let cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]) ||
-                      (releaseId && albumArtCache.current[releaseId]);
-
-      // Also check albumToReleaseIdCache by artist+album name (in case getAlbumArt found it via search)
-      if (!cachedArt?.url && track.artist && track.album) {
-        const lookupKey = `${track.artist}-${track.album}`.toLowerCase();
-        const cachedLookup = albumToReleaseIdCache.current[lookupKey];
-        if (cachedLookup) {
-          if (typeof cachedLookup === 'object') {
-            cachedArt = (cachedLookup.releaseGroupId && albumArtCache.current[cachedLookup.releaseGroupId]) ||
-                        (cachedLookup.releaseId && albumArtCache.current[cachedLookup.releaseId]);
-          } else if (typeof cachedLookup === 'string') {
-            cachedArt = albumArtCache.current[cachedLookup];
-          }
-        }
-      }
-
-      if (cachedArt?.url) {
-        setSearchResults(prev => ({
-          ...prev,
-          tracks: prev.tracks.map(t => t.id === trackId ? { ...t, albumArt: cachedArt.url } : t)
-        }));
-        return;
-      }
-
-      // If no IDs available, try MusicBrainz search to find the release
-      let searchedReleaseGroupId = releaseGroupId;
-      let searchedReleaseId = releaseId;
-      if (!releaseGroupId && !releaseId && track.artist && track.album) {
-        try {
-          const searchQuery = `release:"${track.album}" AND artist:"${track.artist}"`;
-          const searchResponse = await fetch(
-            `https://musicbrainz.org/ws/2/release?query=${encodeURIComponent(searchQuery)}&fmt=json&limit=1`,
-            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-          );
-          if (searchResponse.ok) {
-            const searchData = await searchResponse.json();
-            if (searchData.releases?.length > 0) {
-              searchedReleaseId = searchData.releases[0].id;
-              searchedReleaseGroupId = searchData.releases[0]['release-group']?.id;
-              // Cache the lookup for future use
-              if (searchedReleaseId || searchedReleaseGroupId) {
-                const lookupKey = `${track.artist}-${track.album}`.toLowerCase();
-                albumToReleaseIdCache.current[lookupKey] = { releaseId: searchedReleaseId, releaseGroupId: searchedReleaseGroupId };
-              }
-            }
-          }
-        } catch (e) {
-          // Continue without search results
-        }
-      }
-
-      // Need at least one ID to fetch art
-      if (!searchedReleaseGroupId && !searchedReleaseId) return;
-
-      // Skip if already fetching this ID (prefer releaseGroupId)
-      const requestKey = searchedReleaseGroupId ? `rg:${searchedReleaseGroupId}` : `rel:${searchedReleaseId}`;
-      if (inFlightArtRequests.current.has(requestKey)) return;
-      inFlightArtRequests.current.add(requestKey);
-
-      try {
-        // Prefer release-group endpoint (consistent with album/artist pages)
-        // Fall back to release endpoint if no release-group ID
-        const endpoint = searchedReleaseGroupId
-          ? `https://coverartarchive.org/release-group/${searchedReleaseGroupId}`
-          : `https://coverartarchive.org/release/${searchedReleaseId}`;
-
-        const artResponse = await fetch(endpoint, {
-          headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
-        });
-
-        if (artResponse.ok) {
-          const artData = await artResponse.json();
-          const frontCover = artData.images.find(img => img.front);
-          if (frontCover) {
-            const artUrl = frontCover.thumbnails?.['250'] || frontCover.thumbnails?.['500'] || frontCover.image;
-
-            // Cache under releaseGroupId as primary key (consistent with album/artist pages)
-            // Also cache under releaseId for fallback lookups
-            const cacheEntry = { url: artUrl, timestamp: Date.now() };
-            if (searchedReleaseGroupId) {
-              albumArtCache.current[searchedReleaseGroupId] = cacheEntry;
-            }
-            if (searchedReleaseId) {
-              albumArtCache.current[searchedReleaseId] = cacheEntry;
-            }
-
-            // Update search results with new album art
-            setSearchResults(prev => ({
-              ...prev,
-              tracks: prev.tracks.map(t => t.id === trackId ? { ...t, albumArt: artUrl } : t)
-            }));
-          }
-        }
-      } catch (error) {
-        // Silently fail - album art is optional
-      } finally {
-        inFlightArtRequests.current.delete(requestKey);
-      }
-    });
-
-    // Run all fetches in parallel
-    await Promise.all([...albumPromises, ...trackPromises]);
+    };
+    const idle = Math.min(SEARCH_ART_CONCURRENCY - jobs.workers, jobs.queue.length);
+    for (let i = 0; i < idle; i++) worker();
   };
 
   // Cache utility functions
@@ -30429,6 +30121,34 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return url;
   };
 
+  // Step 2 of the pipeline for known MusicBrainz ids: the cached cover, else
+  // the Cover Art Archive's front image for the release group, then for the
+  // release. A hit is cached under both ids. No MusicBrainz request.
+  const fetchCoverArtByIds = async (releaseGroupId, releaseId) => {
+    const cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]?.url) ||
+                      (releaseId && albumArtCache.current[releaseId]?.url);
+    if (cachedArt) return cachedArt;
+    const paths = [
+      releaseGroupId && `release-group/${releaseGroupId}`,
+      releaseId && `release/${releaseId}`
+    ].filter(Boolean);
+    for (const path of paths) {
+      try {
+        const response = await fetch(`https://coverartarchive.org/${path}/front-250`, { redirect: 'follow' });
+        if (response.ok) {
+          const artUrl = response.url;
+          const cacheEntry = { url: artUrl, timestamp: Date.now() };
+          if (releaseGroupId) albumArtCache.current[releaseGroupId] = cacheEntry;
+          if (releaseId) albumArtCache.current[releaseId] = cacheEntry;
+          return artUrl;
+        }
+      } catch (error) {
+        console.log(`Cover art fetch failed for ${path}:`, error.message);
+      }
+    }
+    return null;
+  };
+
   // Fetch album art for a track by searching MusicBrainz first, then using the shared albumArtCache
   // THE album-art pipeline. Every surface that shows a cover (playbar, queue,
   // Recommendations, Fresh Drops, chat cards, playlist mosaics, ...) goes
@@ -30439,8 +30159,21 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   //   4. iTunes Search → Deezer catalog chain (album-art-catalog.js)
   // Don't add a surface-specific shortcut; the chat card had one ("fast",
   // resolvers only) and it is why AI-recommended tracks rendered without art.
-  const getAlbumArt = async (artist, album) => {
+  //
+  // opts.releaseGroupId / opts.releaseId: a caller that already knows the
+  // MusicBrainz ids (a MusicBrainz search result) skips the name search in
+  // step 2 and asks the Cover Art Archive for those ids. They are not written
+  // to albumToReleaseIdCache: two release groups can share an artist and a
+  // title, and the name key would then hand one album's cover to the other.
+  // opts.background: step 2's MusicBrainz search waits in the background lane
+  // (a page of covers must not hold up the user's next search or click).
+  const getAlbumArt = async (artist, album, opts = {}) => {
     if (!artist || !album) return null;
+
+    if (opts.releaseGroupId || opts.releaseId) {
+      const known = await fetchCoverArtByIds(opts.releaseGroupId || null, opts.releaseId || null);
+      return known || getAlbumArtFromResolvers(artist, album);
+    }
 
     const lookupKey = `${artist}-${album}`.toLowerCase();
 
@@ -30453,56 +30186,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       const releaseId = typeof cached === 'string' ? cached : cached.releaseId;
       const releaseGroupId = typeof cached === 'object' ? cached.releaseGroupId : null;
 
-      // Check albumArtCache - prefer releaseGroupId for consistency
-      const cachedArt = (releaseGroupId && albumArtCache.current[releaseGroupId]?.url) ||
-                        (releaseId && albumArtCache.current[releaseId]?.url);
-      if (cachedArt) {
-        return cachedArt;
-      }
-
-      // We have IDs but no cached art - try to fetch cover art
-      // Prefer release-group endpoint
-      if (releaseGroupId) {
-        try {
-          const rgResponse = await fetch(
-            `https://coverartarchive.org/release-group/${releaseGroupId}/front-250`,
-            { redirect: 'follow' }
-          );
-          if (rgResponse.ok) {
-            const artUrl = rgResponse.url;
-            const cacheEntry = { url: artUrl, timestamp: Date.now() };
-            albumArtCache.current[releaseGroupId] = cacheEntry;
-            if (releaseId) albumArtCache.current[releaseId] = cacheEntry;
-            return artUrl;
-          }
-        } catch (error) {
-          // Fall through to release endpoint
-        }
-      }
-
-      if (releaseId) {
-        try {
-          const caaResponse = await fetch(
-            `https://coverartarchive.org/release/${releaseId}/front-250`,
-            { redirect: 'follow' }
-          );
-          if (caaResponse.ok) {
-            const artUrl = caaResponse.url;
-            const cacheEntry = { url: artUrl, timestamp: Date.now() };
-            albumArtCache.current[releaseId] = cacheEntry;
-            if (releaseGroupId) albumArtCache.current[releaseGroupId] = cacheEntry;
-            return artUrl;
-          }
-        } catch (error) {
-          console.log(`Cover art fetch failed for release ${releaseId}:`, error.message);
-        }
-      }
-      return getAlbumArtFromResolvers(artist, album); // CAA failed, try resolvers
+      const artUrl = await fetchCoverArtByIds(releaseGroupId, releaseId);
+      return artUrl || getAlbumArtFromResolvers(artist, album); // CAA failed, try resolvers
     }
 
     try {
       // Search MusicBrainz for the release (with fallback for multi-artist names)
-      const releases = await searchMusicBrainzRelease(album, artist);
+      const releases = await searchMusicBrainzRelease(album, artist, { background: !!opts.background });
 
       if (releases.length === 0) {
         albumToReleaseIdCache.current[lookupKey] = null;

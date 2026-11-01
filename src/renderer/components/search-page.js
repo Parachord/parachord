@@ -1358,7 +1358,15 @@ const SearchPage = React.memo(function SearchPage(props) {
               React.createElement('p', { className: 'text-gray-400 text-sm' }, 'Start typing to search')
             )
           ) :
-        isSearching ?
+        // Skeletons only until the first results land: each category shows as
+        // soon as it has rows (the services answer in a few hundred ms,
+        // MusicBrainz's three requests seconds apart). Gating the whole list on
+        // isSearching held every result back until the last request finished.
+        isSearching &&
+        searchResults.artists.length === 0 &&
+        searchResults.albums.length === 0 &&
+        searchResults.tracks.length === 0 &&
+        searchResults.playlists.length === 0 ?
           // Loading skeletons - dynamically sized based on container width
           React.createElement('div', { className: 'space-y-10' },
             // Artists skeleton - square card style

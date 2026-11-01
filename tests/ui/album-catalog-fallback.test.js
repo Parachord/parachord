@@ -81,24 +81,30 @@ describe('openers', () => {
 });
 
 describe('search', () => {
-  const s = app.indexOf('const albumPromise = (async () => {');
-  const body = app.slice(s, app.indexOf('// Search tracks', s));
+  const search = fnBody('const performSearch = async (query) => {');
+  const s = search.indexOf('const albumPromise = (async () => {');
+  const body = search.slice(s, search.indexOf('// Search tracks', s));
 
-  test('a MusicBrainz failure still reaches the catalog supplement', () => {
+  test('a MusicBrainz failure still reaches the catalogs, inactive ones included', () => {
     expect(body).toMatch(/catch \(mbError\) \{\s*if \(mbError\.name === 'AbortError'\) throw mbError;/);
-    expect(body).toMatch(/if \(albums\.length < 3 && query === searchQueryRef\.current\)/);
+    expect(body).toMatch(/mbOk\.albums = !!\(albumResponse && albumResponse\.ok\);/);
+    expect(body).toMatch(/if \(mb\.albums\.length < 3 && albumLoader\?\.getAlbumSearchResolvers\)/);
+    expect(body).toMatch(/fallbackAlbumResolvers = orderCatalogResolvers\(albumLoader\.getAlbumSearchResolvers\(\)/);
   });
 
-  test('the supplement uses the registry, not hard-wired services', () => {
-    expect(body).toMatch(/getAlbumSearchResolvers\(\)/);
-    expect(body).toMatch(/catalogAlbumToSearchResult\(a, resolver\.id\)/);
-    expect(body).not.toMatch(/api\.spotify\.com/);
-    expect(body).not.toMatch(/musicKit\.api\.music/);
+  test('the catalogs come from the registry, not hard-wired services', () => {
+    expect(search).toMatch(/searchResolversFor\(albumLoader\.getAlbumSearchResolvers\(\), \{\s*activeIds, order, capability: 'albumSearch', fn: 'searchAlbums'/);
+    expect(search).toMatch(/searchResolversFor\(loadedResolversRef\.current, \{\s*activeIds, order, capability: 'search', fn: 'search'/);
+    expect(search).toMatch(/catalogAlbumsToSearchResults\(Array\.isArray\(found\) \? found : \[\], resolver\.id, priority\)/);
+    expect(search).not.toMatch(/api\.spotify\.com/);
+    expect(search).not.toMatch(/musicKit\.api\.music/);
+    expect(search).not.toMatch(/activeIds\.includes\('(spotify|applemusic)'\)/);
   });
 
   test('outage results are not cached', () => {
-    expect(body).toMatch(/const cacheAlbums = \(list\) => \{\s*if \(!mbOk\) return;/);
-    expect(body).not.toMatch(/searchResultsCache\.current\[cacheKey\] = \{\s*\.\.\.searchResultsCache\.current\[cacheKey\],\s*albums: (merged|rerankedAlbums)/);
+    expect(search).toMatch(/if \(mbOk\.albums\) cacheCategory\('albums', rows\);/);
+    expect(search).toMatch(/if \(mbOk\.tracks\) cacheCategory\('tracks', rows\);/);
+    expect(search).toMatch(/if \(mbOk\.artists\) cacheCategory\('artists', rows\);/);
   });
 });
 
