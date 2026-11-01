@@ -15,6 +15,15 @@ module.exports = {
       var i = u.lastIndexOf('https://');
       return i > 0 ? u.slice(i) : u;
     };
+    // Cover art for a search result. The search API's img field names the
+    // image without the "a" prefix album art lives under, so it 404s at every
+    // size (img/2732951243_3.jpg); img/a<art_id>_10.jpg is the 1200px cover.
+    // Each exported function is serialized on its own, so this is repeated
+    // in search and searchAlbums.
+    var bandcampArtUrl = function (r) {
+      if (r && r.art_id) return 'https://f4.bcbits.com/img/a' + r.art_id + '_10.jpg';
+      return r && r.img ? r.img.replace('_3.jpg', '_10.jpg') : null;
+    };
     var toResult = function (r) {
       if (!r || !r.name) return null;
       var url = normalizeUrl(r.item_url_path || r.url);
@@ -30,7 +39,7 @@ module.exports = {
         purchaseUrl: url,
         bandcampTrackId: r.id || null,
         bandcampAlbumId: r.album_id || null,
-        albumArt: r.img ? r.img.replace('_3.jpg', '_10.jpg') : null,
+        albumArt: bandcampArtUrl(r),
       };
     };
     try {
@@ -244,6 +253,15 @@ module.exports = {
       var i = u.lastIndexOf('https://');
       return i > 0 ? u.slice(i) : u;
     };
+    // Cover art for a search result. The search API's img field names the
+    // image without the "a" prefix album art lives under, so it 404s at every
+    // size (img/2732951243_3.jpg); img/a<art_id>_10.jpg is the 1200px cover.
+    // Each exported function is serialized on its own, so this is repeated
+    // in search and searchAlbums.
+    var bandcampArtUrl = function (r) {
+      if (r && r.art_id) return 'https://f4.bcbits.com/img/a' + r.art_id + '_10.jpg';
+      return r && r.img ? r.img.replace('_3.jpg', '_10.jpg') : null;
+    };
     var toAlbum = function (r) {
       if (!r || !r.name) return null;
       var url = normalizeUrl(r.item_url_path || r.url);
@@ -252,7 +270,7 @@ module.exports = {
         id: 'bandcamp-album-' + (r.id || url),
         name: r.name,
         artist: r.band_name || '',
-        albumArt: r.img ? r.img.replace('_3.jpg', '_10.jpg') : null,
+        albumArt: bandcampArtUrl(r),
         releaseDate: null,
         trackCount: null,
         url: url,
