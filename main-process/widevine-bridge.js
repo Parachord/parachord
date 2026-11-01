@@ -137,7 +137,10 @@ function registerWidevineBridgeIpc({ ipcMain, isAllowedSender }) {
         closeSession(resolverId, mySessionId);
         return { success: false, reason: 'playback-failed', error: `${resolverId}: manifest response carried no manifest` };
       }
-      return { success: true, sessionId: mySessionId, ...result };
+      // Spread-then-sessionId: a provider payload carrying its own sessionId
+      // key must never clobber the bridge-minted id (relay gating and
+      // matched-close key off OURS; a provider-supplied one is inert).
+      return { success: true, ...result, sessionId: mySessionId };
     } catch (error) {
       return { success: false, reason: (error && error.reason) || 'playback-failed', error: String((error && error.message) || error) };
     }

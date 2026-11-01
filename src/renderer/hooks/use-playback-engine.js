@@ -360,6 +360,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       // Display labels by owner — via lookup, never inline === 'service'
       // comparisons (the capability-not-id invariant test bars those).
       const OWNER_LABELS = { localfiles: 'Local file', soundcloud: 'SoundCloud', subsonic: 'Subsonic' };
+      // Stream-error toast label by resolver id — display names via the
+      // resolver registry, never inline === arms (capability-not-id rule).
+      const streamErrorLabel = window.resolverLabelById || ((id) => id || 'Stream');
       const label = OWNER_LABELS[owner] || `Stream (${owner})`;
       console.log(`🎵 ${label} playback ended`);
       handleNextRef.current?.();
@@ -1996,8 +1999,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             }).catch(() => {});
           } else if (resolverId === 'applemusic' && window.electron?.musicKit) {
             window.electron.musicKit.pause().catch(() => {});
-          } else if (resolverId === 'amazonmusic') {
-            stopWidevineIfActive('⏹️ Stopping the native widevine player after superseded play');
           }
         }
         return;
@@ -2023,16 +2024,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           if (window._appleMusicPreviewAudio) {
             window._appleMusicPreviewAudio.volume = effectiveVolume / 100;
           }
-        }
-
-        // Apply volume for Amazon Music (the app owns its own volume pipeline;
-        // drive it to Parachord's effective volume like the Spotify volume API)
-        if (resolverId === 'amazonmusic' && window.electron?.amazonMusic) {
-          const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
-          const trackId = sourceToPlay.id || trackOrSource.id;
-          const effectiveVolume = getEffectiveVolume(volumeToApply, 'amazonmusic', trackId);
-          console.log(`🔊 Applied Amazon Music volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
-          window.electron.amazonMusic.setVolume(effectiveVolume / 100).catch(() => {});
         }
 
         // Reset browser playback state when playing via streaming resolver (Spotify, etc.)
@@ -2078,10 +2069,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setStartTime(audioContext.currentTime);
         }
 
-        // Reset the Amazon Music progress baseline when we started that track
-        if (resolverId === 'amazonmusic') {
-          amazonMusicProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
-        }
       }
 
       // Start auto-advance polling for streaming tracks
@@ -3121,7 +3108,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       console.error(`[Widevine] ${resolverId || 'player'} stream error:`, message);
       if (Date.now() - widevineErrorToastAt > 30000) {
         widevineErrorToastAt = Date.now();
-        showToast(`${resolverId === 'amazonmusic' ? 'Amazon Music' : (resolverId || 'Stream')} stream error — playback may stall`, 'error');
+        showToast(`${streamErrorLabel(resolverId)} stream error — playback may stall`, 'error');
       }
     };
     window.__parachordWidevineSetVariantListener = (cb) => __widevinePlayer.setVariantListener(cb);

@@ -235,6 +235,15 @@ function applyConfig(config) {
   }
 }
 
+// Bridge-ONLY player-event fanout (no telemetry): used when a session must
+// be closed for a track that never started (load failure after mint), where
+// emitPlayerEvent's telemetry side (streamingTerminated etc.) would be a lie.
+function fanoutWidevineEvent(type, { resolverId, sessionId, ...payload } = {}) {
+  if (!window.electron || !window.electron.widevine) return;
+  try { void window.electron.widevine.playerEvent(resolverId, { type, sessionId, ...payload }); }
+  catch { /* session close is best-effort; supersession/sign-out are the net */ }
+}
+
 // Facts for the stream-quality record (the poller-contract shape, renderer side):
 // what Shaka is ACTUALLY streaming right now.
 function currentVariantFacts() {
