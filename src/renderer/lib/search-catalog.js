@@ -22,10 +22,12 @@
 const { orderCatalogResolvers, catalogAlbumToSearchResult, normalizeAlbumTitle, normalizeArtistName } = require('./album-catalog');
 const { trackSlug, slug } = require('./track-slug');
 
-// Results past this position in a service's list aren't shown. The rank also
-// becomes the row's relevance score (MusicBrainz gives each result one).
+// Results past this position in a service's list aren't shown. The rank, and
+// the service's place in the user's priority order, become the row's
+// relevance score (MusicBrainz gives each result one): a service's top hit
+// scores 100, less 5 per place down its list and 5 per service ahead of it.
 const CATALOG_RESULTS_PER_RESOLVER = 15;
-const rankScore = (rank) => Math.max(0, 100 - 5 * rank);
+const rankScore = (rank, priority = 0) => Math.max(0, 100 - 5 * rank - 5 * priority);
 
 // The active resolvers that can run `fn` for `capability`, in priority order.
 function searchResolversFor(resolvers, { activeIds = [], order = [], capability, fn }) {
@@ -38,7 +40,7 @@ function searchResolversFor(resolvers, { activeIds = [], order = [], capability,
 
 // A resolver's search hit as a Search track row. The hit is its own source,
 // at confidence 1: the row is that result, nothing was matched to it.
-function catalogTrackToSearchResult(track, resolverId, rank) {
+function catalogTrackToSearchResult(track, resolverId, rank, priority = 0) {
   const { sources: _ignored, ...record } = track;
   return {
     id: trackSlug(track.artist, track.title, track.album),
@@ -49,7 +51,7 @@ function catalogTrackToSearchResult(track, resolverId, rank) {
     albumArt: track.albumArt || null,
     ...(track.isrc ? { isrc: track.isrc } : {}),
     sources: { [resolverId]: { ...record, confidence: 1 } },
-    score: rankScore(rank),
+    score: rankScore(rank, priority),
     _source: resolverId,
   };
 }
@@ -63,6 +65,18 @@ const trackKey = (track, normalize) => {
   return artist && title ? `${artist}|${title}` : null;
 };
 
+// A MusicBrainz row is one recording on one release, and MusicBrainz often
+// returns several recordings of a song (studio, live, compilations). A hit
+// joins a MusicBrainz row only when the album matches too (edition suffixes
+// aside), or when either side names no album: otherwise the studio version a
+// service found would hide inside a live recording's row.
+const albumOf = (track) => normalizeAlbumTitle(track.album || '');
+
+// Each further service that returns the same track raises its row's score:
+// agreement between services is the best sign a row is the track the user
+// means, not one of the covers and edits titled after it.
+const AGREEMENT_BONUS = 5;
+
 // Track rows: `baseRows` (MusicBrainz and local files) are kept as they are;
 // each service list, in priority order, adds its hits. A hit that is the same
 // track as a base row adds its source to that row, except a local file's row,
@@ -72,36 +86,50 @@ const trackKey = (track, normalize) => {
 // the floor (validate, then sort: the playback pipeline's rule).
 function mergeTrackResults(baseRows, catalogLists, { calculateConfidence, threshold, normalize }) {
   const rows = [];
-  const byKey = new Map();
-  const index = (row) => {
-    const key = trackKey(row, normalize);
-    if (key && !byKey.has(key)) byKey.set(key, row);
-  };
+  const localByKey = new Map();
+  const baseByKey = new Map(); // key -> MusicBrainz rows, in order
+  const catalogByKey = new Map();
   for (const base of baseRows || []) {
-    const row = base.isLocal ? base : { ...base, sources: { ...(base.sources || {}) } };
+    const key = trackKey(base, normalize);
+    if (base.isLocal) {
+      rows.push(base);
+      if (key && !localByKey.has(key)) localByKey.set(key, base);
+      continue;
+    }
+    const row = { ...base, sources: { ...(base.sources || {}) } };
     rows.push(row);
-    index(row);
+    if (key) baseByKey.set(key, [...(baseByKey.get(key) || []), row]);
   }
+  const baseMatch = (key, hit) => {
+    const album = albumOf(hit);
+    return (baseByKey.get(key) || []).find(row => !album || !albumOf(row) || albumOf(row) === album) || null;
+  };
   for (const list of catalogLists || []) {
     for (const hit of list || []) {
       const key = trackKey(hit, normalize);
-      const match = key ? byKey.get(key) : null;
+      if (key && localByKey.has(key)) continue;
+      const match = key ? (baseMatch(key, hit) || catalogByKey.get(key)) : null;
       if (!match) {
         const row = { ...hit, sources: { ...hit.sources } };
         rows.push(row);
-        index(row);
+        if (key) catalogByKey.set(key, row);
         continue;
       }
-      if (match.isLocal) continue;
+      let joined = false;
       for (const [resolverId, source] of Object.entries(hit.sources || {})) {
         if (match.sources[resolverId]) continue;
         // Scored without the hit's own confidence: its 1 says "this row is
         // this hit", which is no longer true once it joins another row.
         const { confidence: _own, ...candidate } = source;
         const confidence = calculateConfidence(match, candidate);
-        if (confidence >= threshold) match.sources[resolverId] = { ...source, confidence };
+        if (confidence >= threshold) {
+          match.sources[resolverId] = { ...source, confidence };
+          joined = true;
+        }
       }
-      match.score = Math.max(match.score ?? 50, hit.score ?? 50);
+      if (joined) {
+        match.score = Math.max(match.score ?? 50, hit.score ?? 50) + AGREEMENT_BONUS;
+      }
     }
   }
   return rows;
@@ -141,21 +169,28 @@ function mergeAlbumResults(mbAlbums, catalogLists) {
   return rows;
 }
 
-// A service's albums as Search album rows, ranked by position.
-function catalogAlbumsToSearchResults(albums, resolverId) {
+// A service's albums as Search album rows, ranked by position and by the
+// service's place in the priority order.
+function catalogAlbumsToSearchResults(albums, resolverId, priority = 0) {
   return (albums || []).slice(0, CATALOG_RESULTS_PER_RESOLVER).map((album, rank) => ({
     ...catalogAlbumToSearchResult(album, resolverId),
-    score: rankScore(rank),
+    score: rankScore(rank, priority),
   }));
 }
 
-// A service's tracks as Search track rows, ranked by position.
-function catalogTracksToSearchResults(tracks, resolverId) {
+// A service's tracks as Search track rows, ranked by position and by the
+// service's place in the priority order.
+function catalogTracksToSearchResults(tracks, resolverId, priority = 0) {
   return (tracks || [])
     .filter(t => t && t.title)
     .slice(0, CATALOG_RESULTS_PER_RESOLVER)
-    .map((track, rank) => catalogTrackToSearchResult(track, resolverId, rank));
+    .map((track, rank) => catalogTrackToSearchResult(track, resolverId, rank, priority));
 }
+
+// Fuse key for ranking track rows: the query against "artist title", so
+// "portishead roads" finds Portishead's "Roads" rather than only the covers
+// and edits whose title is "Portishead - Roads".
+const TRACK_RANK_KEY = { name: 'artistTitle', getFn: (t) => `${t.artist || ''} ${t.title || ''}` };
 
 // Artists named by service results whose name matches the query (one
 // contains the other, after normalization), in the order the results name
@@ -184,6 +219,7 @@ function catalogArtistsFromResults({ query, trackLists = [], albumLists = [], mb
 
 module.exports = {
   CATALOG_RESULTS_PER_RESOLVER,
+  TRACK_RANK_KEY,
   searchResolversFor,
   catalogTrackToSearchResult,
   catalogTracksToSearchResults,

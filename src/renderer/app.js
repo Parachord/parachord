@@ -628,7 +628,8 @@ const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
-  catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates
+  catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates,
+  TRACK_RANK_KEY
 } = require('./lib/search-catalog');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
@@ -17724,6 +17725,10 @@ ${trackListXml}
           tracks: [...(prev.tracks.filter(t => t.isLocal) || []), ...(cachedResults.tracks || [])],
           playlists: prev.playlists
         }));
+      } else {
+        // The page shows whatever has arrived while a search runs, so the
+        // previous query's rows must not stay on screen under the new one.
+        setSearchResults({ artists: [], albums: [], tracks: [], playlists: [] });
       }
 
       setIsSearching(true);
@@ -17809,7 +17814,8 @@ ${trackListXml}
     }));
   };
 
-  // Re-rank search results using fuzzy matching + MusicBrainz popularity score
+  // Re-rank search results using fuzzy matching + MusicBrainz popularity score.
+  // nameKey: a field name, or a Fuse key object (TRACK_RANK_KEY).
   const reRankResults = (items, query, nameKey = 'name') => {
     if (!items || items.length === 0 || !query) return items;
 
@@ -18044,7 +18050,7 @@ ${trackListXml}
 
     const publishTracks = () => {
       if (!isCurrent()) return;
-      const rows = reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, 'title');
+      const rows = reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, TRACK_RANK_KEY);
       // Local files' rows stay first; a service row that only repeats one goes.
       setSearchResults(prev => {
         const localTracks = prev.tracks.filter(t => t.isLocal);
@@ -18060,12 +18066,14 @@ ${trackListXml}
         if (kind === 'tracks') {
           const found = await withCatalogTimeout(resolver.search(query, config));
           if (!isCurrent()) return;
-          catalogTracks.set(resolver.id, catalogTracksToSearchResults(Array.isArray(found) ? found : [], resolver.id));
+          const priority = trackResolvers.indexOf(resolver);
+          catalogTracks.set(resolver.id, catalogTracksToSearchResults(Array.isArray(found) ? found : [], resolver.id, priority));
           publishTracks();
         } else {
           const found = await withCatalogTimeout(albumLoader.searchAlbums(resolver.id, query, config));
           if (!isCurrent()) return;
-          catalogAlbums.set(resolver.id, catalogAlbumsToSearchResults(Array.isArray(found) ? found : [], resolver.id));
+          const priority = [...albumResolvers, ...fallbackAlbumResolvers].indexOf(resolver);
+          catalogAlbums.set(resolver.id, catalogAlbumsToSearchResults(Array.isArray(found) ? found : [], resolver.id, priority));
           publishAlbums();
         }
         publishArtists();

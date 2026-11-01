@@ -87,10 +87,31 @@ describe('performSearch', () => {
     expect(body).toMatch(/mergeTrackResults\(mb\.tracks \|\| \[\], trackLists\(\), scorer\)/);
   });
 
+  test('track rows rank on artist and title, with each service\'s priority', () => {
+    expect(body).toMatch(/reRankResults\(mergeTrackResults\(mb\.tracks \|\| \[\], trackLists\(\), scorer\), query, TRACK_RANK_KEY\)/);
+    expect(body).toMatch(/const priority = trackResolvers\.indexOf\(resolver\);/);
+  });
+
   test('a stale query publishes nothing', () => {
     for (const name of ['publishArtists', 'publishAlbums', 'publishTracks']) {
       const s = body.indexOf(`const ${name} = () => {`);
       expect(body.slice(s, s + 80)).toMatch(/if \(!isCurrent\(\)\) return;/);
     }
+  });
+});
+
+describe('results show as they arrive', () => {
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/search-page.js'), 'utf8');
+
+  test('the skeleton stands in only until the first rows land', () => {
+    // Gating the whole list on isSearching held every result back until the
+    // last request finished (the services' rows waited on MusicBrainz).
+    expect(page).toMatch(/isSearching &&\s*searchResults\.artists\.length === 0 &&\s*searchResults\.albums\.length === 0 &&\s*searchResults\.tracks\.length === 0 &&\s*searchResults\.playlists\.length === 0 \?/);
+    expect(page).not.toMatch(/\n\s*isSearching \?\n/);
+  });
+
+  test('a new query with nothing cached clears the previous query\'s rows', () => {
+    const input = fnBody('const handleSearchInput = (value) => {');
+    expect(input).toMatch(/\} else \{[\s\S]{0,200}setSearchResults\(\{ artists: \[\], albums: \[\], tracks: \[\], playlists: \[\] \}\);/);
   });
 });

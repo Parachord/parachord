@@ -66,6 +66,13 @@ describe('catalogTracksToSearchResults', () => {
     expect(row.id).toBe('radiohead-creep-pablohoney');
   });
 
+  test('a service further down the priority order scores lower', () => {
+    const [first] = catalogTracksToSearchResults([{ title: 'T', artist: 'A' }], 'applemusic', 0);
+    const [fourth] = catalogTracksToSearchResults([{ title: 'T', artist: 'A' }], 'soundcloud', 4);
+    expect(first.score).toBe(100);
+    expect(fourth.score).toBe(80);
+  });
+
   test('rank becomes a falling score, and a long list is cut', () => {
     const many = Array.from({ length: 30 }, (_, i) => ({ title: `T${i}`, artist: 'A' }));
     const rows = catalogTracksToSearchResults(many, 'youtube');
@@ -116,9 +123,39 @@ describe('mergeTrackResults', () => {
     expect(rows[0]).toBe(local);
   });
 
-  test('a row keeps the better of its scores', () => {
+  test('a row takes the better of its scores, plus a bonus per service that agrees', () => {
     const mbLow = { ...mbCreep, score: 40 };
-    expect(mergeTrackResults([mbLow], [sp], scorer)[0].score).toBe(100);
+    expect(mergeTrackResults([mbLow], [sp], scorer)[0].score).toBe(105);
+    const rows = mergeTrackResults([], [sp, am], scorer);
+    expect(rows.find(r => r.title === 'Creep (Acoustic)').score).toBe(105); // max(95, 100) + 5
+    expect(rows.find(r => r.title === 'Creep').score).toBe(100); // one service, no bonus
+  });
+
+  test('a hit does not join a MusicBrainz recording from another album', () => {
+    const mbLive = { id: 'mb-live', title: 'Roads', artist: 'Portishead', album: 'Roseland NYC Live', sources: {} };
+    const studio = catalogTracksToSearchResults([
+      { title: 'Roads', artist: 'Portishead', album: 'Dummy', appleMusicId: 'a1' },
+    ], 'applemusic');
+    const rows = mergeTrackResults([mbLive], [studio], scorer);
+    expect(rows.map(r => r.album)).toEqual(['Roseland NYC Live', 'Dummy']);
+    expect(rows[0].sources).toEqual({});
+  });
+
+  test('a hit joins the MusicBrainz recording on the same album, edition suffix aside', () => {
+    const mbLive = { id: 'mb-live', title: 'Roads', artist: 'Portishead', album: 'Roseland NYC Live', sources: {} };
+    const mbStudio = { id: 'mb-studio', title: 'Roads', artist: 'Portishead', album: 'Dummy', sources: {} };
+    const studio = catalogTracksToSearchResults([
+      { title: 'Roads', artist: 'Portishead', album: 'Dummy (Remastered)', appleMusicId: 'a1' },
+    ], 'applemusic');
+    const rows = mergeTrackResults([mbLive, mbStudio], [studio], scorer);
+    expect(rows).toHaveLength(2);
+    expect(rows[1].sources.applemusic).toMatchObject({ appleMusicId: 'a1' });
+  });
+
+  test('a hit with no album joins the first MusicBrainz recording of the track', () => {
+    const mbLive = { id: 'mb-live', title: 'Roads', artist: 'Portishead', album: 'Roseland NYC Live', sources: {} };
+    const bare = catalogTracksToSearchResults([{ title: 'Roads', artist: 'Portishead', soundcloudId: 's' }], 'soundcloud');
+    expect(mergeTrackResults([mbLive], [bare], scorer)[0].sources.soundcloud).toBeTruthy();
   });
 
   test('a service source whose artist does not match is not attached', () => {

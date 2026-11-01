@@ -95,7 +95,7 @@ describe('search', () => {
   test('the catalogs come from the registry, not hard-wired services', () => {
     expect(search).toMatch(/searchResolversFor\(albumLoader\.getAlbumSearchResolvers\(\), \{\s*activeIds, order, capability: 'albumSearch', fn: 'searchAlbums'/);
     expect(search).toMatch(/searchResolversFor\(loadedResolversRef\.current, \{\s*activeIds, order, capability: 'search', fn: 'search'/);
-    expect(search).toMatch(/catalogAlbumsToSearchResults\(Array\.isArray\(found\) \? found : \[\], resolver\.id\)/);
+    expect(search).toMatch(/catalogAlbumsToSearchResults\(Array\.isArray\(found\) \? found : \[\], resolver\.id, priority\)/);
     expect(search).not.toMatch(/api\.spotify\.com/);
     expect(search).not.toMatch(/musicKit\.api\.music/);
     expect(search).not.toMatch(/activeIds\.includes\('(spotify|applemusic)'\)/);
