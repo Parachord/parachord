@@ -1,3 +1,55 @@
+# Parachord (unreleased)
+
+**Release date:** not yet released
+
+> Search and artist pages show results in about a second instead of five to twenty, playing a track you just clicked no longer waits behind everything else loading, and covers stop flickering, going missing, or pointing at images that don't exist.
+
+---
+
+## Faster search
+
+- **Results in under a second.** Search used to wait on three MusicBrainz lookups, one after another at one per second, and showed nothing until the last answered: five seconds and often far more. It now asks the music services you've turned on at the same time, shows their results as soon as they arrive (usually well under a second), and adds MusicBrainz's below them as they come in, without moving what's already on screen. Where a service and MusicBrainz find the same song, it's one row that plays from either.
+- **Typing doesn't pile up lookups.** Pausing mid-word started a search for the half-typed word, and its lookups stayed in the queue ahead of the search you meant. They're dropped now.
+- **Better top results.** Search used to rank songs by how well the title alone matched what you typed, so "portishead roads" favored covers titled "Portishead - Roads" over Portishead's "Roads". It now matches the artist and the title together, prefers the services you rank higher, and favors songs several services agree on.
+
+## Faster artist and album pages
+
+- **Artist discographies show as they load.** An artist page waited for albums, EPs and singles before showing any of them. Albums now appear as soon as they arrive, and opening an artist from Search skips a lookup it no longer needs.
+- **Covers no longer hold up what you clicked.** Cover lookups, artist bios and Home's suggestions used to queue ahead of the page you opened; at launch, five cover lookups could make an artist page wait 15 seconds. They now wait behind anything you asked for, and a slow lookup already running no longer blocks your click.
+- **Playing a track goes first.** Clicking a track that hasn't been matched to a service yet now finds it ahead of everything else the page is loading, instead of waiting behind every other track on the page (up to 9 seconds on an album). On album pages, clicking such a track used to open a search instead of playing it; it plays now.
+- **Works when MusicBrainz's IPv6 address doesn't.** On November 1, MusicBrainz and the Cover Art Archive accepted connections over IPv6 and then dropped them, for hours, while IPv4 worked, so every lookup failed. Parachord now retries over IPv4 when that happens.
+
+## Album art
+
+- **Bandcamp covers.** Covers from Bandcamp search never loaded: Bandcamp's search returns an image address that doesn't exist. Parachord now builds the right one.
+- **A search cover that fails to load is replaced** with one from another source, instead of leaving a blank square.
+- **Faster covers when a source is slow.** Search shows the cover a service already returned if the usual lookup takes more than two seconds, and songs without an album name get covers too.
+- **ListenBrainz covers** for friends' listens and top albums, your own ListenBrainz history, and the weekly playlists now come from ListenBrainz itself instead of a MusicBrainz search per item.
+
+## Amazon Music
+
+- **Two-factor sign-in works.** The sign-in window closed while Amazon was asking for your code, reported success, and then asked you to sign in again, over and over. It now waits for the whole sign-in, and Amazon shows "Setup required" in Settings when you're signed out.
+- **No more surprise sign-in prompts.** Amazon refreshes part of its session every so often, and a page load caught in that moment made Parachord ask you to sign in while you were signed in. It now retries quietly first.
+- **The song you asked for, not a station.** On a plan that can only play a track as a station, Amazon started a station of similar music while Parachord showed the track you picked. That play now fails, and the next source plays instead.
+- **Report Bad Match** reports only the track you picked.
+
+## Home, friends and links
+
+- **Home suggestions stay put.** Album and Artist Suggestions no longer fetch a new batch every time you open Home; press Refresh for more. A setting brings the old behavior back: **Settings → General → Discover → Refresh Home suggestions on every visit**.
+- **Friend links keep their time period.** `parachord://friend/…` links ignored `?period=` and couldn't open the Top Albums tab; both work now, and copied links include them. Thanks to @theli-ua for reporting it.
+- **Friend and playlist links open.** `parachord://friend/…` and `parachord://playlist/…` links did nothing.
+
+## Sync
+
+- **Deletions you make on Spotify, Apple Music or ListenBrainz stick.** With the new sync turned on, a track you deleted on the service came back on the next sync. It's removed everywhere now. The same fix stops a track that never finished syncing from being deleted from your own playlist.
+
+## Linux
+
+- **Packaging guide for distributions.** `docs/setup/LINUX_PACKAGING.md` covers building from source, which Electron to use, what the build downloads, and runtime needs. Building on Linux doesn't need a compiler. Thanks to @ennqueue for asking for it.
+- **The real app icon, and `parachord://` links,** in the Linux packages: they shipped Electron's default icon, and links didn't open the app.
+
+---
+
 # Parachord v0.9.11
 
 **Release date:** 2026-10-30

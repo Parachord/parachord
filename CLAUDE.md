@@ -65,6 +65,7 @@ Summary; the full text, with the incidents behind each rule, is in [renderer-pat
 - **A click changes the view before its MusicBrainz lookup**, and only what the user asked for takes the foreground lane: speculative prefetches, covers (`getAlbumArt` defaults to background), bios, photos and refreshes use the background lane (`mbBackground: true`), because every MusicBrainz request starts at most once per 1.1s (two in flight, one always kept for the foreground).
 - **Pages are `React.memo`'d modules fed stable props** (Collection, Home, playlist view, artist page, Search). Plain functions go through `useStableHandlers`; `tests/renderer/page-memo.test.js` fails on an unstable prop; a module must load under plain Node (`globalThis`, not `window`, at module scope).
 - **Extracted modules use `React.useState`-style qualified hooks**, never bare destructured ones.
+- **In the resolver queues, a play click goes first, track resolution next, covers last** (`config.__lane` → `laneRunOptions`; see "Resolver queue lanes" in [playback.md](docs/architecture/playback.md)).
 - **Use refs in async callbacks** (`volumeRef`, `isPlayingRef`, `currentTrackRef`, ...) to avoid stale closures.
 - **`showToast(message, type, action, options)`**: `options.persistent`, `options.duration` (ms), and `action: { label, onClick }`.
 - **Colors come from CSS variables** (`var(--accent-primary)`, `var(--card-bg)`, ...) so both themes work.
