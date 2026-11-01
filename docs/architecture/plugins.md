@@ -53,13 +53,28 @@ Subsonic used to be named in ten transport lists, a config gate and a bespoke `g
   - **`build-axes.js` runs before `build-renderer.js` in every hook** — otherwise the bundle is built from a source tree whose fallback module the writer has not regenerated yet, and a one-shot CI `prebuild` ships a stale array. (The old form mentioned an inline `src/renderer/app.js` block — the generated-module shape moves the same ordering rule.)
   - **The PR-only version-bump gate** (`scripts/check-plugin-version-bumps.js`, same workflow) — any PR that touches `plugins-src/<id>/` must change its `manifest.version` (the nested `.manifest.version` path; plugins-src manifests are the `.axe` shell minus `implementation`), or marketplace clients never re-download. This is the enforced form of build-axes' local content-vs-disk warning, which went silent when the artifacts were untracked. New plugins and deletions are exempt. Local-run caveat: with its default `origin/main` base the diff compares against main's tip, so a branch behind main can false-positive — fetch/rebase first (CI can't hit this: HEAD is the merge commit).
 - **Marketplace source**: Raw GitHub files from `Parachord/parachord-plugins` repo
-- **Manifest**: `marketplace-manifest.json` in this repo — the central catalog of all plugins with version numbers (entry `version` is generator-synced; category/tags/downloadUrl/capabilities in the entry are editorial, hand-maintained)
+- **Manifest**: `marketplace-manifest.json` in this repo — the central catalog of all plugins with version numbers (entry `version` and `minAppVersion` are generator-synced; category/tags/downloadUrl/capabilities in the entry are editorial, hand-maintained)
 - **Client sync**: `main.js` fetches manifest + `.axe` files from `https://raw.githubusercontent.com/Parachord/parachord-plugins/main/`
 
 ### Plugin Loading Order (main.js `resolvers-load-builtin`)
 1. Shipped plugins from app `plugins/` directory (bundled in ASAR for packaged builds)
 2. Cached marketplace plugins from `~/.parachord/plugins/`
 3. Version comparison: newer version always wins; same version prefers shipped over cached
+4. A cached copy whose `minAppVersion.desktop` is above this app's version is skipped (see "Minimum app version" below), so the shipped copy stays in use. The shipped copy is never checked: it was built with this app.
+
+### Minimum app version
+The marketplace serves only the latest copy of each plugin, and every installed app downloads it, so a plugin that needs a host feature an older app lacks (a new IPC surface, a native player) would otherwise reach that app and break there. A plugin can declare the oldest app it runs on, per platform, in its manifest:
+
+```json
+"minAppVersion": { "desktop": "0.9.12", "android": "1.4.0", "ios": "1.0.0" }
+```
+
+- **Per platform, because desktop and mobile version separately** and gain host features at different times. A platform with no entry, or a plugin with no field, has no floor. Values are plain `x.y.z`; an app's pre-release suffix is ignored, so `0.9.12-beta.1` meets a `0.9.12` floor.
+- **An app below the floor keeps the copy it has.** Marketplace sync (`plugins-sync-marketplace`) checks the catalog entry before downloading and the downloaded `.axe` before saving, and reports the plugin under `skipped`. The loader skips a cached copy below the floor. Installing from Settings or from a file refuses with "needs Parachord X or later".
+- **Rules live in `main-process/plugin-compat.js`** (`pluginCompatibility(manifest, appVersion, platform)`, `validateMinAppVersion`). The Android and iOS clients mirror them; keep the two in step.
+- **`build-axes.js` validates the field and copies it to the marketplace entry**, so a client can skip a download without fetching the `.axe`; `--check` fails on drift.
+- **Apps released before the field existed ignore it** (v0.9.11 and earlier on desktop). Until most people have updated past that, a plugin that depends on a new host feature still has to detect the feature and fall back, not only declare the floor.
+- **Set the floor to the first release that has the feature.** During development `package.json` still carries the previous release, so a dev build skips the marketplace copy and runs its own bundled one, which is the copy you're working on.
 
 ### How Updates Reach Users (No New Build Required)
 1. **Edit `plugins-src/<id>/implementation.js`** (or `manifest.json`) — and bump `manifest.version` in `plugins-src/<id>/manifest.json`
@@ -105,7 +120,7 @@ An `.axe` file is JSON with up to five top-level keys: `manifest`, `capabilities
 
 ### Manifest
 
-`resolver-loader.js` (`createResolverInstance`) reads `id` and `name` (both required; the file installer rejects a file without them), `version` (semver; the loader and marketplace sync compare it), `author`, `description`, `icon` (an emoji; defaults to 🎵), `color` (hex; defaults to `#888888`), `homepage` and `email`. `type` is either absent (or `"resolver"`), meaning a content resolver that plays or finds tracks, or `"meta-service"`, meaning everything else: AI providers, concert sources, metadata and recommendation services, scrobbling services and the Achordion telemetry plugin. A `manifest.id` may contain only letters, digits, dots, dashes and underscores.
+`resolver-loader.js` (`createResolverInstance`) reads `id` and `name` (both required; the file installer rejects a file without them), `version` (semver; the loader and marketplace sync compare it), `minAppVersion` (optional, per platform; see "Minimum app version" above), `author`, `description`, `icon` (an emoji; defaults to 🎵), `color` (hex; defaults to `#888888`), `homepage` and `email`. `type` is either absent (or `"resolver"`), meaning a content resolver that plays or finds tracks, or `"meta-service"`, meaning everything else: AI providers, concert sources, metadata and recommendation services, scrobbling services and the Achordion telemetry plugin. A `manifest.id` may contain only letters, digits, dots, dashes and underscores.
 
 ### Capabilities
 

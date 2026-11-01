@@ -320,3 +320,13 @@ If neither service returns a current track, surface "<user> is not currently lis
 ```
 
 `cachedRecentTrack` is required (the activate function asserts it). Synthesize from the now-playing fetch: `{ name: track_name, artist: artist_name, album: release_name, timestamp: Date.now() }`.
+
+### Android Parity Requirements (plugin minimum app version)
+
+Android and iOS download plugins from the same marketplace as desktop, so they honor the same floor. A plugin manifest (and its `manifest.json` catalog entry in parachord-plugins) may carry `"minAppVersion": { "desktop": "x.y.z", "android": "x.y.z", "ios": "x.y.z" }`. Each client reads only its own platform key. The rules, from `main-process/plugin-compat.js` (see "Minimum app version" in [plugins.md](plugins.md)):
+
+- No field, or no entry for the platform, means no floor. A value that isn't plain `x.y.z` is no floor.
+- Compare numerically per part (`0.10.0` > `0.9.12`); the app's own pre-release or build suffix is dropped before comparing. An app that can't report its version is not refused.
+- An app below the floor doesn't download the update (check the catalog entry first, then the downloaded `.axe` before saving it), skips a cached copy below the floor at load, and refuses a manual install with a "needs Parachord X or later" message. The copy bundled with the app is never checked.
+
+What breaks if a client drifts: a plugin built for a newer host (desktop's native Amazon player in parachord#1158 is the first) downloads onto an app that lacks the host feature, and that plugin stops working there until the user updates the app.
