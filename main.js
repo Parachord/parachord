@@ -4488,6 +4488,15 @@ async function fetchPluginManifest() {
   }
 }
 
+// Whether this app can run a plugin: its manifest's minAppVersion.desktop
+// (main-process/plugin-compat.js). Checked before a marketplace download, on
+// install, and on loading a downloaded copy; the copy bundled with the app is
+// always runnable here.
+const { pluginCompatibility } = require('./main-process/plugin-compat');
+const desktopPluginCompatibility = (manifest) => pluginCompatibility(manifest, app.getVersion(), 'desktop');
+const pluginNeedsNewerAppMessage = (manifest, requires) =>
+  `${manifest.name} ${manifest.version} needs Parachord ${requires} or later. This is Parachord ${app.getVersion()}; update Parachord to install it.`;
+
 // Fetch a single plugin from marketplace
 async function fetchPlugin(pluginId) {
   try {
@@ -4543,6 +4552,16 @@ ipcMain.handle('resolvers-load-builtin', async () => {
         try {
           const content = await fs.readFile(filepath, 'utf8');
           const axe = JSON.parse(content);
+
+          // A downloaded copy that needs a newer app is skipped, so the
+          // bundled copy (loaded first) stays in use.
+          if (source !== 'app') {
+            const compat = desktopPluginCompatibility(axe.manifest);
+            if (!compat.ok) {
+              console.log(`  ⏭️  Skipping ${axe.manifest.name} v${axe.manifest.version} from ${source} (needs Parachord ${compat.requires}, this is ${app.getVersion()})`);
+              continue;
+            }
+          }
 
           // Check for duplicates - only override if the new version is actually newer
           const existingIdx = plugins.findIndex(p => p.manifest.id === axe.manifest.id);
@@ -4615,11 +4634,21 @@ ipcMain.handle('plugins-sync-marketplace', async () => {
   const updated = [];
   const added = [];
   const failed = [];
+  const skipped = [];
 
   for (const pluginInfo of manifest.plugins) {
     const pluginId = pluginInfo.id;
     const marketplaceVersion = pluginInfo.version;
     const cacheFile = path.join(pluginsDir, `${pluginId}.axe`);
+
+    // A version that needs a newer app isn't downloaded; whatever copy this
+    // app has keeps running.
+    const entryCompat = desktopPluginCompatibility(pluginInfo);
+    if (!entryCompat.ok) {
+      skipped.push({ id: pluginId, version: marketplaceVersion, requires: entryCompat.requires });
+      console.log(`  ⏭️  ${pluginId} v${marketplaceVersion} needs Parachord ${entryCompat.requires} (this is ${app.getVersion()}), not downloading`);
+      continue;
+    }
 
     // Check if we have this plugin cached and what version
     let cachedVersion = null;
@@ -4635,8 +4664,13 @@ ipcMain.handle('plugins-sync-marketplace', async () => {
     if (!cachedVersion || cachedVersion !== marketplaceVersion) {
       console.log(`  📥 Fetching ${pluginId} v${marketplaceVersion}...`);
       const plugin = await fetchPlugin(pluginId);
+      // The .axe itself is the authority: the catalog entry can lag it.
+      const pluginCompat = plugin ? desktopPluginCompatibility(plugin.manifest) : { ok: true };
 
-      if (plugin) {
+      if (plugin && !pluginCompat.ok) {
+        skipped.push({ id: pluginId, version: marketplaceVersion, requires: pluginCompat.requires });
+        console.log(`    ⏭️  ${pluginId} v${marketplaceVersion} needs Parachord ${pluginCompat.requires} (this is ${app.getVersion()}), not saving`);
+      } else if (plugin) {
         await fs.writeFile(cacheFile, JSON.stringify(plugin, null, 2), 'utf8');
         if (cachedVersion) {
           updated.push({ id: pluginId, from: cachedVersion, to: marketplaceVersion });
@@ -4654,8 +4688,8 @@ ipcMain.handle('plugins-sync-marketplace', async () => {
     }
   }
 
-  console.log(`✅ Sync complete: ${added.length} added, ${updated.length} updated, ${failed.length} failed`);
-  return { success: true, added, updated, failed };
+  console.log(`✅ Sync complete: ${added.length} added, ${updated.length} updated, ${failed.length} failed, ${skipped.length} need a newer app`);
+  return { success: true, added, updated, failed, skipped };
 });
 
 // File picker for resolvers
@@ -4715,6 +4749,11 @@ ipcMain.handle('resolvers-install', async (event, axeContent, filename) => {
     // Validate content
     const axe = JSON.parse(axeContent);
     console.log(`  Plugin: ${axe.manifest.name} v${axe.manifest.version}`);
+
+    const compat = desktopPluginCompatibility(axe.manifest);
+    if (!compat.ok) {
+      throw new Error(pluginNeedsNewerAppMessage(axe.manifest, compat.requires));
+    }
 
     // Sanitize filename — strip path separators and directory traversal
     const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -5532,6 +5571,11 @@ ipcMain.handle('marketplace-download-resolver', async (event, url) => {
     }
 
     console.log(`✅ Downloaded resolver: ${axe.manifest.name}`);
+
+    const compat = desktopPluginCompatibility(axe.manifest);
+    if (!compat.ok) {
+      throw new Error(pluginNeedsNewerAppMessage(axe.manifest, compat.requires));
+    }
 
     // Validate and sanitize manifest.id for use as filename
     if (!/^[a-zA-Z0-9._-]+$/.test(axe.manifest.id)) {

@@ -13,7 +13,8 @@
 //       src/renderer/lib/fallback-resolvers.generated.js
 //                                         (gitignored module — the FALLBACK_RESOLVERS
 //                                         array src/renderer/app.js requires)
-//       marketplace-manifest.json         (entry version sync; the ONLY tracked output)
+//       marketplace-manifest.json         (entry version + minAppVersion sync; the ONLY
+//                                         tracked output)
 //
 // Modes:
 //   (default)      write all three artifacts for every plugins-src plugin
@@ -43,6 +44,12 @@
 // (category, tags, downloadUrl, capabilities, ...) are editorial and
 // hand-maintained; a missing entry is an error — add it by hand first.
 //
+// Minimum app versions: an optional manifest.minAppVersion, per platform
+// ({ "desktop": "0.9.12", "android": "1.4.0", "ios": "1.0.0" }), names the
+// oldest app that can run the plugin (main-process/plugin-compat.js). The
+// writer validates it and copies it to the marketplace entry, so clients can
+// skip a download they can't run without fetching the .axe first.
+//
 // Reverse-sync (a community edit landing in plugins/<id>.axe via
 // .github/workflows/reverse-sync.yml): --check FAILS until `--import --plugin
 // <id>` absorbs the edit into plugins-src. Do not hand-edit the .axe to make
@@ -67,6 +74,13 @@ const SRC_DIR = path.join(ROOT, 'plugins-src');
 const PLUGINS_DIR = path.join(ROOT, 'plugins');
 const GENERATED_FALLBACK_PATH = path.join(ROOT, 'src', 'renderer', 'lib', 'fallback-resolvers.generated.js');
 const MARKETPLACE_PATH = path.join(ROOT, 'marketplace-manifest.json');
+const { validateMinAppVersion } = require('../main-process/plugin-compat');
+
+// The marketplace entry mirrors the .axe manifest's minAppVersion (absent on
+// both, or the same object).
+function sameMinAppVersion(entry, manifest) {
+  return JSON.stringify(entry.minAppVersion) === JSON.stringify(manifest.minAppVersion);
+}
 
 
 const args = process.argv.slice(2);
@@ -289,6 +303,14 @@ function runWrite() {
   const marketplace = readMarketplace();
   let marketplaceDirty = false;
 
+  // Validate before writing anything, so a bad field leaves no half-written output.
+  for (const plan of plans) {
+    const minAppProblems = validateMinAppVersion(plan.axe.manifest.minAppVersion);
+    if (minAppProblems.length > 0) {
+      fail(`plugins-src/${plan.id}/manifest.json: ${minAppProblems.join('; ')}`);
+    }
+  }
+
   for (const plan of plans) {
     const axePath = path.join(PLUGINS_DIR, plan.id + '.axe');
     const existing = fs.existsSync(axePath) ? fs.readFileSync(axePath, 'utf8') : null;
@@ -311,6 +333,12 @@ function runWrite() {
       entry.version = plan.axe.manifest.version;
       marketplaceDirty = true;
       console.log(`✅ marketplace-manifest.json: ${plan.id} → v${plan.axe.manifest.version}`);
+    }
+    if (!sameMinAppVersion(entry, plan.axe.manifest)) {
+      if (plan.axe.manifest.minAppVersion === undefined) delete entry.minAppVersion;
+      else entry.minAppVersion = { ...plan.axe.manifest.minAppVersion };
+      marketplaceDirty = true;
+      console.log(`✅ marketplace-manifest.json: ${plan.id} minAppVersion → ${JSON.stringify(plan.axe.manifest.minAppVersion || null)}`);
     }
   }
 
@@ -355,6 +383,11 @@ function runCheck() {
       failures.push(`marketplace-manifest.json has no "${plan.id}" entry`);
     } else if (entry.version !== plan.axe.manifest.version) {
       failures.push(`marketplace-manifest.json ${plan.id} version ${entry.version} ≠ .axe ${plan.axe.manifest.version} — run the writer`);
+    } else if (!sameMinAppVersion(entry, plan.axe.manifest)) {
+      failures.push(`marketplace-manifest.json ${plan.id} minAppVersion ${JSON.stringify(entry.minAppVersion || null)} ≠ .axe ${JSON.stringify(plan.axe.manifest.minAppVersion || null)} — run the writer`);
+    }
+    for (const problem of validateMinAppVersion(plan.axe.manifest.minAppVersion)) {
+      failures.push(`plugins-src/${plan.id}/manifest.json: ${problem}`);
     }
   }
 
