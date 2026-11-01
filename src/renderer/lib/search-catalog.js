@@ -152,21 +152,42 @@ const albumKey = (album) => {
 // Album rows: MusicBrainz's first, then each service's in priority order,
 // minus albums an earlier row already names (artist and title, edition
 // suffixes aside).
+// A dropped service album still lends its cover: the row it duplicates keeps
+// it as `_serviceArt`, the fallback serviceArtFor returns.
 function mergeAlbumResults(mbAlbums, catalogLists) {
-  const seen = new Set();
+  const byKey = new Map();
   const rows = [];
   const add = (album, keepUnkeyed) => {
     const key = albumKey(album);
-    if (key && seen.has(key)) return;
+    const existing = key ? byKey.get(key) : null;
+    if (existing) {
+      if (!existing.albumArt && !existing._serviceArt && album.albumArt) existing._serviceArt = album.albumArt;
+      return;
+    }
     if (!key && !keepUnkeyed) return;
-    if (key) seen.add(key);
-    rows.push(album);
+    const row = { ...album };
+    if (key) byKey.set(key, row);
+    rows.push(row);
   };
   for (const album of mbAlbums || []) add(album, true);
   for (const list of catalogLists || []) {
     for (const album of list || []) add(album, false);
   }
   return rows;
+}
+
+// The cover a service already returned for this row: an album row's
+// `_serviceArt` (from a service album it absorbed), or the first of a track
+// row's sources that carries one (sources join in priority order). Search
+// shows it when the album-art pipeline is slow or finds nothing; it is the
+// image the pipeline's resolver step would find, without searching again.
+function serviceArtFor(row) {
+  if (!row) return null;
+  if (row._serviceArt) return row._serviceArt;
+  for (const source of Object.values(row.sources || {})) {
+    if (source && typeof source.albumArt === 'string' && source.albumArt) return source.albumArt;
+  }
+  return null;
 }
 
 // A service's albums as Search album rows, ranked by position and by the
@@ -228,4 +249,5 @@ module.exports = {
   mergeTrackResults,
   mergeAlbumResults,
   withoutLocalDuplicates,
+  serviceArtFor,
 };

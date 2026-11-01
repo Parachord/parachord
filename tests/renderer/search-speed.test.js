@@ -40,9 +40,24 @@ describe('search-result covers', () => {
   });
 
   test('land through the coalesced writer, not a render per cover', () => {
-    expect(body).toMatch(/writer\.queue\(job\.key, url\)/);
+    expect(body).toMatch(/jobs\.settled\.add\(key\);\s*writer\.queue\(key, url\);/);
     expect(body).not.toMatch(/setSearchResults\(/);
     expect(app).toMatch(/searchArtWriterRef\.current = window\.createCoalescedUpdater\(/);
+  });
+
+  test('a row shows the cover a service already returned when the pipeline is slow or empty', () => {
+    expect(app).toMatch(/const SEARCH_ART_FALLBACK_MS = 2000;/);
+    expect(body).toMatch(/const fallback = serviceArtFor\(item\);\s*if \(fallback\) setTimeout\(\(\) => settle\(key, fallback\), SEARCH_ART_FALLBACK_MS\);/);
+    expect(body).toMatch(/settle\(job\.key, url \|\| job\.fallback\);/);
+    // first cover wins: a row never swaps covers, and a settled row skips the pipeline
+    expect(body).toMatch(/if \(!url \|\| jobs\.query !== query \|\| jobs\.settled\.has\(key\)\) return;/);
+    expect(body).toMatch(/if \(jobs\.settled\.has\(job\.key\)\) continue;/);
+    // the fallback is displayed, never cached
+    expect(body).not.toMatch(/albumArtCache\.current\[[^\]]+\] =/);
+  });
+
+  test('a track row with no album name goes through getTrackArt', () => {
+    expect(body).toMatch(/job\.album\s*\? await getAlbumArt\(job\.artist, job\.album, \{ \.\.\.job\.ids, background: true \}\)\s*: await getTrackArt\(job\.artist, job\.title\)/);
   });
 
   test('are never started from inside a state updater', () => {

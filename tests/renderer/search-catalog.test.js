@@ -11,6 +11,7 @@ const {
   mergeTrackResults,
   mergeAlbumResults,
   withoutLocalDuplicates,
+  serviceArtFor,
   CATALOG_RESULTS_PER_RESOLVER,
 } = require('../../src/renderer/lib/search-catalog');
 const {
@@ -216,5 +217,31 @@ describe('catalogArtistsFromResults', () => {
   test('a query naming the artist and a title still finds the artist', () => {
     const artists = catalogArtistsFromResults({ query: 'the beatles help', trackLists: [tracks] });
     expect(artists.map(a => a.name)).toEqual(['The Beatles']);
+  });
+});
+
+describe('serviceArtFor', () => {
+  test('a MusicBrainz track row lends the cover of the first service source that has one', () => {
+    const mb = { id: 'mb-1', title: 'Creep', artist: 'Radiohead', album: 'Pablo Honey', sources: {} };
+    const am = catalogTracksToSearchResults([{ title: 'Creep', artist: 'Radiohead', album: 'Pablo Honey', albumArt: 'https://am/1.jpg' }], 'applemusic');
+    const sp = catalogTracksToSearchResults([{ title: 'Creep', artist: 'Radiohead', album: 'Pablo Honey', albumArt: 'https://sp/1.jpg' }], 'spotify');
+    const [row] = mergeTrackResults([mb], [am, sp], scorer);
+    expect(serviceArtFor(row)).toBe('https://am/1.jpg');
+  });
+
+  test('a MusicBrainz album row keeps the cover of the service album it absorbed', () => {
+    const mb = [{ id: 'rg-1', title: 'Post-Pardon', 'artist-credit': [{ name: 'Quarantine Angst' }] }];
+    const bandcamp = catalogAlbumsToSearchResults([
+      { name: 'Post-Pardon', artist: 'Quarantine Angst', albumArt: 'https://bc/1.jpg', url: 'u' },
+    ], 'bandcamp');
+    const [row] = mergeAlbumResults(mb, [bandcamp]);
+    expect(row.id).toBe('rg-1');
+    expect(serviceArtFor(row)).toBe('https://bc/1.jpg');
+    expect(mb[0]._serviceArt).toBeUndefined(); // inputs are not mutated
+  });
+
+  test('nothing to lend', () => {
+    expect(serviceArtFor({ sources: { x: { albumArt: null } } })).toBeNull();
+    expect(serviceArtFor(null)).toBeNull();
   });
 });
