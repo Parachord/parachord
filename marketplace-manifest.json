@@ -162,7 +162,10 @@
         "subscription",
         "amazon",
         "widevine"
-      ]
+      ],
+      "minAppVersion": {
+        "desktop": "0.9.12"
+      }
     },
     {
       "id": "localfiles",

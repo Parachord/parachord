@@ -3,9 +3,12 @@
     "id": "amazonmusic",
     "name": "Amazon Music",
     "version": "1.7.0",
+    "minAppVersion": {
+      "desktop": "0.9.12"
+    },
     "author": "Parachord Team",
     "description": "Plays Amazon Music through the shared Widevine player (DASH + license via Amazon session). Does not use the Amazon Music desktop app.",
-    "icon": "\ud83c\udfb5",
+    "icon": "🎵",
     "color": "#25D1DA",
     "homepage": "https://music.amazon.com",
     "email": "support@parachord.dev"
