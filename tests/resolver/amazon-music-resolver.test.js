@@ -40,12 +40,12 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.6.2');
+    expect(axe.manifest.version).toBe('1.7.0');
   });
 
   test('declares streaming capabilities without auth', () => {
     expect(axe.capabilities).toEqual(
-      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, artistImage: true, mobile: false })
+      expect.objectContaining({ resolve: true, search: true, stream: true, urlLookup: true, albumSearch: true, artistImage: true, widevine: true, mobile: false })
     );
     expect(axe.settings.requiresAuth).toBe(false);
     expect(axe.urlPatterns).toEqual([
@@ -258,72 +258,44 @@ describe('amazonmusic resolve', () => {
   });
 });
 
-describe('amazonmusic play', () => {
-  let managePrompt;
-
-  beforeEach(() => {
-    managePrompt = jest.fn().mockResolvedValue(true);
-    global.window = {
-      electron: {
-        amazonMusic: {
-          playTrack: jest.fn().mockResolvedValue({ success: true })
-        }
-      },
-      __parachordManageAmazonMusic: managePrompt
-    };
+describe('amazonmusic play (host-owned through capabilities.widevine)', () => {
+  // With capabilities.widevine the .axe never touches audio: the host's
+  // handlePlay widevine branch drives the shared player, and the old
+  // play-IPC prompt/retry contract moved with it (source-pinned below).
+  // play() here only fails honestly on hosts without that branch.
+  test('play() is host-owned: returns false with a console note', async () => {
+    const resolver = instantiate(axe);
+    const ok = await resolver.play({ amazonAsin: 'B1', title: 'T', artist: 'A' }, {});
+    expect(ok).toBe(false);
   });
 
-  afterEach(() => {
+  test('cleanup() stops the shared widevine engine when it exists', async () => {
+    const stop = jest.fn().mockResolvedValue(undefined);
+    global.window = { __parachordWidevine: { stop } };
+    const resolver = instantiate(axe);
+    await resolver.cleanup();
+    expect(stop).toHaveBeenCalledTimes(1);
     delete global.window;
   });
 
-  test('plays by ASIN', async () => {
+  test('cleanup() tolerates a host with no widevine engine', async () => {
     const resolver = instantiate(axe);
-    const ok = await resolver.play({ amazonAsin: 'B000SNWG5Q', title: 'Around the World', artist: 'Daft Punk' }, {});
-    expect(ok).toBe(true);
-    expect(global.window.electron.amazonMusic.playTrack).toHaveBeenCalledWith({
-      asin: 'B000SNWG5Q', title: 'Around the World', artist: 'Daft Punk'
-    });
+    await expect(resolver.cleanup()).resolves.toBeUndefined();
   });
 
-  test('not-signed-in triggers the sign-in prompt and retries once', async () => {
-    global.window.electron.amazonMusic.playTrack
-      .mockResolvedValueOnce({ success: false, reason: 'not-signed-in' })
-      .mockResolvedValueOnce({ success: true });
-    const resolver = instantiate(axe);
-    const ok = await resolver.play({ amazonAsin: 'B1', title: 'T', artist: 'A' }, {});
-    expect(ok).toBe(true);
-    expect(managePrompt).toHaveBeenCalledTimes(1);
-    expect(global.window.electron.amazonMusic.playTrack).toHaveBeenCalledTimes(2);
+  test('the host widevine branch keeps the not-signed-in prompt-then-retry contract', () => {
+    // Transport is hook-extracted: markers live in the engine hook.
+    const appSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
+    expect(appSrc).toContain('if (isWidevineResolver(resolverId)) {');
+    expect(appSrc).toMatch(/window\.__parachordWidevine\.play\(audioRef\.current, \{\s*resolverId,\s*entity: \{ asin \}/);
+    expect(appSrc).toMatch(/error\.reason === 'not-signed-in' && window\.__parachordManageAmazonMusic/);
+    expect(appSrc).toContain('await startWidevine();');
   });
 
-  test('declined sign-in returns false without retrying', async () => {
-    managePrompt.mockResolvedValue(false);
-    global.window.electron.amazonMusic.playTrack.mockResolvedValue({ success: false, reason: 'not-signed-in' });
-    const resolver = instantiate(axe);
-    const ok = await resolver.play({ amazonAsin: 'B1', title: 'T', artist: 'A' }, {});
-    expect(ok).toBe(false);
-    expect(global.window.electron.amazonMusic.playTrack).toHaveBeenCalledTimes(1);
-  });
-
-  test('no ASIN on the track returns false', async () => {
-    const resolver = instantiate(axe);
-    expect(await resolver.play({ title: 'T', artist: 'A' }, {})).toBe(false);
-    expect(global.window.electron.amazonMusic.playTrack).not.toHaveBeenCalled();
-  });
-
-  test('a page that never loaded fails the play without offering a sign-in prompt', async () => {
-    // load-failed is a network condition (bounded loadURL): the account is not
-    // the problem, so no manage prompt and no retry — the resolver falls
-    // through to the next one in priority order.
-    global.window.electron.amazonMusic.playTrack.mockResolvedValue({
-      success: false, reason: 'load-failed', error: 'Amazon Music page did not finish loading within 30000ms'
-    });
-    const resolver = instantiate(axe);
-    const ok = await resolver.play({ amazonAsin: 'B1', title: 'T', artist: 'A' }, {});
-    expect(ok).toBe(false);
-    expect(managePrompt).not.toHaveBeenCalled();
-    expect(global.window.electron.amazonMusic.playTrack).toHaveBeenCalledTimes(1);
+  test('the resolver declares capabilities.widevine and no longer plays via the amazon IPC', () => {
+    expect(axe.capabilities.widevine).toBe(true);
+    const impl = axe.implementation.play;
+    expect(impl).not.toContain('amazonMusic.playTrack');
   });
 });
 
