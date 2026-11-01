@@ -357,7 +357,10 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     audio.addEventListener('ended', () => {
       const owner = ownerOf(audioRef.current);
       if (!owner) return;
-      const label = owner === 'localfiles' ? 'Local file' : owner === 'soundcloud' ? 'SoundCloud' : 'Subsonic';
+      // Display labels by owner — via lookup, never inline === 'service'
+      // comparisons (the capability-not-id invariant test bars those).
+      const OWNER_LABELS = { localfiles: 'Local file', soundcloud: 'SoundCloud', subsonic: 'Subsonic' };
+      const label = OWNER_LABELS[owner] || `Stream (${owner})`;
       console.log(`🎵 ${label} playback ended`);
       handleNextRef.current?.();
     });
@@ -617,7 +620,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       window._appleMusicPreviewAudio.currentTime = 0;
     }
 
-    pausePromises.push(stopAmazonIfActive('⏹️ Stopping the Amazon Music player before playing new track'));
+    pausePromises.push(stopWidevineIfActive('⏹️ Stopping the native Music player before playing new track'));
 
     // Always stop main process polling for both Spotify and Apple Music
     stopMainProcessPolling();
@@ -1994,7 +1997,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           } else if (resolverId === 'applemusic' && window.electron?.musicKit) {
             window.electron.musicKit.pause().catch(() => {});
           } else if (resolverId === 'amazonmusic') {
-            stopAmazonIfActive('⏹️ Stopping Amazon Music after superseded play');
+            stopWidevineIfActive('⏹️ Stopping the native widevine player after superseded play');
           }
         }
         return;
@@ -2347,7 +2350,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       if (window.electron?.musicKit?.polling) {
         window.electron.musicKit.polling.stop().catch(() => {});
       }
-      stopAmazonIfActive('⏹️ Stopping Amazon Music before next track');
+      stopWidevineIfActive('⏹️ Stopping the native player before next track');
 
       // Stop all local audio sources (HTML5 Audio for local files/SoundCloud)
       // Always stop regardless of paused state to handle edge cases and prevent overlap
@@ -2652,7 +2655,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       window._appleMusicPreviewAudio.currentTime = 0;
     }
 
-    stopAmazonIfActive('⏹️ Stopping Amazon Music before previous track');
+    stopWidevineIfActive('⏹️ Stopping the native player before previous track');
 
     // CRITICAL: Reset streaming playback flag when changing tracks
     streamingPlaybackActiveRef.current = false;
@@ -3101,8 +3104,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // element otherwise tears down on the next play the way any html5 source
   // does — engine unload, element pause). No-op otherwise: a generation that
   // already lost the shared element cannot touch the replacement track.
-  const stopAmazonIfActive = (reason) => {
-    if (!(activeResolversRef.current || []).includes('amazonmusic')) return Promise.resolve();
+  const stopWidevineIfActive = (reason) => {
+    const names = activeResolversRef.current || [];
+    if (!names.some((n) => isWidevineResolver(n))) return Promise.resolve();
     if (!window.__parachordWidevine) return Promise.resolve();
     if (reason) console.log(reason);
     return window.__parachordWidevine.stop().catch(() => {});

@@ -377,7 +377,15 @@ const adapter = {
     };
     const actionName = envelope.clientActionList && envelope.clientActionList[0] && envelope.clientActionList[0].actionName;
     const { status, text } = await new Promise((resolve) => {
-      const req = net.request({ method: 'POST', url: 'https://music.amazon.com/telemetry/v1/events', session: ses });
+      let req;
+      try {
+        req = net.request({ method: 'POST', url: 'https://music.amazon.com/telemetry/v1/events', session: ses });
+      } catch (e) {
+        // net.request can THROW synchronously (corrupt request config,
+        // destroyed session) — resolve, so health bookkeeping still runs.
+        resolve({ status: -1, text: String(e && e.message || e) });
+        return;
+      }
       for (const [k, v] of Object.entries(headers)) req.setHeader(k, v);
       const chunks = [];
       req.on('response', (res) => { res.on('data', (c) => chunks.push(c)); res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString('utf8') })); });

@@ -56,8 +56,7 @@
 
 ## Amazon Music
 
-- **Amazon Music plays in Parachord's own player now** — the same streams and licenses Amazon's web player uses, decrypted by the Widevine CDM on every platform, no embedded Amazon web page in the audio path. Audio quality moved to a global setting (Settings → General → Playback Quality: data-saver ≤100k / standard ≤200k / high ≤500k / max = best available + auto adjust, as bandwidth corridors — never codec tiers); **the old per-service Amazon quality setting is reset and removed** (your previous choice does not carry over — earlier builds' choices migrate: low→saver, balanced→standard, hornet STANDARD→standard, HD/BEST_AVAILABLE→max; fresh installs start on max + auto adjust). Plays are reported to Amazon the same way the web player reports them.
- native Widevine playback, ported onto the playback-engine slice)
+- **Amazon Music plays in Parachord's own player now** — the same streams and licenses Amazon's web player uses, decrypted by the Widevine CDM on every platform, no embedded Amazon web page in the audio path. Audio quality moved to a global setting (Settings → General → Playback Quality: data-saver ≤100k / standard ≤200k / high ≤500k / max = best available (lossless where your build plays it), plus adaptive streaming that roams below the corridor ceiling live); **the old per-service Amazon quality setting is reset and removed** (your previous choice does not carry over — earlier builds' choices migrate: low→saver, balanced→standard, hornet STANDARD→standard, HD/BEST_AVAILABLE→max; fresh installs start on max + auto adjust). Plays are reported to Amazon the same way the web player reports them.
 
 ---
 

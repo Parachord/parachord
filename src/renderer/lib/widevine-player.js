@@ -203,35 +203,35 @@ async function readPlaybackQuality() {
 
 function applyConfig(config) {
   if (!player || !config) return;
+  // maxBandwidth is ALWAYS sent — an empty restrictions object is a merge
+  // no-op in Shaka config, so a previous tier's cap would persist forever
+  // (lock/adaptive and any tier switch afterward included). Infinity resets
+  // restrictions to the default. preferredAudioCodecs stays EMPTY: tiers
+  // are bandwidth corridors across the full roster; codec is irrelevant.
+  const restrictions = { maxBandwidth: (config.maxBandwidth || Infinity) };
   if (config.abrEnabled) {
-    const restrictions = {};
-    if (config.maxBandwidth) restrictions.maxBandwidth = config.maxBandwidth;
-    // ABR is family-scoped (see shakaPlaybackConfig's codecFamily note):
-    // pin the ladder to the tier's codec family (preferredAudioCodecs is a
-    // TOP-LEVEL config key — nesting it under streaming is an unrecognized-
-    // key warning and the pin silently dies) and let the network roam within
-    // it. Instead of selectVariantTrack (which trips Shaka's "selected track
-    // will be overridden" advisory when ABR is enabled), the manager starts
+    // Instead of selectVariantTrack (which trips Shaka's "selected track
+    // will be overridden" advisory with ABR enabled), the manager starts
     // at the tier's rung via defaultBandwidthEstimate and roams ≤ ceiling.
-    // Order never closes: preferredAudioCodecs as a RANKED preference keeps
-    // Shaka's full roster selectable (a closed-family list filters
-    // getVariantTracks and stranded family switches mid-play).
     player.configure({
-      preferredAudioCodecs: config.preferredCodecs || [],
+      preferredAudioCodecs: [],
       abr: { enabled: true, restrictions, defaultBandwidthEstimate: config.variantBandwidth || undefined }
     });
     return;
   }
-  // Locked mode: unrestricted variant selection by bandwidth; cross-family
-  // switching happens via explicit selectVariantTrack with clearBuffer.
-  player.configure({ abr: { enabled: false }, preferredAudioCodecs: [] });
-  if (config.variantBandwidth == null) return;
-  let best = null;
-  for (const t of (player.getVariantTracks() || [])) {
-    if (!best || Math.abs((t.bandwidth || 0) - config.variantBandwidth) < Math.abs((best.bandwidth || 0) - config.variantBandwidth)) best = t;
+  player.configure({ abr: { enabled: false, restrictions: { maxBandwidth: Infinity } }, preferredAudioCodecs: [] });
+  const tracks = player.getVariantTracks() || [];
+  // Exact variant id first; nearest-bandwidth is the fallback (ties exist
+  // in real Amazon manifests — two opus 53,059-ops reps share an id per
+  // KID group).
+  let target = tracks.find(t => String(t.id) === String(config.variantId)) || null;
+  if (!target && config.variantBandwidth != null) {
+    for (const t of tracks) {
+      if (!target || Math.abs((t.bandwidth || 0) - config.variantBandwidth) < Math.abs((target.bandwidth || 0) - config.variantBandwidth)) target = t;
+    }
   }
-  if (best) {
-    try { player.selectVariantTrack(best, true); } catch { /* selection is best-effort */ }
+  if (target) {
+    try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
   }
 }
 
@@ -336,6 +336,15 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   const uri = URL.createObjectURL(blob);
   try {
     await player.load(uri);
+  } catch (loadErr) {
+    // The manifest mint already allocated a bridge session — a failed load
+    // must close it (matched-close by sessionId), or the session idles open
+    // until supersession/sign-out (review #5 L10). Direct fanout: the
+    // telemetry path is guarded by trackSession, and no track ever started.
+    if (result.sessionId) {
+      fanoutWidevineEvent('stopped', { resolverId, sessionId: result.sessionId, positionMs: 0 });
+    }
+    throw loadErr;
   } finally {
     URL.revokeObjectURL(uri);
   }
@@ -378,9 +387,12 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
 
 // Live re-apply of the global quality setting against the active manifest.
 async function applyQuality() {
-  if (!player || !activeResolverId) return;
+  if (!player || !activeResolverId || !trackSession) return;
   const { tier, adaptive } = await readPlaybackQuality();
-  const config = shakaPlaybackConfig(player.getVariantTracks(), tier, adaptive);
+  // Probe-consistent: the re-selection must see the same roster play()
+  // used — on a FLAC-rejecting build a mid-play tier change would
+  // otherwise select an un-decodable variant (the Linux 4012 class).
+  const config = shakaPlaybackConfig(await playableVariants(player.getVariantTracks()), tier, adaptive);
   if (config) applyConfig(config);
 }
 

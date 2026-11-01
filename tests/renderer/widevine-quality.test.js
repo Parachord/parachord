@@ -109,6 +109,18 @@ describe('shakaPlaybackConfig', () => {
       abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, maxBandwidth: null, preferredCodecs: []
     });
   });
+  test('adaptive FLOOR mirrors the locked floor (M3): never a zero-variant restriction', () => {
+    // A manifest whose cheapest rung exceeds the saver corridor must cap at
+    // that rung, not at the corridor ceiling (a cap BELOW every variant
+    // leaves Shaka's restriction filter with nothing).
+    const onlyHi = [
+      { id: 'a', codecs: 'opus', bandwidth: 400000, audioSamplingRate: 48000 },
+      { id: 'b', codecs: 'opus', bandwidth: 300000, audioSamplingRate: 48000 }
+    ];
+    const cfg = shakaPlaybackConfig(onlyHi, 'saver', true);
+    expect(cfg.variantId).toBe('b');
+    expect(cfg.maxBandwidth).toBe(300000);
+  });
   test('null when nothing playable', () => {
     expect(shakaPlaybackConfig([], 'max', true)).toBeNull();
   });

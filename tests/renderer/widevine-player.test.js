@@ -43,7 +43,9 @@ function makeShaka() {
     }
     async attach() {}
     async detach() {}
-    configure(cfg) { this.configureCalls.push(JSON.parse(JSON.stringify(cfg))); }
+    configure(cfg) { this.configureCalls.push(cfg); } // REFERENCE capture — a JSON
+    // deep-clone would serialize maxBandwidth: Infinity to null and mask the
+    // exact restriction-reset bug the H1 regression test pins.
     async load(uri) { this.loadedUris.push(uri); }
     async unload() { this.unloaded += 1; }
     addEventListener(ev, cb) { this.listeners.push([ev, cb]); }
@@ -70,7 +72,8 @@ function makeElectron({ manifestManifest = '<MPD/>', manifestOk = true, licenseO
   };
   const store = {
     get: jest.fn(async (key) => storeValues[key]),
-    set: jest.fn(async (key, value) => { storeValues[key] = value; })
+    set: jest.fn(async (key, value) => { storeValues[key] = value; }),
+    __values: storeValues
   };
   return { bridge, store, playerEvents };
 }
@@ -260,9 +263,57 @@ describe('applyConfig shaping', () => {
     // full roster; codec is irrelevant to the tier.
     expect(adaptive.preferredAudioCodecs).toEqual([]);
     expect(adaptive.streaming && adaptive.streaming.preferredAudioCodecs).toBeUndefined();
-    expect(adaptive.abr.restrictions.maxBandwidth).toBeUndefined();
+    // max caps at Infinity — an explicit reset, since an absent/{} restriction
+    // would be a merge no-op and a prior tier's ceiling would persist.
+    expect(adaptive.abr.restrictions.maxBandwidth).toBe(Infinity);
     expect(adaptive.abr.defaultBandwidthEstimate).toBe(1902230);
     expect(p.selected).toBeNull(); // the manager starts at the estimate — no selectVariantTrack warning
+  });
+
+  test('restriction RESET on tier swap (H1 regression): corridors never stick', async () => {
+    // Shaka treats `restrictions: {}` as a config-merge no-op — a stale cap
+    // from an earlier tier must NEVER persist into max. Both branches
+    // re-send an explicit maxBandwidth: Infinity (merges to the default).
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'high', playback_abr: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    const highAdaptive = p.configureCalls.find((c) => c.abr && c.abr.enabled === true);
+    expect(highAdaptive.abr.restrictions.maxBandwidth).toBe(500000);
+    // Swap to max mid-play via applyQuality.
+    el.store.__values.playback_quality = 'max';
+    await player.applyQuality();
+    const maxAdaptive = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
+    expect(maxAdaptive.abr.restrictions.maxBandwidth).toBe(Infinity);
+    // And locked mode resets the ceiling identically (adaptive → locked swap).
+    el.store.__values.playback_quality = 'high';
+    el.store.__values.playback_abr = false;
+    await player.applyQuality();
+    const locked = p.configureCalls.filter((c) => c.abr && c.abr.enabled === false).pop();
+    expect(locked.abr.restrictions.maxBandwidth).toBe(Infinity);
+  });
+
+  test('applyQuality is PROBE-CONSISTENT (H2): flac-rejecting builds never lock a flac variant mid-play', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } }),
+      codecSupport: { flac: true, emeFlacReject: true }
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    // At start (locked max) the probe filter owns the pick: opus 325595.
+    p.selected = null;
+    // Mid-play tier change also sees the filtered roster.
+    el.store.__values.playback_quality = 'saver';
+    await player.applyQuality();
+    const locked = p.configureCalls.filter((c) => c.abr && c.abr.enabled === false).pop();
+    expect(locked).toBeDefined();
+    const variants = p.variantTracks;
+    const chosen = variants.find((v) => v.id === p.selected.id);
+    expect(String(chosen.codecs)).toContain('opus');
+    expect(chosen.bandwidth).toBeLessThanOrEqual(100000);
   });
 
   test("the 'aac' family maps to Shaka's 'mp4a' prefix", async () => {
