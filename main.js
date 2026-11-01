@@ -3814,7 +3814,18 @@ ipcMain.handle('amazonmusic-sign-out', async () => {
 ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
   console.log(`[Amazon] IPC search ${JSON.stringify(payload)}`);
   try {
-    const tracks = await amazonWebPlayer.searchTracks(payload || {});
+    let tracks = await amazonWebPlayer.searchTracks(payload || {});
+    // #1196: drop the results the account's plan can't play on demand (Prime-
+    // only + isPrime:false → Amazon starts a station instead of the song).
+    // Runs off the search chain (a plain net.request, no view). #1196's
+    // contract: filtering never makes a search worse — a broken filter keeps
+    // today's results rather than failing the search, so it cannot ride the
+    // shared catch below (that maps to success:false — a worse outcome).
+    try {
+      tracks = await amazonDmls.filterUnplayableForPlan(tracks);
+    } catch (filterErr) {
+      console.warn(`[Amazon] eligibility filter threw (${filterErr && filterErr.message}) — keeping unfiltered results`);
+    }
     console.log(`[Amazon] IPC search done ${(tracks && tracks.length) || 0} tracks`);
     return { success: true, engine: 'web', tracks };
   } catch (error) {
