@@ -21,7 +21,9 @@
 // With adaptive playback the player starts at the tier ceiling and lets the
 // network roam at or below it; locked = strictly the tier's rung. Stored
 // values from earlier builds normalize: {low→saver, balanced→standard,
-// standard→high, BEST_AVAILABLE|HD→max, DATA_SAVER→saver, high, max}.
+// BEST_AVAILABLE|HD→max, DATA_SAVER→saver} — direct tier names pass through.
+// Adaptive floors at the cheapest playable variant when the corridor is
+// empty (never a zero-variant restriction filter).
 //
 // Spatial/immersive codecs (mha1 = Dolby AC-4 Atmos, mhm1 = MPEG-H) ride
 // Amazon manifests at the top of the bandwidth ladder (up to 1.6 Mbps) but
@@ -141,7 +143,12 @@ function shakaPlaybackConfig(variants, tier, adaptive) {
     codecFamily: family,
     variantId: variant.id,
     variantBandwidth: bandwidth,
-    maxBandwidth: ceiling,
+    // Adaptive floor mirrors the locked-mode floor: when the cheapest
+    // playable variant exceeds the ceiling, cap at that variant instead —
+    // capping below it leaves the restriction filter with zero variants
+    // and the player with nothing (resolver-neutral class: a future
+    // provider whose manifest starts at 320k).
+    maxBandwidth: ceiling == null ? null : Math.max(ceiling, bandwidth),
     preferredCodecs: []
   };
 }

@@ -6004,6 +6004,9 @@ const Parachord = () => {
   // variant selection; changes apply live to the current stream.
   const [playbackQuality, setPlaybackQuality] = useState('max');
   const [playbackAbr, setPlaybackAbr] = useState(true);
+  // qualityLoaded gates the persist effect below — otherwise the writer
+  // fires on mount with defaults before the read returns (review #5 M6).
+  const [qualityLoaded, setQualityLoaded] = useState(false);
   useEffect(() => {
     if (!cacheLoaded || !window.electron?.store) return;
     (async () => {
@@ -6011,12 +6014,18 @@ const Parachord = () => {
         window.electron.store.get('playback_quality').catch(() => null),
         window.electron.store.get('playback_abr').catch(() => null)
       ]);
-      if (typeof q === 'string' && q) setPlaybackQuality(q);
+      // Normalized: stored values can predate the corridor vocabulary
+      // ('balanced', 'STANDARD') and the select must show a matching tier.
+      const normalized = typeof q === 'string' && window.ParachordWidevineQuality
+        ? window.ParachordWidevineQuality.normalizePlaybackQuality(q)
+        : null;
+      if (normalized) setPlaybackQuality(normalized);
       if (typeof a === 'boolean') setPlaybackAbr(a);
+      setQualityLoaded(true);
     })();
   }, [cacheLoaded]);
   useEffect(() => {
-    if (!cacheLoaded || !window.electron?.store) return;
+    if (!cacheLoaded || !qualityLoaded || !window.electron?.store) return;
     // Write before apply: applyQuality reads the store back — a fire-and-
     // forget set in a fast toggle used to apply the previous tier.
     (async () => {
@@ -6028,7 +6037,7 @@ const Parachord = () => {
         window.__parachordWidevine.applyQuality();
       }
     })();
-  }, [playbackQuality, playbackAbr, cacheLoaded]);
+  }, [playbackQuality, playbackAbr, cacheLoaded, qualityLoaded]);
 
   // Playback-queue state domain — extracted to src/renderer/hooks/use-playback-queue
   // (Track 2b slice 2, parachord#1098). The destructured names are identical
