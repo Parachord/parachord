@@ -87,6 +87,27 @@ beforeEach(() => {
   amazonDmls.init({ store: { get: () => undefined, set: () => {} } });
 });
 
+describe('L9: telemetry bookkeeping survives a synchronous net.request throw', () => {
+  test('net.request throwing resolves as status -1 and increments the dropped counter', async () => {
+    const electron = jest.requireMock('electron');
+    const orig = electron.net.request;
+    // Prewarm the session context FIRST (its config.json fetch precedes the
+    // guarded POST executor — flipping to throw first would fail there).
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON }));
+    await amazonDmls.ensureSessionContext();
+    electron.net.request = () => { throw new Error('session is destroyed'); };
+    try {
+      const before = amazonDmls.telemetryHealth.dropped;
+      const out = await amazonDmls.postTelemetryEvent({ clientActionList: [{ actionName: 'streamingTerminated' }] });
+      expect(out.status).toBe(-1);
+      expect(amazonDmls.telemetryHealth.dropped).toBe(before + 1);
+      expect(amazonDmls.telemetryHealth.last.status).toBe(-1);
+    } finally {
+      electron.net.request = orig;
+    }
+  });
+});
+
 describe('amazon-dmls session context', () => {
   test('mints from config.json + the header capture, prefers config deviceId', async () => {
     requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON })); // config.json

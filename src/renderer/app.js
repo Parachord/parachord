@@ -7074,6 +7074,9 @@ const Parachord = () => {
   // today, any self-hosted server tomorrow. Local files and SoundCloud
   // share the element but have their own play paths.
   const findLoadedResolver = (id) => (id ? (loadedResolversRef.current || []).find(r => r.id === id) : undefined);
+  // Display-name lookup for engine-side labels/toasts — id→name via the
+  // registry, never === 'service' arms (capability-not-id rule).
+  window.resolverLabelById = (id) => (findLoadedResolver(id)?.name) || id || 'Stream';
   const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;
   // Widevine resolvers (capabilities.widevine: Amazon Music today) play
   // encrypted adaptive streams through Shaka on the SAME shared element —

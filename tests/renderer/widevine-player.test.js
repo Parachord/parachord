@@ -39,6 +39,7 @@ function makeShaka() {
         { id: 7, codecs: 'flac', bandwidth: 1902230, audioSamplingRate: 48000, channelsCount: 2 }
       ];
       this.selected = null;
+      this.loadRejection = null; // set to make load() reject as Shaka would
       playerInstances.push(this);
     }
     async attach() {}
@@ -46,7 +47,7 @@ function makeShaka() {
     configure(cfg) { this.configureCalls.push(cfg); } // REFERENCE capture — a JSON
     // deep-clone would serialize maxBandwidth: Infinity to null and mask the
     // exact restriction-reset bug the H1 regression test pins.
-    async load(uri) { this.loadedUris.push(uri); }
+    async load(uri) { this.loadedUris.push(uri); if (this.loadRejection) throw this.loadRejection; }
     async unload() { this.unloaded += 1; }
     addEventListener(ev, cb) { this.listeners.push([ev, cb]); }
     getVariantTracks() { return this.variantTracks; }
@@ -246,6 +247,32 @@ describe('stream-quality facts', () => {
     p.variantTracks.find((t) => t.id === 7).active = false;
     p.variantTracks.find((t) => t.id === 3).active = true;
     expect(player.currentVariantFacts().bitrate).toBe(326);
+  });
+});
+
+describe('L10: a failed load closes the minted bridge session', () => {
+  test('load rejection matched-closes session S1 and re-throws the ORIGINAL shaka error', async () => {
+    const { sh, player, el } = load();
+    el.bridge.getManifest.mockResolvedValueOnce({ success: true, manifest: '<MPD/>', sessionId: 'S1' });
+    const audio = makeAudio();
+    // Pre-arm the next fake instance: play() constructs it, then configure,
+    // then load(). The shaka fake exposes its constructor to us via the
+    // instances list, but at play time the instance doesn't exist yet —
+    // so arm the class through a temporary proxy on the constructor call:
+    // the cleanest hook is the DRAIN: steal the reference by making
+    // getManifest synchronous-resolved and awaiting the microtask where
+    // the instance is created before load runs. We do that by CALLING play
+    // and knocking the first instance as soon as it appears.
+    const playPromise = player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const shakaErr = Object.assign(new Error('shaka 4012 (drm emptyKeySession)'), { reason: 'playback-failed' });
+    // Wait for the fake instance to exist, then arm its load rejection.
+    for (let i = 0; i < 50 && !sh.playerInstances.length; i += 1) await Promise.resolve();
+    expect(sh.playerInstances.length).toBe(1);
+    sh.playerInstances[0].loadRejection = shakaErr;
+    await expect(playPromise).rejects.toBe(shakaErr);
+    // Bridge got the matched close for S1.
+    const stops = el.bridge.playerEvent.mock.calls.filter(([, ev]) => ev && ev.type === 'stopped');
+    expect(stops).toEqual([['amazonmusic', expect.objectContaining({ sessionId: 'S1' })]]);
   });
 });
 
