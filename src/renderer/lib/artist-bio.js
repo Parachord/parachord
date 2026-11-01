@@ -58,8 +58,11 @@ function createWikidataIdLookup({ fetch, userAgent }) {
     } catch (_) {
       // Wikidata unreachable: MusicBrainz may still answer.
     }
+    // Background lane: bios and photos are never what the user clicked for
+    // (the playbar's bio tooltip used to queue this ahead of page loads).
     const res = await fetch(`https://musicbrainz.org/ws/2/artist/${mbid}?inc=url-rels&fmt=json`, {
       headers: { 'User-Agent': userAgent },
+      mbBackground: true,
     });
     if (!res.ok) return null;
     return wikidataIdFromMbRelations(await res.json());
