@@ -106,3 +106,21 @@ test('the MusicBrainz limiter keeps a slot for the foreground', () => {
   expect(config).toMatch(/backgroundMaxConcurrency: 1,/);
   expect(config).toMatch(/minGapMs: 1100,/);
 });
+
+test('a priority job (a play click) still goes first with background jobs capped', async () => {
+  const limiter = createLimiter({ name: 't', maxConcurrency: 2, backgroundMaxConcurrency: 1, minGapMs: 0, cooldownMs: 0, errorThreshold: 99, isThrottleError: () => false });
+  const log = [];
+  let releaseA; let releaseB;
+  const a = limiter.run(() => new Promise((r) => { releaseA = r; }));
+  const b = limiter.run(() => new Promise((r) => { releaseB = r; }));
+  const rest = [
+    limiter.run(async () => { log.push('bg'); }, { background: true }),
+    limiter.run(async () => { log.push('row'); }),
+    limiter.run(async () => { log.push('click'); }, { priority: true }),
+  ];
+  await new Promise((r) => setTimeout(r, 0));
+  releaseA(); releaseB();
+  await Promise.all([a, b, ...rest]);
+  expect(log.slice(0, 2)).toEqual(['click', 'row']);
+  expect(log[2]).toBe('bg');
+});
