@@ -28,8 +28,14 @@
 (function () {
   'use strict';
 
+  // backgroundMaxConcurrency: how many of the maxConcurrency slots background
+  // jobs may hold at once (default: all of them). Below maxConcurrency, the
+  // rest stay free for foreground jobs, so a user's request never waits for a
+  // slow background job that has already started; minGapMs still spaces every
+  // start, foreground and background alike.
   const createLimiter = ({
     maxConcurrency,
+    backgroundMaxConcurrency = maxConcurrency,
     minGapMs,
     cooldownMs,
     errorThreshold,
@@ -37,6 +43,7 @@
     name
   }) => {
     let inFlight = 0;
+    let inFlightBackground = 0;
     let lastStartAt = 0;
     let consecutiveErrors = 0;
     let cooldownUntil = 0;
@@ -58,8 +65,12 @@
           setTimeout(drain, minGapMs - sinceLast);
           return;
         }
+        // Only background jobs waiting, and their share of the slots is taken:
+        // wait for one to finish (its finally drains again).
+        if (pending.length === 0 && inFlightBackground >= backgroundMaxConcurrency) return;
         const job = pending.length > 0 ? pending.shift() : pendingBackground.shift();
         inFlight++;
+        if (job.background) inFlightBackground++;
         lastStartAt = Date.now();
         (async () => {
           try {
@@ -80,6 +91,7 @@
             job.reject(err);
           } finally {
             inFlight--;
+            if (job.background) inFlightBackground--;
             drain();
           }
         })();
@@ -99,8 +111,9 @@
       run: (fn, opts) => new Promise((resolve, reject) => {
         const signal = opts && opts.signal;
         if (signal && signal.aborted) { reject(abortError()); return; }
-        const lane = opts && opts.background ? pendingBackground : pending;
-        const job = { fn, resolve, reject };
+        const background = !!(opts && opts.background);
+        const lane = background ? pendingBackground : pending;
+        const job = { fn, resolve, reject, background };
         // opts.priority: the front of the foreground queue. A play click's
         // resolve goes there, ahead of the page's own rows resolving.
         if (signal && typeof signal.addEventListener === 'function') {
@@ -121,6 +134,7 @@
       }),
       getQueueLength: () => pending.length + pendingBackground.length,
       getBackgroundQueueLength: () => pendingBackground.length,
+      getInFlight: () => inFlight,
       isCoolingDown: () => Date.now() < cooldownUntil,
     };
   };

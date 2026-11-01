@@ -607,14 +607,23 @@ window.nativeMusicKitLimiter = window.createLimiter({
 // guarantees 2 of every 3 get 429/503'd, and the callers render a throttled
 // response as an empty result set. Rather than thread a limiter through ~55
 // call sites, install ONE fetch interceptor: every musicbrainz.org/ws/2/
-// request serializes through a single-permit limiter (>=1.1s gap) and retries
+// request goes through one limiter (starts >=1.1s apart) and retries
 // 429/503 and dropped connections with backoff (a longer Retry-After is
 // honored); every other request passes straight through to the original
 // fetch, untouched.
+//
+// Two in flight, one of them always free for the foreground (2026-11-01).
+// With one permit, a click waited for whatever was already running, however
+// slow MusicBrainz was answering: an artist page's lookup sat 4s behind a
+// cover search that had started a moment before it. The rate MusicBrainz
+// limits is set by minGapMs, which spaces every start, so a second permit
+// doesn't raise it: it only lets a slow response overlap the next start.
+// What #971 fixed was parallel bursts with no spacing at all.
 window.musicbrainzLimiter = window.createLimiter({
   name: 'musicbrainzLimiter',
-  maxConcurrency: 1,     // MB is 1 req/sec/IP — parallelism only buys throttling
-  minGapMs: 1100,        // >= 1s between request starts, with margin
+  maxConcurrency: 2,           // overlap slow responses; starts stay spaced below
+  backgroundMaxConcurrency: 1, // background work never holds the second slot
+  minGapMs: 1100,              // >= 1s between request starts, with margin
   cooldownMs: 5000,      // pause after repeated exhausted-retry throttles
   errorThreshold: 2,
   // Throttled after every retry, or unreachable after every retry: either
