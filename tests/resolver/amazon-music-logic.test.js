@@ -2,6 +2,13 @@ const {
   amazonDmlsRegion,
   amazonDmlsManifestBody,
   amazonDmlsLicenseBody,
+  MUSE_TARGET_PREFIX,
+  ELIGIBILITY_CACHE_TTL_MS,
+  AMAZON_DEVICE_TYPE_ID,
+  amazonEligibilityFlagForTier,
+  amazonEligibilityBody,
+  amazonEligibilityFromResponse,
+  amazonFilterTracksByEligibility,
   dashCodecFamily,
   WIDEVINE_CERT_CHALLENGE,
   reportedPlaybackAsin,
@@ -1904,5 +1911,143 @@ describe('amazonAuthCookieState', () => {
     expect(amazonAuthCookieState(['session-token'])).toBe('none');
     expect(amazonAuthCookieState([])).toBe('none');
     expect(amazonAuthCookieState(null)).toBe('none');
+  });
+});
+
+// ── Plan-tier eligibility (#1196): a Prime-only account can't play an
+// Unlimited-only track on demand — Amazon starts a station seeded from it.
+// Resolution drops those. The pure half of the filter lives here; the
+// adapter-level batching/caching is in
+// tests/main-process/widevine-amazon-provider.test.js.
+describe('amazonEligibilityFlagForTier', () => {
+  test('PRIME gates on isPrime (case/whitespace-insensitive)', () => {
+    expect(amazonEligibilityFlagForTier('PRIME')).toBe('isPrime');
+    expect(amazonEligibilityFlagForTier('prime')).toBe('isPrime');
+    expect(amazonEligibilityFlagForTier(' Prime ')).toBe('isPrime');
+  });
+
+  test('Unlimited tiers do not filter (the isMusicSubscription assumption is unverified)', () => {
+    expect(amazonEligibilityFlagForTier('UNLIMITED')).toBeNull();
+    expect(amazonEligibilityFlagForTier('UNLIMITED_HD')).toBeNull();
+  });
+
+  test('an unrecognized tier means do-not-filter (verdicts only ever remove)', () => {
+    expect(amazonEligibilityFlagForTier('SOMETHING_NEW')).toBeNull();
+    expect(amazonEligibilityFlagForTier('')).toBeNull();
+    expect(amazonEligibilityFlagForTier(null)).toBeNull();
+    expect(amazonEligibilityFlagForTier(undefined)).toBeNull();
+  });
+});
+
+describe('amazonEligibilityBody', () => {
+  test('the getEligibility envelope: device/territory mirror what dmls sends', () => {
+    const body = amazonEligibilityBody({ asins: ['B1', 'B2'], customerId: 'CUST1', deviceId: '1435', territoryId: 'US' });
+    expect(body).toEqual({
+      customerId: 'CUST1',
+      deviceType: AMAZON_DEVICE_TYPE_ID,
+      deviceId: '1435',
+      musicTerritory: 'US',
+      requestedContent: 'KATANA',
+      asins: ['B1', 'B2']
+    });
+    expect(MUSE_TARGET_PREFIX).toContain('MuseServiceExternal');
+  });
+
+  test('one batched call: asins dedupe, blanks drop', () => {
+    const body = amazonEligibilityBody({ asins: ['B1', 'B2', 'B1', '', null, 'B2'], customerId: 'C', deviceId: 'D' });
+    expect(body.asins).toEqual(['B1', 'B2']);
+    expect(body.musicTerritory).toBe('US'); // territory default
+  });
+
+  test('incomplete bodies are refused (no asins / customer / device)', () => {
+    expect(amazonEligibilityBody({ asins: [], customerId: 'C', deviceId: 'D' })).toBeNull();
+    expect(amazonEligibilityBody({ asins: ['B1'], deviceId: 'D' })).toBeNull();
+    expect(amazonEligibilityBody({ asins: ['B1'], customerId: 'C' })).toBeNull();
+    expect(amazonEligibilityBody({})).toBeNull();
+    expect(amazonEligibilityBody()).toBeNull();
+  });
+
+  test('the day cache TTL is the issue-1196 value', () => {
+    expect(ELIGIBILITY_CACHE_TTL_MS).toBe(24 * 60 * 60 * 1000);
+  });
+});
+
+describe('amazonEligibilityFromResponse', () => {
+  const LIVE_SHAPE = {
+    trackEligibilityMap: {
+      B09R9RR8HY: { isPrime: false, isMusicSubscription: true, isHighQuality: true, isSonicRush: true },
+      B00CRMX53S: { isPrime: true, isMusicSubscription: true, isHighQuality: true, isSonicRush: false }
+    }
+  };
+
+  test('parses the trackEligibilityMap verbatim into booleans', () => {
+    expect(amazonEligibilityFromResponse(LIVE_SHAPE)).toEqual({
+      B09R9RR8HY: { isPrime: false, isMusicSubscription: true, isHighQuality: true, isSonicRush: true },
+      B00CRMX53S: { isPrime: true, isMusicSubscription: true, isHighQuality: true, isSonicRush: false }
+    });
+  });
+
+  test('missing flags coerce to false; a non-object entry is all-false', () => {
+    const verdicts = amazonEligibilityFromResponse({ trackEligibilityMap: { B1: { isPrime: true }, B2: null } });
+    expect(verdicts.B1).toEqual({ isPrime: true, isMusicSubscription: false, isHighQuality: false, isSonicRush: false });
+    expect(verdicts.B2).toEqual({ isPrime: false, isMusicSubscription: false, isHighQuality: false, isSonicRush: false });
+  });
+
+  test('a missing/renamed envelope is NOT a verdict — the call failed (keep results)', () => {
+    expect(amazonEligibilityFromResponse({})).toBeNull();
+    expect(amazonEligibilityFromResponse({ trackEligibilityMap: null })).toBeNull();
+    expect(amazonEligibilityFromResponse({ trackEligibilityMap: ['B1'] })).toBeNull();
+    expect(amazonEligibilityFromResponse(null)).toBeNull();
+    expect(amazonEligibilityFromResponse('garbage')).toBeNull();
+  });
+
+  test('an EMPTY map is a valid answer — everything asked was ineligible', () => {
+    expect(amazonEligibilityFromResponse({ trackEligibilityMap: {} })).toEqual({});
+  });
+});
+
+describe('amazonFilterTracksByEligibility', () => {
+  const tracks = [
+    { asin: 'B09R9RR8HY', title: 'Ready or Not', artist: 'The Fugees' },
+    { asin: 'B00CRMX53S', title: 'Killing Me Softly', artist: 'The Fugees' },
+    { asin: 'B0GHOSTTRK', title: 'Ghost', artist: 'Nobody' },
+    { title: 'ASIN-less edge', artist: 'Somebody' }
+  ];
+  const verdicts = {
+    B09R9RR8HY: { isPrime: false, isMusicSubscription: true },
+    B00CRMX53S: { isPrime: true, isMusicSubscription: true }
+    // B0GHOSTTRK absent — "a missing map entry means not eligible"
+  };
+
+  test('PRIME: isPrime:false drops, isPrime:true and ASIN-less tracks stay', () => {
+    const kept = amazonFilterTracksByEligibility(tracks, verdicts, 'isPrime');
+    expect(kept.map((t) => t.asin || 'none')).toEqual(['B00CRMX53S', 'none']);
+  });
+
+  test('a succeeded map with a missing entry drops that ASIN', () => {
+    const kept = amazonFilterTracksByEligibility(tracks, verdicts, 'isMusicSubscription');
+    expect(kept.find((t) => t.asin === 'B0GHOSTTRK')).toBeUndefined();
+  });
+
+  test('null verdicts (the call failed) keep EVERYTHING — never worse than today', () => {
+    expect(amazonFilterTracksByEligibility(tracks, null, 'isPrime')).toBe(tracks);
+    expect(amazonFilterTracksByEligibility(tracks, undefined, 'isPrime')).toBe(tracks);
+  });
+
+  test('no gating flag (unknown tier) is a passthrough', () => {
+    expect(amazonFilterTracksByEligibility(tracks, verdicts, null)).toBe(tracks);
+  });
+
+  test('the issue-1196 case: an eligible release of the same song wins over the Prime-ineligible one', () => {
+    const twoReleases = [
+      { asin: 'B09R9RR8HY', title: 'Ready or Not', artist: 'Fugees', album: 'The Score' },
+      { asin: 'B0ALTRELEASE', title: 'Ready or Not', artist: 'Fugees', album: 'Greatest Hits' }
+    ];
+    const kept = amazonFilterTracksByEligibility(twoReleases, {
+      B09R9RR8HY: { isPrime: false },
+      B0ALTRELEASE: { isPrime: true }
+    }, 'isPrime');
+    expect(kept).toHaveLength(1);
+    expect(kept[0].asin).toBe('B0ALTRELEASE');
   });
 });

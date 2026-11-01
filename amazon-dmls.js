@@ -38,8 +38,14 @@ const {
   amazonDmlsRegion,
   amazonNativeSessionFromConfig,
   amazonAuthCookieState,
+  amazonEligibilityFlagForTier,
+  amazonEligibilityBody,
+  amazonEligibilityFromResponse,
+  amazonFilterTracksByEligibility,
   mpdContentProtectionSets,
   DML_TARGET_PREFIX,
+  MUSE_TARGET_PREFIX,
+  ELIGIBILITY_CACHE_TTL_MS,
   WIDEVINE_CERT_CHALLENGE
 } = require('./amazon-music-logic');
 
@@ -74,6 +80,7 @@ const adapter = {
   sessionContext: null, // volatile: { customerId, marketplaceId, territoryId, region, tier, deviceId, csrfToken, csrfRnd, csrfTs }
   sessionContextPromise: null,
   certSessionReady: false,
+  eligibilityCache: new Map(), // asin → { verdict, at } — see filterUnplayableForPlan (#1196)
 
   init({ store } = {}) {
     this.deps.store = store || null;
@@ -164,15 +171,25 @@ const adapter = {
     try { return JSON.parse(text); } catch { return {}; }
   },
 
-  async dmls(ctx, target, body, { authRetry = true } = {}) {
+  async dmls(ctx, target, body, opts) {
+    return this.signedPost(ctx, {
+      url: `https://music.amazon.com/${ctx.region}/api/dmls/`,
+      target: DML_TARGET_PREFIX + target,
+      body
+    }, opts);
+  },
+
+  // One signed JSON POST to an Amazon music service endpoint — the envelope
+  // every API call shares: amz-1.0 body encoding, the csrf triplet, the
+  // session Cookie, and the session-rot dance below.
+  async signedPost(ctx, { url, target, body }, { authRetry = true } = {}) {
     const { net } = electron();
     const ses = electron().session.fromPartition(PARTITION);
-    const url = `https://music.amazon.com/${ctx.region}/api/dmls/`;
     const cookie = await this.cookieHeader();
     const headers = {
       'Content-Type': 'application/json',
       'Content-Encoding': 'amz-1.0',
-      'X-Amz-Target': DML_TARGET_PREFIX + target,
+      'X-Amz-Target': target,
       'csrf-token': ctx.csrfToken,
       'csrf-rnd': ctx.csrfRnd,
       'csrf-ts': ctx.csrfTs,
@@ -209,9 +226,103 @@ const adapter = {
         this.sessionContext = null;
         throw mintErr;
       }
-      return this.dmls(fresh, target, body, { authRetry: false });
+      return this.signedPost(fresh, { url, target, body }, { authRetry: false });
     }
     return out;
+  },
+
+  // ── plan-tier eligibility (#1196) ────────────────────────────────────────
+
+  // One batched muse getEligibility call. Returns the verdict map on success
+  // (an EMPTY map is a legal answer — everything asked was ineligible), or
+  // null on ANY failure: network, non-200, or a renamed/reshaped envelope.
+  // Logs ASINs and verdicts only — the csrf triplet and the Cookie header go
+  // out over the wire, never to the console.
+  async getEligibilityVerdicts(asins, ctx) {
+    try {
+      const body = amazonEligibilityBody({
+        asins,
+        customerId: ctx && ctx.customerId,
+        deviceId: ctx && ctx.deviceId,
+        territoryId: ctx && ctx.territoryId
+      });
+      if (!body) return null;
+      const { status, text } = await this.signedPost(ctx, {
+        url: `https://music.amazon.com/${ctx.region}/api/muse/getEligibility`,
+        target: MUSE_TARGET_PREFIX + 'getEligibility',
+        body
+      });
+      let json = null;
+      try { json = JSON.parse(text); } catch { /* answered below */ }
+      const verdicts = status === 200 ? amazonEligibilityFromResponse(json) : null;
+      if (!verdicts) {
+        console.warn(`[Amazon dmls] eligibility HTTP ${status} for ${body.asins.length} asins — keeping results`);
+        return null;
+      }
+      console.log(`[Amazon dmls] eligibility: ${body.asins.map((a) => `${a}:${verdicts[a] ? verdicts[a].isPrime : 'absent'}`).join(' ')}`);
+      return verdicts;
+    } catch (err) {
+      console.warn(`[Amazon dmls] eligibility failed (${err && err.message}) — keeping results`);
+      return null;
+    }
+  },
+
+  // #1196: drop the search results the account's plan cannot play ON DEMAND
+  // (Prime-only + an Unlimited-only track, isPrime: false, starts a station
+  // seeded from it instead of the song — after the source was already
+  // chosen). Gated on config.json's tier: only PRIME filters today
+  // (amazonEligibilityFlagForTier). NEVER makes a search worse: unknown tier,
+  // no session, a failed call, or a reshaped response all return the input
+  // list, and ASINs whose refresh failed stay even when cached verdicts of
+  // the OTHER asins apply. Verdicts cache per ASIN for a day — a playlist
+  // resolve is one call per new ASIN, not one per track.
+  async filterUnplayableForPlan(tracks) {
+    if (!Array.isArray(tracks) || !tracks.length) return tracks;
+    try {
+      const ctx = await this.ensureSessionContext();
+      const flag = amazonEligibilityFlagForTier(ctx && ctx.tier);
+      if (!flag) return tracks;
+      const asins = [];
+      const seen = new Set();
+      for (const t of tracks) {
+        const asin = t && typeof t.asin === 'string' ? t.asin : null;
+        if (asin && !seen.has(asin)) { seen.add(asin); asins.push(asin); }
+      }
+      if (!asins.length) return tracks;
+      const now = Date.now();
+      const verdicts = {};
+      const stale = [];
+      for (const asin of asins) {
+        const hit = this.eligibilityCache.get(asin);
+        if (hit && now - hit.at < ELIGIBILITY_CACHE_TTL_MS) verdicts[asin] = hit.verdict;
+        else stale.push(asin);
+      }
+      if (stale.length) {
+        const fresh = await this.getEligibilityVerdicts(stale, ctx);
+        if (fresh) {
+          if (this.eligibilityCache.size > 4000) this.eligibilityCache.clear(); // memory bound; the day TTL still applies
+          for (const asin of stale) {
+            // A response ABSENT the asin is Amazon saying "not eligible" —
+            // cache it as such, or the station-track costs a call per search.
+            const verdict = fresh[asin] || { isPrime: false, isMusicSubscription: false, isHighQuality: false, isSonicRush: false };
+            this.eligibilityCache.set(asin, { verdict, at: now });
+            verdicts[asin] = verdict;
+          }
+        } else {
+          // Failure keeps: mark residuals eligible in the LOCAL map only
+          // (never the cache), so the next search tries them again.
+          for (const asin of stale) verdicts[asin] = { [flag]: true };
+        }
+      }
+      const kept = amazonFilterTracksByEligibility(tracks, verdicts, flag);
+      if (kept.length !== tracks.length) {
+        console.log(`[Amazon dmls] plan filter (${flag}): kept ${kept.length} of ${tracks.length} tracks`);
+      }
+      return kept;
+    } catch (err) {
+      console.warn(`[Amazon dmls] plan filter skipped (${err && err.message}) — keeping results`);
+      return tracks;
+    }
   },
 
   // ── the widevine provider ───────────────────────────────────────────────
@@ -411,6 +522,7 @@ const adapter = {
     try { this._telemetry && this._telemetry.onStopped({}); } catch { /* best-effort */ }
     this.sessionContext = null;
     this.certSessionReady = false;
+    this.eligibilityCache.clear();
     this._telemetry = null;
   },
 
@@ -420,6 +532,10 @@ const adapter = {
       sessionContext: !!this.sessionContext,
       tier: this.sessionContext && this.sessionContext.tier,
       certSessionReady: this.certSessionReady,
+      eligibility: {
+        filtering: !!amazonEligibilityFlagForTier(this.sessionContext && this.sessionContext.tier),
+        cached: this.eligibilityCache.size
+      },
       telemetry: {
         last: this.telemetryHealth.last,
         dropped: this.telemetryHealth.dropped
