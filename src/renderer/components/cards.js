@@ -982,7 +982,6 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
 // ReleasePage component - Shows full album/EP/single with tracklist
 const ReleasePage = ({
   release,
-  handleSearch,
   handlePlay,
   onTrackPlay,
   onTrackContextMenu,
@@ -1460,31 +1459,29 @@ const ReleasePage = ({
               onClick: () => {
                 console.log('Track row clicked:', track.title);
 
-                // Play track with sources if resolved
-                if (availableResolvers.length > 0) {
-                  // Build queue from remaining tracks (after this one)
-                  const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
-                    const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
-                    const tSources = trackSources[tId] || {};
-                    return {
-                      ...t,
-                      id: tId,
-                      artist: release.artist.name,
-                      album: release.title,
-                      albumArt: release.albumArt,
-                      sources: tSources
-                    };
-                  });
+                // Play it, resolved or not. A row the page hasn't resolved yet
+                // resolves on demand in handlePlay, in the resolver queues'
+                // priority lane, ahead of the page's other rows. It used to
+                // open a Search for the track instead, so an album track could
+                // only be played once its row finished resolving behind the rest.
+                // Build queue from remaining tracks (after this one)
+                const tracksAfter = release.tracks.slice(index + 1).map((t, i) => {
+                  const tId = trackSlug(release.artist.name || 'unknown', t.title || 'untitled', release.title || 'noalbum');
+                  const tSources = trackSources[tId] || {};
+                  return {
+                    ...t,
+                    id: tId,
+                    artist: release.artist.name,
+                    album: release.title,
+                    albumArt: release.albumArt,
+                    sources: tSources
+                  };
+                });
 
-                  if (onTrackPlay) {
-                    onTrackPlay(trackForDrag, tracksAfter);
-                  } else {
-                    handlePlay(trackForDrag);
-                  }
+                if (onTrackPlay) {
+                  onTrackPlay(trackForDrag, tracksAfter);
                 } else {
-                  // No resolved sources yet, fall back to search
-                  console.log('No resolved sources, searching...');
-                  handleSearch(`${release.artist.name} ${track.title}`);
+                  handlePlay(trackForDrag);
                 }
               },
               onContextMenu: (e) => {

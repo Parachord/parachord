@@ -109,3 +109,13 @@ describe('the Apple Music plugin passes its caller\'s lane on', () => {
     expect(seen[0]).toEqual({ priority: true });
   });
 });
+
+test('an album row plays when clicked, resolved or not (it used to open a Search)', () => {
+  const cards = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/cards.js'), 'utf8');
+  const s = cards.indexOf("console.log('Track row clicked:', track.title);");
+  const body = cards.slice(s, cards.indexOf('onContextMenu:', s));
+  expect(body).not.toMatch(/handleSearch\(/);
+  expect(body).not.toMatch(/availableResolvers\.length > 0/);
+  expect(body).toMatch(/onTrackPlay\(trackForDrag, tracksAfter\);/);
+  expect(body).toMatch(/handlePlay\(trackForDrag\);/);
+});
