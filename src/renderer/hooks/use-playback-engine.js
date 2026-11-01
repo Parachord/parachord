@@ -45,6 +45,12 @@ const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds } 
 const __widevinePlayer = require('../lib/widevine-player');
 if (typeof window !== 'undefined') window.__parachordWidevine = __widevinePlayer;
 
+// The 30s stream-error toast throttle — module scope so re-renders don't
+// reset it (the hook body runs on every render; a hook-local let resets at
+// 0 each time, voiding the throttle on the first error after any progress
+// tick). Round-7 review.
+const widevineErrorToastState = { at: 0 };
+
 function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   volume,        // useVolume's return object
   queue,         // usePlaybackQueue's return object
@@ -80,7 +86,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   pendingCloseTabIdRef,
   trackNeedsExplicitStart,
   spotifyProgressBaselineRef,
-  amazonMusicProgressBaselineRef,
   // --- Listen-along session (the friends domain; engine reads/writes it, the
   //     friends surface owns it — passed through, like the shared refs) ---
   listenAlongFriend,
@@ -360,9 +365,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       // Display labels by owner — via lookup, never inline === 'service'
       // comparisons (the capability-not-id invariant test bars those).
       const OWNER_LABELS = { localfiles: 'Local file', soundcloud: 'SoundCloud', subsonic: 'Subsonic' };
-      // Stream-error toast label by resolver id — display names via the
-      // resolver registry, never inline === arms (capability-not-id rule).
-      const streamErrorLabel = window.resolverLabelById || ((id) => id || 'Stream');
       const label = OWNER_LABELS[owner] || `Stream (${owner})`;
       console.log(`🎵 ${label} playback ended`);
       handleNextRef.current?.();
@@ -2873,68 +2875,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     const isSpotifyTrack = currentTrack._activeResolver === 'spotify' ||
       (!currentTrack._activeResolver && !isAppleMusicActive && (currentTrack.sources?.spotify || currentTrack.spotifyUri));
 
-    // Amazon Music in-app web player (Widevine WebContentsView)
-    const isAmazonMusicActive = currentTrack._activeResolver === 'amazonmusic' ||
-      (!currentTrack._activeResolver && !isAppleMusicActive && !isSpotifyTrack && (currentTrack.sources?.amazonmusic || currentTrack.amazonAsin));
-
-    if (isAmazonMusicActive && window.electron?.amazonMusic) {
-      try {
-        if (isPlaying) {
-          const r = await window.electron.amazonMusic.pause();
-          if (r && r.success) {
-            console.log('Paused Amazon Music playback');
-          }
-          setIsPlaying(false);
-          // Stop polling so stale state checks don't trigger auto-advance
-          window.electron.amazonMusic.polling.stop();
-        } else {
-          let r = await window.electron.amazonMusic.resume();
-          if (r && r.success === false) {
-            // No media element: the view was blanked (haltPlayback after an
-            // advance with nothing to advance to). Nothing to resume — replay
-            // the current track from its ASIN instead of showing a playing UI
-            // over silence with a poller reading EMPTY forever.
-            const asin = currentTrack.amazonAsin || currentTrack.sources?.amazonmusic?.amazonAsin;
-            if (asin) {
-              console.log('Amazon Music view is blank — replaying current track');
-              r = await window.electron.amazonMusic.playTrack({ asin, title: currentTrack.title, artist: currentTrack.artist });
-              if (r && r.success) {
-                // A fresh page starts its element at full volume; drive it to
-                // Parachord's effective volume like handlePlay does.
-                const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
-                const effectiveVolume = getEffectiveVolume(volumeToApply, 'amazonmusic', currentTrack.id);
-                window.electron.amazonMusic.setVolume(effectiveVolume / 100).catch(() => {});
-                amazonMusicProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
-              }
-            }
-          }
-          if (r && r.success) {
-            console.log('Resumed Amazon Music playback');
-            setIsPlaying(true);
-            // Restart polling for progress updates and auto-advance
-            const asin = currentTrack.amazonAsin || currentTrack.sources?.amazonmusic?.amazonAsin;
-            if (asin) {
-              window.electron.amazonMusic.polling.start({
-                asin,
-                trackTitle: currentTrack.title,
-                trackArtist: currentTrack.artist,
-                duration: currentTrack.duration || 0
-              }).catch(err => console.warn('Could not restart Amazon Music polling:', err.message));
-            }
-          } else {
-            // Nothing to resume and nothing to replay — leave the play button
-            // alone rather than faking a playing state.
-            console.warn('Amazon Music resume failed:', (r && r.error) || 'no media element');
-          }
-        }
-      } catch (error) {
-        console.error('Amazon Music play/pause error:', error);
-        // Update UI state even on error to avoid stuck state
-        setIsPlaying(!isPlaying);
-      }
-      return;
-    }
-
+    // Amazon Music: NO handlePlayPause arm — a widevine Amazon track reaches
+    // the shared-element branch above (usesSharedAudio includes widevine).
+    // The hornet-era fallback here called IPC methods deleted with the
+    // hornet player (pause/resume/playTrack/setVolume/polling.*) and its
+    // catch flipped the playing UI anyway — audio/UI desync, and a
+    // contradiction of the 'leaving an Amazon track stops, never pauses'
+    // invariant. Round-7 review.
     if (isSpotifyTrack && spotifyToken) {
       // Control Spotify playback
       const attemptSpotifyControl = async (token, isRetry = false) => {
@@ -3079,12 +3026,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         console.error('Error stopping Apple Music main process polling:', err);
       });
     }
-    // Stop Amazon Music polling
-    if (window.electron?.amazonMusic?.polling) {
-      try { window.electron.amazonMusic.polling.stop(); } catch (err) {
-        console.error('Error stopping Amazon Music main process polling:', err);
-      }
-    }
+    // Amazon Music: the hornet poller is DELETED (native Widevine playback
+    // has no main-process polling) — nothing to stop here.
   };
 
   // Stops the shared widevine engine when Amazon Music owns it (the shared
@@ -3103,12 +3046,14 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // through the ring buffer; at most one toast per 30s so failing segments
   // don't storm the UI. showToast is component-scope.
   if (typeof window !== 'undefined') {
-    let widevineErrorToastAt = 0;
+    // Label reads the resolver registry LIVE at event time (never inline
+    // === arms); the 30s throttle state is module-scoped — a hook-local
+    // let re-initialized on every render, voiding the throttle.
     window.__parachordWidevineError = (message, resolverId) => {
       console.error(`[Widevine] ${resolverId || 'player'} stream error:`, message);
-      if (Date.now() - widevineErrorToastAt > 30000) {
-        widevineErrorToastAt = Date.now();
-        showToast(`${streamErrorLabel(resolverId)} stream error — playback may stall`, 'error');
+      if (Date.now() - widevineErrorToastState.at > 30000) {
+        widevineErrorToastState.at = Date.now();
+        showToast(`${(window.resolverLabelById || ((id) => id || 'Stream'))(resolverId)} stream error — playback may stall`, 'error');
       }
     };
     window.__parachordWidevineSetVariantListener = (cb) => __widevinePlayer.setVariantListener(cb);
