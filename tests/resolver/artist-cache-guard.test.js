@@ -48,7 +48,9 @@ describe('artistDataCache partial-entry guard', () => {
     // releases.map + releases.filter, back-navigation has the same pair.
     // (The `= ` anchor skips prose mentions in comments, including the ones
     // this fix added describing the crash.)
-    const hits = appSrc.match(/= cachedData\.releases\.(map|filter)/g) || [];
+    // (The two .filter calls sit inside withArtArtist(, which tags the art
+    // queue with the artist name.)
+    const hits = appSrc.match(/(= |withArtArtist\(\s*)cachedData\.releases\.(map|filter)/g) || [];
     expect(hits.length).toBe(4);
     // ...and both guarded cacheValid predicates exist (verified above), which
     // are the only ways to reach those lines.

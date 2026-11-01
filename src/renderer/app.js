@@ -19835,6 +19835,14 @@ ${trackListXml}
   };
 
   // Fetch artist data and discography from MusicBrainz
+  // Releases queued for the artist page's covers carry the artist's name.
+  // fetchSingleAlbumArt runs inside the art loop that fetchArtistData starts,
+  // so it closes over the currentArtist of the render before setCurrentArtist
+  // landed (null at launch, the previous artist after a hop): reading the name
+  // from there made every cover lookup return null at once (2026-11-01).
+  const withArtArtist = (releases, artistName) =>
+    releases.map(r => (r.artist || !artistName ? r : { ...r, artist: artistName }));
+
   // options.mbid: the artist's MusicBrainz id, when the caller already has it
   // (a MusicBrainz search result, or the artist credit of a release group or
   // recording; see src/renderer/lib/artist-open.js). The page then skips the
@@ -19927,7 +19935,8 @@ ${trackListXml}
       navigateTo('artist');
 
       // Queue album art fetches for releases without cached art (viewport-prioritized)
-      const releasesNeedingArt = cachedData.releases.filter(r => !albumArtCache.current[r.id]);
+      const releasesNeedingArt = withArtArtist(
+        cachedData.releases.filter(r => !albumArtCache.current[r.id]), cachedData.artist?.name || artistName);
       albumArtFetchId.current++; // Cancel any previous fetch session
       isAlbumArtFetching.current = false;
       albumArtQueue.current = releasesNeedingArt;
@@ -20126,9 +20135,9 @@ ${trackListXml}
         setLoadingArtist(false);
 
         // Queue album art fetches for releases without art
-        const releasesNeedingArt = fallbackReleases.filter(r =>
+        const releasesNeedingArt = withArtArtist(fallbackReleases.filter(r =>
           !r.albumArt && !albumArtCache.current[r.id]
-        );
+        ), fallbackArtist.name || artistName);
         albumArtFetchId.current++;
         isAlbumArtFetching.current = false;
         albumArtQueue.current = releasesNeedingArt;
@@ -20201,7 +20210,7 @@ ${trackListXml}
           const shown = new Map(prev.map(r => [r.id, r]));
           return sorted.map(r => shown.get(r.id) || withCachedArt(r));
         });
-        const needingArt = batch.filter(r => !albumArtCache.current[r.id]);
+        const needingArt = withArtArtist(batch.filter(r => !albumArtCache.current[r.id]), artist.name);
         if (!releasesShown) {
           releasesShown = true;
           setSmartReleaseTypeFilter(sorted);
@@ -23566,8 +23575,11 @@ ${trackListXml}
   // ahead of the user's next click, for a cover the release-group endpoint
   // already looks across every release for), then a resolver search.
   const fetchSingleAlbumArt = async (release) => {
-    const artistName = release.artist || currentArtist?.name;
-    if (!artistName || !release.title) return null;
+    // release.artist: tagged when queued (withArtArtist); currentArtist here
+    // can be a render behind
+    const artistName = (typeof release.artist === 'string' ? release.artist : release.artist?.name)
+      || currentArtist?.name;
+    if (!release.title) return null;
     return getAlbumArt(artistName, release.title, {
       ...(isMusicBrainzId(release.id) ? { releaseGroupId: release.id } : {}),
       background: true
@@ -30189,12 +30201,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // opts.background: step 2's MusicBrainz search waits in the background lane
   // (a page of covers must not hold up the user's next search or click).
   const getAlbumArt = async (artist, album, opts = {}) => {
-    if (!artist || !album) return null;
+    if (!album) return null;
 
+    // Known ids need no artist: it's only for the name-based fallbacks.
     if (opts.releaseGroupId || opts.releaseId) {
       const known = await fetchCoverArtByIds(opts.releaseGroupId || null, opts.releaseId || null);
-      return known || getAlbumArtFromResolvers(artist, album);
+      return known || (artist ? getAlbumArtFromResolvers(artist, album) : null);
     }
+    if (!artist) return null;
 
     const lookupKey = `${artist}-${album}`.toLowerCase();
 
@@ -31998,7 +32012,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           setSmartReleaseTypeFilter(releasesWithCache);
           setLoadingArtist(false);
           // Queue album art fetches for releases without cached art (viewport-prioritized)
-          const releasesNeedingArt = cachedData.releases.filter(r => !albumArtCache.current[r.id]);
+          const releasesNeedingArt = withArtArtist(
+            cachedData.releases.filter(r => !albumArtCache.current[r.id]), cachedData.artist?.name || previousArtist);
           albumArtFetchId.current++; // Cancel any previous fetch session
           isAlbumArtFetching.current = false;
           albumArtQueue.current = releasesNeedingArt;
