@@ -245,3 +245,61 @@ describe('serviceArtFor', () => {
     expect(serviceArtFor(null)).toBeNull();
   });
 });
+
+describe('stabilizeRows', () => {
+  const { stabilizeRows, rowIdentityKeys, artistIdentityKeys } = require('../../src/renderer/lib/search-catalog');
+
+  test('rows on screen keep their place; new rows follow in ranked order', () => {
+    const first = stabilizeRows([{ id: 'a' }, { id: 'b' }], [], rowIdentityKeys);
+    const second = stabilizeRows([{ id: 'c' }, { id: 'b' }, { id: 'a' }, { id: 'd' }], first.shown, rowIdentityKeys);
+    expect(second.rows.map(r => r.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(second.rows.map(r => r._rowKey)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  test('a MusicBrainz row that absorbed a shown service row takes its place and display key', () => {
+    const sp = catalogTracksToSearchResults([{ title: 'Creep', artist: 'Radiohead', album: 'Pablo Honey', spotifyId: 's1' }], 'spotify');
+    const before = mergeTrackResults([], [sp], scorer);
+    const shown1 = stabilizeRows(before, [], rowIdentityKeys);
+    const serviceKey = shown1.rows[0]._rowKey;
+
+    const mb = [
+      { id: 'mb-other', title: 'Karma Police', artist: 'Radiohead', album: 'OK Computer', sources: {} },
+      { id: 'mb-creep', title: 'Creep', artist: 'Radiohead', album: 'Pablo Honey', sources: {} },
+    ];
+    const after = mergeTrackResults(mb, [sp], scorer);
+    const shown2 = stabilizeRows(after, shown1.shown, rowIdentityKeys);
+    expect(shown2.rows[0].id).toBe('mb-creep'); // MusicBrainz wins identity
+    expect(shown2.rows[0]._rowKey).toBe(serviceKey); // but the card keeps its key and slot
+    expect(shown2.rows[0].sources.spotify).toBeTruthy();
+    expect(shown2.rows.map(r => r.id)).toEqual(['mb-creep', 'mb-other']);
+  });
+
+  test('a MusicBrainz album that replaces a shown service album keeps its slot', () => {
+    const svc = catalogAlbumsToSearchResults([{ id: 'spotify-1', name: 'Kid A', artist: 'Radiohead', url: 'u' }], 'spotify');
+    const s1 = stabilizeRows(mergeAlbumResults([], [svc]), [], rowIdentityKeys);
+    const mb = [{ id: 'rg-kida', title: 'Kid A', 'artist-credit': [{ name: 'Radiohead' }] }];
+    const s2 = stabilizeRows(mergeAlbumResults(mb, [svc]), s1.shown, rowIdentityKeys);
+    expect(s2.rows[0]).toMatchObject({ id: 'rg-kida', _rowKey: 'spotify-1' });
+  });
+
+  test('a MusicBrainz artist replacing a service-named artist keeps its slot', () => {
+    const s1 = stabilizeRows([{ id: 'spotify-artist-the-beatles', name: 'The Beatles' }], [], artistIdentityKeys);
+    const s2 = stabilizeRows([{ id: 'mbid-x', name: 'Beatles' }, { id: 'mbid-y', name: 'Beatles Revival' }], s1.shown, artistIdentityKeys);
+    expect(s2.rows.map(r => [r.id, r._rowKey])).toEqual([['mbid-x', 'spotify-artist-the-beatles'], ['mbid-y', 'mbid-y']]);
+  });
+
+  test('a shown row that drops out leaves no hole, and inputs are not mutated', () => {
+    const rows = [{ id: 'a' }, { id: 'b' }];
+    const s1 = stabilizeRows(rows, [], rowIdentityKeys);
+    const s2 = stabilizeRows([{ id: 'b' }], s1.shown, rowIdentityKeys);
+    expect(s2.rows.map(r => r.id)).toEqual(['b']);
+    expect(rows[0]._rowKey).toBeUndefined();
+  });
+});
+
+test('serviceArtFor passes over URLs known not to load', () => {
+  const row = { sources: { bandcamp: { albumArt: 'https://bc/dead.jpg' }, applemusic: { albumArt: 'https://am/ok.jpg' } } };
+  expect(serviceArtFor(row)).toBe('https://bc/dead.jpg');
+  expect(serviceArtFor(row, new Set(['https://bc/dead.jpg']))).toBe('https://am/ok.jpg');
+  expect(serviceArtFor({ _serviceArt: 'x' }, new Set(['x']))).toBeNull();
+});

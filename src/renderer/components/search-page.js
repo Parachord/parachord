@@ -45,6 +45,7 @@ const SEARCH_PAGE_HANDLERS = [
   'handlePlay',
   'handlePlaylistClick',
   'handlePlaylistDragEnd',
+  'handleSearchArtBroken',
   'handleSearchInput',
   'navigateBack',
   'openChartsAlbum',
@@ -75,6 +76,7 @@ const SearchPage = React.memo(function SearchPage(props) {
     handlePlaylistClick,
     handlePlaylistDragEnd,
     handleSearchDetailScroll,
+    handleSearchArtBroken,
     handleSearchInput,
     handleSearchScrollContainerRef,
     isPlaying,
@@ -476,7 +478,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     const animationDelay = Math.min(index * 30, 300);
                     const searchArtistPattern = generateArtistPattern(artist.name);
                     return React.createElement('div', {
-                      key: artist.id,
+                      key: artist._rowKey || artist.id,
                       className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                       style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${animationDelay}ms` },
                       draggable: true,
@@ -643,7 +645,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   filteredAlbums.map((album, index) => {
                     const animationDelay = Math.min(index * 30, 300);
                     return React.createElement('div', {
-                      key: album.id,
+                      key: album._rowKey || album.id,
                       className: 'group cursor-pointer release-card card-fade-up',
                       style: {
                         padding: '10px',
@@ -702,13 +704,14 @@ const SearchPage = React.memo(function SearchPage(props) {
                         }),
                         // Image with fade-in
                         album.albumArt && React.createElement('img', {
+                          key: album.albumArt,
                           src: album.albumArt,
                           alt: album.title,
                           className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300',
                           style: { opacity: 0 },
                           ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                           onLoad: (e) => { e.target.style.opacity = '1'; },
-                          onError: (e) => { e.target.style.display = 'none'; }
+                          onError: (e) => { e.target.style.display = 'none'; handleSearchArtBroken('album', album, album.albumArt); }
                         }),
                         // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                         React.createElement('div', {
@@ -856,7 +859,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     const isNowPlaying = isCurrentTrack && playbackContext?.type === 'search';
 
                     return React.createElement('div', {
-                      key: track.id,
+                      key: track._rowKey || track.id,
                       'data-track-id': track.id,
                       ref: (el) => {
                         if (el) {
@@ -1518,7 +1521,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             },
               ...searchResults.artists.slice(0, getItemsPerRow(160)).map(artist =>
                 React.createElement(SearchArtistCard, {
-                  key: artist.id,
+                  key: artist._rowKey || artist.id,
                   artist: artist,
                   onClick: () => {
                     // Get cached artist image if available
@@ -1595,7 +1598,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 const trackItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(140) - 1) * 16) / getItemsPerRow(140));
                 const animationDelay = Math.min(index * 40, 300);
                 return React.createElement('div', {
-                  key: track.id,
+                  key: track._rowKey || track.id,
                   className: 'group cursor-grab active:cursor-grabbing release-card card-fade-up',
                   style: {
                     width: trackItemWidth,
@@ -1663,13 +1666,14 @@ const SearchPage = React.memo(function SearchPage(props) {
                     // Image with fade-in (check cache as fallback for immediate display)
                     // Use getCachedAlbumArt for consistent lookup (checks IDs + artist/album name)
                     (track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId)) && React.createElement('img', {
+                      key: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
                       src: track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId),
                       alt: track.album,
                       className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
                       style: { opacity: 0 },
                       ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                       onLoad: (e) => { e.target.style.opacity = '1'; },
-                      onError: (e) => { e.target.style.display = 'none'; }
+                      onError: (e) => { e.target.style.display = 'none'; handleSearchArtBroken('track', track, track.albumArt || getCachedAlbumArt(track.artist, track.album, track.releaseGroupId, track.releaseId)); }
                     }),
                     // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                     React.createElement('div', {
@@ -1804,7 +1808,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                 const albumItemWidth = Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160));
                 const animationDelay = Math.min(index * 40, 300);
                 return React.createElement('div', {
-                  key: album.id,
+                  key: album._rowKey || album.id,
                   onClick: () => {
                     saveSearchHistory(searchQuery, {
                       type: 'album',
@@ -1879,13 +1883,14 @@ const SearchPage = React.memo(function SearchPage(props) {
                     }),
                     // Image with fade-in
                     album.albumArt && React.createElement('img', {
+                      key: album.albumArt,
                       src: album.albumArt,
                       alt: album.title,
                       className: 'absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover/art:scale-105',
                       style: { opacity: 0 },
                       ref: (el) => { if (el && el.complete && el.naturalWidth > 0) el.style.opacity = '1'; },
                       onLoad: (e) => { e.target.style.opacity = '1'; },
-                      onError: (e) => { e.target.style.display = 'none'; }
+                      onError: (e) => { e.target.style.display = 'none'; handleSearchArtBroken('album', album, album.albumArt); }
                     }),
                     // Hover overlay with action buttons (Add to Playlist, Play, Queue)
                     React.createElement('div', {

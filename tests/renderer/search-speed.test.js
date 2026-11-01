@@ -40,17 +40,17 @@ describe('search-result covers', () => {
   });
 
   test('land through the coalesced writer, not a render per cover', () => {
-    expect(body).toMatch(/jobs\.settled\.add\(key\);\s*writer\.queue\(key, url\);/);
+    expect(body).toMatch(/jobs\.settled\.add\(key\);\s*jobs\.art\.set\(key, url\);\s*writer\.queue\(key, url\);/);
     expect(body).not.toMatch(/setSearchResults\(/);
     expect(app).toMatch(/searchArtWriterRef\.current = window\.createCoalescedUpdater\(/);
   });
 
   test('a row shows the cover a service already returned when the pipeline is slow or empty', () => {
     expect(app).toMatch(/const SEARCH_ART_FALLBACK_MS = 2000;/);
-    expect(body).toMatch(/const fallback = serviceArtFor\(item\);\s*if \(fallback\) setTimeout\(\(\) => settle\(key, fallback\), SEARCH_ART_FALLBACK_MS\);/);
-    expect(body).toMatch(/settle\(job\.key, url \|\| job\.fallback\);/);
+    expect(body).toMatch(/const fallback = serviceArtFor\(item, jobs\.bad\);\s*if \(fallback\) setTimeout\(\(\) => settle\(key, fallback\), SEARCH_ART_FALLBACK_MS\);/);
+    expect(body).toMatch(/settle\(job\.key, \[url, job\.fallback\]\.find\(u => u && !jobs\.bad\.has\(u\)\)\);/);
     // first cover wins: a row never swaps covers, and a settled row skips the pipeline
-    expect(body).toMatch(/if \(!url \|\| jobs\.query !== query \|\| jobs\.settled\.has\(key\)\) return;/);
+    expect(body).toMatch(/if \(!url \|\| jobs\.bad\.has\(url\) \|\| jobs\.query !== query \|\| jobs\.settled\.has\(key\)\) return;/);
     expect(body).toMatch(/if \(jobs\.settled\.has\(job\.key\)\) continue;/);
     // the fallback is displayed, never cached
     expect(body).not.toMatch(/albumArtCache\.current\[[^\]]+\] =/);
@@ -153,5 +153,56 @@ describe('only what the user asked for takes the foreground MusicBrainz lane', (
   test('Home\'s suggestion validation is background', () => {
     const s = app.indexOf('const validateAlbum = async (album) => {');
     expect(app.slice(s, s + 600)).toMatch(/\{ headers: mbHeaders, mbBackground: true \}/);
+  });
+});
+
+describe('Search rows hold still as sources answer', () => {
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/search-page.js'), 'utf8');
+  const search = fnBody('const performSearch = async (query) => {');
+
+  test('every category is stabilized before it is published', () => {
+    expect(search).toMatch(/stable\('artists', reRankResults\(/);
+    expect(search).toMatch(/stable\('albums', reRankResults\(mergeAlbumResults\(/);
+    expect(search).toMatch(/stable\('tracks', reRankResults\(mergeTrackResults\(/);
+  });
+
+  test('cards are keyed by the display key, the resolution scheduler by the real id', () => {
+    expect(page).not.toMatch(/key: (artist|album|track)\.id,/);
+    expect(page).toMatch(/'data-track-id': track\.id,/);
+  });
+
+  test('covers are keyed by the display key and survive a re-published row', () => {
+    const art = fnBody('const fetchSearchAlbumArt = (albums, tracks) => {');
+    expect(art).toMatch(/const key = `\$\{kind\}:\$\{item\._rowKey \|\| item\.id\}`;/);
+    expect(art).toMatch(/jobs\.art\.set\(key, url\);/);
+    // the first cover shown for a display key stays, whatever the row brings later
+    expect(app).toMatch(/const shownUrl = jobs\.art\.get\(key\);\s*if \(shownUrl\) return r\.albumArt === shownUrl \? r : \{ \.\.\.r, albumArt: shownUrl \};\s*if \(r\.albumArt\) jobs\.art\.set\(key, r\.albumArt\);/);
+    expect(search).toMatch(/withSearchArt\(\s*stable\('tracks'/);
+  });
+});
+
+describe('a Search cover that fails to load does not stick', () => {
+  const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/search-page.js'), 'utf8');
+
+  test('cards report a failed cover, and the img is keyed on its URL (a hidden img is never reused)', () => {
+    expect((page.match(/handleSearchArtBroken\('album', album, album\.albumArt\)/g) || []).length).toBe(2);
+    expect(page).toMatch(/handleSearchArtBroken\('track', track, track\.albumArt \|\| getCachedAlbumArt\(/);
+    expect((page.match(/key: album\.albumArt,/g) || []).length).toBe(2);
+    expect(page).toMatch(/key: track\.albumArt \|\| getCachedAlbumArt\(/);
+  });
+
+  test('the bad URL is dropped from the slot and the shared caches, and another cover is sought', () => {
+    const body = fnBody('const handleSearchArtBroken = (kind, item, url) => {');
+    expect(body).toMatch(/jobs\.bad\.add\(url\);/);
+    expect(body).toMatch(/if \(jobs\.art\.get\(key\) === url\) jobs\.art\.delete\(key\);/);
+    expect(body).toMatch(/globalThis\.reportBrokenAlbumArt\(url,/);
+    expect(body).toMatch(/fetchSearchAlbumArt\(/);
+  });
+
+  test('bad URLs are never settled, kept, or offered as a fallback', () => {
+    const art = fnBody('const fetchSearchAlbumArt = (albums, tracks) => {');
+    expect(art).toMatch(/if \(!url \|\| jobs\.bad\.has\(url\) \|\|/);
+    expect(art).toMatch(/const fallback = serviceArtFor\(item, jobs\.bad\);/);
+    expect(app).toMatch(/const r = row\.albumArt && jobs\.bad\.has\(row\.albumArt\) \? \{ \.\.\.row, albumArt: undefined \} : row;/);
   });
 });
