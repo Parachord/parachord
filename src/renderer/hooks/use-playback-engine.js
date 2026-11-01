@@ -726,9 +726,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         const freshSources = {};
         const resolvePromises = enabledResolvers.map(async (resolver) => {
           try {
-            const config = getResolverConfigRef.current
-              ? await getResolverConfigRef.current(resolver.id)
-              : {};
+            // Priority lane: the track the user clicked resolves ahead of the
+            // page's own rows in the resolver queues (laneRunOptions).
+            const config = {
+              ...(getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {}),
+              __lane: 'priority'
+            };
 
             let bestMatch = null;
 
@@ -813,9 +816,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             console.log(`🔄 MBID Mapper: retrying with canonical names "${canonicalArtist} - ${canonicalTitle}"`);
             const retryPromises = enabledResolvers.map(async (resolver) => {
               try {
-                const config = getResolverConfigRef.current
-                  ? await getResolverConfigRef.current(resolver.id)
-                  : {};
+                // Priority lane: the track the user clicked resolves ahead of the
+                // page's own rows in the resolver queues (laneRunOptions).
+                const config = {
+                  ...(getResolverConfigRef.current ? await getResolverConfigRef.current(resolver.id) : {}),
+                  __lane: 'priority'
+                };
                 let bestMatch = null;
                 if (resolver.search && typeof resolver.search === 'function') {
                   const query = `${canonicalArtist} ${canonicalTitle}`;

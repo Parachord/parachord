@@ -101,6 +101,8 @@
         if (signal && signal.aborted) { reject(abortError()); return; }
         const lane = opts && opts.background ? pendingBackground : pending;
         const job = { fn, resolve, reject };
+        // opts.priority: the front of the foreground queue. A play click's
+        // resolve goes there, ahead of the page's own rows resolving.
         if (signal && typeof signal.addEventListener === 'function') {
           const onAbort = () => {
             const i = lane.indexOf(job);
@@ -114,7 +116,7 @@
             return fn();
           };
         }
-        lane.push(job);
+        if (opts && opts.priority && !opts.background) lane.unshift(job); else lane.push(job);
         drain();
       }),
       getQueueLength: () => pending.length + pendingBackground.length,
@@ -146,6 +148,17 @@
    * having to mutate `window`. Production callers can rely on the default
    * which reads from `window.globalResolverLimiter`.
    */
+  // The lane a resolver search runs in, from the config its caller passed:
+  // config.__lane 'priority' (a play click) or 'background' (a cover lookup);
+  // anything else is foreground (track resolution). resolve() passes its
+  // config on to this.search(), so its searches inherit the lane.
+  const laneRunOptions = (config) => {
+    const lane = config && config.__lane;
+    if (lane === 'priority') return { priority: true };
+    if (lane === 'background') return { background: true };
+    return undefined;
+  };
+
   const wrapResolverSearchesWithLimiter = (resolvers, limiter) => {
     if (!Array.isArray(resolvers)) return resolvers;
     const lim = limiter
@@ -157,7 +170,7 @@
       if (typeof r.search !== 'function') continue;
       if (r.__limiterWrapped) continue;
       const original = r.search.bind(r);
-      r.search = (query, config) => lim.run(() => original(query, config));
+      r.search = (query, config) => lim.run(() => original(query, config), laneRunOptions(config));
       r.__limiterWrapped = true;
     }
     return resolvers;
@@ -167,6 +180,7 @@
   if (typeof window !== 'undefined') {
     window.createLimiter = createLimiter;
     window.wrapResolverSearchesWithLimiter = wrapResolverSearchesWithLimiter;
+    window.laneRunOptions = laneRunOptions;
     window.RESOLVER_LIMITER_SKIP_IDS = RESOLVER_LIMITER_SKIP_IDS;
   }
 
@@ -175,6 +189,7 @@
     module.exports = {
       createLimiter,
       wrapResolverSearchesWithLimiter,
+      laneRunOptions,
       RESOLVER_LIMITER_SKIP_IDS
     };
   }

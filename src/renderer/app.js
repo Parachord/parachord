@@ -98,16 +98,22 @@ window.iTunesRateLimiter = (() => {
   const MAX_RETRIES = 3;
   const BACKOFF_BASE_MS = 2000; // Start with 2s backoff on 429
   let lastRequestTime = 0;
+  // Two lanes, like createLimiter's: covers (the art pipeline's catalog step)
+  // wait in the background lane, behind Apple Music resolution, which goes
+  // through iTunes whenever MusicKit can't answer; opts.priority (a play
+  // click) goes to the front. One queue had covers holding up resolution
+  // 1.2s apiece (2026-11-01).
   let pendingQueue = [];
+  let pendingBackground = [];
   let isProcessing = false;
   let consecutiveErrors = 0;
 
   const processQueue = async () => {
-    if (isProcessing || pendingQueue.length === 0) return;
+    if (isProcessing || (pendingQueue.length === 0 && pendingBackground.length === 0)) return;
     isProcessing = true;
 
-    while (pendingQueue.length > 0) {
-      const { url, resolve, reject } = pendingQueue.shift();
+    while (pendingQueue.length > 0 || pendingBackground.length > 0) {
+      const { url, resolve, reject } = pendingQueue.length > 0 ? pendingQueue.shift() : pendingBackground.shift();
       const now = Date.now();
       const timeSinceLastRequest = now - lastRequestTime;
 
@@ -163,13 +169,17 @@ window.iTunesRateLimiter = (() => {
   };
 
   return {
-    fetch: (url) => {
+    fetch: (url, opts) => {
       return new Promise((resolve, reject) => {
-        pendingQueue.push({ url, resolve, reject });
+        const job = { url, resolve, reject };
+        if (opts && opts.background) pendingBackground.push(job);
+        else if (opts && opts.priority) pendingQueue.unshift(job);
+        else pendingQueue.push(job);
         processQueue();
       });
     },
-    getQueueLength: () => pendingQueue.length,
+    getQueueLength: () => pendingQueue.length + pendingBackground.length,
+    getBackgroundQueueLength: () => pendingBackground.length,
     getErrorCount: () => consecutiveErrors
   };
 })();
@@ -724,7 +734,11 @@ window.globalResolverLimiter = window.createLimiter({
 
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
-window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 20) => {
+// opts.lane: the resolver lane the plugin's caller asked for ('priority' for a
+// play click, 'background' for a cover lookup; see laneRunOptions in
+// resolver-limiter.js), applied to the MusicKit and iTunes queues.
+window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 20, opts = {}) => {
+  const laneRun = window.laneRunOptions ? window.laneRunOptions({ __lane: opts && opts.lane }) : undefined;
   // 1. Try native MusicKit (macOS) — no developer token needed, uses system Apple Music auth.
   // All calls go through nativeMusicKitLimiter so a parallel fan-out (e.g. background
   // source enrichment for a 200-track queue) can't blow past Apple's catalog rate limit.
@@ -734,7 +748,8 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
       if (authStatus.success && authStatus.authorized) {
         console.log('[AppleMusicSearch] Using native MusicKit for:', query);
         const result = await window.nativeMusicKitLimiter.run(
-          () => window.electron.musicKit.search(query, limit)
+          () => window.electron.musicKit.search(query, limit),
+          laneRun
         );
         if (result.success && Array.isArray(result.songs)) {
           return result.songs.map(song => ({
@@ -817,8 +832,7 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
   console.log('[AppleMusicSearch] Using iTunes API for:', query);
   const response = await window.iTunesRateLimiter.fetch(
     'https://itunes.apple.com/search?term=' + encodeURIComponent(query) +
-    '&media=music&entity=song&limit=' + limit + '&country=' + storefront
-  );
+    '&media=music&entity=song&limit=' + limit + '&country=' + storefront, laneRun);
 
   if (!response.ok) {
     console.error('[AppleMusicSearch] iTunes search failed:', response.status);
@@ -16316,7 +16330,9 @@ ${trackListXml}
     // requireAlbumArt: with earlyReturn, keep walking resolvers until one returns
     // a result that carries albumArt (the album-art pipeline's use), instead of
     // stopping at the first resolver that returns anything.
-    const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false } = options;
+    // lane: the resolver lane for these searches (laneRunOptions in
+    // resolver-limiter.js); 'background' for a cover lookup.
+    const { earlyReturn = false, targetArtist, targetTitle, requireAlbumArt = false, lane = null } = options;
     const allResolvers = loadedResolversRef.current || [];
     const activeIds = activeResolversRef.current || [];
     const resolverOrder = resolverOrderRef.current || [];
@@ -16340,7 +16356,7 @@ ${trackListXml}
         const config = getResolverConfigRef.current
           ? await getResolverConfigRef.current(resolver.id)
           : {};
-        const tracks = await resolver.search(query, config);
+        const tracks = await resolver.search(query, lane ? { ...config, __lane: lane } : config);
         if (Array.isArray(tracks) && tracks.length > 0) {
           const taggedTracks = tracks.map(t => ({
             ...t,
@@ -29962,7 +29978,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // through the shared limiter (~20 req/min/IP); Deezer sends no CORS header
   // for file:// origins, so it goes through the main-process proxy.
   const catalogArtDeps = () => ({
-    fetchItunes: (url) => window.iTunesRateLimiter.fetch(url),
+    fetchItunes: (url) => window.iTunesRateLimiter.fetch(url, { background: true }), // covers wait behind resolution
     fetchDeezer: async (url) => {
       const r = await window.electron?.proxyFetch?.(url, { headers: { Accept: 'application/json' } });
       return { ok: !!(r && r.success), json: async () => JSON.parse(r.text || 'null') };
@@ -29997,7 +30013,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // stopping at the first resolver that returned anything (the old
       // behaviour) let an art-less hit from a higher-priority resolver hide
       // Spotify's or Bandcamp's cover.
-      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true, requireAlbumArt: true });
+      // Background lane: a cover waits behind track resolution.
+      const results = await searchResolvers(`${artist} ${album}`, { earlyReturn: true, requireAlbumArt: true, lane: 'background' });
 
       // Find best match - prefer exact artist+album match
       const normalizedAlbum = album.toLowerCase();

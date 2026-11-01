@@ -11,8 +11,12 @@ module.exports = {
         return [];
       }
       const storefront = config.storefront || 'us';
+      // The caller's lane (config.__lane: 'priority' for a play click,
+      // 'background' for a cover lookup) for the host's MusicKit and iTunes
+      // queues. A host without lanes ignores the extra argument.
+      const lane = config && config.__lane;
       if (window.appleMusicSearchWithMusicKit) {
-        return await window.appleMusicSearchWithMusicKit(query, storefront, 20);
+        return await window.appleMusicSearchWithMusicKit(query, storefront, 20, { lane: lane });
       }
       console.log('Searching Apple Music/iTunes for:', query);
       const response = await window.iTunesRateLimiter.fetch(
@@ -20,6 +24,7 @@ module.exports = {
           encodeURIComponent(query) +
           '&media=music&entity=song&limit=20&country=' +
           storefront,
+        lane === 'background' ? { background: true } : lane === 'priority' ? { priority: true } : undefined,
       );
       if (!response.ok) {
         console.error('iTunes search failed:', response.status);
