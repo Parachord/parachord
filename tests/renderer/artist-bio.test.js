@@ -90,6 +90,8 @@ describe('createWikidataIdLookup', () => {
     await expect(lookup(WILD_PINK)).resolves.toBe('Q42');
     expect(calls[1].url).toBe(`https://musicbrainz.org/ws/2/artist/${WILD_PINK}?inc=url-rels&fmt=json`);
     expect(calls[1].init.headers['User-Agent']).toBe('UA');
+    // bios and photos are never what the user clicked for
+    expect(calls[1].init.mbBackground).toBe(true);
   });
 
   test('falls back to MusicBrainz when Wikidata errors or is unreachable', async () => {

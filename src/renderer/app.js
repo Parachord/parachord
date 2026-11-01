@@ -27448,7 +27448,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           const query = encodeURIComponent(`release-group:"${album.title}" AND artist:"${album.artist}" AND primarytype:album`);
           const searchResp = await fetch(
             `https://musicbrainz.org/ws/2/release-group?query=${query}&limit=5&fmt=json`,
-            { headers: mbHeaders }
+            { headers: mbHeaders, mbBackground: true } // a refresh, not a click: background lane
           );
           if (!searchResp.ok) return null;
           const searchData = await searchResp.json();
@@ -30187,7 +30187,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // to albumToReleaseIdCache: two release groups can share an artist and a
   // title, and the name key would then hand one album's cover to the other.
   // opts.background: step 2's MusicBrainz search waits in the background lane
-  // (a page of covers must not hold up the user's next search or click).
+  // unless a caller passes false. A cover is never what the user clicked for,
+  // and covers used to take the foreground lane: on 2026-11-01 five cover
+  // searches queued at launch (the queue's and the restored page's) made the
+  // artist page's own lookup wait 11s.
   const getAlbumArt = async (artist, album, opts = {}) => {
     if (!artist || !album) return null;
 
@@ -30213,7 +30216,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     try {
       // Search MusicBrainz for the release (with fallback for multi-artist names)
-      const releases = await searchMusicBrainzRelease(album, artist, { background: !!opts.background });
+      const releases = await searchMusicBrainzRelease(album, artist, { background: opts.background !== false });
 
       if (releases.length === 0) {
         albumToReleaseIdCache.current[lookupKey] = null;
@@ -30441,9 +30444,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Fallback: MusicBrainz artist search if mapper didn't return an MBID
         if (!mbid) {
+          // Background lane: the playbar tooltip is never what the user clicked for
           const searchResponse = await fetch(
             `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(currentTrack.artist)}&fmt=json&limit=1`,
-            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' }}
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.app)' }, mbBackground: true }
           );
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();

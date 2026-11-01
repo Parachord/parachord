@@ -75,8 +75,10 @@ describe('getAlbumArt', () => {
     expect(idsBranch).not.toMatch(/albumToReleaseIdCache/);
   });
 
-  test('its MusicBrainz search takes the caller\'s lane', () => {
-    expect(body).toMatch(/searchMusicBrainzRelease\(album, artist, \{ background: !!opts\.background \}\)/);
+  test('its MusicBrainz search takes the background lane unless the caller says otherwise', () => {
+    // A cover is never what the user clicked for: five cover searches queued
+    // at launch made the artist page's lookup wait 11s (2026-11-01).
+    expect(body).toMatch(/searchMusicBrainzRelease\(album, artist, \{ background: opts\.background !== false \}\)/);
   });
 });
 
@@ -128,5 +130,18 @@ describe('results show as they arrive', () => {
   test('a new query with nothing cached clears the previous query\'s rows', () => {
     const input = fnBody('const handleSearchInput = (value) => {');
     expect(input).toMatch(/\} else \{[\s\S]{0,200}setSearchResults\(\{ artists: \[\], albums: \[\], tracks: \[\], playlists: \[\] \}\);/);
+  });
+});
+
+describe('only what the user asked for takes the foreground MusicBrainz lane', () => {
+  test('the playbar bio tooltip\'s artist search is background', () => {
+    const s = app.indexOf('// Fetch artist bio for playbar tooltip when track changes');
+    const block = app.slice(s, app.indexOf('\n  }, [', s));
+    expect(block).toMatch(/musicbrainz\.org\/ws\/2\/artist\?query=[\s\S]{0,200}mbBackground: true/);
+  });
+
+  test('Home\'s suggestion validation is background', () => {
+    const s = app.indexOf('const validateAlbum = async (album) => {');
+    expect(app.slice(s, s + 600)).toMatch(/\{ headers: mbHeaders, mbBackground: true \}/);
   });
 });
