@@ -629,7 +629,7 @@ const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates,
-  TRACK_RANK_KEY
+  TRACK_RANK_KEY, serviceArtFor
 } = require('./lib/search-catalog');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
@@ -18217,17 +18217,28 @@ ${trackListXml}
 
   // Covers for search results (the first ten albums and ten tracks). Each one
   // goes through getAlbumArt, THE album-art pipeline, with its MusicBrainz
-  // search in the background lane, four in flight. A MusicBrainz result
-  // passes its ids, so its cover costs a Cover Art Archive request and no
-  // MusicBrainz search. This used to be a fetcher of its own: a MusicBrainz
+  // search in the background lane, four in flight; a track row with no album
+  // name goes through getTrackArt, the pipeline's song search. A MusicBrainz
+  // result passes its ids, so its cover costs a Cover Art Archive request and
+  // no MusicBrainz search. This used to be a fetcher of its own: a MusicBrainz
   // release search per local track in the foreground queue (up to ten per
   // search at one a second, ahead of the user's next search or click), no
   // resolver or catalog fallback, and a full render per cover. Cached covers
   // land at once; fetched ones in 250ms batches, keyed by kind and id. A
   // newer search drops the work still queued for an older one.
+  //
+  // A row a service already returned a cover for (serviceArtFor: a source's
+  // albumArt, or the cover of a service album the row absorbed) shows that
+  // cover if the pipeline hasn't answered within SEARCH_ART_FALLBACK_MS, or
+  // finds nothing. It is the image the pipeline's resolver step would find,
+  // without searching again, and it is only displayed, never cached. Rows
+  // used to wait out the whole chain (Cover Art Archive, then a fresh
+  // resolver search, then iTunes and Deezer) four at a time, and stayed blank
+  // when the Cover Art Archive was unreachable (2026-11-01, its IPv6 TLS).
   const SEARCH_ART_LIMIT = 10;
   const SEARCH_ART_CONCURRENCY = 4;
-  const searchArtJobsRef = useRef({ query: null, queue: [], seen: new Set(), workers: 0 });
+  const SEARCH_ART_FALLBACK_MS = 2000;
+  const searchArtJobsRef = useRef({ query: null, queue: [], seen: new Set(), settled: new Set(), workers: 0 });
   const searchArtWriterRef = useRef(null);
   if (!searchArtWriterRef.current) {
     searchArtWriterRef.current = window.createCoalescedUpdater((batch) => {
@@ -18252,22 +18263,33 @@ ${trackListXml}
       jobs.query = query;
       jobs.queue = [];
       jobs.seen = new Set();
+      jobs.settled = new Set();
     }
+    // The first cover to arrive for a row wins: the pipeline's, or the
+    // service's once the deadline passes. A row never swaps covers under the user.
+    const settle = (key, url) => {
+      if (!url || jobs.query !== query || jobs.settled.has(key)) return;
+      jobs.settled.add(key);
+      writer.queue(key, url);
+    };
     let cachedHits = 0;
     const enqueue = (kind, item, artist, album, ids) => {
       const key = `${kind}:${item.id}`;
-      if (item.albumArt || !artist || !album || jobs.seen.has(key)) return;
+      const title = kind === 'track' ? item.title : null;
+      if (item.albumArt || !artist || !(album || title) || jobs.seen.has(key)) return;
       jobs.seen.add(key);
-      const cached = (ids.releaseGroupId || ids.releaseId)
+      const cached = !album ? null : (ids.releaseGroupId || ids.releaseId)
         ? ((ids.releaseGroupId && albumArtCache.current[ids.releaseGroupId]?.url) ||
            (ids.releaseId && albumArtCache.current[ids.releaseId]?.url))
         : getCachedAlbumArt(artist, album);
       if (cached) {
-        writer.queue(key, cached);
+        settle(key, cached);
         cachedHits++;
         return;
       }
-      jobs.queue.push({ key, artist, album, ids });
+      const fallback = serviceArtFor(item);
+      if (fallback) setTimeout(() => settle(key, fallback), SEARCH_ART_FALLBACK_MS);
+      jobs.queue.push({ key, artist, album, title, ids, fallback });
     };
     (albums || []).slice(0, SEARCH_ART_LIMIT).forEach(a => enqueue('album', a,
       a['artist-credit']?.[0]?.name || a.artist, a.title,
@@ -18281,13 +18303,16 @@ ${trackListXml}
       try {
         while (jobs.queue.length > 0 && jobs.query === searchQueryRef.current) {
           const job = jobs.queue.shift();
+          if (jobs.settled.has(job.key)) continue; // the service's cover is already showing
           let url = null;
           try {
-            url = await getAlbumArt(job.artist, job.album, { ...job.ids, background: true });
+            url = job.album
+              ? await getAlbumArt(job.artist, job.album, { ...job.ids, background: true })
+              : await getTrackArt(job.artist, job.title);
           } catch (error) {
             // Art is optional
           }
-          if (url) writer.queue(job.key, url);
+          settle(job.key, url || job.fallback);
         }
       } finally {
         jobs.workers--;
