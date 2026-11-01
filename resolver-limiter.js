@@ -86,9 +86,35 @@
       }
     };
 
+    const abortError = () => (typeof DOMException === 'function'
+      ? new DOMException('Aborted', 'AbortError')
+      : Object.assign(new Error('Aborted'), { name: 'AbortError' }));
+
     return {
+      // opts.signal: a job whose signal aborts while it waits leaves the queue
+      // without starting, so it uses no slot and no minGapMs. A superseded
+      // search used to start anyway, fail at once, and still make the next
+      // request wait out the gap: typing with pauses stacked up dead seconds
+      // in front of the search the user wanted.
       run: (fn, opts) => new Promise((resolve, reject) => {
-        (opts && opts.background ? pendingBackground : pending).push({ fn, resolve, reject });
+        const signal = opts && opts.signal;
+        if (signal && signal.aborted) { reject(abortError()); return; }
+        const lane = opts && opts.background ? pendingBackground : pending;
+        const job = { fn, resolve, reject };
+        if (signal && typeof signal.addEventListener === 'function') {
+          const onAbort = () => {
+            const i = lane.indexOf(job);
+            if (i === -1) return; // already started; the job's own fetch sees the abort
+            lane.splice(i, 1);
+            reject(abortError());
+          };
+          signal.addEventListener('abort', onAbort, { once: true });
+          job.fn = () => {
+            signal.removeEventListener('abort', onAbort);
+            return fn();
+          };
+        }
+        lane.push(job);
         drain();
       }),
       getQueueLength: () => pending.length + pendingBackground.length,
