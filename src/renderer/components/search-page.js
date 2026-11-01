@@ -20,6 +20,7 @@
 
 const Icons = require('./icons');
 const { ResolverIcon } = require('./ui-atoms');
+const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
 const { trackSlug, slug } = require('../lib/track-slug');
@@ -490,7 +491,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                           }
                         }));
                       },
-                      onClick: () => fetchArtistData(artist.name),
+                      onClick: () => fetchArtistData(artist.name, artistOpenOptions(artist)),
                       onContextMenu: (e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -801,7 +802,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         },
                         onClick: (e) => {
                           e.stopPropagation();
-                          fetchArtistData(album['artist-credit']?.[0]?.name);
+                          fetchArtistData(album['artist-credit']?.[0]?.name, creditOpenOptions(album['artist-credit']));
                         }
                       }, album['artist-credit']?.[0]?.name || 'Unknown Artist')
                     );
@@ -946,7 +947,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       },
                       onClick: (e) => {
                         e.stopPropagation();
-                        fetchArtistData(track.artist);
+                        fetchArtistData(track.artist, trackArtistOpenOptions(track));
                       }
                     }, track.artist),
 
@@ -1317,7 +1318,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     onResultClick: (result) => {
                       // Navigate directly to the result
                       if (result.type === 'artist') {
-                        fetchArtistData(result.name);
+                        fetchArtistData(result.name, artistOpenOptions(result));
                       } else if (result.type === 'album') {
                         handleAlbumClick({ id: result.id, title: result.name, 'artist-credit': [{ name: result.artist }] });
                       } else if (result.type === 'playlist') {
@@ -1479,7 +1480,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     if (entry.selectedResult) {
                       // Navigate directly to the result
                       if (entry.selectedResult.type === 'artist') {
-                        fetchArtistData(entry.selectedResult.name);
+                        fetchArtistData(entry.selectedResult.name, artistOpenOptions(entry.selectedResult));
                       } else if (entry.selectedResult.type === 'album') {
                         handleAlbumClick({ id: entry.selectedResult.id, title: entry.selectedResult.name, 'artist-credit': [{ name: entry.selectedResult.artist }] });
                       } else if (entry.selectedResult.type === 'track') {
@@ -1529,7 +1530,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       name: artist.name,
                       imageUrl: cachedImage?.url || null
                     });
-                    fetchArtistData(artist.name);
+                    fetchArtistData(artist.name, artistOpenOptions(artist));
                   },
                   getArtistImage: getArtistImage,
                   itemWidth: Math.floor((searchContainerWidth - (getItemsPerRow(160) - 1) * 16) / getItemsPerRow(160)),
