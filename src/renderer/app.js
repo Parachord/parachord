@@ -19817,8 +19817,15 @@ ${trackListXml}
   };
 
   // Fetch artist data and discography from MusicBrainz
-  const fetchArtistData = async (artistName) => {
+  // options.mbid: the artist's MusicBrainz id, when the caller already has it
+  // (a MusicBrainz search result, or the artist credit of a release group or
+  // recording; see src/renderer/lib/artist-open.js). The page then skips the
+  // name search, one turn of the 1 req/s MusicBrainz queue, and can't land on
+  // a namesake. The lookup's other fields (country, type, disambiguation) are
+  // cached but shown nowhere, so nothing is fetched in its place.
+  const fetchArtistData = async (artistName, options = {}) => {
     console.log('Fetching artist data for:', artistName);
+    const knownMbid = isMusicBrainzId(options.mbid) ? options.mbid : null;
 
     // Increment fetch ID to invalidate any in-flight requests for previous artists
     artistFetchId.current++;
@@ -19852,10 +19859,13 @@ ${trackListXml}
     const cachedNorm = normCache(cachedData?.artist?.name);
     const searchNorm = normCache(artistName);
     const cacheNameMatch = cachedNorm === searchNorm;
+    // A caller that knows the MBID wants that artist, not a namesake cached
+    // under the same name.
     const cacheValid = cachedData &&
                       Array.isArray(cachedData.releases) &&
                       (now - cachedData.timestamp) < CACHE_TTL.artistData &&
-                      cacheNameMatch;
+                      cacheNameMatch &&
+                      (!knownMbid || cachedData.artist?.mbid === knownMbid);
 
     // Also check if artist image is in cache
     const normalizedName = artistName.trim().toLowerCase();
@@ -19924,7 +19934,7 @@ ${trackListXml}
     console.log('🌐 Fetching fresh artist data from MusicBrainz...');
 
     // Try MBID mapper cache first for fast artist MBID shortcut (~0ms vs ~500ms+ for MB search)
-    const cachedArtistMbid = getArtistMbidFromMapperCache(artistName);
+    const cachedArtistMbid = knownMbid || getArtistMbidFromMapperCache(artistName);
     if (!cachedArtistMbid) {
       // Fire a mapper lookup in the background using current track if available
       const ct = currentTrackRef.current;
@@ -19943,7 +19953,7 @@ ${trackListXml}
       });
 
       // Fast path: try MBID mapper cache or live lookup to skip the slow MB artist search
-      let mapperArtistMbid = getArtistMbidFromMapperCache(artistName);
+      let mapperArtistMbid = knownMbid || getArtistMbidFromMapperCache(artistName);
       if (!mapperArtistMbid && currentTrackRef.current?.artist?.toLowerCase().trim() === artistName.toLowerCase().trim()) {
         // We're navigating to the current track's artist — use the track to do a mapper lookup
         const mapperResult = await lookupMbidMapper(
@@ -19955,7 +19965,11 @@ ${trackListXml}
       }
 
       let searchResponse;
-      if (mapperArtistMbid) {
+      // A caller-supplied MBID needs no request at all
+      const knownArtist = knownMbid ? { id: knownMbid, name: artistName, score: 100 } : null;
+      if (knownArtist) {
+        // nothing to fetch
+      } else if (mapperArtistMbid) {
         // Direct MBID lookup (~2x faster than fuzzy search, no matching needed)
         searchResponse = await mbFetch(
           `https://musicbrainz.org/ws/2/artist/${mapperArtistMbid}?fmt=json`
@@ -19971,7 +19985,7 @@ ${trackListXml}
         );
       }
 
-      if (!searchResponse.ok) {
+      if (!knownArtist && !searchResponse.ok) {
         console.error('Artist search failed:', searchResponse.status);
         if (searchResponse.status === 503 || searchResponse.status === 429) {
           showConfirmDialog({
@@ -19984,9 +19998,11 @@ ${trackListXml}
         return;
       }
 
-      const searchData = mapperArtistMbid
-        ? { artists: [await searchResponse.json()] } // Direct lookup returns artist object, wrap to match search format
-        : await searchResponse.json();
+      const searchData = knownArtist
+        ? { artists: [knownArtist] }
+        : mapperArtistMbid
+          ? { artists: [await searchResponse.json()] } // Direct lookup returns artist object, wrap to match search format
+          : await searchResponse.json();
 
       // Validate MusicBrainz match quality — weak matches get the same fallback treatment
       // MusicBrainz scores are relative (100 = best match found, not necessarily correct),
@@ -20137,16 +20153,52 @@ ${trackListXml}
         }
       })();
 
-      // Step 2: Fetch artist's release-groups (albums, EPs, singles) with staggered requests
-      // Using release-groups instead of releases to avoid duplicates (each album appears once)
-      // MusicBrainz rate limits to ~1 req/sec, so we stagger by 500ms to stay under limit
+      // Step 2: the artist's release groups, one request per type (album, EP,
+      // single), all three queued at once in the MusicBrainz limiter, which
+      // spaces them 1.1s apart. Release groups rather than releases, so each
+      // album appears once. Each type is shown as it arrives, albums first: the
+      // page used to wait for all three (Promise.all) before showing any, so
+      // the first release appeared only after the singles request answered.
+      // The grid shows releases while loadingArtist is still true (its
+      // skeleton is only for an empty list); loadingArtist ends when all three
+      // have answered, which is when the type tabs show their counts.
       const releaseTypes = ['album', 'ep', 'single'];
-
-      const releasePromises = releaseTypes.map(async (type, index) => {
-        // Stagger requests by 500ms each to avoid rate limiting
-        if (index > 0) {
-          await new Promise(resolve => setTimeout(resolve, index * 500));
+      const byNewest = (a, b) => (b.date || '0000').localeCompare(a.date || '0000');
+      const withCachedArt = (release) => ({
+        ...release,
+        // Use cached URL if available, undefined if needs fetch (shows shimmer)
+        albumArt: albumArtCache.current[release.id]?.url !== undefined
+          ? albumArtCache.current[release.id]?.url
+          : undefined
+      });
+      const fetchedReleases = [];
+      let releasesShown = false;
+      const showReleases = (batch) => {
+        if (thisFetchId !== artistFetchId.current || batch.length === 0) return;
+        fetchedReleases.push(...batch);
+        const sorted = [...fetchedReleases].sort(byNewest);
+        // Rows already on screen keep their object (and any cover the art
+        // queue has written into it); new rows start from the art cache.
+        setArtistReleases(prev => {
+          const shown = new Map(prev.map(r => [r.id, r]));
+          return sorted.map(r => shown.get(r.id) || withCachedArt(r));
+        });
+        const needingArt = batch.filter(r => !albumArtCache.current[r.id]);
+        if (!releasesShown) {
+          releasesShown = true;
+          setSmartReleaseTypeFilter(sorted);
+          albumArtFetchId.current++; // Cancel any previous fetch session
+          isAlbumArtFetching.current = false;
+          albumArtQueue.current = needingArt;
+          visibleAlbumIds.current.clear();
+        } else {
+          // The running art loop reads the queue on every pass
+          albumArtQueue.current = [...albumArtQueue.current, ...needingArt];
         }
+        processAlbumArtQueue();
+      };
+
+      const releasePromises = releaseTypes.map(async (type) => {
         try {
           const releasesResponse = await mbFetch(
             `https://musicbrainz.org/ws/2/release-group?artist=${artist.id}&type=${type}&fmt=json&limit=100`
@@ -20155,7 +20207,7 @@ ${trackListXml}
           if (releasesResponse.ok) {
             const releasesData = await releasesResponse.json();
             if (releasesData['release-groups']) {
-              return releasesData['release-groups'].map(rg => {
+              const releases = releasesData['release-groups'].map(rg => {
                 // Determine release type based on primary-type and secondary-types
                 const primaryType = (rg['primary-type'] || '').toLowerCase();
                 const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
@@ -20179,6 +20231,8 @@ ${trackListXml}
                   disambiguation: rg.disambiguation
                 };
               });
+              showReleases(releases);
+              return releases;
             }
           }
           return [];
@@ -20189,17 +20243,10 @@ ${trackListXml}
       });
 
       const releaseResults = await Promise.all(releasePromises);
-      const allReleases = releaseResults.flat();
+      const uniqueReleases = releaseResults.flat().sort(byNewest);
 
-      console.log(`Found ${allReleases.length} release-groups for ${artist.name}`);
+      console.log(`Found ${uniqueReleases.length} release-groups for ${artist.name}`);
 
-      // Sort by date (newest first)
-      const uniqueReleases = [...allReleases].sort((a, b) => {
-        const dateA = a.date || '0000';
-        const dateB = b.date || '0000';
-        return dateB.localeCompare(dateA);
-      });
-      
       const artistData = {
         name: artist.name,
         mbid: artist.id,
@@ -20223,28 +20270,9 @@ ${trackListXml}
         return;
       }
 
-      // Pre-populate releases with cached album art
-      const releasesWithCache = uniqueReleases.map(release => ({
-        ...release,
-        // Use cached URL if available, undefined if needs fetch (shows shimmer)
-        albumArt: albumArtCache.current[release.id]?.url !== undefined
-          ? albumArtCache.current[release.id]?.url
-          : undefined
-      }));
-
-      // Show page immediately (with cached album art if available)
-      setArtistReleases(releasesWithCache);
-      setSmartReleaseTypeFilter(releasesWithCache);
+      if (!releasesShown) setSmartReleaseTypeFilter([]);
       setLoadingArtist(false);
 
-      // Queue album art fetches (viewport-prioritized) - only for releases without cache
-      const releasesNeedingArt = uniqueReleases.filter(r => !albumArtCache.current[r.id]);
-      albumArtFetchId.current++; // Cancel any previous fetch session
-      isAlbumArtFetching.current = false;
-      albumArtQueue.current = releasesNeedingArt;
-      visibleAlbumIds.current.clear();
-      processAlbumArtQueue();
-      
     } catch (error) {
       console.error('Error fetching artist data:', error);
       // Name what failed. The old check called any TypeError mentioning

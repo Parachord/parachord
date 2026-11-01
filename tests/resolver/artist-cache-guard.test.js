@@ -28,7 +28,7 @@ const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js')
 describe('artistDataCache partial-entry guard', () => {
   test('fetchArtistData cacheValid requires a releases array', () => {
     const m = appSrc.match(
-      /const cacheValid = cachedData &&\s*\n\s*Array\.isArray\(cachedData\.releases\) &&\s*\n\s*\(now - cachedData\.timestamp\) < CACHE_TTL\.artistData &&\s*\n\s*cacheNameMatch;/
+      /const cacheValid = cachedData &&\s*\n\s*Array\.isArray\(cachedData\.releases\) &&\s*\n\s*\(now - cachedData\.timestamp\) < CACHE_TTL\.artistData &&\s*\n\s*cacheNameMatch &&\s*\n\s*\(!knownMbid \|\| cachedData\.artist\?\.mbid === knownMbid\);/
     );
     expect(m).toBeTruthy();
   });
