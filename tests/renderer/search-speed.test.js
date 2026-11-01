@@ -140,6 +140,16 @@ describe('only what the user asked for takes the foreground MusicBrainz lane', (
     expect(block).toMatch(/musicbrainz\.org\/ws\/2\/artist\?query=[\s\S]{0,200}mbBackground: true/);
   });
 
+  test('the play path\'s cover check for a local file is background', () => {
+    const hook = fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
+    expect(hook).toMatch(/await enrichTrackWithMbid\(trackToSet, \{ background: true \}\);/);
+    expect(hook).not.toMatch(/await enrichTrackWithMbid\(trackToSet\);/);
+  });
+
+  test('the dead sequential art loader (a foreground MusicBrainz caller) is gone', () => {
+    expect(app).not.toMatch(/fetchAlbumArtLazy/);
+  });
+
   test('Home\'s suggestion validation is background', () => {
     const s = app.indexOf('const validateAlbum = async (album) => {');
     expect(app.slice(s, s + 600)).toMatch(/\{ headers: mbHeaders, mbBackground: true \}/);

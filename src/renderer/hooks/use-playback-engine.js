@@ -1160,7 +1160,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
               // First try MBID fast path - enrich if needed, then fetch art via releaseMbid
               let artUrl = null;
               if (!trackToSet.releaseMbid && !trackToSet.mbid) {
-                await enrichTrackWithMbid(trackToSet);
+                // Background lane: a cover is never what the user clicked for
+                await enrichTrackWithMbid(trackToSet, { background: true });
               }
               if (trackToSet.releaseMbid) {
                 artUrl = await fetchArtworkViaMbid(trackToSet);
