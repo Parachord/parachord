@@ -7863,10 +7863,6 @@ const Parachord = () => {
   // API polling happens every 5 seconds, but we want smooth 1-second visual updates
   // The baseline is ONLY set by API polls (in getCurrentPlaybackState), not by this effect
   const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
-  // The Amazon Music poller (main process) reports position every 2s; interpolate
-  // between polls for a smooth progress bar (same pattern as Spotify/Apple Music).
-  const amazonMusicProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
-
   const {
     handlePlay,
     handleNext,
