@@ -3002,6 +3002,11 @@ registerStoreIpc({ ipcMain, store, app, getPluginsCacheDir });
 const { registerAuthServerIpc } = require('./main-process/ipc/auth-server');
 registerAuthServerIpc({ ipcMain, store, getAuthServerState: () => authServerState });
 
+// MetaBrainz over IPv4, for when its IPv6 endpoint resets the TLS handshake
+// (2026-11-01): main-process/ipc/metabrainz-ipv4.js.
+const { registerMetaBrainzIpv4Ipc } = require('./main-process/ipc/metabrainz-ipv4');
+registerMetaBrainzIpv4Ipc({ ipcMain, userAgent: METABRAINZ_UA });
+
 // ─── In-app announcements ────────────────────────────────────────────────────
 // Polls a public JSON file on achordion.xyz for product announcements
 // (banner notifications). The fetched payload is cached in electron-store

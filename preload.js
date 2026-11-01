@@ -143,6 +143,10 @@ contextBridge.exposeInMainWorld('electron', {
   // Proxy fetch - bypasses CORS for resolvers
   proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
 
+  // MusicBrainz / Cover Art Archive over IPv4, the fallback when their IPv6
+  // endpoint fails (src/renderer/lib/metabrainz-ipv4.js)
+  metabrainzFetchIpv4: (url, options) => ipcRenderer.invoke('metabrainz-fetch-ipv4', url, options),
+
   // Crypto utilities for scrobbling
   crypto: {
     md5: (input) => ipcRenderer.invoke('crypto-md5', input)

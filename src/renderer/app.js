@@ -612,6 +612,7 @@ window.musicbrainzLimiter = window.createLimiter({
   isThrottleError: (err) => !!(err && (err.mbThrottled || err.mbUnreachable))
 });
 const { mbFetchWithRetries, describeMusicBrainzError } = require('./lib/musicbrainz-fetch');
+const { createIpv4Fallback } = require('./lib/metabrainz-ipv4');
 const {
   isMusicBrainzId, resolverIdFromReleaseId, pickCatalogAlbum, orderCatalogResolvers,
   catalogAlbumToRelease, catalogAlbumToSearchResult, sameAlbumIdentity,
@@ -644,6 +645,22 @@ const {
     } catch (_e) { return false; }
   };
   window.isMusicBrainzWs2Url = isMbWs2;
+  const isCoverArtArchive = (input) => {
+    try {
+      const raw = typeof input === 'string' ? input : (input && input.url);
+      return !!raw && new URL(raw, window.location.href).hostname === 'coverartarchive.org';
+    } catch (_e) { return false; }
+  };
+  // Both hosts fall back to IPv4 through the main process when their IPv6
+  // endpoint fails the handshake (src/renderer/lib/metabrainz-ipv4.js). The
+  // Cover Art Archive isn't rate limited, so it skips the limiter.
+  const metabrainz = window.electron?.metabrainzFetchIpv4
+    ? createIpv4Fallback({
+        fetchDirect: originalFetch,
+        fetchIpv4: (url, options) => window.electron.metabrainzFetchIpv4(url, options),
+        log: (message) => console.warn(`[metabrainz] ${message}`)
+      })
+    : { fetch: originalFetch };
   // Callers that want a timeout on an MB request should pass
   // `queuedTimeoutMs` instead of a pre-armed AbortSignal. A request can wait
   // in this queue for a long time (a 50-artist Fresh Drops pass is ~1 minute
@@ -656,10 +673,11 @@ const {
   // mbThrottled / mbUnreachable flags) is mbFetchWithRetries in
   // src/renderer/lib/musicbrainz-fetch.js, the only MusicBrainz retry layer.
   window.fetch = function (input, init) {
+    if (isCoverArtArchive(input)) return metabrainz.fetch(input, init || {});
     if (!isMbWs2(input)) return originalFetch(input, init);
     const { queuedTimeoutMs, mbBackground, ...fetchInit } = init || {};
     return window.musicbrainzLimiter.run(
-      () => mbFetchWithRetries((attemptInit) => originalFetch(input, attemptInit), fetchInit, { queuedTimeoutMs }),
+      () => mbFetchWithRetries((attemptInit) => metabrainz.fetch(input, attemptInit), fetchInit, { queuedTimeoutMs }),
       // mbBackground: bulk work queues behind user-initiated requests.
       // signal: an aborted request leaves the queue without using a slot.
       { background: !!mbBackground, signal: fetchInit.signal }
@@ -23539,71 +23557,21 @@ ${trackListXml}
     albumArtQueue.current = [...visible, ...nonVisible];
   };
 
-  // Fetch album art for a single release (extracted for reuse)
+  // Cover for one release on the artist page: getAlbumArt, THE album-art
+  // pipeline, with the release group's id (a MusicBrainz artist page's
+  // releases are release groups) and its MusicBrainz search, if any, in the
+  // background lane. This used to be a fetcher of its own: the Cover Art
+  // Archive's release-group JSON, then for every release without one a
+  // FOREGROUND MusicBrainz lookup of the group's first release (one a second,
+  // ahead of the user's next click, for a cover the release-group endpoint
+  // already looks across every release for), then a resolver search.
   const fetchSingleAlbumArt = async (release) => {
-    let albumArtUrl = null;
-
-    // First try release-group endpoint
-    try {
-      const artResponse = await fetch(
-        `https://coverartarchive.org/release-group/${release.id}`,
-        {
-          headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }
-        }
-      );
-
-      if (artResponse.ok) {
-        const artData = await artResponse.json();
-        const frontCover = artData.images.find(img => img.front);
-        if (frontCover && frontCover.thumbnails && frontCover.thumbnails['250']) {
-          albumArtUrl = frontCover.thumbnails['250'];
-        }
-      }
-    } catch (e) {
-      // Fall through to release endpoint
-    }
-
-    // If release-group has no art, try getting a specific release and its art
-    if (!albumArtUrl) {
-      try {
-        // Get the first release in this release-group
-        const releaseResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-        );
-
-        if (releaseResponse.ok) {
-          const releaseData = await releaseResponse.json();
-          if (releaseData.releases && releaseData.releases.length > 0) {
-            const specificReleaseId = releaseData.releases[0].id;
-
-            // Try fetching art from the specific release
-            const releaseArtResponse = await fetch(
-              `https://coverartarchive.org/release/${specificReleaseId}`,
-              { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-            );
-
-            if (releaseArtResponse.ok) {
-              const releaseArtData = await releaseArtResponse.json();
-              const frontCover = releaseArtData.images.find(img => img.front);
-              if (frontCover && frontCover.thumbnails && frontCover.thumbnails['250']) {
-                albumArtUrl = frontCover.thumbnails['250'];
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // Fall through to resolver fallback
-      }
-    }
-
-    // If Cover Art Archive has no art, fall back to resolver search (iTunes, Spotify, etc.)
     const artistName = release.artist || currentArtist?.name;
-    if (!albumArtUrl && artistName && release.title) {
-      albumArtUrl = await getAlbumArtFromResolvers(artistName, release.title);
-    }
-
-    return albumArtUrl;
+    if (!artistName || !release.title) return null;
+    return getAlbumArt(artistName, release.title, {
+      ...(isMusicBrainzId(release.id) ? { releaseGroupId: release.id } : {}),
+      background: true
+    });
   };
 
   // Process album art queue with viewport prioritization
