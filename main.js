@@ -906,14 +906,6 @@ function createWindow() {
 
   amazonWebPlayer.setHost(mainWindow);
   registerAmazonDmlsProvider({ registerWidevineProvider, store });
-  // Session warm-up (#1198 review): mint the dmls session context at launch
-  // so the first Amazon search/play doesn't pay config.json + the header
-  // mint just to learn the plan tier. Signed-out, or Amazon not in the
-  // user's active resolvers, is a no-op.
-  try {
-    const activeResolvers = store.get('active_resolvers');
-    if (!Array.isArray(activeResolvers) || activeResolvers.includes('amazonmusic')) amazonDmls.warmSession();
-  } catch { /* warming is opportunistic */ }
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -921,6 +913,19 @@ function createWindow() {
     if (windowShown || !mainWindow || mainWindow.isDestroyed()) return;
     windowShown = true;
     mainWindow.show();
+
+    // Session warm-up (#1198): mint the dmls context so the first Amazon
+    // search doesn't pay config.json + the header mint just to learn the
+    // tier. A few seconds after the window is showing, not during
+    // createWindow — the mint can drive a page search, and startup used to
+    // pay that (same reason marketplace sync moved to idle, #765).
+    // Signed-out, or Amazon not in the user's active resolvers, is a no-op.
+    setTimeout(() => {
+      try {
+        const activeResolvers = store.get('active_resolvers');
+        if (!Array.isArray(activeResolvers) || activeResolvers.includes('amazonmusic')) amazonDmls.warmSession();
+      } catch { /* warming is opportunistic */ }
+    }, 5000);
 
     // Send any pending protocol URL that was received before window was ready
     if (global.pendingProtocolUrl) {

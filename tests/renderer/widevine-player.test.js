@@ -217,6 +217,20 @@ describe('play-token supersession', () => {
     await expect(p).rejects.toMatchObject({ reason: 'superseded' });
   });
 
+  test('a late plan-ineligible is superseded, not a retry of the old track (#1198)', async () => {
+    const resolvers = [];
+    const el = makeElectron();
+    el.bridge.getManifest = jest.fn(() => new Promise((resolve) => {
+      resolvers.push(() => resolve({ success: false, reason: 'plan-ineligible', error: 'plan' }));
+    }));
+    const { player } = load({ electron: el });
+    const p = player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'A' } });
+    await new Promise(r => setImmediate(r));
+    await player.stop();
+    resolvers[0]();
+    await expect(p).rejects.toMatchObject({ reason: 'superseded' });
+  });
+
   test('a load interrupted by stop() is superseded, not Shaka 7000', async () => {
     const { el, resolvers } = resumableManifest();
     const { sh, player } = load({ electron: el });

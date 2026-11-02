@@ -408,9 +408,10 @@ const adapter = {
 
   // Session warm-up (#1198 review #2): without it the FIRST Amazon search of
   // a session pays the context mint (config.json + possibly a header-mint
-  // page flow) just to learn the tier. Kicked by main at launch (signed-in
-  // accounts with the resolver active) and after every successful sign-in
-  // (refresh: a new sign-in can be a different account/tier). Fire-and-
+  // page flow) just to learn the tier. Kicked by main a few seconds after
+  // the window shows (signed-in accounts with the resolver active) and
+  // after every successful sign-in (refresh: a new sign-in can be a
+  // different account/tier). Fire-and-
   // forget: a failed warm just means the first search pays the mint as
   // before, and signed-out is a silent no-op.
   warmSession({ refresh } = {}) {

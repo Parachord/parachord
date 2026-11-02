@@ -1654,6 +1654,14 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         // above. With no other sources it falls through to the generic
         // error path (the provider's message names the plan gate).
         if (error && error.reason === 'plan-ineligible') {
+          // A late refusal must not pull playback back to the track the user
+          // already left. The catch above bails on a moved generation for
+          // every error; this check is on the call itself so a reorder can't
+          // reopen it (#1198).
+          if (playbackGenerationRef.current !== thisGeneration) {
+            setTrackLoading(false);
+            return;
+          }
           console.warn(`⏭️ ${streamLabel} source is not playable on the account's plan — trying the track's other sources`);
           const otherSources = trackOrSource.sources
             ? Object.keys(trackOrSource.sources).filter(id => id !== resolverId && !trackOrSource.sources[id]?.noMatch)
