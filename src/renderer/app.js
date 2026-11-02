@@ -644,6 +644,7 @@ const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { createReleaseLookup } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups } = require('./lib/artist-discography');
+const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
@@ -17786,59 +17787,17 @@ ${trackListXml}
   const reRankResults = (items, query, nameKey = 'name', artistOf = null) =>
     rankSearchRows(items, query, { Fuse, key: nameKey, artistOf });
 
-  // ListenBrainz listen counts for MusicBrainz release groups or recordings,
-  // as Search popularity (popularityFromListens): one batched POST to
-  // /1/popularity/<kind>, no account needed (the user's token rides along
-  // when there is one). Search waits for it before showing MusicBrainz's rows,
-  // because rows hold still once shown, so it is capped at timeoutMs; a slow
-  // or failed call just leaves those rows without popularity. Answers (an
-  // unknown id's null too) are kept for a day. Returns Map<mbid, 0-100>.
-  const listenBrainzPopularityCache = useRef(new Map()); // `${kind}:${mbid}` → { value, at }
-  const LISTENBRAINZ_POPULARITY_TTL_MS = 24 * 60 * 60 * 1000;
-  const fetchListenBrainzPopularity = async (kind, mbids, { timeoutMs = 800, reference } = {}) => {
-    const out = new Map();
-    const cache = listenBrainzPopularityCache.current;
-    const now = Date.now();
-    const need = [];
-    for (const id of new Set((mbids || []).filter(isMusicBrainzId))) {
-      const hit = cache.get(`${kind}:${id}`);
-      if (hit && now - hit.at < LISTENBRAINZ_POPULARITY_TTL_MS) { if (hit.value !== null) out.set(id, hit.value); }
-      else need.push(id);
-    }
-    if (need.length === 0) return out;
-    const field = `${kind.replace('-', '_')}_mbid`;
-    const url = `https://api.listenbrainz.org/1/popularity/${kind}`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...buildProtocolFetchHeaders(url) },
-        body: JSON.stringify({ [`${field}s`]: need }),
-        signal: ctrl.signal
-      });
-      if (res.ok) {
-        for (const entry of (await res.json()) || []) {
-          const id = entry && entry[field];
-          if (!id) continue;
-          const value = popularityFromListens(entry.total_listen_count, reference);
-          cache.set(`${kind}:${id}`, { value, at: now });
-          if (value !== null) out.set(id, value);
-        }
-      }
-    } catch (e) {
-      console.log(`🔍 ListenBrainz popularity (${kind}) skipped: ${e?.name === 'AbortError' ? `over ${timeoutMs}ms` : e?.message || e}`);
-    } finally {
-      clearTimeout(timer);
-    }
-    return out;
-  };
-  // idOf: the MBID a row's popularity is looked up by (the row's own id, or
-  // its artist's for tracks).
-  const withListenBrainzPopularity = async (kind, rows, { idOf = r => r.id, reference } = {}) => {
-    const popularity = await fetchListenBrainzPopularity(kind, rows.map(idOf), { reference });
-    return popularity.size ? rows.map(r => (popularity.has(idOf(r)) ? { ...r, _popularity: popularity.get(idOf(r)) } : r)) : rows;
-  };
+  // ListenBrainz popularity for Search (src/renderer/lib/search-requests.js):
+  // one batched request per category, capped at 800ms, cached a day.
+  const popularityLookupRef = useRef(null);
+  if (!popularityLookupRef.current) {
+    popularityLookupRef.current = createPopularityLookup({
+      fetch: (url, init) => fetch(url, init),
+      headersFor: buildProtocolFetchHeaders,
+      log: (message) => console.log(message)
+    });
+  }
+  const withListenBrainzPopularity = (kind, rows, opts) => popularityLookupRef.current.withPopularity(kind, rows, opts);
 
   const resolveRecording = async (recording) => {
     const track = {
@@ -17927,34 +17886,6 @@ ${trackListXml}
 
   // Preprocess search query for MusicBrainz Lucene syntax
   // Maps user-friendly filters to MusicBrainz field names
-  const preprocessQuery = (query, endpoint) => {
-    let processed = query;
-
-    // Map album: to appropriate field based on endpoint
-    if (endpoint === 'release-group') {
-      processed = processed.replace(/\balbum:/gi, 'releasegroup:');
-    } else if (endpoint === 'recording') {
-      processed = processed.replace(/\balbum:/gi, 'release:');
-    } else if (endpoint === 'artist') {
-      // For artist endpoint, album: doesn't make sense - strip it
-      // Pattern handles both quoted values (album:"dark side") and unquoted (album:thriller)
-      processed = processed.replace(/\balbum:(?:"[^"]*"|[^\s]*)/gi, '').trim();
-    }
-
-    // Map track:/song: to recording: (only for recording endpoint)
-    if (endpoint === 'recording') {
-      processed = processed.replace(/\b(track|song):/gi, 'recording:');
-    } else {
-      // Strip track:/song: from non-recording endpoints
-      // Pattern handles both quoted values (track:"let it be") and unquoted (track:yesterday)
-      processed = processed.replace(/\b(track|song):(?:"[^"]*"|[^\s]*)/gi, '').trim();
-    }
-
-    // Clean up any double spaces from removals
-    processed = processed.replace(/\s+/g, ' ').trim();
-
-    return processed;
-  };
 
   // Search runs two sides at once and merges what each has returned so far:
   //   - MusicBrainz: artists, albums (release groups) and tracks (recordings),
@@ -18095,23 +18026,11 @@ ${trackListXml}
     // Search artists
     const artistPromise = (async () => {
       try {
-        const artistQuery = preprocessQuery(query, 'artist');
-        const artistResponse = await fetch(
-          `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistQuery)}&fmt=json&limit=25`,
-          fetchOptions
-        );
+        // one request, deduped by name (searchMusicBrainzArtists)
+        const result = await searchMusicBrainzArtists(query, { fetch, fetchOptions });
         if (!isCurrent()) return;
-        mbOk.artists = artistResponse.ok;
-        const data = artistResponse.ok ? await artistResponse.json() : {};
-
-        // Deduplicate artists by name (case-insensitive)
-        const seenArtists = new Set();
-        mb.artists = (data.artists || []).filter(artist => {
-          const name = artist.name?.toLowerCase() || '';
-          if (seenArtists.has(name)) return false;
-          seenArtists.add(name);
-          return true;
-        });
+        mbOk.artists = result.ok;
+        mb.artists = result.rows;
         publishArtists();
       } catch (error) {
         if (error.name !== 'AbortError') {
@@ -18125,33 +18044,14 @@ ${trackListXml}
     // Search albums
     const albumPromise = (async () => {
       try {
-        const albumQuery = preprocessQuery(query, 'release-group');
-        // A MusicBrainz failure (an outage) leaves the catalogs' albums, and
+        // One request, deduped by artist + title (searchMusicBrainzAlbums). A
+        // MusicBrainz failure (an outage) leaves the catalogs' albums, and
         // brings in the inactive catalogs below.
-        let albumResponse = null;
-        try {
-          albumResponse = await fetch(
-            `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(albumQuery)}&fmt=json&limit=30`,
-            fetchOptions
-          );
-        } catch (mbError) {
-          if (mbError.name === 'AbortError') throw mbError;
-          console.warn('MusicBrainz album search failed; trying the catalogs:', mbError.message);
-        }
+        const result = await searchMusicBrainzAlbums(query, { fetch, fetchOptions });
+        if (result.failed) console.warn('MusicBrainz album search failed; trying the catalogs:', result.error?.message);
         if (!isCurrent()) return;
-        mbOk.albums = !!(albumResponse && albumResponse.ok);
-        const data = mbOk.albums ? await albumResponse.json() : {};
-
-        // Deduplicate albums by artist + title (case-insensitive)
-        const seen = new Set();
-        mb.albums = (data['release-groups'] || []).filter(album => {
-          const artist = album['artist-credit']?.[0]?.name?.toLowerCase() || '';
-          const title = album.title?.toLowerCase() || '';
-          const key = `${artist}|${title}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
+        mbOk.albums = result.ok;
+        mb.albums = result.rows;
         // Popularity before the rows show: they hold still once they have
         mb.albums = await withListenBrainzPopularity('release-group', mb.albums);
         if (!isCurrent()) return;
@@ -18173,34 +18073,12 @@ ${trackListXml}
     // Search tracks
     const trackPromise = (async () => {
       try {
-        const trackQuery = preprocessQuery(query, 'recording');
-        const trackResponse = await fetch(
-          `https://musicbrainz.org/ws/2/recording?query=${encodeURIComponent(trackQuery)}&fmt=json&limit=50`,
-          fetchOptions
-        );
+        // One request; tracks start unresolved and the visible ones resolve on
+        // the search-tracks scheduler (searchMusicBrainzTracks).
+        const result = await searchMusicBrainzTracks(query, { fetch, fetchOptions });
         if (!isCurrent()) return;
-        mbOk.tracks = trackResponse.ok;
-        const data = trackResponse.ok ? await trackResponse.json() : {};
-
-        // Tracks start unresolved; the visible ones resolve on the search-tracks
-        // scheduler. recording.id IS the MusicBrainz recording MBID: stored as
-        // mbid for downstream enrichment. score is MusicBrainz's relevance.
-        mb.tracks = (data.recordings || []).map(recording => ({
-          id: recording.id,
-          mbid: recording.id,
-          artistMbids: recording['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
-          releaseMbid: recording.releases?.[0]?.id || null,
-          title: recording.title,
-          artist: recording['artist-credit']?.[0]?.name || 'Unknown',
-          duration: Math.floor((recording.length || 180000) / 1000),
-          album: recording.releases?.[0]?.title || '',
-          releaseId: recording.releases?.[0]?.id || null,
-          releaseGroupId: recording.releases?.[0]?.['release-group']?.id || null, // For cache lookup
-          length: recording.length,
-          score: recording.score,
-          sources: {},
-          _needsResolution: true
-        }));
+        mbOk.tracks = result.ok;
+        mb.tracks = result.rows;
         // Popularity before the rows show: they hold still once they have
         // by artist: ListenBrainz splits a song's plays across duplicate
         // recordings, so an original's recording often has no count
