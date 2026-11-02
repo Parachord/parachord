@@ -642,6 +642,8 @@ const {
 } = require('./lib/artist-image-chain');
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
+const { createReleaseLookup } = require('./lib/release-lookup');
+const { artistLookupPlan, loadArtistReleaseGroups } = require('./lib/artist-discography');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
@@ -7526,79 +7528,20 @@ const Parachord = () => {
     releaseDetails: 30 * 24 * 60 * 60 * 1000 // 30 days (a release's tracklist never changes for a given ID)
   };
 
-  // Release details (tracklist + artist credits) by MusicBrainz release ID.
-  // Album pages used to refetch /ws/2/release/{id}?inc=recordings on every
-  // open, even for an album opened a minute earlier, and MB allows one call
-  // per second. A release's tracklist never changes for a given ID, so cache
-  // it like album art. Always requests recordings+artist-credits so one
-  // cached shape serves every caller (sites that only need recordings get a
-  // superset). Mimics the subset of Response the callers use (ok / status /
-  // json()); non-OK responses are passed through untouched so the
-  // 404 → "maybe it's a release-group ID" fallbacks keep working.
+  // Release details by MusicBrainz release ID, and the album page's lookup:
+  // src/renderer/lib/release-lookup.js (fetch injected, so
+  // tests/renderer/page-load-budget.test.js can count what a page costs).
   const RELEASE_DETAILS_CACHE_MAX = 400; // ~10-30KB each; pruned on save
-  // Entries are either { data, timestamp } for a release ID, or
-  // { alias: <releaseId>, timestamp } for a release-group ID that a caller
-  // resolved to a release (see rememberReleaseGroupAlias). Following the alias
-  // means an album opened from search (which carries a release-group ID) costs
-  // zero MusicBrainz calls on a revisit instead of a 404 probe plus the
-  // release-group lookup. The result carries the real `releaseId`; callers
-  // that keep using the ID afterwards should adopt it.
-  // The cached details for a release ID, or for the release a release-group ID
-  // was resolved to: { releaseId, data }, or null when nothing fresh is cached.
-  const cachedReleaseDetails = (requestedId) => {
-    const now = Date.now();
-    let releaseId = requestedId;
-    const aliasEntry = releaseDetailsCache.current[requestedId];
-    if (aliasEntry && aliasEntry.alias && (now - aliasEntry.timestamp) < CACHE_TTL.releaseDetails) {
-      releaseId = aliasEntry.alias;
-    }
-    const cached = releaseDetailsCache.current[releaseId];
-    return cached && cached.data && (now - cached.timestamp) < CACHE_TTL.releaseDetails
-      ? { releaseId, data: cached.data }
-      : null;
-  };
-  const fetchReleaseDetails = async (requestedId, fetchImpl = fetch) => {
-    const hit = cachedReleaseDetails(requestedId);
-    if (hit) {
-      const { releaseId } = hit;
-      console.log(`📦 Release details from cache: ${releaseId}${releaseId !== requestedId ? ` (via release-group ${requestedId})` : ''}`);
-      return { ok: true, status: 200, fromCache: true, releaseId, json: async () => hit.data };
-    }
-    const releaseId = requestedId;
-    const response = await fetchImpl(
-      `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits+release-groups&fmt=json`,
-      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-    );
-    if (!response.ok) return response;
-    const data = await response.json();
-    releaseDetailsCache.current[releaseId] = { data, timestamp: Date.now() };
-    return { ok: true, status: response.status, fromCache: false, releaseId, json: async () => data };
-  };
-  const rememberReleaseGroupAlias = (releaseGroupId, releaseId) => {
-    if (releaseGroupId && releaseId && releaseGroupId !== releaseId) {
-      releaseDetailsCache.current[releaseGroupId] = { alias: releaseId, timestamp: Date.now() };
-    }
-  };
-  // A release group's first official release WITH its track list, in one
-  // MusicBrainz request: the browse takes inc=recordings, and its release
-  // carries everything the /release/<id>?inc=recordings+artist-credits lookup
-  // does (plus label-info). Opening a group used to cost a browse for the
-  // release id and then that lookup, two slots in the 1.1s queue. Same result
-  // shape as fetchReleaseDetails; an empty group answers
-  // { ok: false, status: 404, noReleases: true }.
-  const fetchReleaseGroupDetails = async (releaseGroupId, fetchImpl = fetch) => {
-    const response = await fetchImpl(
-      `https://musicbrainz.org/ws/2/release?release-group=${releaseGroupId}&status=official&inc=recordings+artist-credits+labels&fmt=json&limit=1`,
-      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-    );
-    if (!response.ok) return response;
-    const body = await response.json();
-    const data = body.releases && body.releases[0];
-    if (!data || !data.id) return { ok: false, status: 404, noReleases: true };
-    releaseDetailsCache.current[data.id] = { data, timestamp: Date.now() };
-    rememberReleaseGroupAlias(releaseGroupId, data.id);
-    return { ok: true, status: response.status, fromCache: false, releaseId: data.id, json: async () => data };
-  };
+  const releaseLookupRef = useRef(null);
+  if (!releaseLookupRef.current) {
+    releaseLookupRef.current = createReleaseLookup({
+      getCache: () => releaseDetailsCache.current,
+      fetch: (url, init) => fetch(url, init), // the MusicBrainz interceptor
+      ttlMs: CACHE_TTL.releaseDetails,
+      log: (message) => console.log(message)
+    });
+  }
+  const { cachedReleaseDetails, fetchReleaseDetails, rememberReleaseGroupAlias, fetchReleaseGroupDetails } = releaseLookupRef.current;
 
   // MBID Mapper v2.0: fast fuzzy lookup of MusicBrainz IDs from artist + recording name
   // Returns { recording_mbid, artist_credit_mbids, release_mbid, confidence, source } or null.
@@ -20111,25 +20054,21 @@ ${trackListXml}
         }
       }
 
+      // Which request finds the artist (artistLookupPlan): none for a
+      // caller-supplied MBID, a direct lookup for the mapper's (~2x faster
+      // than a fuzzy search, no matching needed), else a name search.
       let searchResponse;
-      // A caller-supplied MBID needs no request at all
-      const knownArtist = knownMbid ? { id: knownMbid, name: artistName, score: 100 } : null;
-      if (knownArtist) {
-        // nothing to fetch
-      } else if (mapperArtistMbid) {
-        // Direct MBID lookup (~2x faster than fuzzy search, no matching needed)
-        searchResponse = await mbFetch(
-          `https://musicbrainz.org/ws/2/artist/${mapperArtistMbid}?fmt=json`
-        );
+      const lookupPlan = artistLookupPlan({ name: artistName, knownMbid, mapperMbid: mapperArtistMbid });
+      const knownArtist = lookupPlan.kind === 'known' ? { id: knownMbid, name: artistName, score: 100 } : null;
+      if (lookupPlan.kind === 'lookup') {
+        searchResponse = await mbFetch(lookupPlan.url);
         if (!searchResponse.ok) {
           console.warn('MBID mapper artist ID lookup failed, falling back to search');
           mapperArtistMbid = null;
         }
       }
       if (!mapperArtistMbid) {
-        searchResponse = await mbFetch(
-          `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(artistName)}&fmt=json&limit=5`
-        );
+        searchResponse = await mbFetch(artistLookupPlan({ name: artistName }).url);
       }
 
       if (!knownArtist && !searchResponse.ok) {
@@ -20304,15 +20243,13 @@ ${trackListXml}
       })();
 
       // Step 2: the artist's release groups, one request per type (album, EP,
-      // single), all three queued at once in the MusicBrainz limiter, which
-      // spaces them 1.1s apart. Release groups rather than releases, so each
-      // album appears once. Each type is shown as it arrives, albums first: the
-      // page used to wait for all three (Promise.all) before showing any, so
-      // the first release appeared only after the singles request answered.
-      // The grid shows releases while loadingArtist is still true (its
-      // skeleton is only for an empty list); loadingArtist ends when all three
-      // have answered, which is when the type tabs show their counts.
-      const releaseTypes = ['album', 'ep', 'single'];
+      // single), all three at once (loadArtistReleaseGroups). Each type is
+      // shown as it arrives, albums first: the page used to wait for all three
+      // (Promise.all) before showing any, so the first release appeared only
+      // after the singles request answered. The grid shows releases while
+      // loadingArtist is still true (its skeleton is only for an empty list);
+      // loadingArtist ends when all three have answered, which is when the
+      // type tabs show their counts.
       const byNewest = (a, b) => (b.date || '0000').localeCompare(a.date || '0000');
       const withCachedArt = (release) => ({
         ...release,
@@ -20350,55 +20287,11 @@ ${trackListXml}
         processAlbumArtQueue();
       };
 
-      const releasePromises = releaseTypes.map(async (type) => {
-        try {
-          const releasesResponse = await mbFetch(
-            `https://musicbrainz.org/ws/2/release-group?artist=${artist.id}&type=${type}&fmt=json&limit=100`
-          );
-
-          if (releasesResponse.ok) {
-            const releasesData = await releasesResponse.json();
-            if (releasesData['release-groups']) {
-              const releases = releasesData['release-groups'].map(rg => {
-                // Determine release type based on primary-type and secondary-types
-                const primaryType = (rg['primary-type'] || '').toLowerCase();
-                const secondaryTypes = (rg['secondary-types'] || []).map(t => t.toLowerCase());
-
-                // Categorize: studio album, live, compilation, or the primary type (ep/single)
-                let releaseType = primaryType || type;
-                if (secondaryTypes.includes('live')) {
-                  releaseType = 'live';
-                } else if (secondaryTypes.includes('compilation')) {
-                  releaseType = 'compilation';
-                } else if (primaryType === 'album' && secondaryTypes.length === 0) {
-                  releaseType = 'album'; // Studio album (no secondary types)
-                }
-
-                return {
-                  id: rg.id,
-                  title: rg.title,
-                  date: rg['first-release-date'] || null,
-                  releaseType: releaseType,
-                  secondaryTypes: secondaryTypes,
-                  disambiguation: rg.disambiguation,
-                  // fetchReleaseData / the hover prefetch skip the release-id
-                  // probe, a guaranteed 404 for a release-group id
-                  isReleaseGroup: true
-                };
-              });
-              showReleases(releases);
-              return releases;
-            }
-          }
-          return [];
-        } catch (error) {
-          console.error(`Error fetching ${type} release-groups:`, error);
-          return [];
-        }
-      });
-
-      const releaseResults = await Promise.all(releasePromises);
-      const uniqueReleases = releaseResults.flat().sort(byNewest);
+      const uniqueReleases = (await loadArtistReleaseGroups(artist.id, {
+        fetch: mbFetch,
+        onBatch: (releases) => showReleases(releases),
+        onError: (error, type) => console.error(`Error fetching ${type} release-groups:`, error)
+      })).sort(byNewest);
 
       console.log(`Found ${uniqueReleases.length} release-groups for ${artist.name}`);
       clearTimeout(slowFallbackTimer);
@@ -20554,30 +20447,19 @@ ${trackListXml}
         return;
       }
 
-      // Try fetching as a direct release ID first (for artist discography).
-      // An opener that got the id from a release-group search says so
-      // (isReleaseGroup): unless the group's release is already known, that
-      // lookup is a guaranteed 404 costing a MusicBrainz slot, so skip it.
+      // A release id, or a release group's first official release with its
+      // track list (loadRelease: an id known to be a group skips the
+      // release-id probe, a guaranteed 404). One request either way.
       let releaseId = release.id;
-      const skipReleaseProbe = !!release.isReleaseGroup && !releaseDetailsCache.current[release.id]?.alias;
-      let releaseDetailsResponse = skipReleaseProbe ? null : await fetchReleaseDetails(releaseId);
-
-      // If that fails (404), it's a release-group ID (search, the artist
-      // page): one request answers the group's release and its track list.
-      if (!releaseDetailsResponse || (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404)) {
-        console.log('Not a release ID, loading as release-group...');
-        releaseDetailsResponse = await fetchReleaseGroupDetails(release.id);
-        if (releaseDetailsResponse.noReleases) {
-          throw new Error('No official releases found for this release-group');
-        }
-        if (!releaseDetailsResponse.ok) {
-          throw new Error(`Failed to fetch release or release-group (HTTP ${releaseDetailsResponse.status})`);
-        }
-        console.log('Converted release-group to release ID:', releaseDetailsResponse.releaseId);
+      const releaseDetailsResponse = await releaseLookupRef.current.loadRelease({ id: release.id, isReleaseGroup: release.isReleaseGroup });
+      if (releaseDetailsResponse.noReleases) {
+        throw new Error('No official releases found for this release-group');
       }
-
       if (!releaseDetailsResponse.ok) {
-        throw new Error('Release not found');
+        throw new Error(`Failed to fetch release or release-group (HTTP ${releaseDetailsResponse.status})`);
+      }
+      if (releaseDetailsResponse.releaseId && releaseDetailsResponse.releaseId !== release.id) {
+        console.log('Converted release-group to release ID:', releaseDetailsResponse.releaseId);
       }
       // A cached alias answers with the real release ID; keep using that one.
       releaseId = releaseDetailsResponse.releaseId || releaseId;
@@ -20794,17 +20676,13 @@ ${trackListXml}
       // Hover prefetch: background lane of the MusicBrainz limiter
       const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
 
-      // Try fetching as a direct release ID first, unless the id is known to
-      // be a release group (the artist page's cards): that probe is a
-      // guaranteed 404.
+      // The album page's lookup, in the background lane (loadRelease)
       let releaseId = release.id;
-      const skipReleaseProbe = !!release.isReleaseGroup && !releaseDetailsCache.current[release.id]?.alias;
-      let releaseDetailsResponse = skipReleaseProbe ? null : await fetchReleaseDetails(releaseId, bgFetch);
+      const releaseDetailsResponse = await releaseLookupRef.current.loadRelease({ id: release.id, isReleaseGroup: release.isReleaseGroup }, bgFetch);
+      if (!releaseDetailsResponse.ok) return;
 
-      // A release-group ID: one request answers its release and track list
-      if (!releaseDetailsResponse || (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404)) {
-        releaseDetailsResponse = await fetchReleaseGroupDetails(release.id, bgFetch);
-        if (!releaseDetailsResponse.ok) return;
+      // It was a release group: remember the pick for openers by name
+      if (releaseDetailsResponse.releaseId && releaseDetailsResponse.releaseId !== release.id) {
         releaseGroupPicksRef.current.set(artist?.name, release.title, {
           id: release.id,
           title: release.title,

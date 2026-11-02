@@ -73,6 +73,9 @@ describe('createReleaseGroupPicks', () => {
   });
 });
 
+const releaseLookup = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'lib', 'release-lookup.js'), 'utf8');
+const artistDiscography = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'lib', 'artist-discography.js'), 'utf8');
+
 describe('app.js wiring', () => {
   const fetchRelease = slice('const fetchReleaseData = async (release, artist) => {', '// Prefetch release tracks on hover');
 
@@ -88,7 +91,7 @@ describe('app.js wiring', () => {
   // /release-group/<mbid> from whatever it is given, so a release id there
   // 404s (jherskowitz/achordion#107).
   test('the loaded album records its release group for Copy Link', () => {
-    expect(app).toContain('/ws/2/release/${releaseId}?inc=recordings+artist-credits+release-groups&fmt=json');
+    expect(releaseLookup).toContain('/ws/2/release/${releaseId}?inc=recordings+artist-credits+release-groups&fmt=json');
     expect(fetchRelease).toMatch(/releaseGroupMbid: releaseData\['release-group'\]\?\.id\s*\|\| \(releaseId !== release\.id && isMusicBrainzId\(release\.id\) \? release\.id : null\),/);
     // every share path asks for the release group first
     expect(app).toMatch(/mbid: currentRelease\.releaseGroupMbid \|\| currentRelease\.mbid \|\| currentRelease\.id \|\| null/);
@@ -100,35 +103,39 @@ describe('app.js wiring', () => {
   });
 
   test('a known release-group id skips the release-id probe unless its release is cached', () => {
-    expect(fetchRelease).toMatch(/const skipReleaseProbe = !!release\.isReleaseGroup && !releaseDetailsCache\.current\[release\.id\]\?\.alias;/);
-    expect(fetchRelease).toMatch(/skipReleaseProbe \? null : await fetchReleaseDetails\(releaseId\)/);
+    // loadRelease (src/renderer/lib/release-lookup.js) skips the probe;
+    // page-load-budget.test.js counts it (1 request for a flagged group)
+    expect(releaseLookup).toMatch(/const skipProbe = !!isReleaseGroup && !\(getCache\(\)\[id\] && getCache\(\)\[id\]\.alias\);/);
+    expect(releaseLookup).toMatch(/let response = skipProbe \? null : await fetchReleaseDetails\(id, fetchImpl\);/);
+    expect(fetchRelease).toMatch(/await releaseLookupRef\.current\.loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}\)/);
   });
 
   // An album opened from the artist page used to cost three MusicBrainz
   // requests in the 1.1s queue: a release-id probe that 404s, a browse for
   // the group's release, then that release's track list.
-  const groupDetails = slice('const fetchReleaseGroupDetails = async (releaseGroupId, fetchImpl = fetch) => {', '\n  };');
+  const groupDetails = releaseLookup.slice(releaseLookup.indexOf('const fetchReleaseGroupDetails = async (releaseGroupId, fetchImpl = defaultFetch) => {'), releaseLookup.indexOf('\n  };', releaseLookup.indexOf('const fetchReleaseGroupDetails = async')));
 
   test('a release group loads its release and track list in one request', () => {
     expect(groupDetails).toContain('release?release-group=${releaseGroupId}&status=official&inc=recordings+artist-credits+labels&fmt=json&limit=1');
     expect(groupDetails.match(/fetchImpl\(/g)).toHaveLength(1);
     // cached like a release lookup, and the group remembered as its alias
-    expect(groupDetails).toMatch(/releaseDetailsCache\.current\[data\.id\] = \{ data, timestamp: Date\.now\(\) \};/);
+    expect(groupDetails).toMatch(/getCache\(\)\[data\.id\] = \{ data, timestamp: now\(\) \};/);
     expect(groupDetails).toMatch(/rememberReleaseGroupAlias\(releaseGroupId, data\.id\);/);
     expect(groupDetails).toMatch(/noReleases: true/);
   });
 
   test('fetchReleaseData and the hover prefetch use it, with no second lookup', () => {
-    expect(fetchRelease).toMatch(/releaseDetailsResponse = await fetchReleaseGroupDetails\(release\.id\);/);
+    // both go through loadRelease, whose group path is fetchReleaseGroupDetails
+    expect(releaseLookup).toMatch(/response = await fetchReleaseGroupDetails\(id, fetchImpl\);/);
     expect(fetchRelease).not.toMatch(/release\?release-group=\$\{release\.id\}/);
     const prefetch = slice('const prefetchReleaseTracks = async (release, artist) => {', '\n  };');
-    expect(prefetch).toMatch(/const skipReleaseProbe = !!release\.isReleaseGroup && !releaseDetailsCache\.current\[release\.id\]\?\.alias;/);
-    expect(prefetch).toMatch(/releaseDetailsResponse = await fetchReleaseGroupDetails\(release\.id, bgFetch\);/);
+    expect(prefetch).toMatch(/await releaseLookupRef\.current\.loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}, bgFetch\)/);
     expect(prefetch).not.toMatch(/release\?release-group=\$\{release\.id\}/);
   });
 
   test('artist-page releases and parachord://album matches are flagged as release groups', () => {
-    const artistReleases = slice("`https://musicbrainz.org/ws/2/release-group?artist=${artist.id}&type=${type}&fmt=json&limit=100`", 'showReleases(releases);');
+    // artist-discography.js builds the artist page's releases
+    const artistReleases = artistDiscography.slice(artistDiscography.indexOf('function releaseFromReleaseGroup('));
     expect(artistReleases).toMatch(/id: rg\.id,[\s\S]*?isReleaseGroup: true/);
     expect(app).toMatch(/id: match\.id,\s*title: match\.title,\s*releaseType: match\['primary-type'\]\?\.toLowerCase\(\) \|\| 'album',\s*isReleaseGroup: true/);
   });
@@ -161,7 +168,7 @@ describe('app.js wiring', () => {
     const loader = slice('const loadAlbumTrackList = async (', '// Home\'s and Fresh Drops\' album cards');
     expect(loader).toContain('releaseGroupPicksRef.current.set(artist, title, match)');
     expect(loader).toContain('releaseGroupPicksRef.current.get(artist, title)');
-    expect(slice('const fetchReleaseGroupDetails = async', '\n  };')).toContain('rememberReleaseGroupAlias(releaseGroupId, data.id)');
+    expect(releaseLookup.slice(releaseLookup.indexOf('const fetchReleaseGroupDetails = async'))).toContain('rememberReleaseGroupAlias(releaseGroupId, data.id)');
     expect(slice('const fetchAlbumTracksByName = async', '// Keep fetchAlbumTracksByNameRef in sync')).toContain('loadAlbumTrackList(');
     const searchAlbum = slice('const fetchSearchAlbumTracksAsync = async (album) => {', 'return result;');
     expect(searchAlbum).toContain('releaseGroupPicksRef.current.set(artistName, album.title, album)');

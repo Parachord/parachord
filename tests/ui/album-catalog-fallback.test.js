@@ -42,7 +42,7 @@ describe('fetchReleaseData', () => {
 
   test('an album with a service id skips MusicBrainz', () => {
     const skip = body.indexOf('if (!isMusicBrainzId(release.id)) {');
-    const firstMb = body.indexOf('fetchReleaseDetails(releaseId)');
+    const firstMb = body.indexOf('releaseLookupRef.current.loadRelease(');
     expect(skip).toBeGreaterThan(-1);
     expect(skip).toBeLessThan(firstMb);
   });
