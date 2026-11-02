@@ -1231,6 +1231,23 @@ const DML_TARGET_PREFIX = 'com.amazon.digitalmusiclocator.DigitalMusicLocatorSer
 // per-track license exchange (session/cert init). Mimic it once per session.
 const WIDEVINE_CERT_CHALLENGE = 'CAQ=';
 
+// license-400 denialReason semantics (live captures): only these mean the
+// build's certificate (development VMP) is what Amazon is refusing — the
+// `licenseDenied` "no point trying another Amazon track" class. Everything
+// else (HD entitlement, region, ...) is a per-content refusal the player
+// routes around.
+const CERTIFICATE_DENIAL_REASONS = new Set([
+  'UNTRUSTED_DEVICE_CERTIFICATE',
+  'DEVELOPMENT_CERTIFICATE_NOT_ALLOWED'
+]);
+// Eligibility denials that mean the ACCOUNT lacks the HD tier — after one
+// observed refusal we stop asking for FLAC for the process (jherskowitz's
+// Prime capture: CUSTOMER_NOT_ELIGIBLE on the HD KID group while the opus
+// groups played fine).
+const HD_CONTENT_DENIAL_REASONS = new Set([
+  'CUSTOMER_NOT_ELIGIBLE'
+]);
+
 // Region segment in the dmls URL, derived from the session territory.
 const AMAZON_FE_TERRITORIES = new Set(['JP', 'AU', 'NZ', 'SG', 'MY', 'ID', 'TH', 'PH', 'KR', 'TW', 'IN', 'HK']);
 const AMAZON_EU_TERRITORIES = new Set(['GB', 'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'SE', 'DK', 'NO', 'FI', 'PL', 'PT', 'CH', 'CZ', 'GR', 'HU', 'RO', 'TR']);
@@ -1566,6 +1583,8 @@ module.exports = {
   AMAZON_DEVICE_TYPE_ID,
   DML_TARGET_PREFIX,
   WIDEVINE_CERT_CHALLENGE,
+  CERTIFICATE_DENIAL_REASONS,
+  HD_CONTENT_DENIAL_REASONS,
   AMAZON_TELEMETRY_CONSTANTS,
   TELEMETRY_TERMINATION,
   amazonTelemetryBitrateLabel,

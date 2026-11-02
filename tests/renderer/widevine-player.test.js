@@ -131,6 +131,30 @@ describe('license scheme relay', () => {
     expect(Buffer.from(sent, 'base64')).toEqual(Buffer.from(bytes.buffer));
   });
 
+  test('CUSTOMER_NOT_ELIGIBLE for HD: session drops FLAC — next max-tier play picks opus (plan-level block)', async () => {
+    const { sh, el, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    // Bridge-level denied-shape with the HD eligibility reason.
+    el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for HD' });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    // First play at max starts locked on flac (the roster was full then).
+    let p = sh.playerInstances[0];
+    expect(p.selected.bandwidth).toBe(1902230);
+    // The license relay fails with the HD eligibility reason → session flag.
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic?v=2', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
+    expect(player.getState().hdSessionBlockedByPlan).toBe(true);
+    // Subsequent max-tier play sees the FLAC rung put out of the roster.
+    await player.stop();
+    const audio2 = makeAudio();
+    await player.play(audio2, { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    p = sh.playerInstances[0]; // same engine singleton
+    expect(p.selected.codecs).toContain('opus');
+    expect(p.selected.bandwidth).toBe(325595);
+  });
+
   test('licenseDenied propagates from the bridge through the scheme handler', async () => {
     const { sh, el, player } = load({ electron: makeElectron({ licenseOk: false, licenseDenied: true }) });
     const audio = makeAudio();

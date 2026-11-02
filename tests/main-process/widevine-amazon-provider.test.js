@@ -197,13 +197,49 @@ describe('amazon-dmls relayLicense', () => {
     expect(body.licenseChallenge).toBe('Y2hhbGxlbmdl');
   });
 
-  test('400 is licenseDenied with the VMP message', async () => {
+  test('400 with an opaque/non-JSON body is a generic refusal, NOT claimed as the cert class', async () => {
     requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON }));
     requestHandlers.push(() => ({ status: 400, text: 'denied' }));
+    let err = null;
+    try { await amazonDmls.relayLicense('CAQ='); } catch (e) { err = e; }
+    expect(err.licenseDenied).toBe(false);
+    expect(err.denialReason).toBeNull();
+    expect(err.message).not.toContain('VMP');
+  });
+
+  test('400 denialReason=CUSTOMER_NOT_ELIGIBLE is a per-content refusal, NOT a build problem (Prime HD capture)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON }));
+    requestHandlers.push(() => ({
+      status: 400,
+      text: JSON.stringify({
+        __type: 'com.amazon.digitalmusicdrmlicenseservice#ForbiddenException',
+        denialReason: 'CUSTOMER_NOT_ELIGIBLE',
+        message: 'customer is not eligible for HD content (EligibilityException CUSTOMER_NOT_ELIGIBLE)'
+      })
+    }));
+    let err = null;
+    try { await amazonDmls.relayLicense('CAQ='); } catch (e) { err = e; }
+    expect(err.licenseDenied).toBe(false);
+    expect(err.denialReason).toBe('CUSTOMER_NOT_ELIGIBLE');
+    expect(err.message).toContain('not eligible for HD content');
+    expect(err.message).not.toContain('VMP');
+    // The plan-level HD block gets recorded for the session.
+    expect(amazonDmls.hdSessionBlockedByPlan).toBe(true);
+    expect(amazonDmls.debugState().hdSessionBlockedByPlan).toBe(true);
+  });
+
+  test('400 denialReason=UNTRUSTED_DEVICE_CERTIFICATE stays licenseDenied (build VMP problem)', async () => {
+    amazonDmls.hdSessionBlockedByPlan = false; // reset plan-level flag for the assertion below
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON }));
+    requestHandlers.push(() => ({
+      status: 400,
+      text: JSON.stringify({ denialReason: 'UNTRUSTED_DEVICE_CERTIFICATE', message: 'device cert rejected' })
+    }));
     await expect(amazonDmls.relayLicense('CAQ=')).rejects.toMatchObject({
       licenseDenied: true,
       message: expect.stringContaining('VMP')
     });
+    expect(amazonDmls.hdSessionBlockedByPlan).toBe(false);
   });
 
   test('non-200 without license field is an error', async () => {
@@ -245,6 +281,23 @@ describe('widevine bridge IPC', () => {
 });
 
 describe('widevine bridge relay gating', () => {
+  test('bridge relays the denialReason through the license reply', async () => {
+    registerWidevineProvider('relay-denial', {
+      getManifest: async () => ({ manifest: '<MPD/>' }),
+      relayLicense: async () => {
+        const e = new Error('Amazon refused the license for this content (CUSTOMER_NOT_ELIGIBLE): not eligible');
+        e.reason = 'playback-failed'; e.licenseDenied = false; e.denialReason = 'CUSTOMER_NOT_ELIGIBLE';
+        throw e;
+      }
+    });
+    const manifest = await handlers['widevine:manifest'](mainFrameEvent, { resolverId: 'relay-denial', entity: {} });
+    const reply = await handlers['widevine:license'](mainFrameEvent, { resolverId: 'relay-denial', challenge: 'CAQ=', sessionId: manifest.sessionId });
+    expect(reply.success).toBe(false);
+    expect(reply.licenseDenied).toBe(false);
+    expect(reply.denialReason).toBe('CUSTOMER_NOT_ELIGIBLE');
+  });
+
+
   let handlers;
   const ipcMain = { handle: (name, fn) => { handlers[name] = fn; } };
 

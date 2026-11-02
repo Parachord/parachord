@@ -131,6 +131,13 @@ function ensureLicenseScheme() {
     if (!result || result.success !== true) {
       const err = new Error((result && result.error) || 'license relay failed');
       if (result && result.licenseDenied) err.licenseDenied = true;
+      // Eligibility refusals (CUSTOMER_NOT_ELIGIBLE for the HD KID group on
+      // a Prime plan — live-verified) are process-level facts: stop asking
+      // for FLAC. The current play survives on the other KID groups; the
+      // NEXT readPlaybackQuality/start selection drops the HD rungs.
+      if (result && HD_CONTENT_DENIAL_STATUSES.has(result.denialReason)) {
+        hdSessionBlockedByPlan = true;
+      }
       throw err;
     }
     return { uri, data: unb64(result.license), headers: {}, originalRequest: request };
@@ -145,6 +152,14 @@ function ensureLicenseScheme() {
 // tier fails shaka 4012 (RESTRICTIONS_CANNOT_BE_MET) there even though
 // MediaSource is fine everywhere. Hornet-era Linux never played FLAC for the
 // same underlying reason). Probe both layers once per process.
+// Set once Amazon answers a license relay with an HD-content eligibility
+// denial (CUSTOMER_NOT_ELIGIBLE — the Prime-plan capture): the FLAC KID
+// group will be refused for the whole account, so stop asking (the
+// refusal would otherwise repeat per track). Process-level, matching the
+// dmls session it was issued under.
+let hdSessionBlockedByPlan = false;
+const HD_CONTENT_DENIAL_STATUSES = new Set(['CUSTOMER_NOT_ELIGIBLE']);
+
 let supportedCodecFamilies = null;
 async function getSupportedCodecFamilies() {
   if (supportedCodecFamilies) return supportedCodecFamilies;
@@ -268,7 +283,10 @@ function currentVariantFacts() {
 // list through getSupportedCodecFamilies before tier selection runs.
 function playableVariants(tracks) {
   // Callers: await getSupportedCodecFamilies() once before selection.
-  const support = supportedCodecFamilies || { flac: true, opus: true, aac: true };
+  const support = { ...(supportedCodecFamilies || { flac: true, opus: true, aac: true }) };
+  // Plan-level HD refusal: the FLAC KID group gets CUSTOMER_NOT_ELIGIBLE
+  // from the license relay — put flac out of the roster for the process.
+  if (hdSessionBlockedByPlan) support.flac = false;
   return (tracks || []).filter((t) => {
     const c = String(t && (t.codecs || t.codec) || '').toLowerCase();
     if (c.startsWith('flac')) return support.flac;
@@ -457,6 +475,7 @@ function getState() {
     errorCode: audioElement && audioElement.error ? audioElement.error.code : null,
     variantFacts: currentVariantFacts(),
     qualitySeen: lastQualityRead,
+    hdSessionBlockedByPlan,
     shaka
   };
 }
