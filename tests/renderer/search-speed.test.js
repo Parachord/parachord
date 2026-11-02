@@ -105,7 +105,9 @@ describe('performSearch', () => {
   });
 
   test('track rows rank on artist and title, with each service\'s priority', () => {
-    expect(body).toMatch(/reRankResults\(mergeTrackResults\(mb\.tracks \|\| \[\], trackLists\(\), scorer\), query, TRACK_RANK_KEY\)/);
+    expect(body).toMatch(/reRankResults\(mergeTrackResults\(mb\.tracks \|\| \[\], trackLists\(\), scorer\), query, TRACK_RANK_KEY, t => t\.artist\)/);
+    // albums rank on artist and title too, with the artist-named bonus
+    expect(body).toMatch(/reRankResults\(mergeAlbumResults\(mb\.albums \|\| \[\], albumLists\(\)\), query, ALBUM_RANK_KEY, albumArtistName\), rowIdentityKeys, namedArtistTier\(albumArtistName\)\)/);
     expect(body).toMatch(/const priority = trackResolvers\.indexOf\(resolver\);/);
   });
 

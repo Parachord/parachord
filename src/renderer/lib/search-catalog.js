@@ -219,6 +219,55 @@ function catalogTracksToSearchResults(tracks, resolverId, priority = 0) {
 // and edits whose title is "Portishead - Roads".
 const TRACK_RANK_KEY = { name: 'artistTitle', getFn: (t) => `${t.artist || ''} ${t.title || ''}` };
 
+// Fuse key for ranking album rows, the same idea as TRACK_RANK_KEY: the
+// query against "artist title". Titles alone ranked a search for an artist
+// by which albums have the artist's name in the title, which is mostly covers
+// ("Into Dust (Mazzy Star Cover)"), while the artist's own albums
+// ("Among My Swan") scored nothing.
+const albumArtistName = (album) => (((album && album['artist-credit']) || [])[0] || {}).name || '';
+const ALBUM_RANK_KEY = { name: 'artistTitle', getFn: (a) => `${albumArtistName(a)} ${a.title || ''}` };
+
+// Lowercased, accent-free, punctuation as spaces, padded for whole-word tests.
+const asWords = (s) => ` ${String(s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+  .replace(/&/g, ' and ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+
+// Does the query name this artist, as whole words? "mazzy star" and
+// "mazzy star among my swan" name Mazzy Star; "airplane" doesn't name Air.
+// A leading "The" is optional on either side.
+function queryNamesArtist(query, artistName) {
+  const artist = asWords(artistName).trim();
+  if (!artist) return false;
+  const q = asWords(query).replace(/^ the /, ' ');
+  const bare = artist.replace(/^the /, '');
+  return !!bare && q.includes(` ${bare} `);
+}
+
+// A row by the artist the query names ranks above rows that only mention the
+// artist (covers, tributes, karaoke). Large enough to lift a perfect artist
+// match over a cover whose title contains the name; small next to the 60
+// points fuzzy relevance is worth, so an unrelated artist still can't win.
+const ARTIST_NAMED_BONUS = 20;
+
+// Search's ranking (reRankResults in app.js). Each row scores 60% fuzzy
+// relevance of the query against `key` plus 40% its source's own score
+// (MusicBrainz's search score, or a service row's rankScore by position),
+// plus ARTIST_NAMED_BONUS when `artistOf` names an artist the query names.
+// Fuse is passed in: the renderer loads it from vendor/fuse.min.js.
+function rankSearchRows(items, query, { Fuse, key, artistOf = null } = {}) {
+  if (!items || items.length === 0 || !query || !Fuse) return items;
+  const fuse = new Fuse(items, { keys: [key], includeScore: true, threshold: 0.6, ignoreLocation: true, useExtendedSearch: false });
+  const fuzzy = new Map();
+  for (const r of fuse.search(query)) fuzzy.set(r.item, (1 - r.score) * 100);
+  return items
+    .map((item) => {
+      const relevance = fuzzy.get(item) || 0;
+      const sourceScore = item.score || 50;
+      const bonus = artistOf && queryNamesArtist(query, artistOf(item)) ? ARTIST_NAMED_BONUS : 0;
+      return { ...item, _finalScore: relevance * 0.6 + sourceScore * 0.4 + bonus };
+    })
+    .sort((a, b) => b._finalScore - a._finalScore);
+}
+
 // Artists named by service results whose name matches the query (one
 // contains the other, after normalization), in the order the results name
 // them, minus artists MusicBrainz already returned.
@@ -255,7 +304,12 @@ function catalogArtistsFromResults({ query, trackLists = [], albumLists = [], mb
 // The row's real id still changes (a MusicBrainz match wins identity); only
 // the display key and the order are held. previous is the last call's
 // returned `shown`; returns { rows, shown }.
-function stabilizeRows(rows, previous, identityKeys) {
+// tierOf(row), optional: a higher tier always comes first, and rows hold
+// still within their tier. Search passes 1 for rows by the artist the query
+// names, so when an artist's own albums arrive after a fast service's covers
+// that mention the name, they move above them once (2026-11-02: "Mazzy Star"
+// kept its covers on top until a second search).
+function stabilizeRows(rows, previous, identityKeys, tierOf = null) {
   const owner = new Map();
   for (const p of previous || []) {
     for (const k of p.keys) if (!owner.has(k)) owner.set(k, p.rowKey);
@@ -268,10 +322,13 @@ function stabilizeRows(rows, previous, identityKeys) {
     if (rowKey) placed.set(rowKey, { ...row, _rowKey: rowKey });
     else fresh.push({ ...row, _rowKey: row.id });
   }
-  const ordered = [
+  const held = [
     ...(previous || []).map(p => placed.get(p.rowKey)).filter(Boolean),
     ...fresh,
   ];
+  const tier = (r) => (tierOf ? tierOf(r) || 0 : 0);
+  const tiers = [...new Set(held.map(tier))].sort((x, y) => y - x);
+  const ordered = tiers.length > 1 ? tiers.flatMap(t => held.filter(r => tier(r) === t)) : held;
   const shown = ordered.map(r => ({ rowKey: r._rowKey, keys: [...new Set([r._rowKey, ...identityKeys(r)])] }));
   return { rows: ordered, shown };
 }
@@ -288,6 +345,11 @@ module.exports = {
   artistIdentityKeys,
   CATALOG_RESULTS_PER_RESOLVER,
   TRACK_RANK_KEY,
+  ALBUM_RANK_KEY,
+  albumArtistName,
+  queryNamesArtist,
+  ARTIST_NAMED_BONUS,
+  rankSearchRows,
   searchResolversFor,
   catalogTrackToSearchResult,
   catalogTracksToSearchResults,

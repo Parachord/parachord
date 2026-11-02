@@ -303,3 +303,98 @@ test('serviceArtFor passes over URLs known not to load', () => {
   expect(serviceArtFor(row, new Set(['https://bc/dead.jpg']))).toBe('https://am/ok.jpg');
   expect(serviceArtFor({ _serviceArt: 'x' }, new Set(['x']))).toBeNull();
 });
+
+// Search's ranking, with the real Fuse the renderer loads (vendor/fuse.min.js).
+describe('rankSearchRows', () => {
+  const Fuse = require('../../vendor/fuse.min.js');
+  const {
+    rankSearchRows, ALBUM_RANK_KEY, albumArtistName, queryNamesArtist, ARTIST_NAMED_BONUS,
+  } = require('../../src/renderer/lib/search-catalog');
+  const album = (title, artist, score) => ({ id: `${artist}:${title}`, title, 'artist-credit': [{ name: artist }], score });
+
+  // 2026-11-02: "Mazzy Star" listed only covers under Albums. MusicBrainz
+  // returned Mazzy Star's own albums (score 100), but titles alone ranked
+  // them at 40 and the services' covers ("… (Mazzy Star Cover)") near 100.
+  test('an artist search ranks the artist\'s own albums above covers that mention the name', () => {
+    const rows = [
+      album('Mazzy Star Covers', 'Mersilde', 100),
+      album('Into Dust (Mazzy Star Cover)', 'Indigo Raven', 95),
+      album('fade into you (mazzy star cover)', 'bleach bath', 90),
+      album('Among My Swan', 'Mazzy Star', 100),
+      album('So Tonight That I Might See', 'Mazzy Star', 100),
+    ];
+    const ranked = rankSearchRows(rows, 'Mazzy Star', { Fuse, key: ALBUM_RANK_KEY, artistOf: albumArtistName });
+    expect(ranked.slice(0, 2).map(r => albumArtistName(r))).toEqual(['Mazzy Star', 'Mazzy Star']);
+  });
+
+  test('a title search still finds the title first', () => {
+    const rows = [
+      album('Pink Moon', 'Nick Drake', 100),
+      album('Abbey Road', 'The Beatles', 100),
+      album('Abbey Road Revisited', 'Various Artists', 90),
+    ];
+    const ranked = rankSearchRows(rows, 'abbey road', { Fuse, key: ALBUM_RANK_KEY, artistOf: albumArtistName });
+    expect(ranked[0].title).toBe('Abbey Road');
+    expect(ranked[ranked.length - 1].title).toBe('Pink Moon');
+  });
+
+  test('"artist title" puts that artist\'s track above a cover titled with both', () => {
+    const rows = [
+      { id: 'cover', title: 'Portishead - Roads', artist: 'Some Covers Band', score: 100 },
+      { id: 'own', title: 'Roads', artist: 'Portishead', score: 90 },
+    ];
+    const ranked = rankSearchRows(rows, 'portishead roads', { Fuse, key: { name: 'artistTitle', getFn: t => `${t.artist} ${t.title}` }, artistOf: t => t.artist });
+    expect(ranked[0].id).toBe('own');
+  });
+
+  test('without artistOf there is no bonus; no Fuse or no query leaves the order', () => {
+    const rows = [album('A', 'X', 10), album('B', 'Y', 90)];
+    expect(rankSearchRows(rows, 'x', { Fuse, key: 'title' }).every(r => r._finalScore < ARTIST_NAMED_BONUS + 100)).toBe(true);
+    expect(rankSearchRows(rows, '', { Fuse, key: 'title' })).toBe(rows);
+    expect(rankSearchRows(rows, 'x', { key: 'title' })).toBe(rows);
+  });
+});
+
+describe('queryNamesArtist', () => {
+  const { queryNamesArtist } = require('../../src/renderer/lib/search-catalog');
+  test('whole words, any position, accents and a leading "The" ignored', () => {
+    expect(queryNamesArtist('Mazzy Star', 'Mazzy Star')).toBe(true);
+    expect(queryNamesArtist('mazzy star among my swan', 'Mazzy Star')).toBe(true);
+    expect(queryNamesArtist('roads portishead', 'Portishead')).toBe(true);
+    expect(queryNamesArtist('beatles abbey road', 'The Beatles')).toBe(true);
+    expect(queryNamesArtist('the beatles', 'Beatles')).toBe(true);
+    expect(queryNamesArtist('beyonce lemonade', 'Beyoncé')).toBe(true);
+    expect(queryNamesArtist('simon garfunkel', 'Simon & Garfunkel')).toBe(false); // "and" is a word
+    expect(queryNamesArtist('simon and garfunkel', 'Simon & Garfunkel')).toBe(true);
+  });
+  test('not a part of a word, not an empty name', () => {
+    expect(queryNamesArtist('airplane', 'Air')).toBe(false);
+    expect(queryNamesArtist('mazzy', 'Mazzy Star')).toBe(false);
+    expect(queryNamesArtist('anything', '')).toBe(false);
+  });
+});
+
+describe('stabilizeRows tiers', () => {
+  const { stabilizeRows, rowIdentityKeys, queryNamesArtist, albumArtistName } = require('../../src/renderer/lib/search-catalog');
+  const album = (id, title, artist) => ({ id, title, 'artist-credit': [{ name: artist }] });
+  const tier = (row) => (queryNamesArtist('Mazzy Star', albumArtistName(row)) ? 1 : 0);
+
+  test('the artist\'s own albums, arriving after covers, move above them once; rows hold still within a tier', () => {
+    // a fast service answers first with covers that mention the name
+    const first = stabilizeRows([album('c1', 'Mazzy Star Covers', 'Mersilde'), album('c2', 'Into Dust (Mazzy Star Cover)', 'Indigo Raven')], [], rowIdentityKeys, tier);
+    expect(first.rows.map(r => r.id)).toEqual(['c1', 'c2']);
+    // then Mazzy Star's own albums
+    const ranked = [album('m1', 'Among My Swan', 'Mazzy Star'), album('m2', 'Still', 'Mazzy Star'), album('c2', 'Into Dust (Mazzy Star Cover)', 'Indigo Raven'), album('c1', 'Mazzy Star Covers', 'Mersilde')];
+    const second = stabilizeRows(ranked, first.shown, rowIdentityKeys, tier);
+    expect(second.rows.map(r => r.id)).toEqual(['m1', 'm2', 'c1', 'c2']); // covers keep their order among themselves
+    // a later answer doesn't reshuffle what's shown
+    const third = stabilizeRows([album('m3', 'Deep Cuts', 'Mazzy Star'), ...ranked], second.shown, rowIdentityKeys, tier);
+    expect(third.rows.map(r => r.id)).toEqual(['m1', 'm2', 'm3', 'c1', 'c2']);
+  });
+
+  test('without tierOf, behavior is unchanged', () => {
+    const first = stabilizeRows([album('c1', 'X', 'A')], [], rowIdentityKeys);
+    const second = stabilizeRows([album('m1', 'Y', 'Mazzy Star'), album('c1', 'X', 'A')], first.shown, rowIdentityKeys);
+    expect(second.rows.map(r => r.id)).toEqual(['c1', 'm1']);
+  });
+});

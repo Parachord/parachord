@@ -649,7 +649,7 @@ const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates,
-  TRACK_RANK_KEY, serviceArtFor, stabilizeRows, rowIdentityKeys, artistIdentityKeys
+  TRACK_RANK_KEY, ALBUM_RANK_KEY, albumArtistName, rankSearchRows, queryNamesArtist, serviceArtFor, stabilizeRows, rowIdentityKeys, artistIdentityKeys
 } = require('./lib/search-catalog');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
@@ -17889,40 +17889,12 @@ ${trackListXml}
     }));
   };
 
-  // Re-rank search results using fuzzy matching + MusicBrainz popularity score.
-  // nameKey: a field name, or a Fuse key object (TRACK_RANK_KEY).
-  const reRankResults = (items, query, nameKey = 'name') => {
-    if (!items || items.length === 0 || !query) return items;
-
-    // Configure Fuse.js for fuzzy matching
-    const fuse = new Fuse(items, {
-      keys: [nameKey],
-      includeScore: true,
-      threshold: 0.6,
-      ignoreLocation: true,
-      useExtendedSearch: false
-    });
-
-    const fuzzyResults = fuse.search(query);
-
-    // Create a map of fuzzy scores (Fuse score is 0-1 where 0 is perfect match)
-    const fuzzyScoreMap = new Map();
-    fuzzyResults.forEach(result => {
-      // Convert Fuse score (0=best, 1=worst) to 0-100 (100=best)
-      fuzzyScoreMap.set(result.item, (1 - result.score) * 100);
-    });
-
-    // Score and sort all items
-    return items
-      .map(item => {
-        const fuzzyScore = fuzzyScoreMap.get(item) || 0;
-        const mbScore = item.score || 50; // MusicBrainz popularity score (0-100)
-        // Blend: 60% fuzzy relevance, 40% popularity
-        const finalScore = (fuzzyScore * 0.6) + (mbScore * 0.4);
-        return { ...item, _finalScore: finalScore };
-      })
-      .sort((a, b) => b._finalScore - a._finalScore);
-  };
+  // Re-rank search results: fuzzy relevance blended with each source's own
+  // score, plus a bonus for rows by an artist the query names
+  // (rankSearchRows in src/renderer/lib/search-catalog.js).
+  // nameKey: a field name, or a Fuse key object (TRACK_RANK_KEY, ALBUM_RANK_KEY).
+  const reRankResults = (items, query, nameKey = 'name', artistOf = null) =>
+    rankSearchRows(items, query, { Fuse, key: nameKey, artistOf });
 
   const resolveRecording = async (recording) => {
     const track = {
@@ -18109,8 +18081,10 @@ ${trackListXml}
     // shown keep their place and display key as later sources answer, so
     // nothing reshuffles or remounts under the user.
     const shown = { artists: [], albums: [], tracks: [] };
-    const stable = (category, ranked, identityKeys) => {
-      const next = stabilizeRows(ranked, shown[category], identityKeys);
+    // Rows by the artist the query names form the top tier (stabilizeRows).
+    const namedArtistTier = (artistOf) => (row) => (queryNamesArtist(query, artistOf(row)) ? 1 : 0);
+    const stable = (category, ranked, identityKeys, tierOf) => {
+      const next = stabilizeRows(ranked, shown[category], identityKeys, tierOf);
       shown[category] = next.shown;
       return next.rows;
     };
@@ -18128,7 +18102,7 @@ ${trackListXml}
     const publishAlbums = () => {
       if (!isCurrent()) return;
       const rows = withSearchArt(
-        stable('albums', reRankResults(mergeAlbumResults(mb.albums || [], albumLists()), query, 'title'), rowIdentityKeys),
+        stable('albums', reRankResults(mergeAlbumResults(mb.albums || [], albumLists()), query, ALBUM_RANK_KEY, albumArtistName), rowIdentityKeys, namedArtistTier(albumArtistName)),
         'album');
       setSearchResults(prev => ({ ...prev, albums: rows }));
       fetchSearchAlbumArt(rows, []);
@@ -18138,7 +18112,7 @@ ${trackListXml}
     const publishTracks = () => {
       if (!isCurrent()) return;
       const rows = withSearchArt(
-        stable('tracks', reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, TRACK_RANK_KEY), rowIdentityKeys),
+        stable('tracks', reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, TRACK_RANK_KEY, t => t.artist), rowIdentityKeys, namedArtistTier(t => t.artist)),
         'track');
       // Local files' rows stay first; a service row that only repeats one goes.
       setSearchResults(prev => {
