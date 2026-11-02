@@ -142,7 +142,15 @@ function registerWidevineBridgeIpc({ ipcMain, isAllowedSender }) {
       // matched-close key off OURS; a provider-supplied one is inert).
       return { success: true, ...result, sessionId: mySessionId };
     } catch (error) {
-      return { success: false, reason: (error && error.reason) || 'playback-failed', error: String((error && error.message) || error) };
+      return {
+        success: false,
+        reason: (error && error.reason) || 'playback-failed',
+        // The provider's plan-eligibility refusal (Amazon getEligibility):
+        // forwarded like licenseDenied so the engine can treat it as a
+        // failed SOURCE (try the track's other resolvers), not an error.
+        notEligibleForPlan: !!(error && error.notEligibleForPlan),
+        error: String((error && error.message) || error)
+      };
     }
   });
 
