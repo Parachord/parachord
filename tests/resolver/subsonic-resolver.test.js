@@ -363,15 +363,19 @@ describe('app.js integration', () => {
     // through usesSharedAudio / isHtml5StreamResolver.
     expect(axe.capabilities.html5Stream).toBe(true);
     expect(appSrc).toContain("const isHtml5StreamResolver = (id) => !!findLoadedResolver(id)?.capabilities?.html5Stream;");
-    expect(appSrc).toContain("const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id) || isWidevineResolver(id);");
+    expect(appSrc).toContain("const usesSharedAudio = (id) => id === 'localfiles' || isHtml5StreamResolver(id) || isWidevineResolver(id);");
     // play/pause toggle
     expect(appSrc).toContain('audioRef.current && usesSharedAudio(currentTrack?._activeResolver)');
-    // seek keys off the resolver actually playing, not "has a subsonic source"
-    expect(appSrc).toContain('usesSharedAudio(activeResolver) && audioRef.current');
+    // seek keys off the resolver actually playing, not "has a subsonic source":
+    // mediaElementFor hands back the shared element for every usesSharedAudio
+    // resolver (an embedded player's facade aside)
+    expect(appSrc).toContain('return usesSharedAudio(id) ? audioRef.current : null;');
+    expect(appSrc).toContain('const seekEl = mediaElementFor(activeResolver);');
     expect(appSrc).not.toContain('currentTrack?.sources?.subsonic');
     // volume slider support — widevine resolvers (Amazon) share the element,
     // so they need no special case here anymore
-    expect(appSrc).toContain('usesSharedAudio(currentResolverId) || (isSpotify && spotifyVolumeSupported)');
+    expect(appSrc).toContain('playsInApp(currentResolverId) || (isSpotify && spotifyVolumeSupported)');
+    expect(appSrc).toContain('const playsInApp = (id) => usesSharedAudio(id) || !!embedPlayerKind(id);');
     // and no id list is left behind
     expect(appSrc).not.toMatch(/activeResolver(?:Id)? === 'subsonic'|resolverId === 'subsonic'/);
   });
@@ -380,11 +384,11 @@ describe('app.js integration', () => {
     // The generic audioContext-based progress interval must not run for HTML5
     // audio resolvers — otherwise it fights with the element's timeupdate
     // (progress bar jumps back and forth) and its elapsed>=duration check can
-    // fire a premature handleNext after a pause/resume. localfiles/soundcloud
-    // are skipped the same way.
-    const m = appSrc.match(/const isSoundCloud = activeResolver === 'soundcloud';\n    const isHtml5Stream = isHtml5StreamResolver\(activeResolver\);/);
+    // fire a premature handleNext after a pause/resume. localfiles and the
+    // embedded players (SoundCloud's widget) are skipped the same way.
+    const m = appSrc.match(/const isEmbedPlayer = !!embedPlayerKind\(activeResolver\);.*\n    const isHtml5Stream = isHtml5StreamResolver\(activeResolver\);/);
     expect(m).toBeTruthy();
-    expect(appSrc).toContain('!isLocalFile && !isSoundCloud && !isHtml5Stream && !isBrowserTrack');
+    expect(appSrc).toContain('!isLocalFile && !isEmbedPlayer && !isHtml5Stream && !isBrowserTrack');
   });
 
   test('resolver volume offsets include subsonic (neutral)', () => {
@@ -400,10 +404,11 @@ describe('app.js integration', () => {
   });
 
   test('shared HTML5 element is created once and every path uses it', () => {
-    // localfiles + soundcloud hand the track over as-is; the shared
-    // html5Stream branch tags it with the owning resolver because every
-    // such resolver plays http(s) URLs and the element's src can't tell them apart.
-    expect(appSrc.match(/ensureSharedAudioElement\(trackOrSource\)/g)).toHaveLength(2);
+    // localfiles hands the track over as-is (SoundCloud plays in its widget
+    // now, not the shared element); the shared html5Stream branch tags it
+    // with the owning resolver because every such resolver plays http(s) URLs
+    // and the element's src can't tell them apart.
+    expect(appSrc.match(/ensureSharedAudioElement\(trackOrSource\)/g)).toHaveLength(1);
     expect(appSrc).toContain('ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId })');
     expect(appSrc).toContain('const audio = new Audio()');
     expect(appSrc).not.toContain('audioRef.current = new Audio()');

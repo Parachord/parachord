@@ -58,7 +58,7 @@
     {
       "id": "soundcloud",
       "name": "SoundCloud",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "author": "Parachord Team",
       "description": "Search and stream music from SoundCloud. Free with optional Go+ subscription. Requires OAuth login.",
       "icon": "☁",

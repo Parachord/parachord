@@ -7086,7 +7086,32 @@ const Parachord = () => {
   // encrypted adaptive streams through Shaka on the SAME shared element —
   // manifest/license bytes come from main via window.electron.widevine.
   const isWidevineResolver = (id) => !!findLoadedResolver(id)?.capabilities?.widevine;
-  const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id) || isWidevineResolver(id);
+  const usesSharedAudio = (id) => id === 'localfiles' || isHtml5StreamResolver(id) || isWidevineResolver(id);
+  // Embedded-player resolvers play in the service's own player, outside the
+  // shared element: `capabilities.embedPlayer: true`, with the host adapter
+  // (lib/embed-players.js) named by the .axe's top-level
+  // `embedPlayer.adapter` (SoundCloud's widget today). The name stays out of
+  // `capabilities`, which mobile clients decode as booleans.
+  const embedPlayerKind = (id) => {
+    const resolver = findLoadedResolver(id);
+    if (!resolver?.capabilities?.embedPlayer) return null;
+    const kind = resolver.embedPlayer?.adapter;
+    return typeof kind === 'string' && kind ? kind : null;
+  };
+  // Audio Parachord plays itself, through either path (volume support, the
+  // Spotify poll skip).
+  const playsInApp = (id) => usesSharedAudio(id) || !!embedPlayerKind(id);
+  // The element a resolver's in-app audio plays through, for seek, volume and
+  // play/pause: an embedded player's HTMLMediaElement-shaped facade, else the
+  // shared <audio>.
+  const mediaElementFor = (id) => {
+    const kind = embedPlayerKind(id);
+    if (kind) {
+      const player = window.__parachordEmbedPlayer ? window.__parachordEmbedPlayer(kind) : null;
+      return player ? player.element : null;
+    }
+    return usesSharedAudio(id) ? audioRef.current : null;
+  };
 
   // Cleanup polling interval, external track timeout, and stop playback on unmount
   useEffect(() => {
@@ -7301,6 +7326,7 @@ const Parachord = () => {
     currentTrackRef,
     isPlayingRef,
     usesSharedAudio,
+    mediaElementFor,
   });
   const {
     volume, setVolume,
@@ -7800,6 +7826,7 @@ const Parachord = () => {
       isWidevineResolver,
       findLoadedResolver,
       usesSharedAudio,
+      embedPlayerKind,
       resolveTracksInBackground,
       buildProtocolFetchHeaders,
       lastfmFetch,
@@ -10229,9 +10256,11 @@ const Parachord = () => {
             }
             const positionSec = Math.max(0, Number(offsetMs) / 1000);
             let confirmedMs = null;
-            if (audioRef.current && (usesSharedAudio(activeResolver) || activeResolver === 'youtube' || activeResolver === 'bandcamp')) {
-              audioRef.current.currentTime = positionSec;
-              confirmedMs = Math.round(audioRef.current.currentTime * 1000);
+            const seekEl = mediaElementFor(activeResolver)
+              || ((activeResolver === 'youtube' || activeResolver === 'bandcamp') ? audioRef.current : null);
+            if (seekEl) {
+              seekEl.currentTime = positionSec;
+              confirmedMs = Math.round(seekEl.currentTime * 1000);
             }
             if (activeResolver === 'applemusic') {
               // Three sequential `if`s (NOT an else-if chain) is deliberate:
@@ -10297,8 +10326,9 @@ const Parachord = () => {
           // playback paths that don't expose a position (Spotify Connect).
           getCurrentPosition: () => {
             const track = currentTrackRef.current;
-            const audio = audioRef.current;
             const activeResolver = track?._activeResolver || (track ? determineResolverIdFromTrack(track) : null);
+            // The widget's facade for SoundCloud, else the shared element.
+            const audio = (activeResolver && mediaElementFor(activeResolver)) || audioRef.current;
             const audioOwnsPlayback = activeResolver && activeResolver !== 'applemusic' && activeResolver !== 'spotify';
             const audioPositionSec = audio?.currentTime;
             const audioDurationSec = audio?.duration;
@@ -12574,12 +12604,12 @@ ${trackListXml}
     const activeResolver = currentTrack?._activeResolver;
     const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic' || activeResolver === 'amazonmusic';
     const isLocalFile = activeResolver === 'localfiles';
-    const isSoundCloud = activeResolver === 'soundcloud';
+    const isEmbedPlayer = !!embedPlayerKind(activeResolver); // SoundCloud's widget, ... (capabilities.embedPlayer)
     const isHtml5Stream = isHtml5StreamResolver(activeResolver); // Subsonic, ... (capabilities.html5Stream)
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isHtml5Stream && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isEmbedPlayer && !isHtml5Stream && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -33970,9 +34000,10 @@ const getCurrentPlaybackState = async () => {
 useEffect(() => {
   if (!spotifyToken || !isPlaying) return;
 
-  // Don't poll if playing via HTML5 Audio (local files or SoundCloud)
+  // Don't poll while Parachord plays the audio itself (local files, streams,
+  // embedded players)
   const activeResolver = currentTrack?._activeResolver;
-  if (usesSharedAudio(activeResolver)) {
+  if (playsInApp(activeResolver)) {
     return;
   }
 
@@ -34007,11 +34038,12 @@ useEffect(() => {
     // HTML5 audio engines. Key off the resolver actually playing, not
     // track.sources — a Subsonic source can be attached while local files
     // are what's playing.
-    if (usesSharedAudio(activeResolver) && audioRef.current) {
-      if (audioRef.current.src?.startsWith('local-audio:')) {
+    const seekEl = mediaElementFor(activeResolver);
+    if (seekEl) {
+      if (seekEl.src?.startsWith('local-audio:')) {
         localFileSeekTargetRef.current = newPosition;
       }
-      audioRef.current.currentTime = newPosition;
+      seekEl.currentTime = newPosition;
     }
     // Apple Music (native MusicKit, MusicKit JS, or preview audio)
     if (activeResolver === 'applemusic') {
@@ -44410,7 +44442,7 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || usesSharedAudio(currentResolverId) || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || playsInApp(currentResolverId) || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;
@@ -44425,7 +44457,7 @@ useEffect(() => {
                 const restoredVolume = preMuteVolumeRef.current || 30;
                 setIsMuted(false);
                 setVolume(restoredVolume);
-                if (usesSharedAudio(activeResolverId) && audioRef.current) {
+                if (mediaElementFor(activeResolverId)) {
                   applyLocalFileVolume(restoredVolume, currentTrackRef.current?.id, activeResolverId);
                 }
                 if (activeResolverId === 'spotify') {
@@ -44439,8 +44471,9 @@ useEffect(() => {
                 // Mute: save current volume and set to 0
                 preMuteVolumeRef.current = volume;
                 setIsMuted(true);
-                if (usesSharedAudio(activeResolverId) && audioRef.current) {
-                  audioRef.current.volume = 0;
+                const muteEl = mediaElementFor(activeResolverId);
+                if (muteEl) {
+                  muteEl.volume = 0;
                 }
                 if (activeResolverId === 'spotify') {
                   setSpotifyVolume(0, false);
@@ -44517,7 +44550,7 @@ useEffect(() => {
                     // Re-determine resolver from current track ref to avoid stale closure
                     const activeResolverId = determineResolverIdFromTrack(currentTrackRef.current);
                     // Local files and SoundCloud: apply normalized volume immediately
-                    if (usesSharedAudio(activeResolverId) && audioRef.current) {
+                    if (mediaElementFor(activeResolverId)) {
                       applyLocalFileVolume(newVolume, currentTrackRef.current?.id, activeResolverId);
                     }
                     // Spotify: debounced API call to prevent rate limiting
