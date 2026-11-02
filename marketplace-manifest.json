@@ -60,7 +60,7 @@
       "name": "SoundCloud",
       "version": "1.2.0",
       "author": "Parachord Team",
-      "description": "Search and stream music from SoundCloud. Free with optional Go+ subscription. Requires OAuth login.",
+      "description": "Search SoundCloud and play tracks in SoundCloud's own player. Playback needs no sign-in; search needs a SoundCloud login.",
       "icon": "☁",
       "color": "#FF5500",
       "homepage": "https://soundcloud.com",
@@ -69,7 +69,8 @@
         "search": true,
         "stream": true,
         "browse": false,
-        "urlLookup": true
+        "urlLookup": true,
+        "embedPlayer": true
       },
       "requiresAuth": true,
       "builtin": true,
