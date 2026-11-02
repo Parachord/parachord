@@ -86,8 +86,11 @@ describe('search', () => {
   const body = search.slice(s, search.indexOf('// Search tracks', s));
 
   test('a MusicBrainz failure still reaches the catalogs, inactive ones included', () => {
-    expect(body).toMatch(/catch \(mbError\) \{\s*if \(mbError\.name === 'AbortError'\) throw mbError;/);
-    expect(body).toMatch(/mbOk\.albums = !!\(albumResponse && albumResponse\.ok\);/);
+    // searchMusicBrainzAlbums answers a network failure with { ok: false,
+    // failed: true } and rethrows only AbortError (page-load-budget.test.js
+    // runs it); Search carries on to the catalogs
+    expect(body).toMatch(/const result = await searchMusicBrainzAlbums\(query, \{ fetch, fetchOptions \}\);/);
+    expect(body).toMatch(/mbOk\.albums = result\.ok;/);
     expect(body).toMatch(/if \(mb\.albums\.length < 3 && albumLoader\?\.getAlbumSearchResolvers\)/);
     expect(body).toMatch(/fallbackAlbumResolvers = orderCatalogResolvers\(albumLoader\.getAlbumSearchResolvers\(\)/);
   });

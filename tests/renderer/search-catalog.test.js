@@ -468,12 +468,10 @@ describe('popularity', () => {
     // a row that clearly outranks a shown one moves past it
     expect(search).toMatch(/const promoteByScore = \{ scoreOf: r => r\._finalScore, margin: PROMOTE_MARGIN \};/);
     expect(search).toMatch(/stabilizeRows\(ranked, shown\[category\], identityKeys, tierOf, promoteByScore\)/);
-    const fetcher = app.slice(app.indexOf('const fetchListenBrainzPopularity = async'), app.indexOf('const withListenBrainzPopularity = async'));
-    expect(fetcher).toMatch(/timeoutMs = 800/);
-    expect(fetcher).toMatch(/https:\/\/api\.listenbrainz\.org\/1\/popularity\/\$\{kind\}/);
-    expect(fetcher).toMatch(/method: 'POST'/);
-    expect(fetcher).toMatch(/cache\.set\(`\$\{kind\}:\$\{id\}`, \{ value, at: now \}\)/);
-    expect(app).toMatch(/const LISTENBRAINZ_POPULARITY_TTL_MS = 24 \* 60 \* 60 \* 1000;/);
+    // the lookup itself (one POST per category, the 800ms cap, the day's
+    // cache) is src/renderer/lib/search-requests.js, run in
+    // page-load-budget.test.js
+    expect(app).toMatch(/createPopularityLookup\(\{\s*fetch: \(url, init\) => fetch\(url, init\),\s*headersFor: buildProtocolFetchHeaders,/);
   });
 });
 
