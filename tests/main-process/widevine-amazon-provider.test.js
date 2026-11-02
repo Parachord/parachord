@@ -373,6 +373,66 @@ describe('amazon-dmls plan-tier eligibility filter (#1196)', () => {
   });
 });
 
+describe('play-time eligibility gate in getManifest (#1198 review #1)', () => {
+  // A track that skipped the search filter (imported playlist, play-by-ASIN,
+  // restored queue) is checked at manifest time — the license layer may fail
+  // OPEN for a plan-ineligible ASIN. The refusal trips before any manifest
+  // request; a failed LOOKUP proceeds with the play, matching the search rule.
+  const museCalls = () => mockRequests.filter((r) => r.opts.url.includes('/api/muse/getEligibility'));
+  const dmlsCalls = () => mockRequests.filter((r) => r.opts.url.includes('/api/dmls/'));
+
+  test('PRIME + isPrime:false → refused with notEligibleForPlan, no manifest/license round trip', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B_UNL: { isPrime: false, isMusicSubscription: true } } });
+    await expect(amazonDmls.getManifest({ asin: 'B_UNL' })).rejects.toMatchObject({
+      reason: 'playback-failed',
+      notEligibleForPlan: true,
+      message: expect.stringContaining('PRIME')
+    });
+    expect(museCalls()).toHaveLength(1);
+    expect(JSON.parse(museCalls()[0].getBody()).asins).toEqual(['B_UNL']);
+    expect(dmlsCalls()).toHaveLength(0); // no getDashManifestsV2, no license cert
+    // A second play of the same ASIN refuses from the cache — no new call.
+    await expect(amazonDmls.getManifest({ asin: 'B_UNL' })).rejects.toMatchObject({ notEligibleForPlan: true });
+    expect(museCalls()).toHaveLength(1);
+  });
+
+  test('PRIME + isPrime:true fetched inline → the manifest proceeds', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B_OK: { isPrime: true, isMusicSubscription: true } } });
+    queueManifest({});
+    const result = await amazonDmls.getManifest({ asin: 'B_OK' });
+    expect(result.manifest).toContain('<MPD');
+    expect(museCalls()).toHaveLength(1);
+    expect(dmlsCalls().length).toBeGreaterThan(0);
+  });
+
+  test('PRIME + lookup failure FAILS OPEN — the play proceeds (matches the search rule)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ status: 500 });
+    queueManifest({});
+    const result = await amazonDmls.getManifest({ asin: 'B_MAYBE' });
+    expect(result.manifest).toContain('<MPD');
+  });
+
+  test('backed-off endpoint: no eligibility request, the play proceeds', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    amazonDmls.eligibilityBackoffUntil = Date.now() + 60000;
+    queueManifest({});
+    const result = await amazonDmls.getManifest({ asin: 'B_MAYBE' });
+    expect(result.manifest).toContain('<MPD');
+    expect(museCalls()).toHaveLength(0);
+  });
+
+  test('UNLIMITED tier: no eligibility gate at all (no muse request)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON })); // tier UNLIMITED_HD
+    queueManifest({});
+    const result = await amazonDmls.getManifest({ asin: 'B_ANY' });
+    expect(result.manifest).toContain('<MPD');
+    expect(museCalls()).toHaveLength(0);
+  });
+});
+
 describe('eligibility LRU cache (#1198 review)', () => {
   const verdict = { isPrime: true, isMusicSubscription: true, isHighQuality: false, isSonicRush: false };
 
@@ -519,8 +579,15 @@ describe('widevine bridge IPC', () => {
       getManifest: async (entity) => ({ manifest: '<MPD/>', note: entity.asin }),
       relayLicense: async (challenge) => (challenge === 'Q0FRPQ==' ? 'TElD' : 'BAD')
     });
+    registerWidevineProvider('plan-gate', {
+      getManifest: async () => { const e = new Error('plan'); e.reason = 'playback-failed'; e.notEligibleForPlan = true; throw e; },
+      relayLicense: async () => 'TElD'
+    });
+    const gated = await handlers['widevine:manifest'](null, { resolverId: 'plan-gate', entity: { asin: 'B1' } });
+    expect(gated).toMatchObject({ success: false, reason: 'playback-failed', notEligibleForPlan: true });
     const manifest = await handlers['widevine:manifest'](null, { resolverId: 'mock', entity: { asin: 'B1' } });
     expect(manifest).toMatchObject({ success: true, manifest: '<MPD/>', note: 'B1' });
+    expect('notEligibleForPlan' in manifest).toBe(false); // failure-only flag
     expect(typeof manifest.sessionId).toBe('string');
     const license = await handlers['widevine:license'](null, { resolverId: 'mock', challenge: 'Q0FRPQ==', sessionId: manifest.sessionId });
     expect(license).toMatchObject({ success: true, license: 'TElD' });

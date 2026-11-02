@@ -387,4 +387,18 @@ describe('error paths', () => {
     await expect(player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } }))
       .rejects.toMatchObject({ reason: 'not-signed-in' });
   });
+
+  test('a plan-eligibility refusal from the bridge rides the thrown error', async () => {
+    const el = makeElectron({ manifestOk: false });
+    el.bridge.getManifest = jest.fn(async () => ({
+      success: false,
+      reason: 'playback-failed',
+      notEligibleForPlan: true,
+      error: "the account's Amazon plan (PRIME) doesn't include this title"
+    }));
+    const { player } = load({ electron: el });
+    const audio = makeAudio();
+    await expect(player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } }))
+      .rejects.toMatchObject({ reason: 'playback-failed', notEligibleForPlan: true });
+  });
 });

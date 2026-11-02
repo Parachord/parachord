@@ -318,23 +318,10 @@ const adapter = {
         if (asin && !seen.has(asin)) { seen.add(asin); asins.push(asin); }
       }
       if (!asins.length) return tracks;
-      const now = Date.now();
-      const verdicts = {};
-      const stale = [];
-      for (const asin of asins) {
-        const cached = this.cachedEligibility(asin, now);
-        if (cached) verdicts[asin] = cached;
-        else stale.push(asin);
-      }
-      if (stale.length) {
-        if (now < this.eligibilityBackoffUntil) {
-          // Backed off (#1198 review): no round trip at all. Cached verdicts
-          // above still apply; the residuals stay, exactly like a failure.
-          for (const asin of stale) verdicts[asin] = { [flag]: true };
-        } else {
-          await this.resolveEligibility(stale, ctx, verdicts, flag);
-        }
-      }
+      const verdicts = await this.lookupEligibilityVerdicts(asins, ctx);
+      // Failure keeps: mark ASINs without a verdict eligible in the LOCAL
+      // map only (never the cache), so the next search tries them again.
+      for (const asin of asins) if (!verdicts[asin]) verdicts[asin] = { [flag]: true };
       const kept = amazonFilterTracksByEligibility(tracks, verdicts, flag);
       if (kept.length !== tracks.length) {
         console.log(`[Amazon dmls] plan filter (${flag}): kept ${kept.length} of ${tracks.length} tracks`);
@@ -346,12 +333,23 @@ const adapter = {
     }
   },
 
-  // Fill `verdicts` for the cache-miss ASINs. Concurrent searches share: an
-  // ASIN already being fetched joins that promise, and the rest go out in
-  // ONE batched getEligibility call (#1198 review). A null per-ASIN result
-  // (failed batch) keeps the track — marked eligible in the LOCAL map only,
-  // never cached, so the next search (past the backoff) tries again.
-  async resolveEligibility(stale, ctx, verdicts, flag) {
+  // Eligibility verdicts for a set of ASINs: LRU cache first, then (unless
+  // the endpoint is backed off) ONE batched getEligibility call for the
+  // misses, shared with any lookup already in flight — an ASIN another flow
+  // is fetching joins its promise (#1198 review). Returns { asin: verdict }
+  // — a MISSING key means "no verdict" (backed off, or the lookup failed).
+  // Never throws: callers decide what a missing verdict means (search keeps
+  // the result; the manifest gate proceeds with the play).
+  async lookupEligibilityVerdicts(asins, ctx) {
+    const out = {};
+    const stale = [];
+    const now = Date.now();
+    for (const asin of asins) {
+      const cached = this.cachedEligibility(asin, now);
+      if (cached) out[asin] = cached;
+      else stale.push(asin);
+    }
+    if (!stale.length || now < this.eligibilityBackoffUntil) return out;
     const pending = new Map();
     const toFetch = [];
     for (const asin of stale) {
@@ -371,14 +369,15 @@ const adapter = {
     }
     await Promise.all([...pending.entries()].map(async ([asin, p]) => {
       const v = await p.catch(() => null);
-      verdicts[asin] = v || { [flag]: true };
+      if (v) out[asin] = v;
     }));
+    return out;
   },
 
-  // The one batched call behind a resolveEligibility fetch. Resolves a Map
-  // of asin → verdict ({} entries nothing was eligible for stay OUT — the
-  // absent-asins cache entry below is what records them); null per asin on
-  // failure. On failure the whole endpoint backs off for
+  // The one batched call behind a lookupEligibilityVerdicts fetch. Resolves
+  // a Map of asin → verdict ({} entries nothing was eligible for stay OUT —
+  // the absent-asins cache entry below is what records them); null per asin
+  // on failure. On failure the whole endpoint backs off for
   // ELIGIBILITY_FAILURE_BACKOFF_MS so a broken endpoint doesn't tax every
   // search; on success the backoff clears.
   async fetchEligibilityBatch(asins, ctx) {
@@ -424,6 +423,29 @@ const adapter = {
 
   // ── the widevine provider ───────────────────────────────────────────────
 
+  // Play-time second line of defence (#1198 review #1): a track that skipped
+  // the search filter (an imported/synced playlist, play-by-ASIN, a queue
+  // restored from an earlier session) is checked at MANIFEST time, because
+  // the license layer may fail OPEN for a plan-ineligible ASIN. Same tier
+  // gate, LRU cache, backoff and in-flight sharing as the search filter — so
+  // after a resolution the verdict is usually already cached and this costs
+  // nothing. Ineligible fails with notEligibleForPlan so the engine treats
+  // Amazon as a failed source and the track's other resolvers play; if the
+  // LOOKUP itself fails (or is backed off) the play proceeds, matching the
+  // search rule.
+  async assertEligibleForPlan(asin, ctx) {
+    const flag = amazonEligibilityFlagForTier(ctx && ctx.tier);
+    if (!flag || !asin) return;
+    const verdicts = await this.lookupEligibilityVerdicts([asin], ctx).catch(() => null);
+    const verdict = verdicts && verdicts[asin];
+    if (!verdict || verdict[flag] === true) return;
+    console.log(`[Amazon dmls] refusing manifest for ${asin}: not eligible for tier ${ctx.tier} (${flag})`);
+    const err = new Error(`the account's Amazon plan (${ctx.tier}) doesn't include this title`);
+    err.reason = 'playback-failed';
+    err.notEligibleForPlan = true;
+    throw err;
+  },
+
   // CAQ= cert pre-charge once per session (the page world used to do this in
   // its Shaka setup; warm it lazily on the first successful manifest).
   kickCertWarm() {
@@ -444,6 +466,9 @@ const adapter = {
       throw err;
     }
     const ctx = await this.ensureSessionContext();
+    // Plan-tier gate — refuses (notEligibleForPlan) before any manifest
+    // request, license session, or telemetry exists for an ineligible play.
+    await this.assertEligibleForPlan(asin, ctx);
     const body = amazonDmlsManifestBody({
       asin,
       customerId: ctx.customerId,

@@ -290,6 +290,8 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   if (!result || result.success !== true) {
     const err = new Error((result && result.error) || 'manifest fetch failed');
     err.reason = (result && result.reason) || 'playback-failed';
+    // Plan-eligibility refusals ride through to the engine's failover.
+    if (result && result.notEligibleForPlan) err.notEligibleForPlan = true;
     throw err;
   }
   // The mint can take seconds — a newer play may have started meanwhile.
