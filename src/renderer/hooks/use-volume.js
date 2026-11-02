@@ -83,7 +83,11 @@ function useVolume({
   currentTrackRef,
   isPlayingRef,
   usesSharedAudio,
+  mediaElementFor,
 }) {
+  // The element that plays a resolver's audio: the shared <audio> for local
+  // files and html5/Widevine streams, the widget's facade for SoundCloud.
+  const elementFor = mediaElementFor || ((id) => (usesSharedAudio(id) ? audioRef.current : null));
   const [volume, setVolume] = React.useState(30);
   const [isMuted, setIsMuted] = React.useState(false);
   const preMuteVolumeRef = React.useRef(30); // Remember volume before muting
@@ -191,11 +195,13 @@ function useVolume({
     }, 150); // 150ms debounce
   };
 
-  // Apply normalized volume for HTML5 audio playback (local files and SoundCloud)
+  // Apply normalized volume to in-app playback (local files, html5/Widevine
+  // streams, the SoundCloud widget)
   const applyLocalFileVolume = (baseVolume, trackId, resolverId = 'localfiles') => {
-    if (!audioRef.current) return;
+    const el = elementFor(resolverId);
+    if (!el) return;
     const effectiveVolume = getEffectiveVolume(baseVolume, resolverId, trackId);
-    audioRef.current.volume = effectiveVolume / 100;
+    el.volume = effectiveVolume / 100;
   };
 
   // Keep refs in sync with state
@@ -224,8 +230,9 @@ function useVolume({
       const currentVol = volumeRef.current;
       const trackId = currentTrackRef.current?.id;
       const effectiveVolume = getEffectiveVolume(currentVol, resolverId, trackId);
-      if (usesSharedAudio(resolverId) && audioRef.current) {
-        audioRef.current.volume = effectiveVolume / 100;
+      const el = elementFor(resolverId);
+      if (el) {
+        el.volume = effectiveVolume / 100;
       }
       if (resolverId === 'spotify') {
         setSpotifyVolumeDebounced(currentVol, true);
@@ -256,8 +263,9 @@ function useVolume({
         const resolverId = determineResolverIdFromTrack(currentTrackRef.current);
         const trackId = currentTrackRef.current?.id;
         const effectiveVolume = getEffectiveVolume(newVolume, resolverId, trackId);
-        if (usesSharedAudio(resolverId) && audioRef.current) {
-          audioRef.current.volume = effectiveVolume / 100;
+        const el = elementFor(resolverId);
+        if (el) {
+          el.volume = effectiveVolume / 100;
         }
         if (resolverId === 'spotify') {
           setSpotifyVolumeDebounced(newVolume, true);
@@ -287,9 +295,14 @@ function useVolume({
         systemMuted = true;
         console.log('[SystemVolume] System muted - pausing audio');
 
-        // Mute HTML5 audio elements (local files, SoundCloud, Apple Music preview)
+        // Mute in-app audio (the shared element, the SoundCloud widget, Apple
+        // Music preview)
         if (audioRef.current) {
           audioRef.current.volume = 0;
+        }
+        const widgetEl = elementFor('soundcloud');
+        if (widgetEl && widgetEl !== audioRef.current) {
+          widgetEl.volume = 0;
         }
         if (window._appleMusicPreviewAudio) {
           window._appleMusicPreviewAudio.volume = 0;
@@ -322,7 +335,7 @@ function useVolume({
           const resolverId = track ? determineResolverIdFromTrack(track) : null;
 
           // Restore HTML5 audio volume
-          if (usesSharedAudio(resolverId) && audioRef.current) {
+          if (elementFor(resolverId)) {
             applyLocalFileVolume(currentVol, track?.id, resolverId);
           }
           if (resolverId === 'applemusic' && window._appleMusicPreviewAudio) {
