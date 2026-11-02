@@ -641,6 +641,7 @@ const {
   deezerArtistImageFromSearch, firstArtistImage, createArtistImageMissCache
 } = require('./lib/artist-image-chain');
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
+const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
@@ -8811,86 +8812,32 @@ const Parachord = () => {
     showToast(`Looking up "${album}" by ${artist}...`, 'info');
 
     try {
-      // Search MusicBrainz for the release-group
-      const searchQuery = encodeURIComponent(`release:"${album}" AND artist:"${artist}"`);
-      const searchResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release-group?query=${searchQuery}&fmt=json&limit=5`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
-
-      if (!searchResponse.ok) {
-        throw new Error('MusicBrainz search failed');
-      }
-
-      const searchData = await searchResponse.json();
-      const releaseGroups = searchData['release-groups'] || [];
-
-      if (releaseGroups.length === 0) {
-        console.log('❌ No albums found on MusicBrainz for:', artist, album);
-        showToast(`Could not find "${album}" on MusicBrainz`, 'error');
+      // MusicBrainz and the services' catalogs race for the track list
+      // (loadAlbumTrackList); MusicBrainz's names win when it matched.
+      const list = await loadAlbumTrackList({ artist, title: album });
+      if (!list) {
+        console.log('❌ No track list found for:', artist, album);
+        showToast(`Could not find "${album}" on MusicBrainz or your services`, 'error');
         return;
       }
+      const artistName = list.artist;
+      const albumTitle = list.title;
 
-      // Use the first match
-      const releaseGroup = releaseGroups[0];
-      const releaseGroupId = releaseGroup.id;
-      const artistName = releaseGroup['artist-credit']?.[0]?.name || artist;
-      const albumTitle = releaseGroup.title || album;
-
-      console.log(`📀 Found release-group: ${releaseGroupId} - "${artistName}" - "${albumTitle}"`);
-
-      // Fetch the first release from this release-group
-      const releaseResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release?release-group=${releaseGroupId}&status=official&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
-
-      if (!releaseResponse.ok) {
-        throw new Error('Failed to fetch release');
-      }
-
-      const releaseData = await releaseResponse.json();
-      if (!releaseData.releases || releaseData.releases.length === 0) {
-        showToast(`Could not find tracklist for "${albumTitle}"`, 'error');
-        return;
-      }
-
-      const releaseId = releaseData.releases[0].id;
-
-      // Fetch release details with tracks
-      const detailsResponse = await fetchReleaseDetails(releaseId);
-
-      if (!detailsResponse.ok) {
-        throw new Error('Failed to fetch release details');
-      }
-
-      const detailsData = await detailsResponse.json();
-
-      // Extract tracks
       const albumContext = { type: 'album', name: albumTitle, artist: artistName, url: url };
-      const tracks = [];
-      if (detailsData.media && detailsData.media.length > 0) {
-        detailsData.media.forEach((medium) => {
-          if (medium.tracks) {
-            medium.tracks.forEach((track, index) => {
-              const trackId = `scraped-album-${Date.now()}-${tracks.length}`;
-              tracks.push({
-                id: trackId,
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                artist: artistName,
-                album: albumTitle,
-                duration: track.length ? Math.round(track.length / 1000) : 0,
-                recordingId: track.recording?.id,
-                source: null,
-                resolvedBy: null,
-                albumArt: null,
-                _playbackContext: albumContext
-              });
-            });
-          }
-        });
-      }
+      const insertedAt = Date.now();
+      const tracks = list.tracks.map((track, index) => ({
+        id: `scraped-album-${insertedAt}-${index}`,
+        position: track.position,
+        title: track.title,
+        artist: artistName,
+        album: albumTitle,
+        duration: track.duration,
+        recordingId: track.recordingId,
+        source: null,
+        resolvedBy: null,
+        albumArt: null,
+        _playbackContext: albumContext
+      }));
 
       if (tracks.length === 0) {
         showToast(`No tracks found for "${albumTitle}"`, 'error');
@@ -20957,62 +20904,28 @@ ${trackListXml}
 
     try {
       const artistName = album['artist-credit']?.[0]?.name || 'Unknown Artist';
-
-      // Search albums use release-group IDs, so fetch the first release from the group
-      const releaseGroupResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release?release-group=${album.id}&status=official&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
-
-      if (!releaseGroupResponse.ok) return null;
-
-      const releaseGroupData = await releaseGroupResponse.json();
-      if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return null;
-
-      const releaseId = releaseGroupData.releases[0].id;
-      // Opening this album later reuses the lookup (fetchReleaseData).
-      rememberReleaseGroupAlias(album.id, releaseId);
-      releaseGroupPicksRef.current.set(artistName, album.title, album);
-
-      // Fetch the release details with tracks
-      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
-
-      if (!releaseDetailsResponse.ok) return null;
-
-      const releaseData = await releaseDetailsResponse.json();
-
-      // Extract tracks
-      const tracks = [];
-      if (releaseData.media && releaseData.media.length > 0) {
-        releaseData.media.forEach((medium) => {
-          if (medium.tracks) {
-            medium.tracks.forEach(track => {
-              const trackId = trackSlug(artistName, track.title || 'untitled', album.title || 'noalbum');
-              const albumArt = album.albumArt || null;
-              tracks.push({
-                id: trackId,
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                length: track.length,
-                duration: track.length ? Math.round(track.length / 1000) : 0,
-                recordingId: track.recording?.id,
-                artist: artistName,
-                album: album.title,
-                albumArt: albumArt,
-                sources: {}
-              });
-            });
-          }
-        });
-      }
-
-      const cachedAlbumArt = album.albumArt || null;
-
-      // Cache the prefetched tracks using the release-group ID
-      const result = {
-        tracks,
+      // A MusicBrainz row carries its release-group id; a service's row (a
+      // catalog search result) carries _catalog and an id MusicBrainz will
+      // never know, so only the catalogs are asked.
+      const knownIds = (resolverLoaderRef.current?.getAllResolvers?.() || []).map(r => r.id);
+      const isMbRow = isMusicBrainzId(album.id);
+      const list = await loadAlbumTrackList({
+        artist: artistName,
         title: album.title,
-        albumArt: cachedAlbumArt,
+        albumArt: album.albumArt || null,
+        releaseGroupId: isMbRow ? album.id : null,
+        catalog: album._catalog || null,
+        preferResolverId: resolverIdFromReleaseId(album.id, knownIds),
+        skipMusicBrainz: !isMbRow
+      });
+      if (!list) return null;
+      if (isMbRow) releaseGroupPicksRef.current.set(artistName, album.title, album);
+
+      // Cache the prefetched tracks using the search row's id
+      const result = {
+        tracks: list.tracks,
+        title: album.title,
+        albumArt: album.albumArt || null,
         artist: artistName
       };
 
@@ -25460,16 +25373,8 @@ ${tracks}
     console.log(`➕ Adding chart album to queue: ${album.artist} - ${album.title}`);
 
     try {
-      const searchQuery = encodeURIComponent(`release:"${album.title}" AND artist:"${album.artist}"`);
-      const mbResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release/?query=${searchQuery}&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
-      );
-
-      if (!mbResponse.ok) throw new Error('MusicBrainz search failed');
-
-      const mbData = await mbResponse.json();
-      if (!mbData.releases?.[0]) {
+      const list = await loadAlbumTrackList({ artist: album.artist, title: album.title, albumArt: album.albumArt || null });
+      if (!list) {
         showConfirmDialog({
           type: 'error',
           title: 'Album Not Found',
@@ -25478,35 +25383,13 @@ ${tracks}
         return;
       }
 
-      const releaseId = mbData.releases[0].id;
-      const tracksResponse = await fetchReleaseDetails(releaseId);
-
-      if (!tracksResponse.ok) throw new Error('Failed to fetch tracks');
-
-      const releaseData = await tracksResponse.json();
-      const tracks = [];
-
-      releaseData.media?.forEach(medium => {
-        medium.tracks?.forEach(track => {
-          tracks.push({
-            id: track.recording?.id || track.id,
-            title: track.title,
-            artist: album.artist,
-            duration: track.length ? Math.round(track.length / 1000) : null,
-            albumArt: album.albumArt
-          });
-        });
+      const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
+      addToQueue(list.tracks, context);
+      showConfirmDialog({
+        type: 'success',
+        title: 'Added to Queue',
+        message: `Added ${list.tracks.length} tracks from "${album.title}"`
       });
-
-      if (tracks.length > 0) {
-        const context = { type: 'album', id: album.id, name: album.title, artist: album.artist };
-        addToQueue(tracks, context);
-        showConfirmDialog({
-          type: 'success',
-          title: 'Added to Queue',
-          message: `Added ${tracks.length} tracks from "${album.title}"`
-        });
-      }
     } catch (error) {
       console.error('Error adding chart album to queue:', error);
       showConfirmDialog({
@@ -27573,71 +27456,92 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
-  // Fetch album tracklist from MusicBrainz and return playable track objects
-  const fetchAlbumTracksFromMusicBrainz = async (artistName, albumTitle, albumArt) => {
-    const mbHeaders = { 'User-Agent': 'Parachord/0.1 (https://parachord.com)' };
-    try {
-      const query = encodeURIComponent(`${artistName} ${albumTitle}`);
-      const searchResp = await fetch(
-        `https://musicbrainz.org/ws/2/release-group?query=${query}&limit=5&fmt=json`,
-        { headers: mbHeaders }
-      );
-      if (!searchResp.ok) return [];
-      const searchData = await searchResp.json();
-      const results = searchData['release-groups'] || [];
-      if (results.length === 0) return [];
+  // An album's track list for the album-card actions (Play, Add to Queue, Add
+  // to Playlist) as playable track objects: MusicBrainz and the services'
+  // catalogs race, and the first list with tracks wins (see
+  // src/renderer/lib/album-track-list.js). Those actions used to wait on
+  // MusicBrainz alone, two or three requests in its 1 req/s queue, and got
+  // nothing when it failed.
+  //   releaseGroupId: a MusicBrainz release-group id when the caller has one
+  //     (one request instead of a search plus a browse)
+  //   catalog / preferResolverId: a service album the caller already knows
+  //   skipMusicBrainz: a service's album id MusicBrainz will never know
+  // Returns { tracks, source: 'musicbrainz' | <resolverId>, artist, title },
+  // or null. artist/title are MusicBrainz's names when it matched by search.
+  const loadAlbumTrackList = async ({ artist, title, albumArt = null, releaseGroupId = null, catalog = null, preferResolverId = null, skipMusicBrainz = false }) => {
+    const toTracks = (entries) => entries.map(e => ({
+      id: trackSlug(artist || 'unknown', e.title || 'untitled', title || 'noalbum'),
+      position: e.position,
+      title: e.title,
+      artist,
+      album: title,
+      albumArt: albumArt || null,
+      length: e.length || 0,
+      duration: e.length ? Math.round(e.length / 1000) : 0,
+      recordingId: e.recordingId || undefined,
+      sources: {} // Empty sources triggers on-demand resolution
+    }));
 
-      // Find best studio album match
-      const nonStudioTypes = ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street', 'demo', 'soundtrack'];
-      const match = results.find(r => {
-        const primaryType = r['primary-type']?.toLowerCase();
-        const secondaryTypes = (r['secondary-types'] || []).map(t => t.toLowerCase());
-        const artistMatch = r['artist-credit']?.[0]?.name?.toLowerCase() === artistName.toLowerCase();
-        return primaryType === 'album' && artistMatch && !secondaryTypes.some(t => nonStudioTypes.includes(t));
-      }) || results.find(r => r['artist-credit']?.[0]?.name?.toLowerCase() === artistName.toLowerCase()) || results[0];
+    const fromMusicBrainz = async () => {
+      let rgId = isMusicBrainzId(releaseGroupId) ? releaseGroupId : null;
+      let matched = null;
+      if (!rgId) {
+        const known = releaseGroupPicksRef.current.get(artist, title);
+        if (known?.id) {
+          rgId = known.id;
+        } else {
+          const query = encodeURIComponent(`${artist} ${title}`);
+          const searchResp = await fetch(
+            `https://musicbrainz.org/ws/2/release-group?query=${query}&limit=5&fmt=json`,
+            { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+          );
+          if (!searchResp.ok) return null;
+          const match = pickReleaseGroup((await searchResp.json())['release-groups'], artist);
+          if (!match) return null;
+          // Opening this album later reuses the lookup (openAlbumForTrack,
+          // handleCollectionAlbumClick, fetchReleaseData).
+          releaseGroupPicksRef.current.set(artist, title, match);
+          rgId = match.id;
+          matched = { artist: match['artist-credit']?.[0]?.name || artist, title: match.title || title };
+        }
+      }
+      // A group already opened answers from the cache; otherwise one request
+      // (the browse carries the track list).
+      const details = releaseDetailsCache.current[rgId]?.alias
+        ? await fetchReleaseDetails(rgId)
+        : await fetchReleaseGroupDetails(rgId);
+      if (!details.ok) return null;
+      return { tracks: toTracks(entriesFromMusicBrainzRelease(await details.json())), source: 'musicbrainz', ...(matched || {}) };
+    };
 
-      // Get first official release
-      const relResp = await fetch(
-        `https://musicbrainz.org/ws/2/release?release-group=${match.id}&status=official&fmt=json&limit=1`,
-        { headers: mbHeaders }
-      );
-      if (!relResp.ok) return [];
-      const relData = await relResp.json();
-      const release = relData.releases?.[0];
-      if (!release) return [];
-      // Opening this album later reuses both lookups (openAlbumForTrack,
-      // handleCollectionAlbumClick, fetchReleaseData).
-      releaseGroupPicksRef.current.set(artistName, albumTitle, match);
-      rememberReleaseGroupAlias(match.id, release.id);
-
-      // Fetch full release with recordings
-      const detailResp = await fetchReleaseDetails(release.id);
-      if (!detailResp.ok) return [];
-      const detailData = await detailResp.json();
-
-      // Convert to playable track objects (matching Critical Darlings format)
-      const tracks = [];
-      (detailData.media || []).forEach(medium => {
-        (medium.tracks || []).forEach(track => {
-          const trackTitle = track.title || track.recording?.title || 'Unknown Track';
-          tracks.push({
-            id: trackSlug(artistName, trackTitle, albumTitle),
-            position: track.position,
-            title: trackTitle,
-            artist: artistName,
-            album: albumTitle,
-            albumArt: albumArt || null,
-            length: track.length || 0,
-            recordingId: track.recording?.id,
-            sources: {} // Empty sources triggers on-demand resolution
-          });
-        });
+    const fromCatalogs = async () => {
+      const found = await loadAlbumFromCatalogs({ artist, title, catalog, preferResolverId });
+      if (!found) return null;
+      const release = catalogAlbumToRelease(found.album, {
+        resolverId: found.resolverId,
+        resolverName: found.resolverName,
+        requested: { title, artistName: artist }
       });
-      return tracks;
-    } catch (error) {
-      console.error('Failed to fetch album tracks from MusicBrainz:', error);
-      return [];
-    }
+      return { tracks: toTracks(entriesFromCatalogRelease(release)), source: found.resolverId };
+    };
+
+    const mbSide = () => fromMusicBrainz().catch(e => { console.warn(`📀 Album tracks: MusicBrainz failed for "${title}":`, e?.message || e); return null; });
+    const catalogSide = () => fromCatalogs().catch(e => { console.warn(`📀 Album tracks: catalogs failed for "${title}":`, e?.message || e); return null; });
+    // MusicBrainz's answer already cached: it lands at once, so the catalogs
+    // are only asked if it turns out empty.
+    const mbCached = !skipMusicBrainz && isMusicBrainzId(releaseGroupId) && !!cachedReleaseDetails(releaseGroupId);
+    const winner = mbCached
+      ? await firstNonEmptyList([mbSide()]) || await firstNonEmptyList([catalogSide()])
+      : await firstNonEmptyList([skipMusicBrainz ? Promise.resolve(null) : mbSide(), catalogSide()]);
+    if (!winner) return null;
+    console.log(`📀 Album tracks: "${title}" by ${artist} from ${winner.source} (${winner.tracks.length} tracks)`);
+    return { tracks: winner.tracks, source: winner.source, artist: winner.artist || artist, title: winner.title || title };
+  };
+
+  // Home's and Fresh Drops' album cards: the track list as playable tracks.
+  const fetchAlbumTracksFromMusicBrainz = async (artistName, albumTitle, albumArt) => {
+    const list = await loadAlbumTrackList({ artist: artistName, title: albumTitle, albumArt });
+    return list ? list.tracks : [];
   };
 
   // Load AI recommendations when HOME is active and an AI plugin is enabled.
@@ -29849,62 +29753,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
 
     try {
-      // Search MusicBrainz for the release
-      const releases = await searchMusicBrainzRelease(albumName, artistName);
-
-      if (releases.length === 0) {
-        console.log(`No MusicBrainz release found for: ${artistName} - ${albumName}`);
+      // MusicBrainz and the services' catalogs race for the track list
+      // (loadAlbumTrackList), which also records the release group it found.
+      const list = await loadAlbumTrackList({ artist: artistName, title: albumName, albumArt });
+      if (!list) {
+        console.log(`No track list found for: ${artistName} - ${albumName}`);
         return [];
       }
-
-      const release = releases[0];
-      const releaseId = release.id;
-      // Opening this album later reuses the lookup (openAlbumForTrack,
-      // handleCollectionAlbumClick, fetchReleaseData).
-      const releaseGroup = release['release-group'];
-      if (releaseGroup?.id) {
-        releaseGroupPicksRef.current.set(artistName, albumName, {
-          id: releaseGroup.id,
-          title: releaseGroup.title || release.title,
-          'primary-type': releaseGroup['primary-type'],
-          'artist-credit': release['artist-credit'] || [{ name: artistName }]
-        });
-        rememberReleaseGroupAlias(releaseGroup.id, releaseId);
-      }
-
-      // Fetch the release details with tracks
-      const releaseDetailsResponse = await fetchReleaseDetails(releaseId);
-
-      if (!releaseDetailsResponse.ok) {
-        console.log(`Failed to fetch release details for: ${releaseId}`);
-        return [];
-      }
-
-      const releaseData = await releaseDetailsResponse.json();
-
-      // Extract tracks
-      const tracks = [];
-      if (releaseData.media && releaseData.media.length > 0) {
-        releaseData.media.forEach((medium) => {
-          if (medium.tracks) {
-            medium.tracks.forEach(track => {
-              const trackId = trackSlug(artistName, track.title || 'untitled', albumName);
-              tracks.push({
-                id: trackId,
-                position: track.position,
-                title: track.title || track.recording?.title || 'Unknown Track',
-                length: track.length,
-                duration: track.length ? Math.round(track.length / 1000) : 0,
-                recordingId: track.recording?.id,
-                artist: artistName,
-                album: albumName,
-                albumArt: albumArt,
-                sources: {}
-              });
-            });
-          }
-        });
-      }
+      const tracks = list.tracks;
 
       // Cache the result
       topAlbumTracksCache.current[cacheKey] = tracks;
