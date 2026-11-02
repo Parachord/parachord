@@ -5241,18 +5241,19 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       const collectionArtist = data.album?.artist || data.artist || data.tracks?.[0]?.artist || null;
       const collectionArt = data.album?.art || data.albumArt || data.tracks?.[0]?.albumArt || null;
       // Harvest any available album MBID. Achordion's entity-link endpoint
-      // accepts both release-group and release MBIDs for type=album (release
-      // MBIDs are mapped server-side to the canonical release-group page),
-      // so any of these wires us into a direct /release-group/<mbid> URL
-      // instead of falling through to /release-group/lookup. Fields, in
+      // builds /release-group/<mbid> from whatever it is given and does NOT
+      // map a release MBID to its group (that link 404s;
+      // jherskowitz/achordion#107), so release-group fields come first. Any
+      // of these wires us into a direct URL instead of falling through to
+      // /release-group/lookup. Fields, in
       // priority order: explicit album MBID fields → the data.id at this
       // level (typically a release-group MBID for MB-derived album data) →
       // the first track's releaseMbid (mapper-enriched specific edition).
-      const albumMbid = data.album?.mbid
-        || data.album?.releaseGroupMbid
+      const albumMbid = data.album?.releaseGroupMbid
+        || data.releaseGroupMbid
+        || data.album?.mbid
         || data.album?.id
         || data.mbid
-        || data.releaseGroupMbid
         || (data.type === 'release' || data.type === 'collection-album' ? data.id : null)
         || data.tracks?.[0]?.releaseMbid
         || null;

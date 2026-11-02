@@ -1315,9 +1315,10 @@ const ReleasePage = ({
                   // release-group MBID for MB-derived discography; for Spotify
                   // / Apple Music fallback paths it's prefixed (e.g.
                   // "spotify-..."), so rely on the UUID-shape check inside
-                  // publishCollectionSmartLink to gate validity. First track's
-                  // releaseMbid (mapper-enriched) is a reliable fallback —
-                  // Achordion server-side maps release MBIDs to release-groups.
+                  // publishCollectionSmartLink to gate validity. The release
+                  // group comes first: once MusicBrainz's list loads,
+                  // release.id is a release, and Achordion doesn't map a
+                  // release to its group (the link would 404).
                   const albumMbid = release.releaseGroupMbid
                     || release.mbid
                     || release.id

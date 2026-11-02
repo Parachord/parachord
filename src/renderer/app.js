@@ -7555,7 +7555,7 @@ const Parachord = () => {
       return { ok: true, status: 200, fromCache: true, releaseId, json: async () => cached.data };
     }
     const response = await fetchImpl(
-      `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
+      `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits+release-groups&fmt=json`,
       { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
     );
     if (!response.ok) return response;
@@ -13380,8 +13380,9 @@ ${trackListXml}
 
     // Try entity-link if we have any MBID; otherwise fall through to
     // /release-group/lookup. Order: explicit release-group MBID, then
-    // mapper-enriched release MBID (Achordion maps to release-group),
-    // then generic id (typically the rg MBID from MB-derived data).
+    // the other MBIDs. Achordion builds /release-group/<mbid> from whatever
+    // it is given and does not map a release MBID to its group, so a
+    // release id here makes a link that 404s (jherskowitz/achordion#107).
     // Final fallback: live MBID-mapper call against any track of the album
     // — Critical Darlings RSS, Apple/Last.fm chart entries, and other
     // sources without upstream MBIDs all reach this path. Mapper returns
@@ -20584,6 +20585,12 @@ ${trackListXml}
 
       const releaseInfo = {
         id: releaseData.id,
+        // The album's release group, which Copy Link shares: Achordion's
+        // album pages are release groups, and a release id under
+        // /release-group/ 404s. The lookup includes it; a cached lookup from
+        // before it did falls back to the group id this page was opened by.
+        releaseGroupMbid: releaseData['release-group']?.id
+          || (releaseId !== release.id && isMusicBrainzId(release.id) ? release.id : null),
         title: releaseData.title,
         artist: artist,
         date: releaseData.date || release.date,
@@ -31896,10 +31903,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           artist: currentArtist.name,
           albumArt: currentRelease.albumArt || null,
           type: 'album',
-          // currentRelease.id is typically the release-group MBID for MB-derived
-          // discography; if it ever happens to be a release MBID, Achordion
-          // server-side maps it. Either way the entity-link path gives us a
-          // direct URL instead of /release-group/lookup.
+          // Achordion's album pages are release groups and it does NOT map a
+          // release MBID to its group (a release id under /release-group/
+          // 404s), so the group id fetchReleaseData records comes first.
+          // currentRelease.id is the release once MusicBrainz's list loads.
           mbid: currentRelease.releaseGroupMbid || currentRelease.mbid || currentRelease.id || null
         };
         achordionShare = {
