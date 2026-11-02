@@ -42,6 +42,7 @@
 
 ## SoundCloud
 
+- **SoundCloud plays in Parachord.** SoundCloud tracks used to open in your browser, because SoundCloud no longer lets apps stream full tracks. They now play in the app through SoundCloud's own player, with no sign-in needed to play. Most independent uploads, mixes and remixes play in full. A track SoundCloud won't play outside its own site plays from another of your services instead, or offers to open it on SoundCloud.
 - **Stays signed in.** SoundCloud signed you out about once an hour while a page was finding several tracks at once, and you had to connect it again in Settings. It now stays connected.
 
 ## Home, friends and links
