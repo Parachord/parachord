@@ -84,3 +84,36 @@ test('the Search page passes the MBIDs it has', () => {
   expect(searchPage).toMatch(/fetchArtistData\(entry\.selectedResult\.name, artistOpenOptions\(entry\.selectedResult\)\)/);
   expect(searchPage).not.toMatch(/fetchArtistData\(artist\.name\)/);
 });
+
+// An uncached artist's discography takes an artist lookup and three
+// release-group requests in MusicBrainz's 1.1s queue. When none of it has
+// shown after ARTIST_SLOW_FALLBACK_MS, the services' discography shows
+// meanwhile; MusicBrainz's first batch replaces it.
+describe('slow MusicBrainz: the services\' discography meanwhile', () => {
+  const fetchArtist = fnBody('const fetchArtistData = async (artistName, options = {}) => {', '\n  // Fetch release data (album/EP/single) with full track listing');
+
+  test('after 3s, the not-on-MusicBrainz sources fill the page', () => {
+    expect(app).toMatch(/const ARTIST_SLOW_FALLBACK_MS = 3000;/);
+    const timer = fetchArtist.slice(fetchArtist.indexOf('const slowFallbackTimer = setTimeout('), fetchArtist.indexOf('}, ARTIST_SLOW_FALLBACK_MS);'));
+    expect(timer).toMatch(/\[fetchArtistFromSpotify, fetchArtistFromMusicKit, fetchArtistFromLastfm, fetchArtistFromDiscogs\]/);
+    // stale and settled checks before and after every source
+    expect(timer.match(/if \(thisFetchId !== artistFetchId\.current \|\| discographySettled\) return;/g)).toHaveLength(2);
+    expect(timer).toMatch(/setArtistReleases\(shown\);/);
+    expect(timer).toMatch(/albumArtFetchId\.current\+\+;/);
+    // only on the uncached path: the cached path returns before the timer
+    expect(fetchArtist.indexOf("console.log('📦 Using cached artist data for:'")).toBeLessThan(fetchArtist.indexOf('const slowFallbackTimer'));
+  });
+
+  test('MusicBrainz\'s first batch, or the not-on-MusicBrainz path, settles it', () => {
+    const show = fetchArtist.slice(fetchArtist.indexOf('const showReleases = (batch) => {'), fetchArtist.indexOf('const releasePromises = '));
+    expect(show).toMatch(/discographySettled = true;[^\n]*\n\s*clearTimeout\(slowFallbackTimer\);/);
+    // the list is rebuilt from MusicBrainz's releases only, so a service list goes
+    expect(show).toMatch(/return sorted\.map\(r => shown\.get\(r\.id\) \|\| withCachedArt\(r\)\);/);
+    expect(fetchArtist).toMatch(/if \(!mbMatchIsGood\) \{\s*\/\/ This path asks the same services itself\s*discographySettled = true;\s*clearTimeout\(slowFallbackTimer\);/);
+  });
+
+  test('a MusicBrainz miss keeps the service list and caches nothing', () => {
+    const tail = fetchArtist.slice(fetchArtist.indexOf('console.log(`Found ${uniqueReleases.length} release-groups'), fetchArtist.indexOf('artistDataCache.current[cacheKey] = {\n        artist: artistData'));
+    expect(tail).toMatch(/if \(uniqueReleases\.length === 0 && serviceDiscographySource\) \{[\s\S]*?return;\s*\}/);
+  });
+});
