@@ -17,6 +17,7 @@
 - **Artist discographies show as they load.** An artist page waited for albums, EPs and singles before showing any of them. Albums now appear as soon as they arrive, and opening an artist from Search skips a lookup it no longer needs.
 - **Covers no longer hold up what you clicked.** Cover lookups, artist bios and Home's suggestions used to queue ahead of the page you opened; at launch, five cover lookups could make an artist page wait 15 seconds. They now wait behind anything you asked for, and a slow lookup already running no longer blocks your click.
 - **Playing a track goes first.** Clicking a track that hasn't been matched to a service yet now finds it ahead of everything else the page is loading, instead of waiting behind every other track on the page (up to 9 seconds on an album). On album pages, clicking such a track used to open a search instead of playing it; it plays now.
+- **Album pages show their tracks sooner.** Opening an album from an artist page took three MusicBrainz lookups, a second or more apart, before the track list appeared; it now takes one. Your services are asked for the track list at the same time, and theirs shows if it arrives first (usually under a second), where the page used to wait five seconds before asking them. The track count shows a loading bar instead of "Loading...".
 - **Works when MusicBrainz's IPv6 address doesn't.** On November 1, MusicBrainz and the Cover Art Archive accepted connections over IPv6 and then dropped them, for hours, while IPv4 worked, so every lookup failed. Parachord now retries over IPv4 when that happens.
 
 ## Album art
@@ -38,6 +39,8 @@
 - **Home suggestions stay put.** Album and Artist Suggestions no longer fetch a new batch every time you open Home; press Refresh for more. A setting brings the old behavior back: **Settings → General → Discover → Refresh Home suggestions on every visit**.
 - **Friend links keep their time period.** `parachord://friend/…` links ignored `?period=` and couldn't open the Top Albums tab; both work now, and copied links include them. Thanks to @theli-ua for reporting it.
 - **Friend and playlist links open.** `parachord://friend/…` and `parachord://playlist/…` links did nothing.
+
+- **Album links from Copy Link work.** Copying an album page's link could give an Achordion link that went nowhere: it named the specific release MusicBrainz had loaded instead of the album. It now names the album.
 
 ## Sync
 
