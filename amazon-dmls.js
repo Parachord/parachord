@@ -101,7 +101,7 @@ const adapter = {
   async ensureSessionContext({ refresh } = {}) {
     if (!refresh && this.sessionContext) return this.sessionContext;
     if (this.sessionContextPromise) return this.sessionContextPromise;
-    this.sessionContextPromise = this.mintSessionContext().then((ctx) => {
+    this.sessionContextPromise = this.mintSessionContext({ refresh: !!refresh }).then((ctx) => {
       this.sessionContext = ctx;
       this.sessionContextPromise = null;
       console.log(`[Amazon dmls] session context ok (territory ${ctx.territoryId}, region ${ctx.region}, tier ${ctx.tier || 'unknown'})`);
@@ -113,7 +113,7 @@ const adapter = {
     return this.sessionContextPromise;
   },
 
-  async mintSessionContext() {
+  async mintSessionContext({ refresh } = {}) {
     // Benign mint query: the user's own most recent search (already in their
     // Amazon history, so the one-shot page flow pollutes nothing).
     let lastQuery = null;
@@ -124,7 +124,7 @@ const adapter = {
     } catch { /* history is optional */ }
     const [config, headers] = await Promise.all([
       this.fetchConfigJson(),
-      searchHost().mintSessionHeaders({ query: lastQuery })
+      searchHost().mintSessionHeaders({ query: lastQuery, refresh: !!refresh })
     ]);
     const session = amazonNativeSessionFromConfig(config);
     const ctx = {
@@ -434,6 +434,8 @@ const adapter = {
     this.sessionContext = null;
     this.certSessionReady = false;
     this._telemetry = null;
+    // A Prime-plan HD refusal must not survive into a later HD account.
+    this.hdSessionBlockedByPlan = false;
   },
 
   debugState() {

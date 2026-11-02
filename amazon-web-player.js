@@ -702,12 +702,17 @@ const amazonWebPlayer = {
   // adds nothing new). Rides enqueueSearch: webRequest has a single listener
   // slot per method per session, and the chain is what serializes this
   // against an in-flight search's own capture registration.
-  async mintSessionHeaders({ query } = {}) {
+  async mintSessionHeaders({ query, refresh } = {}) {
     if (!(await this.isSignedIn())) {
       const err = new Error('Sign in to Amazon Music first');
       err.reason = 'not-signed-in';
       throw err;
     }
+    // A dmls 400 REQUIRED_COOKIES means THESE headers were rejected. The
+    // stored search template is the same token — reusing it makes the retry
+    // fail and the user get a sign-in prompt on a live session. Drop it and
+    // mint from a page flow.
+    if (refresh) this.specSearchTemplate = null;
     // Fast path since the search template landed (#1152): the captured
     // spec-search request already carries exactly these headers from a real
     // page flow — the replay's freshness check is the mint's too.

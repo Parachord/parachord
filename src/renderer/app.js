@@ -48694,6 +48694,11 @@ useEffect(() => {
                           setIsPlaying(false);
                         }
                       }
+                      // Prime-plan HD block is account-scoped. The next
+                      // sign-in may be an HD account; don't keep FLAC off.
+                      if (window.__parachordWidevine && typeof window.__parachordWidevine.clearPlanBlocks === 'function') {
+                        window.__parachordWidevine.clearPlanBlocks();
+                      }
                       const r = await window.electron.amazonMusic.signOut();
                       if (r && r.success) {
                         setAmazonMusicStatus({ success: true, engine: 'widevine', web: { cdm: !!(amazonMusicStatus && amazonMusicStatus.web && amazonMusicStatus.web.cdm), signedIn: false } });

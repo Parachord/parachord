@@ -345,20 +345,20 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
       }
     });
-    audio.addEventListener('loadedmetadata', () => {
+    const adoptElementDuration = () => {
       if (!ownerOf(audioRef.current)) return;
       const audioDuration = audioRef.current?.duration;
-      if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
-        setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+      if (!(audioDuration && !isNaN(audioDuration) && isFinite(audioDuration))) return;
+      setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
+      // Search-resolved tracks often arrive with duration 0. onProgressUpdate
+      // returns early on 0, so the scrobble never fires unless this patches
+      // the track the scrobble manager holds (the React patch does not).
+      if (window.scrobbleManager && typeof window.scrobbleManager.updateTrackDuration === 'function') {
+        window.scrobbleManager.updateTrackDuration(audioDuration);
       }
-    });
-    audio.addEventListener('durationchange', () => {
-      if (!ownerOf(audioRef.current)) return;
-      const audioDuration = audioRef.current?.duration;
-      if (audioDuration && !isNaN(audioDuration) && isFinite(audioDuration)) {
-        setCurrentTrack(prev => prev ? { ...prev, duration: audioDuration } : prev);
-      }
-    });
+    };
+    audio.addEventListener('loadedmetadata', adoptElementDuration);
+    audio.addEventListener('durationchange', adoptElementDuration);
     audio.addEventListener('ended', () => {
       const owner = ownerOf(audioRef.current);
       if (!owner) return;
@@ -625,7 +625,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       window._appleMusicPreviewAudio.currentTime = 0;
     }
 
-    pausePromises.push(stopWidevineIfActive('⏹️ Stopping the native Music player before playing new track'));
+    const widevineStop = stopWidevineIfActive('⏹️ Stopping the native Music player before playing new track');
+    pausePromises.push(widevineStop);
 
     // Always stop main process polling for both Spotify and Apple Music
     stopMainProcessPolling();
@@ -640,6 +641,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         new Promise(resolve => setTimeout(resolve, 500)) // Max 500ms wait
       ]);
     }
+    // Shaka's unload removes src. It must finish BEFORE the next source sets
+    // src — the 500ms cap above used to let a late unload strip a local file.
+    await widevineStop;
 
     // Check if another play request has superseded this one while we were stopping playback
     if (playbackGenerationRef.current !== thisGeneration) {
@@ -1621,7 +1625,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         audioRef.current.volume = effectiveVolume / 100;
         console.log(`🔊 Applied ${streamLabel} volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
         audioRef.current.currentTime = 0;
-        await audioRef.current.play();
+        // audio.play() can sit pending while Shaka waits on a license that
+        // will never come (a 4xx arrives as an error event, not a rejection).
+        // untilAudible rejects on that critical error so the catch below
+        // fails this source instead of leaving the spinner up.
+        const audible = window.__parachordWidevine.untilAudible();
+        const started = audioRef.current.play();
+        await Promise.race([started, audible]);
       };
 
       try {
@@ -1630,19 +1640,27 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         // Sign-in prompts are the resolver's UX (the .axe's old play path did
         // prompt-then-retry-once — mirrored here so the widevine branch keeps
         // that contract).
-        // Superseded is not a failure: the newer play owns the element. No
-        // toast, no auto-skip (autoSkipIfAdvancing does not generation-check).
-        if (error && error.reason === 'superseded') {
+        // Superseded — or a generation that already moved — is not a failure.
+        // autoSkipIfAdvancing does not generation-check, so a 7000 from a
+        // skipped load used to skip the track the user just picked.
+        if ((error && error.reason === 'superseded') || playbackGenerationRef.current !== thisGeneration) {
           setTrackLoading(false);
           return;
         }
         if (error && error.reason === 'not-signed-in' && window.__parachordManageAmazonMusic) {
-          const ok = await window.__parachordManageAmazonMusic({ explicit: true });
-          if (ok && playbackGenerationRef.current === thisGeneration) {
+          // reason is what #1172's quiet-retry keys on. explicit skips the
+          // radio/hidden gates; forcePrompt is NOT set, so live cookies
+          // retry once instead of opening the sign-in window.
+          const ok = await window.__parachordManageAmazonMusic({ explicit: true, reason: error.reason });
+          if (playbackGenerationRef.current !== thisGeneration) {
+            setTrackLoading(false);
+            return;
+          }
+          if (ok) {
             try {
               await startWidevine();
             } catch (retryError) {
-              if (retryError && retryError.reason === 'superseded') {
+              if ((retryError && retryError.reason === 'superseded') || playbackGenerationRef.current !== thisGeneration) {
                 setTrackLoading(false);
                 return;
               }
@@ -1656,7 +1674,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
               });
               return;
             }
-          } else if (!ok) {
+          } else {
             setTrackLoading(false);
             return;
           }
@@ -1678,10 +1696,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       // behind the newer track (in-flight plays are token-invalidated).
       if (playbackGenerationRef.current !== thisGeneration) {
         console.log('⏹️ Playback request superseded during Widevine load, aborting');
-        // Conditional teardown: only if the engine hasn't MOVED ON since our
-        // play (a newer widevine play already handles its own unload — a blind
-        // stop() here would cancel it AND close its license session).
-        if (window.__parachordWidevine) await window.__parachordWidevine.stop({ token: widevinePlayToken }).catch(() => {});
+        // A null token is unconditional and cancels the newer play. Only
+        // tear down a play that actually started (it returned a token).
+        if (window.__parachordWidevine && widevinePlayToken != null) {
+          await window.__parachordWidevine.stop({ token: widevinePlayToken }).catch(() => {});
+        }
         return;
       }
 
@@ -2808,6 +2827,15 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // Previously this checked sources.localfiles/soundcloud which caused it to hijack
     // pause for Apple Music tracks when audioRef.current lingered from a prior play.
     if (audioRef.current && usesSharedAudio(currentTrack?._activeResolver)) {
+      // The engine was stopped (track ended into an empty queue, or sign-out).
+      // audio.play() on the unloaded element reports playing over silence.
+      const widevineSilent = isWidevineResolver(currentTrack._activeResolver)
+        && window.__parachordWidevine
+        && !window.__parachordWidevine.getState().activeResolverId;
+      if (!isPlaying && widevineSilent) {
+        handlePlay(currentTrack);
+        return;
+      }
       if (isPlaying) {
         audioRef.current.pause();
         setIsPlaying(false);
@@ -3035,9 +3063,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // does — engine unload, element pause). No-op otherwise: a generation that
   // already lost the shared element cannot touch the replacement track.
   const stopWidevineIfActive = (reason) => {
-    const names = activeResolversRef.current || [];
-    if (!names.some((n) => isWidevineResolver(n))) return Promise.resolve();
     if (!window.__parachordWidevine) return Promise.resolve();
+    // Gate on the engine owning the element, not on Amazon being enabled.
+    // An enabled resolver that is not playing must not unload — Shaka's
+    // teardown strips src from whatever the shared element holds now.
+    const state = typeof window.__parachordWidevine.getState === 'function'
+      ? window.__parachordWidevine.getState() : null;
+    if (!state || !state.activeResolverId) return Promise.resolve();
     if (reason) console.log(reason);
     return window.__parachordWidevine.stop().catch(() => {});
   };
@@ -3055,6 +3087,16 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         widevineErrorToastState.at = Date.now();
         showToast(`${(window.resolverLabelById || ((id) => id || 'Stream'))(resolverId)} stream error — playback may stall`, 'error');
       }
+    };
+    // CRITICAL after the element was audible: the buffer will drain and
+    // ended will never fire. Skip, but only while this engine still owns
+    // the element (a late error must not skip the replacement track).
+    window.__parachordWidevineFatal = (message, resolverId) => {
+      const state = window.__parachordWidevine && window.__parachordWidevine.getState();
+      if (!state || !state.activeResolverId) return;
+      console.error(`[Widevine] ${resolverId || 'player'} fatal:`, message);
+      showToast(`${(window.resolverLabelById || ((id) => id || 'Stream'))(resolverId)} playback failed`, 'error');
+      handleNextRef.current?.();
     };
     window.__parachordWidevineSetVariantListener = (cb) => __widevinePlayer.setVariantListener(cb);
   }

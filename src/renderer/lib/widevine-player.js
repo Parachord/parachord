@@ -76,6 +76,7 @@ function bindElementEvents(audio) {
       return;
     }
     trackSession.started = true;
+    resolveAudible();
     const delay = loadStartStamp ? Math.max(0, (performance.now() - loadStartStamp) / 1000) : null;
     const facts = currentVariantFacts();
     emitPlayerEvent('play-started', {
@@ -159,6 +160,34 @@ function ensureLicenseScheme() {
 // dmls session it was issued under.
 let hdSessionBlockedByPlan = false;
 const HD_CONTENT_DENIAL_STATUSES = new Set(['CUSTOMER_NOT_ELIGIBLE']);
+
+// untilAudible(): resolves once the element is actually playing, rejects on a
+// CRITICAL Shaka error before that (a license 4xx arrives as an error event
+// after load(), and audio.play() can sit pending on a key that never comes).
+let audibleWaiters = [];
+let pendingFatal = null;
+function clearAudible() {
+  pendingFatal = null;
+  audibleWaiters = [];
+}
+function failAudible(err) {
+  pendingFatal = err;
+  const waiters = audibleWaiters.splice(0);
+  for (const w of waiters) w.reject(err);
+}
+function resolveAudible() {
+  pendingFatal = null;
+  const waiters = audibleWaiters.splice(0);
+  for (const w of waiters) w.resolve();
+}
+function untilAudible() {
+  if (trackSession && trackSession.started) return Promise.resolve();
+  if (pendingFatal) return Promise.reject(pendingFatal);
+  return new Promise((resolve, reject) => audibleWaiters.push({ resolve, reject }));
+}
+function clearPlanBlocks() {
+  hdSessionBlockedByPlan = false;
+}
 
 let supportedCodecFamilies = null;
 async function getSupportedCodecFamilies() {
@@ -303,15 +332,18 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
 
   const mine = ++playToken;
   lastError = null;
+  clearAudible();
   loadStartStamp = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
   const result = await window.electron.widevine.getManifest(resolverId, entity || {});
+  // A stop/skip during the mint wins over the manifest's own failure:
+  // otherwise a superseded play reports playback-failed and the engine
+  // auto-skips or dialogs over the track the user just picked.
+  if (playToken !== mine) throw supersededError();
   if (!result || result.success !== true) {
     const err = new Error((result && result.error) || 'manifest fetch failed');
     err.reason = (result && result.reason) || 'playback-failed';
     throw err;
   }
-  // The mint can take seconds — a newer play may have started meanwhile.
-  if (playToken !== mine) throw supersededError();
 
   const shaka = window.shaka;
   if (!player) {
@@ -341,6 +373,17 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
       recentErrors.push(lastErrorDetail);
       if (recentErrors.length > 20) recentErrors.shift();
       if (typeof window.__parachordWidevineError === 'function') window.__parachordWidevineError(lastError, activeResolverId);
+      // CRITICAL (severity 2) or a DRM-range code: the player will not
+      // recover. Before the element is audible this rejects untilAudible()
+      // so a hung audio.play() still fails the source. After start, the
+      // host skips rather than stalling the queue on a drained buffer.
+      const critical = d.severity === 2 || (typeof d.code === 'number' && d.code >= 6000 && d.code < 7000);
+      if (critical) {
+        const fatal = new Error(lastError);
+        fatal.reason = 'playback-failed';
+        if (!trackSession || !trackSession.started) failAudible(fatal);
+        else if (typeof window.__parachordWidevineFatal === 'function') window.__parachordWidevineFatal(lastError, activeResolverId);
+      }
     });
   }
   if (audioElement !== audio) {
@@ -371,6 +414,10 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     if (result.sessionId) {
       fanoutWidevineEvent('stopped', { resolverId, sessionId: result.sessionId, positionMs: 0 });
     }
+    // stop()'s unload interrupts load with Shaka 7000. That is supersession,
+    // not a failure of this track — rethrowing the 7000 made the engine
+    // auto-skip the track the user just picked, or dialog over it.
+    if (playToken !== mine) throw supersededError();
     throw loadErr;
   } finally {
     URL.revokeObjectURL(uri);
@@ -395,6 +442,16 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
 
   const { tier, adaptive } = await readPlaybackQuality();
   await getSupportedCodecFamilies();
+  // A stop during these awaits empties the variant list. Reporting that as
+  // playback-failed is the same superseded-as-failure hole as the load catch.
+  if (playToken !== mine) {
+    if (trackSession && trackSession.sessionId) {
+      fanoutWidevineEvent('stopped', { resolverId, sessionId: trackSession.sessionId, positionMs: 0 });
+    }
+    trackSession = null;
+    if (activeResolverId === resolverId) activeResolverId = null;
+    throw supersededError();
+  }
   // Tier selection runs over what this build can decode (e.g. FLAC-only-on-
   // paper builds fall to top opus instead of stalling at an un-decodable
   // variant).
@@ -425,24 +482,33 @@ async function applyQuality() {
 
 async function stop({ token } = {}) {
   // Token-conditional teardown: refuse to cancel a play that's newer than the
-  // caller's. Without a token, stop whatever is playing (explicit teardowns).
+  // caller's. Without a token, stop whatever WE own (explicit teardowns).
   if (typeof token === 'number' && token !== playToken) return { stopped: false, reason: 'stale-teardown' };
-  playToken += 1; // every stop invalidates all in-flight plays
-  const hadTrack = !!trackSession;
+  // Own the element only while a widevine load/play is on it. Shaka's unload
+  // and detach call removeAttribute('src') on the attached element, so an
+  // unconditional unload silences a later local/html5 track (sign-out after
+  // Amazon, or a stop that lands after the next source set src).
+  const owned = !!(trackSession || activeResolverId);
+  playToken += 1; // every stop invalidates all in-flight plays, owned or not
+  if (!owned) return { stopped: false, reason: 'not-owner' };
   emitPlayerEvent('stopped', {
     positionMs: audioElement && Number.isFinite(audioElement.currentTime) ? Math.round(audioElement.currentTime * 1000) : 0
   });
   trackSession = null;
   activeResolverId = null;
   lastError = null;
+  clearAudible();
   if (player) {
     try { await player.unload(); } catch { /* already unloaded */ }
+    // Drop Shaka's element reference so a later unload cannot reach whatever
+    // the host attached next (Lk no-ops once the element pointer is null).
+    try { await player.detach(); } catch { /* already detached */ }
   }
-  // Only pause when the engine was the element's owner — a later html5/local
-  // track that already claimed it must not be interrupted.
-  if (audioElement && hadTrack) {
+  if (audioElement) {
     try { audioElement.pause(); } catch { /* element tolerance */ }
   }
+  audioElement = null;
+  return { stopped: true };
 }
 
 function getState() {
@@ -480,5 +546,5 @@ function getState() {
   };
 }
 
-const api = { play, applyQuality, stop, getState, currentVariantFacts, setVariantListener, QUALITY_STORE_KEY, ABR_STORE_KEY };
+const api = { play, applyQuality, stop, getState, currentVariantFacts, setVariantListener, untilAudible, clearPlanBlocks, QUALITY_STORE_KEY, ABR_STORE_KEY };
 module.exports = api;

@@ -178,10 +178,13 @@ describe('amazon-dmls getManifest', () => {
     requestHandlers.push(() => ({ status: 400, text: '{"__type":"com.amazon.digitalmusiclocator#UnauthorizedException","message":"Request authentication failure : REQUIRED_COOKIES_MISSING"}' }));
     requestHandlers.push(() => ({ status: 200, text: CONFIG_NO_TERRITORY })); // refresher config
     queueManifest({});
+    amazonWebPlayer.mintSessionHeaders.mockClear();
     const result = await amazonDmls.getManifest({ asin: 'B1' });
     expect(result.manifest).toBeDefined();
     const dmlsCalls = mockRequests.filter((r) => r.opts.url.includes('/api/dmls/')).length;
     expect(dmlsCalls).toBe(2);
+    // The rejected headers must not be re-read from the search template.
+    expect(amazonWebPlayer.mintSessionHeaders).toHaveBeenCalledWith(expect.objectContaining({ refresh: true }));
   });
 });
 
@@ -240,6 +243,13 @@ describe('amazon-dmls relayLicense', () => {
       message: expect.stringContaining('VMP')
     });
     expect(amazonDmls.hdSessionBlockedByPlan).toBe(false);
+  });
+
+  test('sign-out clears the plan-level HD block', async () => {
+    amazonDmls.hdSessionBlockedByPlan = true;
+    amazonDmls.onSignOut();
+    expect(amazonDmls.hdSessionBlockedByPlan).toBe(false);
+    expect(amazonDmls.debugState().hdSessionBlockedByPlan).toBe(false);
   });
 
   test('non-200 without license field is an error', async () => {

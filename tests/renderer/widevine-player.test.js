@@ -202,9 +202,82 @@ describe('play-token supersession', () => {
     resolvers[0]();
     await expect(p).rejects.toMatchObject({ reason: 'superseded' });
   });
+
+  test('a manifest failure that lands after stop() is superseded, not playback-failed', async () => {
+    const resolvers = [];
+    const el = makeElectron();
+    el.bridge.getManifest = jest.fn(() => new Promise((resolve) => {
+      resolvers.push(() => resolve({ success: false, reason: 'playback-failed', error: 'CONTENT_NOT_ELIGIBLE' }));
+    }));
+    const { player } = load({ electron: el });
+    const p = player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'A' } });
+    await new Promise(r => setImmediate(r));
+    await player.stop();
+    resolvers[0]();
+    await expect(p).rejects.toMatchObject({ reason: 'superseded' });
+  });
+
+  test('a load interrupted by stop() is superseded, not Shaka 7000', async () => {
+    const { el, resolvers } = resumableManifest();
+    const { sh, player } = load({ electron: el });
+    let release;
+    sh.Player.prototype.load = function () {
+      this.loadedUris.push('held');
+      return new Promise((resolve, reject) => {
+        release = () => reject(Object.assign(new Error('shaka 7000 LOAD_INTERRUPTED'), { code: 7000 }));
+      });
+    };
+    const p = player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'A' } });
+    await new Promise(r => setImmediate(r));
+    resolvers[0]();
+    for (let i = 0; i < 20 && !release; i += 1) await Promise.resolve();
+    expect(release).toBeDefined();
+    await player.stop();
+    release();
+    await expect(p).rejects.toMatchObject({ reason: 'superseded' });
+  });
 });
 
 describe('stale teardowns (review round 2)', () => {
+  test('stop() does not unload once the engine no longer owns the element', async () => {
+    const { sh, player } = load();
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'A' } });
+    const inst = sh.playerInstances[0];
+    await player.stop();
+    const afterOwnedStop = inst.unloaded;
+    const again = await player.stop();
+    expect(again).toMatchObject({ stopped: false, reason: 'not-owner' });
+    expect(inst.unloaded).toBe(afterOwnedStop);
+    expect(inst.unloaded).toBeGreaterThan(0);
+  });
+
+  test('a critical error before the element is audible rejects untilAudible', async () => {
+    const { sh, player } = load();
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'A' } });
+    const inst = sh.playerInstances[0];
+    const errorCb = inst.listeners.find(([ev]) => ev === 'error')[1];
+    const pending = player.untilAudible();
+    errorCb({ detail: { severity: 2, code: 6007, message: 'license failed' } });
+    await expect(pending).rejects.toMatchObject({ reason: 'playback-failed' });
+  });
+
+  test('clearPlanBlocks lets the next max-tier play select FLAC again', async () => {
+    const { sh, el, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for HD' });
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic?v=2', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
+    expect(player.getState().hdSessionBlockedByPlan).toBe(true);
+    player.clearPlanBlocks();
+    expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+    await player.stop();
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    expect(sh.playerInstances[0].selected.bandwidth).toBe(1902230);
+  });
+
   test('stop({token}) with a moved-on token does nothing — the newer play survives', async () => {
     const { player } = load();
     const audio = makeAudio();
