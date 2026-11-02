@@ -18851,8 +18851,14 @@ ${trackListXml}
                 date: savedLastView.releaseDate
               };
             }
-            // Fetch the artist data (this will populate currentArtist)
-            setTimeout(() => fetchArtistData(savedLastView.artistName), 100);
+            // Fetch the artist data (this will populate currentArtist) once
+            // the big caches are in. The artist cache is one of them, and
+            // they hydrate after first paint: fetching before that missed the
+            // cache on every launch, refetched the whole discography from
+            // MusicBrainz and painted it one release type at a time.
+            setTimeout(() => {
+              waitForBigCaches().then(() => fetchArtistData(savedLastView.artistName));
+            }, 100);
             console.log(`📦 Restoring last view: artist (${savedLastView.artistName})${savedLastView.artistPageTab ? ` [${savedLastView.artistPageTab}]` : ''}${savedLastView.releaseTitle ? ` -> ${savedLastView.releaseTitle}` : ''}`);
           } else if (savedLastView.view === 'history') {
             // Restore history view with tab
