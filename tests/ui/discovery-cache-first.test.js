@@ -44,3 +44,13 @@ test.each([
   const body = between(`const ${inner} = async (forceRefresh) => {`, '// Check ref cache as fallback');
   expect(body).toMatch(new RegExp(`&& ${freshVar}\\) \\{`));
 });
+
+// Reopening the app on an artist page restored it 100ms after the critical
+// keys loaded, before the artist cache (a big cache) hydrated: every launch
+// missed the cache, refetched the discography from MusicBrainz and painted
+// it one release type at a time (2026-11, Dire Straits).
+test('the restored artist page waits for the caches before fetching', () => {
+  const restore = between("if (savedLastView.view === 'artist' && savedLastView.artistName) {", "} else if (savedLastView.view === 'history') {");
+  expect(restore).toMatch(/waitForBigCaches\(\)\.then\(\(\) => fetchArtistData\(savedLastView\.artistName\)\)/);
+  expect(restore).not.toMatch(/setTimeout\(\(\) => fetchArtistData\(/);
+});
