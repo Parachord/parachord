@@ -89,6 +89,35 @@ describe('app.js wiring', () => {
     expect(fetchRelease).toMatch(/skipReleaseProbe \? null : await fetchReleaseDetails\(releaseId\)/);
   });
 
+  // An album opened from the artist page used to cost three MusicBrainz
+  // requests in the 1.1s queue: a release-id probe that 404s, a browse for
+  // the group's release, then that release's track list.
+  const groupDetails = slice('const fetchReleaseGroupDetails = async (releaseGroupId, fetchImpl = fetch) => {', '\n  };');
+
+  test('a release group loads its release and track list in one request', () => {
+    expect(groupDetails).toContain('release?release-group=${releaseGroupId}&status=official&inc=recordings+artist-credits+labels&fmt=json&limit=1');
+    expect(groupDetails.match(/fetchImpl\(/g)).toHaveLength(1);
+    // cached like a release lookup, and the group remembered as its alias
+    expect(groupDetails).toMatch(/releaseDetailsCache\.current\[data\.id\] = \{ data, timestamp: Date\.now\(\) \};/);
+    expect(groupDetails).toMatch(/rememberReleaseGroupAlias\(releaseGroupId, data\.id\);/);
+    expect(groupDetails).toMatch(/noReleases: true/);
+  });
+
+  test('fetchReleaseData and the hover prefetch use it, with no second lookup', () => {
+    expect(fetchRelease).toMatch(/releaseDetailsResponse = await fetchReleaseGroupDetails\(release\.id\);/);
+    expect(fetchRelease).not.toMatch(/release\?release-group=\$\{release\.id\}/);
+    const prefetch = slice('const prefetchReleaseTracks = async (release, artist) => {', '\n  };');
+    expect(prefetch).toMatch(/const skipReleaseProbe = !!release\.isReleaseGroup && !releaseDetailsCache\.current\[release\.id\]\?\.alias;/);
+    expect(prefetch).toMatch(/releaseDetailsResponse = await fetchReleaseGroupDetails\(release\.id, bgFetch\);/);
+    expect(prefetch).not.toMatch(/release\?release-group=\$\{release\.id\}/);
+  });
+
+  test('artist-page releases and parachord://album matches are flagged as release groups', () => {
+    const artistReleases = slice("`https://musicbrainz.org/ws/2/release-group?artist=${artist.id}&type=${type}&fmt=json&limit=100`", 'showReleases(releases);');
+    expect(artistReleases).toMatch(/id: rg\.id,[\s\S]*?isReleaseGroup: true/);
+    expect(app).toMatch(/id: match\.id,\s*title: match\.title,\s*releaseType: match\['primary-type'\]\?\.toLowerCase\(\) \|\| 'album',\s*isReleaseGroup: true/);
+  });
+
   const openForTrack = slice('const openAlbumForTrack = async (track) => {', 'const handleAlbumClick = async (album) => {');
 
   test('openAlbumForTrack asks the mapper up front only when it has no album name', () => {

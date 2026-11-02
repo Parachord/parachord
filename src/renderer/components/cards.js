@@ -1284,7 +1284,16 @@ const ReleasePage = ({
               fontSize: isCompact ? '0.75rem' : '0.875rem',
               transition: 'font-size 300ms ease'
             }
-          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs` : (release._loadError ? '' : 'Loading...')),
+          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs`
+            : release._loadError ? ''
+            // Track count still loading: the same shimmer as the track
+            // skeleton, sized like "10 Songs" so nothing shifts when it lands
+            : React.createElement('span', {
+                className: 'inline-block rounded shimmer-light animate-shimmer align-middle',
+                role: 'status',
+                'aria-label': 'Loading track count',
+                style: { width: isCompact ? '3.5rem' : '4rem', height: '0.8em', backgroundSize: '200% 100%' }
+              })),
           // A track list from a service's catalog, not MusicBrainz (the
           // album-page catalog fallback): say where it came from.
           release._catalogSource && React.createElement('p', {

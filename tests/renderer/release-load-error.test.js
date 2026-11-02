@@ -39,6 +39,7 @@ describe('ReleasePage load error', () => {
     expect(html).not.toContain('track-skeleton');
     expect(html).not.toContain('animate-shimmer');
     expect(html).not.toContain('Loading...');
+    expect(html).not.toContain('Loading track count');
   });
 
   test('without a retry handler the button is left out', () => {
@@ -57,10 +58,12 @@ describe('ReleasePage load error', () => {
     expect(render({ ...base, tracks: [] })).not.toContain('Track list from');
   });
 
-  test('still loading shows the skeleton as before', () => {
+  test('still loading shows the skeleton, the track count included', () => {
     const html = render(base);
     expect(html).not.toContain('role="alert"');
     expect(html).toContain('animate-shimmer');
-    expect(html).toContain('Loading...');
+    // the left rail's track count is a shimmer bar, not "Loading..." text
+    expect(html).not.toContain('Loading...');
+    expect(html).toContain('aria-label="Loading track count"');
   });
 });
