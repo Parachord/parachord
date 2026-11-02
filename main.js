@@ -906,6 +906,14 @@ function createWindow() {
 
   amazonWebPlayer.setHost(mainWindow);
   registerAmazonDmlsProvider({ registerWidevineProvider, store });
+  // Session warm-up (#1198 review): mint the dmls session context at launch
+  // so the first Amazon search/play doesn't pay config.json + the header
+  // mint just to learn the plan tier. Signed-out, or Amazon not in the
+  // user's active resolvers, is a no-op.
+  try {
+    const activeResolvers = store.get('active_resolvers');
+    if (!Array.isArray(activeResolvers) || activeResolvers.includes('amazonmusic')) amazonDmls.warmSession();
+  } catch { /* warming is opportunistic */ }
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -3796,7 +3804,12 @@ ipcMain.handle('amazonmusic-get-status', async () => {
 
 ipcMain.handle('amazonmusic-open-login', async () => {
   try {
-    return await amazonWebPlayer.openLogin();
+    const result = await amazonWebPlayer.openLogin();
+    // A successful sign-in warms the dmls session context (with refresh: a
+    // new sign-in can be a different account and tier) so the first search
+    // never waits on the mint.
+    if (result && result.signedIn) amazonDmls.warmSession({ refresh: true });
+    return result;
   } catch (error) {
     return { success: false, reason: error.reason, error: error.message };
   }

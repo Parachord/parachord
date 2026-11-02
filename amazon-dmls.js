@@ -46,6 +46,7 @@ const {
   DML_TARGET_PREFIX,
   MUSE_TARGET_PREFIX,
   ELIGIBILITY_CACHE_TTL_MS,
+  ELIGIBILITY_FAILURE_BACKOFF_MS,
   WIDEVINE_CERT_CHALLENGE
 } = require('./amazon-music-logic');
 
@@ -64,6 +65,9 @@ function deviceTimeZoneString() {
 const PARTITION = 'persist:amazon-music';
 const MUSIC_AGENT_SDK = 'Vinyl/2.0';
 const MUSIC_AGENT_CLIENT = 'GreenHornet_Web/1.0.1458';
+// Verdict-cache memory bound (#1196): past this many entries the LRU drop
+// oldest-push-out applies. A full playlist library of Amazon ASINs fits.
+const ELIGIBILITY_CACHE_MAX_ENTRIES = 4000;
 
 function electron() { return require('electron'); }
 function searchHost() { return require('./amazon-web-player.js'); }
@@ -80,7 +84,10 @@ const adapter = {
   sessionContext: null, // volatile: { customerId, marketplaceId, territoryId, region, tier, deviceId, csrfToken, csrfRnd, csrfTs }
   sessionContextPromise: null,
   certSessionReady: false,
-  eligibilityCache: new Map(), // asin → { verdict, at } — see filterUnplayableForPlan (#1196)
+  eligibilityCache: new Map(), // asin → { verdict, at } — insertion-ordered LRU, see cacheEligibility
+  eligibilityInFlight: new Map(), // asin → Promise<verdict|null> — concurrent searches share one lookup (#1198)
+  eligibilityBackoffUntil: 0, // failure backoff: no calls before this instant (#1198)
+  sessionGeneration: 0, // bumped on sign-out — in-flight verdict writes die with their session
 
   init({ store } = {}) {
     this.deps.store = store || null;
@@ -233,6 +240,26 @@ const adapter = {
 
   // ── plan-tier eligibility (#1196) ────────────────────────────────────────
 
+  // LRU read: TTL check plus insertion-recency refresh (the TTL itself keeps
+  // the ORIGINAL mint time — a hot verdict still expires after a day).
+  cachedEligibility(asin, now) {
+    const hit = this.eligibilityCache.get(asin);
+    if (!hit || now - hit.at >= ELIGIBILITY_CACHE_TTL_MS) return null;
+    this.eligibilityCache.delete(asin);
+    this.eligibilityCache.set(asin, hit);
+    return hit.verdict;
+  },
+
+  // LRU write: re-insert at the tail; past the cap the OLDEST entries push
+  // out (Map iterates in insertion order — the first key is the coldest).
+  cacheEligibility(asin, verdict, at) {
+    this.eligibilityCache.delete(asin);
+    this.eligibilityCache.set(asin, { verdict, at });
+    while (this.eligibilityCache.size > ELIGIBILITY_CACHE_MAX_ENTRIES) {
+      this.eligibilityCache.delete(this.eligibilityCache.keys().next().value);
+    }
+  },
+
   // One batched muse getEligibility call. Returns the verdict map on success
   // (an EMPTY map is a legal answer — everything asked was ineligible), or
   // null on ANY failure: network, non-200, or a renamed/reshaped envelope.
@@ -274,8 +301,10 @@ const adapter = {
   // (amazonEligibilityFlagForTier). NEVER makes a search worse: unknown tier,
   // no session, a failed call, or a reshaped response all return the input
   // list, and ASINs whose refresh failed stay even when cached verdicts of
-  // the OTHER asins apply. Verdicts cache per ASIN for a day — a playlist
-  // resolve is one call per new ASIN, not one per track.
+  // the OTHER asins apply. Verdicts cache per ASIN for a day (LRU) — a
+  // playlist resolve is one call per new ASIN; a FAILED lookup backs the
+  // endpoint off for 10 minutes; concurrent searches share one lookup per
+  // ASIN via eligibilityInFlight.
   async filterUnplayableForPlan(tracks) {
     if (!Array.isArray(tracks) || !tracks.length) return tracks;
     try {
@@ -293,25 +322,17 @@ const adapter = {
       const verdicts = {};
       const stale = [];
       for (const asin of asins) {
-        const hit = this.eligibilityCache.get(asin);
-        if (hit && now - hit.at < ELIGIBILITY_CACHE_TTL_MS) verdicts[asin] = hit.verdict;
+        const cached = this.cachedEligibility(asin, now);
+        if (cached) verdicts[asin] = cached;
         else stale.push(asin);
       }
       if (stale.length) {
-        const fresh = await this.getEligibilityVerdicts(stale, ctx);
-        if (fresh) {
-          if (this.eligibilityCache.size > 4000) this.eligibilityCache.clear(); // memory bound; the day TTL still applies
-          for (const asin of stale) {
-            // A response ABSENT the asin is Amazon saying "not eligible" —
-            // cache it as such, or the station-track costs a call per search.
-            const verdict = fresh[asin] || { isPrime: false, isMusicSubscription: false, isHighQuality: false, isSonicRush: false };
-            this.eligibilityCache.set(asin, { verdict, at: now });
-            verdicts[asin] = verdict;
-          }
-        } else {
-          // Failure keeps: mark residuals eligible in the LOCAL map only
-          // (never the cache), so the next search tries them again.
+        if (now < this.eligibilityBackoffUntil) {
+          // Backed off (#1198 review): no round trip at all. Cached verdicts
+          // above still apply; the residuals stay, exactly like a failure.
           for (const asin of stale) verdicts[asin] = { [flag]: true };
+        } else {
+          await this.resolveEligibility(stale, ctx, verdicts, flag);
         }
       }
       const kept = amazonFilterTracksByEligibility(tracks, verdicts, flag);
@@ -323,6 +344,82 @@ const adapter = {
       console.warn(`[Amazon dmls] plan filter skipped (${err && err.message}) — keeping results`);
       return tracks;
     }
+  },
+
+  // Fill `verdicts` for the cache-miss ASINs. Concurrent searches share: an
+  // ASIN already being fetched joins that promise, and the rest go out in
+  // ONE batched getEligibility call (#1198 review). A null per-ASIN result
+  // (failed batch) keeps the track — marked eligible in the LOCAL map only,
+  // never cached, so the next search (past the backoff) tries again.
+  async resolveEligibility(stale, ctx, verdicts, flag) {
+    const pending = new Map();
+    const toFetch = [];
+    for (const asin of stale) {
+      const shared = this.eligibilityInFlight.get(asin);
+      if (shared) pending.set(asin, shared);
+      else toFetch.push(asin);
+    }
+    if (toFetch.length) {
+      const batch = this.fetchEligibilityBatch(toFetch, ctx);
+      for (const asin of toFetch) {
+        const p = batch.then((map) => map.get(asin) ?? null);
+        this.eligibilityInFlight.set(asin, p);
+        pending.set(asin, p);
+        const clear = () => { if (this.eligibilityInFlight.get(asin) === p) this.eligibilityInFlight.delete(asin); };
+        p.then(clear, clear);
+      }
+    }
+    await Promise.all([...pending.entries()].map(async ([asin, p]) => {
+      const v = await p.catch(() => null);
+      verdicts[asin] = v || { [flag]: true };
+    }));
+  },
+
+  // The one batched call behind a resolveEligibility fetch. Resolves a Map
+  // of asin → verdict ({} entries nothing was eligible for stay OUT — the
+  // absent-asins cache entry below is what records them); null per asin on
+  // failure. On failure the whole endpoint backs off for
+  // ELIGIBILITY_FAILURE_BACKOFF_MS so a broken endpoint doesn't tax every
+  // search; on success the backoff clears.
+  async fetchEligibilityBatch(asins, ctx) {
+    const map = new Map();
+    const generation = this.sessionGeneration;
+    const fresh = await this.getEligibilityVerdicts(asins, ctx);
+    const now = Date.now();
+    if (!fresh) {
+      this.eligibilityBackoffUntil = now + ELIGIBILITY_FAILURE_BACKOFF_MS;
+      console.warn(`[Amazon dmls] eligibility lookup backed off for ${Math.round(ELIGIBILITY_FAILURE_BACKOFF_MS / 60000)} min after a failure`);
+      return map;
+    }
+    this.eligibilityBackoffUntil = 0;
+    // A sign-out mid-flight kills the write: the verdicts belong to the OLD
+    // account's catalog and must not poison the next session's cache.
+    if (generation !== this.sessionGeneration) return map;
+    for (const asin of asins) {
+      // A response ABSENT the asin is Amazon saying "not eligible" — cache
+      // it as such, or the station-track costs a call per search.
+      const verdict = fresh[asin] || { isPrime: false, isMusicSubscription: false, isHighQuality: false, isSonicRush: false };
+      this.cacheEligibility(asin, verdict, now);
+      map.set(asin, verdict);
+    }
+    return map;
+  },
+
+  // Session warm-up (#1198 review #2): without it the FIRST Amazon search of
+  // a session pays the context mint (config.json + possibly a header-mint
+  // page flow) just to learn the tier. Kicked by main at launch (signed-in
+  // accounts with the resolver active) and after every successful sign-in
+  // (refresh: a new sign-in can be a different account/tier). Fire-and-
+  // forget: a failed warm just means the first search pays the mint as
+  // before, and signed-out is a silent no-op.
+  warmSession({ refresh } = {}) {
+    if (!refresh && (this.sessionContext || this.sessionContextPromise)) return false;
+    void this.ensureSessionContext({ refresh }).catch((err) => {
+      if (!err || err.reason !== 'not-signed-in') {
+        console.log(`[Amazon dmls] session warm-up skipped (${err && err.message})`);
+      }
+    });
+    return true;
   },
 
   // ── the widevine provider ───────────────────────────────────────────────
@@ -522,7 +619,10 @@ const adapter = {
     try { this._telemetry && this._telemetry.onStopped({}); } catch { /* best-effort */ }
     this.sessionContext = null;
     this.certSessionReady = false;
+    this.sessionGeneration += 1;
     this.eligibilityCache.clear();
+    this.eligibilityInFlight.clear();
+    this.eligibilityBackoffUntil = 0;
     this._telemetry = null;
   },
 
@@ -534,7 +634,9 @@ const adapter = {
       certSessionReady: this.certSessionReady,
       eligibility: {
         filtering: !!amazonEligibilityFlagForTier(this.sessionContext && this.sessionContext.tier),
-        cached: this.eligibilityCache.size
+        cached: this.eligibilityCache.size,
+        inFlight: this.eligibilityInFlight.size,
+        backedOffUntil: new Date(this.eligibilityBackoffUntil).toISOString()
       },
       telemetry: {
         last: this.telemetryHealth.last,
@@ -550,4 +652,4 @@ function registerAmazonDmlsProvider({ registerWidevineProvider, store } = {}) {
   return adapter;
 }
 
-module.exports = { registerAmazonDmlsProvider, amazonDmls: adapter };
+module.exports = { registerAmazonDmlsProvider, amazonDmls: adapter, ELIGIBILITY_CACHE_MAX_ENTRIES };

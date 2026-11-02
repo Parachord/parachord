@@ -1288,6 +1288,12 @@ const MUSE_TARGET_PREFIX = 'com.amazon.muse.MuseServiceExternal.';
 // the cache with the rest of the session state.
 const ELIGIBILITY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
+// A FAILED lookup is remembered too: after one, no getEligibility calls for
+// this long, so a broken/rotated endpoint doesn't tax every search (#1198
+// review #3). Cached verdicts still apply during the backoff; only the
+// round trip pauses.
+const ELIGIBILITY_FAILURE_BACKOFF_MS = 10 * 60 * 1000;
+
 // Which eligibility flag the account's plan tier gates on. Only PRIME filters
 // today (#1196): an Unlimited account plays the full catalog on demand, and
 // the "isMusicSubscription covers every playable track" assumption still
@@ -1667,6 +1673,7 @@ module.exports = {
   amazonDmlsLicenseBody,
   MUSE_TARGET_PREFIX,
   ELIGIBILITY_CACHE_TTL_MS,
+  ELIGIBILITY_FAILURE_BACKOFF_MS,
   amazonEligibilityFlagForTier,
   amazonEligibilityBody,
   amazonEligibilityFromResponse,
