@@ -184,6 +184,7 @@ function registerWidevineBridgeIpc({ ipcMain, isAllowedSender }) {
         success: false,
         reason: (error && error.reason) || 'playback-failed',
         licenseDenied: !!(error && error.licenseDenied),
+        denialReason: (error && typeof error.denialReason === 'string') ? error.denialReason : null,
         error: String((error && error.message) || error)
       };
     }

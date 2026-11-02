@@ -40,7 +40,9 @@ const {
   amazonAuthCookieState,
   mpdContentProtectionSets,
   DML_TARGET_PREFIX,
-  WIDEVINE_CERT_CHALLENGE
+  WIDEVINE_CERT_CHALLENGE,
+  CERTIFICATE_DENIAL_REASONS,
+  HD_CONTENT_DENIAL_REASONS
 } = require('./amazon-music-logic');
 
 // hornet reports times relative to this offset format; cheap local copy.
@@ -286,12 +288,32 @@ const adapter = {
     if (!body) throw new Error('amazon-dmls: license body incomplete');
     const { status, text } = await this.dmls(ctx, 'getLicenseForPlaybackV2', body);
     if (status === 400) {
-      // Amazon refusing this build's Widevine certificate (development VMP) —
-      // surfaced to the renderer player as licenseDenied, mirroring the
-      // hornet path's error text.
-      const err = new Error('Amazon refused the Widevine license. This build needs a production VMP signature.');
+      // A 400 is NOT always the certificate. Parse Amazon's body and branch
+      // on denialReason: only the cert reasons mean the build's VMP signature
+      // (licenseDenied — no point trying another Amazon track). Every other
+      // denial (CUSTOMER_NOT_ELIGIBLE for HD on a Prime plan, region, …) is
+      // a per-kid-group refusal the player must route around; carry Amazon's
+      // denialReason + message through, logging no session material.
+      let refusal = null;
+      try { refusal = JSON.parse(text); } catch { /* opaque */ }
+      const denialReason = refusal && typeof refusal.denialReason === 'string' ? refusal.denialReason : null;
+      const message = refusal && typeof refusal.message === 'string' ? refusal.message : null;
+      if (CERTIFICATE_DENIAL_REASONS.has(denialReason)) {
+        const err = new Error('Amazon refused the Widevine license. This build needs a production VMP signature.');
+        err.reason = 'playback-failed';
+        err.licenseDenied = true;
+        throw err;
+      }
+      const err = new Error(`Amazon refused the license for this content${denialReason ? ` (${denialReason})` : ''}${message ? `: ${message}` : ''}`);
       err.reason = 'playback-failed';
-      err.licenseDenied = true;
+      err.licenseDenied = false;
+      err.denialReason = denialReason;
+      if (HD_CONTENT_DENIAL_REASONS.has(denialReason)) {
+        // The plan has no HD entitlement: stop asking for FLAC for the rest
+        // of the process (the refusal would otherwise repeat per track).
+        this.hdSessionBlockedByPlan = true;
+      }
+      console.warn(`[Amazon dmls] license denied (${denialReason || 'unknown'})${message ? `: ${message}` : ''}`);
       throw err;
     }
     let json = null;
@@ -420,6 +442,10 @@ const adapter = {
       sessionContext: !!this.sessionContext,
       tier: this.sessionContext && this.sessionContext.tier,
       certSessionReady: this.certSessionReady,
+      // Set once a license-400 carries an HD-content denialReason (the
+      // Prime capture: CUSTOMER_NOT_ELIGIBLE on the FLAC KID group) — the
+      // renderer stops asking for FLAC for the process.
+      hdSessionBlockedByPlan: !!this.hdSessionBlockedByPlan,
       telemetry: {
         last: this.telemetryHealth.last,
         dropped: this.telemetryHealth.dropped
