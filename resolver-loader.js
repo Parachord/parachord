@@ -92,7 +92,7 @@ class ResolverLoader {
     const RESERVED_KEYS = new Set([
       '__proto__', 'constructor', 'prototype',
       'id', 'name', 'version', 'author', 'description', 'icon', 'color',
-      'homepage', 'email', 'capabilities', 'urlPatterns',
+      'homepage', 'email', 'capabilities', 'urlPatterns', 'embedPlayer',
       'requiresAuth', 'authType', 'configurable', 'enabled', 'weight', 'config',
       '_bindContext'
     ]);
@@ -122,6 +122,10 @@ class ResolverLoader {
       capabilities: capabilities || {},
       // URL patterns for URL lookup
       urlPatterns: axe.urlPatterns || [],
+      // Embedded player (capabilities.embedPlayer): which host adapter plays
+      // it. Kept outside `capabilities`, whose values every client (Android
+      // and iOS decode a Map<String, Boolean>) reads as booleans.
+      embedPlayer: axe.embedPlayer && typeof axe.embedPlayer === 'object' ? { ...axe.embedPlayer } : null,
 
       // Settings
       requiresAuth: settings?.requiresAuth || false,

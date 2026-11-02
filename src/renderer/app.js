@@ -7086,13 +7086,29 @@ const Parachord = () => {
   // encrypted adaptive streams through Shaka on the SAME shared element —
   // manifest/license bytes come from main via window.electron.widevine.
   const isWidevineResolver = (id) => !!findLoadedResolver(id)?.capabilities?.widevine;
-  const usesSharedAudio = (id) => id === 'localfiles' || id === 'soundcloud' || isHtml5StreamResolver(id) || isWidevineResolver(id);
+  const usesSharedAudio = (id) => id === 'localfiles' || isHtml5StreamResolver(id) || isWidevineResolver(id);
+  // Embedded-player resolvers play in the service's own player, outside the
+  // shared element: `capabilities.embedPlayer: true`, with the host adapter
+  // (lib/embed-players.js) named by the .axe's top-level
+  // `embedPlayer.adapter` (SoundCloud's widget today). The name stays out of
+  // `capabilities`, which mobile clients decode as booleans.
+  const embedPlayerKind = (id) => {
+    const resolver = findLoadedResolver(id);
+    if (!resolver?.capabilities?.embedPlayer) return null;
+    const kind = resolver.embedPlayer?.adapter;
+    return typeof kind === 'string' && kind ? kind : null;
+  };
+  // Audio Parachord plays itself, through either path (volume support, the
+  // Spotify poll skip).
+  const playsInApp = (id) => usesSharedAudio(id) || !!embedPlayerKind(id);
   // The element a resolver's in-app audio plays through, for seek, volume and
-  // play/pause: SoundCloud's widget facade (lib/soundcloud-widget-player.js,
-  // HTMLMediaElement-shaped), else the shared <audio>.
+  // play/pause: an embedded player's HTMLMediaElement-shaped facade, else the
+  // shared <audio>.
   const mediaElementFor = (id) => {
-    if (id === 'soundcloud') {
-      return window.__parachordSoundCloudWidget ? window.__parachordSoundCloudWidget().element : null;
+    const kind = embedPlayerKind(id);
+    if (kind) {
+      const player = window.__parachordEmbedPlayer ? window.__parachordEmbedPlayer(kind) : null;
+      return player ? player.element : null;
     }
     return usesSharedAudio(id) ? audioRef.current : null;
   };
@@ -7810,7 +7826,7 @@ const Parachord = () => {
       isWidevineResolver,
       findLoadedResolver,
       usesSharedAudio,
-      mediaElementFor,
+      embedPlayerKind,
       resolveTracksInBackground,
       buildProtocolFetchHeaders,
       lastfmFetch,
@@ -12588,12 +12604,12 @@ ${trackListXml}
     const activeResolver = currentTrack?._activeResolver;
     const isStreamingTrack = activeResolver === 'spotify' || activeResolver === 'applemusic' || activeResolver === 'amazonmusic';
     const isLocalFile = activeResolver === 'localfiles';
-    const isSoundCloud = activeResolver === 'soundcloud';
+    const isEmbedPlayer = !!embedPlayerKind(activeResolver); // SoundCloud's widget, ... (capabilities.embedPlayer)
     const isHtml5Stream = isHtml5StreamResolver(activeResolver); // Subsonic, ... (capabilities.html5Stream)
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isSoundCloud && !isHtml5Stream && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isEmbedPlayer && !isHtml5Stream && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -33984,9 +34000,10 @@ const getCurrentPlaybackState = async () => {
 useEffect(() => {
   if (!spotifyToken || !isPlaying) return;
 
-  // Don't poll if playing via HTML5 Audio (local files or SoundCloud)
+  // Don't poll while Parachord plays the audio itself (local files, streams,
+  // embedded players)
   const activeResolver = currentTrack?._activeResolver;
-  if (usesSharedAudio(activeResolver)) {
+  if (playsInApp(activeResolver)) {
     return;
   }
 
@@ -44425,7 +44442,7 @@ useEffect(() => {
             // For Spotify, only enable volume on Computer devices (desktop app)
             // TVs, speakers, and other devices don't respond to remote volume commands reliably
             const spotifyVolumeSupported = !isSpotify || spotifyDevice?.type === 'Computer';
-            const volumeSupported = !currentTrack || usesSharedAudio(currentResolverId) || (isSpotify && spotifyVolumeSupported);
+            const volumeSupported = !currentTrack || playsInApp(currentResolverId) || (isSpotify && spotifyVolumeSupported);
             const isDisabled = !volumeSupported || browserPlaybackActive || isExternalPlayback;
             const resolverOffset = currentResolverId ? (resolverVolumeOffsets[currentResolverId] || 0) : 0;
             const hasOffset = resolverOffset !== 0;

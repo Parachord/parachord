@@ -45,17 +45,13 @@ const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds } 
 const __widevinePlayer = require('../lib/widevine-player');
 if (typeof window !== 'undefined') window.__parachordWidevine = __widevinePlayer;
 
-// SoundCloud plays through SoundCloud's widget in a hidden iframe. Created
-// on first use (the module must load under plain Node, where there is no
-// document); app.js reaches its media-element facade through
-// window.__parachordSoundCloudWidget for seek and volume.
-const { createSoundCloudWidgetPlayer } = require('../lib/soundcloud-widget-player');
-let __soundCloudWidget = null;
-const soundCloudWidget = () => {
-  if (!__soundCloudWidget) __soundCloudWidget = createSoundCloudWidgetPlayer();
-  return __soundCloudWidget;
-};
-if (typeof window !== 'undefined') window.__parachordSoundCloudWidget = soundCloudWidget;
+// Resolvers that play through a service's own embeddable player
+// (capabilities.embedPlayer, SoundCloud's widget today). The
+// adapters live in lib/embed-players.js; app.js reaches a player's
+// media-element facade through window.__parachordEmbedPlayer for seek and
+// volume.
+const { embedPlayer, embedLinkFor, stopAllEmbedPlayers } = require('../lib/embed-players');
+if (typeof window !== 'undefined') window.__parachordEmbedPlayer = embedPlayer;
 
 // The 30s stream-error toast throttle — module scope so re-renders don't
 // reset it (the hook body runs on every render; a hook-local let resets at
@@ -148,7 +144,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     isWidevineResolver,
     findLoadedResolver,
     usesSharedAudio,
-    mediaElementFor,
+    embedPlayerKind,
     resolveTracksInBackground,
     buildProtocolFetchHeaders,
     lastfmFetch,
@@ -1286,14 +1282,17 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return;
     }
 
-    // Handle SoundCloud playback with HTML5 Audio (stream from API)
-    if (resolverId === 'soundcloud') {
-      console.log('🎵 Playing SoundCloud track:', sourceToPlay.title);
-      console.log('🎵 SoundCloud source details:', { soundcloudId: sourceToPlay.soundcloudId, streamable: sourceToPlay.streamable });
+    // Embedded-player resolvers (capabilities.embedPlayer, SoundCloud's
+    // widget today) play in the service's own player, driven by a host
+    // adapter (lib/embed-players.js).
+    const embedKind = embedPlayerKind(resolverId);
+    if (embedKind) {
+      const serviceName = resolver?.name || resolverId;
+      console.log(`🎵 Playing ${serviceName} track via its embedded player:`, sourceToPlay.title);
 
-      // Stop Spotify polling when switching to SoundCloud playback
+      // Stop Spotify polling when switching to embedded playback
       if (playbackPollerRef.current) {
-        console.log('⏹️ Stopping Spotify polling for SoundCloud playback');
+        console.log(`⏹️ Stopping Spotify polling for ${serviceName} playback`);
         clearInterval(playbackPollerRef.current);
         playbackPollerRef.current = null;
       }
@@ -1319,7 +1318,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       // Pause Spotify if it's playing
       if (spotifyToken && streamingPlaybackActiveRef.current) {
-        console.log('⏹️ Pausing Spotify for SoundCloud playback');
+        console.log(`⏹️ Pausing Spotify for ${serviceName} playback`);
         try {
           await fetch('https://api.spotify.com/v1/me/player/pause', {
             method: 'PUT',
@@ -1330,27 +1329,24 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
       }
 
-      // Play through SoundCloud's own embeddable widget
-      // (lib/soundcloud-widget-player.js). The API gives a signed-in user
-      // 30-second previews at most (full streams answer "Artist Pro
-      // required"); the widget plays whole tracks and needs no sign-in. It
-      // can refuse a track it isn't allowed to embed: that never starts, and
-      // counts as a failed SOURCE (another source plays, or the user can open
-      // the track on SoundCloud).
-      const permalink = sourceToPlay.soundcloudUrl;
-      const widget = soundCloudWidget();
+      // The embedded player can refuse a track the service won't let it
+      // play (for SoundCloud's widget: a track it may not embed never
+      // starts). That counts as a failed SOURCE: another source plays, or
+      // the user can open the track on the service's site.
+      const link = embedLinkFor(embedKind, sourceToPlay);
+      const widget = embedPlayer(embedKind);
       const isCurrentPlay = () => playbackGenerationRef.current === thisGeneration;
       try {
-        if (!permalink) {
-          const noLink = new Error('this SoundCloud match has no track link');
+        if (!link) {
+          const noLink = new Error(`this ${serviceName} match has no track link`);
           noLink.reason = 'unplayable';
           throw noLink;
         }
         const volumeToApply = isMutedRef.current ? 0 : volumeRef.current;
-        const effectiveVolume = getEffectiveVolume(volumeToApply, 'soundcloud', sourceToPlay.id || trackOrSource.id);
+        const effectiveVolume = getEffectiveVolume(volumeToApply, resolverId, sourceToPlay.id || trackOrSource.id);
         widget.element.volume = effectiveVolume / 100;
 
-        const started = await widget.load(permalink, {
+        const started = await widget.load(link, {
           onProgress: (seconds) => {
             if (!isCurrentPlay() || seekingRef.current) return;
             setProgress(seconds);
@@ -1369,7 +1365,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           onPlay: () => { if (isCurrentPlay()) setIsPlaying(true); },
           onFinish: () => {
             if (!isCurrentPlay()) return;
-            console.log('🎵 SoundCloud playback ended');
+            console.log(`🎵 ${serviceName} playback ended`);
             handleNextRef.current?.();
           }
         });
@@ -1396,40 +1392,40 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         setBrowserPlaybackActive(false);
         setIsExternalPlayback(false);
         trackNeedsExplicitStart.current = false;
-        console.log(`✅ SoundCloud playing via the widget (${effectiveVolume.toFixed(1)}% volume)`);
+        console.log(`✅ ${serviceName} playing via its embedded player (${effectiveVolume.toFixed(1)}% volume)`);
 
         if (window.scrobbleManager) {
           window.scrobbleManager.onTrackStart(trackToSet);
         }
       } catch (error) {
         if ((error && error.reason === 'superseded') || !isCurrentPlay()) return;
-        console.warn(`🎵 SoundCloud can't play "${trackOrSource.title}": ${error && error.message}`);
+        console.warn(`🎵 ${serviceName} can't play "${trackOrSource.title}": ${error && error.message}`);
         widget.stop();
 
         // Another enabled source for this track plays instead (the
         // Spotify-unavailable fallback's shape: drop this source, replay).
         const fallbackSources = trackOrSource.sources
-          ? Object.keys(trackOrSource.sources).filter(id => id !== 'soundcloud'
+          ? Object.keys(trackOrSource.sources).filter(id => id !== resolverId
             && !trackOrSource.sources[id]?.noMatch && activeResolversRef.current.includes(id))
           : [];
         if (fallbackSources.length > 0) {
           const order = resolverOrderRef.current;
           fallbackSources.sort((x, y) => order.indexOf(x) - order.indexOf(y));
           const fallbackName = window.resolverLabelById ? window.resolverLabelById(fallbackSources[0]) : fallbackSources[0];
-          showToast(`SoundCloud can't play this track here. Playing via ${fallbackName}.`);
+          showToast(`${serviceName} can't play this track here. Playing via ${fallbackName}.`);
           handlePlay({
             ...trackOrSource,
-            sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== 'soundcloud'))
+            sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== resolverId))
           });
           return;
         }
 
-        if (autoSkipIfAdvancing(`SoundCloud: ${error && error.message}`)) return;
+        if (autoSkipIfAdvancing(`${serviceName}: ${error && error.message}`)) return;
         setTrackLoading(false);
         showToast(
-          `SoundCloud only plays "${trackOrSource.title}" on its own site.`,
+          `${serviceName} only plays "${trackOrSource.title}" on its own site.`,
           'error',
-          permalink ? { label: 'Open in SoundCloud', onClick: () => window.electron?.shell?.openExternal?.(permalink) } : null
+          link ? { label: `Open in ${serviceName}`, onClick: () => window.electron?.shell?.openExternal?.(link) } : null
         );
       }
       return;
@@ -2713,12 +2709,15 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return;
     }
 
-    // SoundCloud plays in the widget, not the shared element. Checked before
-    // the shared-element arm, which would otherwise pause a stale <audio>.
-    if (currentTrack?._activeResolver === 'soundcloud') {
-      const widgetEl = mediaElementFor('soundcloud');
-      // The widget was stopped (another source played, sign-out): start over.
-      if (!widgetEl || !(__soundCloudWidget && __soundCloudWidget.isActive())) {
+    // Embedded players (SoundCloud's widget) play outside the shared element.
+    // Checked before the shared-element arm, which would otherwise pause a
+    // stale <audio>.
+    const activeEmbedKind = embedPlayerKind(currentTrack?._activeResolver);
+    if (activeEmbedKind) {
+      const player = embedPlayer(activeEmbedKind);
+      const widgetEl = player && player.element;
+      // The player was stopped (another source played, sign-out): start over.
+      if (!widgetEl || !player.isActive()) {
         if (!isPlaying) handlePlay(currentTrack);
         return;
       }
@@ -2923,14 +2922,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   }, []);
 
   const stopAllLocalAudio = () => {
-    // Halt the SoundCloud widget (a no-op when it isn't playing).
-    if (__soundCloudWidget) {
-      try {
-        __soundCloudWidget.stop();
-      } catch (e) {
-        console.error('Error stopping the SoundCloud widget:', e);
-      }
-    }
+    // Halt embedded players (SoundCloud's widget); a no-op when idle.
+    stopAllEmbedPlayers();
 
     // Stop HTML5 Audio element (used by local files and html5/Widevine streams)
     // Always call pause() regardless of paused state to handle edge cases

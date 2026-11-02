@@ -295,14 +295,15 @@ function useVolume({
         systemMuted = true;
         console.log('[SystemVolume] System muted - pausing audio');
 
-        // Mute in-app audio (the shared element, the SoundCloud widget, Apple
-        // Music preview)
+        // Mute in-app audio (the shared element, an embedded player such as
+        // SoundCloud's widget, Apple Music preview)
         if (audioRef.current) {
           audioRef.current.volume = 0;
         }
-        const widgetEl = elementFor('soundcloud');
-        if (widgetEl && widgetEl !== audioRef.current) {
-          widgetEl.volume = 0;
+        const mutedTrack = currentTrackRef.current;
+        const embedEl = mutedTrack ? elementFor(determineResolverIdFromTrack(mutedTrack)) : null;
+        if (embedEl && embedEl !== audioRef.current) {
+          embedEl.volume = 0;
         }
         if (window._appleMusicPreviewAudio) {
           window._appleMusicPreviewAudio.volume = 0;
