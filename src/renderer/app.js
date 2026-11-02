@@ -3446,8 +3446,8 @@ const Parachord = () => {
   const artistConcertsCache = useRef({}); // { normalizedArtistName: { events: [], timestamp } }
   const [artistConcertsTicketFlyout, setArtistConcertsTicketFlyout] = useState(null);
   const [currentRelease, setCurrentRelease] = useState(null); // Release/Album page data
-  // The release on screen now, for timers and async callbacks (the slow-
-  // MusicBrainz album fallback) that must not act on a stale closure.
+  // The release on screen now, for timers and async callbacks (the album
+  // catalog race) that must not act on a stale closure.
   const currentReleaseRef = useRef(null);
   currentReleaseRef.current = currentRelease;
   const [loadingRelease, setLoadingRelease] = useState(false);
@@ -7542,7 +7542,9 @@ const Parachord = () => {
   // zero MusicBrainz calls on a revisit instead of a 404 probe plus the
   // release-group lookup. The result carries the real `releaseId`; callers
   // that keep using the ID afterwards should adopt it.
-  const fetchReleaseDetails = async (requestedId, fetchImpl = fetch) => {
+  // The cached details for a release ID, or for the release a release-group ID
+  // was resolved to: { releaseId, data }, or null when nothing fresh is cached.
+  const cachedReleaseDetails = (requestedId) => {
     const now = Date.now();
     let releaseId = requestedId;
     const aliasEntry = releaseDetailsCache.current[requestedId];
@@ -7550,10 +7552,18 @@ const Parachord = () => {
       releaseId = aliasEntry.alias;
     }
     const cached = releaseDetailsCache.current[releaseId];
-    if (cached && cached.data && (now - cached.timestamp) < CACHE_TTL.releaseDetails) {
+    return cached && cached.data && (now - cached.timestamp) < CACHE_TTL.releaseDetails
+      ? { releaseId, data: cached.data }
+      : null;
+  };
+  const fetchReleaseDetails = async (requestedId, fetchImpl = fetch) => {
+    const hit = cachedReleaseDetails(requestedId);
+    if (hit) {
+      const { releaseId } = hit;
       console.log(`📦 Release details from cache: ${releaseId}${releaseId !== requestedId ? ` (via release-group ${requestedId})` : ''}`);
-      return { ok: true, status: 200, fromCache: true, releaseId, json: async () => cached.data };
+      return { ok: true, status: 200, fromCache: true, releaseId, json: async () => hit.data };
     }
+    const releaseId = requestedId;
     const response = await fetchImpl(
       `https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings+artist-credits&fmt=json`,
       { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
@@ -7567,6 +7577,26 @@ const Parachord = () => {
     if (releaseGroupId && releaseId && releaseGroupId !== releaseId) {
       releaseDetailsCache.current[releaseGroupId] = { alias: releaseId, timestamp: Date.now() };
     }
+  };
+  // A release group's first official release WITH its track list, in one
+  // MusicBrainz request: the browse takes inc=recordings, and its release
+  // carries everything the /release/<id>?inc=recordings+artist-credits lookup
+  // does (plus label-info). Opening a group used to cost a browse for the
+  // release id and then that lookup, two slots in the 1.1s queue. Same result
+  // shape as fetchReleaseDetails; an empty group answers
+  // { ok: false, status: 404, noReleases: true }.
+  const fetchReleaseGroupDetails = async (releaseGroupId, fetchImpl = fetch) => {
+    const response = await fetchImpl(
+      `https://musicbrainz.org/ws/2/release?release-group=${releaseGroupId}&status=official&inc=recordings+artist-credits+labels&fmt=json&limit=1`,
+      { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' } }
+    );
+    if (!response.ok) return response;
+    const body = await response.json();
+    const data = body.releases && body.releases[0];
+    if (!data || !data.id) return { ok: false, status: 404, noReleases: true };
+    releaseDetailsCache.current[data.id] = { data, timestamp: Date.now() };
+    rememberReleaseGroupAlias(releaseGroupId, data.id);
+    return { ok: true, status: response.status, fromCache: false, releaseId: data.id, json: async () => data };
   };
 
   // MBID Mapper v2.0: fast fuzzy lookup of MusicBrainz IDs from artist + recording name
@@ -11492,7 +11522,8 @@ const Parachord = () => {
                 fetchReleaseData({
                   id: match.id,
                   title: match.title,
-                  releaseType: match['primary-type']?.toLowerCase() || 'album'
+                  releaseType: match['primary-type']?.toLowerCase() || 'album',
+                  isReleaseGroup: true
                 }, artist);
               } catch (error) {
                 console.error('Error loading album from protocol:', error);
@@ -20353,7 +20384,10 @@ ${trackListXml}
                   date: rg['first-release-date'] || null,
                   releaseType: releaseType,
                   secondaryTypes: secondaryTypes,
-                  disambiguation: rg.disambiguation
+                  disambiguation: rg.disambiguation,
+                  // fetchReleaseData / the hover prefetch skip the release-id
+                  // probe, a guaranteed 404 for a release-group id
+                  isReleaseGroup: true
                 };
               });
               showReleases(releases);
@@ -20413,6 +20447,23 @@ ${trackListXml}
   };
 
   // Fetch release data (album/EP/single) with full track listing
+  // Album pages resolve every track as soon as a track list shows. The
+  // catalogs' list usually shows first and MusicBrainz's follows a moment
+  // later with mostly the same titles, so the same track ids would be
+  // resolved twice while the first pass is still searching (resolveTrack's
+  // cache is only written when a resolution finishes). A track already
+  // being resolved for an album page joins that resolution instead.
+  const albumResolutionsInFlight = useRef(new Map());
+  const resolveAlbumTrack = (track, artistName) => {
+    const inFlight = albumResolutionsInFlight.current;
+    if (inFlight.has(track.id)) return inFlight.get(track.id);
+    const pending = Promise.resolve(resolveTrack(track, artistName, {}))
+      .catch(() => {})
+      .finally(() => inFlight.delete(track.id));
+    inFlight.set(track.id, pending);
+    return pending;
+  };
+
   const fetchReleaseData = async (release, artist) => {
     // Show partial data immediately (from ReleaseCard) while fetching full track list
     // This avoids showing a skeleton for info we already have
@@ -20447,10 +20498,10 @@ ${trackListXml}
       tracks: null, // null indicates tracks are loading
       _isPartial: true
     };
-    // A catalog track list already on screen for this album (the slow-
-    // MusicBrainz fallback filled the page while the opener's lookup was
-    // queued) stays up until MusicBrainz answers; blanking it back to the
-    // skeleton would undo the fallback. Success below replaces it.
+    // A catalog track list already on screen for this album (the catalogs'
+    // race answered while the opener's lookup was queued) stays up until
+    // MusicBrainz answers; blanking it back to the skeleton would undo it.
+    // Success below replaces it.
     const keepCatalogList = !!(shownRelease && shownRelease._catalogSource && shownRelease.tracks
       && sameAlbumIdentity(shownRelease, { title: release.title, artist: artistNameForPartial }));
     if (!keepCatalogList) {
@@ -20505,33 +20556,18 @@ ${trackListXml}
       const skipReleaseProbe = !!release.isReleaseGroup && !releaseDetailsCache.current[release.id]?.alias;
       let releaseDetailsResponse = skipReleaseProbe ? null : await fetchReleaseDetails(releaseId);
 
-      // If that fails (404), it might be a release-group ID (from search)
-      // Try converting release-group to release ID
+      // If that fails (404), it's a release-group ID (search, the artist
+      // page): one request answers the group's release and its track list.
       if (!releaseDetailsResponse || (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404)) {
-        console.log('Not a release ID, trying as release-group...');
-
-        const releaseGroupResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-        );
-
-        if (!releaseGroupResponse.ok) {
-          throw new Error(`Failed to fetch release or release-group (HTTP ${releaseGroupResponse.status})`);
-        }
-
-        const releaseGroupData = await releaseGroupResponse.json();
-
-        if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) {
+        console.log('Not a release ID, loading as release-group...');
+        releaseDetailsResponse = await fetchReleaseGroupDetails(release.id);
+        if (releaseDetailsResponse.noReleases) {
           throw new Error('No official releases found for this release-group');
         }
-
-        // Use the first official release ID
-        releaseId = releaseGroupData.releases[0].id;
-        console.log('Converted release-group to release ID:', releaseId);
-        rememberReleaseGroupAlias(release.id, releaseId);
-
-        // Fetch again with the converted ID
-        releaseDetailsResponse = await fetchReleaseDetails(releaseId);
+        if (!releaseDetailsResponse.ok) {
+          throw new Error(`Failed to fetch release or release-group (HTTP ${releaseDetailsResponse.status})`);
+        }
+        console.log('Converted release-group to release ID:', releaseDetailsResponse.releaseId);
       }
 
       if (!releaseDetailsResponse.ok) {
@@ -20625,7 +20661,7 @@ ${trackListXml}
       console.log(`🎵 [release] Triggering resolution for ${tracks.length} album tracks (artist=${artistName}, release=${releaseData.title})`);
       tracks.forEach(track => {
         const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', releaseData.title || 'noalbum');
-        resolveTrack({ ...track, id: trackId }, artistName, {});
+        resolveAlbumTrack({ ...track, id: trackId }, artistName);
       });
 
       // Fetch album art in background (don't block track display)
@@ -20710,8 +20746,8 @@ ${trackListXml}
       
     } catch (error) {
       console.error('Error fetching release data:', error);
-      // The slow-MusicBrainz fallback already showed a catalog list for this
-      // album: that list stands, nothing more to do.
+      // The catalogs' race already showed a catalog list for this album:
+      // that list stands, nothing more to do.
       const onScreen = currentReleaseRef.current;
       if (onScreen && onScreen._catalogSource && onScreen.tracks
         && sameAlbumIdentity(onScreen, { title: release.title, artist: catalogArtistName })) {
@@ -20746,31 +20782,23 @@ ${trackListXml}
       // Hover prefetch: background lane of the MusicBrainz limiter
       const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
 
-      // Try fetching as a direct release ID first
+      // Try fetching as a direct release ID first, unless the id is known to
+      // be a release group (the artist page's cards): that probe is a
+      // guaranteed 404.
       let releaseId = release.id;
-      let releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
+      const skipReleaseProbe = !!release.isReleaseGroup && !releaseDetailsCache.current[release.id]?.alias;
+      let releaseDetailsResponse = skipReleaseProbe ? null : await fetchReleaseDetails(releaseId, bgFetch);
 
-      // If that fails (404), it might be a release-group ID
-      if (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404) {
-        const releaseGroupResponse = await bgFetch(
-          `https://musicbrainz.org/ws/2/release?release-group=${release.id}&status=official&fmt=json&limit=1`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-        );
-
-        if (!releaseGroupResponse.ok) return;
-
-        const releaseGroupData = await releaseGroupResponse.json();
-        if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return;
-
-        releaseId = releaseGroupData.releases[0].id;
-        rememberReleaseGroupAlias(release.id, releaseId);
+      // A release-group ID: one request answers its release and track list
+      if (!releaseDetailsResponse || (!releaseDetailsResponse.ok && releaseDetailsResponse.status === 404)) {
+        releaseDetailsResponse = await fetchReleaseGroupDetails(release.id, bgFetch);
+        if (!releaseDetailsResponse.ok) return;
         releaseGroupPicksRef.current.set(artist?.name, release.title, {
           id: release.id,
           title: release.title,
           'primary-type': release.releaseType,
           'artist-credit': [{ name: artist?.name, artist: { id: artist?.id || null } }]
         });
-        releaseDetailsResponse = await fetchReleaseDetails(releaseId, bgFetch);
       }
 
       if (!releaseDetailsResponse.ok) return;
@@ -21018,8 +21046,8 @@ ${trackListXml}
   // { artist, title } -> { album, resolverId, resolverName } | null.
   // catalog ({ resolverId, url }, from a search result) loads that album
   // directly; preferResolverId (the service a release id came from) is asked
-  // first. Concurrent calls for the same album share one lookup: the slow-
-  // MusicBrainz timer and a MusicBrainz failure can ask at the same moment.
+  // first. Concurrent calls for the same album share one lookup: the
+  // catalogs' race and a MusicBrainz failure can ask at the same moment.
   const catalogLookupsInFlight = useRef(new Map());
   const loadAlbumFromCatalogs = (args) => {
     const key = [
@@ -21083,7 +21111,7 @@ ${trackListXml}
     setLoadingRelease(false);
     release.tracks.forEach(track => {
       const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', release.title || 'noalbum');
-      resolveTrack({ ...track, id: trackId }, artistName, {});
+      resolveAlbumTrack({ ...track, id: trackId }, artistName);
     });
     return true;
   };
@@ -21103,16 +21131,20 @@ ${trackListXml}
     else fetchReleaseData(retry.release, retry.artist);
   };
 
-  // MusicBrainz slow, not failing: every MusicBrainz request waits its turn in
-  // a 1 request/s queue, so an album page can sit on its skeleton for many
-  // seconds behind other lookups. If a page is still waiting for its track
-  // list after MB_SLOW_FALLBACK_MS, show the catalogs' list in the meantime.
-  // When MusicBrainz answers, fetchReleaseData's success path replaces it, so
-  // MusicBrainz stays the canonical list (track ids, recording ids); until
-  // then fetchReleaseData's own load does not blank the catalog list. Keyed
-  // on the album, not the id: a page moves from a release-group id to a
-  // release id while it loads.
-  const MB_SLOW_FALLBACK_MS = 5000;
+  // The services' catalogs race MusicBrainz for an album's track list. Every
+  // MusicBrainz request waits its turn in a 1 request/s queue, so a track
+  // list from MusicBrainz is a second away at best and many seconds behind
+  // other lookups, while a service's albumSearch + lookupAlbum usually answers
+  // in well under a second. So as soon as a page is waiting for its track
+  // list, the catalogs are asked too, and their list shows if it lands first.
+  // (Until 2026-11 they were asked only after the page had waited 5s.) When
+  // MusicBrainz answers, fetchReleaseData's success path replaces it, so
+  // MusicBrainz stays the canonical list (track ids, recording ids); rows are
+  // keyed by position, so a matching list just gains MusicBrainz's data in
+  // place. Until then fetchReleaseData's own load does not blank the catalog
+  // list. Skipped when MusicBrainz's answer is already cached (it lands at
+  // once). Keyed on the album, not the id: a page moves from a release-group
+  // id to a release id while it loads.
   const waitingAlbumKey = (currentRelease && !currentRelease.tracks && !currentRelease._loadError
     && currentRelease.title && currentRelease.artist?.name)
     ? `${normalizeArtistName(currentRelease.artist.name)}\u0000${normalizeAlbumTitle(currentRelease.title)}`
@@ -21120,18 +21152,19 @@ ${trackListXml}
   useEffect(() => {
     if (!waitingAlbumKey) return undefined;
     let cancelled = false;
-    const timer = setTimeout(async () => {
+    (async () => {
       const waiting = currentReleaseRef.current;
-      if (cancelled || !waiting || waiting.tracks || waiting._loadError) return;
+      if (!waiting || waiting.tracks || waiting._loadError) return;
       // A release with a service's id is already loading from the catalogs
       // (fetchReleaseData skips MusicBrainz for those).
       const knownIds = (resolverLoaderRef.current?.getAllResolvers?.() || []).map(r => r.id);
       if (resolverIdFromReleaseId(waiting.id, knownIds)) return;
+      if (waiting.id && cachedReleaseDetails(waiting.id)) return;
       const stillThisAlbum = (prev) => !!prev && !prev.tracks && !prev._loadError && sameAlbumIdentity(prev, waiting);
       try {
         const found = await loadAlbumFromCatalogs({ artist: waiting.artist.name, title: waiting.title, catalog: waiting._catalog || null });
         if (cancelled || !found || !stillThisAlbum(currentReleaseRef.current)) return;
-        console.log(`📀 MusicBrainz still loading "${waiting.title}" after ${MB_SLOW_FALLBACK_MS}ms: showing ${found.resolverId}'s track list meanwhile`);
+        console.log(`📀 "${waiting.title}": ${found.resolverId}'s track list answered before MusicBrainz, showing it meanwhile`);
         showCatalogRelease({
           found,
           requested: { id: waiting.id, title: waiting.title, albumArt: waiting.albumArt, date: waiting.date, releaseType: waiting.releaseType },
@@ -21139,12 +21172,11 @@ ${trackListXml}
           canApply: stillThisAlbum
         });
       } catch (e) {
-        console.warn('Slow-MusicBrainz album fallback failed:', e?.message || e);
+        console.warn('Album catalog race failed:', e?.message || e);
       }
-    }, MB_SLOW_FALLBACK_MS);
+    })();
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
   }, [waitingAlbumKey]);
 
