@@ -429,10 +429,10 @@ const adapter = {
   // the license layer may fail OPEN for a plan-ineligible ASIN. Same tier
   // gate, LRU cache, backoff and in-flight sharing as the search filter — so
   // after a resolution the verdict is usually already cached and this costs
-  // nothing. Ineligible fails with notEligibleForPlan so the engine treats
-  // Amazon as a failed source and the track's other resolvers play; if the
-  // LOOKUP itself fails (or is backed off) the play proceeds, matching the
-  // search rule.
+  // nothing. Ineligible fails with provider reason 'plan-ineligible' so the
+  // engine treats Amazon as a failed source and the track's other resolvers
+  // play; if the LOOKUP itself fails (or is backed off) the play proceeds,
+  // matching the search rule.
   async assertEligibleForPlan(asin, ctx) {
     const flag = amazonEligibilityFlagForTier(ctx && ctx.tier);
     if (!flag || !asin) return;
@@ -441,8 +441,7 @@ const adapter = {
     if (!verdict || verdict[flag] === true) return;
     console.log(`[Amazon dmls] refusing manifest for ${asin}: not eligible for tier ${ctx.tier} (${flag})`);
     const err = new Error(`the account's Amazon plan (${ctx.tier}) doesn't include this title`);
-    err.reason = 'playback-failed';
-    err.notEligibleForPlan = true;
+    err.reason = 'plan-ineligible';
     throw err;
   },
 
@@ -466,8 +465,9 @@ const adapter = {
       throw err;
     }
     const ctx = await this.ensureSessionContext();
-    // Plan-tier gate — refuses (notEligibleForPlan) before any manifest
-    // request, license session, or telemetry exists for an ineligible play.
+    // Plan-tier gate — refuses (reason 'plan-ineligible') before any
+    // manifest request, license session, or telemetry exists for an
+    // ineligible play.
     await this.assertEligibleForPlan(asin, ctx);
     const body = amazonDmlsManifestBody({
       asin,

@@ -17,7 +17,10 @@
 //
 // Error contract: handlers return { success:false, reason?, error } — never
 // throw over IPC. 'reason' is provider-defined ('not-signed-in',
-// 'playback-failed', 'load-failed'…) and flows to the resolver unchanged.
+// 'playback-failed', 'load-failed', 'plan-ineligible'…) and flows to the
+// resolver unchanged. A provider introduces a new failure CLASS by minting a
+// reason — the bridge and the renderer player forward it untouched; only
+// consumers with a branch for that reason change.
 
 'use strict';
 
@@ -142,15 +145,7 @@ function registerWidevineBridgeIpc({ ipcMain, isAllowedSender }) {
       // matched-close key off OURS; a provider-supplied one is inert).
       return { success: true, ...result, sessionId: mySessionId };
     } catch (error) {
-      return {
-        success: false,
-        reason: (error && error.reason) || 'playback-failed',
-        // The provider's plan-eligibility refusal (Amazon getEligibility):
-        // forwarded like licenseDenied so the engine can treat it as a
-        // failed SOURCE (try the track's other resolvers), not an error.
-        notEligibleForPlan: !!(error && error.notEligibleForPlan),
-        error: String((error && error.message) || error)
-      };
+      return { success: false, reason: (error && error.reason) || 'playback-failed', error: String((error && error.message) || error) };
     }
   });
 

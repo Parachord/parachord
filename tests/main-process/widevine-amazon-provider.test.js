@@ -381,19 +381,18 @@ describe('play-time eligibility gate in getManifest (#1198 review #1)', () => {
   const museCalls = () => mockRequests.filter((r) => r.opts.url.includes('/api/muse/getEligibility'));
   const dmlsCalls = () => mockRequests.filter((r) => r.opts.url.includes('/api/dmls/'));
 
-  test('PRIME + isPrime:false → refused with notEligibleForPlan, no manifest/license round trip', async () => {
+  test('PRIME + isPrime:false → refused with reason plan-ineligible, no manifest/license round trip', async () => {
     requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
     queueEligibility({ map: { B_UNL: { isPrime: false, isMusicSubscription: true } } });
     await expect(amazonDmls.getManifest({ asin: 'B_UNL' })).rejects.toMatchObject({
-      reason: 'playback-failed',
-      notEligibleForPlan: true,
+      reason: 'plan-ineligible',
       message: expect.stringContaining('PRIME')
     });
     expect(museCalls()).toHaveLength(1);
     expect(JSON.parse(museCalls()[0].getBody()).asins).toEqual(['B_UNL']);
     expect(dmlsCalls()).toHaveLength(0); // no getDashManifestsV2, no license cert
     // A second play of the same ASIN refuses from the cache — no new call.
-    await expect(amazonDmls.getManifest({ asin: 'B_UNL' })).rejects.toMatchObject({ notEligibleForPlan: true });
+    await expect(amazonDmls.getManifest({ asin: 'B_UNL' })).rejects.toMatchObject({ reason: 'plan-ineligible' });
     expect(museCalls()).toHaveLength(1);
   });
 
@@ -580,14 +579,15 @@ describe('widevine bridge IPC', () => {
       relayLicense: async (challenge) => (challenge === 'Q0FRPQ==' ? 'TElD' : 'BAD')
     });
     registerWidevineProvider('plan-gate', {
-      getManifest: async () => { const e = new Error('plan'); e.reason = 'playback-failed'; e.notEligibleForPlan = true; throw e; },
+      getManifest: async () => { const e = new Error('plan'); e.reason = 'plan-ineligible'; throw e; },
       relayLicense: async () => 'TElD'
     });
+    // A provider reason passes through the bridge unchanged — the bridge
+    // holds no per-class forwarding code.
     const gated = await handlers['widevine:manifest'](null, { resolverId: 'plan-gate', entity: { asin: 'B1' } });
-    expect(gated).toMatchObject({ success: false, reason: 'playback-failed', notEligibleForPlan: true });
+    expect(gated).toMatchObject({ success: false, reason: 'plan-ineligible', error: 'plan' });
     const manifest = await handlers['widevine:manifest'](null, { resolverId: 'mock', entity: { asin: 'B1' } });
     expect(manifest).toMatchObject({ success: true, manifest: '<MPD/>', note: 'B1' });
-    expect('notEligibleForPlan' in manifest).toBe(false); // failure-only flag
     expect(typeof manifest.sessionId).toBe('string');
     const license = await handlers['widevine:license'](null, { resolverId: 'mock', challenge: 'Q0FRPQ==', sessionId: manifest.sessionId });
     expect(license).toMatchObject({ success: true, license: 'TElD' });
