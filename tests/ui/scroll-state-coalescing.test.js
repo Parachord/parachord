@@ -227,7 +227,8 @@ describe('card click opens the release page before the lookup', () => {
       expect(s).toBeGreaterThan(-1);
       const b = app.slice(s, app.indexOf('\n  };', s));
       expect(b).toMatch(/mbBackground: true/);
-      expect(b).toMatch(/fetchReleaseDetails\(releaseId, bgFetch\)/);
+      // the album page's lookup (loadRelease) or a release lookup, in the background lane
+      expect(b).toMatch(/fetchReleaseDetails\(releaseId, bgFetch\)|loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}, bgFetch\)/);
       expect(b).not.toMatch(/await fetch\(/);
       expect(b).not.toMatch(/fetchReleaseDetails\(releaseId\)/);
     }

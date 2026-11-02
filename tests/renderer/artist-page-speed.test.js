@@ -47,7 +47,9 @@ describe('fetchArtistData', () => {
 
   test('a caller-supplied MBID skips the artist lookup', () => {
     expect(body).toMatch(/const knownMbid = isMusicBrainzId\(options\.mbid\) \? options\.mbid : null;/);
-    expect(body).toMatch(/const knownArtist = knownMbid \? \{ id: knownMbid, name: artistName, score: 100 \} : null;\s*if \(knownArtist\) \{\s*\/\/ nothing to fetch\s*\} else if \(mapperArtistMbid\)/);
+    // artistLookupPlan: 'known' fetches nothing (page-load-budget.test.js counts it)
+    expect(body).toMatch(/const lookupPlan = artistLookupPlan\(\{ name: artistName, knownMbid, mapperMbid: mapperArtistMbid \}\);/);
+    expect(body).toMatch(/const knownArtist = lookupPlan\.kind === 'known' \? \{ id: knownMbid, name: artistName, score: 100 \} : null;/);
     expect(body).toMatch(/let mapperArtistMbid = knownMbid \|\| getArtistMbidFromMapperCache\(artistName\);/);
     expect(body).toMatch(/if \(!knownArtist && !searchResponse\.ok\)/);
   });
@@ -57,7 +59,8 @@ describe('fetchArtistData', () => {
   });
 
   test('each release type is shown as it arrives, not after all three', () => {
-    expect(body).toMatch(/showReleases\(releases\);\s*return releases;/);
+    // loadArtistReleaseGroups hands each type to onBatch as it answers
+    expect(body).toMatch(/onBatch: \(releases\) => showReleases\(releases\)/);
     // the 500ms stagger is gone: the MusicBrainz limiter spaces the requests
     expect(body).not.toMatch(/setTimeout\(resolve, index \* 500\)/);
     // rows already on screen keep their object (and any cover written into it)
@@ -69,7 +72,7 @@ describe('fetchArtistData', () => {
   });
 
   test('loading ends only when all three have answered', () => {
-    const all = body.indexOf('const releaseResults = await Promise.all(releasePromises);');
+    const all = body.indexOf('const uniqueReleases = (await loadArtistReleaseGroups(artist.id, {');
     const done = body.indexOf('setLoadingArtist(false);', all);
     expect(all).toBeGreaterThan(-1);
     expect(done).toBeGreaterThan(all);
