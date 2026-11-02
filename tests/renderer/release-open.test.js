@@ -155,12 +155,15 @@ describe('app.js wiring', () => {
     expect(collection).toContain('releaseGroupPicksRef.current.set(album.artist, album.title, match)');
   });
   test('the queue-album fetches record the release group and its release', () => {
-    const fromMb = slice('const fetchAlbumTracksFromMusicBrainz = async', '// Load AI recommendations when HOME is active');
-    expect(fromMb).toContain('releaseGroupPicksRef.current.set(artistName, albumTitle, match)');
-    expect(fromMb).toContain('rememberReleaseGroupAlias(match.id, release.id)');
-    const byName = slice('const fetchAlbumTracksByName = async', '// Keep fetchAlbumTracksByNameRef in sync');
-    expect(byName).toContain('rememberReleaseGroupAlias(releaseGroup.id, releaseId)');
+    // Every album-card action goes through loadAlbumTrackList, which records
+    // the group it searched for; fetchReleaseGroupDetails records the group's
+    // release as its alias.
+    const loader = slice('const loadAlbumTrackList = async (', '// Home\'s and Fresh Drops\' album cards');
+    expect(loader).toContain('releaseGroupPicksRef.current.set(artist, title, match)');
+    expect(loader).toContain('releaseGroupPicksRef.current.get(artist, title)');
+    expect(slice('const fetchReleaseGroupDetails = async', '\n  };')).toContain('rememberReleaseGroupAlias(releaseGroupId, data.id)');
+    expect(slice('const fetchAlbumTracksByName = async', '// Keep fetchAlbumTracksByNameRef in sync')).toContain('loadAlbumTrackList(');
     const searchAlbum = slice('const fetchSearchAlbumTracksAsync = async (album) => {', 'return result;');
-    expect(searchAlbum).toContain('rememberReleaseGroupAlias(album.id, releaseId)');
+    expect(searchAlbum).toContain('releaseGroupPicksRef.current.set(artistName, album.title, album)');
   });
 });
