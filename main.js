@@ -906,6 +906,14 @@ function createWindow() {
 
   amazonWebPlayer.setHost(mainWindow);
   registerAmazonDmlsProvider({ registerWidevineProvider, store });
+  // Session warm-up (#1198 review): mint the dmls session context at launch
+  // so the first Amazon search/play doesn't pay config.json + the header
+  // mint just to learn the plan tier. Signed-out, or Amazon not in the
+  // user's active resolvers, is a no-op.
+  try {
+    const activeResolvers = store.get('active_resolvers');
+    if (!Array.isArray(activeResolvers) || activeResolvers.includes('amazonmusic')) amazonDmls.warmSession();
+  } catch { /* warming is opportunistic */ }
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -3796,7 +3804,12 @@ ipcMain.handle('amazonmusic-get-status', async () => {
 
 ipcMain.handle('amazonmusic-open-login', async () => {
   try {
-    return await amazonWebPlayer.openLogin();
+    const result = await amazonWebPlayer.openLogin();
+    // A successful sign-in warms the dmls session context (with refresh: a
+    // new sign-in can be a different account and tier) so the first search
+    // never waits on the mint.
+    if (result && result.signedIn) amazonDmls.warmSession({ refresh: true });
+    return result;
   } catch (error) {
     return { success: false, reason: error.reason, error: error.message };
   }
@@ -3814,7 +3827,18 @@ ipcMain.handle('amazonmusic-sign-out', async () => {
 ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
   console.log(`[Amazon] IPC search ${JSON.stringify(payload)}`);
   try {
-    const tracks = await amazonWebPlayer.searchTracks(payload || {});
+    let tracks = await amazonWebPlayer.searchTracks(payload || {});
+    // #1196: drop the results the account's plan can't play on demand (Prime-
+    // only + isPrime:false → Amazon starts a station instead of the song).
+    // Runs off the search chain (a plain net.request, no view). #1196's
+    // contract: filtering never makes a search worse — a broken filter keeps
+    // today's results rather than failing the search, so it cannot ride the
+    // shared catch below (that maps to success:false — a worse outcome).
+    try {
+      tracks = await amazonDmls.filterUnplayableForPlan(tracks);
+    } catch (filterErr) {
+      console.warn(`[Amazon] eligibility filter threw (${filterErr && filterErr.message}) — keeping unfiltered results`);
+    }
     console.log(`[Amazon] IPC search done ${(tracks && tracks.length) || 0} tracks`);
     return { success: true, engine: 'web', tracks };
   } catch (error) {

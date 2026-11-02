@@ -52,8 +52,12 @@ jest.mock('../../amazon-web-player', () => ({
 }));
 
 const amazonWebPlayer = require('../../amazon-web-player');
-const { amazonDmls, registerAmazonDmlsProvider } = require('../../amazon-dmls');
+const { amazonDmls, registerAmazonDmlsProvider, ELIGIBILITY_CACHE_MAX_ENTRIES } = require('../../amazon-dmls');
+const { ELIGIBILITY_CACHE_TTL_MS } = require('../../amazon-music-logic');
 const { registerWidevineProvider, registerWidevineBridgeIpc } = require('../../main-process/widevine-bridge');
+
+const ELIGIBILITY_CACHE_MAX = ELIGIBILITY_CACHE_MAX_ENTRIES;
+const ELIGIBILITY_DAY_TTL = ELIGIBILITY_CACHE_TTL_MS;
 
 const CONFIG_JSON = JSON.stringify({
   customerId: 'CUST1',
@@ -65,6 +69,19 @@ const CONFIG_JSON = JSON.stringify({
 });
 
 const CONFIG_NO_TERRITORY = JSON.stringify({ customerId: 'CUST1', marketplaceId: 'MKT', siteRegion: 'NA', deviceId: '1435' });
+
+const CONFIG_PRIME = JSON.stringify({
+  customerId: 'CUST1',
+  marketplaceId: 'MKT',
+  musicTerritory: 'US',
+  siteRegion: 'NA',
+  deviceId: '14354613042605242',
+  tier: 'PRIME'
+});
+
+function queueEligibility({ status = 200, map = {} } = {}) {
+  requestHandlers.push(() => ({ status, text: status === 200 ? JSON.stringify({ trackEligibilityMap: map }) : 'boom' }));
+}
 
 function queueManifest({ status = 200, entry } = {}) {
   const body = JSON.stringify({ contentResponseList: [entry || {
@@ -80,6 +97,9 @@ beforeEach(() => {
   amazonDmls.sessionContext = null;
   amazonDmls.sessionContextPromise = null;
   amazonDmls.certSessionReady = false;
+  amazonDmls.eligibilityCache.clear();
+  amazonDmls.eligibilityInFlight.clear();
+  amazonDmls.eligibilityBackoffUntil = 0;
   amazonWebPlayer.isSignedIn.mockResolvedValue(true);
   amazonWebPlayer.mintSessionHeaders.mockClear();
   requestHandlers.length = 0;
@@ -213,6 +233,338 @@ describe('amazon-dmls relayLicense', () => {
   });
 });
 
+describe('amazon-dmls plan-tier eligibility filter (#1196)', () => {
+  // A Prime-only account cannot play an Unlimited-only (isPrime: false)
+  // track on demand — Amazon starts a station seeded from it instead. The
+  // filter asks muse getEligibility for the search's ASINs (ONE batched
+  // call) and drops the ones the plan can't play; failures keep everything.
+  const museCalls = () => mockRequests.filter((r) => r.opts.url.includes('/api/muse/getEligibility'));
+
+  test('PRIME tier: isPrime:false and absent-from-map drop, isPrime:true and ASIN-less stay', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME })); // config.json
+    queueEligibility({ map: { B_PRIME_OK: { isPrime: true, isMusicSubscription: true }, B_UNL_ONLY: { isPrime: false, isMusicSubscription: true } } });
+    const tracks = [
+      { asin: 'B_UNL_ONLY', title: 'Ready or Not' },
+      { asin: 'B_PRIME_OK', title: 'Ready or Not' },
+      { asin: 'B_MISSING', title: 'Ghost' },
+      { title: 'ASIN-less' }
+    ];
+    const kept = await amazonDmls.filterUnplayableForPlan(tracks);
+    expect(kept.map((t) => t.asin || 'none')).toEqual(['B_PRIME_OK', 'none']);
+  });
+
+  test('the muse call: one batched POST with the dmls-shaped envelope (csrf + cookies on the wire only)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B1: { isPrime: true } } });
+    await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }, { asin: 'B2' }, { asin: 'B1' }]);
+    expect(museCalls()).toHaveLength(1);
+    const req = museCalls()[0];
+    expect(req.opts.url).toBe('https://music.amazon.com/NA/api/muse/getEligibility');
+    expect(req.headers['X-Amz-Target']).toBe('com.amazon.muse.MuseServiceExternal.getEligibility');
+    expect(req.headers['Content-Type']).toBe('application/json');
+    expect(req.headers['Content-Encoding']).toBe('amz-1.0');
+    expect(req.headers['csrf-token']).toBe('tok-0123456789abcdef0123456789abcdef=');
+    expect(req.headers['Cookie']).toContain('at-main=AT');
+    expect(JSON.parse(req.getBody())).toEqual({
+      customerId: 'CUST1',
+      deviceType: 'A16ZV8BU3SN1N3',
+      deviceId: '14354613042605242',
+      musicTerritory: 'US',
+      requestedContent: 'KATANA',
+      asins: ['B1', 'B2'] // one batch, deduped
+    });
+  });
+
+  test('UNLIMITED tiers do not filter — no request, the input list passes through', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON })); // tier UNLIMITED_HD
+    const tracks = [{ asin: 'B1' }, { asin: 'B2' }];
+    const kept = await amazonDmls.filterUnplayableForPlan(tracks);
+    expect(kept).toBe(tracks);
+    expect(museCalls()).toHaveLength(0);
+  });
+
+  test('an unknown tier does not filter either (no request)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: JSON.stringify({ customerId: 'C', siteRegion: 'NA', deviceId: 'D', tier: 'SOMETHING_NEW' }) }));
+    const tracks = [{ asin: 'B1' }];
+    expect(await amazonDmls.filterUnplayableForPlan(tracks)).toBe(tracks);
+    expect(museCalls()).toHaveLength(0);
+  });
+
+  test('failures never make things worse: HTTP error keeps every track', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ status: 500 });
+    const tracks = [{ asin: 'B1' }, { asin: 'B2' }];
+    expect(await amazonDmls.filterUnplayableForPlan(tracks)).toEqual(tracks);
+  });
+
+  test('failures never make things worse: a renamed/reshaped envelope keeps every track', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    requestHandlers.push(() => ({ status: 200, text: '{"notTrackEligibilityMap":{}}' }));
+    const tracks = [{ asin: 'B1' }];
+    expect(await amazonDmls.filterUnplayableForPlan(tracks)).toEqual(tracks);
+  });
+
+  test('an EMPTY map is a valid answer — every ASIN result drops (asin-less stays)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: {} });
+    const kept = await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }, { asin: 'B2' }, { title: 'none' }]);
+    expect(kept).toEqual([{ title: 'none' }]);
+  });
+
+  test('verdicts cache per ASIN: a second search makes no new call, absent-asins cache as not-eligible', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B1: { isPrime: true } } });
+    await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }, { asin: 'B2' }]);
+    expect(amazonDmls.eligibilityCache.size).toBe(2); // B2's absence cached as not-eligible
+    const kept = await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }, { asin: 'B2' }]);
+    expect(kept.map((t) => t.asin)).toEqual(['B1']);
+    expect(museCalls()).toHaveLength(1);
+  });
+
+  test('verdicts expire after a day and refresh in one call', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B1: { isPrime: true } } });
+    await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }]);
+    for (const entry of amazonDmls.eligibilityCache.values()) entry.at = 0; // past the day TTL
+    queueEligibility({ map: { B1: { isPrime: false } } });
+    const kept = await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }]);
+    expect(kept).toEqual([]);
+    expect(museCalls()).toHaveLength(2);
+  });
+
+  test('mixed: a cached drop survives a failed refresh of the other ASINs', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B1: { isPrime: false } } });
+    await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }]);
+    queueEligibility({ status: 500 });
+    const kept = await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }, { asin: 'B2' }]);
+    expect(kept.map((t) => t.asin)).toEqual(['B2']); // B1 cached-drop, B2 failure-kept
+  });
+
+  test('sign-out drops the verdict cache with the session context', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B1: { isPrime: true } } });
+    await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }]);
+    expect(amazonDmls.eligibilityCache.size).toBe(1);
+    amazonDmls.onSignOut();
+    expect(amazonDmls.eligibilityCache.size).toBe(0);
+  });
+
+  test('tier/filter diagnostics surface in debugState', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B1: { isPrime: true } } });
+    await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }]);
+    expect(amazonDmls.debugState().eligibility).toEqual({
+      filtering: true,
+      cached: 1,
+      inFlight: 0,
+      backedOffUntil: new Date(0).toISOString()
+    });
+  });
+
+  test('not signed in keeps everything (no session context, no filter, no throw)', async () => {
+    mockCookies.length = 0;
+    mockCookies.push({ name: 'session-id', value: 'x' });
+    const tracks = [{ asin: 'B1' }];
+    const kept = await amazonDmls.filterUnplayableForPlan(tracks);
+    expect(kept).toBe(tracks);
+    expect(museCalls()).toHaveLength(0);
+    mockCookies.unshift({ name: 'at-main', value: 'AT' });
+  });
+});
+
+describe('play-time eligibility gate in getManifest (#1198 review #1)', () => {
+  // A track that skipped the search filter (imported playlist, play-by-ASIN,
+  // restored queue) is checked at manifest time — the license layer may fail
+  // OPEN for a plan-ineligible ASIN. The refusal trips before any manifest
+  // request; a failed LOOKUP proceeds with the play, matching the search rule.
+  const museCalls = () => mockRequests.filter((r) => r.opts.url.includes('/api/muse/getEligibility'));
+  const dmlsCalls = () => mockRequests.filter((r) => r.opts.url.includes('/api/dmls/'));
+
+  test('PRIME + isPrime:false → refused with reason plan-ineligible, no manifest/license round trip', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B_UNL: { isPrime: false, isMusicSubscription: true } } });
+    await expect(amazonDmls.getManifest({ asin: 'B_UNL' })).rejects.toMatchObject({
+      reason: 'plan-ineligible',
+      message: expect.stringContaining('PRIME')
+    });
+    expect(museCalls()).toHaveLength(1);
+    expect(JSON.parse(museCalls()[0].getBody()).asins).toEqual(['B_UNL']);
+    expect(dmlsCalls()).toHaveLength(0); // no getDashManifestsV2, no license cert
+    // A second play of the same ASIN refuses from the cache — no new call.
+    await expect(amazonDmls.getManifest({ asin: 'B_UNL' })).rejects.toMatchObject({ reason: 'plan-ineligible' });
+    expect(museCalls()).toHaveLength(1);
+  });
+
+  test('PRIME + isPrime:true fetched inline → the manifest proceeds', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B_OK: { isPrime: true, isMusicSubscription: true } } });
+    queueManifest({});
+    const result = await amazonDmls.getManifest({ asin: 'B_OK' });
+    expect(result.manifest).toContain('<MPD');
+    expect(museCalls()).toHaveLength(1);
+    expect(dmlsCalls().length).toBeGreaterThan(0);
+  });
+
+  test('PRIME + lookup failure FAILS OPEN — the play proceeds (matches the search rule)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ status: 500 });
+    queueManifest({});
+    const result = await amazonDmls.getManifest({ asin: 'B_MAYBE' });
+    expect(result.manifest).toContain('<MPD');
+  });
+
+  test('backed-off endpoint: no eligibility request, the play proceeds', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    amazonDmls.eligibilityBackoffUntil = Date.now() + 60000;
+    queueManifest({});
+    const result = await amazonDmls.getManifest({ asin: 'B_MAYBE' });
+    expect(result.manifest).toContain('<MPD');
+    expect(museCalls()).toHaveLength(0);
+  });
+
+  test('UNLIMITED tier: no eligibility gate at all (no muse request)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON })); // tier UNLIMITED_HD
+    queueManifest({});
+    const result = await amazonDmls.getManifest({ asin: 'B_ANY' });
+    expect(result.manifest).toContain('<MPD');
+    expect(museCalls()).toHaveLength(0);
+  });
+});
+
+describe('eligibility LRU cache (#1198 review)', () => {
+  const verdict = { isPrime: true, isMusicSubscription: true, isHighQuality: false, isSonicRush: false };
+
+  test('writes past the cap push the OLDEST entries out, one by one', () => {
+    for (let i = 0; i < ELIGIBILITY_CACHE_MAX + 10; i++) amazonDmls.cacheEligibility(`B${i}`, verdict, 1);
+    expect(amazonDmls.eligibilityCache.size).toBe(ELIGIBILITY_CACHE_MAX);
+    expect(amazonDmls.eligibilityCache.has('B0')).toBe(false); // coldest: gone
+    expect(amazonDmls.eligibilityCache.has('B9')).toBe(false);
+    expect(amazonDmls.eligibilityCache.has('B10')).toBe(true); // the 4001st survives
+  });
+
+  test('a cache HIT refreshes recency — hot verdicts are not pushed out', () => {
+    for (let i = 0; i < ELIGIBILITY_CACHE_MAX; i++) amazonDmls.cacheEligibility(`B${i}`, verdict, 1);
+    expect(amazonDmls.cachedEligibility('B0', 100)).toEqual(verdict); // touch B0
+    amazonDmls.cacheEligibility('BNEW', verdict, 100); // must evict B1, not B0
+    expect(amazonDmls.eligibilityCache.has('B0')).toBe(true);
+    expect(amazonDmls.eligibilityCache.has('B1')).toBe(false);
+  });
+
+  test('TTL still uses the original mint time (a hit does not extend the day)', () => {
+    amazonDmls.cacheEligibility('B0', verdict, 1000);
+    expect(amazonDmls.cachedEligibility('B0', 1000 + ELIGIBILITY_DAY_TTL - 1)).toEqual(verdict);
+    expect(amazonDmls.cachedEligibility('B0', 1000 + ELIGIBILITY_DAY_TTL)).toBeNull();
+  });
+
+  test('re-writing an asin keeps one entry (delete + re-insert)', () => {
+    amazonDmls.cacheEligibility('B0', { ...verdict, isPrime: false }, 1);
+    amazonDmls.cacheEligibility('B0', verdict, 2);
+    expect(amazonDmls.eligibilityCache.size).toBe(1);
+    expect(amazonDmls.cachedEligibility('B0', 3)).toEqual(verdict);
+  });
+});
+
+describe('eligibility failure backoff (#1198 review #3)', () => {
+  test('a failed lookup backs the endpoint off: no calls, results kept, cache still applies', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B_CACHED: { isPrime: false } } });
+    await amazonDmls.filterUnplayableForPlan([{ asin: 'B_CACHED' }]);
+    queueEligibility({ status: 500 }); // the failure: B_FRESH fetch fails
+    await amazonDmls.filterUnplayableForPlan([{ asin: 'B_FRESH' }]);
+    expect(amazonDmls.eligibilityBackoffUntil).toBeGreaterThan(Date.now());
+    // Within the backoff: NO new request, cached B_CACHED still drops, fresh kept.
+    const kept = await amazonDmls.filterUnplayableForPlan([{ asin: 'B_CACHED' }, { asin: 'B_FRESH' }]);
+    expect(kept.map((t) => t.asin)).toEqual(['B_FRESH']);
+    const calls = mockRequests.filter((r) => r.opts.url.includes('/api/muse/getEligibility'));
+    expect(calls).toHaveLength(2); // the success + the failure — and no third
+  });
+
+  test('success clears the backoff', async () => {
+    amazonDmls.eligibilityBackoffUntil = Date.now() + 60000;
+    amazonDmls.eligibilityBackoffUntil = 0; // simulate expiry
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    queueEligibility({ map: { B1: { isPrime: false } } });
+    const kept = await amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }]);
+    expect(kept).toEqual([]);
+    expect(amazonDmls.eligibilityBackoffUntil).toBe(0);
+  });
+});
+
+describe('concurrent eligibility lookups (#1198 review #4)', () => {
+  const PRIME_CTX = {
+    customerId: 'CUST1', marketplaceId: 'MKT', territoryId: 'US', region: 'NA',
+    tier: 'PRIME', deviceType: 'A16ZV8BU3SN1N3', deviceId: '1435', csrfToken: 'tok-tok-tok-tok-tok', csrfRnd: '1', csrfTs: '2'
+  };
+
+  test('overlapping searches share one lookup per ASIN', async () => {
+    amazonDmls.sessionContext = PRIME_CTX; // pre-warmed: no config.json fetch
+    queueEligibility({ map: { B1: { isPrime: true }, B2: { isPrime: false } } });
+    queueEligibility({ map: { B3: { isPrime: true } } });
+    const [a, b] = await Promise.all([
+      amazonDmls.filterUnplayableForPlan([{ asin: 'B1' }, { asin: 'B2' }]),
+      amazonDmls.filterUnplayableForPlan([{ asin: 'B2' }, { asin: 'B3' }])
+    ]);
+    expect(a.map((t) => t.asin)).toEqual(['B1']);
+    expect(b.map((t) => t.asin)).toEqual(['B3']);
+    const calls = mockRequests.filter((r) => r.opts.url.includes('/api/muse/getEligibility'));
+    // B2 fetched exactly once; the second fan only re-fetches B3.
+    const fetched = calls.flatMap((r) => JSON.parse(r.getBody()).asins);
+    expect(fetched.filter((x) => x === 'B2')).toHaveLength(1);
+    expect(fetched.sort()).toEqual(['B1', 'B2', 'B3']);
+    expect(amazonDmls.eligibilityInFlight.size).toBe(0); // cleaned up after settle
+  });
+
+  test('in-flight verdict writes die with their session (sign-out mid-flight)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: '{"trackEligibilityMap":{}}' }));
+    const p = amazonDmls.fetchEligibilityBatch(['B1'], PRIME_CTX);
+    amazonDmls.onSignOut(); // generation bump lands before the response does
+    const map = await p;
+    expect(map.size).toBe(0);
+    expect(amazonDmls.eligibilityCache.size).toBe(0); // nothing cached from the old session
+  });
+});
+
+describe('session warm-up (#1198 review #2)', () => {
+  test('cold start warms the context (one config.json + header mint); second call is a no-op', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    expect(amazonDmls.warmSession()).toBe(true);
+    await amazonDmls.sessionContextPromise;
+    expect(amazonDmls.sessionContext && amazonDmls.sessionContext.tier).toBe('PRIME');
+    expect(amazonDmls.warmSession()).toBe(false); // already warm
+    expect(mockRequests.filter((r) => r.opts.url.includes('config.json'))).toHaveLength(1);
+  });
+
+  test('refresh re-mints (a new sign-in can be a different account/tier)', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_PRIME }));
+    amazonDmls.warmSession();
+    await amazonDmls.sessionContextPromise;
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON })); // now UNLIMITED_HD
+    expect(amazonDmls.warmSession({ refresh: true })).toBe(true);
+    await amazonDmls.sessionContextPromise; // capture-then-await: no leaked mint into the next test
+    expect(amazonDmls.sessionContext.tier).toBe('UNLIMITED_HD');
+  });
+
+  test('signed out is a silent no-op (no rejection, no context)', async () => {
+    mockCookies.length = 0;
+    mockCookies.push({ name: 'session-id', value: 'x' });
+    expect(amazonDmls.warmSession()).toBe(true);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(amazonDmls.sessionContext).toBeNull();
+    mockCookies.unshift({ name: 'at-main', value: 'AT' });
+  });
+
+  test('sign-out also clears the in-flight map, the backoff and bumps the generation', () => {
+    amazonDmls.eligibilityInFlight.set('B1', Promise.resolve(null));
+    amazonDmls.eligibilityBackoffUntil = Date.now() + 60000;
+    const gen = amazonDmls.sessionGeneration;
+    amazonDmls.onSignOut();
+    expect(amazonDmls.eligibilityInFlight.size).toBe(0);
+    expect(amazonDmls.eligibilityBackoffUntil).toBe(0);
+    expect(amazonDmls.sessionGeneration).toBe(gen + 1);
+  });
+});
+
 describe('widevine bridge IPC', () => {
   test('unregistered resolver fails honestly; registered provider round-trips', async () => {
     const handlers = {};
@@ -226,6 +578,14 @@ describe('widevine bridge IPC', () => {
       getManifest: async (entity) => ({ manifest: '<MPD/>', note: entity.asin }),
       relayLicense: async (challenge) => (challenge === 'Q0FRPQ==' ? 'TElD' : 'BAD')
     });
+    registerWidevineProvider('plan-gate', {
+      getManifest: async () => { const e = new Error('plan'); e.reason = 'plan-ineligible'; throw e; },
+      relayLicense: async () => 'TElD'
+    });
+    // A provider reason passes through the bridge unchanged — the bridge
+    // holds no per-class forwarding code.
+    const gated = await handlers['widevine:manifest'](null, { resolverId: 'plan-gate', entity: { asin: 'B1' } });
+    expect(gated).toMatchObject({ success: false, reason: 'plan-ineligible', error: 'plan' });
     const manifest = await handlers['widevine:manifest'](null, { resolverId: 'mock', entity: { asin: 'B1' } });
     expect(manifest).toMatchObject({ success: true, manifest: '<MPD/>', note: 'B1' });
     expect(typeof manifest.sessionId).toBe('string');

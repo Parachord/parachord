@@ -17,7 +17,10 @@
 //
 // Error contract: handlers return { success:false, reason?, error } — never
 // throw over IPC. 'reason' is provider-defined ('not-signed-in',
-// 'playback-failed', 'load-failed'…) and flows to the resolver unchanged.
+// 'playback-failed', 'load-failed', 'plan-ineligible'…) and flows to the
+// resolver unchanged. A provider introduces a new failure CLASS by minting a
+// reason — the bridge and the renderer player forward it untouched; only
+// consumers with a branch for that reason change.
 
 'use strict';
 

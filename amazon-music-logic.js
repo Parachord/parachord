@@ -1269,6 +1269,103 @@ function amazonDmlsLicenseBody({ challenge, customerId, deviceId, musicAgent } =
   };
 }
 
+// ── Plan-tier eligibility (the muse getEligibility call, #1196) ─────────────
+// Amazon Music plans can play different catalogs ON DEMAND. On a Prime-only
+// account a track that is Unlimited-only (isPrime: false) cannot be played on
+// demand — Amazon starts a station seeded from it instead, i.e. the wrong
+// music after the source was already chosen. muse's getEligibility answers
+// the catalog flags for a batch of ASINs in one call:
+//   POST https://music.amazon.com/<REGION>/api/muse/getEligibility
+//   X-Amz-Target com.amazon.muse.MuseServiceExternal.getEligibility
+//   { customerId, deviceType, deviceId, musicTerritory, requestedContent, asins }
+// Content-Type application/json + Content-Encoding amz-1.0 + the csrf triplet
+// + the session Cookie — the same signed envelope the dmls calls use (the
+// region segment is the session's siteRegion, e.g. NA for US).
+const MUSE_TARGET_PREFIX = 'com.amazon.muse.MuseServiceExternal.';
+
+// Verdicts are cached per ASIN so a playlist resolve is not one call per
+// track. Catalog membership drifts slowly; a day is fine, and sign-out drops
+// the cache with the rest of the session state.
+const ELIGIBILITY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// A FAILED lookup is remembered too: after one, no getEligibility calls for
+// this long, so a broken/rotated endpoint doesn't tax every search (#1198
+// review #3). Cached verdicts still apply during the backoff; only the
+// round trip pauses.
+const ELIGIBILITY_FAILURE_BACKOFF_MS = 10 * 60 * 1000;
+
+// Which eligibility flag the account's plan tier gates on. Only PRIME filters
+// today (#1196): an Unlimited account plays the full catalog on demand, and
+// the "isMusicSubscription covers every playable track" assumption still
+// needs a live check before it gates anything. An unrecognized tier means
+// DON'T FILTER — verdicts only ever remove results, so a wrong mapping would
+// silently drop playable music.
+function amazonEligibilityFlagForTier(tier) {
+  return String(tier || '').trim().toUpperCase() === 'PRIME' ? 'isPrime' : null;
+}
+
+// The getEligibility body: customer/device are the same values the
+// getDashManifestsV2 body sends (the device type is the web player's
+// registered id — the AMAZON_DEVICE_TYPE_ID constant dmls uses), and the
+// territory is the marketplace the account is signed into (config.json's
+// musicTerritory, not a secret). requestedContent 'KATANA' is the on-demand
+// streaming catalog the web player gates with.
+function amazonEligibilityBody({ asins, customerId, deviceId, territoryId } = {}) {
+  const list = [];
+  const seen = new Set();
+  for (const a of Array.isArray(asins) ? asins : []) {
+    const asin = String(a || '').trim();
+    if (asin && !seen.has(asin)) { seen.add(asin); list.push(asin); }
+  }
+  if (!list.length || !customerId || !deviceId) return null;
+  return {
+    customerId: String(customerId),
+    deviceType: AMAZON_DEVICE_TYPE_ID,
+    deviceId: String(deviceId),
+    musicTerritory: String(territoryId || 'US'),
+    requestedContent: 'KATANA',
+    asins: list
+  };
+}
+
+// The response's trackEligibilityMap: asin → catalog flags. isPrime — the
+// track is in the Prime catalog; isMusicSubscription — it needs an Amazon
+// Music subscription; isHighQuality — HD/UHD; isSonicRush — Atmos. A missing
+// envelope is NOT an empty verdict: the caller treats it as "the call
+// failed" and keeps the results, so a hornet rename of the response field can
+// never wipe a search. An EMPTY map is a valid answer — everything asked was
+// ineligible.
+function amazonEligibilityFromResponse(json) {
+  const map = json && typeof json === 'object' ? json.trackEligibilityMap : null;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+  const verdicts = {};
+  for (const [asin, entry] of Object.entries(map)) {
+    const e = entry && typeof entry === 'object' ? entry : {};
+    verdicts[asin] = {
+      isPrime: e.isPrime === true,
+      isMusicSubscription: e.isMusicSubscription === true,
+      isHighQuality: e.isHighQuality === true,
+      isSonicRush: e.isSonicRush === true
+    };
+  }
+  return verdicts;
+}
+
+// Drop the tracks a SUCCEEDED lookup says the plan's flag does not cover.
+// verdicts === null is the failed-call shape: keep EVERYTHING — eligibility
+// filtering never makes a search worse than today. A track whose ASIN has no
+// entry in a succeeded response is not eligible ("a missing map entry means
+// not eligible"); a track with no ASIN at all cannot be judged and stays.
+function amazonFilterTracksByEligibility(tracks, verdicts, flag) {
+  if (!Array.isArray(tracks) || !verdicts || !flag) return tracks;
+  return tracks.filter((t) => {
+    const asin = t && typeof t.asin === 'string' ? t.asin : null;
+    if (!asin) return true;
+    const v = verdicts[asin];
+    return !!(v && v[flag] === true);
+  });
+}
+
 // Codec bucket of a DASH codec string (mpdAudioRepresentations rep.codec).
 function dashCodecFamily(codec) {
   const c = String(codec || '').toLowerCase();
@@ -1574,6 +1671,13 @@ module.exports = {
   amazonDmlsRegion,
   amazonDmlsManifestBody,
   amazonDmlsLicenseBody,
+  MUSE_TARGET_PREFIX,
+  ELIGIBILITY_CACHE_TTL_MS,
+  ELIGIBILITY_FAILURE_BACKOFF_MS,
+  amazonEligibilityFlagForTier,
+  amazonEligibilityBody,
+  amazonEligibilityFromResponse,
+  amazonFilterTracksByEligibility,
   dashCodecFamily,
 
 };

@@ -1636,6 +1636,25 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setTrackLoading(false);
           return;
         }
+        // 'plan-ineligible' at manifest time (a provider reason: the
+        // account's plan can't play this title, per the provider's own
+        // gate): a failed SOURCE, not a playback error — retry the track
+        // without this resolver, mirroring the missing-local-file fallback
+        // above. With no other sources it falls through to the generic
+        // error path (the provider's message names the plan gate).
+        if (error && error.reason === 'plan-ineligible') {
+          console.warn(`⏭️ ${streamLabel} source is not playable on the account's plan — trying the track's other sources`);
+          const otherSources = trackOrSource.sources
+            ? Object.keys(trackOrSource.sources).filter(id => id !== resolverId && !trackOrSource.sources[id]?.noMatch)
+            : [];
+          if (otherSources.length > 0) {
+            handlePlay({
+              ...trackOrSource,
+              sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== resolverId))
+            });
+            return;
+          }
+        }
         if (error && error.reason === 'not-signed-in' && window.__parachordManageAmazonMusic) {
           const ok = await window.__parachordManageAmazonMusic({ explicit: true });
           if (ok && playbackGenerationRef.current === thisGeneration) {
