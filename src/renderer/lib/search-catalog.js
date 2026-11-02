@@ -52,6 +52,8 @@ function catalogTrackToSearchResult(track, resolverId, rank, priority = 0) {
     ...(track.isrc ? { isrc: track.isrc } : {}),
     sources: { [resolverId]: { ...record, confidence: 1 } },
     score: rankScore(rank, priority),
+    // A service's own popularity (Spotify's 0-100), when it sends one
+    ...(typeof track.popularity === 'number' && Number.isFinite(track.popularity) ? { _popularity: track.popularity } : {}),
     _source: resolverId,
   };
 }
@@ -242,28 +244,73 @@ function queryNamesArtist(query, artistName) {
   return !!bare && q.includes(` ${bare} `);
 }
 
-// A row by the artist the query names ranks above rows that only mention the
-// artist (covers, tributes, karaoke). Large enough to lift a perfect artist
+// Popularity, 0-100, when a source has it: ListenBrainz listen counts for
+// MusicBrainz rows (no account needed; log scale, `reference` listens = 100)
+// and Spotify's own popularity for its track rows, for users with Spotify.
+// Albums use the release group's listens (POPULARITY_REFERENCE_LISTENS, 1M:
+// Portishead's Dummy, ~610k, is ~96). Tracks use their artist's total
+// (ARTIST_POPULARITY_REFERENCE_LISTENS, 10M: Mazzy Star, ~4.2M, ~95; a
+// covering artist with ~18k, ~61): ListenBrainz splits a song's plays across
+// duplicate recordings, so the recording MusicBrainz's search returns for an
+// original often has no count at all while a cover's does. It degrades gracefully: in rankSearchRows a row without popularity
+// counts as the median of the rows in its list that have one, so having or
+// lacking the signal is neutral, and a list where nothing has it ranks
+// exactly as it would without popularity.
+const POPULARITY_REFERENCE_LISTENS = 1000000;
+const ARTIST_POPULARITY_REFERENCE_LISTENS = 10000000;
+function popularityFromListens(listens, reference = POPULARITY_REFERENCE_LISTENS) {
+  if (typeof listens !== 'number' || !Number.isFinite(listens) || listens < 0) return null;
+  return Math.min(100, (100 * Math.log10(1 + listens)) / Math.log10(1 + reference));
+}
+
+// Does the query name this row: its artist (queryNamesArtist), or its title
+// exactly (edition suffixes aside, normalizeAlbumTitle)? The title half keeps
+// a title search fair: for "Abbey Road", a tribute band named Abbey Road must
+// not outrank the Beatles' Abbey Road just because the query names the band.
+function queryNamesRow(query, artistName, title) {
+  if (queryNamesArtist(query, artistName)) return true;
+  const t = normalizeAlbumTitle(title || '');
+  return !!t && t === normalizeAlbumTitle(query || '');
+}
+
+// A row the query names (its artist, or its exact title) ranks above rows that
+// only mention it (covers and tributes with the artist's name in the title). Large enough to lift a perfect artist
 // match over a cover whose title contains the name; small next to the 60
 // points fuzzy relevance is worth, so an unrelated artist still can't win.
 const ARTIST_NAMED_BONUS = 20;
 
+// How far a row must outrank a row shown ahead of it to move past it once rows
+// hold still (stabilizeRows' promote). On the 0-120 ranking scale; smaller
+// gaps are noise between sources, and moving on them is the reshuffling rows
+// hold still to avoid.
+const PROMOTE_MARGIN = 5;
+
 // Search's ranking (reRankResults in app.js). Each row scores 60% fuzzy
-// relevance of the query against `key` plus 40% its source's own score
-// (MusicBrainz's search score, or a service row's rankScore by position),
-// plus ARTIST_NAMED_BONUS when `artistOf` names an artist the query names.
+// relevance of the query against `key` plus 40% its standing: its source's
+// own score (MusicBrainz's search score, or a service row's rankScore by
+// position), averaged with its popularity (_popularity, or the list's median
+// when it has none, see above), plus
+// ARTIST_NAMED_BONUS when the query names the row (queryNamesRow, given
+// `artistOf`; `titleOf` defaults to the row's title).
 // Fuse is passed in: the renderer loads it from vendor/fuse.min.js.
-function rankSearchRows(items, query, { Fuse, key, artistOf = null } = {}) {
+function rankSearchRows(items, query, { Fuse, key, artistOf = null, titleOf = (r) => r.title } = {}) {
   if (!items || items.length === 0 || !query || !Fuse) return items;
   const fuse = new Fuse(items, { keys: [key], includeScore: true, threshold: 0.6, ignoreLocation: true, useExtendedSearch: false });
   const fuzzy = new Map();
   for (const r of fuse.search(query)) fuzzy.set(r.item, (1 - r.score) * 100);
+  const popularityOf = (item) => (typeof item._popularity === 'number' && Number.isFinite(item._popularity) ? item._popularity : null);
+  const known = items.map(popularityOf).filter(p => p !== null).sort((a, b) => a - b);
+  const median = known.length === 0 ? null
+    : known.length % 2 ? known[(known.length - 1) / 2]
+      : (known[known.length / 2 - 1] + known[known.length / 2]) / 2;
   return items
     .map((item) => {
       const relevance = fuzzy.get(item) || 0;
       const sourceScore = item.score || 50;
-      const bonus = artistOf && queryNamesArtist(query, artistOf(item)) ? ARTIST_NAMED_BONUS : 0;
-      return { ...item, _finalScore: relevance * 0.6 + sourceScore * 0.4 + bonus };
+      const popularity = popularityOf(item) ?? median; // null: nothing in the list has one
+      const standing = popularity === null ? sourceScore : (sourceScore + popularity) / 2;
+      const bonus = artistOf && queryNamesRow(query, artistOf(item), titleOf(item)) ? ARTIST_NAMED_BONUS : 0;
+      return { ...item, _finalScore: relevance * 0.6 + standing * 0.4 + bonus };
     })
     .sort((a, b) => b._finalScore - a._finalScore);
 }
@@ -309,7 +356,13 @@ function catalogArtistsFromResults({ query, trackLists = [], albumLists = [], mb
 // names, so when an artist's own albums arrive after a fast service's covers
 // that mention the name, they move above them once (2026-11-02: "Mazzy Star"
 // kept its covers on top until a second search).
-function stabilizeRows(rows, previous, identityKeys, tierOf = null) {
+// promote, optional { scoreOf, margin }: within a tier, a row moves above a
+// row ahead of it whose score is lower by at least `margin`; smaller gaps hold
+// still. Search passes the ranking score and PROMOTE_MARGIN, so a row that
+// arrives later and clearly outranks what is shown (the original song, with
+// its artist's popularity, after a fast service's covers) moves up once and
+// then holds where it lands.
+function stabilizeRows(rows, previous, identityKeys, tierOf = null, promote = null) {
   const owner = new Map();
   for (const p of previous || []) {
     for (const k of p.keys) if (!owner.has(k)) owner.set(k, p.rowKey);
@@ -328,7 +381,17 @@ function stabilizeRows(rows, previous, identityKeys, tierOf = null) {
   ];
   const tier = (r) => (tierOf ? tierOf(r) || 0 : 0);
   const tiers = [...new Set(held.map(tier))].sort((x, y) => y - x);
-  const ordered = tiers.length > 1 ? tiers.flatMap(t => held.filter(r => tier(r) === t)) : held;
+  const tiered = tiers.length > 1 ? tiers.flatMap(t => held.filter(r => tier(r) === t)) : held;
+  let ordered = tiered;
+  if (promote && typeof promote.scoreOf === 'function') {
+    const score = (r) => promote.scoreOf(r) || 0;
+    ordered = [];
+    for (const row of tiered) {
+      let i = ordered.length;
+      while (i > 0 && tier(ordered[i - 1]) === tier(row) && score(row) - score(ordered[i - 1]) >= promote.margin) i -= 1;
+      ordered.splice(i, 0, row);
+    }
+  }
   const shown = ordered.map(r => ({ rowKey: r._rowKey, keys: [...new Set([r._rowKey, ...identityKeys(r)])] }));
   return { rows: ordered, shown };
 }
@@ -348,8 +411,13 @@ module.exports = {
   ALBUM_RANK_KEY,
   albumArtistName,
   queryNamesArtist,
+  queryNamesRow,
   ARTIST_NAMED_BONUS,
   rankSearchRows,
+  popularityFromListens,
+  POPULARITY_REFERENCE_LISTENS,
+  ARTIST_POPULARITY_REFERENCE_LISTENS,
+  PROMOTE_MARGIN,
   searchResolversFor,
   catalogTrackToSearchResult,
   catalogTracksToSearchResults,
