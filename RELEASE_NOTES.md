@@ -33,6 +33,8 @@
 
 ## Amazon Music
 
+- **Amazon plays in Parachord's own player.** Amazon Music used to play inside a hidden Amazon web page that Parachord steered from outside, so skipping, seeking, the progress bar and your keyboard's media keys didn't always agree with what you heard. Its stream now plays in Parachord's player like other services. Thanks to @theli-ua, who built it.
+- **Choose Amazon's stream quality.** **Settings → General → Playback Quality** picks Max, High, Standard or Data saver, and can adjust to your connection. With an HD plan, Max plays lossless; other plans get the best quality they include, and a change applies to the song already playing.
 - **Two-factor sign-in works.** The sign-in window closed while Amazon was asking for your code, reported success, and then asked you to sign in again, over and over. It now waits for the whole sign-in, and Amazon shows "Setup required" in Settings when you're signed out.
 - **No more surprise sign-in prompts.** Amazon refreshes part of its session every so often, and a page load caught in that moment made Parachord ask you to sign in while you were signed in. It now retries quietly first.
 - **The song you asked for, not a station.** On a plan that can only play a track as a station, Amazon started a station of similar music while Parachord showed the track you picked. That play now fails, and the next source plays instead.
