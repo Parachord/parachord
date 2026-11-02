@@ -1247,6 +1247,25 @@ const CERTIFICATE_DENIAL_REASONS = new Set([
 const HD_CONTENT_DENIAL_REASONS = new Set([
   'CUSTOMER_NOT_ELIGIBLE'
 ]);
+// A license denial's message is a sentence, then " - " and a dump of the
+// account's and the title's eligibility that starts
+// `CustomerEligibility(customerId=…, marketplaceId=…, …)`. The message ends
+// up in logs and error text, and logs get pasted into issues, so keep the
+// sentence only, and scrub an account identifier that turns up anyway.
+const LICENSE_DENIAL_SUMMARY_MAX = 200;
+function licenseDenialSummary(message) {
+  if (typeof message !== 'string') return null;
+  let text = message;
+  const separator = text.indexOf(' - ');
+  if (separator !== -1) text = text.slice(0, separator);
+  const eligibility = text.search(/\b(?:Customer|Content)Eligibility\s*\(/);
+  if (eligibility !== -1) text = text.slice(0, eligibility);
+  text = text
+    .replace(/\b(customerId|marketplaceId|deviceId)("?\s*[=:]\s*"?)[^,)"\s]+/gi, '$1$2<redacted>')
+    .trim();
+  if (text.length > LICENSE_DENIAL_SUMMARY_MAX) text = `${text.slice(0, LICENSE_DENIAL_SUMMARY_MAX)}…`;
+  return text || null;
+}
 
 // Region segment in the dmls URL, derived from the session territory.
 const AMAZON_FE_TERRITORIES = new Set(['JP', 'AU', 'NZ', 'SG', 'MY', 'ID', 'TH', 'PH', 'KR', 'TW', 'IN', 'HK']);
@@ -1585,6 +1604,7 @@ module.exports = {
   WIDEVINE_CERT_CHALLENGE,
   CERTIFICATE_DENIAL_REASONS,
   HD_CONTENT_DENIAL_REASONS,
+  licenseDenialSummary,
   AMAZON_TELEMETRY_CONSTANTS,
   TELEMETRY_TERMINATION,
   amazonTelemetryBitrateLabel,

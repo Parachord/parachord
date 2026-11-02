@@ -1,5 +1,6 @@
 const {
   amazonDmlsRegion,
+  licenseDenialSummary,
   amazonDmlsManifestBody,
   amazonDmlsLicenseBody,
   dashCodecFamily,
@@ -1904,5 +1905,41 @@ describe('amazonAuthCookieState', () => {
     expect(amazonAuthCookieState(['session-token'])).toBe('none');
     expect(amazonAuthCookieState([])).toBe('none');
     expect(amazonAuthCookieState(null)).toBe('none');
+  });
+});
+
+describe('licenseDenialSummary', () => {
+  // Shape of a live content refusal on a Prime account; the ids are fake.
+  const CONTENT_REFUSAL = 'customer is not eligible for content (EligibilityException CUSTOMER_NOT_ELIGIBLE) - '
+    + 'CustomerEligibility(customerId=AFAKECUSTOMER123, marketplaceId=ATVFAKEMARKET, eligibilities=[ROBIN, NIGHTWING]) '
+    + 'ContentEligibility(asin=B086Q41M9C, eligibilities=[KATANA])';
+
+  test('keeps the sentence before the eligibility dump', () => {
+    expect(licenseDenialSummary(CONTENT_REFUSAL))
+      .toBe('customer is not eligible for content (EligibilityException CUSTOMER_NOT_ELIGIBLE)');
+  });
+
+  test('drops an eligibility block that arrives without the separator', () => {
+    const out = licenseDenialSummary('not eligible CustomerEligibility(customerId=AFAKECUSTOMER123)');
+    expect(out).toBe('not eligible');
+  });
+
+  test('scrubs account identifiers anywhere in the text, JSON bodies included', () => {
+    expect(licenseDenialSummary('denied for customerId=AFAKECUSTOMER123, deviceId: 1234abcd'))
+      .toBe('denied for customerId=<redacted>, deviceId: <redacted>');
+    const body = licenseDenialSummary('{"customerId":"AFAKECUSTOMER123","message":"denied"}');
+    expect(body).not.toContain('AFAKECUSTOMER123');
+  });
+
+  test('leaves a plain message alone and caps a long one', () => {
+    expect(licenseDenialSummary('customer is not eligible for HD content (EligibilityException CUSTOMER_NOT_ELIGIBLE)'))
+      .toBe('customer is not eligible for HD content (EligibilityException CUSTOMER_NOT_ELIGIBLE)');
+    expect(licenseDenialSummary('x'.repeat(500))).toHaveLength(201);
+  });
+
+  test('non-strings and empty text give null', () => {
+    expect(licenseDenialSummary(null)).toBeNull();
+    expect(licenseDenialSummary(undefined)).toBeNull();
+    expect(licenseDenialSummary('   ')).toBeNull();
   });
 });

@@ -231,6 +231,28 @@ describe('amazon-dmls relayLicense', () => {
     expect(amazonDmls.debugState().hdSessionBlockedByPlan).toBe(true);
   });
 
+  test('400 content refusal: the error and the log carry no customer ID', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON }));
+    requestHandlers.push(() => ({
+      status: 400,
+      text: JSON.stringify({
+        denialReason: 'CUSTOMER_NOT_ELIGIBLE',
+        message: 'customer is not eligible for content (EligibilityException CUSTOMER_NOT_ELIGIBLE) - '
+          + 'CustomerEligibility(customerId=AFAKECUSTOMER123, marketplaceId=ATVFAKEMARKET)'
+      })
+    }));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let err = null;
+    try { await amazonDmls.relayLicense('CAQ='); } catch (e) { err = e; }
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n');
+    warn.mockRestore();
+    expect(err.message).toContain('not eligible for content');
+    expect(err.message).not.toContain('AFAKECUSTOMER123');
+    expect(err.message).not.toContain('CustomerEligibility');
+    expect(logged).toContain('license denied (CUSTOMER_NOT_ELIGIBLE)');
+    expect(logged).not.toContain('AFAKECUSTOMER123');
+  });
+
   test('400 denialReason=UNTRUSTED_DEVICE_CERTIFICATE stays licenseDenied (build VMP problem)', async () => {
     amazonDmls.hdSessionBlockedByPlan = false; // reset plan-level flag for the assertion below
     requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON }));
