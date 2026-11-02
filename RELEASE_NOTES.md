@@ -12,6 +12,8 @@
 - **Typing doesn't pile up lookups.** Pausing mid-word started a search for the half-typed word, and its lookups stayed in the queue ahead of the search you meant. They're dropped now.
 - **Better top results.** Search used to rank songs by how well the title alone matched what you typed, so "portishead roads" favored covers titled "Portishead - Roads" over Portishead's "Roads". It now matches the artist and the title together, prefers the services you rank higher, and favors songs several services agree on.
 
+- **Originals before covers.** Searching an artist's name listed albums with the name in their title, mostly covers ("Into Dust (Mazzy Star Cover)"), ahead of the artist's own; searching a song title could list several covers before the original. Search now counts it when your query names an artist or matches a title exactly, and uses how much each artist and album is listened to on ListenBrainz (and Spotify's popularity, if you use Spotify), so Mazzy Star's albums lead a search for "Mazzy Star" and the original "Fade Into You" leads that one. When the original arrives a moment after the covers, it moves up once.
+
 ## Faster artist and album pages
 
 - **Artist discographies show as they load.** An artist page waited for albums, EPs and singles before showing any of them. Albums now appear as soon as they arrive, and opening an artist from Search skips a lookup it no longer needs.
