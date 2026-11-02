@@ -38,8 +38,30 @@ function playbackDurationSeconds(source, track) {
   return length > 0 ? Math.max(1, Math.round(length / 1000)) : 0;
 }
 
+// Candidate order for handlePlay's source selection (candidates are
+// { resolverId, source, priority, confidence }): the preferred resolver (an
+// explicit pick) first, then sources the plugin did NOT flag
+// `limitedPlayback`, then resolver priority (lower index first), then
+// confidence. `limitedPlayback` is a plugin's own forecast that its player
+// will probably refuse the source or play only a preview of it (SoundCloud:
+// the API's `access` is 'preview' or 'blocked', which the widget plays in full
+// 0 of 7 and 1 of 14 times). It never removes a source: with nothing else, it
+// still plays, and a refusal takes the usual failure path.
+function compareCandidateSources(a, b, preferredResolver) {
+  if (preferredResolver) {
+    if (a.resolverId === preferredResolver && b.resolverId !== preferredResolver) return -1;
+    if (b.resolverId === preferredResolver && a.resolverId !== preferredResolver) return 1;
+  }
+  const aLimited = !!(a.source && a.source.limitedPlayback);
+  const bLimited = !!(b.source && b.source.limitedPlayback);
+  if (aLimited !== bLimited) return aLimited ? 1 : -1;
+  if (a.priority !== b.priority) return a.priority - b.priority;
+  return b.confidence - a.confidence;
+}
+
 module.exports = {
   unsupportedAudioMessage,
   dropSubsonicSecrets,
   playbackDurationSeconds,
+  compareCandidateSources,
 };

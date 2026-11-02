@@ -38,7 +38,7 @@
 
 const { isOtherVersion } = require('../lib/track-variants');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds } = require('../lib/playback-helpers');
+const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -916,7 +916,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         });
       }
 
-      // Sort sources by: 1) preferred resolver (if specified), 2) resolver priority, 3) confidence
+      // Sort sources by: 1) preferred resolver (if specified), 2) sources the
+      // plugin flagged limitedPlayback last, 3) resolver priority, 4) confidence
+      // (compareCandidateSources)
       // Use refs to avoid stale closure issues when called from callbacks
       const currentActiveResolvers = activeResolversRef.current;
       const currentResolverOrder = resolverOrderRef.current;
@@ -959,19 +961,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           entry.sourceId === srcId
         );
       })
-      .sort((a, b) => {
-        // If a preferred resolver is specified, prioritize it
-        if (preferredResolver) {
-          if (a.resolverId === preferredResolver) return -1;
-          if (b.resolverId === preferredResolver) return 1;
-        }
-        // Then sort by priority (lower index = higher priority)
-        if (a.priority !== b.priority) {
-          return a.priority - b.priority;
-        }
-        // If same priority, sort by confidence (higher = better)
-        return b.confidence - a.confidence;
-      });
+      .sort((a, b) => compareCandidateSources(a, b, preferredResolver));
 
       if (sortedSources.length === 0) {
         console.error('❌ No enabled resolvers found for track. Available sources:', Object.keys(trackOrSource.sources), 'Active resolvers:', currentActiveResolvers);
