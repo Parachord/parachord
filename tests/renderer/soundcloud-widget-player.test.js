@@ -1,4 +1,8 @@
-const { createSoundCloudWidgetPlayer, widgetSrc, WIDGET_ORIGIN } = require('../../src/renderer/lib/soundcloud-widget-player');
+const { createSoundCloudWidgetPlayer, widgetSrc, isPreviewSound, WIDGET_ORIGIN } = require('../../src/renderer/lib/soundcloud-widget-player');
+
+// getCurrentSound replies captured from the widget (#1211, Android port)
+const FULL_SOUND = { policy: 'MONETIZE', duration: 235017, full_duration: 235019, monetization_model: 'BLACKBOX' };
+const SNIP_SOUND = { policy: 'SNIP', duration: 30000, full_duration: 219246, monetization_model: 'SUB_HIGH_TIER' };
 
 // A fake window: one iframe whose contentWindow records what we post, and a
 // `message` listener we can drive as the widget would.
@@ -48,6 +52,9 @@ describe('SoundCloud widget player', () => {
     w.fromWidget('play');
     w.fromWidget('playProgress', { currentPosition: 0 });
     w.fromWidget('playProgress', { currentPosition: 1200 });
+    expect(w.methods()).toContain('getCurrentSound'); // the whole-track check
+    expect(onProgress).not.toHaveBeenCalled(); // not started until it answers
+    w.fromWidget('getCurrentSound', FULL_SOUND);
 
     await expect(started).resolves.toEqual({ durationSeconds: 237 });
     expect(onProgress).toHaveBeenCalledWith(1.2);
@@ -75,6 +82,7 @@ describe('SoundCloud widget player', () => {
     expect(firstProgress).not.toHaveBeenCalled();
     w.fromWidget('ready');
     w.fromWidget('playProgress', { currentPosition: 300 });
+    w.fromWidget('getCurrentSound', FULL_SOUND);
     await expect(second).resolves.toBeDefined();
   });
 
@@ -97,6 +105,7 @@ describe('SoundCloud widget player', () => {
     w.fromWidget('ready');
     expect(w.posted.find((p) => p.msg.method === 'setVolume').msg.value).toBe(40);
     w.fromWidget('playProgress', { currentPosition: 100 });
+    w.fromWidget('getCurrentSound', FULL_SOUND);
     await started;
 
     w.posted.length = 0;
@@ -120,6 +129,7 @@ describe('SoundCloud widget player', () => {
     w.fromWidget('pause');
     expect(h.onPause).not.toHaveBeenCalled();
     w.fromWidget('playProgress', { currentPosition: 100 });
+    w.fromWidget('getCurrentSound', FULL_SOUND);
     await started;
     w.fromWidget('pause');
     w.fromWidget('play');
@@ -141,5 +151,43 @@ describe('SoundCloud widget player', () => {
     w.fromWidget('ready');
     w.fromWidget('finish');
     expect(onFinish).not.toHaveBeenCalled();
+  });
+
+  test('a 30-second preview is refused, not played (#1211)', async () => {
+    const w = fakeWindow();
+    const player = createSoundCloudWidgetPlayer({ win: w.win, log: quiet });
+    const h = { onProgress: jest.fn(), onFinish: jest.fn() };
+    const started = player.load('https://soundcloud.com/taylorswiftofficial/shake-it-off', h);
+    w.fromWidget('ready');
+    w.fromWidget('getDuration', 219246); // the widget answers the FULL length
+    w.fromWidget('playProgress', { currentPosition: 800 });
+    w.posted.length = 0;
+    w.fromWidget('getCurrentSound', SNIP_SOUND);
+    await expect(started).rejects.toMatchObject({ reason: 'preview' });
+    expect(w.methods()).toContain('pause');
+    w.fromWidget('playProgress', { currentPosition: 29753 });
+    w.fromWidget('finish');
+    expect(h.onProgress).not.toHaveBeenCalled();
+    expect(h.onFinish).not.toHaveBeenCalled();
+  });
+
+  test('no getCurrentSound reply within the check window counts as the whole track', async () => {
+    const w = fakeWindow();
+    const player = createSoundCloudWidgetPlayer({ win: w.win, soundCheckTimeoutMs: 2000, log: quiet });
+    const started = player.load('https://soundcloud.com/a/b');
+    w.fromWidget('ready');
+    w.fromWidget('playProgress', { currentPosition: 500 });
+    jest.advanceTimersByTime(2000);
+    await expect(started).resolves.toBeDefined();
+    expect(player.getState().started).toBe(true);
+  });
+
+  test('isPreviewSound: SNIP policy, or a playable duration short of the full one', () => {
+    expect(isPreviewSound(SNIP_SOUND)).toBe(true);
+    expect(isPreviewSound({ policy: 'MONETIZE', duration: 30000, full_duration: 219246 })).toBe(true);
+    expect(isPreviewSound(FULL_SOUND)).toBe(false);
+    expect(isPreviewSound({ policy: 'MONETIZE', duration: 233759, full_duration: 233744 })).toBe(false); // Shape of You
+    expect(isPreviewSound({ policy: 'ALLOW' })).toBe(false);
+    expect(isPreviewSound(null)).toBe(false);
   });
 });

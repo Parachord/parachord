@@ -1422,8 +1422,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         if (autoSkipIfAdvancing(`${serviceName}: ${error && error.message}`)) return;
         setTrackLoading(false);
+        // reason 'preview': the service lets its player play only a snippet.
         showToast(
-          `${serviceName} only plays "${trackOrSource.title}" on its own site.`,
+          error && error.reason === 'preview'
+            ? `${serviceName} only lets Parachord play a preview of "${trackOrSource.title}".`
+            : `${serviceName} only plays "${trackOrSource.title}" on its own site.`,
           'error',
           link ? { label: `Open in ${serviceName}`, onClick: () => window.electron?.shell?.openExternal?.(link) } : null
         );
