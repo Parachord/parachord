@@ -40,6 +40,10 @@
 - **The song you asked for, not a station.** On a plan that can only play a track as a station, Amazon started a station of similar music while Parachord showed the track you picked. That play now fails, and the next source plays instead.
 - **Report Bad Match** reports only the track you picked.
 
+## SoundCloud
+
+- **Stays signed in.** SoundCloud signed you out about once an hour while a page was finding several tracks at once, and you had to connect it again in Settings. It now stays connected.
+
 ## Home, friends and links
 
 - **Home suggestions stay put.** Album and Artist Suggestions no longer fetch a new batch every time you open Home; press Refresh for more. A setting brings the old behavior back: **Settings → General → Discover → Refresh Home suggestions on every visit**.
