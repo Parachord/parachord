@@ -84,6 +84,21 @@ describe('app.js wiring', () => {
     expect(fetchRelease).toContain('setCurrentRelease(prev => withArchiveCover(prev, releaseData.id, albumArt))');
     expect(fetchRelease).not.toMatch(/prev\.id === releaseData\.id \? \{ \.\.\.prev, albumArt \}/);
   });
+  // Copy Link shares the album's release group: Achordion builds
+  // /release-group/<mbid> from whatever it is given, so a release id there
+  // 404s (jherskowitz/achordion#107).
+  test('the loaded album records its release group for Copy Link', () => {
+    expect(app).toContain('/ws/2/release/${releaseId}?inc=recordings+artist-credits+release-groups&fmt=json');
+    expect(fetchRelease).toMatch(/releaseGroupMbid: releaseData\['release-group'\]\?\.id\s*\|\| \(releaseId !== release\.id && isMusicBrainzId\(release\.id\) \? release\.id : null\),/);
+    // every share path asks for the release group first
+    expect(app).toMatch(/mbid: currentRelease\.releaseGroupMbid \|\| currentRelease\.mbid \|\| currentRelease\.id \|\| null/);
+    expect(app).toMatch(/let mbidCandidate = collection\.releaseGroupMbid\s*\|\|/);
+    const cards = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'cards.js'), 'utf8');
+    expect(cards).toMatch(/const albumMbid = release\.releaseGroupMbid\s*\|\| release\.mbid/);
+    const main = fs.readFileSync(path.join(__dirname, '..', '..', 'main.js'), 'utf8');
+    expect(main).toMatch(/const albumMbid = data\.album\?\.releaseGroupMbid\s*\|\| data\.releaseGroupMbid\s*\|\| data\.album\?\.mbid/);
+  });
+
   test('a known release-group id skips the release-id probe unless its release is cached', () => {
     expect(fetchRelease).toMatch(/const skipReleaseProbe = !!release\.isReleaseGroup && !releaseDetailsCache\.current\[release\.id\]\?\.alias;/);
     expect(fetchRelease).toMatch(/skipReleaseProbe \? null : await fetchReleaseDetails\(releaseId\)/);
