@@ -42,7 +42,8 @@ const {
   DML_TARGET_PREFIX,
   WIDEVINE_CERT_CHALLENGE,
   CERTIFICATE_DENIAL_REASONS,
-  HD_CONTENT_DENIAL_REASONS
+  HD_CONTENT_DENIAL_REASONS,
+  licenseDenialSummary
 } = require('./amazon-music-logic');
 
 // hornet reports times relative to this offset format; cheap local copy.
@@ -255,7 +256,7 @@ const adapter = {
     let json = null;
     try { json = JSON.parse(text); } catch { /* fall through */ }
     if (status !== 200 || !json) {
-      const err = new Error(`amazon-dmls: manifest HTTP ${status}: ${text.slice(0, 160)}`);
+      const err = new Error(`amazon-dmls: manifest HTTP ${status}: ${(licenseDenialSummary(text) || '').slice(0, 160)}`);
       err.reason = status === -1 ? 'load-failed' : 'playback-failed';
       throw err;
     }
@@ -297,7 +298,9 @@ const adapter = {
       let refusal = null;
       try { refusal = JSON.parse(text); } catch { /* opaque */ }
       const denialReason = refusal && typeof refusal.denialReason === 'string' ? refusal.denialReason : null;
-      const message = refusal && typeof refusal.message === 'string' ? refusal.message : null;
+      // Amazon's message carries the account's customer ID after its first
+      // sentence; only the sentence reaches the error and the log.
+      const message = licenseDenialSummary(refusal && refusal.message);
       if (CERTIFICATE_DENIAL_REASONS.has(denialReason)) {
         const err = new Error('Amazon refused the Widevine license. This build needs a production VMP signature.');
         err.reason = 'playback-failed';
@@ -319,7 +322,7 @@ const adapter = {
     let json = null;
     try { json = JSON.parse(text); } catch { /* fall through */ }
     if (status !== 200 || !json || typeof json.license !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(json.license)) {
-      const err = new Error(`amazon-dmls: license HTTP ${status}: ${text.slice(0, 160)}`);
+      const err = new Error(`amazon-dmls: license HTTP ${status}: ${(licenseDenialSummary(text) || '').slice(0, 160)}`);
       err.reason = status === -1 ? 'load-failed' : 'playback-failed';
       throw err;
     }
