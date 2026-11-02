@@ -11,7 +11,7 @@
 //     live Amazon pages during background resolution/import whatever is
 //     playing) — registration happens in amazon-web-player.js ensureView;
 //   - keys are accepted only while that resolver OWNS playback (the
-//     registration's isOwned() — amazonWebPlayer.currentAsin is non-null
+//     registration's isOwned() — <provider-owned player state> (hornet-era example: amazonWebPlayer.currentAsin, deleted with the hornet player) is non-null
 //     exactly while the Amazon player owns it), so a parked view cannot
 //     drive another resolver's transport;
 //   - a per-sender sliding-window rate limit caps transport spam;

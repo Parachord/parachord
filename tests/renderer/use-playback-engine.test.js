@@ -155,7 +155,6 @@ describe('usePlaybackEngine (Node render probe)', () => {
         pendingCloseTabIdRef: ref(),
         trackNeedsExplicitStart: ref(),
         spotifyProgressBaselineRef: ref(),
-        amazonMusicProgressBaselineRef: ref(),
         listenAlongFriend: null,
         setListenAlongFriend: noop,
         listenAlongFriendRef: ref(),

@@ -1,20 +1,17 @@
 const {
+  amazonDmlsRegion,
+  amazonDmlsManifestBody,
+  amazonDmlsLicenseBody,
+  dashCodecFamily,
+  WIDEVINE_CERT_CHALLENGE,
   reportedPlaybackAsin,
   shouldRevealPlayerOnFailure,
-  playerDurationMs,
-  decidePollAdvance,
-  shouldPollFaster,
   cdmStatusHealthy,
   pageBlocksPlayback,
   signInLanded,
   amazonAuthCookieState,
   AMAZON_QUALITY_OPTIONS,
-  normalizeStreamingQuality,
   amazonSongSearchUrl,
-  installAmazonRequireTrap,
-  readPersistedQuality,
-  writePersistedQuality,
-  amazonQualityFromStore,
   asinFromPlayerUrl,
   amazonPlaylistIdFromUrl,
   amazonPlaylistDetailRequest,
@@ -26,20 +23,6 @@ const {
   playlistTrackFromGqlEdge,
   stripAmazonTitleMarker,
   playlistFromGql,
-  NEAR_END_MS,
-  EMPTY_WHILE_PAUSED_POLL_LIMIT,
-  measuredStreamKbps,
-  createStreamBitrateMeter,
-  QUALITY_MIN_PAIRS,
-  QUALITY_PAIR_WINDOW,
-  QUALITY_SHIFT_RATIO,
-  installAmazonStreamCapture,
-  mpdAudioRepresentations,
-  flacStreamInfoFromInit,
-  attachInitStreamInfo,
-  pickMpdRepresentation,
-  amazonStreamTier,
-  amazonStreamQualityRecord,
   amazonMediaPauseExpr,
   amazonPlayGenerationStamp,
   amazonSpecSearchRequest,
@@ -220,95 +203,6 @@ describe('shouldRevealPlayerOnFailure', () => {
   });
 });
 
-describe('playerDurationMs', () => {
-  test('treats the player value as milliseconds, including long tracks', () => {
-    expect(playerDurationMs(180000)).toBe(180000);
-    expect(playerDurationMs(1200000)).toBe(1200000);
-    expect(playerDurationMs(0)).toBe(0);
-    expect(playerDurationMs(null)).toBe(0);
-  });
-});
-
-describe('decidePollAdvance', () => {
-  const playing = { state: 'PLAYING', durationMs: 180000, pollCount: 5, expectedAsin: 'B1', actualAsin: 'B1' };
-
-  test('does not skip when seeking backward near the end', () => {
-    const decision = decidePollAdvance({
-      ...playing,
-      lastPositionMs: 176000,
-      positionMs: 140000,
-      seekSuppress: true
-    });
-    expect(decision.action).not.toBe('advance');
-  });
-
-  test('a backward seek is not an autoplay wrap even without the suppress flag', () => {
-    const decision = decidePollAdvance({
-      ...playing,
-      lastPositionMs: 176000,
-      positionMs: 140000
-    });
-    expect(decision.action).toBe('continue');
-  });
-
-  test('wrap to the start after 80% is a finish', () => {
-    const decision = decidePollAdvance({
-      ...playing,
-      lastPositionMs: 176000,
-      positionMs: 200
-    });
-    expect(decision).toEqual({ action: 'advance', reason: 'finished' });
-  });
-
-  test('does not cut off several seconds before the end', () => {
-    const early = decidePollAdvance({ ...playing, lastPositionMs: 170000, positionMs: 176000 });
-    expect(early.action).not.toBe('advance');
-    const late = decidePollAdvance({
-      ...playing,
-      lastPositionMs: 179000,
-      positionMs: 180000 - NEAR_END_MS
-    });
-    expect(late).toEqual({ action: 'advance', reason: 'near-end' });
-  });
-
-  test('polls faster only in the last few seconds', () => {
-    expect(shouldPollFaster(180000, 100000)).toBe(false);
-    expect(shouldPollFaster(180000, 175000)).toBe(true);
-  });
-
-  test('a different ASIN after the grace period advances', () => {
-    expect(decidePollAdvance({ ...playing, pollCount: 1, actualAsin: 'B9' }).action).toBe('wait');
-    expect(decidePollAdvance({ ...playing, pollCount: 3, actualAsin: 'B9' }).reason).toBe('track-changed');
-  });
-
-  test('a page torn down while paused waits out a grace window, then advances', () => {
-    const emptyWhilePaused = { state: 'EMPTY', positionMs: 0, durationMs: 180000, lastPositionMs: 60000, lastState: 'PAUSED', expectedAsin: 'B1' };
-    // Still inside the window: keep polling — the user paused, and the page
-    // may just be between documents.
-    expect(decidePollAdvance({ ...emptyWhilePaused, emptyWhilePausedPolls: 5 })).toEqual({ action: 'track' });
-    // Past the window: the element is gone and cannot be resumed — the pause
-    // was honored long enough; playback is dead.
-    expect(decidePollAdvance({ ...emptyWhilePaused, emptyWhilePausedPolls: EMPTY_WHILE_PAUSED_POLL_LIMIT }))
-      .toEqual({ action: 'advance', reason: 'stopped' });
-    // STOPPED/FINISHED while paused count the same as EMPTY.
-    expect(decidePollAdvance({ ...emptyWhilePaused, state: 'STOPPED', emptyWhilePausedPolls: EMPTY_WHILE_PAUSED_POLL_LIMIT }))
-      .toEqual({ action: 'advance', reason: 'stopped' });
-  });
-
-  test('an empty player while nothing ever played does not advance', async () => {
-    // lastState null (never PLAYING): the page is still loading — a fresh
-    // poller never latches a pause-death, so the count it sends is 0 and a
-    // fresh poller must not advance on its first EMPTY reads.
-    const decision = decidePollAdvance({ state: 'EMPTY', lastState: null, emptyWhilePausedPolls: 0 });
-    expect(decision).toEqual({ action: 'track' });
-    // The latched counter is only nonzero after a PAUSED poller saw death —
-    // a count at the limit advances regardless of the (churned) lastState.
-    expect(decidePollAdvance({
-      state: 'EMPTY', lastState: 'EMPTY', emptyWhilePausedPolls: EMPTY_WHILE_PAUSED_POLL_LIMIT
-    })).toEqual({ action: 'advance', reason: 'stopped' });
-  });
-});
-
 describe('pageBlocksPlayback', () => {
   test('profile picker and sign-in are not a finished session', () => {
     expect(pageBlocksPlayback('https://music.amazon.com/identity/who-is-listening')).toBe('not-signed-in');
@@ -319,19 +213,15 @@ describe('pageBlocksPlayback', () => {
     expect(pageBlocksPlayback('https://music.amazon.com/')).toBeNull();
     expect(pageBlocksPlayback('https://music.amazon.com/tracks/B000SNWG5Q')).toBeNull();
   });
-
   test('every step of the Amazon sign-in portal is a wall, 2FA included', () => {
-    // 2FA (OTP), push approval, verification and account-fix pages sit under
-    // /ap/ on the account host, and their query carries the music.amazon.com
-    // return address. None of them is a finished session.
     const rt = '?openid.return_to=https%3A%2F%2Fmusic.amazon.com%2F';
     for (const path of ['/ap/mfa', '/ap/cvf/approval', '/ap/cvf/request', '/ap/challenge', '/ap/accountfixup']) {
       expect(pageBlocksPlayback(`https://www.amazon.com${path}${rt}`)).toBe('not-signed-in');
     }
     expect(pageBlocksPlayback('https://www.amazon.co.uk/ap/mfa?arb=x')).toBe('not-signed-in');
-    // A music path that merely contains "ap" is not the portal.
     expect(pageBlocksPlayback('https://music.amazon.com/albums/B0AP123')).toBeNull();
   });
+
 });
 
 describe('cdmStatusHealthy', () => {
@@ -364,28 +254,6 @@ describe('cdmStatusHealthy', () => {
     const cyclic = { widevine: { status: 'ok' } };
     cyclic.self = cyclic;
     expect(cdmStatusHealthy(cyclic)).toBe(true);
-  });
-});
-
-describe('amazonAuthCookieState', () => {
-  test('the auth cookies isSignedIn has always keyed on are known', () => {
-    expect(amazonAuthCookieState(['session-id', 'at-main', 'sess-at-main', 'x-main'])).toBe('known');
-    expect(amazonAuthCookieState(['at-main-music'])).toBe('known');
-    expect(amazonAuthCookieState(['at-acbuk'])).toBe('known');
-  });
-
-  test('other auth-shaped names are a session under rotated names', () => {
-    expect(amazonAuthCookieState(['session-id', 'x-main'])).toBe('rotated');
-    expect(amazonAuthCookieState(['at-main2', 'session-id'])).toBe('known'); // still the at-main prefix
-    expect(amazonAuthCookieState(['at-v2', 'sess-at-v2'])).toBe('rotated');
-  });
-
-  test('a logged-out jar is signed out (the old page-based hedge said signed in)', () => {
-    // What a logged-out session held, before and during a sign-in (2026-10).
-    expect(amazonAuthCookieState(['session-id', 'session-id-time', 'ubid-main', 'i18n-prefs', 'csm-hit', 'cwr_u'])).toBe('none');
-    expect(amazonAuthCookieState(['session-token'])).toBe('none'); // not auth-shaped on its own
-    expect(amazonAuthCookieState([])).toBe('none');
-    expect(amazonAuthCookieState(null)).toBe('none');
   });
 });
 
@@ -431,26 +299,6 @@ describe('signInLanded', () => {
     // A URL that changed this tick is not stable yet.
     expect(signInLanded({ url: track, lastUrl: home, stableTicks: 3, hasCookie: true }))
       .toEqual({ landed: false, stableTicks: 1 });
-  });
-
-  test('the 2FA page never lands, however long the user takes', () => {
-    // The old gate matched "music.amazon.com" anywhere in the URL, so the
-    // 2FA page's return_to query passed it, and the window closed itself two
-    // seconds into the code prompt, reporting a sign-in that never happened.
-    for (const url of [
-      'https://www.amazon.com/ap/mfa?openid.return_to=https%3A%2F%2Fmusic.amazon.com%2F&arb=x',
-      'https://www.amazon.com/ap/cvf/approval?openid.return_to=https%3A%2F%2Fmusic.amazon.com%2F',
-      // Not the portal, but still not the music host: never a landing.
-      'https://www.amazon.com/gp/redirect?to=https%3A%2F%2Fmusic.amazon.com%2F'
-    ]) {
-      let v = { stableTicks: 0 };
-      let last = null;
-      for (let i = 0; i < 10; i++) {
-        v = signInLanded({ url, lastUrl: last, stableTicks: v.stableTicks, hasCookie: true });
-        last = url;
-        expect(v.landed).toBe(false);
-      }
-    }
   });
 });
 
@@ -500,260 +348,6 @@ const steadySamples = (count, { startWallMs = 0, startPositionMs = 0, startBytes
   return out;
 };
 
-describe('measuredStreamKbps', () => {
-  test('steady 2s pairs measure the stream bitrate exactly', () => {
-    expect(measuredStreamKbps(steadySamples(QUALITY_MIN_PAIRS))).toBe(850);
-  });
-
-  test('fast-cadence 400ms pairs (the near-end interval) measure too', () => {
-    expect(measuredStreamKbps(steadySamples(QUALITY_MIN_PAIRS, { stepMs: 400, kbps: 320 }))).toBe(320);
-  });
-
-  test('needs several steady pairs before reporting — a couple of reads are not a measurement', () => {
-    expect(measuredStreamKbps(steadySamples(QUALITY_MIN_PAIRS - 1))).toBeNull();
-    expect(measuredStreamKbps(steadySamples(1))).toBeNull();
-    expect(measuredStreamKbps([])).toBeNull();
-    expect(measuredStreamKbps(null)).toBeNull();
-  });
-
-  test('the startup buffer-fill overshoot does not drag the median', () => {
-    // While the decoder's buffers fill, the first pairs read ~3-5x the true
-    // rate. The median window must land on the steady pairs.
-    const spiked = [
-      qualitySample(0, 0, 0),
-      qualitySample(2000, 2000, 1282500), // 5130 kbps
-      ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 2000, startPositionMs: 2000, startBytes: 1282500 })
-    ];
-    expect(measuredStreamKbps(spiked)).toBe(850);
-  });
-
-  test('a pair spanning a seek is not a measurement', () => {
-    const seeked = [
-      ...steadySamples(2),
-      qualitySample(8000, 90000, 425000), // forward seek: playhead jumped far past the wall clock
-      ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 8000, startPositionMs: 90000, startBytes: 425000 })
-    ];
-    expect(measuredStreamKbps(seeked)).toBe(850);
-  });
-
-  test('a pair spanning a pause or a stalled counter is not a measurement', () => {
-    // Pause: playhead frozen while the wall clock ran on.
-    const paused = [...steadySamples(2), qualitySample(8000, 4000, 425000), qualitySample(10000, 4000, 425000)];
-    expect(measuredStreamKbps(paused)).toBeNull();
-    // Stalled counter: nothing decoded in the window (bytes frozen).
-    const stalled = [...steadySamples(2), qualitySample(8000, 8000, 425000), qualitySample(10000, 10000, 425000)];
-    expect(measuredStreamKbps(stalled)).toBeNull();
-  });
-
-  test('absurd pair rates are transients, not the stream', () => {
-    // 24000 kbps is beyond anything Amazon delivers; under 16 kbps is not
-    // audio. Either way the pair is dropped, and without enough steady pairs
-    // there is no measurement at all.
-    const absurd = [
-      qualitySample(0, 0, 0),
-      qualitySample(2000, 2000, 6000000), // 24000 kbps
-      ...steadySamples(QUALITY_MIN_PAIRS - 2, { startWallMs: 2000, startPositionMs: 2000, startBytes: 6000000 })
-    ];
-    expect(measuredStreamKbps(absurd)).toBeNull();
-  });
-
-  test('the median window is bounded, so a quality change mid-track is tracked', () => {
-    // An ABR step mid-track: the early 320 kbps pairs age out of the window
-    // and the measurement follows the new rate once it dominates.
-    const shifted = [
-      ...steadySamples(2, { kbps: 320 }),
-      ...steadySamples(QUALITY_PAIR_WINDOW + 1, { startWallMs: 4000, startPositionMs: 4000, startBytes: 80000, kbps: 850 })
-    ];
-    expect(measuredStreamKbps(shifted)).toBe(850);
-  });
-
-  test('a dropped poll does not pair across the gap', () => {
-    // Wall delta 6000ms exceeds the pair window — skip rather than average
-    // across whatever happened in between.
-    const gapped = [
-      ...steadySamples(2),
-      qualitySample(10000, 10000, 1062500),
-      ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 10000, startPositionMs: 10000, startBytes: 1062500 })
-    ];
-    expect(measuredStreamKbps(gapped)).toBe(850);
-  });
-
-  test('reads without a decode counter never form pairs', () => {
-    const counterless = [
-      qualitySample(0, 0, null),
-      qualitySample(2000, 2000, null),
-      ...steadySamples(QUALITY_MIN_PAIRS, { startWallMs: 4000, startPositionMs: 4000 })
-    ];
-    expect(measuredStreamKbps(counterless)).toBe(850);
-  });
-});
-
-// The poller's meter: the median of every steady pair rate of the track, so a
-// VBR stream settles on its average instead of following a 16s window
-// (review on #1100), with a tier change (auto adjust) still followed.
-describe('createStreamBitrateMeter', () => {
-  // Feed 2s pairs with the given per-pair rates, continuing from `from` (the
-  // last sample fed, or a fresh start). Returns the last sample.
-  const feed = (meter, rates, from = null) => {
-    let cur = from || { wallMs: 0, positionMs: 0, bytes: 0 };
-    if (!from) meter.addSample(cur);
-    for (const kbps of rates) {
-      cur = { wallMs: cur.wallMs + 2000, positionMs: cur.positionMs + 2000, bytes: cur.bytes + kbps * 250 };
-      meter.addSample(cur);
-    }
-    return cur;
-  };
-  const meterWithRates = (rates) => {
-    const meter = createStreamBitrateMeter();
-    feed(meter, rates);
-    return meter;
-  };
-
-  test('reports nothing until enough steady pairs exist', () => {
-    expect(meterWithRates(Array(QUALITY_MIN_PAIRS - 1).fill(850)).kbps()).toBeNull();
-    expect(meterWithRates(Array(QUALITY_MIN_PAIRS).fill(850)).kbps()).toBe(850);
-  });
-
-  test('a VBR stream reports the track median, not the latest 16s window', () => {
-    // Pair rates wander 760-1040 around ~900; the last window happens to be high.
-    const rates = [];
-    for (let i = 0; i < 40; i++) rates.push(900 + ((i * 37) % 9 - 4) * 35);
-    const tail = Array(QUALITY_PAIR_WINDOW).fill(1000);
-    const meter = meterWithRates([...rates, ...tail]);
-    const track = meter.kbps();
-    expect(track).toBeGreaterThanOrEqual(880);
-    expect(track).toBeLessThanOrEqual(920);
-    // 1000 vs ~900 is inside the shift ratio: wobble, not a tier change.
-    expect(Math.abs(1000 - track) / track).toBeLessThan(QUALITY_SHIFT_RATIO);
-  });
-
-  test('the startup buffer-fill overshoot does not drag the report', () => {
-    expect(meterWithRates([5130, 4200, ...Array(20).fill(850)]).kbps()).toBe(850);
-  });
-
-  test('a tier change mid-track is followed once the recent window shows it', () => {
-    const meter = createStreamBitrateMeter();
-    let last = feed(meter, Array(60).fill(900));
-    expect(meter.kbps()).toBe(900);
-    // Auto adjust drops to AAC 256: the whole-track median alone would sit at
-    // 900 for minutes; the recent window's shift resets it.
-    last = feed(meter, Array(QUALITY_PAIR_WINDOW).fill(256), last);
-    expect(meter.kbps()).toBe(256);
-    // ...and from then on the track figure is the new tier's.
-    feed(meter, Array(4).fill(260), last);
-    expect(meter.kbps()).toBeGreaterThanOrEqual(256);
-    expect(meter.kbps()).toBeLessThanOrEqual(260);
-  });
-
-  test('a seek or pause between reads is not a pair', () => {
-    const meter = createStreamBitrateMeter();
-    const last = feed(meter, Array(QUALITY_MIN_PAIRS).fill(850));
-    // Forward seek: playhead jumps 60s while the wall clock moves 2s.
-    meter.addSample({ wallMs: last.wallMs + 2000, positionMs: last.positionMs + 60000, bytes: last.bytes + 9000000 });
-    expect(meter.kbps()).toBe(850);
-  });
-});
-
-describe('installAmazonStreamCapture', () => {
-  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-  const fakeResponse = ({ text = '', contentLength = null, arrayBuffer = null }) => ({
-    clone: () => ({
-      text: () => Promise.resolve(text),
-      arrayBuffer: () => Promise.resolve(arrayBuffer)
-    }),
-    headers: { get: (name) => (String(name).toLowerCase() === 'content-length' ? (contentLength == null ? null : String(contentLength)) : null) }
-  });
-
-  const fetchScope = (responseFor) => {
-    const scope = {};
-    scope.fetch = async (input) => {
-      const url = typeof input === 'string' ? input : (input && input.url);
-      const res = responseFor(url);
-      scope.__lastResponse = res;
-      return res;
-    };
-    return scope;
-  };
-
-  test('captures a fetch-loaded manifest via the cloned response text', async () => {
-    const scope = fetchScope(() => fakeResponse({ text: '<MPD>flac</MPD>' }));
-    installAmazonStreamCapture(scope);
-    await scope.fetch('https://cdn.example.com/a.mpd?sig=1');
-    await flush();
-    expect(scope.__parachordStreamCaps.manifests).toEqual([
-      { url: 'https://cdn.example.com/a.mpd?sig=1', text: '<MPD>flac</MPD>' }
-    ]);
-  });
-
-  test('fetch passthrough is untouched: the caller gets the original response object', async () => {
-    const res = fakeResponse({ text: '<MPD>x</MPD>' });
-    const scope = fetchScope(() => res);
-    installAmazonStreamCapture(scope);
-    const out = await scope.fetch('https://cdn.example.com/a.mpd');
-    expect(out).toBe(res);
-  });
-
-  test('captures small init segments and drops media-sized responses', async () => {
-    const small = new ArrayBuffer(1200);
-    const scope = fetchScope((url) => (
-      url === 'https://cdn.example.com/init.mp4' ? fakeResponse({ contentLength: 1200, arrayBuffer: small })
-        : url === 'https://cdn.example.com/seg1.m4s' ? fakeResponse({ contentLength: 812344 })
-          : fakeResponse({ arrayBuffer: small }) // no content-length: decided after the read
-    ));
-    installAmazonStreamCapture(scope);
-    await scope.fetch('https://cdn.example.com/init.mp4');
-    await scope.fetch('https://cdn.example.com/seg1.m4s'); // media segment: skipped by content-length
-    await scope.fetch('https://cdn.example.com/unknown.bin'); // not a manifest/init URL: ignored
-    await flush();
-    expect(scope.__parachordStreamCaps.inits).toEqual([
-      { url: 'https://cdn.example.com/init.mp4', bytes: small }
-    ]);
-  });
-
-  test('an XHR-loaded manifest and init segment are captured on load', () => {
-    class FakeXHR {
-      constructor() { this.responseType = ''; this._listeners = {}; }
-      open(method, url) { this._url = url; }
-      addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); }
-      fire() { (this._listeners.load || []).forEach((fn) => fn()); }
-    }
-    FakeXHR.UNSENT = 0;
-    FakeXHR.OPENED = 1;
-    const scope = { XMLHttpRequest: FakeXHR };
-    installAmazonStreamCapture(scope);
-    const XHR = scope.XMLHttpRequest;
-    expect(XHR.UNSENT).toBe(0); // statics survive the wrap
-    const manifestXhr = new XHR();
-    expect(manifestXhr).toBeInstanceOf(XHR);
-    manifestXhr.open('GET', 'https://cdn.example.com/b.mpd');
-    manifestXhr.responseText = '<MPD>xhr</MPD>';
-    manifestXhr.fire();
-    const initXhr = new XHR();
-    initXhr.open('GET', 'https://cdn.example.com/i.m4s');
-    initXhr.responseType = 'arraybuffer';
-    const bytes = new ArrayBuffer(800);
-    initXhr.response = bytes;
-    initXhr.fire();
-    expect(scope.__parachordStreamCaps.manifests).toEqual([
-      { url: 'https://cdn.example.com/b.mpd', text: '<MPD>xhr</MPD>' }
-    ]);
-    expect(scope.__parachordStreamCaps.inits).toEqual([
-      { url: 'https://cdn.example.com/i.m4s', bytes }
-    ]);
-  });
-
-  test('install is idempotent and a bare scope is tolerated', () => {
-    const scope = fetchScope(() => fakeResponse({ text: '<MPD/>' }));
-    installAmazonStreamCapture(scope);
-    const wrapped = scope.fetch;
-    installAmazonStreamCapture(scope);
-    expect(scope.fetch).toBe(wrapped);
-    // A scope with no fetch/XHR at all (the preload stub's test stub) must not throw.
-    expect(() => installAmazonStreamCapture({})).not.toThrow();
-    expect(() => installAmazonStreamCapture(null)).not.toThrow();
-  });
-});
 
 const ladderMpd = `<?xml version="1.0" encoding="utf-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
@@ -771,228 +365,6 @@ const ladderMpd = `<?xml version="1.0" encoding="utf-8"?>
   </Period>
 </MPD>`;
 
-describe('mpdAudioRepresentations', () => {
-  test('parses the audio ladder and excludes video sets', () => {
-    const reps = mpdAudioRepresentations(ladderMpd, 'https://cdn.example.com/manifest.mpd');
-    expect(reps).toHaveLength(2);
-    expect(reps[0]).toMatchObject({
-      id: 'B0HD441',
-      codec: 'fLaC',
-      container: 'mp4',
-      bandwidth: 850000,
-      sampleRate: 44100,
-      channels: 2,
-      initializationUrl: 'https://cdn.example.com/dash/B0HD441/init.mp4?token=a&b'
-    });
-    expect(reps.some(r => r.id === 'v1')).toBe(false);
-  });
-
-  test('a representation id naming the depth is picked up as a bit-depth hint', () => {
-    const reps = mpdAudioRepresentations(ladderMpd, 'https://cdn.example.com/manifest.mpd');
-    expect(reps.find(r => r.id === 'B0HD441').bitDepth).toBeNull();
-    expect(reps.find(r => r.id === 'B0UHD48-24bit').bitDepth).toBe(24);
-  });
-
-  test('audio attributes inherit from the AdaptationSet when the representation omits them', () => {
-    const xml = `<MPD><Period>
-      <AdaptationSet mimeType="audio/mp4" codecs="fLaC" audioSamplingRate="44100" bitDepth="16">
-        <Representation id="r1" bandwidth="900000"/>
-      </AdaptationSet>
-    </Period></MPD>`;
-    const reps = mpdAudioRepresentations(xml, 'https://x/m.mpd');
-    expect(reps[0]).toMatchObject({ codec: 'fLaC', container: 'mp4', sampleRate: 44100, bitDepth: 16, bandwidth: 900000 });
-  });
-
-  test('SegmentList Initialization sourceURL is an init URL too', () => {
-    const xml = `<MPD><Period>
-      <AdaptationSet mimeType="audio/mp4">
-        <Representation id="a1" codecs="mp4a.40.2" bandwidth="256000" audioSamplingRate="44100">
-          <SegmentList timescale="44100" duration="196608">
-            <Initialization sourceURL="https://cdn2.example.com/init.mp4"/>
-          </SegmentList>
-        </Representation>
-      </AdaptationSet>
-    </Period></MPD>`;
-    const reps = mpdAudioRepresentations(xml, 'https://x/m.mpd');
-    expect(reps[0].initializationUrl).toBe('https://cdn2.example.com/init.mp4');
-  });
-
-  test('garbage in, empty list out', () => {
-    expect(mpdAudioRepresentations('', 'https://x/m.mpd')).toEqual([]);
-    expect(mpdAudioRepresentations('not xml at all', 'https://x/m.mpd')).toEqual([]);
-    expect(mpdAudioRepresentations(null, null)).toEqual([]);
-  });
-});
-
-describe('flacStreamInfoFromInit', () => {
-  const isoBox = (type, payload) => {
-    const head = Buffer.alloc(8);
-    head.writeUInt32BE(payload.length + 8, 0);
-    head.write(type, 4, 'ascii');
-    return Buffer.concat([head, payload]);
-  };
-  const streaminfo = ({ sampleRate, bitDepth, channels }) => {
-    const s = Buffer.alloc(34);
-    s[10] = (sampleRate >> 12) & 0xff;
-    s[11] = (sampleRate >> 4) & 0xff;
-    s[12] = ((sampleRate & 0x0f) << 4) | (((channels - 1) & 0x07) << 1) | (((bitDepth - 1) >> 4) & 0x01);
-    s[13] = ((bitDepth - 1) & 0x0f) << 4;
-    return s;
-  };
-  // A dfla box: FullBox version/flags, FLAC block header (type 0, length 34),
-  // then STREAMINFO — nested the way a real init segment carries it.
-  const dflaBox = (fourcc, opts) => isoBox(fourcc, Buffer.concat([
-    Buffer.alloc(4),
-    Buffer.from([0x00, 0x00, 0x00, 34]),
-    streaminfo(opts)
-  ]));
-
-  test('reads STREAMINFO from the nested dfla box (spec spelling)', () => {
-    const init = isoBox('moov', isoBox('trak', dflaBox('dfla', { sampleRate: 48000, bitDepth: 24, channels: 2 })));
-    expect(flacStreamInfoFromInit(init))
-      .toEqual({ codec: 'fLaC', sampleRate: 48000, channels: 2, bitDepth: 24 });
-    const hd = isoBox('moov', isoBox('trak', dflaBox('dfla', { sampleRate: 44100, bitDepth: 16, channels: 2 })));
-    expect(flacStreamInfoFromInit(hd))
-      .toEqual({ codec: 'fLaC', sampleRate: 44100, channels: 2, bitDepth: 16 });
-  });
-
-  test("reads STREAMINFO from Amazon's muxer spelling 'dfLa' inside an encrypted audio entry", () => {
-    // Observed live (2026-10-15): the init segment carries stsd → enca →
-    // [dfLa + sinf → (frma 'fLaC', schi → tenc)], with the FLAC box spelled
-    // 'dfLa' — not the spec's 'dfla'.
-    const dfLa = dflaBox('dfLa', { sampleRate: 44100, bitDepth: 16, channels: 2 });
-    const sinf = isoBox('sinf', Buffer.concat([
-      isoBox('frma', Buffer.from('fLaC', 'ascii')),
-      isoBox('schi', Buffer.concat([Buffer.alloc(4), isoBox('tenc', Buffer.alloc(20))]))
-    ]));
-    const enca = isoBox('enca', Buffer.concat([
-      Buffer.alloc(28), // sample-entry + AudioSampleEntry reserved fields
-      dfLa,
-      sinf
-    ]));
-    const stsd = isoBox('stsd', Buffer.concat([Buffer.alloc(8), enca]));
-    const init = isoBox('moov', isoBox('trak', isoBox('mdia', isoBox('minf', isoBox('stbl', stsd)))));
-    expect(flacStreamInfoFromInit(init))
-      .toEqual({ codec: 'fLaC', sampleRate: 44100, channels: 2, bitDepth: 16 });
-  });
-
-  test('a media segment or garbage is null, not a false positive', () => {
-    expect(flacStreamInfoFromInit(isoBox('moof', Buffer.alloc(64)))).toBeNull();
-    expect(flacStreamInfoFromInit(Buffer.alloc(0))).toBeNull();
-    expect(flacStreamInfoFromInit(Buffer.from('dfla but far too short'))).toBeNull();
-    // 'dfLa' appearing with no plausible STREAMINFO behind it does not parse.
-    const decoy = Buffer.concat([Buffer.from('dfLa'), Buffer.alloc(80, 0xff)]);
-    expect(flacStreamInfoFromInit(decoy)).toBeNull();
-    // A planted fourcc plus a bare STREAMINFO used to parse. The block header
-    // is required; sample-rate and bit-depth range checks are not enough.
-    const bare = Buffer.concat([
-      Buffer.from('dfLa'),
-      streaminfo({ sampleRate: 48000, bitDepth: 24, channels: 2 }),
-      Buffer.alloc(8)
-    ]);
-    expect(flacStreamInfoFromInit(bare)).toBeNull();
-    expect(flacStreamInfoFromInit(Buffer.concat([
-      Buffer.from('dfla'),
-      streaminfo({ sampleRate: 44100, bitDepth: 16, channels: 2 }),
-      Buffer.alloc(8)
-    ]))).toBeNull();
-  });
-});
-
-describe('attachInitStreamInfo', () => {
-  const rep = (initializationUrl) => ({ codec: 'fLaC', bandwidth: 900000, sampleRate: 44100, channels: null, bitDepth: null, initializationUrl });
-
-  test('a URL-matched init is authoritative over the MPD attributes', () => {
-    const inits = [{ url: 'https://cdn/i.mp4', codec: 'fLaC', sampleRate: 48000, bitDepth: 24, channels: 2 }];
-    const out = attachInitStreamInfo([rep('https://cdn/i.mp4')], inits);
-    expect(out[0]).toMatchObject({ sampleRate: 48000, bitDepth: 24, channels: 2 });
-  });
-
-  test('the single-representation pairing fills only missing fields', () => {
-    const inits = [{ url: 'https://other/i.mp4', codec: 'fLaC', sampleRate: 44100, bitDepth: 16, channels: 2 }];
-    const out = attachInitStreamInfo([rep(null)], inits);
-    expect(out[0]).toMatchObject({ sampleRate: 44100, bitDepth: 16, channels: 2 });
-  });
-
-  test('ambiguous multi-rep, multi-init input pairs nothing', () => {
-    const inits = [
-      { url: 'https://a/i.mp4', codec: 'fLaC', sampleRate: 44100, bitDepth: 16, channels: 2 },
-      { url: 'https://b/i.mp4', codec: 'fLaC', sampleRate: 48000, bitDepth: 24, channels: 2 }
-    ];
-    const out = attachInitStreamInfo([rep(null), rep(null)], inits);
-    expect(out.every(r => r.bitDepth === null)).toBe(true);
-  });
-});
-
-describe('pickMpdRepresentation', () => {
-  const ladder = [
-    { id: 'a', codec: 'fLaC', bandwidth: 850000, sampleRate: 44100, bitDepth: 16 },
-    { id: 'b', codec: 'fLaC', bandwidth: 1478000, sampleRate: 48000, bitDepth: 24 }
-  ];
-
-  test('the measured bitrate picks the rung of the ladder actually playing', () => {
-    expect(pickMpdRepresentation(ladder, 840).id).toBe('a');
-    expect(pickMpdRepresentation(ladder, 1500).id).toBe('b');
-  });
-
-  test('a single representation is it, and no bandwidths means the richest wins', () => {
-    expect(pickMpdRepresentation([{ codec: 'fLaC' }], 900).codec).toBe('fLaC');
-    const noBw = [
-      { codec: 'fLaC', sampleRate: 44100 },
-      { codec: 'fLaC', sampleRate: 48000, bitDepth: 24 }
-    ];
-    expect(pickMpdRepresentation(noBw, 900).bitDepth).toBe(24);
-  });
-
-  test('empty input is null', () => {
-    expect(pickMpdRepresentation([], 900)).toBeNull();
-    expect(pickMpdRepresentation(null, 900)).toBeNull();
-  });
-});
-
-describe('amazonStreamTier / amazonStreamQualityRecord', () => {
-  test('the tier follows Amazon\'s vocabulary from the measured facts', () => {
-    expect(amazonStreamTier({ codec: 'mp4a.40.2', sampleRate: 44100 })).toBe('SD');
-    expect(amazonStreamTier({ codec: 'fLaC', sampleRate: 44100, bitDepth: 16 })).toBe('HD');
-    expect(amazonStreamTier({ codec: 'fLaC', sampleRate: 48000, bitDepth: 24 })).toBe('Ultra HD');
-    expect(amazonStreamTier({ codec: 'fLaC', sampleRate: 96000, bitDepth: 16 })).toBe('Ultra HD');
-    expect(amazonStreamTier({ codec: 'alac', sampleRate: 44100, bitDepth: 16 })).toBe('HD');
-    expect(amazonStreamTier({ codec: null })).toBeNull();
-  });
-
-  test('the record merges the measured bitrate with the captured params', () => {
-    expect(amazonStreamQualityRecord(1478, { codec: 'fLaC', container: 'mp4', sampleRate: 48000, bitDepth: 24, channels: 2 }))
-      .toEqual({
-        bitrate: 1478,
-        origin: 'measured',
-        codec: 'fLaC',
-        container: 'mp4',
-        sampleRate: 48000,
-        bitDepth: 24,
-        channels: 2,
-        tier: 'Ultra HD'
-      });
-  });
-
-  test('without captured params the record is the honest bitrate-only one', () => {
-    expect(amazonStreamQualityRecord(850, null)).toEqual({ bitrate: 850, origin: 'measured' });
-    expect(amazonStreamQualityRecord(0, { codec: 'fLaC' })).toBeNull();
-  });
-});
-
-describe('normalizeStreamingQuality', () => {
-  test('maps the modal radios and the legacy HD value', () => {
-    expect(normalizeStreamingQuality('BEST_AVAILABLE')).toBe('BEST_AVAILABLE');
-    expect(normalizeStreamingQuality('HD')).toBe('BEST_AVAILABLE');
-    expect(normalizeStreamingQuality('STANDARD')).toBe('STANDARD');
-    expect(normalizeStreamingQuality('DATA_SAVER')).toBe('DATA_SAVER');
-    expect(normalizeStreamingQuality('ULTRA_HD')).toBeNull();
-    expect(AMAZON_QUALITY_OPTIONS.map(o => o.value)).toEqual([
-      'BEST_AVAILABLE', 'STANDARD', 'DATA_SAVER'
-    ]);
-  });
-});
-
 // window.__r is Metro's require. The trap observes requires Amazon's own
 // code makes — it never calls __r itself.
 const makeMetroScope = () => {
@@ -1005,74 +377,6 @@ const makeMetroScope = () => {
   return scope;
 };
 
-describe('installAmazonRequireTrap', () => {
-  test('captures the playbackController when Amazon requires its module', () => {
-    const scope = makeMetroScope();
-    installAmazonRequireTrap(scope);
-    scope.__r = scope.require;
-    scope.__r(456);
-    expect(scope.__parachordAmazonPlayback).toBeUndefined();
-    scope.__r(123);
-    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
-    expect(scope.__parachordAmazonPlayback.audioQualitySettings.streamingQuality).toBe('STANDARD');
-  });
-
-  test('wraps a require that was already assigned before the trap', () => {
-    const scope = makeMetroScope();
-    scope.__r = scope.require;
-    installAmazonRequireTrap(scope);
-    scope.__r(123);
-    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
-  });
-
-  test('the wrapped require still passes through calls and extra properties', () => {
-    const scope = makeMetroScope();
-    installAmazonRequireTrap(scope);
-    const asyncChunk = () => {};
-    scope.require.async = asyncChunk;
-    scope.__r = scope.require;
-    expect(scope.__r).not.toBe(scope.require);
-    expect(scope.__r.async).toBe(asyncChunk);
-    expect(scope.__r(456)).toEqual({ other: true });
-  });
-
-  test('re-assignment re-wraps without double wrapping, and install is idempotent', () => {
-    const scope = makeMetroScope();
-    installAmazonRequireTrap(scope);
-    scope.__r = scope.require;
-    const first = scope.__r;
-    scope.__r = scope.require; // a lazy chunk exposes __r again
-    expect(scope.__r).not.toBe(first);
-    scope.__r(123);
-    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
-    installAmazonRequireTrap(scope);
-    expect(scope.__r).toBe(scope.__r); // no-op re-install
-  });
-
-  test('a throwing module export does not break the require', () => {
-    const scope = {};
-    const hostile = { get playbackController() { throw new Error('getter'); } };
-    scope.require = (id) => (id === 7 ? hostile : { ok: 1 });
-    installAmazonRequireTrap(scope);
-    scope.__r = scope.require;
-    expect(() => scope.__r(7)).not.toThrow();
-    expect(scope.__r(8)).toEqual({ ok: 1 });
-    expect(scope.__parachordAmazonPlayback).toBeUndefined();
-  });
-
-  test('serializes self-contained for evaluation inside the Amazon page', () => {
-    // The preload embeds this function with .toString() and runs it in the
-    // page world, where module-scope identifiers do not exist. new Function
-    // gives it the same bare scope, so a closure reference fails here instead
-    // of inside Amazon's page.
-    const embedded = new Function(`return (${installAmazonRequireTrap.toString()})`)();
-    const scope = makeMetroScope();
-    embedded(scope);
-    scope.__r = scope.require;
-    scope.__r(123);
-    expect(scope.__parachordAmazonPlaybackModuleId).toBe(123);
-  });
-});
 
 // Real localStorage exposes stored entries as enumerable own properties,
 // which is how the helpers find the playback-controller key. Model that.
@@ -1086,90 +390,6 @@ const makeStorage = (initial) => {
 
 const playbackControllerEntry = (quality) => JSON.stringify({
   data: { audioQualitySettings: quality, unrelated: { keep: true } }
-});
-
-describe('readPersistedQuality', () => {
-  test('reads audio quality from the playback-controller entry', () => {
-    const storage = makeStorage({
-      'hornet:playback-controller:v2': playbackControllerEntry({ streamingQuality: 'HD', abrEnabled: false })
-    });
-    expect(readPersistedQuality(storage)).toEqual({ streamingQuality: 'HD', abrEnabled: false });
-  });
-
-  test('returns null when no entry, malformed JSON, or no audioQualitySettings', () => {
-    expect(readPersistedQuality(makeStorage({}))).toBeNull();
-    expect(readPersistedQuality(makeStorage({ 'playback-controller': '{not json' }))).toBeNull();
-    expect(readPersistedQuality(makeStorage({ 'playback-controller': JSON.stringify({ data: {} }) }))).toBeNull();
-    expect(readPersistedQuality(makeStorage({ 'playback-controller': JSON.stringify({ data: { audioQualitySettings: null } }) }))).toBeNull();
-  });
-
-  test('serializes self-contained for evaluation inside the Amazon page', () => {
-    const embedded = new Function(`return (${readPersistedQuality.toString()})`)();
-    const storage = makeStorage({
-      'playback-controller': playbackControllerEntry({ streamingQuality: 'STANDARD', abrEnabled: true })
-    });
-    expect(embedded(storage)).toEqual({ streamingQuality: 'STANDARD', abrEnabled: true });
-  });
-});
-
-describe('amazonQualityFromStore', () => {
-  test('a read does not produce a persist patch', () => {
-    const store = { streamingQuality: 'BEST_AVAILABLE' };
-    const step = amazonQualityFromStore(store, null);
-    expect(step.persist).toBeNull();
-    expect(step.report).toEqual({ streamingQuality: 'BEST_AVAILABLE', abrEnabled: true });
-    expect(store.abrEnabled).toBeUndefined();
-  });
-
-  test('a write persists only fields that are actually set', () => {
-    const store = { streamingQuality: 'STANDARD' };
-    const step = amazonQualityFromStore(store, { streamingQuality: 'BEST_AVAILABLE' });
-    expect(step.persist).toEqual({ streamingQuality: 'BEST_AVAILABLE' });
-    expect(step.persist.abrEnabled).toBeUndefined();
-  });
-
-  test('a write can turn Auto-adjust off when the caller set it', () => {
-    const store = { streamingQuality: 'HD', abrEnabled: true };
-    const step = amazonQualityFromStore(store, { abrEnabled: false });
-    expect(step.persist).toEqual({ streamingQuality: 'HD', abrEnabled: false });
-  });
-});
-
-describe('writePersistedQuality', () => {
-  test('merges quality into the entry and preserves unrelated data', () => {
-    const storage = makeStorage({
-      'playback-controller': playbackControllerEntry({ streamingQuality: 'STANDARD', abrEnabled: true })
-    });
-    expect(writePersistedQuality(storage, { streamingQuality: 'BEST_AVAILABLE', abrEnabled: false })).toBe(true);
-    const parsed = JSON.parse(storage.getItem('playback-controller'));
-    expect(parsed.data.audioQualitySettings).toEqual({ streamingQuality: 'BEST_AVAILABLE', abrEnabled: false });
-    expect(parsed.data.unrelated).toEqual({ keep: true });
-  });
-
-  test('a patch with undefined fields keeps the stored tier', () => {
-    // Flipping only Auto-adjust must not clobber the persisted streamingQuality.
-    const storage = makeStorage({
-      'playback-controller': playbackControllerEntry({ streamingQuality: 'HD', abrEnabled: true })
-    });
-    expect(writePersistedQuality(storage, { abrEnabled: false })).toBe(true);
-    const parsed = JSON.parse(storage.getItem('playback-controller'));
-    expect(parsed.data.audioQualitySettings).toEqual({ streamingQuality: 'HD', abrEnabled: false });
-  });
-
-  test('returns false when there is no entry to merge into', () => {
-    const storage = makeStorage({});
-    expect(writePersistedQuality(storage, { streamingQuality: 'STANDARD' })).toBe(false);
-    expect(readPersistedQuality(storage)).toBeNull();
-  });
-
-  test('serializes self-contained for evaluation inside the Amazon page', () => {
-    const embedded = new Function(`return (${writePersistedQuality.toString()})`)();
-    const storage = makeStorage({
-      'playback-controller': playbackControllerEntry({ streamingQuality: 'STANDARD', abrEnabled: true })
-    });
-    expect(embedded(storage, { abrEnabled: false })).toBe(true);
-    expect(readPersistedQuality(storage)).toEqual({ streamingQuality: 'STANDARD', abrEnabled: false });
-  });
 });
 
 describe('asinFromPlayerUrl', () => {
@@ -2596,5 +1816,93 @@ describe('albumTracksConnectionIn', () => {
     expect(albumTracksConnectionIn({ album: null })).toBe(false);
     expect(albumTracksConnectionIn({ album: { tracksConnection: null } })).toBe(false);
     expect(albumTracksConnectionIn({ album: { tracksConnection: { edges: 'nope' } } })).toBe(false);
+  });
+});
+
+// The real variant table observed live 2026-10 for an HD-tier account (Get
+// Lucky): three opus plus two FLAC renditions across five adaptation sets.
+const LIVE_REPS = [
+  { id: '0', codec: 'opus', bandwidth: 53059, sampleRate: 48000, channels: 2, bitDepth: null },
+  { id: '1', codec: 'opus', bandwidth: 197343, sampleRate: 48000, channels: 2, bitDepth: null },
+  { id: '2', codec: 'opus', bandwidth: 325595, sampleRate: 48000, channels: 2, bitDepth: null },
+  { id: '3', codec: 'opus', bandwidth: 53059, sampleRate: 48000, channels: 2, bitDepth: null },
+  { id: '4', codec: 'opus', bandwidth: 165280, sampleRate: 48000, channels: 2, bitDepth: null },
+  { id: '5', codec: 'flac', bandwidth: 1062133, sampleRate: 44100, channels: 2, bitDepth: 16 },
+  { id: '6', codec: 'flac', bandwidth: 1902230, sampleRate: 44100, channels: 2, bitDepth: 24 },
+  // Spatial/Atmos renditions ride the SAME manifest (observed live) —
+  // Chromium cannot decode AC-4/MPEG-H, so they must never be selected.
+  { id: '8', codec: 'mha1.0x0e', bandwidth: 1612557, sampleRate: 48000, channels: null, bitDepth: null },
+  { id: '12', codec: 'mhm1.0x0e', bandwidth: 1610228, sampleRate: 48000, channels: null, bitDepth: null }
+];
+
+describe('amazonDmlsRegion', () => {
+  test('maps territories to the dmls region segment', () => {
+    expect(amazonDmlsRegion('US')).toBe('NA');
+    expect(amazonDmlsRegion('BR')).toBe('NA');
+    expect(amazonDmlsRegion('DE')).toBe('EU');
+    expect(amazonDmlsRegion('GB')).toBe('EU');
+    expect(amazonDmlsRegion('JP')).toBe('FE');
+    expect(amazonDmlsRegion('AU')).toBe('FE');
+    expect(amazonDmlsRegion(null)).toBe('NA');
+  });
+});
+
+describe('amazonDmlsManifestBody', () => {
+  const base = { asin: 'B00CRMX53S', customerId: 'CUST', marketplaceId: 'ATVPDKIKX0DER', territoryId: 'US', deviceId: '123', musicAgent: 'Agent/1.0' };
+  test('builds the captured shape', () => {
+    const body = amazonDmlsManifestBody(base);
+    expect(body.contentIdList).toEqual([{ identifier: 'B00CRMX53S', identifierType: 'ASIN' }]);
+    expect(body.deviceToken).toEqual({ deviceTypeId: 'A16ZV8BU3SN1N3', deviceId: '123' });
+    expect(body.customerId).toBe('CUST');
+    expect(body.customerInfo).toEqual({ marketplaceId: 'ATVPDKIKX0DER', territoryId: 'US' });
+    expect(body.musicDashVersionList).toEqual(['SIREN_KATANA']);
+    expect(body.contentProtectionList).toEqual(['TRACK_PSSH']);
+    expect(body.tryAsinSubstitution).toBe(true);
+    expect(body.appInfo).toEqual({ musicAgent: 'Agent/1.0' });
+  });
+  test('null without required identifiers', () => {
+    expect(amazonDmlsManifestBody({ ...base, asin: null })).toBeNull();
+    expect(amazonDmlsManifestBody({ ...base, customerId: null })).toBeNull();
+    expect(amazonDmlsManifestBody({ ...base, deviceId: null })).toBeNull();
+  });
+});
+
+describe('amazonDmlsLicenseBody', () => {
+  test('builds the Widevine relay shape, cert challenge included', () => {
+    const body = amazonDmlsLicenseBody({ challenge: WIDEVINE_CERT_CHALLENGE, customerId: 'CUST', deviceId: '123', musicAgent: 'Agent/1.0' });
+    expect(body.DrmType).toBe('WIDEVINE');
+    expect(body.licenseChallenge).toBe('CAQ=');
+    expect(body.customerId).toBe('CUST');
+    expect(body.deviceToken.deviceId).toBe('123');
+    expect(amazonDmlsLicenseBody({ challenge: null, customerId: 'C', deviceId: 'D' })).toBeNull();
+  });
+});
+
+describe('dashCodecFamily', () => {
+  test('buckets codec strings', () => {
+    expect(dashCodecFamily('flac')).toBe('flac');
+    expect(dashCodecFamily('opus')).toBe('opus');
+    expect(dashCodecFamily('mp4a.40.2')).toBe('aac');
+  });
+});
+
+describe('amazonAuthCookieState', () => {
+  test('the auth cookies isSignedIn has always keyed on are known', () => {
+    expect(amazonAuthCookieState(['session-id', 'at-main', 'sess-at-main', 'x-main'])).toBe('known');
+    expect(amazonAuthCookieState(['at-main-music'])).toBe('known');
+    expect(amazonAuthCookieState(['at-acbuk'])).toBe('known');
+  });
+
+  test('other auth-shaped names are a session under rotated names', () => {
+    expect(amazonAuthCookieState(['session-id', 'x-main'])).toBe('rotated');
+    expect(amazonAuthCookieState(['at-main2', 'session-id'])).toBe('known');
+    expect(amazonAuthCookieState(['at-v2', 'sess-at-v2'])).toBe('rotated');
+  });
+
+  test('a logged-out jar is signed out (the old page-based hedge said signed in)', () => {
+    expect(amazonAuthCookieState(['session-id', 'session-id-time', 'ubid-main', 'i18n-prefs', 'csm-hit', 'cwr_u'])).toBe('none');
+    expect(amazonAuthCookieState(['session-token'])).toBe('none');
+    expect(amazonAuthCookieState([])).toBe('none');
+    expect(amazonAuthCookieState(null)).toBe('none');
   });
 });

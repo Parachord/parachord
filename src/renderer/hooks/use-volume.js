@@ -89,7 +89,6 @@ function useVolume({
   const preMuteVolumeRef = React.useRef(30); // Remember volume before muting
   const isMutedRef = React.useRef(false); // Ref for mute state to avoid stale closures
   const spotifyVolumeTimeoutRef = React.useRef(null); // Debounce Spotify volume API calls
-  const amazonMusicVolumeTimeoutRef = React.useRef(null); // Debounce Amazon Music setVolume calls
 
   const [resolverVolumeOffsets, setResolverVolumeOffsets] = React.useState(
     defaultResolverVolumeOffsets,
@@ -361,7 +360,6 @@ function useVolume({
     resolverVolumeOffsetsRef,
     trackVolumeAdjustments,
     spotifyVolumeTimeoutRef,
-    amazonMusicVolumeTimeoutRef,
     getEffectiveVolume,
     setSpotifyVolume,
     setSpotifyVolumeDebounced,

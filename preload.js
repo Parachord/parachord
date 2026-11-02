@@ -629,34 +629,20 @@ contextBridge.exposeInMainWorld('electron', {
     // Diagnostic (DevTools only): record an album or search page's gql into a
     // file in userData. See main.js 'amazonmusic-debug-capture-gql'.
     debugCaptureGql: (url) => ipcRenderer.invoke('amazonmusic-debug-capture-gql', { url }),
-    playTrack: (params) => ipcRenderer.invoke('amazonmusic-play-track', params),
-    pause: () => ipcRenderer.invoke('amazonmusic-pause'),
-    resume: () => ipcRenderer.invoke('amazonmusic-resume'),
-    stop: () => ipcRenderer.invoke('amazonmusic-stop'),
-    seek: (positionMs) => ipcRenderer.invoke('amazonmusic-seek', { positionMs }),
-    setVolume: (volume) => ipcRenderer.invoke('amazonmusic-set-volume', { volume }),
-    getPlaybackState: () => ipcRenderer.invoke('amazonmusic-get-playback-state'),
-    getQuality: () => ipcRenderer.invoke('amazonmusic-get-quality'),
-    setQuality: (settings) => ipcRenderer.invoke('amazonmusic-set-quality', settings),
+    // Audio plays through the shared widevine path (window.electron.widevine
+    // + the renderer's shared HTMLAudioElement); the old per-engine transport
+    // and polling IPCs are gone with the hornet view.
+  },
 
-    // Main process polling controls (background-safe, for auto-advance)
-    polling: {
-      start: (params) => ipcRenderer.invoke('amazonmusic-polling-start', params),
-      stop: () => ipcRenderer.invoke('amazonmusic-polling-stop'),
-      getStatus: () => ipcRenderer.invoke('amazonmusic-polling-status'),
-
-      // Listen for polling events from main process
-      onAdvance: (callback) => {
-        ipcRenderer.on('amazonmusic-polling-advance', (event, data) => {
-          callback(data);
-        });
-      },
-      onProgress: (callback) => {
-        ipcRenderer.on('amazonmusic-polling-progress', (event, data) => {
-          callback(data);
-        });
-      }
-    }
+  // The resolver-neutral Widevine/DASH bridge. The renderer's shared player
+  // (lib/widevine-player.js) asks a main-side provider for the manifest and
+  // relays license bytes through it; providers register per resolver (Amazon
+  // Music is amazon-dmls.js). This is the ONLY surface a stream resolver
+  // needs beyond its search/sign-in channels.
+  widevine: {
+    getManifest: (resolverId, entity) => ipcRenderer.invoke('widevine:manifest', { resolverId, entity }),
+    relayLicense: (resolverId, challenge, sessionId) => ipcRenderer.invoke('widevine:license', { resolverId, challenge, sessionId }),
+    playerEvent: (resolverId, event) => ipcRenderer.invoke('widevine:player-event', { resolverId, event })
   },
 
   // Ollama operations (local AI)

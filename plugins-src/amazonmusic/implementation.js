@@ -1,4 +1,4 @@
-// Source of truth for plugins/amazonmusic.axe v1.6.2.
+// Source of truth for plugins/amazonmusic.axe v1.6.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -136,42 +136,14 @@ module.exports = {
     return containing[0] || null;
   },
   play: async function (track, config) {
-    try {
-      if (!window.electron || !window.electron.amazonMusic) {
-        console.error('Amazon Music: bridge not available');
-        return false;
-      }
-      var asin = track.amazonAsin || track.asin;
-      if (!asin) {
-        console.error('Amazon Music: no ASIN on track');
-        return false;
-      }
-      var attempt = function () {
-        return window.electron.amazonMusic.playTrack({
-          asin: asin,
-          title: track.title,
-          artist: track.artist,
-        });
-      };
-      var result = await attempt();
-      if (result && result.success) return true;
-      var reason = result && result.reason;
-      if (reason === 'not-ready' || reason === 'not-signed-in' || reason === 'no-cdm') {
-        console.log('Amazon Music: not connected (' + reason + '), asking you to sign in...');
-        var managed = false;
-        if (typeof window.__parachordManageAmazonMusic === 'function') {
-          managed = await window.__parachordManageAmazonMusic({ explicit: true, reason: reason });
-        }
-        if (!managed) return false;
-        result = await attempt();
-        return !!(result && result.success);
-      }
-      console.error('Amazon Music play failed:', result && result.error);
-      return false;
-    } catch (error) {
-      console.error('Amazon Music play error:', error);
-      return false;
-    }
+    // Host-owned: with capabilities.widevine the host's handlePlay drives the
+    // shared Widevine player (Shaka on the shared audio element, manifest and
+    // license bytes via window.electron.widevine from the main-process dmls
+    // provider). What used to live here — playTrack IPC, prompt-then-retry —
+    // lives in the host's widevine branch, which also keeps the
+    // not-signed-in → prompt → retry contract.
+    console.log('Amazon Music: play() is host-owned (capabilities.widevine branch in handlePlay); not handled here');
+    return false;
   },
   init: async function (config) {
     console.log('Amazon Music resolver initialized');
@@ -180,8 +152,8 @@ module.exports = {
   cleanup: async function () {
     console.log('Amazon Music resolver cleanup');
     try {
-      if (window.electron && window.electron.amazonMusic && window.electron.amazonMusic.polling) {
-        window.electron.amazonMusic.polling.stop();
+      if (typeof window.__parachordWidevine === 'object' && typeof window.__parachordWidevine.stop === 'function') {
+        await window.__parachordWidevine.stop();
       }
     } catch (e) {}
   },

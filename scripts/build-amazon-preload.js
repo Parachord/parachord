@@ -6,8 +6,7 @@
 // Why this exists: amazon-player-preload.js runs sandboxed in Amazon's WebView
 // — a sandboxed preload can only require 'electron'/'events'/'timers'/'url',
 // never local files — so the four page-world functions
-// (installAmazonRequireTrap + installAmazonStreamCapture from
-// amazon-music-logic.js, installMediaSessionHijack from embedded-player-kit.js)
+// (installMediaSessionHijack from embedded-player-kit.js)
 // must be INLINED as literal copies. They used to be maintained by hand with
 // a behavioral parity test policing drift. This generator makes the copies
 // mechanically: it .toString()s the source functions and rewrites the
@@ -39,8 +38,6 @@ const ROOT = path.join(__dirname, '..');
 const PRELOAD_PATH = path.join(ROOT, 'amazon-player-preload.js');
 
 const SECTIONS = [
-  { id: 'installAmazonRequireTrap', from: 'amazon-music-logic' },
-  { id: 'installAmazonStreamCapture', from: 'amazon-music-logic' },
   { id: 'installMediaSessionHijack', from: 'embedded-player-kit' },
   { id: 'applyMediaSessionMirror', from: 'embedded-player-kit' },
 ];

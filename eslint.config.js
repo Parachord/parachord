@@ -114,6 +114,8 @@ const STRICT_FILES = [
   'plugins-src/**/*.js',
   'src/renderer/components/**/*.js',
   'src/renderer/hooks/**/*.js',
+  'src/renderer/lib/widevine-player.js',
+  'src/renderer/lib/widevine-quality.js',
   'protocol-url.js',
   'stream-quality.js',
   'mbid-lookup.js',
