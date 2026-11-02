@@ -652,7 +652,7 @@ const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
   catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates,
-  TRACK_RANK_KEY, serviceArtFor, stabilizeRows, rowIdentityKeys, artistIdentityKeys
+  TRACK_RANK_KEY, ALBUM_RANK_KEY, albumArtistName, rankSearchRows, queryNamesRow, popularityFromListens, ARTIST_POPULARITY_REFERENCE_LISTENS, PROMOTE_MARGIN, serviceArtFor, stabilizeRows, rowIdentityKeys, artistIdentityKeys
 } = require('./lib/search-catalog');
 (function installMusicBrainzThrottle() {
   if (typeof window.fetch !== 'function' || typeof window.createLimiter !== 'function') return;
@@ -17779,39 +17779,65 @@ ${trackListXml}
     }));
   };
 
-  // Re-rank search results using fuzzy matching + MusicBrainz popularity score.
-  // nameKey: a field name, or a Fuse key object (TRACK_RANK_KEY).
-  const reRankResults = (items, query, nameKey = 'name') => {
-    if (!items || items.length === 0 || !query) return items;
+  // Re-rank search results: fuzzy relevance blended with each source's own
+  // score, plus a bonus for rows by an artist the query names
+  // (rankSearchRows in src/renderer/lib/search-catalog.js).
+  // nameKey: a field name, or a Fuse key object (TRACK_RANK_KEY, ALBUM_RANK_KEY).
+  const reRankResults = (items, query, nameKey = 'name', artistOf = null) =>
+    rankSearchRows(items, query, { Fuse, key: nameKey, artistOf });
 
-    // Configure Fuse.js for fuzzy matching
-    const fuse = new Fuse(items, {
-      keys: [nameKey],
-      includeScore: true,
-      threshold: 0.6,
-      ignoreLocation: true,
-      useExtendedSearch: false
-    });
-
-    const fuzzyResults = fuse.search(query);
-
-    // Create a map of fuzzy scores (Fuse score is 0-1 where 0 is perfect match)
-    const fuzzyScoreMap = new Map();
-    fuzzyResults.forEach(result => {
-      // Convert Fuse score (0=best, 1=worst) to 0-100 (100=best)
-      fuzzyScoreMap.set(result.item, (1 - result.score) * 100);
-    });
-
-    // Score and sort all items
-    return items
-      .map(item => {
-        const fuzzyScore = fuzzyScoreMap.get(item) || 0;
-        const mbScore = item.score || 50; // MusicBrainz popularity score (0-100)
-        // Blend: 60% fuzzy relevance, 40% popularity
-        const finalScore = (fuzzyScore * 0.6) + (mbScore * 0.4);
-        return { ...item, _finalScore: finalScore };
-      })
-      .sort((a, b) => b._finalScore - a._finalScore);
+  // ListenBrainz listen counts for MusicBrainz release groups or recordings,
+  // as Search popularity (popularityFromListens): one batched POST to
+  // /1/popularity/<kind>, no account needed (the user's token rides along
+  // when there is one). Search waits for it before showing MusicBrainz's rows,
+  // because rows hold still once shown, so it is capped at timeoutMs; a slow
+  // or failed call just leaves those rows without popularity. Answers (an
+  // unknown id's null too) are kept for a day. Returns Map<mbid, 0-100>.
+  const listenBrainzPopularityCache = useRef(new Map()); // `${kind}:${mbid}` → { value, at }
+  const LISTENBRAINZ_POPULARITY_TTL_MS = 24 * 60 * 60 * 1000;
+  const fetchListenBrainzPopularity = async (kind, mbids, { timeoutMs = 800, reference } = {}) => {
+    const out = new Map();
+    const cache = listenBrainzPopularityCache.current;
+    const now = Date.now();
+    const need = [];
+    for (const id of new Set((mbids || []).filter(isMusicBrainzId))) {
+      const hit = cache.get(`${kind}:${id}`);
+      if (hit && now - hit.at < LISTENBRAINZ_POPULARITY_TTL_MS) { if (hit.value !== null) out.set(id, hit.value); }
+      else need.push(id);
+    }
+    if (need.length === 0) return out;
+    const field = `${kind.replace('-', '_')}_mbid`;
+    const url = `https://api.listenbrainz.org/1/popularity/${kind}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...buildProtocolFetchHeaders(url) },
+        body: JSON.stringify({ [`${field}s`]: need }),
+        signal: ctrl.signal
+      });
+      if (res.ok) {
+        for (const entry of (await res.json()) || []) {
+          const id = entry && entry[field];
+          if (!id) continue;
+          const value = popularityFromListens(entry.total_listen_count, reference);
+          cache.set(`${kind}:${id}`, { value, at: now });
+          if (value !== null) out.set(id, value);
+        }
+      }
+    } catch (e) {
+      console.log(`🔍 ListenBrainz popularity (${kind}) skipped: ${e?.name === 'AbortError' ? `over ${timeoutMs}ms` : e?.message || e}`);
+    } finally {
+      clearTimeout(timer);
+    }
+    return out;
+  };
+  // idOf: the MBID a row's popularity is looked up by (the row's own id, or
+  // its artist's for tracks).
+  const withListenBrainzPopularity = async (kind, rows, { idOf = r => r.id, reference } = {}) => {
+    const popularity = await fetchListenBrainzPopularity(kind, rows.map(idOf), { reference });
+    return popularity.size ? rows.map(r => (popularity.has(idOf(r)) ? { ...r, _popularity: popularity.get(idOf(r)) } : r)) : rows;
   };
 
   const resolveRecording = async (recording) => {
@@ -17999,8 +18025,13 @@ ${trackListXml}
     // shown keep their place and display key as later sources answer, so
     // nothing reshuffles or remounts under the user.
     const shown = { artists: [], albums: [], tracks: [] };
-    const stable = (category, ranked, identityKeys) => {
-      const next = stabilizeRows(ranked, shown[category], identityKeys);
+    // Rows the query names (their artist, or their exact title) form the top
+    // tier (stabilizeRows).
+    const namedArtistTier = (artistOf) => (row) => (queryNamesRow(query, artistOf(row), row.title) ? 1 : 0);
+    // A row that clearly outranks one shown ahead of it moves past it once.
+    const promoteByScore = { scoreOf: r => r._finalScore, margin: PROMOTE_MARGIN };
+    const stable = (category, ranked, identityKeys, tierOf) => {
+      const next = stabilizeRows(ranked, shown[category], identityKeys, tierOf, promoteByScore);
       shown[category] = next.shown;
       return next.rows;
     };
@@ -18018,7 +18049,7 @@ ${trackListXml}
     const publishAlbums = () => {
       if (!isCurrent()) return;
       const rows = withSearchArt(
-        stable('albums', reRankResults(mergeAlbumResults(mb.albums || [], albumLists()), query, 'title'), rowIdentityKeys),
+        stable('albums', reRankResults(mergeAlbumResults(mb.albums || [], albumLists()), query, ALBUM_RANK_KEY, albumArtistName), rowIdentityKeys, namedArtistTier(albumArtistName)),
         'album');
       setSearchResults(prev => ({ ...prev, albums: rows }));
       fetchSearchAlbumArt(rows, []);
@@ -18028,7 +18059,7 @@ ${trackListXml}
     const publishTracks = () => {
       if (!isCurrent()) return;
       const rows = withSearchArt(
-        stable('tracks', reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, TRACK_RANK_KEY), rowIdentityKeys),
+        stable('tracks', reRankResults(mergeTrackResults(mb.tracks || [], trackLists(), scorer), query, TRACK_RANK_KEY, t => t.artist), rowIdentityKeys, namedArtistTier(t => t.artist)),
         'track');
       // Local files' rows stay first; a service row that only repeats one goes.
       setSearchResults(prev => {
@@ -18121,6 +18152,9 @@ ${trackListXml}
           seen.add(key);
           return true;
         });
+        // Popularity before the rows show: they hold still once they have
+        mb.albums = await withListenBrainzPopularity('release-group', mb.albums);
+        if (!isCurrent()) return;
         publishAlbums();
 
         if (mb.albums.length < 3 && albumLoader?.getAlbumSearchResolvers) {
@@ -18167,6 +18201,13 @@ ${trackListXml}
           sources: {},
           _needsResolution: true
         }));
+        // Popularity before the rows show: they hold still once they have
+        // by artist: ListenBrainz splits a song's plays across duplicate
+        // recordings, so an original's recording often has no count
+        mb.tracks = await withListenBrainzPopularity('artist', mb.tracks, {
+          idOf: t => t.artistMbids?.[0], reference: ARTIST_POPULARITY_REFERENCE_LISTENS
+        });
+        if (!isCurrent()) return;
         publishTracks();
 
         // Background-enrich tracks with MBID mapper data (populates cache for future lookups)

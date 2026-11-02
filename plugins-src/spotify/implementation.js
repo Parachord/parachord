@@ -47,6 +47,8 @@ module.exports = {
         sources: ['spotify'],
         spotifyUri: track.uri,
         spotifyId: track.id,
+        // Spotify's 0-100 popularity; Search ranks with it (search-catalog.js)
+        popularity: typeof track.popularity === 'number' ? track.popularity : undefined,
         spotifyAlbumId: track.album.id,
         albumArt: track.album.images[0]?.url,
         isrc:
