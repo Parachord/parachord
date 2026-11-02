@@ -19979,6 +19979,8 @@ ${trackListXml}
   // name search, one turn of the 1 req/s MusicBrainz queue, and can't land on
   // a namesake. The lookup's other fields (country, type, disambiguation) are
   // cached but shown nowhere, so nothing is fetched in its place.
+  // See the slow-MusicBrainz fallback in fetchArtistData.
+  const ARTIST_SLOW_FALLBACK_MS = 3000;
   const fetchArtistData = async (artistName, options = {}) => {
     console.log('Fetching artist data for:', artistName);
     const knownMbid = isMusicBrainzId(options.mbid) ? options.mbid : null;
@@ -20088,6 +20090,41 @@ ${trackListXml}
       console.log('🔄 Resolver settings changed, invalidating cache for:', artistName);
     }
 
+    // MusicBrainz slow, not failing: the discography takes an artist lookup
+    // and three release-group requests in the 1.1s queue, so 4.4s at best and
+    // much longer behind other lookups. If nothing has shown after
+    // ARTIST_SLOW_FALLBACK_MS, the services' discography (the sources the
+    // not-on-MusicBrainz path below uses) shows meanwhile. MusicBrainz's
+    // first batch replaces it: showReleases builds the list from MusicBrainz's
+    // releases only. If MusicBrainz ends up with none, it stays, and the empty
+    // result is not cached. discographySettled: MusicBrainz's releases are
+    // showing, or the not-on-MusicBrainz path took over.
+    let discographySettled = false;
+    let serviceDiscographySource = null;
+    const slowFallbackTimer = setTimeout(async () => {
+      for (const fetchFn of [fetchArtistFromSpotify, fetchArtistFromMusicKit, fetchArtistFromLastfm, fetchArtistFromDiscogs]) {
+        if (thisFetchId !== artistFetchId.current || discographySettled) return;
+        let result = null;
+        try { result = await fetchFn(artistName); } catch { /* next source */ }
+        if (thisFetchId !== artistFetchId.current || discographySettled) return;
+        if (!result?.releases?.length) continue;
+        serviceDiscographySource = result.source;
+        console.log(`🎵 MusicBrainz still loading "${artistName}" after ${ARTIST_SLOW_FALLBACK_MS}ms: showing ${result.source}'s ${result.releases.length} releases meanwhile`);
+        const shown = result.releases.map(release => ({
+          ...release,
+          albumArt: release.albumArt || albumArtCache.current[release.id]?.url || undefined
+        }));
+        setArtistReleases(shown);
+        setSmartReleaseTypeFilter(shown);
+        albumArtFetchId.current++; // Cancel any previous fetch session
+        isAlbumArtFetching.current = false;
+        albumArtQueue.current = withArtArtist(shown.filter(r => !r.albumArt), artistName);
+        visibleAlbumIds.current.clear();
+        processAlbumArtQueue();
+        return;
+      }
+    }, ARTIST_SLOW_FALLBACK_MS);
+
     console.log('🌐 Fetching fresh artist data from MusicBrainz...');
 
     // Try MBID mapper cache first for fast artist MBID shortcut (~0ms vs ~500ms+ for MB search)
@@ -20181,6 +20218,9 @@ ${trackListXml}
       const mbMatchIsGood = mbCandidate && mbNameMatch;
 
       if (!mbMatchIsGood) {
+        // This path asks the same services itself
+        discographySettled = true;
+        clearTimeout(slowFallbackTimer);
         if (mbCandidate) {
           console.log(`⚠️ MusicBrainz match is weak (score: ${mbScore}, name: "${mbCandidate.name}" vs "${artistName}"), trying fallbacks...`);
         } else {
@@ -20332,6 +20372,8 @@ ${trackListXml}
       let releasesShown = false;
       const showReleases = (batch) => {
         if (thisFetchId !== artistFetchId.current || batch.length === 0) return;
+        discographySettled = true; // replaces a service discography on screen
+        clearTimeout(slowFallbackTimer);
         fetchedReleases.push(...batch);
         const sorted = [...fetchedReleases].sort(byNewest);
         // Rows already on screen keep their object (and any cover the art
@@ -20406,6 +20448,16 @@ ${trackListXml}
       const uniqueReleases = releaseResults.flat().sort(byNewest);
 
       console.log(`Found ${uniqueReleases.length} release-groups for ${artist.name}`);
+      clearTimeout(slowFallbackTimer);
+
+      // MusicBrainz answered with nothing (every request failed, or it has no
+      // releases) while a service's discography is showing: keep that, and
+      // don't cache an empty discography for a month.
+      if (uniqueReleases.length === 0 && serviceDiscographySource) {
+        console.log(`🎵 MusicBrainz had no releases for "${artist.name}": keeping ${serviceDiscographySource}'s`);
+        if (thisFetchId === artistFetchId.current) setLoadingArtist(false);
+        return;
+      }
 
       const artistData = {
         name: artist.name,
