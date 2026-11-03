@@ -13,11 +13,20 @@
 // within START_TIMEOUT_MS is reported `unplayable` for the engine to route
 // around.
 //
+// Moving is not enough on its own: for some tracks SoundCloud lets the widget
+// play only a 30-second PREVIEW, which starts, plays, fades and fires
+// `finish` while getDuration still answers the full length (#1211; Android
+// port, Taylor Swift "Shake It Off": policy SNIP, duration 30000 of
+// full_duration 219246). So once the position moves, the player asks
+// `getCurrentSound`, and rejects with reason `preview` when the sound is a
+// snippet (isPreviewSound). No reply within SOUND_CHECK_TIMEOUT_MS counts as
+// whole, so a widget that stops answering getters can't block playback.
+//
 // The widget is driven with its postMessage protocol directly, NOT by
 // loading SoundCloud's api.js: a third-party script in the main renderer
 // would run beside window.electron. Messages are JSON `{method, value}`:
 //   to the widget    {method:'addEventListener', value:<event>}, play, pause,
-//                    seekTo(ms), setVolume(0-100), getDuration
+//                    seekTo(ms), setVolume(0-100), getDuration, getCurrentSound
 //   from the widget  ready, playProgress {currentPosition ms}, play, pause,
 //                    finish, error, and getter replies under the getter's name
 // Only messages from WIDGET_ORIGIN whose source is our iframe's window count.
@@ -36,6 +45,16 @@ const WIDGET_ORIGIN = 'https://w.soundcloud.com';
 const WIDGET_PLAYER_URL = `${WIDGET_ORIGIN}/player/`;
 const WIDGET_EVENTS = ['playProgress', 'play', 'pause', 'finish', 'error'];
 const START_TIMEOUT_MS = 10000;
+const SOUND_CHECK_TIMEOUT_MS = 2000;
+
+// A sound the widget may only preview: SoundCloud marks it policy SNIP, and
+// its playable duration falls short of its full duration.
+function isPreviewSound(sound) {
+  if (!sound || typeof sound !== 'object') return false;
+  if (sound.policy === 'SNIP') return true;
+  const { duration, full_duration: fullDuration } = sound;
+  return typeof duration === 'number' && typeof fullDuration === 'number' && fullDuration - duration > 1000;
+}
 
 function widgetSrc(permalinkUrl) {
   const params = new URLSearchParams({
@@ -55,12 +74,19 @@ function errorWithReason(message, reason) {
   return err;
 }
 
-function createSoundCloudWidgetPlayer({ win = globalThis.window, startTimeoutMs = START_TIMEOUT_MS, log = console } = {}) {
+function createSoundCloudWidgetPlayer({
+  win = globalThis.window,
+  startTimeoutMs = START_TIMEOUT_MS,
+  soundCheckTimeoutMs = SOUND_CHECK_TIMEOUT_MS,
+  log = console
+} = {}) {
   let iframe = null;
   let generation = 0;
   let ready = false;
   let active = false;
   let started = false;
+  let checkingSound = false;
+  let soundCheckTimer = null;
   let paused = true;
   let positionMs = 0;
   let durationMs = 0;
@@ -87,6 +113,25 @@ function createSoundCloudWidgetPlayer({ win = globalThis.window, startTimeoutMs 
     const fn = handlers[name];
     if (typeof fn !== 'function') return;
     try { fn(...args); } catch (e) { log.error('[SoundCloud widget] handler failed:', name, e); }
+  };
+
+  // The position moved: confirm it's the whole track before calling it
+  // started (see isPreviewSound). `sound` is the getCurrentSound reply, or
+  // null when none came in time.
+  const finishSoundCheck = (sound) => {
+    if (!checkingSound) return;
+    checkingSound = false;
+    clearTimeout(soundCheckTimer);
+    soundCheckTimer = null;
+    if (isPreviewSound(sound)) {
+      post('pause');
+      settleStart(errorWithReason('SoundCloud only lets its widget play a preview of this track', 'preview'));
+      return;
+    }
+    started = true;
+    paused = false;
+    settleStart(null);
+    call('onProgress', positionMs / 1000);
   };
 
   const onMessage = (event) => {
@@ -118,14 +163,17 @@ function createSoundCloudWidgetPlayer({ win = globalThis.window, startTimeoutMs 
         const at = value && typeof value.currentPosition === 'number' ? value.currentPosition : null;
         if (at === null) break;
         positionMs = at;
-        if (!started && at > 0) {
-          started = true;
-          paused = false;
-          settleStart(null);
+        if (!started && !checkingSound && at > 0 && pendingStart) {
+          checkingSound = true;
+          post('getCurrentSound');
+          soundCheckTimer = setTimeout(() => finishSoundCheck(null), soundCheckTimeoutMs);
         }
         if (started) call('onProgress', at / 1000);
         break;
       }
+      case 'getCurrentSound':
+        finishSoundCheck(value);
+        break;
       case 'play':
         paused = false;
         if (started) call('onPlay');
@@ -166,6 +214,9 @@ function createSoundCloudWidgetPlayer({ win = globalThis.window, startTimeoutMs 
   const reset = () => {
     ready = false;
     started = false;
+    checkingSound = false;
+    clearTimeout(soundCheckTimer);
+    soundCheckTimer = null;
     paused = true;
     positionMs = 0;
     durationMs = 0;
@@ -233,4 +284,4 @@ function createSoundCloudWidgetPlayer({ win = globalThis.window, startTimeoutMs 
   return { load, stop, element, isActive: () => active, getState };
 }
 
-module.exports = { createSoundCloudWidgetPlayer, widgetSrc, WIDGET_ORIGIN, START_TIMEOUT_MS };
+module.exports = { createSoundCloudWidgetPlayer, widgetSrc, isPreviewSound, WIDGET_ORIGIN, START_TIMEOUT_MS, SOUND_CHECK_TIMEOUT_MS };
