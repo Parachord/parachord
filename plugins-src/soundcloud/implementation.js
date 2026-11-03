@@ -38,6 +38,9 @@ module.exports = {
         soundcloudUrl: track.permalink_url,
         albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url,
         streamable: track.streamable && track.access !== 'blocked',
+        // The widget plays `preview` and `blocked` tracks in full almost
+        // never; rank them after other sources (compareCandidateSources).
+        limitedPlayback: !!track.access && track.access !== 'playable',
         waveformUrl: track.waveform_url,
       }));
       console.log(`Found ${results.length} SoundCloud results`);
@@ -78,6 +81,7 @@ module.exports = {
           soundcloudUrl: track.permalink_url,
           albumArt: track.artwork_url?.replace('-large', '-t500x500'),
           streamable: track.streamable && track.access !== 'blocked',
+          limitedPlayback: !!track.access && track.access !== 'playable',
         };
       }
       return null;
@@ -113,6 +117,7 @@ module.exports = {
           duration: Math.floor((t.duration || 0) / 1000),
           soundcloudId: t.id,
           soundcloudUrl: t.permalink_url,
+          limitedPlayback: !!t.access && t.access !== 'playable',
         }))
         .filter((t) => t.title);
       if (!tracks.length) {
