@@ -745,14 +745,18 @@ window.globalResolverLimiter = window.createLimiter({
   }
 });
 
-// The MusicKit developer token. The main process picks it (environment >
-// generated at launch > saved in Settings, skipping any that has expired;
-// main-process/musickit-token.js). localStorage holds the Settings copy and
-// is read only when there is no main process to ask. Reading it first, as
-// every caller used to, kept an expired saved token in use while a fresh
-// generated one sat unused, and MusicKit refused it ("Initialized with an
-// expired token").
+// The MusicKit developer token. A token saved in Settings (its copy in
+// localStorage) comes first, as it always has, while it hasn't expired: a
+// user who saved one keeps using it, and the Apple Music sign-in made with
+// it. Otherwise the main process picks one (environment > generated at
+// launch > saved in Settings, skipping any that has expired;
+// main-process/musickit-token.js). An expired saved token used to be used
+// anyway, while a fresh generated one sat unused, and MusicKit refused it
+// ("Initialized with an expired token").
+const { isTokenExpired: isMusicKitTokenExpired } = require('../../main-process/musickit-token');
 async function getMusicKitDeveloperToken() {
+  const saved = localStorage.getItem('musickit_developer_token') || '';
+  if (saved && !isMusicKitTokenExpired(saved)) return saved;
   if (window.electron?.config?.get) {
     try {
       return await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
@@ -761,7 +765,7 @@ async function getMusicKitDeveloperToken() {
       return '';
     }
   }
-  return localStorage.getItem('musickit_developer_token') || '';
+  return '';
 }
 
 // MusicKit-enabled Apple Music search wrapper

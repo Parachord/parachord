@@ -76,12 +76,32 @@ describe('wiring', () => {
     expect(gen.slice(0, 1200)).toMatch(/if \(!isMusicKitTokenExpired\(process\.env\.MUSICKIT_DEVELOPER_TOKEN\)\)/);
   });
 
-  test('the renderer reads its saved copy only inside getMusicKitDeveloperToken, after the main process', () => {
+  // A saved token that is still valid keeps winning, as it did before the
+  // expiry fix (the user's Apple Music sign-in was made with it); only an
+  // expired one falls through to the main process.
+  test('the renderer uses its saved copy first only while it has not expired, then asks the main process', () => {
     const reads = appSrc.match(/localStorage\.getItem\('musickit_developer_token'\)/g) || [];
     expect(reads).toHaveLength(1);
     const helper = appSrc.slice(appSrc.indexOf('async function getMusicKitDeveloperToken'));
     const body = helper.slice(0, helper.indexOf('\n}\n'));
-    expect(body.indexOf("config.get('MUSICKIT_DEVELOPER_TOKEN')")).toBeGreaterThan(0);
-    expect(body.indexOf("localStorage.getItem('musickit_developer_token')")).toBeGreaterThan(body.indexOf("config.get('MUSICKIT_DEVELOPER_TOKEN')"));
+    const savedAt = body.indexOf("localStorage.getItem('musickit_developer_token')");
+    const guardAt = body.indexOf('if (saved && !isMusicKitTokenExpired(saved)) return saved;');
+    const askAt = body.indexOf("config.get('MUSICKIT_DEVELOPER_TOKEN')");
+    expect(savedAt).toBeGreaterThan(0);
+    expect(guardAt).toBeGreaterThan(savedAt);
+    expect(askAt).toBeGreaterThan(guardAt);
+    expect(appSrc).toContain("const { isTokenExpired: isMusicKitTokenExpired } = require('../../main-process/musickit-token');");
+  });
+});
+
+describe('in the renderer (no Buffer)', () => {
+  const realBuffer = global.Buffer;
+  afterEach(() => { global.Buffer = realBuffer; });
+
+  test('reads exp with atob', () => {
+    global.Buffer = undefined;
+    expect(tokenExpiry(EXPIRED)).toBe(Date.UTC(2026, 6, 31) / 1000);
+    expect(isTokenExpired(EXPIRED, NOW)).toBe(true);
+    expect(isTokenExpired(FRESH, NOW)).toBe(false);
   });
 });

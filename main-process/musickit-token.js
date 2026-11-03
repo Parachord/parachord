@@ -9,6 +9,14 @@
 // token still looks configured. Expired candidates are skipped, so a fresh
 // token further down the list is used instead.
 
+// Pure, and loaded by both processes: the renderer (bundled by esbuild, no
+// Buffer under contextIsolation) checks a token saved in Settings with it.
+function decodeBase64Url(s) {
+  if (typeof Buffer !== 'undefined') return Buffer.from(s, 'base64url').toString('utf8');
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  return atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+}
+
 // Seconds since the epoch at which `token` expires, or null when it isn't a
 // JWT with a numeric `exp` (an opaque token is passed through, not judged).
 function tokenExpiry(token) {
@@ -16,7 +24,7 @@ function tokenExpiry(token) {
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   try {
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    const payload = JSON.parse(decodeBase64Url(parts[1]));
     return typeof payload.exp === 'number' ? payload.exp : null;
   } catch (_e) {
     return null;
