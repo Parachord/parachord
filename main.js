@@ -2507,6 +2507,12 @@ function generateCodeChallenge(verifier) {
 const MUSICKIT_TEAM_ID = 'YR3XETE537';
 const MUSICKIT_KEY_ID = '437JVHZMMK';
 let generatedMusicKitToken = null;
+const {
+  tokenExpiry: musicKitTokenExpiry,
+  isTokenExpired: isMusicKitTokenExpired,
+  pickDeveloperToken: pickMusicKitDeveloperToken,
+} = require('./main-process/musickit-token');
+const loggedExpiredMusicKitTokens = new Set(); // config-get is called often; warn once per source
 let musicKitTokenReady = Promise.resolve(null); // resolved by generateMusicKitDeveloperToken()
 
 /**
@@ -2515,11 +2521,15 @@ let musicKitTokenReady = Promise.resolve(null); // resolved by generateMusicKitD
  * Users auth with their own Apple Music subscription via MusicKit JS.
  */
 async function generateMusicKitDeveloperToken() {
-  // If user set a token via env, skip generation
+  // If user set a token via env, skip generation, unless it has expired
+  // (MusicKit refuses an expired one; generate a fresh one from the key instead)
   if (process.env.MUSICKIT_DEVELOPER_TOKEN) {
-    console.log('🍎 MusicKit: Using developer token from environment');
-    generatedMusicKitToken = process.env.MUSICKIT_DEVELOPER_TOKEN;
-    return generatedMusicKitToken;
+    if (!isMusicKitTokenExpired(process.env.MUSICKIT_DEVELOPER_TOKEN)) {
+      console.log('🍎 MusicKit: Using developer token from environment');
+      generatedMusicKitToken = process.env.MUSICKIT_DEVELOPER_TOKEN;
+      return generatedMusicKitToken;
+    }
+    console.warn(`🍎 MusicKit: MUSICKIT_DEVELOPER_TOKEN in the environment expired on ${new Date(musicKitTokenExpiry(process.env.MUSICKIT_DEVELOPER_TOKEN) * 1000).toISOString().slice(0, 10)}; generating one from the key instead`);
   }
 
   const keyFileName = `AuthKey_${MUSICKIT_KEY_ID}.p8`;
@@ -3167,13 +3177,24 @@ const CONFIG_FALLBACKS = {
 };
 ipcMain.handle('config-get', async (event, key) => {
   if (ALLOWED_CONFIG_KEYS.includes(key)) {
-    // MusicKit token: env var > auto-generated from .p8 > user-configured in Settings
+    // MusicKit token: env var > auto-generated from .p8 > user-configured in Settings,
+    // skipping any that has expired (main-process/musickit-token.js).
     // Await token generation so the renderer doesn't race ahead and get null.
     if (key === 'MUSICKIT_DEVELOPER_TOKEN') {
       if (!generatedMusicKitToken) {
         await musicKitTokenReady;
       }
-      return process.env[key] || generatedMusicKitToken || store.get('applemusic_developer_token') || null;
+      return pickMusicKitDeveloperToken([
+        { source: 'environment', token: process.env[key] },
+        { source: 'generated', token: generatedMusicKitToken },
+        { source: 'Settings', token: store.get('applemusic_developer_token') },
+      ], {
+        onSkip: (source, expiredAt) => {
+          if (loggedExpiredMusicKitTokens.has(source)) return;
+          loggedExpiredMusicKitTokens.add(source);
+          console.warn(`🍎 MusicKit: skipping the developer token from ${source}, which expired on ${expiredAt.toISOString().slice(0, 10)}`);
+        },
+      });
     }
     return process.env[key] || CONFIG_FALLBACKS[key] || null;
   }
