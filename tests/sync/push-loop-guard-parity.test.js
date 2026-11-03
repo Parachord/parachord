@@ -102,6 +102,20 @@ const PARITY_GUARDS = [
       'Array.isArray(chOverride)',
       "playlist.id?.startsWith('listenbrainz-')",
       "playlist.id?.startsWith('hosted-') && providerId === 'listenbrainz'",
+      // The edit branch (already-linked playlists) re-checks the override —
+      // without this marker the gate holds via the create-branch occurrence
+      // alone and deleting the edit-branch check from one loop stays green.
+      'if (Array.isArray(chOverride) && !chOverride.includes(providerId)) continue;',
+    ],
+  },
+  {
+    name: 'create-vs-update branch structure (syncInfo absent → create; locallyModified → update push)',
+    markers: [
+      'const syncInfo = playlist.syncedTo?.[providerId];',
+      'else if (playlist.locallyModified) {',
+      // The 404 handling on a failed update push flags pendingAction so the
+      // UI can surface a remote deletion instead of re-pushing forever.
+      "playlist.syncedTo[providerId].pendingAction = 'remote-deleted';",
     ],
   },
   {
@@ -109,16 +123,16 @@ const PARITY_GUARDS = [
     markers: ['lbOptedInByOverride'],
   },
   {
-    name: 'LB circuit breaker (3 consecutive write failures stop the run)',
-    markers: ['lbConsecutiveFailures >= 3', 'noteLbOutcome('],
+    name: 'LB circuit breaker (3 consecutive write failures stop the run) — definition plus one call per write branch',
+    markers: [{ text: 'noteLbOutcome(', min: 2 }, 'const noteLbOutcome = (ok) =>', 'lbConsecutiveFailures >= 3'],
   },
   {
-    name: 'per-iteration idle yield (renderer stays responsive mid-loop, #798)',
-    markers: ['await yieldToIdle();'],
+    name: 'per-iteration idle yield (renderer stays responsive mid-loop, #798) — main loop + save loop',
+    markers: [{ text: 'await yieldToIdle();', min: 2 }],
   },
   {
-    name: 'inter-IPC breathe (250ms spread so sync IPCs cannot starve the UI)',
-    markers: ['await breathe();', 'const SYNC_IPC_DELAY_MS = 250;'],
+    name: 'inter-IPC breathe (250ms spread so sync IPCs cannot starve the UI) — once per write branch',
+    markers: [{ text: 'await breathe();', min: 2 }, 'const SYNC_IPC_DELAY_MS = 250;'],
   },
   {
     name: 'post-push locallyModified clear is relevantMirrors-scoped (source provider excluded)',
@@ -136,12 +150,18 @@ const PARITY_GUARDS = [
   },
 ];
 
+// occurrence in the save loop; noteLbOutcome's definition plus one call site per
+// write branch; breathe appears once per write branch. Without the counts,
+// deleting one of the duplicate occurrences from a single loop stays green.
 function missingGuards(region) {
   const missing = [];
   for (const guard of PARITY_GUARDS) {
     for (const marker of guard.markers) {
-      if (!region.includes(marker)) {
-        missing.push(`${guard.name} — missing marker: ${marker}`);
+      const need = marker.min || 1;
+      const text = typeof marker === 'string' ? marker : marker.text;
+      const count = region.split(text).length - 1;
+      if (count < need) {
+        missing.push(`${guard.name} — expected ${need}× marker: ${text} (found ${count})`);
       }
     }
   }
@@ -182,5 +202,10 @@ describe('legacy playlist push/create twin loops (background sync + post-wizard)
     // And the untouched region still passes, so the failure is the drift, not the check.
     expect(missingGuards(background)).toEqual([]);
     expect(missingGuards(wizard)).toEqual([]);
+    // The edit-branch channel gate is separately guarded: deleting it from one
+    // loop must fail even though the create-branch gate still matches.
+    const brokenBg = background.replace('if (Array.isArray(chOverride) && !chOverride.includes(providerId)) continue;', '/* guard dropped */');
+    const missingBg = missingGuards(brokenBg);
+    expect(missingBg.some((m) => m.includes('channel gate'))).toBe(true);
   });
 });
