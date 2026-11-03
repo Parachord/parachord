@@ -90,6 +90,14 @@ describe('engine ctx literal ordering (TDZ guards)', () => {
     'getArtistTopTracksRef', 'keyForSpinoffDedupRef', 'refreshSpotifyTokenRef', 'startAutoAdvancePollingRef',
   ]);
   test.each(ALL_SLOTS.map((n) => [n]))('%s is present in the ctx literal', (name) => {
+    // Shorthand `name,`, or an alias `name: other,` whose value must then be
+    // declared above the literal too (the engine's activeResolversRef is
+    // playbackResolversRef, #1220).
+    const alias = ctxBody.match(new RegExp(`\\b${name}: (\\w+),`));
+    if (alias) {
+      expect(declaredAbove(alias[1], ctxLine)).toBe(true);
+      return;
+    }
     expect(ctxBody).toContain(name + ',');
   });
 

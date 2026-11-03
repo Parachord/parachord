@@ -60,10 +60,36 @@ describe('main process', () => {
 });
 
 describe('renderer', () => {
-  test('a plan refusal never opens the sign-in prompt', () => {
+  test('background searches skip the cache but never open the sign-in dialog', () => {
     const fn = between(app, 'window.__parachordNoteAmazonNotReady = (error) => {', '\n  };');
     expect(fn).toMatch(/code === 'plan-ineligible'/);
-    expect(fn).toMatch(/if \(code !== 'load-failed' && code !== 'plan-ineligible'\) \{\s*manageAmazonMusic\(/);
+    expect(fn).not.toMatch(/manageAmazonMusic/);
+    // The only non-explicit caller was this one.
+    expect(app).not.toMatch(/manageAmazonMusic\(\{ explicit: false/);
+  });
+
+  test('an Amazon that cannot play is left out of playback, icons and priority, but stays active', () => {
+    // Derived from the status: signed in and not on Music Unlimited.
+    expect(app).toMatch(/amazonMusicStatus\?\.web\?\.signedIn && amazonMusicStatus\.plan && amazonMusicStatus\.plan !== 'unlimited'\s*\? \['amazonmusic'\] : \[\]/);
+    expect(app).toMatch(/activeResolvers\.filter\(id => !planBlockedResolverIds\.includes\(id\)\)/);
+    // The engine plays only from playbackResolvers.
+    expect(app).toMatch(/activeResolversRef: playbackResolversRef,/);
+    // Source icons: every badge filter in app.js, the playbar picker and the pages.
+    expect(app).not.toMatch(/\.filter\(\(\[resolverId\]\) => activeResolvers\.includes\(resolverId\)\)/);
+    expect(app.match(/\.filter\(\(\[resolverId\]\) => playbackResolvers\.includes\(resolverId\)\)/g)).toHaveLength(6);
+    expect(app).toMatch(/if \(!playbackResolvers\.includes\(resId\)\) return false;/);
+    expect(app.match(/^\s+activeResolvers: playbackResolvers, /gm)).toHaveLength(4);
+    // Settings: numbered resolvers first, then the plan-blocked ones with no
+    // number (display only; resolverOrder keeps their slot), and those can't
+    // be dragged or dropped on.
+    expect(app).toMatch(/\[\.\.\.playingInOrder, \.\.\.planBlockedInOrder\]\.forEach\(\(resolverId, index\) => \{/);
+    expect(app).toMatch(/priorityNumber: index < playingInOrder\.length \? index \+ 1 : null,/);
+    expect(app).toMatch(/const reorderable = isActive && !planBlockedResolverIds\.includes\(resolver\.id\);/);
+    expect(app).toMatch(/draggable: reorderable,/);
+    expect(app).toMatch(/onDrop: reorderable \? /);
+    expect(app).not.toMatch(/setResolverOrder\([^)]*planBlocked/);
+    // Metadata still asks every active resolver.
+    expect(app).toMatch(/const amazonMusicEnabled = activeResolvers\.includes\('amazonmusic'\);/);
   });
 
   test('an upgrade to Music Unlimited re-resolves Amazon, across restarts', () => {
