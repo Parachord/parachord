@@ -81,10 +81,10 @@ const PARITY_GUARDS = [
     ],
   },
   {
-    name: 'collaborative push-back exemption (genuine local edits pass the source guard)',
+    name: 'collaborative push-back exemption (genuine local edits pass the source guard) — once in the syncedFrom block, once in the id-prefix block',
     markers: [
-      'const hasGenuineLocalEdits = playlist.locallyModified',
-      '(playlist.lastModified || 0) > sourceSyncedAt',
+      { text: 'const hasGenuineLocalEdits = playlist.locallyModified', min: 2 },
+      { text: '(playlist.lastModified || 0) > sourceSyncedAt', min: 2 },
     ],
   },
   {
