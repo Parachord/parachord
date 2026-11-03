@@ -59,9 +59,24 @@ function compareCandidateSources(a, b, preferredResolver) {
   return b.confidence - a.confidence;
 }
 
+// A plugin's config from what its settings panel saved. `inMemory` is its entry
+// in the app's copy of meta_service_configs, which is empty until the startup
+// bulk load has run; a deep link at launch can ask before that, so an empty copy
+// falls back to the store rather than answer "not configured".
+async function savedPluginConfig(resolverId, inMemory, readStored) {
+  if (inMemory) return inMemory;
+  try {
+    const stored = await readStored();
+    return (stored && stored[resolverId]) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
 module.exports = {
   unsupportedAudioMessage,
   dropSubsonicSecrets,
   playbackDurationSeconds,
   compareCandidateSources,
+  savedPluginConfig,
 };

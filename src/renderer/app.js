@@ -649,6 +649,7 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
+const { savedPluginConfig } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -12421,8 +12422,13 @@ ${trackListXml}
     if (configs[resolverId]) return configs[resolverId];
     // Any other plugin: whatever its settings panel saved into
     // meta_service_configs (Subsonic's server URL, username and password, for
-    // one). Read through the ref so search/play see the latest save.
-    return metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId] || {};
+    // one). Read through the ref so search/play see the latest save, and from
+    // the store if the startup bulk load hasn't filled the ref yet.
+    return savedPluginConfig(
+      resolverId,
+      metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId],
+      () => window.electron.store.get('meta_service_configs')
+    );
   };
 
   useEffect(() => {

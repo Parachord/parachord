@@ -47,7 +47,7 @@ describe('capabilities.html5Stream', () => {
   });
 
   test('getResolverConfig hands any unlisted plugin its saved meta_service_configs entry', () => {
-    expect(appSrc).toContain('return metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId] || {};');
+    expect(appSrc).toContain('metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId],');
   });
 });
 

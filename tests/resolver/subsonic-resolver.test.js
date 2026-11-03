@@ -426,7 +426,7 @@ describe('app.js integration', () => {
     // meta_service_configs.subsonic; getResolverConfig's generic fallback hands
     // that entry to search/getStreamUrl, same as for any other plugin.
     expect(appSrc).not.toContain("if (resolverId === 'subsonic') {");
-    expect(appSrc).toContain('return metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId] || {};');
+    expect(appSrc).toContain('metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId],');
   });
 });
 
