@@ -648,6 +648,7 @@ const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTrac
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
+const PlaybackLimits = require('./lib/playback-limits');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -5941,19 +5942,21 @@ const Parachord = () => {
   // Amazon Music sign-in status from the in-app player:
   // { success, engine: 'web', web: { cdm, signedIn }, plan, planMessage }
   const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
-  // #1220: a resolver that is enabled but can't play on the account's plan
-  // (Amazon off Music Unlimited). It stays in activeResolvers for what it
-  // still does (album search, artist photos, links), but playbackResolvers
-  // leaves it out: source selection, source icons and the priority numbers.
-  const planBlockedResolverIds = useMemo(() => (
-    amazonMusicStatus?.web?.signedIn && amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited'
-      ? ['amazonmusic'] : []
-  ), [amazonMusicStatus]);
-  const playbackResolvers = useMemo(() => (
-    planBlockedResolverIds.length
-      ? activeResolvers.filter(id => !planBlockedResolverIds.includes(id))
-      : activeResolvers
-  ), [activeResolvers, planBlockedResolverIds]);
+  // Resolvers that are enabled but can't play on the account's plan (Amazon
+  // off Music Unlimited, #1220). Each service reports its limit into one map
+  // (lib/playback-limits.js); another service with such a plan is one more
+  // entry. Such a resolver stays in activeResolvers for what it still does
+  // (search, album search, artist photos, links, playlist sync), but
+  // playbackResolvers leaves it out: source selection, source icons and the
+  // priority numbers.
+  const playbackLimits = useMemo(() => ({
+    amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus)
+  }), [amazonMusicStatus]);
+  const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
+  const playbackResolvers = useMemo(
+    () => PlaybackLimits.playbackResolverIds(activeResolvers, planBlockedResolverIds),
+    [activeResolvers, planBlockedResolverIds]
+  );
   const playbackResolversRef = useRef(playbackResolvers);
   playbackResolversRef.current = playbackResolvers;
   // Re-fetch Amazon Music status and audio quality when its detail modal opens.
@@ -7297,20 +7300,6 @@ const Parachord = () => {
   // it at run time, after this render has defined it.
   const applyAmazonMusicStatus = (s) => {
     setAmazonMusicStatus(s);
-    // #1220: off Music Unlimited, Amazon searches answer not-ready, which
-    // leaves no amazonmusic key but a fresh timestamp on every track. After
-    // an upgrade those would count as already searched for 7 days, so clear
-    // them once the plan reads unlimited where it last read otherwise (kept
-    // across restarts: the upgrade can happen while the app is closed).
-    const plan = s && s.plan;
-    if (!plan) return;
-    let last = null;
-    try { last = localStorage.getItem('amazonmusic_last_plan'); } catch (e) {}
-    if (plan === 'unlimited' && last && last !== 'unlimited' && typeof window.__parachordClearAmazonNoMatch === 'function') {
-      console.log(`[Amazon] plan is now Music Unlimited (was ${last}); re-resolving Amazon`);
-      window.__parachordClearAmazonNoMatch();
-    }
-    try { localStorage.setItem('amazonmusic_last_plan', plan); } catch (e) {}
   };
   const refreshAmazonMusicStatus = (opts) => {
     if (!window.electron?.amazonMusic?.getStatus) return;
@@ -7515,20 +7504,21 @@ const Parachord = () => {
     if (cached > 0) console.log(`📚 Dropped ${cached} cached local source(s) for files no longer in the library`);
   }, [libraryPathsVersion, cacheLoaded, collectionLoading]);
 
-  // After sign-in, tracks resolved while Amazon was not ready have no
-  // amazonmusic key (notReady skips the noMatch marker) but a fresh timestamp.
-  // cacheValid then treats every enabled resolver as already queried for 7 days.
-  // Zero those timestamps too, not only entries that carry the marker.
-  window.__parachordClearAmazonNoMatch = () => {
+  // After sign-in (or an upgrade, #1220), tracks resolved while a resolver was
+  // not ready have no key for it (notReady skips the noMatch marker) but a
+  // fresh timestamp. cacheValid then treats every enabled resolver as already
+  // queried for 7 days. Zero those timestamps too, not only entries that
+  // carry the marker.
+  const clearResolverMisses = (resolverId) => {
     const cache = trackSourcesCache.current || {};
     for (const key of Object.keys(cache)) {
       const entry = cache[key];
       if (!entry?.sources) continue;
-      const am = entry.sources.amazonmusic;
+      const am = entry.sources[resolverId];
       if (am && !am.noMatch) continue;
       if (am?.noMatch) {
         const sources = { ...entry.sources };
-        delete sources.amazonmusic;
+        delete sources[resolverId];
         entry.sources = sources;
       }
       entry.timestamp = 0;
@@ -7540,9 +7530,9 @@ const Parachord = () => {
       let changed = false;
       const next = { ...prev };
       for (const key of Object.keys(next)) {
-        if (!next[key]?.amazonmusic?.noMatch) continue;
+        if (!next[key]?.[resolverId]?.noMatch) continue;
         const copy = { ...next[key] };
-        delete copy.amazonmusic;
+        delete copy[resolverId];
         if (copy.__noMatchAll) delete copy.__noMatchAll;
         next[key] = copy;
         changed = true;
@@ -7553,10 +7543,10 @@ const Parachord = () => {
       if (!prev?.tracks?.length) return prev;
       let changed = false;
       const tracks = prev.tracks.map(t => {
-        if (!t?.sources?.amazonmusic?.noMatch) return t;
+        if (!t?.sources?.[resolverId]?.noMatch) return t;
         changed = true;
         const sources = { ...t.sources };
-        delete sources.amazonmusic;
+        delete sources[resolverId];
         return { ...t, sources };
       });
       if (!changed) return prev;
@@ -7565,6 +7555,40 @@ const Parachord = () => {
       return newData;
     });
   };
+  window.__parachordClearAmazonNoMatch = () => clearResolverMisses('amazonmusic');
+
+  // A resolver whose plan stopped blocking it (an upgrade) and whose searches
+  // were held back meanwhile (Amazon) searches again. Its last state is kept
+  // per resolver across restarts: the upgrade can happen while the app is
+  // closed (lib/playback-limits.js, #1220).
+  useEffect(() => {
+    for (const [resolverId, limit] of Object.entries(playbackLimits)) {
+      const key = PlaybackLimits.limitStorageKey(resolverId);
+      let last = null;
+      try { last = localStorage.getItem(key); } catch (e) {}
+      const { reresolve, store } = PlaybackLimits.limitTransition(last, limit);
+      if (reresolve) {
+        console.log(`[Playback limits] ${resolverId} can play now (${limit.planKey}); searching it again`);
+        clearResolverMisses(resolverId);
+      }
+      if (store !== null && store !== last) {
+        try { localStorage.setItem(key, store); } catch (e) {}
+      }
+    }
+  }, [playbackLimits]);
+
+  // The engine's plan refusal (reason 'plan-ineligible') reports here: record
+  // the plan the service just told us, and return the wording to show (null:
+  // the refusal's own message is shown). A plugin checks this hook exists
+  // before throwing plan-ineligible (docs/architecture/plugins.md).
+  window.__parachordNotePlanRefusal = (resolverId, planKey) => {
+    if (resolverId === 'amazonmusic') {
+      refreshAmazonMusicStatus();
+      return null; // main's refusal already carries the Amazon wording
+    }
+    return null;
+  };
+
 
   // Cache for artist images from Last.fm (artistName -> { url, timestamp })
   const artistImageCache = useRef({});
@@ -41907,8 +41931,9 @@ useEffect(() => {
                         // or dropped on: a plan-blocked one sits outside the
                         // numbered order (#1220), so its slot isn't a position.
                         const reorderable = isActive && !planBlockedResolverIds.includes(resolver.id);
-                        const amazonPlanLimited = resolver.id === 'amazonmusic' && isActive
-                          && amazonMusicStatus?.web?.signedIn && amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited';
+                        // Enabled but limited by the account's plan: the label
+                        // and its tooltip come from the resolver's limit.
+                        const planStatus = isActive ? PlaybackLimits.tileStatus(playbackLimits, resolver.id) : { statusLabel: null, statusTitle: null };
 
                         return React.createElement(ResolverCard, {
                           key: resolver.id,
@@ -41916,8 +41941,8 @@ useEffect(() => {
                           isActive: isActive,
                           hasUpdate: resolver.hasUpdate,
                           needsConfiguration: needsConfiguration,
-                          statusLabel: amazonPlanLimited ? (amazonMusicStatus.plan === 'prime' ? 'Prime: no playback' : 'Plan not confirmed') : null,
-                          statusTitle: amazonPlanLimited ? amazonMusicStatus.planMessage : null,
+                          statusLabel: planStatus.statusLabel,
+                          statusTitle: planStatus.statusTitle,
                           priorityNumber: resolver.priorityNumber,
                           isInstalling: isInstalling,
                           draggable: reorderable,
@@ -46278,7 +46303,10 @@ useEffect(() => {
                       onClick: (e) => { e.preventDefault(); window.electron?.openExternal?.('https://developer.spotify.com/dashboard') || window.open('https://developer.spotify.com/dashboard', '_blank'); },
                       style: { color: '#1DB954', textDecoration: 'underline' }
                     }, 'developer.spotify.com/dashboard'),
-                    ' to get your Client ID.'
+                    // Since February 2026 a Development Mode app works only
+                    // while its owner has Premium, and every Parachord sign-in
+                    // is one (docs/architecture/playback.md).
+                    ' to get your Client ID. The Spotify account that creates the app needs Spotify Premium, and the app stops working if that Premium lapses.'
                   ),
               // Setup steps (only shown when no key configured)
               spotifyCredentialsSource === 'none' && React.createElement('div', {
@@ -48677,7 +48705,7 @@ useEffect(() => {
                 }, !amazonMusicStatus ? '' :
                   amazonMusicStatus.web?.signedIn
                     // Off Music Unlimited, nothing plays (#1220); say why.
-                    ? (amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited' ? (amazonMusicStatus.planMessage || '') : '')
+                    ? (PlaybackLimits.limitMessage(playbackLimits, 'amazonmusic') || '')
                     : amazonMusicStatus.web?.cdm
                       ? 'Sign in with your Amazon Music account'
                       : 'This build cannot play DRM-protected Amazon streams')

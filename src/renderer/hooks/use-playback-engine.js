@@ -550,6 +550,42 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return true;
     };
 
+    // The account's plan doesn't cover playback on this service
+    // (reason 'plan-ineligible': Amazon off Music Unlimited, #1220, or a
+    // plugin's play() on a plan its service can't play on demand). The app
+    // records the plan (lib/playback-limits.js) and supplies the wording; then
+    // another enabled source plays, the way a refused SoundCloud track falls
+    // back, and with none the message is shown. True when it handled err.
+    const handlePlanRefusal = (err, refusedId, label) => {
+      if (!err || err.reason !== 'plan-ineligible') return false;
+      const noted = typeof window.__parachordNotePlanRefusal === 'function'
+        ? window.__parachordNotePlanRefusal(refusedId, err.planKey) : null;
+      const message = noted || err.message;
+      console.warn(`🔐 ${label}: ${message}`);
+      const fallbackSources = trackOrSource.sources
+        ? Object.keys(trackOrSource.sources).filter(id => id !== refusedId
+          && !trackOrSource.sources[id]?.noMatch && activeResolversRef.current.includes(id))
+        : [];
+      if (fallbackSources.length > 0) {
+        const order = resolverOrderRef.current;
+        fallbackSources.sort((x, y) => order.indexOf(x) - order.indexOf(y));
+        if (!planRefusalExplained.has(refusedId)) {
+          planRefusalExplained.add(refusedId);
+          const fallbackName = window.resolverLabelById ? window.resolverLabelById(fallbackSources[0]) : fallbackSources[0];
+          showToast(`${message} Playing via ${fallbackName}.`, 'info', null, { duration: 8000 });
+        }
+        handlePlay({
+          ...trackOrSource,
+          sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== refusedId))
+        });
+        return true;
+      }
+      if (autoSkipIfAdvancing(`${label}: ${message}`)) return true;
+      setTrackLoading(false);
+      showToast(message, 'error', null, { duration: 8000 });
+      return true;
+    };
+
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setTrackLoading(true); // Show loading state in playbar
 
@@ -1521,37 +1557,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         await Promise.race([started, audible]);
       };
 
-      // The account's plan doesn't cover playback on this service (#1220:
-      // Amazon off Music Unlimited; the provider's message says so). Another
-      // enabled source plays instead, the way a refused SoundCloud track falls
-      // back; with none, the message is shown. True when it handled the error.
-      const handlePlanRefusal = (err) => {
-        if (!err || err.reason !== 'plan-ineligible') return false;
-        console.warn(`🔐 ${streamLabel}: ${err.message}`);
-        const fallbackSources = trackOrSource.sources
-          ? Object.keys(trackOrSource.sources).filter(id => id !== resolverId
-            && !trackOrSource.sources[id]?.noMatch && activeResolversRef.current.includes(id))
-          : [];
-        if (fallbackSources.length > 0) {
-          const order = resolverOrderRef.current;
-          fallbackSources.sort((x, y) => order.indexOf(x) - order.indexOf(y));
-          if (!planRefusalExplained.has(resolverId)) {
-            planRefusalExplained.add(resolverId);
-            const fallbackName = window.resolverLabelById ? window.resolverLabelById(fallbackSources[0]) : fallbackSources[0];
-            showToast(`${err.message} Playing via ${fallbackName}.`, 'info', null, { duration: 8000 });
-          }
-          handlePlay({
-            ...trackOrSource,
-            sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== resolverId))
-          });
-          return true;
-        }
-        if (autoSkipIfAdvancing(`${streamLabel}: ${err.message}`)) return true;
-        setTrackLoading(false);
-        showToast(err.message, 'error', null, { duration: 8000 });
-        return true;
-      };
-
       try {
         await startWidevine();
       } catch (error) {
@@ -1565,7 +1570,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setTrackLoading(false);
           return;
         }
-        if (handlePlanRefusal(error)) return;
+        if (handlePlanRefusal(error, resolverId, streamLabel)) return;
         if (error && error.reason === 'not-signed-in' && window.__parachordManageAmazonMusic) {
           // reason is what #1172's quiet-retry keys on. explicit skips the
           // radio/hidden gates; forcePrompt is NOT set, so live cookies
@@ -1584,7 +1589,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
                 return;
               }
               // Signed in, but to an account whose plan doesn't play.
-              if (handlePlanRefusal(retryError)) return;
+              if (handlePlanRefusal(retryError, resolverId, streamLabel)) return;
               console.error(`❌ ${streamLabel} retry after sign-in failed:`, retryError);
               if (autoSkipIfAdvancing(`${streamLabel} playback: ${retryError.message}`)) return;
               setTrackLoading(false);
@@ -2207,6 +2212,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
       }
     } catch (error) {
+      // A plugin refusing for the account's plan (plan-ineligible, see
+      // docs/architecture/plugins.md): not an error to re-resolve. A
+      // superseded play's refusal is dropped.
+      if (error && error.reason === 'plan-ineligible') {
+        if (playbackGenerationRef.current === thisGeneration) handlePlanRefusal(error, resolverId, resolver.name);
+        return;
+      }
       console.error(`❌ Error playing with ${resolver.name}:`, error);
       setTrackLoading(false); // Clear loading state on error
 
