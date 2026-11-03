@@ -58,7 +58,7 @@
     {
       "id": "soundcloud",
       "name": "SoundCloud",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "author": "Parachord Team",
       "description": "Search SoundCloud and play tracks in SoundCloud's own player. Playback needs no sign-in; search needs a SoundCloud login.",
       "icon": "☁",

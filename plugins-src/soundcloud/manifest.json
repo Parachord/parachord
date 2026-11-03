@@ -2,7 +2,7 @@
   "manifest": {
     "id": "soundcloud",
     "name": "SoundCloud",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "author": "Parachord Team",
     "description": "Search and stream music from SoundCloud. Requires OAuth login for full access.",
     "icon": "☁",

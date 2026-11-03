@@ -64,12 +64,18 @@ module.exports = {
       );
       if (!resolveResponse.ok) return null;
       const data = await resolveResponse.json();
-      if (data.location) {
+      // /resolve answers with a redirect to the track, which fetch follows,
+      // so the body is the track itself. It used to answer { location }
+      // instead; keep following that in case it comes back.
+      let track = data && data.kind === 'track' ? data : null;
+      if (!track && data && data.location) {
         const trackResponse = await fetch(data.location.replace('soundcloud:tracks:', ''), {
           headers: { Authorization: `OAuth ${config.token}` },
         });
         if (!trackResponse.ok) return null;
-        const track = await trackResponse.json();
+        track = await trackResponse.json();
+      }
+      if (track) {
         return {
           id: `soundcloud-${track.id}`,
           title: track.title,
