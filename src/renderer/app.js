@@ -12599,6 +12599,13 @@ ${trackListXml}
     // clock runs through pauses).
     // Skip for browser-based tracks (YouTube, Bandcamp) - they use extension events
     // Also skip if duration is 0 or missing to prevent infinite handleNext loop
+    // Skip while a track is loading (handlePlay sets trackLoading until it
+    // starts or fails): a track a drag or a click just made current has no
+    // _activeResolver yet, so it looked like one this timer drives, while
+    // isPlaying and startTime still belonged to the previous song. Elapsed
+    // time since that song started passed a short track's duration at once,
+    // and handleNext cancelled the load (a SoundCloud widget load takes
+    // seconds, so a 30-second track was skipped before it could start).
     //
     // Use _activeResolver to determine the actual playback source, not just what sources exist
     const activeResolver = currentTrack?._activeResolver;
@@ -12609,7 +12616,7 @@ ${trackListXml}
     const isBrowserTrack = browserPlaybackActive || isExternalPlayback;
     const hasValidDuration = currentTrack?.duration && currentTrack.duration > 0;
 
-    if (isPlaying && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isEmbedPlayer && !isHtml5Stream && !isBrowserTrack && hasValidDuration) {
+    if (isPlaying && !trackLoading && audioContext && currentTrack && !isStreamingTrack && !isLocalFile && !isEmbedPlayer && !isHtml5Stream && !isBrowserTrack && hasValidDuration) {
       const interval = setInterval(() => {
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
@@ -12625,7 +12632,7 @@ ${trackListXml}
       }, 100);
       return () => clearInterval(interval);
     }
-  }, [isPlaying, audioContext, currentTrack, startTime, browserPlaybackActive, isExternalPlayback]);
+  }, [isPlaying, trackLoading, audioContext, currentTrack, startTime, browserPlaybackActive, isExternalPlayback]);
 
 
   // Apple Music native MusicKit polling interpolation baseline
