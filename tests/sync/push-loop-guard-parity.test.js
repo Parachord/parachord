@@ -106,6 +106,13 @@ const PARITY_GUARDS = [
       // without this marker the gate holds via the create-branch occurrence
       // alone and deleting the edit-branch check from one loop stays green.
       'if (Array.isArray(chOverride) && !chOverride.includes(providerId)) continue;',
+      // Arm-1 enforcement (the override array actually blocks a create) — the
+      // loops spell it differently (background inlines the continue, the
+      // wizard sets a channelBlocked var) but both contain this fragment.
+      '!chOverride.includes(providerId)',
+      // Gate outcome: whichever shape a loop uses, deleting the enforcement
+      // from one loop leaves neither marker in its region.
+      { anyOf: ['if (channelBlocked) {', 'if (!chOverride.includes(providerId)) continue;'] },
     ],
   },
   {
@@ -115,8 +122,25 @@ const PARITY_GUARDS = [
       'else if (playlist.locallyModified) {',
       // The 404 handling on a failed update push flags pendingAction so the
       // UI can surface a remote deletion instead of re-pushing forever.
-      "playlist.syncedTo[providerId].pendingAction = 'remote-deleted';",
+      { text: "playlist.syncedTo[providerId].pendingAction = 'remote-deleted';", min: 2 },
     ],
+  },
+  {
+    name: 'write branches: create (sync.createPlaylist) and update push (sync.pushPlaylist) with track resolution',
+    markers: [
+      'sync.createPlaylist(',
+      'sync.pushPlaylist(',
+      'resolveTracks',
+      'syncedAt: Date.now()',
+    ],
+  },
+  {
+    name: 'mutation bookkeeping (playlistsChanged flag + modifiedPlaylistIds set)',
+    markers: ['playlistsChanged = true', 'modifiedPlaylistIds.add('],
+  },
+  {
+    name: 'LB breaker trip is user-visible (toast text)',
+    markers: ['ListenBrainz rate-limited or unreachable; will resume next sync cycle'],
   },
   {
     name: 'LB auto-create opt-in (pushLocalPlaylists flood-guard, override bypass)',
@@ -157,6 +181,12 @@ function missingGuards(region) {
   const missing = [];
   for (const guard of PARITY_GUARDS) {
     for (const marker of guard.markers) {
+      if (marker && typeof marker === 'object' && Array.isArray(marker.anyOf)) {
+        if (!marker.anyOf.some((m) => region.includes(m))) {
+          missing.push(`${guard.name} — none of the shape markers present: ${marker.anyOf.join(' / ')}`);
+        }
+        continue;
+      }
       const need = marker.min || 1;
       const text = typeof marker === 'string' ? marker : marker.text;
       const count = region.split(text).length - 1;
