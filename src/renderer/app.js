@@ -648,6 +648,7 @@ const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTrac
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
+const PlaybackLimits = require('./lib/playback-limits');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -3631,6 +3632,29 @@ const Parachord = () => {
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
+  // The Spotify account's plan ('premium' / 'free'), or null when unknown.
+  // Spotify no longer reports it (`product` left /v1/me for Development Mode
+  // apps in February 2026, and every Parachord sign-in is one), so it is
+  // learned from playback: a play refused with PREMIUM_REQUIRED is 'free', a
+  // play that starts is 'premium'. A blocked Spotify is never tried, so a
+  // 'free' reading expires after SPOTIFY_FREE_TTL_MS (an upgrade gets noticed)
+  // and the Spotify panel can clear it. Remembered on this device; forgotten
+  // on disconnect. Feeds lib/playback-limits.js.
+  const SPOTIFY_FREE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const [spotifyProduct, setSpotifyProduct] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('spotify_product') || 'null');
+      if (!saved || typeof saved.product !== 'string') return null;
+      if (saved.product !== 'premium' && Date.now() - (saved.at || 0) > SPOTIFY_FREE_TTL_MS) return null;
+      return saved.product;
+    } catch (e) { return null; }
+  });
+  useEffect(() => {
+    try {
+      if (spotifyProduct) localStorage.setItem('spotify_product', JSON.stringify({ product: spotifyProduct, at: Date.now() }));
+      else localStorage.removeItem('spotify_product');
+    } catch (e) {}
+  }, [spotifyProduct]);
   const [spotifyDevice, setSpotifyDevice] = useState(null); // Current Spotify playback device { name, type, supports_volume }
   const [spotifyAdvancedOpen, setSpotifyAdvancedOpen] = useState(false); // Advanced settings accordion
   const [spotifyClientIdInput, setSpotifyClientIdInput] = useState(''); // Client ID input
@@ -5941,19 +5965,21 @@ const Parachord = () => {
   // Amazon Music sign-in status from the in-app player:
   // { success, engine: 'web', web: { cdm, signedIn }, plan, planMessage }
   const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
-  // #1220: a resolver that is enabled but can't play on the account's plan
-  // (Amazon off Music Unlimited). It stays in activeResolvers for what it
-  // still does (album search, artist photos, links), but playbackResolvers
-  // leaves it out: source selection, source icons and the priority numbers.
-  const planBlockedResolverIds = useMemo(() => (
-    amazonMusicStatus?.web?.signedIn && amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited'
-      ? ['amazonmusic'] : []
-  ), [amazonMusicStatus]);
-  const playbackResolvers = useMemo(() => (
-    planBlockedResolverIds.length
-      ? activeResolvers.filter(id => !planBlockedResolverIds.includes(id))
-      : activeResolvers
-  ), [activeResolvers, planBlockedResolverIds]);
+  // Resolvers that are enabled but can't play on the account's plan (Amazon
+  // off Music Unlimited, #1220; Spotify Free). Each service reports its limit
+  // into one map (lib/playback-limits.js). Such a resolver stays in
+  // activeResolvers for what it still does (search, album search, artist
+  // photos, links, playlist sync), but playbackResolvers leaves it out:
+  // source selection, source icons and the priority numbers.
+  const playbackLimits = useMemo(() => ({
+    amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
+    spotify: spotifyConnected ? PlaybackLimits.spotifyPlaybackLimit(spotifyProduct) : null
+  }), [amazonMusicStatus, spotifyConnected, spotifyProduct]);
+  const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
+  const playbackResolvers = useMemo(
+    () => PlaybackLimits.playbackResolverIds(activeResolvers, planBlockedResolverIds),
+    [activeResolvers, planBlockedResolverIds]
+  );
   const playbackResolversRef = useRef(playbackResolvers);
   playbackResolversRef.current = playbackResolvers;
   // Re-fetch Amazon Music status and audio quality when its detail modal opens.
@@ -7297,20 +7323,6 @@ const Parachord = () => {
   // it at run time, after this render has defined it.
   const applyAmazonMusicStatus = (s) => {
     setAmazonMusicStatus(s);
-    // #1220: off Music Unlimited, Amazon searches answer not-ready, which
-    // leaves no amazonmusic key but a fresh timestamp on every track. After
-    // an upgrade those would count as already searched for 7 days, so clear
-    // them once the plan reads unlimited where it last read otherwise (kept
-    // across restarts: the upgrade can happen while the app is closed).
-    const plan = s && s.plan;
-    if (!plan) return;
-    let last = null;
-    try { last = localStorage.getItem('amazonmusic_last_plan'); } catch (e) {}
-    if (plan === 'unlimited' && last && last !== 'unlimited' && typeof window.__parachordClearAmazonNoMatch === 'function') {
-      console.log(`[Amazon] plan is now Music Unlimited (was ${last}); re-resolving Amazon`);
-      window.__parachordClearAmazonNoMatch();
-    }
-    try { localStorage.setItem('amazonmusic_last_plan', plan); } catch (e) {}
   };
   const refreshAmazonMusicStatus = (opts) => {
     if (!window.electron?.amazonMusic?.getStatus) return;
@@ -7515,20 +7527,21 @@ const Parachord = () => {
     if (cached > 0) console.log(`📚 Dropped ${cached} cached local source(s) for files no longer in the library`);
   }, [libraryPathsVersion, cacheLoaded, collectionLoading]);
 
-  // After sign-in, tracks resolved while Amazon was not ready have no
-  // amazonmusic key (notReady skips the noMatch marker) but a fresh timestamp.
-  // cacheValid then treats every enabled resolver as already queried for 7 days.
-  // Zero those timestamps too, not only entries that carry the marker.
-  window.__parachordClearAmazonNoMatch = () => {
+  // After sign-in (or an upgrade, #1220), tracks resolved while a resolver was
+  // not ready have no key for it (notReady skips the noMatch marker) but a
+  // fresh timestamp. cacheValid then treats every enabled resolver as already
+  // queried for 7 days. Zero those timestamps too, not only entries that
+  // carry the marker.
+  const clearResolverMisses = (resolverId) => {
     const cache = trackSourcesCache.current || {};
     for (const key of Object.keys(cache)) {
       const entry = cache[key];
       if (!entry?.sources) continue;
-      const am = entry.sources.amazonmusic;
+      const am = entry.sources[resolverId];
       if (am && !am.noMatch) continue;
       if (am?.noMatch) {
         const sources = { ...entry.sources };
-        delete sources.amazonmusic;
+        delete sources[resolverId];
         entry.sources = sources;
       }
       entry.timestamp = 0;
@@ -7540,9 +7553,9 @@ const Parachord = () => {
       let changed = false;
       const next = { ...prev };
       for (const key of Object.keys(next)) {
-        if (!next[key]?.amazonmusic?.noMatch) continue;
+        if (!next[key]?.[resolverId]?.noMatch) continue;
         const copy = { ...next[key] };
-        delete copy.amazonmusic;
+        delete copy[resolverId];
         if (copy.__noMatchAll) delete copy.__noMatchAll;
         next[key] = copy;
         changed = true;
@@ -7553,10 +7566,10 @@ const Parachord = () => {
       if (!prev?.tracks?.length) return prev;
       let changed = false;
       const tracks = prev.tracks.map(t => {
-        if (!t?.sources?.amazonmusic?.noMatch) return t;
+        if (!t?.sources?.[resolverId]?.noMatch) return t;
         changed = true;
         const sources = { ...t.sources };
-        delete sources.amazonmusic;
+        delete sources[resolverId];
         return { ...t, sources };
       });
       if (!changed) return prev;
@@ -7565,6 +7578,48 @@ const Parachord = () => {
       return newData;
     });
   };
+  window.__parachordClearAmazonNoMatch = () => clearResolverMisses('amazonmusic');
+
+  // A resolver whose plan stopped blocking it (an upgrade) and whose searches
+  // were held back meanwhile (Amazon) searches again. Its last state is kept
+  // per resolver across restarts: the upgrade can happen while the app is
+  // closed (lib/playback-limits.js, #1220).
+  useEffect(() => {
+    for (const [resolverId, limit] of Object.entries(playbackLimits)) {
+      const key = PlaybackLimits.limitStorageKey(resolverId);
+      let last = null;
+      try { last = localStorage.getItem(key); } catch (e) {}
+      const { reresolve, store } = PlaybackLimits.limitTransition(last, limit);
+      if (reresolve) {
+        console.log(`[Playback limits] ${resolverId} can play now (${limit.planKey}); searching it again`);
+        clearResolverMisses(resolverId);
+      }
+      if (store !== null && store !== last) {
+        try { localStorage.setItem(key, store); } catch (e) {}
+      }
+    }
+  }, [playbackLimits]);
+
+  // A play that started proves the plan plays (Spotify: Premium).
+  window.__parachordNotePlanPlays = (resolverId) => {
+    if (resolverId === 'spotify' && spotifyProduct !== 'premium') setSpotifyProduct('premium');
+  };
+
+  // The engine's plan refusal (reason 'plan-ineligible') reports here: record
+  // the plan the service just told us, and return the wording to show.
+  window.__parachordNotePlanRefusal = (resolverId, planKey) => {
+    if (resolverId === 'spotify') {
+      const product = planKey || 'free';
+      setSpotifyProduct(product);
+      return PlaybackLimits.spotifyPlaybackLimit(product)?.message || null;
+    }
+    if (resolverId === 'amazonmusic') {
+      refreshAmazonMusicStatus();
+      return null; // main's refusal already carries the Amazon wording
+    }
+    return null;
+  };
+
 
   // Cache for artist images from Last.fm (artistName -> { url, timestamp })
   const artistImageCache = useRef({});
@@ -32628,6 +32683,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       await window.electron.spotify.disconnect();
       setSpotifyToken(null);
       setSpotifyConnected(false);
+      setSpotifyProduct(null); // the next sign-in may be another account
       // Remove Spotify sources from all tracks and remove from active resolvers
       removeResolverSources('spotify');
       setActiveResolvers(prev => prev.filter(id => id !== 'spotify'));
@@ -41907,8 +41963,9 @@ useEffect(() => {
                         // or dropped on: a plan-blocked one sits outside the
                         // numbered order (#1220), so its slot isn't a position.
                         const reorderable = isActive && !planBlockedResolverIds.includes(resolver.id);
-                        const amazonPlanLimited = resolver.id === 'amazonmusic' && isActive
-                          && amazonMusicStatus?.web?.signedIn && amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited';
+                        // Enabled but limited by the account's plan: the label
+                        // and its tooltip come from the resolver's limit.
+                        const planStatus = isActive ? PlaybackLimits.tileStatus(playbackLimits, resolver.id) : { statusLabel: null, statusTitle: null };
 
                         return React.createElement(ResolverCard, {
                           key: resolver.id,
@@ -41916,8 +41973,8 @@ useEffect(() => {
                           isActive: isActive,
                           hasUpdate: resolver.hasUpdate,
                           needsConfiguration: needsConfiguration,
-                          statusLabel: amazonPlanLimited ? (amazonMusicStatus.plan === 'prime' ? 'Prime: no playback' : 'Plan not confirmed') : null,
-                          statusTitle: amazonPlanLimited ? amazonMusicStatus.planMessage : null,
+                          statusLabel: planStatus.statusLabel,
+                          statusTitle: planStatus.statusTitle,
                           priorityNumber: resolver.priorityNumber,
                           isInstalling: isInstalling,
                           draggable: reorderable,
@@ -46245,16 +46302,34 @@ useEffect(() => {
                     }
                   }, 'Connect')
             ),
+            // The plan as Spotify reports it: this line used to say Premium
+            // for every connected account. Free can't play over Connect, so
+            // say why instead (lib/playback-limits.js).
             spotifyConnected && React.createElement('div', {
               className: 'flex items-center gap-2',
               style: {
                 marginTop: '12px',
                 fontSize: '12px',
-                color: '#22c55e'
+                color: PlaybackLimits.limitMessage(playbackLimits, 'spotify') ? '#d97706' : '#22c55e'
               }
             },
-              React.createElement('span', null, '✓'),
-              React.createElement('span', null, 'Spotify Premium connected')
+              React.createElement('span', null, PlaybackLimits.limitMessage(playbackLimits, 'spotify') ? '!' : '✓'),
+              React.createElement('span', null,
+                PlaybackLimits.limitMessage(playbackLimits, 'spotify')
+                  || (spotifyProduct === 'premium' ? 'Spotify Premium connected' : 'Spotify connected')),
+              // Spotify can't be asked for the plan, and a blocked Spotify is
+              // never tried, so after an upgrade this lets the next play test it.
+              PlaybackLimits.limitMessage(playbackLimits, 'spotify') && React.createElement('button', {
+                onClick: () => {
+                  setSpotifyProduct(null);
+                  showToast('Parachord will try Spotify again on the next play.', 'info');
+                },
+                style: {
+                  marginLeft: '8px', padding: '2px 8px', fontSize: '11px', fontWeight: '500',
+                  color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
+                  borderRadius: '6px', flexShrink: 0
+                }
+              }, 'Check again')
             ),
             // Spotify API credentials — BYOK required
             !spotifyConnected && React.createElement('div', {
@@ -48677,7 +48752,7 @@ useEffect(() => {
                 }, !amazonMusicStatus ? '' :
                   amazonMusicStatus.web?.signedIn
                     // Off Music Unlimited, nothing plays (#1220); say why.
-                    ? (amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited' ? (amazonMusicStatus.planMessage || '') : '')
+                    ? (PlaybackLimits.limitMessage(playbackLimits, 'amazonmusic') || '')
                     : amazonMusicStatus.web?.cdm
                       ? 'Sign in with your Amazon Music account'
                       : 'This build cannot play DRM-protected Amazon streams')

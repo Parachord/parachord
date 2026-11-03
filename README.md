@@ -16,9 +16,9 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Buy Links** - Bandcamp purchase buttons surfaced for any track that can be found, even when streaming from a different source
 
 ### Supported Sources
-- **Spotify** - Full Spotify Connect integration with remote playback (Premium required)
+- **Spotify** - Full Spotify Connect integration with remote playback (Premium required to play; with Spotify Free, Spotify is still used for search, playlists and links)
 - **Apple Music** - Full playback via native MusicKit on macOS or MusicKit JS on Windows and Linux (subscription required). Windows and Linux playback needs the Widevine CDM, which Parachord downloads on first launch (see [System Requirements](#system-requirements))
-- **Amazon Music** - Plays in Parachord's own player, using the same streams and licenses Amazon's web player uses, decrypted by the Widevine CDM on every platform (Amazon Music account required; you sign in once in a Parachord window). It does not use the Amazon Music desktop app
+- **Amazon Music** - Plays in Parachord's own player, using the same streams and licenses Amazon's web player uses, decrypted by the Widevine CDM on every platform (Amazon Music Unlimited required to play; with Amazon Prime, Amazon is still used for album art, artist photos and links. You sign in once in a Parachord window). It does not use the Amazon Music desktop app
 - **YouTube** - Stream audio from YouTube videos
 - **Bandcamp** - Browse, play, and purchase from independent artists
 - **SoundCloud** - Stream from SoundCloud's catalog
@@ -88,6 +88,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 Parachord is a player for people who already subscribe to the services it plays from, plus their own files and servers. It brings those services together in one app. It is not a way to get music without paying for it, or to keep copies of it.
 
 - **Your account, the service's own streams.** Each service plays through your own account, using that service's own player, its official API, or the same endpoints its own web player uses. Either way, the stream, its license and its quality come from the service. On the subscription services (Spotify, Apple Music, Amazon Music), your plays are reported to the service the way its own player reports them, so they count. Where a service needs a subscription for full tracks, so does Parachord.
+- **Plans without on-demand playback.** Where a plan can't play a chosen track on demand (Amazon Prime, Spotify Free), Parachord doesn't play that service's tracks at all. It still uses the service for what the plan allows, such as search, album art, artist photos, links and playlists, and Settings says why it isn't playing.
 - **No ripping.** Parachord doesn't decrypt, record, download or save protected streams. It doesn't extract decryption keys, and it doesn't unlock tiers or content your subscription doesn't include.
 - **Decryption stays with the service.** Spotify plays in Spotify's own app through Spotify Connect. Apple Music on macOS plays through Apple's MusicKit. Amazon Music, and Apple Music on Windows and Linux, are decrypted inside Google's Widevine module, using a license the service issues to your account. Parachord never sees the decryption keys and never saves the audio.
 - **Plug-ins follow the same rules.** A plug-in that tries to get around a service's protections isn't accepted into the Parachord marketplace, and is removed if one slips through (see the [plug-in guidelines](https://github.com/Parachord/parachord-plugins#guidelines)). Plug-ins installed from anywhere else aren't reviewed, so Parachord can't vouch for them.

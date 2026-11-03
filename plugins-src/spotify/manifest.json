@@ -2,7 +2,10 @@
   "manifest": {
     "id": "spotify",
     "name": "Spotify",
-    "version": "1.2.1",
+    "version": "1.3.0",
+    "minAppVersion": {
+      "desktop": "0.9.12"
+    },
     "author": "Parachord Team",
     "description": "Stream from Spotify via Spotify Connect API. Requires Spotify Premium for remote playback.",
     "icon": "♫",

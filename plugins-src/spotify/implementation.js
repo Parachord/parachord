@@ -421,6 +421,19 @@ module.exports = {
       return false;
     }
     let token = config.token;
+    // A Spotify Free account can't be controlled over Connect: the player
+    // endpoints answer 403 with reason PREMIUM_REQUIRED. Say so, so the host
+    // can treat it as the account's plan (another source plays, Spotify is
+    // left out of playback) instead of a missing device.
+    async function premiumRequired(response) {
+      if (response.status !== 403) return false;
+      try {
+        const body = await response.json();
+        return !!(body && body.error && body.error.reason === 'PREMIUM_REQUIRED');
+      } catch (e) {
+        return false;
+      }
+    }
     async function tryPlay(t) {
       const devicesResponse = await fetch('https://api.spotify.com/v1/me/player/devices', {
         headers: { Authorization: `Bearer ${t}` },
@@ -453,6 +466,7 @@ module.exports = {
           body: JSON.stringify({ device_ids: [activeDevice.id], play: true }),
         });
         if (!transferResponse.ok && transferResponse.status !== 204) {
+          if (await premiumRequired(transferResponse)) return { premiumRequired: true };
           console.error('Failed to transfer playback');
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -465,6 +479,7 @@ module.exports = {
         });
       const playResponse = await sendPlay();
       if (playResponse.status === 401) return { needsRefresh: true };
+      if (await premiumRequired(playResponse)) return { premiumRequired: true };
       if (!playResponse.ok && playResponse.status !== 204) return { success: false };
       const matches = (item) =>
         !!item &&
@@ -505,19 +520,32 @@ module.exports = {
       );
       return { success: true };
     }
+    // Apps that know the account's plan (the playback-limits hook, desktop
+    // 0.9.12+) get plan-ineligible; older hosts and mobile get the plain
+    // false they always did, which they already handle.
+    const refuseForPlan = () => {
+      if (typeof window === 'undefined' || typeof window.__parachordNotePlanRefusal !== 'function') return false;
+      const err = new Error('Spotify Premium is required to play Spotify tracks in Parachord.');
+      err.reason = 'plan-ineligible';
+      err.planKey = 'free';
+      throw err;
+    };
     try {
       const result = await tryPlay(token);
+      if (result.premiumRequired) return refuseForPlan();
       if (result.needsRefresh && config.refreshToken) {
         console.log('🔄 Spotify play: Token expired, refreshing...');
         const newToken = await config.refreshToken();
         if (newToken && newToken !== token) {
           console.log('🔄 Spotify play: Retrying with refreshed token');
           const retryResult = await tryPlay(newToken);
+          if (retryResult.premiumRequired) return refuseForPlan();
           return retryResult.success || false;
         }
       }
       return result.success || false;
     } catch (error) {
+      if (error && error.reason === 'plan-ineligible') throw error;
       console.error('Spotify play error:', error);
       return false;
     }

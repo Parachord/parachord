@@ -13,7 +13,6 @@ const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
 const main = read('main.js');
 const preload = read('preload.js');
 const app = read('src/renderer/app.js');
-const engine = read('src/renderer/hooks/use-playback-engine.js');
 const telemetry = read('main-process/amazon-telemetry.js');
 
 const between = (src, start, end) => {
@@ -74,62 +73,9 @@ describe('renderer', () => {
     // The only non-explicit caller was this one.
     expect(app).not.toMatch(/manageAmazonMusic\(\{ explicit: false/);
   });
-
-  test('an Amazon that cannot play is left out of playback, icons and priority, but stays active', () => {
-    // Derived from the status: signed in and not on Music Unlimited.
-    expect(app).toMatch(/amazonMusicStatus\?\.web\?\.signedIn && amazonMusicStatus\.plan && amazonMusicStatus\.plan !== 'unlimited'\s*\? \['amazonmusic'\] : \[\]/);
-    expect(app).toMatch(/activeResolvers\.filter\(id => !planBlockedResolverIds\.includes\(id\)\)/);
-    // The engine plays only from playbackResolvers.
-    expect(app).toMatch(/activeResolversRef: playbackResolversRef,/);
-    // Source icons: every badge filter in app.js, the playbar picker and the pages.
-    expect(app).not.toMatch(/\.filter\(\(\[resolverId\]\) => activeResolvers\.includes\(resolverId\)\)/);
-    expect(app.match(/\.filter\(\(\[resolverId\]\) => playbackResolvers\.includes\(resolverId\)\)/g)).toHaveLength(6);
-    expect(app).toMatch(/if \(!playbackResolvers\.includes\(resId\)\) return false;/);
-    expect(app.match(/^\s+activeResolvers: playbackResolvers, /gm)).toHaveLength(4);
-    // Settings: numbered resolvers first, then the plan-blocked ones with no
-    // number (display only; resolverOrder keeps their slot), and those can't
-    // be dragged or dropped on.
-    expect(app).toMatch(/\[\.\.\.playingInOrder, \.\.\.planBlockedInOrder\]\.forEach\(\(resolverId, index\) => \{/);
-    expect(app).toMatch(/priorityNumber: index < playingInOrder\.length \? index \+ 1 : null,/);
-    expect(app).toMatch(/const reorderable = isActive && !planBlockedResolverIds\.includes\(resolver\.id\);/);
-    expect(app).toMatch(/draggable: reorderable,/);
-    expect(app).toMatch(/onDrop: reorderable \? /);
-    expect(app).not.toMatch(/setResolverOrder\([^)]*planBlocked/);
-    // Metadata still asks every active resolver.
-    expect(app).toMatch(/const amazonMusicEnabled = activeResolvers\.includes\('amazonmusic'\);/);
-  });
-
-  test('an upgrade to Music Unlimited re-resolves Amazon, across restarts', () => {
-    const fn = between(app, 'const applyAmazonMusicStatus = (s) => {', 'const refreshAmazonMusicStatus');
-    expect(fn).toMatch(/localStorage\.getItem\('amazonmusic_last_plan'\)/);
-    expect(fn).toMatch(/plan === 'unlimited' && last && last !== 'unlimited'[^\n]*\n[^\n]*\n\s*window\.__parachordClearAmazonNoMatch\(\);/);
-    expect(fn).toMatch(/localStorage\.setItem\('amazonmusic_last_plan', plan\)/);
-    // Every status read goes through it, and main's change event triggers one.
-    const refresh = between(app, 'const refreshAmazonMusicStatus = (opts) => {', '\n  };');
-    expect(refresh).toMatch(/\.then\(\(s\) => applyAmazonMusicStatus\(/);
-    expect(app).toMatch(/window\.electron\.amazonMusic\.onPlanChanged\(\(\) => refreshAmazonMusicStatus\(\)\)/);
-    expect(app).toMatch(/if \(s && s\.success\) applyAmazonMusicStatus\(s\);/);
-    expect(app).not.toMatch(/if \(s && s\.success\) setAmazonMusicStatus\(s\);/);
-  });
-
-  test('the tile and the settings panel show the plan message', () => {
-    expect(app).toMatch(/statusTitle: amazonPlanLimited \? amazonMusicStatus\.planMessage : null/);
-    expect(app).toMatch(/amazonMusicStatus\.plan && amazonMusicStatus\.plan !== 'unlimited' \? \(amazonMusicStatus\.planMessage \|\| ''\)/);
-  });
-
-  test('the widevine branch handles a plan refusal before the sign-in path, and after a sign-in retry', () => {
-    const branch = between(engine, 'if (isWidevineResolver(resolverId)) {', '// Check if another play request superseded this one while loading');
-    const planCheck = branch.indexOf('if (handlePlanRefusal(error)) return;');
-    expect(planCheck).toBeGreaterThan(-1);
-    expect(planCheck).toBeLessThan(branch.indexOf("error.reason === 'not-signed-in'"));
-    expect(branch).toMatch(/if \(handlePlanRefusal\(retryError\)\) return;/);
-    const fn = between(branch, 'const handlePlanRefusal = (err) => {', '\n      };');
-    expect(fn).toMatch(/err\.reason !== 'plan-ineligible'/);
-    // Another enabled source plays, without this one.
-    expect(fn).toMatch(/handlePlay\(\{\s*\.\.\.trackOrSource,\s*sources: Object\.fromEntries\(Object\.entries\(trackOrSource\.sources\)\.filter\(\(\[id\]\) => id !== resolverId\)\)/);
-    // The fallback toast is explained once per resolver per session.
-    expect(fn).toMatch(/if \(!planRefusalExplained\.has\(resolverId\)\)/);
-  });
+  // The playback-limit wiring Amazon shares with Spotify (playbackResolvers,
+  // the Settings grid, the upgrade re-search, the engine's refusal) is pinned
+  // in tests/renderer/playback-limits.test.js.
 });
 
 describe('ResolverCard status label', () => {
