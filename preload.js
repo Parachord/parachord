@@ -616,7 +616,8 @@ contextBridge.exposeInMainWorld('electron', {
   // search parked offscreen) load music.amazon.com on the main window and
   // castlabs Electron's Widevine CDM decrypts. The desktop app is not used.
   amazonMusic: {
-    getStatus: () => ipcRenderer.invoke('amazonmusic-get-status'),
+    // { refreshPlan: true } reads the plan from Amazon instead of the cache.
+    getStatus: (opts) => ipcRenderer.invoke('amazonmusic-get-status', { refreshPlan: !!(opts && opts.refreshPlan) }),
     openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
     signOut: () => ipcRenderer.invoke('amazonmusic-sign-out'),
     searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks',

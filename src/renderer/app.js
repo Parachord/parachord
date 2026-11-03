@@ -5962,7 +5962,9 @@ const Parachord = () => {
     let cancelled = false;
     (async () => {
       try {
-        const s = await window.electron.amazonMusic.getStatus();
+        // refreshPlan: read the plan from Amazon now, not the 30-minute cache,
+        // so an upgrade shows as soon as the panel opens (#1220).
+        const s = await window.electron.amazonMusic.getStatus({ refreshPlan: true });
         if (cancelled) return;
         const status = s && s.success ? s : { success: true, engine: 'widevine', web: { cdm: false, signedIn: false } };
         setAmazonMusicStatus(status);
@@ -7310,9 +7312,9 @@ const Parachord = () => {
     }
     try { localStorage.setItem('amazonmusic_last_plan', plan); } catch (e) {}
   };
-  const refreshAmazonMusicStatus = () => {
+  const refreshAmazonMusicStatus = (opts) => {
     if (!window.electron?.amazonMusic?.getStatus) return;
-    window.electron.amazonMusic.getStatus()
+    window.electron.amazonMusic.getStatus(opts)
       .then((s) => applyAmazonMusicStatus(s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } }))
       .catch(() => {});
   };
@@ -7320,7 +7322,9 @@ const Parachord = () => {
   useEffect(() => {
     if (!cacheLoaded || !amazonMusicEnabled) return;
     if (activeView !== 'settings' && amazonMusicStatus) return;
-    refreshAmazonMusicStatus();
+    // Opening Settings reads the plan from Amazon, not the 30-minute cache,
+    // so an upgrade shows (and re-resolves) as soon as Settings opens (#1220).
+    refreshAmazonMusicStatus({ refreshPlan: activeView === 'settings' });
   }, [cacheLoaded, amazonMusicEnabled, activeView]);
   // Main reports a plan change (a session mint or a re-read found another
   // plan): refresh the tile and settings, and re-resolve on an upgrade.

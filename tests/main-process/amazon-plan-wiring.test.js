@@ -44,8 +44,15 @@ describe('main process', () => {
 
   test('getStatus reports the plan and its message once signed in', () => {
     const handler = between(main, "ipcMain.handle('amazonmusic-get-status'", "ipcMain.handle('amazonmusic-open-login'");
-    expect(handler).toMatch(/if \(signedIn\) \{\s*try \{ plan = await amazonDmls\.getPlan\(\); \} catch \{ plan = 'unknown'; \}/);
+    expect(handler).toMatch(/if \(signedIn\) \{\s*try \{ plan = await amazonDmls\.getPlan\(\{ refresh: !!refreshPlan \}\); \} catch \{ plan = 'unknown'; \}/);
+    expect(main).toMatch(/ipcMain\.handle\('amazonmusic-get-status', async \(event, \{ refreshPlan \} = \{\}\) => \{/);
+    expect(preload).toMatch(/getStatus: \(opts\) => ipcRenderer\.invoke\('amazonmusic-get-status', \{ refreshPlan: !!\(opts && opts\.refreshPlan\) \}\)/);
     expect(handler).toMatch(/planMessage: plan \? amazonPlanMessage\(plan\) : null/);
+  });
+
+  test('opening Settings or the Amazon panel reads the plan fresh', () => {
+    expect(app).toMatch(/refreshAmazonMusicStatus\(\{ refreshPlan: activeView === 'settings' \}\);/);
+    expect(app).toMatch(/window\.electron\.amazonMusic\.getStatus\(\{ refreshPlan: true \}\)/);
   });
 
   test('a plan change is sent to the renderer', () => {
@@ -98,7 +105,7 @@ describe('renderer', () => {
     expect(fn).toMatch(/plan === 'unlimited' && last && last !== 'unlimited'[^\n]*\n[^\n]*\n\s*window\.__parachordClearAmazonNoMatch\(\);/);
     expect(fn).toMatch(/localStorage\.setItem\('amazonmusic_last_plan', plan\)/);
     // Every status read goes through it, and main's change event triggers one.
-    const refresh = between(app, 'const refreshAmazonMusicStatus = () => {', '\n  };');
+    const refresh = between(app, 'const refreshAmazonMusicStatus = (opts) => {', '\n  };');
     expect(refresh).toMatch(/\.then\(\(s\) => applyAmazonMusicStatus\(/);
     expect(app).toMatch(/window\.electron\.amazonMusic\.onPlanChanged\(\(\) => refreshAmazonMusicStatus\(\)\)/);
     expect(app).toMatch(/if \(s && s\.success\) applyAmazonMusicStatus\(s\);/);

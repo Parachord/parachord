@@ -130,7 +130,14 @@ const adapter = {
     }
     if (this.planPromise) return this.planPromise;
     this.planPromise = this.fetchConfigJson()
-      .then((config) => this.notePlan(amazonNativeSessionFromConfig(config).tier, now).plan)
+      .then((config) => {
+        const tier = amazonNativeSessionFromConfig(config).tier;
+        // A forced re-read (opening Settings) that comes back without a tier,
+        // offline or a bad reply, doesn't overturn a known plan: that would
+        // block an Unlimited account for a minute because Settings opened.
+        if (refresh && !tier && s && s.plan !== 'unknown') return s.plan;
+        return this.notePlan(tier, now).plan;
+      })
       .finally(() => { this.planPromise = null; });
     return this.planPromise;
   },

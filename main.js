@@ -3685,16 +3685,18 @@ ipcMain.handle('applemusic-polling-status', async () => {
 // hidden search view.
 // Errors come back as { success: false, error|reason } rather than thrown IPC
 // rejections so the resolver can branch (not-ready must not be cached as noMatch).
-ipcMain.handle('amazonmusic-get-status', async () => {
+ipcMain.handle('amazonmusic-get-status', async (event, { refreshPlan } = {}) => {
   try {
     const cdm = amazonWebPlayer.cdmAvailable();
     const signedIn = await amazonWebPlayer.isSignedIn();
     const preload = await amazonWebPlayer.preloadProbe();
-    // #1220: only Music Unlimited plays. Read once signed in (cached, so
-    // opening Settings doesn't refetch); null when signed out.
+    // #1220: only Music Unlimited plays. Read once signed in; null when
+    // signed out. Cached for 30 minutes, except that opening Settings or the
+    // Amazon panel asks for a fresh read (refreshPlan), so an upgrade shows
+    // up there at once.
     let plan = null;
     if (signedIn) {
-      try { plan = await amazonDmls.getPlan(); } catch { plan = 'unknown'; }
+      try { plan = await amazonDmls.getPlan({ refresh: !!refreshPlan }); } catch { plan = 'unknown'; }
     }
     return {
       success: true,

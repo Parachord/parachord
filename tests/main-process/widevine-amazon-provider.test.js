@@ -519,6 +519,26 @@ describe('amazon-dmls plan gate (#1220)', () => {
     expect(await amazonDmls.getPlan({}, t0 + 61 * 1000)).toBe('unlimited');
   });
 
+  test('a forced re-read (opening Settings) sees an upgrade at once', async () => {
+    const t0 = 2_000_000;
+    requestHandlers.push(() => ({ status: 200, text: configWithTier('PRIME') }));
+    expect(await amazonDmls.getPlan({}, t0)).toBe('prime');
+    requestHandlers.push(() => ({ status: 200, text: configWithTier('UNLIMITED') }));
+    expect(await amazonDmls.getPlan({ refresh: true }, t0 + 1000)).toBe('unlimited');
+  });
+
+  test('a forced re-read that fails keeps a known plan', async () => {
+    const t0 = 3_000_000;
+    requestHandlers.push(() => ({ status: 200, text: configWithTier('UNLIMITED_HD') }));
+    expect(await amazonDmls.getPlan({}, t0)).toBe('unlimited');
+    requestHandlers.push(() => ({ status: 200, text: '' })); // offline / a bad reply
+    expect(await amazonDmls.getPlan({ refresh: true }, t0 + 1000)).toBe('unlimited');
+    expect(amazonDmls.planState).toMatchObject({ plan: 'unlimited', at: t0 });
+    // The scheduled re-read still judges it: past the TTL, no tier is unknown.
+    requestHandlers.push(() => ({ status: 200, text: '' }));
+    expect(await amazonDmls.getPlan({}, t0 + 31 * 60 * 1000)).toBe('unknown');
+  });
+
   test('getPlan needs the auth cookies', async () => {
     const saved = mockCookies.splice(0);
     try {
