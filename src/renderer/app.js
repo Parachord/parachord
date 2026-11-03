@@ -745,6 +745,25 @@ window.globalResolverLimiter = window.createLimiter({
   }
 });
 
+// The MusicKit developer token. The main process picks it (environment >
+// generated at launch > saved in Settings, skipping any that has expired;
+// main-process/musickit-token.js). localStorage holds the Settings copy and
+// is read only when there is no main process to ask. Reading it first, as
+// every caller used to, kept an expired saved token in use while a fresh
+// generated one sat unused, and MusicKit refused it ("Initialized with an
+// expired token").
+async function getMusicKitDeveloperToken() {
+  if (window.electron?.config?.get) {
+    try {
+      return await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+    } catch (e) {
+      console.log('[MusicKit] Could not get the developer token:', e.message);
+      return '';
+    }
+  }
+  return localStorage.getItem('musickit_developer_token') || '';
+}
+
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
 // opts.lane: the resolver lane the plugin's caller asked for ('priority' for a
@@ -790,23 +809,14 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
   if (musicKitWeb) {
     let status = musicKitWeb.getAuthStatus();
 
-    // If not configured, try to configure with token from localStorage or env
+    // If not configured, try to configure with the developer token
     if (!status.configured) {
-      let developerToken = localStorage.getItem('musickit_developer_token') || '';
-
-      // Try to get from electron config (.env) if not in localStorage
-      if (!developerToken && window.electron?.config?.get) {
-        try {
-          developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
-        } catch (e) {
-          console.log('[AppleMusicSearch] Could not get token from env:', e.message);
-        }
-      }
+      const developerToken = await getMusicKitDeveloperToken();
 
       // Configure MusicKit if we have a token
       if (developerToken) {
         try {
-          console.log('[AppleMusicSearch] Configuring MusicKit with token from', localStorage.getItem('musickit_developer_token') ? 'localStorage' : 'env');
+          console.log('[AppleMusicSearch] Configuring MusicKit');
           await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
           status = musicKitWeb.getAuthStatus();
         } catch (configError) {
@@ -883,10 +893,7 @@ window.appleMusicLookupSong = async (songId, storefront = 'us') => {
   if (musicKitWeb) {
     let status = musicKitWeb.getAuthStatus();
     if (!status.configured) {
-      let developerToken = localStorage.getItem('musickit_developer_token') || '';
-      if (!developerToken && window.electron?.config?.get) {
-        try { developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || ''; } catch (e) {}
-      }
+      const developerToken = await getMusicKitDeveloperToken();
       if (developerToken) {
         try {
           await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
@@ -951,10 +958,7 @@ window.appleMusicLookupAlbum = async (albumId, storefront = 'us') => {
   if (musicKitWeb) {
     let status = musicKitWeb.getAuthStatus();
     if (!status.configured) {
-      let developerToken = localStorage.getItem('musickit_developer_token') || '';
-      if (!developerToken && window.electron?.config?.get) {
-        try { developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || ''; } catch (e) {}
-      }
+      const developerToken = await getMusicKitDeveloperToken();
       if (developerToken) {
         try {
           await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
@@ -1049,10 +1053,7 @@ window.appleMusicSearchAlbumsWithMusicKit = async (term, storefront = 'us', limi
   if (!musicKitWeb) return null;
   let status = musicKitWeb.getAuthStatus();
   if (!status.configured) {
-    let developerToken = localStorage.getItem('musickit_developer_token') || '';
-    if (!developerToken && window.electron?.config?.get) {
-      try { developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || ''; } catch (e) {}
-    }
+    const developerToken = await getMusicKitDeveloperToken();
     if (developerToken) {
       try {
         await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
@@ -1094,10 +1095,7 @@ window.appleMusicLookupPlaylist = async (playlistId, storefront = 'us') => {
 
   let status = musicKitWeb.getAuthStatus();
   if (!status.configured) {
-    let developerToken = localStorage.getItem('musickit_developer_token') || '';
-    if (!developerToken && window.electron?.config?.get) {
-      try { developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || ''; } catch (e) {}
-    }
+    const developerToken = await getMusicKitDeveloperToken();
     if (developerToken) {
       try {
         await musicKitWeb.configure(developerToken, 'Parachord', '1.0.0');
@@ -8910,7 +8908,7 @@ const Parachord = () => {
         // button instead, which routes through the auth-window flow.
         if (musicKitWeb && window.electron?.platform === 'darwin') {
           try {
-            const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+            const devToken = await getMusicKitDeveloperToken();
             const status = musicKitWeb.getAuthStatus();
             if (!status.configured && devToken) {
               await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
@@ -9002,7 +9000,7 @@ const Parachord = () => {
         // Settings (which routes through the auth-window flow).
         if (musicKitWeb && window.electron?.platform === 'darwin') {
           try {
-            const devToken = localStorage.getItem('musickit_developer_token') || await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
+            const devToken = await getMusicKitDeveloperToken();
             const status = musicKitWeb.getAuthStatus();
             if (!status.configured && devToken) {
               await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
@@ -12330,28 +12328,12 @@ ${trackListXml}
       return { token };
     }
 
-    // For Apple Music, load developer token with fallback chain:
-    // 1. User-configured (localStorage) > 2. Environment variable (.env)
+    // For Apple Music, the developer token (the main process picks it)
     if (resolverId === 'applemusic') {
-      let developerToken = localStorage.getItem('musickit_developer_token') || '';
-      let tokenSource = 'user';
-
-      // Try to load from environment variable if not in localStorage
-      if (!developerToken && window.electron?.config?.get) {
-        try {
-          developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
-          if (developerToken) {
-            tokenSource = 'environment';
-            console.log('🍎 Loaded MusicKit developer token from environment');
-          }
-        } catch (e) {
-          // Ignore errors
-        }
-      }
+      const developerToken = await getMusicKitDeveloperToken();
 
       return {
         developerToken,
-        tokenSource,
         storefront: 'us'
       };
     }
@@ -32760,15 +32742,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Check for MusicKit JS first (cross-platform)
       const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
 
-      // Load developer token: user-configured > environment variable
-      let developerToken = localStorage.getItem('musickit_developer_token') || '';
-      if (!developerToken && window.electron?.config?.get) {
-        try {
-          developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || '';
-        } catch (e) {
-          // Ignore errors
-        }
-      }
+      // Load the developer token (the main process picks it)
+      const developerToken = await getMusicKitDeveloperToken();
       const userToken = localStorage.getItem('musickit_user_token') || '';
 
       if (musicKitWeb && developerToken) {
@@ -32922,10 +32897,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     // Determine available auth methods
     const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-    let developerToken = localStorage.getItem('musickit_developer_token') || '';
-    if (!developerToken && window.electron?.config?.get) {
-      try { developerToken = await window.electron.config.get('MUSICKIT_DEVELOPER_TOKEN') || ''; } catch (e) {}
-    }
+    const developerToken = await getMusicKitDeveloperToken();
 
     const hasNativeMusicKit = window.electron?.musicKit && await window.electron.musicKit.isAvailable().catch(() => false);
     const hasMusicKitWeb = !!(musicKitWeb && developerToken);
