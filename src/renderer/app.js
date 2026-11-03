@@ -6401,11 +6401,18 @@ const Parachord = () => {
     if (trackMeta.bandcampTrackId) sourceData.bandcampTrackId = trackMeta.bandcampTrackId;
     if (trackMeta.bandcampAlbumId) sourceData.bandcampAlbumId = trackMeta.bandcampAlbumId;
     if (trackMeta.appleMusicId) sourceData.appleMusicId = trackMeta.appleMusicId;
+    if (trackMeta.soundcloudId) sourceData.soundcloudId = trackMeta.soundcloudId;
+    if (trackMeta.soundcloudUrl) sourceData.soundcloudUrl = trackMeta.soundcloudUrl;
     if (trackMeta.previewUrl) sourceData.previewUrl = trackMeta.previewUrl;
 
+    // The link's own source names the track too: sources are rescored by
+    // title and artist, and one without them falls under the floor. Without
+    // a sign-in, a SoundCloud link's source is the only one SoundCloud gets.
     if (Object.keys(sourceData).length > 0) {
       track.sources[resolverId] = {
         ...sourceData,
+        title: trackMeta.title,
+        artist: trackMeta.artist,
         confidence: 1.0
       };
     }
