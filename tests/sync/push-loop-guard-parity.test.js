@@ -72,15 +72,15 @@ const PARITY_GUARDS = [
   {
     name: 'provider-scoped syncedFrom guard (multi-provider mirror propagation)',
     markers: [
-      'const sourceProvider = playlist.syncedFrom?.resolver;',
+      { text: 'const sourceProvider = playlist.syncedFrom?.resolver;', count: 2 },
       'if (sourceProvider === providerId)',
     ],
   },
   {
     name: 'collaborative push-back exemption (genuine local edits pass the source guard) — once in the syncedFrom block, once in the id-prefix block',
     markers: [
-      { text: 'const hasGenuineLocalEdits = playlist.locallyModified', min: 2 },
-      { text: '(playlist.lastModified || 0) > sourceSyncedAt', min: 2 },
+      { text: 'const hasGenuineLocalEdits = playlist.locallyModified', count: 2 },
+      { text: '(playlist.lastModified || 0) > sourceSyncedAt', count: 2 },
     ],
   },
   {
@@ -94,8 +94,8 @@ const PARITY_GUARDS = [
   {
     name: 'LB channel gate (per-playlist re-export opt-in; listenbrainz-*/hosted- defaults; SYNC: sync-engine/playlist-push-candidate.js channelGateBlocksCreate)',
     markers: [
-      'const chOverride = channelOverrides[playlist.id];',
-      'Array.isArray(chOverride)',
+      { text: 'const chOverride = channelOverrides[playlist.id];', count: 2 },
+      { text: 'Array.isArray(chOverride)', count: 2 },
       "playlist.id?.startsWith('listenbrainz-')",
       "playlist.id?.startsWith('hosted-') && providerId === 'listenbrainz'",
       // The edit branch (already-linked playlists) re-checks the override —
@@ -106,7 +106,7 @@ const PARITY_GUARDS = [
       // loops spell it differently (background inlines the continue, the
       // wizard sets a channelBlocked var) but both contain this fragment twice:
       // once in the create branch, once in the edit branch.
-      { text: '!chOverride.includes(providerId)', min: 2 },
+      { text: '!chOverride.includes(providerId)', count: 2 },
       // Gate outcome: whichever shape a loop uses, deleting the enforcement
       // from one loop leaves neither marker in its region.
       { anyOf: ['if (channelBlocked) {', 'if (!chOverride.includes(providerId)) continue;'] },
@@ -119,7 +119,7 @@ const PARITY_GUARDS = [
       'else if (playlist.locallyModified) {',
       // The 404 handling on a failed update push flags pendingAction so the
       // UI can surface a remote deletion instead of re-pushing forever.
-      { text: "playlist.syncedTo[providerId].pendingAction = 'remote-deleted';", min: 2 },
+      { text: "playlist.syncedTo[providerId].pendingAction = 'remote-deleted';", count: 2 },
     ],
   },
   {
@@ -128,7 +128,7 @@ const PARITY_GUARDS = [
       'sync.createPlaylist(',
       'sync.pushPlaylist(',
       'resolveTracks',
-      { text: 'syncedAt: Date.now()', min: 2 },
+      { text: 'syncedAt: Date.now()', count: 2 },
     ],
   },
   {
@@ -140,7 +140,7 @@ const PARITY_GUARDS = [
   },
   {
     name: 'mutation bookkeeping (playlistsChanged flag + modifiedPlaylistIds set)',
-    markers: ['playlistsChanged = true', 'modifiedPlaylistIds.add('],
+    markers: [{ text: 'playlistsChanged = true', count: 4 }, { text: 'modifiedPlaylistIds.add(', count: 6 }],
   },
   {
     name: 'LB breaker trip is user-visible (toast text)',
@@ -148,19 +148,25 @@ const PARITY_GUARDS = [
   },
   {
     name: 'LB auto-create opt-in (pushLocalPlaylists flood-guard, override bypass)',
-    markers: [{ text: 'lbOptedInByOverride', min: 2 }],
+    markers: [
+      { text: 'lbOptedInByOverride', count: 2 },
+      // The flood-guard setting itself: the loops read it from different
+      // objects (background: currentSettings, wizard: settings), but the
+      // comparison is spelled identically.
+      'pushLocalPlaylists !== true',
+    ],
   },
   {
     name: 'LB circuit breaker (3 consecutive write failures stop the run) — definition plus one call per write branch',
-    markers: [{ text: 'noteLbOutcome(', min: 2 }, 'const noteLbOutcome = (ok) =>', 'lbConsecutiveFailures >= 3'],
+    markers: [{ text: 'noteLbOutcome(', count: 2 }, 'const noteLbOutcome = (ok) =>', 'lbConsecutiveFailures >= 3'],
   },
   {
     name: 'per-iteration idle yield (renderer stays responsive mid-loop, #798) — main loop + save loop',
-    markers: [{ text: 'await yieldToIdle();', min: 2 }],
+    markers: [{ text: 'await yieldToIdle();', count: 2 }],
   },
   {
     name: 'inter-IPC breathe (250ms spread so sync IPCs cannot starve the UI) — once per write branch',
-    markers: [{ text: 'await breathe();', min: 2 }, 'const SYNC_IPC_DELAY_MS = 250;'],
+    markers: [{ text: 'await breathe();', count: 2 }, 'const SYNC_IPC_DELAY_MS = 250;'],
   },
   {
     name: 'post-push locallyModified clear is relevantMirrors-scoped (source provider excluded)',
@@ -178,10 +184,12 @@ const PARITY_GUARDS = [
   },
 ];
 
-// Marker counts are exact per region on current main: yieldToIdle appears once in the
-// main loop and once in the save loop; noteLbOutcome's definition plus one call site
-// per write branch; breathe appears once per write branch. Without the counts,
-// deleting one of the duplicate occurrences from a single loop stays green.
+// Marker counts are exact, not floors (the checker uses !==): every multi-site
+// marker requires its real per-region occurrence count on current main, so
+// deleting an occurrence from one loop AND adding an occurrence to only one
+// loop both fail — either direction is drift. Someone adding a real occurrence
+// to both loops bumps the count in the list; that's the cost of a gate over
+// code this sensitive.
 function missingGuards(region) {
   const missing = [];
   for (const guard of PARITY_GUARDS) {
@@ -192,11 +200,13 @@ function missingGuards(region) {
         }
         continue;
       }
-      const need = marker.min || 1;
+      const need = typeof marker === 'string' ? 1 : marker.count;
       const text = typeof marker === 'string' ? marker : marker.text;
       const count = region.split(text).length - 1;
-      if (count < need) {
-        missing.push(`${guard.name} — expected ${need}× marker: ${text} (found ${count})`);
+      // Exact, not a floor: a guard body ADDED to only one loop (an extra
+      // occurrence) fails here just like a deletion does — both are drift.
+      if (count !== need) {
+        missing.push(`${guard.name} — expected exactly ${need}× marker: ${text} (found ${count})`);
       }
     }
   }
