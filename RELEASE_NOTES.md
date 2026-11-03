@@ -1,3 +1,17 @@
+# Parachord (unreleased)
+
+**Release date:** not yet released
+
+> Subsonic and other plugins no longer lose a track's source when a link opens the app.
+
+---
+
+## Links
+
+- **A `parachord://` link that opens the app keeps your plugins' sources.** If the link was handled before your saved settings had finished loading, a plugin like Subsonic looked signed out for its first search, so the track played from another service with no warning. This was rare, most likely on a slow disk. Plugins now read their saved settings directly when that happens. Thanks to @theli-ua for finding it.
+
+---
+
 # Parachord v0.9.12
 
 **Release date:** 2026-11-03
