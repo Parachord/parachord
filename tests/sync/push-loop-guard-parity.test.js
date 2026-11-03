@@ -108,8 +108,9 @@ const PARITY_GUARDS = [
       'if (Array.isArray(chOverride) && !chOverride.includes(providerId)) continue;',
       // Arm-1 enforcement (the override array actually blocks a create) — the
       // loops spell it differently (background inlines the continue, the
-      // wizard sets a channelBlocked var) but both contain this fragment.
-      '!chOverride.includes(providerId)',
+      // wizard sets a channelBlocked var) but both contain this fragment twice:
+      // once in the create branch, once in the edit branch.
+      { text: '!chOverride.includes(providerId)', min: 2 },
       // Gate outcome: whichever shape a loop uses, deleting the enforcement
       // from one loop leaves neither marker in its region.
       { anyOf: ['if (channelBlocked) {', 'if (!chOverride.includes(providerId)) continue;'] },
@@ -131,7 +132,7 @@ const PARITY_GUARDS = [
       'sync.createPlaylist(',
       'sync.pushPlaylist(',
       'resolveTracks',
-      'syncedAt: Date.now()',
+      { text: 'syncedAt: Date.now()', min: 2 },
     ],
   },
   {
@@ -144,7 +145,7 @@ const PARITY_GUARDS = [
   },
   {
     name: 'LB auto-create opt-in (pushLocalPlaylists flood-guard, override bypass)',
-    markers: ['lbOptedInByOverride'],
+    markers: [{ text: 'lbOptedInByOverride', min: 2 }],
   },
   {
     name: 'LB circuit breaker (3 consecutive write failures stop the run) — definition plus one call per write branch',
@@ -174,8 +175,9 @@ const PARITY_GUARDS = [
   },
 ];
 
-// occurrence in the save loop; noteLbOutcome's definition plus one call site per
-// write branch; breathe appears once per write branch. Without the counts,
+// Marker counts are exact per region on current main: yieldToIdle appears once in the
+// main loop and once in the save loop; noteLbOutcome's definition plus one call site
+// per write branch; breathe appears once per write branch. Without the counts,
 // deleting one of the duplicate occurrences from a single loop stays green.
 function missingGuards(region) {
   const missing = [];
