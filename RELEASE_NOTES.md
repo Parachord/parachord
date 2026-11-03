@@ -1,6 +1,6 @@
-# Parachord (unreleased)
+# Parachord v0.9.12
 
-**Release date:** not yet released
+**Release date:** 2026-11-03
 
 > Search and artist pages show results in about a second instead of five to twenty, and a track you click plays without waiting behind everything else loading. Amazon Music now plays in Parachord's own player, with a quality setting, for Music Unlimited accounts. SoundCloud tracks play in the app instead of opening your browser. And covers stop flickering, going missing, or pointing at images that don't exist.
 
