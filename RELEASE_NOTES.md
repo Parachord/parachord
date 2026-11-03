@@ -45,7 +45,7 @@
 - **SoundCloud plays in Parachord.** SoundCloud tracks used to open in your browser, because SoundCloud no longer lets apps stream full tracks. They now play in the app through SoundCloud's own player, with no sign-in needed to play. Most independent uploads, mixes and remixes play in full. A track SoundCloud won't play outside its own site, or would only play as a 30-second preview, plays from another of your services instead, or offers to open it on SoundCloud.
 - **Tries your other services first for tracks SoundCloud usually refuses.** When SoundCloud says a track is preview-only or blocked where you are, and another of your services has the same song, Parachord plays that one first, even if you rank SoundCloud higher. If nothing else has it, SoundCloud still tries.
 - **Stays signed in.** SoundCloud signed you out about once an hour while a page was finding several tracks at once, and you had to connect it again in Settings. It now stays connected.
-- **Dragging in a SoundCloud link works again.** Dropping a soundcloud.com track link on Parachord said "Could not load track metadata", because SoundCloud changed how it answers link lookups. The track plays now.
+- **Dragging in a SoundCloud link works again, signed in or not.** Dropping a soundcloud.com track link on Parachord said "Could not load track metadata", because SoundCloud changed how it answers link lookups. The track plays now. It also works without connecting SoundCloud: Parachord reads the track's title, artist and art from SoundCloud's public link preview and plays it in SoundCloud's player. Finding SoundCloud tracks by search still needs a sign-in.
 
 ## Apple Music
 
