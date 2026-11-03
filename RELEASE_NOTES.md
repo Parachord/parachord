@@ -37,7 +37,9 @@
 - **Choose Amazon's stream quality.** **Settings → General → Playback Quality** picks Max, High, Standard or Data saver, and can adjust to your connection. With an HD plan, Max plays lossless; other plans get the best quality they include, and a change applies to the song already playing.
 - **Two-factor sign-in works.** The sign-in window closed while Amazon was asking for your code, reported success, and then asked you to sign in again, over and over. It now waits for the whole sign-in, and Amazon shows "Setup required" in Settings when you're signed out.
 - **No more surprise sign-in prompts.** Amazon refreshes part of its session every so often, and a page load caught in that moment made Parachord ask you to sign in while you were signed in. It now retries quietly first.
-- **The song you asked for, not a station.** On a plan that can only play a track as a station, Amazon started a station of similar music while Parachord showed the track you picked. That play now fails, and the next source plays instead.
+- **Playing Amazon tracks needs Music Unlimited.** On Amazon Prime, playing a track could start a station of similar music instead of the song you picked. Parachord now checks your plan: with Music Unlimited, Amazon plays as before. With Prime, or when Parachord can't confirm your plan, Amazon stays on for album art, artist photos, links and playlist import, but its tracks aren't offered for playback. Songs play from your other services, Amazon icons don't show on tracks, and Amazon's tile in Settings says "Prime: no playback" (or "Plan not confirmed"), with the reason when you hover.
+- **Upgrading turns playback back on.** After you move to Music Unlimited, open Settings: Amazon returns to its place in your priority order, and Parachord looks for Amazon matches again for tracks it skipped.
+- **No sign-in pop-up from background searches.** "Play Amazon Music in Parachord?" used to pop up while pages were finding tracks. It now opens only when you ask for Amazon: signing in from Settings, playing an Amazon track, or importing an Amazon link.
 - **Report Bad Match** reports only the track you picked.
 
 ## SoundCloud
@@ -50,6 +52,10 @@
 ## Apple Music
 
 - **Works again if you once saved a developer token.** If you pasted an Apple Music developer token into Settings at some point, Parachord kept using it after it expired (they last six months). Apple Music search fell back to a simpler one, previews stopped, and Settings said "Setup required". Parachord now skips an expired token and uses a current one.
+
+## Spotify
+
+- **Setup says Premium is needed.** Since February 2026, Spotify runs the developer app you create for Parachord only while the account that created it has Spotify Premium, and stops it if Premium lapses. Spotify's setup steps in Settings now say so.
 
 ## Home, friends and links
 
