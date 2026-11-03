@@ -2,7 +2,7 @@
 
 **Release date:** not yet released
 
-> Search and artist pages show results in about a second instead of five to twenty, playing a track you just clicked no longer waits behind everything else loading, and covers stop flickering, going missing, or pointing at images that don't exist.
+> Search and artist pages show results in about a second instead of five to twenty, and a track you click plays without waiting behind everything else loading. Amazon Music now plays in Parachord's own player, with a quality setting, for Music Unlimited accounts. SoundCloud tracks play in the app instead of opening your browser. And covers stop flickering, going missing, or pointing at images that don't exist.
 
 ---
 
@@ -44,7 +44,7 @@
 
 ## SoundCloud
 
-- **SoundCloud plays in Parachord.** SoundCloud tracks used to open in your browser, because SoundCloud no longer lets apps stream full tracks. They now play in the app through SoundCloud's own player, with no sign-in needed to play. Most independent uploads, mixes and remixes play in full. A track SoundCloud won't play outside its own site, or would only play as a 30-second preview, plays from another of your services instead, or offers to open it on SoundCloud.
+- **SoundCloud plays in Parachord.** SoundCloud tracks used to open in your browser, because SoundCloud no longer lets apps stream its audio directly. Parachord now plays them in the app through SoundCloud's own embeddable player, the one websites use, which needs no sign-in. Most independent uploads, mixes and remixes play in full. A track SoundCloud won't play outside its own site, or would only play as a 30-second preview, plays from another of your services instead, or offers to open it on SoundCloud.
 - **Tries your other services first for tracks SoundCloud usually refuses.** When SoundCloud says a track is preview-only or blocked where you are, and another of your services has the same song, Parachord plays that one first, even if you rank SoundCloud higher. If nothing else has it, SoundCloud still tries.
 - **Stays signed in.** SoundCloud signed you out about once an hour while a page was finding several tracks at once, and you had to connect it again in Settings. It now stays connected.
 - **Dragging in a SoundCloud link works again, signed in or not.** Dropping a soundcloud.com track link on Parachord said "Could not load track metadata", because SoundCloud changed how it answers link lookups. The track plays now. It also works without connecting SoundCloud: Parachord reads the track's title, artist and art from SoundCloud's public link preview and plays it in SoundCloud's player. Finding SoundCloud tracks by search still needs a sign-in.
@@ -62,7 +62,6 @@
 - **Home suggestions stay put.** Album and Artist Suggestions no longer fetch a new batch every time you open Home; press Refresh for more. A setting brings the old behavior back: **Settings → General → Discover → Refresh Home suggestions on every visit**.
 - **Friend links keep their time period.** `parachord://friend/…` links ignored `?period=` and couldn't open the Top Albums tab; both work now, and copied links include them. Thanks to @theli-ua for reporting it.
 - **Friend and playlist links open.** `parachord://friend/…` and `parachord://playlist/…` links did nothing.
-
 - **Album links from Copy Link work.** Copying an album page's link could give an Achordion link that went nowhere: it named the specific release MusicBrainz had loaded instead of the album. It now names the album.
 
 ## Sync
