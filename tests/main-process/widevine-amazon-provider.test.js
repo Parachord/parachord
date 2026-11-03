@@ -80,6 +80,8 @@ beforeEach(() => {
   amazonDmls.sessionContext = null;
   amazonDmls.sessionContextPromise = null;
   amazonDmls.certSessionReady = false;
+  amazonDmls.planState = null;
+  amazonDmls.planPromise = null;
   amazonWebPlayer.isSignedIn.mockResolvedValue(true);
   amazonWebPlayer.mintSessionHeaders.mockClear();
   requestHandlers.length = 0;
@@ -459,5 +461,89 @@ describe('widevine bridge session ORDERING (review round 2)', () => {
     }
     const ninth = await handlers['widevine:manifest'](mainFrameEvent, { resolverId: 'mock-rate', entity: {} });
     expect(ninth).toMatchObject({ success: false, reason: 'rate-limited' });
+  });
+});
+
+// #1220: only Music Unlimited plays. The plan is config.json's `tier`, read
+// by the session mint or on its own (getPlan), cached for 30 min (a minute
+// when unknown), and checked before any manifest is asked for.
+describe('amazon-dmls plan gate (#1220)', () => {
+  const configWithTier = (tier) => JSON.stringify({
+    customerId: 'CUST1', marketplaceId: 'MKT', musicTerritory: 'US', siteRegion: 'NA', deviceId: '1435',
+    ...(tier === undefined ? {} : { tier })
+  });
+  const manifestRequests = () => mockRequests.filter((r) => /api\/dmls/.test(r.opts.url));
+
+  test('Music Unlimited plays', async () => {
+    requestHandlers.push(() => ({ status: 200, text: CONFIG_JSON })); // tier { name: 'UNLIMITED_HD' }
+    queueManifest();
+    await expect(amazonDmls.getManifest({ asin: 'B1' })).resolves.toMatchObject({ manifest: expect.any(String) });
+    expect(amazonDmls.debugState().plan).toBe('unlimited');
+  });
+
+  test.each([
+    ['PRIME', 'prime', /^Amazon Prime: Amazon is used for album art, artist photos and links\. Playing Amazon tracks in Parachord needs Music Unlimited\.$/],
+    [undefined, 'unknown', /couldn't confirm your Amazon Music plan/],
+    ['SOMETHING_NEW', 'unknown', /couldn't confirm your Amazon Music plan/]
+  ])('tier %p is refused as plan-ineligible before any manifest request', async (tier, plan, message) => {
+    requestHandlers.push(() => ({ status: 200, text: configWithTier(tier) }));
+    queueManifest();
+    const err = await amazonDmls.getManifest({ asin: 'B1' }).catch((e) => e);
+    expect(err).toMatchObject({ reason: 'plan-ineligible', plan });
+    expect(err.message).toMatch(message);
+    expect(manifestRequests()).toHaveLength(0);
+  });
+
+  test('the bridge carries the refusal and its message to the renderer', async () => {
+    const handlers = {};
+    registerWidevineBridgeIpc({ ipcMain: { handle: (name, fn) => { handlers[name] = fn; } } });
+    registerAmazonDmlsProvider({ registerWidevineProvider, store: { get: () => undefined } });
+    requestHandlers.push(() => ({ status: 200, text: configWithTier('PRIME') }));
+    const r = await handlers['widevine:manifest'](null, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    expect(r).toMatchObject({ success: false, reason: 'plan-ineligible' });
+    expect(r.error).toMatch(/^Amazon Prime: .*needs Music Unlimited\.$/);
+  });
+
+  test('getPlan caches a known plan for 30 minutes and an unknown one for a minute', async () => {
+    const t0 = 1_000_000;
+    requestHandlers.push(() => ({ status: 200, text: configWithTier('PRIME') }));
+    expect(await amazonDmls.getPlan({}, t0)).toBe('prime');
+    expect(await amazonDmls.getPlan({}, t0 + 29 * 60 * 1000)).toBe('prime'); // no fetch queued: cached
+    requestHandlers.push(() => ({ status: 200, text: configWithTier('UNLIMITED') }));
+    expect(await amazonDmls.getPlan({}, t0 + 31 * 60 * 1000)).toBe('unlimited');
+
+    amazonDmls.planState = null;
+    requestHandlers.push(() => ({ status: 200, text: '' })); // a failed read
+    expect(await amazonDmls.getPlan({}, t0)).toBe('unknown');
+    requestHandlers.push(() => ({ status: 200, text: configWithTier('UNLIMITED_HD') }));
+    expect(await amazonDmls.getPlan({}, t0 + 61 * 1000)).toBe('unlimited');
+  });
+
+  test('getPlan needs the auth cookies', async () => {
+    const saved = mockCookies.splice(0);
+    try {
+      await expect(amazonDmls.getPlan()).rejects.toMatchObject({ reason: 'not-signed-in' });
+    } finally {
+      mockCookies.push(...saved);
+    }
+  });
+
+  test('a plan change is reported, a repeat reading is not', () => {
+    const onPlanChange = jest.fn();
+    amazonDmls.init({ store: { get: () => undefined }, onPlanChange });
+    amazonDmls.notePlan('PRIME');
+    amazonDmls.notePlan('PRIME');
+    amazonDmls.notePlan('UNLIMITED_HD');
+    expect(onPlanChange.mock.calls.map((c) => c[0])).toEqual([
+      { plan: 'prime', previous: null },
+      { plan: 'unlimited', previous: 'prime' }
+    ]);
+  });
+
+  test('sign-out forgets the plan', () => {
+    amazonDmls.notePlan('PRIME');
+    amazonDmls.onSignOut();
+    expect(amazonDmls.planState).toBeNull();
+    expect(amazonDmls.debugState().plan).toBeNull();
   });
 });

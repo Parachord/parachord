@@ -33,6 +33,7 @@ const {
   amazonClientAction,
   amazonStreamingDetails,
   amazonTelemetryBitrateLabel,
+  isUnlimitedTier,
   AMAZON_DEVICE_TYPE_ID,
   TELEMETRY_TERMINATION
 } = require('../amazon-music-logic');
@@ -72,7 +73,7 @@ function createAmazonTelemetry({ post, context, now, randomUUID } = {}) {
       albumAsin: state.current && state.current.albumAsin,
       territory: ctx.territoryId,
       tier: ctx.tier,
-      resourceType: ctx.tier && /^UNLIMITED/.test(ctx.tier) ? 'UNLIMITED_MUSIC' : 'PRIME_MUSIC',
+      resourceType: isUnlimitedTier(ctx.tier) ? 'UNLIMITED_MUSIC' : 'PRIME_MUSIC',
       playbackInstanceId: state.playbackInstanceId,
       playQueueId: state.playQueueId,
       subscriptionMode: ctx.tier,

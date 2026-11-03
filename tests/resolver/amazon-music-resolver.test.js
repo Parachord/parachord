@@ -40,7 +40,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.7.0');
+    expect(axe.manifest.version).toBe('1.8.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -143,6 +143,19 @@ describe('amazonmusic search', () => {
     await expect(resolver.search('daft punk', {})).rejects.toMatchObject({
       notReady: true,
       code: 'load-failed'
+    });
+  });
+
+  // #1220: off Music Unlimited the host answers plan-ineligible. Not-ready,
+  // not a miss: a 30-day noMatch would outlive an upgrade.
+  test('throws notReady when the plan is not Music Unlimited, so it is not cached as noMatch', async () => {
+    global.window.electron.amazonMusic.searchTracks.mockResolvedValue({
+      success: false, reason: 'plan-ineligible', error: 'Amazon Prime: ...'
+    });
+    const resolver = instantiate(axe);
+    await expect(resolver.resolve('Daft Punk', 'Around the World', null, {})).rejects.toMatchObject({
+      notReady: true,
+      code: 'plan-ineligible'
     });
   });
 

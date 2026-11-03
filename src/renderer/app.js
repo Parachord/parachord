@@ -7278,10 +7278,27 @@ const Parachord = () => {
   // after every sign-in attempt, on enable, and each time Settings opens, so
   // a session that expired since is caught too. manageAmazonMusic above calls
   // it at run time, after this render has defined it.
+  const applyAmazonMusicStatus = (s) => {
+    setAmazonMusicStatus(s);
+    // #1220: off Music Unlimited, Amazon searches answer not-ready, which
+    // leaves no amazonmusic key but a fresh timestamp on every track. After
+    // an upgrade those would count as already searched for 7 days, so clear
+    // them once the plan reads unlimited where it last read otherwise (kept
+    // across restarts: the upgrade can happen while the app is closed).
+    const plan = s && s.plan;
+    if (!plan) return;
+    let last = null;
+    try { last = localStorage.getItem('amazonmusic_last_plan'); } catch (e) {}
+    if (plan === 'unlimited' && last && last !== 'unlimited' && typeof window.__parachordClearAmazonNoMatch === 'function') {
+      console.log(`[Amazon] plan is now Music Unlimited (was ${last}); re-resolving Amazon`);
+      window.__parachordClearAmazonNoMatch();
+    }
+    try { localStorage.setItem('amazonmusic_last_plan', plan); } catch (e) {}
+  };
   const refreshAmazonMusicStatus = () => {
     if (!window.electron?.amazonMusic?.getStatus) return;
     window.electron.amazonMusic.getStatus()
-      .then((s) => setAmazonMusicStatus(s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } }))
+      .then((s) => applyAmazonMusicStatus(s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } }))
       .catch(() => {});
   };
   const amazonMusicEnabled = activeResolvers.includes('amazonmusic');
@@ -7290,6 +7307,12 @@ const Parachord = () => {
     if (activeView !== 'settings' && amazonMusicStatus) return;
     refreshAmazonMusicStatus();
   }, [cacheLoaded, amazonMusicEnabled, activeView]);
+  // Main reports a plan change (a session mint or a re-read found another
+  // plan): refresh the tile and settings, and re-resolve on an upgrade.
+  useEffect(() => {
+    if (!cacheLoaded || !amazonMusicEnabled || !window.electron?.amazonMusic?.onPlanChanged) return;
+    return window.electron.amazonMusic.onPlanChanged(() => refreshAmazonMusicStatus());
+  }, [cacheLoaded, amazonMusicEnabled]);
 
   // Leaving an Amazon track must blank the player view, not just pause it -
   // the module's own invariant ("pause is not enough": Amazon can start the
@@ -7303,12 +7326,14 @@ const Parachord = () => {
   // and a decline is not cached as a 30-day noMatch (the throw already skipped that).
   window.__parachordNoteAmazonNotReady = (error) => {
     const code = error && (error.code || error.reason);
-    const notReady = !!(error && (error.notReady || code === 'not-ready' || code === 'not-signed-in' || code === 'no-cdm' || code === 'load-failed' || /Amazon Music not ready/.test(error.message || '')));
+    const notReady = !!(error && (error.notReady || code === 'not-ready' || code === 'not-signed-in' || code === 'no-cdm' || code === 'load-failed' || code === 'plan-ineligible' || /Amazon Music not ready/.test(error.message || '')));
     if (!notReady) return false;
     // A page that did not load (offline, captive portal, a stalled network) is
     // transient: skip the noMatch cache like other notReady results, but do
-    // not offer a sign-in prompt — the account is not the problem.
-    if (code !== 'load-failed') {
+    // not offer a sign-in prompt — the account is not the problem. Nor is it
+    // for plan-ineligible (#1220): the account is signed in, just not on
+    // Music Unlimited, and the tile says so.
+    if (code !== 'load-failed' && code !== 'plan-ineligible') {
       manageAmazonMusic({ explicit: false, reason: code }).catch(() => {});
     }
     return true;
@@ -41853,12 +41878,19 @@ useEffect(() => {
                           }
                         }
 
+                        // Amazon signed in but not on Music Unlimited: set up,
+                        // but it plays nothing (#1220). The tooltip says why.
+                        const amazonPlanLimited = resolver.id === 'amazonmusic' && isActive
+                          && amazonMusicStatus?.web?.signedIn && amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited';
+
                         return React.createElement(ResolverCard, {
                           key: resolver.id,
                           resolver: resolver,
                           isActive: isActive,
                           hasUpdate: resolver.hasUpdate,
                           needsConfiguration: needsConfiguration,
+                          statusLabel: amazonPlanLimited ? (amazonMusicStatus.plan === 'prime' ? 'Prime: no playback' : 'Plan not confirmed') : null,
+                          statusTitle: amazonPlanLimited ? amazonMusicStatus.planMessage : null,
                           priorityNumber: resolver.priorityNumber,
                           isInstalling: isInstalling,
                           draggable: isActive,
@@ -48617,7 +48649,8 @@ useEffect(() => {
                   style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
                 }, !amazonMusicStatus ? '' :
                   amazonMusicStatus.web?.signedIn
-                    ? ''
+                    // Off Music Unlimited, nothing plays (#1220); say why.
+                    ? (amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited' ? (amazonMusicStatus.planMessage || '') : '')
                     : amazonMusicStatus.web?.cdm
                       ? 'Sign in with your Amazon Music account'
                       : 'This build cannot play DRM-protected Amazon streams')
@@ -48660,7 +48693,7 @@ useEffect(() => {
                       const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true });
                       if (ok) {
                         const s = await window.electron.amazonMusic.getStatus().catch(() => null);
-                        if (s && s.success) setAmazonMusicStatus(s);
+                        if (s && s.success) applyAmazonMusicStatus(s);
                       }
                     },
                     style: {
