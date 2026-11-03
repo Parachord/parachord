@@ -60,11 +60,64 @@ describe('SoundCloud lookupUrl', () => {
     expect(await lookupUrl('https://soundcloud.com/desos/sets/x', { token: 't' })).toBeNull();
   });
 
-  test('a failed resolve, or no sign-in, is null', async () => {
+  test('a failed resolve is null', async () => {
     global.fetch = jest.fn(async () => reply({}, false));
     expect(await lookupUrl(TRACK.permalink_url, { token: 't' })).toBeNull();
-    global.fetch = jest.fn();
-    expect(await lookupUrl(TRACK.permalink_url, {})).toBeNull();
-    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// Without a sign-in, the public oEmbed endpoint describes the link (#1217).
+// Shapes copied from live replies on 2026-11-03.
+describe('SoundCloud lookupUrl without a sign-in (oEmbed)', () => {
+  const PERMALINK = 'https://soundcloud.com/flume/never-be-like-you-feat-kai';
+  const embedFor = (kind, id) => '<iframe width="100%" height="400" scrolling="no" frameborder="no" allow="autoplay; encrypted-media" '
+    + `src="https://w.soundcloud.com/player/?visual=true&url=https%3A%2F%2Fapi.soundcloud.com%2F${kind}%2F${id}&show_artwork=true"></iframe>`;
+  const OEMBED = {
+    version: 1.0,
+    type: 'rich',
+    provider_name: 'SoundCloud',
+    title: 'Never Be Like You feat. Kai by Flume',
+    thumbnail_url: 'https://i1.sndcdn.com/artworks-000143264206-mtz96c-t500x500.jpg',
+    html: embedFor('tracks', 242136202),
+    author_name: 'Flume',
+    author_url: 'https://soundcloud.com/flume',
+  };
+
+  test('builds the track from the embed, asking without credentials', async () => {
+    global.fetch = jest.fn(async () => reply(OEMBED));
+    const result = await lookupUrl(`${PERMALINK}?si=abc&utm_source=clipboard`, {});
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [requested, options] = global.fetch.mock.calls[0];
+    expect(requested).toBe(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(PERMALINK)}`);
+    expect(options).toBeUndefined();
+    expect(result).toEqual({
+      id: 'soundcloud-242136202',
+      title: 'Never Be Like You feat. Kai',
+      artist: 'Flume',
+      album: 'SoundCloud',
+      sources: ['soundcloud'],
+      soundcloudId: 242136202,
+      soundcloudUrl: PERMALINK,
+      albumArt: OEMBED.thumbnail_url,
+    });
+  });
+
+  test('keeps a title that does not end with the uploader', async () => {
+    global.fetch = jest.fn(async () => reply({ ...OEMBED, title: 'Never Be Like You' }));
+    expect((await lookupUrl(PERMALINK, {})).title).toBe('Never Be Like You');
+  });
+
+  test('a set or a user page is not a track', async () => {
+    global.fetch = jest.fn(async () => reply({ ...OEMBED, title: 'SKIN by Flume', html: embedFor('playlists', 1) }));
+    expect(await lookupUrl('https://soundcloud.com/flume/sets/skin', {})).toBeNull();
+    global.fetch = jest.fn(async () => reply({ ...OEMBED, title: 'Flume', html: embedFor('users', 2976616) }));
+    expect(await lookupUrl('https://soundcloud.com/flume', {})).toBeNull();
+  });
+
+  test('a link oEmbed does not know (404), or a network error, is null', async () => {
+    global.fetch = jest.fn(async () => reply(null, false));
+    expect(await lookupUrl('https://soundcloud.com/nope/nothing', {})).toBeNull();
+    global.fetch = jest.fn(async () => { throw new Error('offline'); });
+    expect(await lookupUrl(PERMALINK, {})).toBeNull();
   });
 });

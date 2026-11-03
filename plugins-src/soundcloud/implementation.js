@@ -56,7 +56,43 @@ module.exports = {
     return results[0] || null;
   },
   lookupUrl: async function (url, config) {
-    if (!config.token) return null;
+    // Without a sign-in the API can't be asked, but SoundCloud's public
+    // oEmbed still describes a track link, and the widget plays it from the
+    // link alone. oEmbed has no duration or access, so those stay unset and
+    // the widget reports what it will play.
+    if (!config.token) {
+      try {
+        const permalink = url.split(/[?#]/)[0];
+        const response = await fetch(
+          `https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(permalink)}`,
+        );
+        if (!response.ok) return null;
+        const embed = await response.json();
+        // The embed's src names the track by its API URL (URL-encoded). A set
+        // or a user page names /playlists/ or /users/ instead: not a track.
+        const idMatch = String(embed?.html || '').match(/api\.soundcloud\.com(?:\/|%2F)tracks(?:\/|%2F)(\d+)/i);
+        if (!idMatch) return null;
+        const artist = embed.author_name || 'Unknown Artist';
+        const byArtist = ` by ${artist}`;
+        const title = embed.title && embed.title.endsWith(byArtist)
+          ? embed.title.slice(0, -byArtist.length)
+          : embed.title;
+        if (!title) return null;
+        return {
+          id: `soundcloud-${idMatch[1]}`,
+          title,
+          artist,
+          album: 'SoundCloud',
+          sources: ['soundcloud'],
+          soundcloudId: Number(idMatch[1]),
+          soundcloudUrl: permalink,
+          albumArt: embed.thumbnail_url,
+        };
+      } catch (error) {
+        console.error('SoundCloud oEmbed lookup error:', error);
+        return null;
+      }
+    }
     try {
       const resolveResponse = await fetch(
         `https://api.soundcloud.com/resolve?url=${encodeURIComponent(url)}`,
