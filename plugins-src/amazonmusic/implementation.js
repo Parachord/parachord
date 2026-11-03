@@ -31,11 +31,15 @@ module.exports = {
       );
       if (!result || !result.success) {
         var reason = result && result.reason;
+        // plan-ineligible: the account isn't on Music Unlimited, so the host
+        // offers no playable Amazon tracks (#1220). Not-ready rather than a
+        // miss, so an upgrade re-resolves instead of finding cached misses.
         if (
           reason === 'not-ready' ||
           reason === 'not-signed-in' ||
           reason === 'no-cdm' ||
-          reason === 'load-failed'
+          reason === 'load-failed' ||
+          reason === 'plan-ineligible'
         ) {
           var err = new Error('Amazon Music not ready');
           err.notReady = true;

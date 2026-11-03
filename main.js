@@ -719,6 +719,7 @@ const appleMusicPoller = {
 const amazonWebPlayer = require('./amazon-web-player');
 const { registerWidevineProvider, registerWidevineBridgeIpc } = require('./main-process/widevine-bridge');
 const { registerAmazonDmlsProvider, amazonDmls } = require('./amazon-dmls');
+const { amazonPlanMessage } = require('./amazon-music-logic');
 
 // Widevine playback runs in the renderer (Shaka on the shared HTMLAudioElement);
 // the bridge relays manifest/license operations to main-side providers per
@@ -906,7 +907,13 @@ function createWindow() {
   });
 
   amazonWebPlayer.setHost(mainWindow);
-  registerAmazonDmlsProvider({ registerWidevineProvider, store });
+  registerAmazonDmlsProvider({
+    registerWidevineProvider,
+    store,
+    // #1220: the renderer refreshes the Amazon status (tile, settings) and,
+    // on an upgrade, re-resolves Amazon.
+    onPlanChange: ({ plan }) => safeSendToRenderer('amazonmusic-plan-changed', { plan })
+  });
   mainWindow.loadFile('index.html');
 
   let windowShown = false;
@@ -3678,11 +3685,19 @@ ipcMain.handle('applemusic-polling-status', async () => {
 // hidden search view.
 // Errors come back as { success: false, error|reason } rather than thrown IPC
 // rejections so the resolver can branch (not-ready must not be cached as noMatch).
-ipcMain.handle('amazonmusic-get-status', async () => {
+ipcMain.handle('amazonmusic-get-status', async (event, { refreshPlan } = {}) => {
   try {
     const cdm = amazonWebPlayer.cdmAvailable();
     const signedIn = await amazonWebPlayer.isSignedIn();
     const preload = await amazonWebPlayer.preloadProbe();
+    // #1220: only Music Unlimited plays. Read once signed in; null when
+    // signed out. Cached for 30 minutes, except that opening Settings or the
+    // Amazon panel asks for a fresh read (refreshPlan), so an upgrade shows
+    // up there at once.
+    let plan = null;
+    if (signedIn) {
+      try { plan = await amazonDmls.getPlan({ refresh: !!refreshPlan }); } catch { plan = 'unknown'; }
+    }
     return {
       success: true,
       platform: process.platform,
@@ -3690,6 +3705,8 @@ ipcMain.handle('amazonmusic-get-status', async () => {
       // The settings UI reads web.{cdm,signedIn} — the shape is kept; audio
       // plays in the main renderer through the widevine bridge.
       web: { cdm, signedIn },
+      plan,
+      planMessage: plan ? amazonPlanMessage(plan) : null,
       // Live proof the search-view preload is alive (sandboxed-preload
       // failure surface).
       preload,
@@ -3730,6 +3747,11 @@ ipcMain.handle('amazonmusic-sign-out', async () => {
 ipcMain.handle('amazonmusic-search-tracks', async (event, payload) => {
   console.log(`[Amazon] IPC search ${JSON.stringify(payload)}`);
   try {
+    // #1220: off Music Unlimited, offer no playable tracks. Checked only when
+    // signed in, so a signed-out search still answers not-signed-in (the
+    // sign-in prompt). The resolver treats plan-ineligible as not-ready, so
+    // nothing is cached as a miss and an upgrade re-resolves.
+    if (await amazonWebPlayer.isSignedIn()) await amazonDmls.assertPlanPlays();
     const tracks = await amazonWebPlayer.searchTracks(payload || {});
     console.log(`[Amazon] IPC search done ${(tracks && tracks.length) || 0} tracks`);
     return { success: true, engine: 'web', tracks };

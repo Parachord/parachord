@@ -59,6 +59,12 @@ if (typeof window !== 'undefined') window.__parachordEmbedPlayer = embedPlayer;
 // tick). Round-7 review.
 const widevineErrorToastState = { at: 0 };
 
+// Resolvers whose plan refusal (reason 'plan-ineligible', #1220) has already
+// been explained this session. When another source plays instead, the toast
+// says why once, not on every track of a queue. Module scope for the same
+// reason as the throttle above.
+const planRefusalExplained = new Set();
+
 function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   volume,        // useVolume's return object
   queue,         // usePlaybackQueue's return object
@@ -1515,6 +1521,37 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         await Promise.race([started, audible]);
       };
 
+      // The account's plan doesn't cover playback on this service (#1220:
+      // Amazon off Music Unlimited; the provider's message says so). Another
+      // enabled source plays instead, the way a refused SoundCloud track falls
+      // back; with none, the message is shown. True when it handled the error.
+      const handlePlanRefusal = (err) => {
+        if (!err || err.reason !== 'plan-ineligible') return false;
+        console.warn(`🔐 ${streamLabel}: ${err.message}`);
+        const fallbackSources = trackOrSource.sources
+          ? Object.keys(trackOrSource.sources).filter(id => id !== resolverId
+            && !trackOrSource.sources[id]?.noMatch && activeResolversRef.current.includes(id))
+          : [];
+        if (fallbackSources.length > 0) {
+          const order = resolverOrderRef.current;
+          fallbackSources.sort((x, y) => order.indexOf(x) - order.indexOf(y));
+          if (!planRefusalExplained.has(resolverId)) {
+            planRefusalExplained.add(resolverId);
+            const fallbackName = window.resolverLabelById ? window.resolverLabelById(fallbackSources[0]) : fallbackSources[0];
+            showToast(`${err.message} Playing via ${fallbackName}.`, 'info', null, { duration: 8000 });
+          }
+          handlePlay({
+            ...trackOrSource,
+            sources: Object.fromEntries(Object.entries(trackOrSource.sources).filter(([id]) => id !== resolverId))
+          });
+          return true;
+        }
+        if (autoSkipIfAdvancing(`${streamLabel}: ${err.message}`)) return true;
+        setTrackLoading(false);
+        showToast(err.message, 'error', null, { duration: 8000 });
+        return true;
+      };
+
       try {
         await startWidevine();
       } catch (error) {
@@ -1528,6 +1565,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setTrackLoading(false);
           return;
         }
+        if (handlePlanRefusal(error)) return;
         if (error && error.reason === 'not-signed-in' && window.__parachordManageAmazonMusic) {
           // reason is what #1172's quiet-retry keys on. explicit skips the
           // radio/hidden gates; forcePrompt is NOT set, so live cookies
@@ -1545,6 +1583,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
                 setTrackLoading(false);
                 return;
               }
+              // Signed in, but to an account whose plan doesn't play.
+              if (handlePlanRefusal(retryError)) return;
               console.error(`❌ ${streamLabel} retry after sign-in failed:`, retryError);
               if (autoSkipIfAdvancing(`${streamLabel} playback: ${retryError.message}`)) return;
               setTrackLoading(false);

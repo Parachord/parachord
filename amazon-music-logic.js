@@ -1344,6 +1344,32 @@ function amazonNativeSessionFromConfig(json) {
   };
 }
 
+// The account's plan, from config.json's `tier` (#1220). Only Music Unlimited
+// plays on demand in Parachord. Prime gives no on-demand playback, and a tier
+// we can't read or don't recognize blocks too ('unknown'), so a format change
+// on Amazon's side shows up as a message rather than as plays the plan may
+// not cover. Seen so far: 'PRIME' and values starting 'UNLIMITED'. The rule
+// lives here alone; telemetry's resourceType uses the same test.
+function isUnlimitedTier(tier) {
+  return typeof tier === 'string' && /^UNLIMITED/i.test(tier.trim());
+}
+
+function amazonPlanFromTier(tier) {
+  if (isUnlimitedTier(tier)) return 'unlimited';
+  if (typeof tier === 'string' && tier.trim().toUpperCase() === 'PRIME') return 'prime';
+  return 'unknown';
+}
+
+// One wording for the tile, the settings panel and the play refusal.
+const AMAZON_PLAN_MESSAGES = {
+  prime: 'Amazon Prime: Amazon is used for album art, artist photos and links. Playing Amazon tracks in Parachord needs Music Unlimited.',
+  unknown: "Parachord couldn't confirm your Amazon Music plan, so Amazon playback is off until it can. Playing Amazon tracks in Parachord needs Music Unlimited."
+};
+
+function amazonPlanMessage(plan) {
+  return AMAZON_PLAN_MESSAGES[plan] || null;
+}
+
 // ── Streaming telemetry (the hornet /telemetry/v1/events vocabulary) ────────
 // Live-captured 2026-10: the web player reports streamingInitiated on play
 // start, streamingTerminated at seek/pause/teardown/end, and trackStreamed
@@ -1546,6 +1572,9 @@ function mpdContentProtectionSets(xml) {
 
 module.exports = {
   amazonNativeSessionFromConfig,
+  isUnlimitedTier,
+  amazonPlanFromTier,
+  amazonPlanMessage,
   mpdContentProtectionSets,
   gqlCaptureSubject,
   gqlRequestsIn,

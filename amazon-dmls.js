@@ -37,6 +37,8 @@ const {
   amazonDmlsLicenseBody,
   amazonDmlsRegion,
   amazonNativeSessionFromConfig,
+  amazonPlanFromTier,
+  amazonPlanMessage,
   amazonAuthCookieState,
   mpdContentProtectionSets,
   DML_TARGET_PREFIX,
@@ -65,6 +67,19 @@ const MUSIC_AGENT_CLIENT = 'GreenHornet_Web/1.0.1458';
 function electron() { return require('electron'); }
 function searchHost() { return require('./amazon-web-player.js'); }
 
+// How long a plan reading is trusted (#1220). An upgrade or a lapsed trial
+// happens without warning, so a known plan is re-read every half hour; a
+// failed or unrecognized reading blocks playback, so it is retried soon.
+const PLAN_TTL_MS = 30 * 60 * 1000;
+const PLAN_UNKNOWN_TTL_MS = 60 * 1000;
+
+function planRefusal(plan) {
+  const err = new Error(amazonPlanMessage(plan) || amazonPlanMessage('unknown'));
+  err.reason = 'plan-ineligible';
+  err.plan = plan;
+  return err;
+}
+
 function musicAgent() {
   let appVersion = 'dev';
   try { appVersion = (electron().app && electron().app.getVersion && electron().app.getVersion()) || 'dev'; } catch { /* not ready */ }
@@ -72,14 +87,67 @@ function musicAgent() {
 }
 
 const adapter = {
-  deps: { store: null },
+  deps: { store: null, onPlanChange: null },
   telemetryHealth: { last: null, dropped: 0 },
   sessionContext: null, // volatile: { customerId, marketplaceId, territoryId, region, tier, deviceId, csrfToken, csrfRnd, csrfTs }
   sessionContextPromise: null,
   certSessionReady: false,
+  planState: null, // { plan: 'unlimited'|'prime'|'unknown', tier, at }
+  planPromise: null,
+  loggedTiers: new Set(),
 
-  init({ store } = {}) {
+  init({ store, onPlanChange } = {}) {
     this.deps.store = store || null;
+    this.deps.onPlanChange = typeof onPlanChange === 'function' ? onPlanChange : null;
+  },
+
+  // Record a plan reading, from config.json directly (getPlan) or from a
+  // session mint, which reads the same file. Tells the renderer when the
+  // plan changes, so an upgrade re-resolves Amazon without a restart.
+  notePlan(tier, now = Date.now()) {
+    const plan = amazonPlanFromTier(tier);
+    const previous = this.planState && this.planState.plan;
+    this.planState = { plan, tier: tier || null, at: now };
+    const tierKey = String(tier);
+    if (!this.loggedTiers.has(tierKey)) {
+      this.loggedTiers.add(tierKey);
+      console.log(`[Amazon dmls] plan: tier ${tier ? JSON.stringify(tier) : 'missing'} → ${plan}`);
+    }
+    if (previous !== plan && this.deps.onPlanChange) {
+      try { this.deps.onPlanChange({ plan, previous: previous || null }); } catch { /* best-effort */ }
+    }
+    return this.planState;
+  },
+
+  // The account's plan: 'unlimited', 'prime' or 'unknown'. Throws
+  // not-signed-in without auth cookies (config.json needs them). A failed
+  // fetch reads as no tier, so 'unknown', and is retried after a minute.
+  async getPlan({ refresh } = {}, now = Date.now()) {
+    const s = this.planState;
+    if (!refresh && s) {
+      const ttl = s.plan === 'unknown' ? PLAN_UNKNOWN_TTL_MS : PLAN_TTL_MS;
+      if (now - s.at < ttl) return s.plan;
+    }
+    if (this.planPromise) return this.planPromise;
+    this.planPromise = this.fetchConfigJson()
+      .then((config) => {
+        const tier = amazonNativeSessionFromConfig(config).tier;
+        // A forced re-read (opening Settings) that comes back without a tier,
+        // offline or a bad reply, doesn't overturn a known plan: that would
+        // block an Unlimited account for a minute because Settings opened.
+        if (refresh && !tier && s && s.plan !== 'unknown') return s.plan;
+        return this.notePlan(tier, now).plan;
+      })
+      .finally(() => { this.planPromise = null; });
+    return this.planPromise;
+  },
+
+  // Throws plan-ineligible unless the account is on Music Unlimited. The
+  // error's message is the wording the tile and settings panel show.
+  async assertPlanPlays() {
+    const plan = await this.getPlan();
+    if (plan !== 'unlimited') throw planRefusal(plan);
+    return plan;
   },
 
   async cookieHeader() {
@@ -105,6 +173,7 @@ const adapter = {
     this.sessionContextPromise = this.mintSessionContext({ refresh: !!refresh }).then((ctx) => {
       this.sessionContext = ctx;
       this.sessionContextPromise = null;
+      this.notePlan(ctx.tier);
       console.log(`[Amazon dmls] session context ok (territory ${ctx.territoryId}, region ${ctx.region}, tier ${ctx.tier || 'unknown'})`);
       return ctx;
     }).catch((err) => {
@@ -239,6 +308,9 @@ const adapter = {
       throw err;
     }
     const ctx = await this.ensureSessionContext();
+    // Only Music Unlimited plays (#1220): refused before any manifest is asked
+    // for. The mint above read the plan, so this rarely fetches again.
+    await this.assertPlanPlays();
     const body = amazonDmlsManifestBody({
       asin,
       customerId: ctx.customerId,
@@ -439,6 +511,8 @@ const adapter = {
     this._telemetry = null;
     // A Prime-plan HD refusal must not survive into a later HD account.
     this.hdSessionBlockedByPlan = false;
+    // Nor the plan itself: the next sign-in may be another account.
+    this.planState = null;
   },
 
   debugState() {
@@ -446,6 +520,7 @@ const adapter = {
       provider: 'amazon-dmls',
       sessionContext: !!this.sessionContext,
       tier: this.sessionContext && this.sessionContext.tier,
+      plan: this.planState && this.planState.plan,
       certSessionReady: this.certSessionReady,
       // Set once a license-400 carries an HD-content denialReason (the
       // Prime capture: CUSTOMER_NOT_ELIGIBLE on the FLAC KID group) — the
@@ -459,8 +534,8 @@ const adapter = {
   }
 };
 
-function registerAmazonDmlsProvider({ registerWidevineProvider, store } = {}) {
-  adapter.init({ store });
+function registerAmazonDmlsProvider({ registerWidevineProvider, store, onPlanChange } = {}) {
+  adapter.init({ store, onPlanChange });
   registerWidevineProvider('amazonmusic', adapter);
   return adapter;
 }

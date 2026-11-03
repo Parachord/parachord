@@ -14,12 +14,16 @@ const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 //   2. Enabled + needs setup (full color, checkmark, orange "!", "Setup required")
 //   3. Not enabled (grayed, "Available")
 //   4. Installing (spinner overlay)
+// statusLabel (with statusTitle as its tooltip) replaces "Setup required" for
+// a resolver that is set up but limited, e.g. Amazon without Music Unlimited.
 const ResolverCard = React.memo(({
   resolver,
   isActive,
   hasUpdate,
   isInstalling,
   needsConfiguration,
+  statusLabel = null,
+  statusTitle = null,
   priorityNumber,
   onClick,
   onDragStart,
@@ -154,6 +158,11 @@ const ResolverCard = React.memo(({
     needsConfiguration && isEnabled && React.createElement('span', {
       style: { fontSize: '10px', fontWeight: '500', color: '#d97706', marginTop: '2px' }
     }, 'Setup required'),
+    // A limit the resolver is set up under (statusTitle explains it)
+    !needsConfiguration && isEnabled && statusLabel && React.createElement('span', {
+      style: { fontSize: '10px', fontWeight: '500', color: '#d97706', marginTop: '2px' },
+      title: statusTitle || undefined
+    }, statusLabel),
     // "Available" label - not enabled
     isAvailable && React.createElement('span', {
       style: { fontSize: '10px', fontWeight: '500', color: 'var(--text-tertiary)', marginTop: '2px' }

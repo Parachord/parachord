@@ -616,7 +616,8 @@ contextBridge.exposeInMainWorld('electron', {
   // search parked offscreen) load music.amazon.com on the main window and
   // castlabs Electron's Widevine CDM decrypts. The desktop app is not used.
   amazonMusic: {
-    getStatus: () => ipcRenderer.invoke('amazonmusic-get-status'),
+    // { refreshPlan: true } reads the plan from Amazon instead of the cache.
+    getStatus: (opts) => ipcRenderer.invoke('amazonmusic-get-status', { refreshPlan: !!(opts && opts.refreshPlan) }),
     openLogin: () => ipcRenderer.invoke('amazonmusic-open-login'),
     signOut: () => ipcRenderer.invoke('amazonmusic-sign-out'),
     searchTracks: (query) => ipcRenderer.invoke('amazonmusic-search-tracks',
@@ -626,6 +627,12 @@ contextBridge.exposeInMainWorld('electron', {
       query && typeof query === 'object' ? query : { query }),
     lookupAlbum: (url) => ipcRenderer.invoke('amazonmusic-lookup-album', { url }),
     searchArtistImage: (artistName) => ipcRenderer.invoke('amazonmusic-search-artist-image', { artistName }),
+    // The account's plan changed ('unlimited' / 'prime' / 'unknown'; #1220).
+    onPlanChanged: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('amazonmusic-plan-changed', handler);
+      return () => ipcRenderer.removeListener('amazonmusic-plan-changed', handler);
+    },
     // Diagnostic (DevTools only): record an album or search page's gql into a
     // file in userData. See main.js 'amazonmusic-debug-capture-gql'.
     debugCaptureGql: (url) => ipcRenderer.invoke('amazonmusic-debug-capture-gql', { url }),

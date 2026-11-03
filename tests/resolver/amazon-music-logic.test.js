@@ -49,8 +49,49 @@ const {
   assignDiscNumbers,
   albumDetailFromGql,
   createSearchBreaker,
-  isAmazonMusicPage
+  isAmazonMusicPage,
+  amazonNativeSessionFromConfig,
+  isUnlimitedTier,
+  amazonPlanFromTier,
+  amazonPlanMessage
 } = require('../../amazon-music-logic');
+
+// #1220: only Music Unlimited plays; Prime and anything unreadable block.
+describe('Amazon plan from config.json tier', () => {
+  test.each([
+    ['UNLIMITED', 'unlimited'],
+    ['UNLIMITED_HD', 'unlimited'],
+    [' unlimited_hd ', 'unlimited'],
+    ['PRIME', 'prime'],
+    ['prime', 'prime'],
+    ['PRIME_PLUS', 'unknown'],
+    ['FREE', 'unknown'],
+    ['', 'unknown'],
+    [null, 'unknown'],
+    [undefined, 'unknown'],
+    [{ name: 'UNLIMITED' }, 'unknown'] // the raw object; amazonNativeSessionFromConfig unwraps it first
+  ])('%p → %s', (tier, plan) => {
+    expect(amazonPlanFromTier(tier)).toBe(plan);
+  });
+
+  test('an object-shaped tier is unwrapped by the config parser', () => {
+    expect(amazonPlanFromTier(amazonNativeSessionFromConfig({ tier: { name: 'UNLIMITED_HD' } }).tier)).toBe('unlimited');
+    expect(amazonPlanFromTier(amazonNativeSessionFromConfig({ tier: { tier: 'PRIME' } }).tier)).toBe('prime');
+    expect(amazonPlanFromTier(amazonNativeSessionFromConfig({}).tier)).toBe('unknown');
+  });
+
+  test('telemetry and the gate share one Unlimited rule', () => {
+    expect(isUnlimitedTier('UNLIMITED_HD')).toBe(true);
+    expect(isUnlimitedTier('PRIME')).toBe(false);
+    expect(isUnlimitedTier(null)).toBe(false);
+  });
+
+  test('one wording per blocked plan; none for Unlimited', () => {
+    expect(amazonPlanMessage('prime')).toBe('Amazon Prime: Amazon is used for album art, artist photos and links. Playing Amazon tracks in Parachord needs Music Unlimited.');
+    expect(amazonPlanMessage('unknown')).toMatch(/^Parachord couldn't confirm your Amazon Music plan, so Amazon playback is off until it can\./);
+    expect(amazonPlanMessage('unlimited')).toBeNull();
+  });
+});
 
 // The replay-first template: one captured spec-search request serves every
 // later search with patched variables (see "Spec-search request templates"

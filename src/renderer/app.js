@@ -5939,15 +5939,32 @@ const Parachord = () => {
 
   const [selectedResolver, setSelectedResolver] = useState(null); // Resolver detail modal
   // Amazon Music sign-in status from the in-app player:
-  // { success, engine: 'web', web: { cdm, signedIn } }
+  // { success, engine: 'web', web: { cdm, signedIn }, plan, planMessage }
   const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
+  // #1220: a resolver that is enabled but can't play on the account's plan
+  // (Amazon off Music Unlimited). It stays in activeResolvers for what it
+  // still does (album search, artist photos, links), but playbackResolvers
+  // leaves it out: source selection, source icons and the priority numbers.
+  const planBlockedResolverIds = useMemo(() => (
+    amazonMusicStatus?.web?.signedIn && amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited'
+      ? ['amazonmusic'] : []
+  ), [amazonMusicStatus]);
+  const playbackResolvers = useMemo(() => (
+    planBlockedResolverIds.length
+      ? activeResolvers.filter(id => !planBlockedResolverIds.includes(id))
+      : activeResolvers
+  ), [activeResolvers, planBlockedResolverIds]);
+  const playbackResolversRef = useRef(playbackResolvers);
+  playbackResolversRef.current = playbackResolvers;
   // Re-fetch Amazon Music status and audio quality when its detail modal opens.
   useEffect(() => {
     if (selectedResolver?.id !== 'amazonmusic') return;
     let cancelled = false;
     (async () => {
       try {
-        const s = await window.electron.amazonMusic.getStatus();
+        // refreshPlan: read the plan from Amazon now, not the 30-minute cache,
+        // so an upgrade shows as soon as the panel opens (#1220).
+        const s = await window.electron.amazonMusic.getStatus({ refreshPlan: true });
         if (cancelled) return;
         const status = s && s.success ? s : { success: true, engine: 'widevine', web: { cdm: false, signedIn: false } };
         setAmazonMusicStatus(status);
@@ -7278,18 +7295,43 @@ const Parachord = () => {
   // after every sign-in attempt, on enable, and each time Settings opens, so
   // a session that expired since is caught too. manageAmazonMusic above calls
   // it at run time, after this render has defined it.
-  const refreshAmazonMusicStatus = () => {
+  const applyAmazonMusicStatus = (s) => {
+    setAmazonMusicStatus(s);
+    // #1220: off Music Unlimited, Amazon searches answer not-ready, which
+    // leaves no amazonmusic key but a fresh timestamp on every track. After
+    // an upgrade those would count as already searched for 7 days, so clear
+    // them once the plan reads unlimited where it last read otherwise (kept
+    // across restarts: the upgrade can happen while the app is closed).
+    const plan = s && s.plan;
+    if (!plan) return;
+    let last = null;
+    try { last = localStorage.getItem('amazonmusic_last_plan'); } catch (e) {}
+    if (plan === 'unlimited' && last && last !== 'unlimited' && typeof window.__parachordClearAmazonNoMatch === 'function') {
+      console.log(`[Amazon] plan is now Music Unlimited (was ${last}); re-resolving Amazon`);
+      window.__parachordClearAmazonNoMatch();
+    }
+    try { localStorage.setItem('amazonmusic_last_plan', plan); } catch (e) {}
+  };
+  const refreshAmazonMusicStatus = (opts) => {
     if (!window.electron?.amazonMusic?.getStatus) return;
-    window.electron.amazonMusic.getStatus()
-      .then((s) => setAmazonMusicStatus(s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } }))
+    window.electron.amazonMusic.getStatus(opts)
+      .then((s) => applyAmazonMusicStatus(s && s.success ? s : { success: true, engine: 'web', web: { cdm: false, signedIn: false } }))
       .catch(() => {});
   };
   const amazonMusicEnabled = activeResolvers.includes('amazonmusic');
   useEffect(() => {
     if (!cacheLoaded || !amazonMusicEnabled) return;
     if (activeView !== 'settings' && amazonMusicStatus) return;
-    refreshAmazonMusicStatus();
+    // Opening Settings reads the plan from Amazon, not the 30-minute cache,
+    // so an upgrade shows (and re-resolves) as soon as Settings opens (#1220).
+    refreshAmazonMusicStatus({ refreshPlan: activeView === 'settings' });
   }, [cacheLoaded, amazonMusicEnabled, activeView]);
+  // Main reports a plan change (a session mint or a re-read found another
+  // plan): refresh the tile and settings, and re-resolve on an upgrade.
+  useEffect(() => {
+    if (!cacheLoaded || !amazonMusicEnabled || !window.electron?.amazonMusic?.onPlanChanged) return;
+    return window.electron.amazonMusic.onPlanChanged(() => refreshAmazonMusicStatus());
+  }, [cacheLoaded, amazonMusicEnabled]);
 
   // Leaving an Amazon track must blank the player view, not just pause it -
   // the module's own invariant ("pause is not enough": Amazon can start the
@@ -7299,19 +7341,17 @@ const Parachord = () => {
   // so calling it while a NEWER Amazon play has already claimed the view is a
   // no-op and cannot blank the replacement track.
 
-  // Background resolution calls this when search throws notReady. One prompt,
-  // and a decline is not cached as a 30-day noMatch (the throw already skipped that).
+  // Background resolution calls this when search throws notReady: the result
+  // is not cached as a 30-day noMatch (the throw already skipped that), and
+  // nothing else happens. Background searches never open the sign-in dialog
+  // (#1220): Amazon plays only on Music Unlimited, so an unasked-for "Play
+  // Amazon Music in Parachord?" pop-up would mostly reach accounts that can't
+  // use it. A signed-out Amazon shows "Setup required" on its tile instead;
+  // the dialog still opens when the user asks for Amazon (Settings → Sign in,
+  // playing an Amazon track, an Amazon link).
   window.__parachordNoteAmazonNotReady = (error) => {
     const code = error && (error.code || error.reason);
-    const notReady = !!(error && (error.notReady || code === 'not-ready' || code === 'not-signed-in' || code === 'no-cdm' || code === 'load-failed' || /Amazon Music not ready/.test(error.message || '')));
-    if (!notReady) return false;
-    // A page that did not load (offline, captive portal, a stalled network) is
-    // transient: skip the noMatch cache like other notReady results, but do
-    // not offer a sign-in prompt — the account is not the problem.
-    if (code !== 'load-failed') {
-      manageAmazonMusic({ explicit: false, reason: code }).catch(() => {});
-    }
-    return true;
+    return !!(error && (error.notReady || code === 'not-ready' || code === 'not-signed-in' || code === 'no-cdm' || code === 'load-failed' || code === 'plan-ineligible' || /Amazon Music not ready/.test(error.message || '')));
   };
 
 
@@ -7824,7 +7864,9 @@ const Parachord = () => {
   const ctx = {
     resolvers: {
       loadedResolversRef,
-      activeResolversRef,
+      // The engine only plays: it gets the resolvers that can play on the
+      // account's plan (#1220), under the name its bodies use.
+      activeResolversRef: playbackResolversRef,
       resolverOrderRef,
       resolverBlocklistRef,
       resolverConfigCache,
@@ -35314,14 +35356,14 @@ useEffect(() => {
     // Search Page - Full page search view
     activeView === 'search' ? (
       React.createElement(SearchPage, {
-          activeResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, formatTime, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchResultsSortDropdownOpen, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setSearchResultsSortDropdownOpen, setTrackLoading, showToast, trackSources,
+          activeResolvers: playbackResolvers, activeView, allResolvers, artistImageCache, currentTrack, filteredHistoryMatches, formatTime, handleSearchDetailScroll, handleSearchScrollContainerRef, isPlaying, isSearching, playbackContext, playlists, prefetchedReleasesRef, resolverOrder, searchContainerWidth, searchDetailCategory, searchHeaderCollapsed, searchHistory, searchInputRef, searchQuery, searchResults, searchResultsContainerRef, searchResultsFilter, searchResultsFilterOpen, searchResultsSort, searchResultsSortDropdownOpen, searchScrollContainerRef, searchTracksObserverRef, searchTracksRowRefs, setAddToPlaylistPanel, setDraggingTrackForPlaylist, setSearchDetailCategory, setSearchPreviewItem, setSearchResultsFilter, setSearchResultsFilterOpen, setSearchResultsSort, setSearchResultsSortDropdownOpen, setTrackLoading, showToast, trackSources,
           ...searchPageHandlers
         }) // end main view
     ) : // end activeView === 'search' ternary
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement(ArtistPage, {
-          activeResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
+          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServiceConfigs: metaServiceConfigs,
@@ -35496,7 +35538,7 @@ useEffect(() => {
 
       // Main content area - Playlist Page (new design matching album page layout)
       : activeView === 'playlist-view' && selectedPlaylist ? React.createElement(PlaylistViewPage, {
-          activeResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, formatTime, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setShareDropdownOpen, setSyncDeleteDialog, setTrackLoading, shareDropdownOpen, showToast, trackSources,
+          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, formatTime, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setShareDropdownOpen, setSyncDeleteDialog, setTrackLoading, shareDropdownOpen, showToast, trackSources,
           ...playlistViewPageHandlers
         })
 
@@ -36331,7 +36373,7 @@ useEffect(() => {
 
         // Library view with collapsible hero header (matching Recommendations pattern)
         activeView === 'library' && React.createElement(CollectionPage, {
-          activeResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionSortDropdownOpen, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionSortDropdownOpen, setCollectionTab, setDraggingTrackForPlaylist, setSyncMenuOpen, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncMenuOpen, syncProviderConfig, syncStatus, trackSources,
+          activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionSortDropdownOpen, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionSortDropdownOpen, setCollectionTab, setDraggingTrackForPlaylist, setSyncMenuOpen, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncMenuOpen, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
 
@@ -37128,7 +37170,7 @@ useEffect(() => {
                       : hasResolved ? (() => {
                           const bestConf = getBestSourceConfidence(resolvedSources);
                           return Object.entries(resolvedSources)
-                            .filter(([resolverId]) => activeResolvers.includes(resolverId))
+                            .filter(([resolverId]) => playbackResolvers.includes(resolverId))
                             .sort(([aId], [bId]) => {
                               const aIndex = resolverOrder.indexOf(aId);
                               const bIndex = resolverOrder.indexOf(bId);
@@ -39566,7 +39608,7 @@ useEffect(() => {
                           : hasResolved ? (() => {
                               const bestConf = getBestSourceConfidence(resolvedSources);
                               return Object.entries(resolvedSources)
-                                .filter(([resolverId]) => activeResolvers.includes(resolverId))
+                                .filter(([resolverId]) => playbackResolvers.includes(resolverId))
                                 .sort(([aId], [bId]) => {
                                   const aIndex = resolverOrder.indexOf(aId);
                                   const bIndex = resolverOrder.indexOf(bId);
@@ -40033,7 +40075,7 @@ useEffect(() => {
                             )
                           : hasResolved ? (() => {
                               const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
@@ -40139,7 +40181,7 @@ useEffect(() => {
                         React.createElement('div', { className: 'flex items-center gap-1 justify-end', style: { width: '140px', flexShrink: 0, minHeight: '24px' } },
                           hasResolved ? (() => {
                               const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                              return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                                 const resolver = allResolvers.find(r => r.id === resolverId);
                                 if (!resolver || !resolver.play) return null;
                                 return React.createElement('button', {
@@ -41016,7 +41058,7 @@ useEffect(() => {
                               )
                             : hasResolved ? (() => {
                                 const bestConf = getBestSourceConfidence(resolvedSources);
-                                return Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                                   const resolver = allResolvers.find(r => r.id === resolverId);
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
@@ -41119,7 +41161,7 @@ useEffect(() => {
                               )
                             : hasResolved ? (() => {
                                 const bestConf = getBestSourceConfidence(resolvedSources);
-                                return Object.entries(resolvedSources).filter(([resolverId]) => activeResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
+                                return Object.entries(resolvedSources).filter(([resolverId]) => playbackResolvers.includes(resolverId)).sort(([aId], [bId]) => resolverOrder.indexOf(aId) - resolverOrder.indexOf(bId)).map(([resolverId, source]) => {
                                   const resolver = allResolvers.find(r => r.id === resolverId);
                                   if (!resolver || !resolver.play) return null;
                                   return React.createElement('button', {
@@ -41752,16 +41794,22 @@ useEffect(() => {
                     // Build unified list: installed resolvers + marketplace-only resolvers
                     const unifiedResolvers = [];
 
-                    // First, add installed resolvers in order
-                    resolverOrder
-                      .filter(resolverId => allResolvers.some(r => r.id === resolverId))
-                      .forEach((resolverId, index) => {
+                    // First, add installed resolvers in order. One that can't
+                    // play on the account's plan (#1220) has no playback
+                    // priority: it gets no number, doesn't take one, and is
+                    // shown after the numbered ones, before the inactive ones.
+                    // Display only — resolverOrder keeps its slot, so an
+                    // upgrade puts it back where it was.
+                    const installedInOrder = resolverOrder.filter(resolverId => allResolvers.some(r => r.id === resolverId));
+                    const playingInOrder = installedInOrder.filter(resolverId => !planBlockedResolverIds.includes(resolverId));
+                    const planBlockedInOrder = installedInOrder.filter(resolverId => planBlockedResolverIds.includes(resolverId));
+                    [...playingInOrder, ...planBlockedInOrder].forEach((resolverId, index) => {
                         const resolver = allResolvers.find(r => r.id === resolverId);
                         const marketplaceResolver = marketplaceContentResolvers.find(r => r.id === resolver.id);
                         unifiedResolvers.push({
                           ...resolver,
                           isInstalled: true,
-                          priorityNumber: index + 1,
+                          priorityNumber: index < playingInOrder.length ? index + 1 : null,
                           marketplaceData: marketplaceResolver,
                           hasUpdate: marketplaceResolver && marketplaceResolver.version > resolver.version
                         });
@@ -41853,15 +41901,26 @@ useEffect(() => {
                           }
                         }
 
+                        // Amazon signed in but not on Music Unlimited: set up,
+                        // but it plays nothing (#1220). The tooltip says why.
+                        // Only resolvers with a playback priority can be dragged
+                        // or dropped on: a plan-blocked one sits outside the
+                        // numbered order (#1220), so its slot isn't a position.
+                        const reorderable = isActive && !planBlockedResolverIds.includes(resolver.id);
+                        const amazonPlanLimited = resolver.id === 'amazonmusic' && isActive
+                          && amazonMusicStatus?.web?.signedIn && amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited';
+
                         return React.createElement(ResolverCard, {
                           key: resolver.id,
                           resolver: resolver,
                           isActive: isActive,
                           hasUpdate: resolver.hasUpdate,
                           needsConfiguration: needsConfiguration,
+                          statusLabel: amazonPlanLimited ? (amazonMusicStatus.plan === 'prime' ? 'Prime: no playback' : 'Plan not confirmed') : null,
+                          statusTitle: amazonPlanLimited ? amazonMusicStatus.planMessage : null,
                           priorityNumber: resolver.priorityNumber,
                           isInstalling: isInstalling,
-                          draggable: isActive,
+                          draggable: reorderable,
                           isDragging: draggedResolver === resolver.id,
                           isDragOver: dragOverResolver === resolver.id,
                           onClick: () => {
@@ -41869,12 +41928,12 @@ useEffect(() => {
                             const loadedResolver = allResolvers.find(r => r.id === resolver.id);
                             setSelectedResolver(loadedResolver || resolver);
                           },
-                          onDragStart: isActive ? (e) => handleResolverDragStart(e, resolver.id) : undefined,
-                          onDragOver: isActive ? handleResolverDragOver : undefined,
-                          onDragEnter: isActive ? (e) => handleResolverDragEnter(e, resolver.id) : undefined,
-                          onDragLeave: isActive ? handleResolverDragLeave : undefined,
-                          onDrop: isActive ? (e) => handleResolverDrop(e, resolver.id) : undefined,
-                          onDragEnd: isActive ? handleResolverDragEnd : undefined,
+                          onDragStart: reorderable ? (e) => handleResolverDragStart(e, resolver.id) : undefined,
+                          onDragOver: reorderable ? handleResolverDragOver : undefined,
+                          onDragEnter: reorderable ? (e) => handleResolverDragEnter(e, resolver.id) : undefined,
+                          onDragLeave: reorderable ? handleResolverDragLeave : undefined,
+                          onDrop: reorderable ? (e) => handleResolverDrop(e, resolver.id) : undefined,
+                          onDragEnd: reorderable ? handleResolverDragEnd : undefined,
                           onContextMenu: isActive ? (e) => {
                             e.preventDefault();
                             if (window.electron?.resolvers?.showContextMenu) {
@@ -43957,7 +44016,7 @@ useEffect(() => {
                 const playbarTrackTitleNorm = (currentTrack.title || '').toLowerCase().trim();
                 const availableSources = currentTrack.sources && typeof currentTrack.sources === 'object' && !Array.isArray(currentTrack.sources)
                   ? Object.keys(currentTrack.sources).filter(resId => {
-                      if (!activeResolvers.includes(resId)) return false;
+                      if (!playbackResolvers.includes(resId)) return false;
                       if (currentTrack.sources[resId]?.noMatch) return false;
                       const src = currentTrack.sources[resId];
                       const srcId = src ? (src.youtubeId || src.spotifyUri || src.spotifyId || src.bandcampUrl || src.soundcloudId || src.appleMusicId || src.filePath || src.id || null) : null;
@@ -48617,7 +48676,8 @@ useEffect(() => {
                   style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
                 }, !amazonMusicStatus ? '' :
                   amazonMusicStatus.web?.signedIn
-                    ? ''
+                    // Off Music Unlimited, nothing plays (#1220); say why.
+                    ? (amazonMusicStatus.plan && amazonMusicStatus.plan !== 'unlimited' ? (amazonMusicStatus.planMessage || '') : '')
                     : amazonMusicStatus.web?.cdm
                       ? 'Sign in with your Amazon Music account'
                       : 'This build cannot play DRM-protected Amazon streams')
@@ -48660,7 +48720,7 @@ useEffect(() => {
                       const ok = await manageAmazonMusic({ explicit: true, reason: 'not-signed-in', forcePrompt: true });
                       if (ok) {
                         const s = await window.electron.amazonMusic.getStatus().catch(() => null);
-                        if (s && s.success) setAmazonMusicStatus(s);
+                        if (s && s.success) applyAmazonMusicStatus(s);
                       }
                     },
                     style: {
