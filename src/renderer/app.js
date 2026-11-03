@@ -9574,7 +9574,17 @@ const Parachord = () => {
                 }
               }
               console.log(`[Sync] Saved ${saveCount} modified playlist(s) of ${allPlaylists.length} total`);
-              setPlaylists(allPlaylists);
+              // Preserve in-memory hosted playlists not yet in this snapshot.
+              // allPlaylists was loaded before a loop that can run for minutes
+              // (250ms breathe per playlist), so a hosted playlist imported
+              // mid-loop is on disk but not in the snapshot — a plain replace
+              // would drop it from the UI until restart. Same merge as the
+              // background-sync push loop's post-save (guard-parity holds).
+              setPlaylists(prev => {
+                const diskIds = new Set(allPlaylists.map(p => p.id));
+                const hostedOnly = prev.filter(p => p.sourceUrl && !diskIds.has(p.id));
+                return [...allPlaylists, ...hostedOnly];
+              });
             }
           } catch (err) {
             console.warn('[Sync] Local playlist auto-create failed after manual sync:', err.message);
