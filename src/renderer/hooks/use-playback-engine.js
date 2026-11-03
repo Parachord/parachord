@@ -551,8 +551,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     };
 
     // The account's plan doesn't cover playback on this service
-    // (reason 'plan-ineligible': Amazon off Music Unlimited, #1220; Spotify
-    // Free, which its plugin reports from Spotify's PREMIUM_REQUIRED). The app
+    // (reason 'plan-ineligible': Amazon off Music Unlimited, #1220, or a
+    // plugin's play() on a plan its service can't play on demand). The app
     // records the plan (lib/playback-limits.js) and supplies the wording; then
     // another enabled source plays, the way a refused SoundCloud track falls
     // back, and with none the message is shown. True when it handled err.
@@ -1953,9 +1953,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       if (success) {
         console.log(`✅ Playing on ${resolver.name}`);
-        // The account's plan plays here (Spotify: Premium); the app records it
-        // (lib/playback-limits.js).
-        if (typeof window.__parachordNotePlanPlays === 'function') window.__parachordNotePlanPlays(resolverId);
 
         // Apply normalized volume for Spotify (respect mute state)
         if (resolverId === 'spotify') {
@@ -2215,9 +2212,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
       }
     } catch (error) {
-      // Spotify Free (its plugin throws plan-ineligible on PREMIUM_REQUIRED):
-      // not an error to re-resolve, the account's plan. A superseded play's
-      // refusal is dropped.
+      // A plugin refusing for the account's plan (plan-ineligible, see
+      // docs/architecture/plugins.md): not an error to re-resolve. A
+      // superseded play's refusal is dropped.
       if (error && error.reason === 'plan-ineligible') {
         if (playbackGenerationRef.current === thisGeneration) handlePlanRefusal(error, resolverId, resolver.name);
         return;

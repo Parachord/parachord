@@ -1,5 +1,8 @@
 // src/renderer/lib/playback-limits.js — resolvers that are set up but can't
-// play on the account's plan (#1220 for Amazon Prime; Spotify Free).
+// play on the account's plan (#1220, Amazon Prime). Spotify isn't here: the
+// Development Mode app every Parachord Spotify sign-in uses only works while
+// its owner has Premium (February 2026), so a connected Spotify is in
+// practice a Premium one.
 //
 // Such a resolver stays enabled for what it still does (search, metadata,
 // links, playlist sync), but it is left out of playback: source selection,
@@ -23,8 +26,6 @@ const AMAZON_TILE_LABELS = {
   unknown: 'Plan not confirmed'
 };
 
-const SPOTIFY_FREE_MESSAGE = 'Spotify Free: Spotify is used for search, playlists and links. Playing Spotify tracks in Parachord needs Spotify Premium.';
-
 // Amazon's limit from its getStatus reply. Only Music Unlimited plays, and an
 // unknown plan blocks too (amazon-dmls decides; the message comes from main).
 function amazonPlaybackLimit(status) {
@@ -37,19 +38,6 @@ function amazonPlaybackLimit(status) {
     message: status.planMessage || null,
     searchesHeldBack: true
   };
-}
-
-// Spotify's limit from the account's plan ('premium' or 'free'), learned
-// from playback (Spotify stopped reporting `product` on /v1/me to Development
-// Mode apps in February 2026). Only Premium can be driven over Connect.
-// Search works on any plan, so its results were cached as usual and an
-// upgrade needs no new search. An unknown plan does NOT block: unlike
-// Amazon, Spotify enforces Premium itself with a clear refusal at play time
-// (403 PREMIUM_REQUIRED), which is what records 'free'.
-function spotifyPlaybackLimit(product) {
-  if (!product) return null;
-  if (product === 'premium') return { blocked: false, planKey: 'premium', label: null, message: null };
-  return { blocked: true, planKey: product, label: 'Free: no playback', message: SPOTIFY_FREE_MESSAGE };
 }
 
 // The ids whose plan can't play, in a stable order.
@@ -96,12 +84,10 @@ function limitStorageKey(id) {
 
 module.exports = {
   amazonPlaybackLimit,
-  spotifyPlaybackLimit,
   planBlockedIds,
   playbackResolverIds,
   tileStatus,
   limitMessage,
   limitTransition,
-  limitStorageKey,
-  SPOTIFY_FREE_MESSAGE
+  limitStorageKey
 };

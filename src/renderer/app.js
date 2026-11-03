@@ -3632,29 +3632,6 @@ const Parachord = () => {
   const [spotifyToken, setSpotifyToken] = useState(null);
   const spotifyTokenRef = useRef(null); // Ref for cleanup on unmount
   const [spotifyConnected, setSpotifyConnected] = useState(false);
-  // The Spotify account's plan ('premium' / 'free'), or null when unknown.
-  // Spotify no longer reports it (`product` left /v1/me for Development Mode
-  // apps in February 2026, and every Parachord sign-in is one), so it is
-  // learned from playback: a play refused with PREMIUM_REQUIRED is 'free', a
-  // play that starts is 'premium'. A blocked Spotify is never tried, so a
-  // 'free' reading expires after SPOTIFY_FREE_TTL_MS (an upgrade gets noticed)
-  // and the Spotify panel can clear it. Remembered on this device; forgotten
-  // on disconnect. Feeds lib/playback-limits.js.
-  const SPOTIFY_FREE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-  const [spotifyProduct, setSpotifyProduct] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('spotify_product') || 'null');
-      if (!saved || typeof saved.product !== 'string') return null;
-      if (saved.product !== 'premium' && Date.now() - (saved.at || 0) > SPOTIFY_FREE_TTL_MS) return null;
-      return saved.product;
-    } catch (e) { return null; }
-  });
-  useEffect(() => {
-    try {
-      if (spotifyProduct) localStorage.setItem('spotify_product', JSON.stringify({ product: spotifyProduct, at: Date.now() }));
-      else localStorage.removeItem('spotify_product');
-    } catch (e) {}
-  }, [spotifyProduct]);
   const [spotifyDevice, setSpotifyDevice] = useState(null); // Current Spotify playback device { name, type, supports_volume }
   const [spotifyAdvancedOpen, setSpotifyAdvancedOpen] = useState(false); // Advanced settings accordion
   const [spotifyClientIdInput, setSpotifyClientIdInput] = useState(''); // Client ID input
@@ -5966,15 +5943,15 @@ const Parachord = () => {
   // { success, engine: 'web', web: { cdm, signedIn }, plan, planMessage }
   const [amazonMusicStatus, setAmazonMusicStatus] = useState(null);
   // Resolvers that are enabled but can't play on the account's plan (Amazon
-  // off Music Unlimited, #1220; Spotify Free). Each service reports its limit
-  // into one map (lib/playback-limits.js). Such a resolver stays in
-  // activeResolvers for what it still does (search, album search, artist
-  // photos, links, playlist sync), but playbackResolvers leaves it out:
-  // source selection, source icons and the priority numbers.
+  // off Music Unlimited, #1220). Each service reports its limit into one map
+  // (lib/playback-limits.js); another service with such a plan is one more
+  // entry. Such a resolver stays in activeResolvers for what it still does
+  // (search, album search, artist photos, links, playlist sync), but
+  // playbackResolvers leaves it out: source selection, source icons and the
+  // priority numbers.
   const playbackLimits = useMemo(() => ({
-    amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
-    spotify: spotifyConnected ? PlaybackLimits.spotifyPlaybackLimit(spotifyProduct) : null
-  }), [amazonMusicStatus, spotifyConnected, spotifyProduct]);
+    amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus)
+  }), [amazonMusicStatus]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
   const playbackResolvers = useMemo(
     () => PlaybackLimits.playbackResolverIds(activeResolvers, planBlockedResolverIds),
@@ -7600,19 +7577,11 @@ const Parachord = () => {
     }
   }, [playbackLimits]);
 
-  // A play that started proves the plan plays (Spotify: Premium).
-  window.__parachordNotePlanPlays = (resolverId) => {
-    if (resolverId === 'spotify' && spotifyProduct !== 'premium') setSpotifyProduct('premium');
-  };
-
   // The engine's plan refusal (reason 'plan-ineligible') reports here: record
-  // the plan the service just told us, and return the wording to show.
+  // the plan the service just told us, and return the wording to show (null:
+  // the refusal's own message is shown). A plugin checks this hook exists
+  // before throwing plan-ineligible (docs/architecture/plugins.md).
   window.__parachordNotePlanRefusal = (resolverId, planKey) => {
-    if (resolverId === 'spotify') {
-      const product = planKey || 'free';
-      setSpotifyProduct(product);
-      return PlaybackLimits.spotifyPlaybackLimit(product)?.message || null;
-    }
     if (resolverId === 'amazonmusic') {
       refreshAmazonMusicStatus();
       return null; // main's refusal already carries the Amazon wording
@@ -32683,7 +32652,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       await window.electron.spotify.disconnect();
       setSpotifyToken(null);
       setSpotifyConnected(false);
-      setSpotifyProduct(null); // the next sign-in may be another account
       // Remove Spotify sources from all tracks and remove from active resolvers
       removeResolverSources('spotify');
       setActiveResolvers(prev => prev.filter(id => id !== 'spotify'));
@@ -46302,34 +46270,16 @@ useEffect(() => {
                     }
                   }, 'Connect')
             ),
-            // The plan as Spotify reports it: this line used to say Premium
-            // for every connected account. Free can't play over Connect, so
-            // say why instead (lib/playback-limits.js).
             spotifyConnected && React.createElement('div', {
               className: 'flex items-center gap-2',
               style: {
                 marginTop: '12px',
                 fontSize: '12px',
-                color: PlaybackLimits.limitMessage(playbackLimits, 'spotify') ? '#d97706' : '#22c55e'
+                color: '#22c55e'
               }
             },
-              React.createElement('span', null, PlaybackLimits.limitMessage(playbackLimits, 'spotify') ? '!' : '✓'),
-              React.createElement('span', null,
-                PlaybackLimits.limitMessage(playbackLimits, 'spotify')
-                  || (spotifyProduct === 'premium' ? 'Spotify Premium connected' : 'Spotify connected')),
-              // Spotify can't be asked for the plan, and a blocked Spotify is
-              // never tried, so after an upgrade this lets the next play test it.
-              PlaybackLimits.limitMessage(playbackLimits, 'spotify') && React.createElement('button', {
-                onClick: () => {
-                  setSpotifyProduct(null);
-                  showToast('Parachord will try Spotify again on the next play.', 'info');
-                },
-                style: {
-                  marginLeft: '8px', padding: '2px 8px', fontSize: '11px', fontWeight: '500',
-                  color: 'var(--text-primary)', backgroundColor: 'var(--hover-bg-default)',
-                  borderRadius: '6px', flexShrink: 0
-                }
-              }, 'Check again')
+              React.createElement('span', null, '✓'),
+              React.createElement('span', null, 'Spotify Premium connected')
             ),
             // Spotify API credentials — BYOK required
             !spotifyConnected && React.createElement('div', {
@@ -46353,7 +46303,10 @@ useEffect(() => {
                       onClick: (e) => { e.preventDefault(); window.electron?.openExternal?.('https://developer.spotify.com/dashboard') || window.open('https://developer.spotify.com/dashboard', '_blank'); },
                       style: { color: '#1DB954', textDecoration: 'underline' }
                     }, 'developer.spotify.com/dashboard'),
-                    ' to get your Client ID.'
+                    // Since February 2026 a Development Mode app works only
+                    // while its owner has Premium, and every Parachord sign-in
+                    // is one (docs/architecture/playback.md).
+                    ' to get your Client ID. The Spotify account that creates the app needs Spotify Premium, and the app stops working if that Premium lapses.'
                   ),
               // Setup steps (only shown when no key configured)
               spotifyCredentialsSource === 'none' && React.createElement('div', {
