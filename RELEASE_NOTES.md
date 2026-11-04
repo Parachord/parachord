@@ -41,6 +41,7 @@
 
 ## AI DJ
 
+- **A request to queue tracks starts playing even if the first one can't be found.** With nothing playing, a missing first track used to leave the rest queued and the app silent. The AI DJ and MCP clients now start with the first track found and are told what was skipped.
 - **Resume means resume.** Asking the AI DJ or an MCP client to resume a paused track could skip to the next one in your queue. It now carries on with the track you paused. Asking to pause something already paused, or to resume something already playing, also no longer does the opposite.
 
 ---
