@@ -649,7 +649,7 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
-const { savedPluginConfig } = require('./lib/playback-helpers');
+const { savedPluginConfig, sourcesChangedOnRecheck } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -20909,7 +20909,7 @@ ${trackListXml}
     // Compare with cached sources
     const cachedResolverIds = Object.keys(cachedSources).sort();
     const freshResolverIds = Object.keys(freshSources).sort();
-    const sourcesChanged = JSON.stringify(cachedResolverIds) !== JSON.stringify(freshResolverIds);
+    const sourcesChanged = sourcesChangedOnRecheck(cachedSources, freshSources);
 
     if (sourcesChanged) {
       console.log(`⚠️ Sources changed for: ${track.title}`);

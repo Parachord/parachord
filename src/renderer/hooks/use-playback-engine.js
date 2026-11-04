@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources } = require('../lib/playback-helpers');
+const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -718,7 +718,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       }
 
       // We have a track with multiple sources - select the best one
-      let availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
+      let availableResolvers = playableSourceIds(trackOrSource.sources);
 
       if (availableResolvers.length === 0) {
         // No sources available - show track immediately, then resolve
@@ -833,7 +833,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
 
         // Update availableResolvers after resolution
-        availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
+        availableResolvers = playableSourceIds(trackOrSource.sources);
 
         // If no sources found but MBID mapper returned canonical names, retry with those
         // This helps when the original metadata has typos, alternate spellings, or non-standard formatting
@@ -886,7 +886,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
                 queueTrackSources(trackOrSource.id, freshSources, { immediate: true });
               }
             }
-            availableResolvers = Object.keys(trackOrSource.sources).filter(id => !trackOrSource.sources[id]?.noMatch);
+            availableResolvers = playableSourceIds(trackOrSource.sources);
           }
         }
 
