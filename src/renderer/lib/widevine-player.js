@@ -28,8 +28,10 @@ const { shakaPlaybackConfig } = require('./widevine-quality');
 
 const QUALITY_STORE_KEY = 'playback_quality';
 const ABR_STORE_KEY = 'playback_abr';
+const SPATIAL_STORE_KEY = 'playback_spatial';
 const DEFAULT_QUALITY = 'max';
 const DEFAULT_ABR = true;
+const DEFAULT_SPATIAL = false;
 
 let player = null;
 let audioElement = null;
@@ -128,16 +130,29 @@ function ensureLicenseScheme() {
     const url = new URL(uri);
     const resolverId = url.host;
     const sessionId = url.searchParams.get('s');
+    // Snapshot BEFORE the await: a license round-trip can outlive a variant
+    // switch (the load-time pick handing over to our locked selection), and a
+    // plan refusal must be attributed to the family whose group was ASKED
+    // FOR, not whichever variant is active when the denial lands.
+    const factsAtRequest = currentVariantFacts();
     const result = await window.electron.widevine.relayLicense(resolverId, b64(request.body), sessionId);
     if (!result || result.success !== true) {
       const err = new Error((result && result.error) || 'license relay failed');
       if (result && result.licenseDenied) err.licenseDenied = true;
-      // Eligibility refusals (CUSTOMER_NOT_ELIGIBLE for the HD KID group on
-      // a Prime plan — live-verified) are process-level facts: stop asking
-      // for FLAC. The current play survives on the other KID groups; the
-      // NEXT readPlaybackQuality/start selection drops the HD rungs.
+      // Eligibility refusals (CUSTOMER_NOT_ELIGIBLE — live-verified on a
+      // Prime plan for the HD KID group, and the same refusal shape applies
+      // to the spatial ec-3 KID group) are process-level facts: stop asking
+      // for the refused family. Which group was refused is read off the
+      // variant that was active WHEN THE REQUEST FIRED — the CDM asks for
+      // the selected variant's group, and the challenge bytes are opaque.
+      // The current play survives on the other KID groups unless the refused
+      // group was the locked selection's own family (a locked spatial pick
+      // whose KID is refused fails this play — the lossy and HD FLAC groups
+      // keep playing); the NEXT selection drops the refused rungs.
       if (result && HD_CONTENT_DENIAL_STATUSES.has(result.denialReason)) {
-        hdSessionBlockedByPlan = true;
+        const activeCodec = factsAtRequest && factsAtRequest.codec ? String(factsAtRequest.codec).toLowerCase() : null;
+        if (activeCodec === 'ec-3') spatialBlockedByPlan = true;
+        else hdSessionBlockedByPlan = true;
       }
       throw err;
     }
@@ -153,12 +168,18 @@ function ensureLicenseScheme() {
 // tier fails shaka 4012 (RESTRICTIONS_CANNOT_BE_MET) there even though
 // MediaSource is fine everywhere. Hornet-era Linux never played FLAC for the
 // same underlying reason). Probe both layers once per process.
-// Set once Amazon answers a license relay with an HD-content eligibility
-// denial (CUSTOMER_NOT_ELIGIBLE — the Prime-plan capture): the FLAC KID
-// group will be refused for the whole account, so stop asking (the
-// refusal would otherwise repeat per track). Process-level, matching the
-// dmls session it was issued under.
+// Plan-level latches set once Amazon answers a license relay with an
+// eligibility denial (CUSTOMER_NOT_ELIGIBLE — the Prime-plan capture): the
+// refused KID group's family stops being asked for the whole account
+// session (the refusal would otherwise repeat per track). Which group was
+// refused is read off the ACTIVE variant's family at denial time — the CDM
+// asks for the selected variant's group; the challenge bytes are opaque.
+// FLAC keeps the legacy unconditional latch; the spatial group (the ec-3
+// KID set) latches its own flag so a spatial refusal drops the ec-3 rungs
+// instead of wrongly taking FLAC down with it. Process-level, matching the
+// dmls session it was issued under; both clear on sign-out.
 let hdSessionBlockedByPlan = false;
+let spatialBlockedByPlan = false;
 const HD_CONTENT_DENIAL_STATUSES = new Set(['CUSTOMER_NOT_ELIGIBLE']);
 
 // untilAudible(): resolves once the element is actually playing, rejects on a
@@ -187,6 +208,7 @@ function untilAudible() {
 }
 function clearPlanBlocks() {
   hdSessionBlockedByPlan = false;
+  spatialBlockedByPlan = false;
 }
 
 let supportedCodecFamilies = null;
@@ -198,16 +220,25 @@ async function getSupportedCodecFamilies() {
   const codecTypes = {
     flac: is('audio/mp4; codecs="flac"'),
     opus: is('audio/mp4; codecs="opus"'),
-    aac: is('audio/mp4; codecs="mp4a.40.2"')
+    aac: is('audio/mp4; codecs="mp4a.40.2"'),
+    // E-AC-3 (the Dolby Digital Plus Atmos master's codec): decoded in
+    // software by Chromium's ffmpeg — admitted only under the spatial
+    // opt-in, and only when BOTH layers here say yes.
+    ec3: is('audio/mp4; codecs="ec-3"')
   };
   const emeFamilies = { ...codecTypes };
-  // Deeper EME probe: FLAC's premium tier typically carries stronger
-  // output-protection requirements; when the key system rejects the AUDIO
-  // robustness conditions that tier needs, treat the family as unsupported on
-  // this build entirely rather than stalling at its first segment. (A failed
-  // requestMediaKeySystemAccess = the CDM won't accept even basic playback
-  // for that codec — treat unsupported.)
-  if (codecTypes.flac) {
+  // The families whose premium rungs carry stronger output-protection
+  // requirements get a deeper EME probe: FLAC, and ec-3 for spatial (Amazon
+  // issues a separate KID group per rendition family, and the spatial group's
+  // key may demand conditions a build's CDM refuses). When the key system
+  // rejects the AUDIO robustness conditions that tier needs, treat the family
+  // as unsupported on this build entirely rather than stalling at its first
+  // segment. (A failed requestMediaKeySystemAccess = the CDM won't accept
+  // even basic playback for that codec — treat unsupported.)
+  const EME_PROBE_TYPES = { flac: 'flac', ec3: 'ec-3' };
+  for (const [family, codec] of Object.entries(EME_PROBE_TYPES)) {
+    if (!codecTypes[family]) continue;
+    const contentType = `audio/mp4; codecs="${codec}"`;
     try {
       const nav = (typeof window !== 'undefined' && window.navigator) || (typeof navigator !== 'undefined' && navigator);
       // Minimal probe only — matches what Shaka's own setup asks. Anything
@@ -216,12 +247,12 @@ async function getSupportedCodecFamilies() {
       // FLAC regression reverted by this).
       const access = await nav.requestMediaKeySystemAccess('com.widevine.alpha', [{
         initDataTypes: ['cenc'],
-        audioCapabilities: [{ contentType: 'audio/mp4; codecs="flac"' }]
+        audioCapabilities: [{ contentType }]
       }]);
-      if (!access) emeFamilies.flac = false;
+      if (!access) emeFamilies[family] = false;
     } catch (e) {
-      console.log('[widevine-player] flac key-system probe rejected:', String(e && e.name || e), e && e.message);
-      emeFamilies.flac = false;
+      console.log(`[widevine-player] ${family} key-system probe rejected:`, String(e && e.name || e), e && e.message);
+      emeFamilies[family] = false;
     }
   }
   supportedCodecFamilies = emeFamilies;
@@ -233,16 +264,19 @@ async function getSupportedCodecFamilies() {
 async function readPlaybackQuality() {
   let tier = DEFAULT_QUALITY;
   let adaptive = DEFAULT_ABR;
+  let spatial = DEFAULT_SPATIAL;
   try {
-    const [q, a] = await Promise.all([
+    const [q, a, s] = await Promise.all([
       window.electron.store.get(QUALITY_STORE_KEY),
-      window.electron.store.get(ABR_STORE_KEY)
+      window.electron.store.get(ABR_STORE_KEY),
+      window.electron.store.get(SPATIAL_STORE_KEY)
     ]);
     if (typeof q === 'string' && q) tier = q;
     if (typeof a === 'boolean') adaptive = a;
+    if (typeof s === 'boolean') spatial = s;
   } catch { /* defaults */ }
-  lastQualityRead = { tier, adaptive };
-  return { tier, adaptive };
+  lastQualityRead = { tier, adaptive, spatial };
+  return { tier, adaptive, spatial };
 }
 
 function applyConfig(config) {
@@ -309,21 +343,54 @@ function currentVariantFacts() {
 }
 
 // Variants the current build can ACTUALLY decode: filters the manifest's
-// list through getSupportedCodecFamilies before tier selection runs.
+// list through getSupportedCodecFamilies before tier selection runs. The
+// spatial PREFERENCE (whether ec-3 may be picked at all) is applied later by
+// shakaPlaybackConfig — this is only decompressability.
 function playableVariants(tracks) {
   // Callers: await getSupportedCodecFamilies() once before selection.
-  const support = { ...(supportedCodecFamilies || { flac: true, opus: true, aac: true }) };
-  // Plan-level HD refusal: the FLAC KID group gets CUSTOMER_NOT_ELIGIBLE
-  // from the license relay — put flac out of the roster for the process.
+  const support = { ...(supportedCodecFamilies || { flac: true, opus: true, aac: true, ec3: true }) };
+  // Plan-level refusals: the FLAC KID group (hdSessionBlockedByPlan) or the
+  // spatial ec-3 KID group (spatialBlockedByPlan) got CUSTOMER_NOT_ELIGIBLE
+  // from the license relay — put the refused family out of the roster for
+  // the process, each flag scoped to its own family.
   if (hdSessionBlockedByPlan) support.flac = false;
+  if (spatialBlockedByPlan) support.ec3 = false;
   return (tracks || []).filter((t) => {
     const c = String(t && (t.codecs || t.codec) || '').toLowerCase();
     if (c.startsWith('flac')) return support.flac;
     if (c.startsWith('opus')) return support.opus;
     if (c.startsWith('mp4a') || c.startsWith('aac')) return support.aac;
+    if (c.startsWith('ec-3')) return support.ec3;
+    // ac-4 / mha1 / mhm1: no decoder in Chromium's ffmpeg on any build.
     return false;
   });
 }
+
+// The load-time pick is steered by a LOW bandwidth estimate, never a codec
+// list: shaka's chooser sorts candidates ascending by bandwidth and falls
+// back to the CHEAPEST playable variant when the estimate sits below every
+// rung (vendor chooseVariant: `c = a[0]`) — an opus rung on every Amazon
+// capture, whose KID group every plan that passes the plan gate grants
+// (live-verified on Prime: the opus groups played while the HD group was
+// refused). useNetworkInformation is pinned false because the browser's
+// navigator.connection.downlink would otherwise override the configured seed
+// (vendor default: useNetworkInformation: true) and land the load-time pick
+// wherever the OS network estimate points — the FLAC/spatial rungs again.
+// applyConfig re-sends the tier's real estimate (adaptive) or disables ABR
+// (locked), so only the load window rides this seed.
+//
+// NEVER steer the load-time pick with preferredAudioCodecs — two vendor
+// hazards (review rounds 3-4, both verified against the vendored build):
+// (1) the parse-time filter narrows the manifest to the first preferred
+//     codec with prefix matches and WRITES THE NARROWED LIST BACK into the
+//     manifest — the roster collapses for good (getVariantTracks never sees
+//     the other families again);
+// (2) the choice criteria ADOPTED AT LOAD keeps the list, and
+//     player.configure() never syncs preferredAudioCodecs back out of it —
+//     applyConfig's [] re-send is invisible to the criteria, and the ABR
+//     manager is re-fed a one-family set on every choice, forever.
+// preferredAudioCodecs stays EMPTY everywhere on this engine.
+const LOAD_TIME_SAFE_ESTIMATE_BPS = 1;
 
 async function play(audio, { resolverId, entity, trackContext } = {}) {
   if (!audio || !resolverId) throw new Error('widevine-player: audio element and resolverId are required');
@@ -343,6 +410,19 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     const err = new Error((result && result.error) || 'manifest fetch failed');
     err.reason = (result && result.reason) || 'playback-failed';
     throw err;
+  }
+
+  // Probe BEFORE load: the load-time codec constraint needs the per-build
+  // capability map, and nothing else about the selection is load-sensitive —
+  // the quality/tier read stays POST-load (a settings toggle that lands
+  // during the load window must reach the incoming track's selection; the
+  // toggle's own applyQuality no-ops while no track session exists).
+  await getSupportedCodecFamilies();
+  // A stop during the probe await is the same superseded-as-failure hole as
+  // the load catch: the mint already allocated a bridge session, so close it.
+  if (playToken !== mine) {
+    if (result.sessionId) fanoutWidevineEvent('stopped', { resolverId, sessionId: result.sessionId, positionMs: 0 });
+    throw supersededError();
   }
 
   const shaka = window.shaka;
@@ -397,7 +477,14 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   const licenseServerUri = `parachord-license://${resolverId}${result.sessionId ? `?s=${encodeURIComponent(result.sessionId)}` : ''}`;
   player.configure({
     drm: { servers: { 'com.widevine.alpha': licenseServerUri } },
-    streaming: { rebufferingGoal: 2, bufferingGoal: 10 }
+    streaming: { rebufferingGoal: 2, bufferingGoal: 10 },
+    // The load-time pick rides a LOW estimate (see LOAD_TIME_SAFE_ESTIMATE_BPS):
+    // shaka's ABR chooses a variant the moment load() parses the manifest and
+    // fires that variant's KID license request BEFORE our locked selection
+    // lands, so the pick must land on a rung every playable plan grants — the
+    // cheapest lossy rung, never a plan-refused family (HD FLAC, spatial).
+    // preferredAudioCodecs stays EMPTY: see the hazards above.
+    abr: { useNetworkInformation: false, defaultBandwidthEstimate: LOAD_TIME_SAFE_ESTIMATE_BPS }
   });
   activeResolverId = resolverId;
 
@@ -440,8 +527,7 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     started: false
   };
 
-  const { tier, adaptive } = await readPlaybackQuality();
-  await getSupportedCodecFamilies();
+  const { tier, adaptive, spatial } = await readPlaybackQuality();
   // A stop during these awaits empties the variant list. Reporting that as
   // playback-failed is the same superseded-as-failure hole as the load catch.
   if (playToken !== mine) {
@@ -454,8 +540,10 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   }
   // Tier selection runs over what this build can decode (e.g. FLAC-only-on-
   // paper builds fall to top opus instead of stalling at an un-decodable
-  // variant).
-  const config = shakaPlaybackConfig(playableVariants(player.getVariantTracks()), tier, adaptive);
+  // variant). The spatial opt-in (playback_spatial) admits the E-AC-3 JOC
+  // (Dolby Digital Plus Atmos) rungs when this build decodes them — see
+  // lib/widevine-quality.js for the selection semantics.
+  const config = shakaPlaybackConfig(playableVariants(player.getVariantTracks()), tier, adaptive, { spatial });
   if (!config) {
     await player.unload();
     const err = new Error('manifest carried no audio variant this build can play');
@@ -472,11 +560,11 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
 // Live re-apply of the global quality setting against the active manifest.
 async function applyQuality() {
   if (!player || !activeResolverId || !trackSession) return;
-  const { tier, adaptive } = await readPlaybackQuality();
+  const { tier, adaptive, spatial } = await readPlaybackQuality();
   // Probe-consistent: the re-selection must see the same roster play()
   // used — on a FLAC-rejecting build a mid-play tier change would
   // otherwise select an un-decodable variant (the Linux 4012 class).
-  const config = shakaPlaybackConfig(await playableVariants(player.getVariantTracks()), tier, adaptive);
+  const config = shakaPlaybackConfig(await playableVariants(player.getVariantTracks()), tier, adaptive, { spatial });
   if (config) applyConfig(config);
 }
 
@@ -542,9 +630,10 @@ function getState() {
     variantFacts: currentVariantFacts(),
     qualitySeen: lastQualityRead,
     hdSessionBlockedByPlan,
+    spatialBlockedByPlan,
     shaka
   };
 }
 
-const api = { play, applyQuality, stop, getState, currentVariantFacts, setVariantListener, untilAudible, clearPlanBlocks, QUALITY_STORE_KEY, ABR_STORE_KEY };
+const api = { play, applyQuality, stop, getState, currentVariantFacts, setVariantListener, untilAudible, clearPlanBlocks, QUALITY_STORE_KEY, ABR_STORE_KEY, SPATIAL_STORE_KEY };
 module.exports = api;

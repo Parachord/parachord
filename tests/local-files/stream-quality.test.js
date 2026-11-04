@@ -64,6 +64,12 @@ describe('stream-quality', () => {
       expect(streamQualityCodecLabel({ codec: 'MPEG 1 Layer 3' })).toBe('MP3');
       expect(streamQualityCodecLabel({ codec: 'AAC' })).toBe('AAC');
       expect(streamQualityCodecLabel({ codec: 'PCM' })).toBe('WAV');
+      // The widevine variant facts report the DASH codec string up to the
+      // first dot — 'ec-3' is the E-AC-3 JOC (Dolby Digital Plus Atmos) rung,
+      // labeled with the ◗◖ spatial glyph pair, not the word "Atmos".
+      expect(streamQualityCodecLabel({ codec: 'ec-3' })).toBe('E-AC-3 ◗◖');
+      expect(streamQualityCodecLabel({ codec: 'ec3' })).toBe('E-AC-3 ◗◖');
+      expect(formatStreamQuality({ codec: 'ec-3', sampleRate: 48000, bitrate: 770 })).toBe('E-AC-3 ◗◖ · 48 kHz · 770 kbps');
     });
 
     test('falls back to the container when codec was never captured', () => {

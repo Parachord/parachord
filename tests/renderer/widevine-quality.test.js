@@ -7,6 +7,8 @@ const {
   TIER_CEILING_BPS,
   normalizePlaybackQuality,
   widevineCodecFamily,
+  SPATIAL_CODEC_FAMILIES,
+  variantSpatial,
   variantPlayable,
   selectShakaVariant,
   shakaPlaybackConfig
@@ -57,6 +59,8 @@ describe('TIER_CEILING_BPS / variantPlayable', () => {
   test('spatial codecs are excluded from the roster', () => {
     expect(variantPlayable({ codecs: 'mha1.0x0e' })).toBe(false);
     expect(variantPlayable({ codecs: 'mhm1.0x0c' })).toBe(false);
+    expect(variantPlayable({ codecs: 'ec-3' })).toBe(false);
+    expect(variantPlayable({ codecs: 'ac-4.02.02.00' })).toBe(false);
     expect(variantPlayable({ codecs: 'flac' })).toBe(true);
     expect(variantPlayable({ codecs: 'opus' })).toBe(true);
     expect(variantPlayable({ codecs: 'mp4a.40.2' })).toBe(true);
@@ -123,5 +127,81 @@ describe('shakaPlaybackConfig', () => {
   });
   test('null when nothing playable', () => {
     expect(shakaPlaybackConfig([], 'max', true)).toBeNull();
+  });
+});
+
+// Spatial/Atmos opt-in ({ spatial: true }): the E-AC-3 JOC rungs of a real
+// Atmos manifest (B0CPSG7191, live capture 2026-11: ec-3 770k/450k JOC,
+// ac-4.02.02.00 IMS 260k/115k, 24-bit FLAC 1723k) are admitted, the pick is
+// made within the spatial rungs, and ac-4/mpeg-h stay out categorically.
+const SPATIAL_VARIANTS = [
+  { id: '1', codecs: 'opus', bandwidth: 51352, audioSamplingRate: 48000, channelsCount: 2 },
+  { id: '3', codecs: 'opus', bandwidth: 323352, audioSamplingRate: 48000, channelsCount: 2 },
+  { id: '6', codecs: 'flac', bandwidth: 1018140, audioSamplingRate: 44100, channelsCount: 2 },
+  { id: '7', codecs: 'flac', bandwidth: 1723851, audioSamplingRate: 44100, channelsCount: 2 },
+  { id: '8', codecs: 'ec-3', bandwidth: 770130, audioSamplingRate: 48000, channelsCount: 6 },
+  { id: '9', codecs: 'ec-3', bandwidth: 450130, audioSamplingRate: 48000, channelsCount: 6 },
+  { id: '10', codecs: 'ac-4.02.02.00', bandwidth: 259980, audioSamplingRate: 48000, channelsCount: 2 },
+  { id: '11', codecs: 'ac-4.02.02.00', bandwidth: 115479, audioSamplingRate: 48000, channelsCount: 2 }
+];
+
+describe('spatial / Atmos opt-in', () => {
+  test('family mapping covers the spatial codec strings', () => {
+    expect(widevineCodecFamily('ec-3')).toBe('ec3');
+    expect(widevineCodecFamily('EC-3')).toBe('ec3');
+    expect(widevineCodecFamily('ac-4.02.02.00')).toBe('ac4');
+    expect(widevineCodecFamily('mha1.0x0e')).toBe('mpegh');
+    expect(widevineCodecFamily('mhm1.0x0c')).toBe('mpegh');
+    expect(SPATIAL_CODEC_FAMILIES.has('ec3')).toBe(true);
+  });
+  test('variantSpatial flags every immersive family; playable admits ONLY ec3, only on opt-in', () => {
+    expect(variantSpatial({ codecs: 'ec-3' })).toBe(true);
+    expect(variantSpatial({ codecs: 'ac-4.02.02.00' })).toBe(true);
+    expect(variantSpatial({ codecs: 'mha1.0x0e' })).toBe(true);
+    expect(variantSpatial({ codecs: 'flac' })).toBe(false);
+    expect(variantPlayable({ codecs: 'ec-3' }, true)).toBe(true);
+    expect(variantPlayable({ codecs: 'ec-3' }, false)).toBe(false);
+    expect(variantPlayable({ codecs: 'ec-3' })).toBe(false);
+    // No opt-in ever admits ac-4/mpeg-h (no Chromium decoder — categorical).
+    expect(variantPlayable({ codecs: 'ac-4.02.02.00' }, true)).toBe(false);
+    expect(variantPlayable({ codecs: 'mha1.0x0e' }, true)).toBe(false);
+    expect(variantPlayable({ codecs: 'mhm1.0x0c' }, true)).toBe(false);
+    // Stereo families unaffected by the flag.
+    expect(variantPlayable({ codecs: 'flac' }, true)).toBe(true);
+  });
+  test('spatial on: the pick is made WITHIN the spatial rungs (ec-3 only)', () => {
+    // max: the top ec-3 rung — NOT the 24-bit FLAC, whose bandwidth is higher.
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'max', { spatial: true })).toMatchObject({ id: '8', codecs: 'ec-3' });
+    // high (≤500k): the 450k ec-3 rung fits the corridor.
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'high', { spatial: true })).toMatchObject({ id: '9' });
+    // standard (≤200k): no spatial rung fits — the same flooring rule, inside
+    // the spatial set (cheapest ec-3, never a drop back to stereo).
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'standard', { spatial: true })).toMatchObject({ id: '9' });
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'saver', { spatial: true })).toMatchObject({ id: '9' });
+  });
+  test('spatial on but no spatial rungs (or none this build decodes): unchanged selection', () => {
+    const stereoOnly = SPATIAL_VARIANTS.filter((v) => !variantSpatial(v));
+    expect(selectShakaVariant(stereoOnly, 'max', { spatial: true })).toMatchObject({ id: '7' });
+    // The ac-4-only IMS manifest never selects spatial either way.
+    const ac4Only = stereoOnly.concat([{ id: '10', codecs: 'ac-4.02.02.00', bandwidth: 259980 }]);
+    expect(selectShakaVariant(ac4Only, 'max', { spatial: true })).toMatchObject({ id: '7' });
+  });
+  test('spatial off: identical picks to the pre-opt-in roster (no spatial, ever)', () => {
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'max')).toMatchObject({ id: '7' });
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'max', {})).toMatchObject({ id: '7' });
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'max', { spatial: false })).toMatchObject({ id: '7' });
+  });
+  test('a spatial pick is always LOCKED — adaptive cannot pin a codec family', () => {
+    expect(shakaPlaybackConfig(SPATIAL_VARIANTS, 'max', true, { spatial: true })).toEqual({
+      abrEnabled: false, variantId: '8', variantBandwidth: 770130, codecFamily: 'ec3', preferredCodecs: []
+    });
+    // Locked flag agrees (same shape).
+    expect(shakaPlaybackConfig(SPATIAL_VARIANTS, 'max', false, { spatial: true })).toEqual(
+      shakaPlaybackConfig(SPATIAL_VARIANTS, 'max', true, { spatial: true })
+    );
+    // Spatial on but nothing spatial playable: adaptive behaves as before.
+    expect(shakaPlaybackConfig(LIVE_VARIANTS, 'max', true, { spatial: true })).toEqual({
+      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, maxBandwidth: null, preferredCodecs: []
+    });
   });
 });
