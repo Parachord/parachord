@@ -74,6 +74,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **Listening History** - Browse your play history and track your activity
 
 ### Additional Features
+- **Built-in Visualizer** - Vibresia scenes, drawn live from the music Parachord is playing. Open it from the Visualizer button at the bottom of the sidebar; pick a scene or let Auto Scan move between them on the beat. It reads the audio already playing, so there is no second app and nothing to route ([docs/architecture/visualizer.md](docs/architecture/visualizer.md))
 - **Global Search** - Search across all sources with unified results
 - **Collection View** - Browse your aggregated music collection
 - **Recommendations** - Personalized suggestions via Last.fm, ListenBrainz Weekly Jams, and AI (full inventory in [docs/features/RECOMMENDATIONS.md](docs/features/RECOMMENDATIONS.md); import and sync paths in [docs/features/PLAYLIST_IMPORT_AND_SYNC.md](docs/features/PLAYLIST_IMPORT_AND_SYNC.md))
