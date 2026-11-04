@@ -402,7 +402,17 @@ function stabilizeRows(rows, previous, identityKeys, tierOf = null, promote = nu
 const rowIdentityKeys = (row) => (Array.isArray(row._aliases) && row._aliases.length ? row._aliases : [row.id]);
 const artistIdentityKeys = (row) => [row.id, `name:${normalizeArtistName(row.name || '')}`];
 
+// The user's own files, as Search rows. The local-files service already builds
+// the source record under the resolver id (`sources.localfiles`); source
+// selection only keeps sources keyed by an active resolver id, so replacing it
+// here is what made these rows answer "No Enabled Source".
+const LOCAL_SEARCH_RESULTS = 20;
+function localSearchRows(results) {
+  return (results || []).slice(0, LOCAL_SEARCH_RESULTS).map(track => ({ ...track, isLocal: true }));
+}
+
 module.exports = {
+  localSearchRows,
   stabilizeRows,
   rowIdentityKeys,
   artistIdentityKeys,
