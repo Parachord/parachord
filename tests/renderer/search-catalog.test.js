@@ -13,6 +13,7 @@ const {
   withoutLocalDuplicates,
   serviceArtFor,
   CATALOG_RESULTS_PER_RESOLVER,
+  localSearchRows,
 } = require('../../src/renderer/lib/search-catalog');
 const {
   calculateConfidence, normalizeStr, MIN_CONFIDENCE_THRESHOLD,
@@ -118,7 +119,7 @@ describe('mergeTrackResults', () => {
   });
 
   test('a local file row is not given service sources, and its duplicates are dropped', () => {
-    const local = { id: 'local-1', title: 'Creep', artist: 'Radiohead', isLocal: true, sources: { localFiles: {} } };
+    const local = { id: 'local-1', title: 'Creep', artist: 'Radiohead', isLocal: true, sources: { localfiles: {} } };
     const rows = mergeTrackResults([local], [sp], scorer);
     expect(rows.map(r => r.id)).toEqual(['local-1', sp[1].id]);
     expect(rows[0]).toBe(local);
@@ -539,5 +540,44 @@ describe('queryNamesRow: an exact title counts like naming the artist', () => {
     const tier = (r) => (queryNamesRow('Abbey Road', albumArtistName(r), r.title) ? 1 : 0);
     const shown = stabilizeRows(ranked, [], rowIdentityKeys, tier);
     expect(shown.rows.map(r => r.id).slice(0, 2)).toEqual(['beatles', 'band']);
+  });
+});
+
+describe('localSearchRows', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const LocalFilesService = require('../../local-files/index');
+  const resolverId = require('../../plugins-src/localfiles/manifest.json').manifest.id;
+  const appSrc = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+
+  // What localFiles.search hands the renderer: the service's own formatter,
+  // over a database row.
+  const service = Object.assign(Object.create(LocalFilesService.prototype), { albumArt: { cacheDir: '/nonexistent' } });
+  const dbRow = (id) => ({ id, title: 'Happy Me', artist: 'Biohio', album: 'Kindergarten', file_path: `/music/${id}.mp3`, duration: 214 });
+  const result = (id) => service.formatTrackForRenderer(dbRow(id));
+
+  test("a row's source is keyed by the resolver id, or source selection drops it", () => {
+    // handlePlay keeps only sources whose key is an active resolver id, so a
+    // row keyed anything else plays nothing and shows "No Enabled Source".
+    const [row] = localSearchRows([result(1)]);
+    expect(Object.keys(row.sources)).toEqual([resolverId]);
+  });
+
+  test('a row keeps the whole source record the service built', () => {
+    const [row] = localSearchRows([result(1)]);
+    expect(row.sources[resolverId]).toEqual(result(1).sources[resolverId]);
+    expect(row.sources[resolverId].filePath).toBe('/music/1.mp3');
+    expect(row.isLocal).toBe(true);
+  });
+
+  test('it shows at most 20 rows, and no results is no rows', () => {
+    const many = Array.from({ length: 25 }, (_, i) => result(i));
+    expect(localSearchRows(many)).toHaveLength(20);
+    expect(localSearchRows(null)).toEqual([]);
+  });
+
+  test('Search builds its local rows with it', () => {
+    expect(appSrc).toMatch(/localTracks = localSearchRows\(results\);/);
+    expect(appSrc).not.toMatch(/sources: \{ localFiles:/);
   });
 });

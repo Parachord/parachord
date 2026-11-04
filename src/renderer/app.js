@@ -654,7 +654,7 @@ const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
   searchResolversFor, catalogTracksToSearchResults, catalogAlbumsToSearchResults,
-  catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates,
+  catalogArtistsFromResults, mergeTrackResults, mergeAlbumResults, withoutLocalDuplicates, localSearchRows,
   TRACK_RANK_KEY, ALBUM_RANK_KEY, albumArtistName, rankSearchRows, queryNamesRow, popularityFromListens, ARTIST_POPULARITY_REFERENCE_LISTENS, PROMOTE_MARGIN, serviceArtFor, stabilizeRows, rowIdentityKeys, artistIdentityKeys
 } = require('./lib/search-catalog');
 (function installMusicBrainzThrottle() {
@@ -17629,11 +17629,7 @@ ${trackListXml}
     if (window.electron?.localFiles?.search) {
       try {
         const results = await window.electron.localFiles.search(query);
-        localTracks = (results || []).slice(0, 20).map(track => ({
-          ...track,
-          isLocal: true,
-          sources: { localFiles: { filePath: track.filePath, confidence: 1 } }
-        }));
+        localTracks = localSearchRows(results);
         // Background-enrich local file tracks with MBIDs
         enrichTracksWithMbids(localTracks);
       } catch (error) {
