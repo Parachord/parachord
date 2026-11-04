@@ -24,7 +24,7 @@
 
 'use strict';
 
-const { shakaPlaybackConfig, widevineCodecFamily } = require('./widevine-quality');
+const { shakaPlaybackConfig, widevineCodecFamily, loadTimePickCap, dropUnplayableAdaptationSets } = require('./widevine-quality');
 
 const QUALITY_STORE_KEY = 'playback_quality';
 const ABR_STORE_KEY = 'playback_abr';
@@ -322,8 +322,11 @@ function applyConfig(config) {
     // FLAC. When this engine narrowed the criteria on this track AND the
     // tier's target rung sits in a different family, select the target rung
     // FIRST — the selection re-anchors the criteria onto the tier's family
-    // (the ABR set then spans that family's rungs under the ceiling) — then
-    // hand control to the manager. This trips Shaka's "selected track will
+    // (the ABR set then spans that family's rungs under the ceiling — known
+    // floor: a weak link has no way DOWN below that family's cheapest rung
+    // for the rest of the track, where a fresh adaptive play drops to the
+    // family below; the next load re-widens) — then hand control to the
+    // manager. This trips Shaka's "selected track will
     // be overridden" advisory; accepted: the manager IS meant to take over.
     // The criteriaNarrowed gate is load-bearing: on a FRESH play the criteria
     // is wide and the active variant merely reflects the manager's own
@@ -502,9 +505,27 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   // The license session id from widevine:manifest rides the server URI; the
   // bridge validates it and caps relays per session (relay-gating rules).
   const licenseServerUri = `parachord-license://${resolverId}${result.sessionId ? `?s=${encodeURIComponent(result.sessionId)}` : ''}`;
+  // The tier read + codec probe run BEFORE load: the LOAD-TIME pick (the
+  // variant shaka's ABR chooses the moment load() parses the manifest, before
+  // applyConfig lands) must stay inside the user's tier — with the spanning
+  // candidate set nothing else keeps a locked Saver track off the FLAC rungs
+  // (review #1247 point 1: every locked Saver/Standard/High play fetched a
+  // FLAC init segment + license first) — and off any family the process has
+  // been refused (probe or plan latch). This is NOT the estimate seed or
+  // preferredAudioCodecs (the two load-time hazards); it is a restriction,
+  // which the post-load applyConfig re-sends with the authoritative value.
+  const preload = await readPlaybackQuality();
+  const support = await getSupportedCodecFamilies();
+  const flacRefused = hdSessionBlockedByPlan || support.flac === false;
+  const loadCap = loadTimePickCap(preload.tier, { flacRefused });
   player.configure({
     drm: { servers: { 'com.widevine.alpha': licenseServerUri } },
     streaming: { rebufferingGoal: 2, bufferingGoal: 10 },
+    // The load-time pick's cap (see loadTimePickCap): the tier ceiling — or,
+    // when the process has been refused FLAC (probe/latch), the high ceiling,
+    // which every observed Amazon FLAC rung sits above. Sent with an explicit
+    // value: an absent restrictions object is a merge no-op.
+    abr: { restrictions: { maxBandwidth: loadCap } },
     // enableAudioGroups: false — THE cross-family adaptive fix (#1243).
     // With it on (the default), the DASH parser stamps every stream with
     // its AdaptationSet's id as groupId, and the ABR candidate set shaka's
@@ -522,26 +543,30 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     // mha/mhm spatial rungs stay excluded by the channel guards. Verified
     // against the vendored 4.16.55: tests/renderer/widevine-shaka-adaptation.test.js.
     manifest: { enableAudioGroups: false }
-    // NO load-time steering: shaka's ABR picks a variant the moment load()
-    // parses the manifest (the default estimate, or the browser's downlink)
-    // and fires that variant's KID license request before our locked
-    // selection lands. Steer it with a low defaultBandwidthEstimate and the
-    // FIRST track starts on the bottom rung (no clearBufferSwitch to climb
-    // away from it), while every later track ignores the seed — the
-    // estimator's samples survive plays (the ABR manager is reused while the
-    // factory is unchanged), so only the first track after launch is
-    // affected. Pinning useNetworkInformation off to make the seed stick
-    // also kills the estimator reset on network change. The load-time pick
-    // needs no steering anyway: the default criteria narrows by
-    // preferredAudioChannelCount (2), so 6-channel spatial rungs are never
-    // the load-time pick, and the plan gate stops accounts that can't play
-    // before any manifest request. preferredAudioCodecs stays EMPTY — see the
-    // hazards above.
+    // NO estimate steering and NO codec list — only the restriction above
+    // shapes the load-time pick. A low defaultBandwidthEstimate seed only
+    // steers the FIRST track after launch (the estimator's samples survive
+    // plays — the ABR manager is reused while the factory is unchanged) and
+    // lands it on the bottom rung with no clearBufferSwitch to climb away;
+    // pinning useNetworkInformation off to make a seed stick also kills the
+    // estimator reset on network change. preferredAudioCodecs stays EMPTY —
+    // the parse-time filter writes the narrowed manifest back and the
+    // load-adopted criteria never un-syncs the list (two vendor hazards,
+    // rounds 3-4). What the pick still may do within the cap: start on FLAC
+    // under MAX on a fast estimate (the tier's own request — its license
+    // fires before applyConfig, the accepted residual), and 6-channel
+    // spatial rungs are never the pick (the default criteria narrows by
+    // preferredAudioChannelCount: 2).
   });
   activeResolverId = resolverId;
 
   // Blob URL, not a data: URI — manifests can exceed Chromium's ~2MB URL cap.
-  const blob = new Blob([result.manifest], { type: 'application/dash+xml' });
+  // Undecodable AdaptationSets (AC-4 / MPEG-H — no Chromium decoder on any
+  // build, and their stereo rungs sit INSIDE the tier corridors where the
+  // spanning ABR set can reach them) are dropped first: the ABR candidate set
+  // is then the decodable roster.
+  const manifestText = dropUnplayableAdaptationSets(result.manifest);
+  const blob = new Blob([manifestText], { type: 'application/dash+xml' });
   const uri = URL.createObjectURL(blob);
   try {
     await player.load(uri);
@@ -589,7 +614,7 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   };
 
   const { tier, adaptive, spatial } = await readPlaybackQuality();
-  await getSupportedCodecFamilies();
+  // (The codec probe already ran pre-load; this call is the cached no-op.)
   // A stop during these awaits empties the variant list. Reporting that as
   // playback-failed is the same superseded-as-failure hole as the load catch.
   if (playToken !== mine) {
@@ -604,8 +629,12 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   // paper builds fall to top opus instead of stalling at an un-decodable
   // variant). The spatial opt-in (playback_spatial) admits the E-AC-3 JOC
   // (Dolby Digital Plus Atmos) rungs when this build decodes them — see
-  // lib/widevine-quality.js for the selection semantics.
-  const config = shakaPlaybackConfig(playableVariants(player.getVariantTracks()), tier, adaptive, { spatial });
+  // lib/widevine-quality.js for the selection semantics. The UNFILTERED roster
+  // rides along (allVariants) so shakaPlaybackConfig can cap adaptive below a
+  // family that playableVariants dropped (probe / plan latch): the shaka-side
+  // ABR set never hears our filter.
+  const allTracks = player.getVariantTracks();
+  const config = shakaPlaybackConfig(playableVariants(allTracks), tier, adaptive, { spatial, allVariants: allTracks });
   if (!config) {
     await player.unload();
     const err = new Error('manifest carried no audio variant this build can play');
@@ -625,8 +654,10 @@ async function applyQuality() {
   const { tier, adaptive, spatial } = await readPlaybackQuality();
   // Probe-consistent: the re-selection must see the same roster play()
   // used — on a FLAC-rejecting build a mid-play tier change would
-  // otherwise select an un-decodable variant (the Linux 4012 class).
-  const config = shakaPlaybackConfig(await playableVariants(player.getVariantTracks()), tier, adaptive, { spatial });
+  // otherwise select an un-decodable variant (the Linux 4012 class). The
+  // unfiltered roster rides along for the family-drop cap (see play()).
+  const allTracks = player.getVariantTracks();
+  const config = shakaPlaybackConfig(await playableVariants(allTracks), tier, adaptive, { spatial, allVariants: allTracks });
   if (config) applyConfig(config);
 }
 

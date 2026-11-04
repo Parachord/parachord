@@ -473,6 +473,70 @@ describe('applyConfig shaping', () => {
     expect(p.selected).toBeNull(); // the manager starts at the estimate — no selectVariantTrack warning
   });
 
+  test('the pre-load configure caps the LOAD-TIME pick at the tier ceiling (#1247 review point 1)', async () => {
+    // The load-time pick fires before applyConfig lands; with the spanning
+    // ABR set nothing else kept it inside the user's tier — every locked
+    // Saver/Standard/High track fetched a FLAC init segment + license first.
+    // The cap rides the SAME configure call that drm/streaming/manifest ride
+    // (the last one before load()).
+    const cases = [
+      { tier: 'saver', abr: false, expect: 100000 },
+      { tier: 'standard', abr: true, expect: 200000 },
+      { tier: 'high', abr: false, expect: 500000 },
+      { tier: 'max', abr: true, expect: Infinity }
+    ];
+    for (const { tier, abr, expect: want } of cases) {
+      const { sh, player } = load({
+        electron: makeElectron({ storeValues: { playback_quality: tier, playback_abr: abr } })
+      });
+      await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+      const p = sh.playerInstances[0];
+      const atLoad = p.configureCalls[p.configureCountAtLoad - 1];
+      expect(atLoad.abr.restrictions.maxBandwidth).toBe(want); // tier ' + tier
+    }
+  });
+
+  test('a refused FLAC family caps the load-time pick at the high ceiling — the plan latch case (#1247 review point 2)', async () => {
+    // After a CUSTOMER_NOT_ELIGIBLE refusal latches hdSessionBlockedByPlan, the
+    // load-time pick must not ask for the FLAC family again — every observed
+    // Amazon FLAC rung sits above the high corridor ceiling, so capping the
+    // pick there keeps it on the lossy roster until the post-load config
+    // applies the precise top-playable cap.
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for HD' });
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic?v=2', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
+    expect(player.getState().hdSessionBlockedByPlan).toBe(true);
+    // Second play on the latched process: max + adaptive.
+    el.store.__values.playback_abr = true;
+    await player.stop();
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    const p = sh.playerInstances[0];
+    const atLoad = p.configureCalls[p.configureCountAtLoad - 1];
+    expect(atLoad.abr.restrictions.maxBandwidth).toBe(500000); // below every observed FLAC rung
+    // And the post-load adaptive config caps at the top PLAYABLE rung — below
+    // the FLAC rungs, so mid-track ABR cannot reach the refused family either.
+    const adaptive = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
+    expect(adaptive.abr.restrictions.maxBandwidth).toBe(325595);
+  });
+
+  test('a FLAC-rejecting build caps the load-time pick and the adaptive config the same way (the Linux 4012 class)', async () => {
+    const { sh, player } = load({
+      codecSupport: { flac: true, emeFlacReject: true },
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true } })
+    });
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    const atLoad = p.configureCalls[p.configureCountAtLoad - 1];
+    expect(atLoad.abr.restrictions.maxBandwidth).toBe(500000);
+    const adaptive = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
+    expect(adaptive.abr.restrictions.maxBandwidth).toBe(325595); // top playable (opus) — the FLAC rungs are out of reach
+  });
+
   test('play() configures manifest.enableAudioGroups:false before load — the cross-family ABR set (#1243)', async () => {
     // With the default (true), the DASH parser stamps every stream with its
     // AdaptationSet's id as groupId and shaka's choice criteria builds the
