@@ -52849,7 +52849,7 @@ useEffect(() => {
                   React.createElement('path', { d: 'M9 18V5l12-2v13' }),
                   React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
                   React.createElement('circle', { cx: 18, cy: 16, r: 3 })
-                ), text: 'Play from Spotify, YouTube, Bandcamp, and more' },
+                ), text: 'Play from Spotify, Apple Music, Amazon Music, Bandcamp, and more' },
                 { icon: React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'var(--accent-primary)', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
                   React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
                   React.createElement('path', { d: 'M21 21l-4.35-4.35' })
