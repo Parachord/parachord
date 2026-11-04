@@ -20,7 +20,6 @@ describe('createTrackFromMeta', () => {
   const META = {
     title: 'Never Be Like You feat. Kai',
     artist: 'Flume',
-    album: 'SoundCloud',
     soundcloudId: 242136202,
     soundcloudUrl: 'https://soundcloud.com/flume/never-be-like-you-feat-kai',
     albumArt: 'https://i1.sndcdn.com/artworks-x-t500x500.jpg',

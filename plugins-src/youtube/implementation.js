@@ -33,7 +33,6 @@ module.exports = {
             id: `youtube-${videoId}`,
             title: title,
             artist: channel,
-            album: 'YouTube',
             duration: 180,
             sources: ['youtube'],
             youtubeId: videoId,
@@ -105,7 +104,6 @@ module.exports = {
       return {
         title: title || 'Unknown Title',
         artist,
-        album: 'YouTube',
         duration: 180,
         albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
         sourceUrl: url,
@@ -153,7 +151,6 @@ module.exports = {
           tracks.push({
             title: trackTitle,
             artist: artist,
-            album: 'YouTube',
             duration: 180,
             albumArt: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
             youtubeId: videoId,

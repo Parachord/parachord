@@ -94,7 +94,6 @@ describe('SoundCloud lookupUrl without a sign-in (oEmbed)', () => {
       id: 'soundcloud-242136202',
       title: 'Never Be Like You feat. Kai',
       artist: 'Flume',
-      album: 'SoundCloud',
       sources: ['soundcloud'],
       soundcloudId: 242136202,
       soundcloudUrl: PERMALINK,
