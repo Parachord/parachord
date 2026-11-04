@@ -2,8 +2,7 @@
 //
 // An "embedded player" is a third-party page that plays audio inside its own
 // WebContents while Parachord's own UI stays the app the user interacts with
-// (Amazon Music's hidden player/search views today; the Bandcamp mini
-// playbackWindow is a future consumer). Chromium's OS media integration
+// (Amazon Music's hidden player/search views today). Chromium's OS media integration
 // follows the audio: the embedded page's media session becomes the app's
 // ACTIVE session, so the OS surface is driven by the third-party page — on
 // Linux a second `chromium` MPRIS player (with the page's full metadata)

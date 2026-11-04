@@ -46,7 +46,7 @@ const __widevinePlayer = require('../lib/widevine-player');
 if (typeof window !== 'undefined') window.__parachordWidevine = __widevinePlayer;
 
 // Resolvers that play through a service's own embeddable player
-// (capabilities.embedPlayer, SoundCloud's widget today). The
+// (capabilities.embedPlayer: SoundCloud's widget, Bandcamp's embed). The
 // adapters live in lib/embed-players.js; app.js reaches a player's
 // media-element facade through window.__parachordEmbedPlayer for seek and
 // volume.
@@ -603,12 +603,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       pendingCloseTabIdRef.current = activeExtensionTabId;
       setBrowserPlaybackActive(false);
       setActiveExtensionTabId(null);
-    }
-
-    // Close playback window if active (Bandcamp embedded player)
-    if (window.electron?.playbackWindow?.close) {
-      console.log('⏹️ Closing playback window before playing new track');
-      window.electron.playbackWindow.close();
     }
 
     // ALWAYS stop all streaming playback sources unconditionally to prevent overlap
@@ -1400,7 +1394,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             console.log(`🎵 ${serviceName} playback ended`);
             handleNextRef.current?.();
           }
-        });
+        }, sourceToPlay);
         if (!isCurrentPlay()) return;
 
         const duration = (started && started.durationSeconds) || playbackDurationSeconds(sourceToPlay, trackOrSource);
@@ -1842,7 +1836,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
     // Check if resolver can stream
     if (!resolver.capabilities.stream) {
-      // For non-streaming resolvers (Bandcamp, YouTube), show prompt first
+      // For non-streaming resolvers (YouTube), show prompt first
       console.log('🌐 External browser track detected, showing prompt...');
       streamingPlaybackActiveRef.current = false; // Allow browser events for external playback
 
@@ -2355,12 +2349,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         setActiveExtensionTabId(null);
       }
 
-      // Close playback window if active (Bandcamp embedded player)
-      if (window.electron?.playbackWindow?.close) {
-        console.log('⏹️ Closing playback window before next track');
-        await window.electron.playbackWindow.close();
-      }
-
       // Clean up external track timeouts
       if (externalTrackTimeoutRef.current) {
         clearTimeout(externalTrackTimeoutRef.current);
@@ -2613,12 +2601,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       setActiveExtensionTabId(null);
     }
 
-    // Close playback window if active (for Bandcamp, etc.)
-    if (window.electron?.playbackWindow?.close) {
-      console.log('⏹️ Closing playback window before restarting track');
-      await window.electron.playbackWindow.close();
-    }
-
     // Clean up any active polling or timeouts
     if (playbackPollerRef.current) {
       clearInterval(playbackPollerRef.current);
@@ -2734,23 +2716,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         action: isPlaying ? 'pause' : 'play'
       });
       // State will be updated when extension sends back playing/paused event
-      return;
-    }
-
-    // Handle external playback window (Bandcamp embed)
-    if (isExternalPlayback && window.electron?.playbackWindow?.toggle) {
-      console.log('🎸 Toggling playback window play/pause');
-      const result = await window.electron.playbackWindow.toggle();
-      if (result.success) {
-        if (result.state === 'playing') {
-          setIsPlaying(true);
-        } else if (result.state === 'paused') {
-          setIsPlaying(false);
-        } else {
-          // For 'clicked' fallback, just toggle the state
-          setIsPlaying(!isPlaying);
-        }
-      }
       return;
     }
 
