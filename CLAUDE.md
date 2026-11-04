@@ -91,6 +91,8 @@ When tagging a new version, three places must agree on the version string. Missi
 
 Then commit (`X.Y.Z` is conventional for the commit subject), push, and `git tag vX.Y.Z` + `git push origin vX.Y.Z`. The CI build picks up from the tag.
 
+PRs and `main` build Mac once, on Apple Silicon; the Intel build runs only on tags and manual runs (`build.yml`). A job that never gets a runner during a Mac shortage is retried up to 3 times by `rerun-unacquired.yml`, which also covers tags.
+
 Two release-only failure modes to know about:
 
 - **Apple notarization 403 "A required agreement is missing or has expired"** (surfaces as `Unexpected token 'E', "Error: HTT"... is not valid JSON` from @electron/notarize). Apple periodically requires the account holder to accept an updated agreement at developer.apple.com/account; until then every notarization is refused. Accept it, then `gh run rerun <id> --failed`. Acceptance can take a minute to propagate, so a job that started just before may need one more rerun (v0.9.8 did).

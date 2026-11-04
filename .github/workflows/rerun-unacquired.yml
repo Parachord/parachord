@@ -1,0 +1,36 @@
+name: Rerun jobs that never got a runner
+
+# During a Mac runner shortage GitHub cancels a job after about 15 minutes without
+# running a step. scripts/rerun-unacquired.js retries those, and leaves everything
+# else alone. workflow_run always runs this file and the script from main, so
+# nothing from the run being looked at is checked out or executed.
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+
+permissions:
+  actions: write
+  checks: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  rerun:
+    if: github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Rerun if a job never got a runner
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: node scripts/rerun-unacquired.js
