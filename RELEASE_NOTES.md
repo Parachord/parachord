@@ -6,6 +6,10 @@
 
 ---
 
+## Amazon Music
+
+- **Prefer Dolby Atmos mixes.** A new option in Settings, under Playback Quality, plays the 5.1 core of a track's Atmos mix on Amazon Music when one is available. This isn't full Atmos: it's mixed down on stereo output, and it replaces lossless FLAC at the Max tier, so it's off by default. Saver and Standard keep their data limits and play stereo when no Atmos version fits. Thanks to @theli-ua.
+
 ## Bandcamp
 
 - **Bandcamp tracks play inside Parachord.** They used to open a small floating window with little control over playback. They now play through Bandcamp's own player, hidden in the app, with seek, volume, the real track length, and the queue moving on when a track ends. The Buy link is still there for any track on Bandcamp. A track Bandcamp won't play moves on to another source.
