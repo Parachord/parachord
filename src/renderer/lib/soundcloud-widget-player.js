@@ -201,7 +201,10 @@ function createSoundCloudWidgetPlayer({
     if (iframe) return iframe;
     const doc = win.document;
     iframe = doc.createElement('iframe');
-    iframe.setAttribute('allow', 'autoplay');
+    // encrypted-media has to be delegated to a cross-origin frame. Without it the
+    // widget has nothing it can play for a track SoundCloud only serves encrypted,
+    // and never starts (#1244). The app's permission handlers don't lift this.
+    iframe.setAttribute('allow', 'autoplay; encrypted-media');
     iframe.setAttribute('title', 'SoundCloud player');
     iframe.setAttribute('aria-hidden', 'true');
     iframe.setAttribute('tabindex', '-1');
