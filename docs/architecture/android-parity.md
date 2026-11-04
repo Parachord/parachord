@@ -189,7 +189,7 @@ The corollary: **don't make the JS-fallback or auth-failed kill-switch session-p
 
 ### Android Parity Requirements (artist credit matching)
 
-`scoreConfidence` and `selectBestMatch` must apply the same artist and title rules as desktop's `validateResolvedTrack`, described under "Match Confidence + Selection Floor" in [playback.md](playback.md). Every row of `ARTIST_CREDIT_VECTORS` in `tests/resolver/confidence-scoring.test.js` must return the same score, in both directions. If mobile drifts, one client plays a source the other refuses for the same track, and the sync hydration paths mint an id on one client that the other won't.
+`scoreConfidence` and `selectBestMatch` must apply the same artist and title rules as desktop's `validateResolvedTrack`, described under "Match Confidence + Selection Floor" in [playback.md](playback.md). Every row of `ARTIST_CREDIT_VECTORS` in `tests/helpers/artist-credit-vectors.js` must return the same score, in both directions. If mobile drifts, one client plays a source the other refuses for the same track, and the sync hydration paths mint an id on one client that the other won't.
 
 ### Android Parity Requirements (protocol play handlers)
 

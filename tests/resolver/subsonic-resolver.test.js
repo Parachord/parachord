@@ -94,7 +94,7 @@ beforeEach(() => {
 describe('subsonic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('subsonic');
-    expect(axe.manifest.version).toBe('0.3.0');
+    expect(axe.manifest.version).toBe('0.3.1');
   });
 
   test('declares streaming capabilities with userpass auth', () => {
