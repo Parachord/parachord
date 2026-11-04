@@ -42516,10 +42516,10 @@ useEffect(() => {
                     style: { marginTop: '10px', gap: '12px' }
                   },
                     React.createElement('div', null,
-                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Prefer spatial / Atmos audio'),
+                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Prefer Dolby Atmos mixes'),
                       React.createElement('p', {
                         style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
-                      }, 'Play the Dolby Atmos master (E-AC-3 JOC, software-decoded 5.1 core) instead of stereo when the track and this build support it. Tier ceilings still shape which spatial rung; AC-4 / MPEG-H spatial codecs are never playable.')
+                      }, 'Plays the 5.1 core of a track’s Atmos mix when available. This isn’t full Atmos: it’s mixed down on stereo output, and it replaces lossless FLAC at the Max tier.')
                     ),
                     React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer flex-shrink-0' },
                       React.createElement('input', {

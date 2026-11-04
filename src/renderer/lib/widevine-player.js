@@ -172,7 +172,9 @@ function ensureLicenseScheme() {
 // eligibility denial (CUSTOMER_NOT_ELIGIBLE — the Prime-plan capture): the
 // refused KID group's family stops being asked for the whole account
 // session (the refusal would otherwise repeat per track). Which group was
-// refused is read off the ACTIVE variant's family at denial time — the CDM
+// refused is read off the variant active WHEN THE LICENSE REQUEST FIRED (a
+// snapshot taken before the relay await — the round-trip can outlive a
+// variant switch, so denial-time state may name the wrong family); the CDM
 // asks for the selected variant's group; the challenge bytes are opaque.
 // FLAC keeps the legacy unconditional latch; the spatial group (the ec-3
 // KID set) latches its own flag so a spatial refusal drops the ec-3 rungs
@@ -287,10 +289,40 @@ function applyConfig(config) {
   // restrictions to the default. preferredAudioCodecs stays EMPTY: tiers
   // are bandwidth corridors across the full roster; codec is irrelevant.
   const restrictions = { maxBandwidth: (config.maxBandwidth || Infinity) };
+  // Exact variant id first; nearest-bandwidth is the fallback (ties exist
+  // in real Amazon manifests — two opus 53,059-ops reps share an id per
+  // KID group).
+  function configTargetTrack() {
+    const tracks = player.getVariantTracks() || [];
+    let target = tracks.find(t => String(t.id) === String(config.variantId)) || null;
+    if (!target && config.variantBandwidth != null) {
+      for (const t of tracks) {
+        if (!target || Math.abs((t.bandwidth || 0) - config.variantBandwidth) < Math.abs((target.bandwidth || 0) - config.variantBandwidth)) target = t;
+      }
+    }
+    return target;
+  }
   if (config.abrEnabled) {
-    // Instead of selectVariantTrack (which trips Shaka's "selected track
-    // will be overridden" advisory with ABR enabled), the manager starts
-    // at the tier's rung via defaultBandwidthEstimate and roams ≤ ceiling.
+    // CRITERIA DE-CONFINEMENT (review: the adaptive flip-out-of-spatial bug):
+    // a locked SPATIAL pick re-configured shaka's choice criteria with the
+    // ec-3 rung (selectVariantTrack sets the criteria's channelCount/audioCodec
+    // to the selected track — verified in the vendor), and player.configure()
+    // never re-widens it. Enabling ABR alone would keep the candidate set
+    // confined to the spatial rungs — turning the preference OFF mid-track
+    // (adaptive) would keep streaming ec-3 until the next track. Select the
+    // tier's rung FIRST — the selection re-configures the criteria onto the
+    // new rung's family/channels — then hand control to the manager. This
+    // trips Shaka's "selected track will be overridden" advisory; accepted:
+    // the manager IS meant to take over from here.
+    const active = (player.getVariantTracks() || []).find((t) => t.active);
+    if (active && String(active.codecs || '').toLowerCase().startsWith('ec-3')) {
+      const target = configTargetTrack();
+      if (target) {
+        try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
+      }
+    }
+    // The manager starts at the tier's rung via defaultBandwidthEstimate and
+    // roams ≤ ceiling.
     player.configure({
       preferredAudioCodecs: [],
       abr: { enabled: true, restrictions, defaultBandwidthEstimate: config.variantBandwidth || undefined }
@@ -298,16 +330,7 @@ function applyConfig(config) {
     return;
   }
   player.configure({ abr: { enabled: false, restrictions: { maxBandwidth: Infinity } }, preferredAudioCodecs: [] });
-  const tracks = player.getVariantTracks() || [];
-  // Exact variant id first; nearest-bandwidth is the fallback (ties exist
-  // in real Amazon manifests — two opus 53,059-ops reps share an id per
-  // KID group).
-  let target = tracks.find(t => String(t.id) === String(config.variantId)) || null;
-  if (!target && config.variantBandwidth != null) {
-    for (const t of tracks) {
-      if (!target || Math.abs((t.bandwidth || 0) - config.variantBandwidth) < Math.abs((target.bandwidth || 0) - config.variantBandwidth)) target = t;
-    }
-  }
+  const target = configTargetTrack();
   if (target) {
     try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
   }
@@ -366,19 +389,6 @@ function playableVariants(tracks) {
   });
 }
 
-// The load-time pick is steered by a LOW bandwidth estimate, never a codec
-// list: shaka's chooser sorts candidates ascending by bandwidth and falls
-// back to the CHEAPEST playable variant when the estimate sits below every
-// rung (vendor chooseVariant: `c = a[0]`) — an opus rung on every Amazon
-// capture, whose KID group every plan that passes the plan gate grants
-// (live-verified on Prime: the opus groups played while the HD group was
-// refused). useNetworkInformation is pinned false because the browser's
-// navigator.connection.downlink would otherwise override the configured seed
-// (vendor default: useNetworkInformation: true) and land the load-time pick
-// wherever the OS network estimate points — the FLAC/spatial rungs again.
-// applyConfig re-sends the tier's real estimate (adaptive) or disables ABR
-// (locked), so only the load window rides this seed.
-//
 // NEVER steer the load-time pick with preferredAudioCodecs — two vendor
 // hazards (review rounds 3-4, both verified against the vendored build):
 // (1) the parse-time filter narrows the manifest to the first preferred
@@ -390,7 +400,6 @@ function playableVariants(tracks) {
 //     applyConfig's [] re-send is invisible to the criteria, and the ABR
 //     manager is re-fed a one-family set on every choice, forever.
 // preferredAudioCodecs stays EMPTY everywhere on this engine.
-const LOAD_TIME_SAFE_ESTIMATE_BPS = 1;
 
 async function play(audio, { resolverId, entity, trackContext } = {}) {
   if (!audio || !resolverId) throw new Error('widevine-player: audio element and resolverId are required');
@@ -410,19 +419,6 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     const err = new Error((result && result.error) || 'manifest fetch failed');
     err.reason = (result && result.reason) || 'playback-failed';
     throw err;
-  }
-
-  // Probe BEFORE load: the load-time codec constraint needs the per-build
-  // capability map, and nothing else about the selection is load-sensitive —
-  // the quality/tier read stays POST-load (a settings toggle that lands
-  // during the load window must reach the incoming track's selection; the
-  // toggle's own applyQuality no-ops while no track session exists).
-  await getSupportedCodecFamilies();
-  // A stop during the probe await is the same superseded-as-failure hole as
-  // the load catch: the mint already allocated a bridge session, so close it.
-  if (playToken !== mine) {
-    if (result.sessionId) fanoutWidevineEvent('stopped', { resolverId, sessionId: result.sessionId, positionMs: 0 });
-    throw supersededError();
   }
 
   const shaka = window.shaka;
@@ -477,14 +473,22 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   const licenseServerUri = `parachord-license://${resolverId}${result.sessionId ? `?s=${encodeURIComponent(result.sessionId)}` : ''}`;
   player.configure({
     drm: { servers: { 'com.widevine.alpha': licenseServerUri } },
-    streaming: { rebufferingGoal: 2, bufferingGoal: 10 },
-    // The load-time pick rides a LOW estimate (see LOAD_TIME_SAFE_ESTIMATE_BPS):
-    // shaka's ABR chooses a variant the moment load() parses the manifest and
-    // fires that variant's KID license request BEFORE our locked selection
-    // lands, so the pick must land on a rung every playable plan grants — the
-    // cheapest lossy rung, never a plan-refused family (HD FLAC, spatial).
-    // preferredAudioCodecs stays EMPTY: see the hazards above.
-    abr: { useNetworkInformation: false, defaultBandwidthEstimate: LOAD_TIME_SAFE_ESTIMATE_BPS }
+    streaming: { rebufferingGoal: 2, bufferingGoal: 10 }
+    // NO load-time steering: shaka's ABR picks a variant the moment load()
+    // parses the manifest (the default estimate, or the browser's downlink)
+    // and fires that variant's KID license request before our locked
+    // selection lands. Steer it with a low defaultBandwidthEstimate and the
+    // FIRST track starts on the bottom rung (no clearBufferSwitch to climb
+    // away from it), while every later track ignores the seed — the
+    // estimator's samples survive plays (the ABR manager is reused while the
+    // factory is unchanged), so only the first track after launch is
+    // affected. Pinning useNetworkInformation off to make the seed stick
+    // also kills the estimator reset on network change. The load-time pick
+    // needs no steering anyway: the default criteria narrows by
+    // preferredAudioChannelCount (2), so 6-channel spatial rungs are never
+    // the load-time pick, and the plan gate stops accounts that can't play
+    // before any manifest request. preferredAudioCodecs stays EMPTY — see the
+    // hazards above.
   });
   activeResolverId = resolverId;
 
@@ -528,6 +532,7 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   };
 
   const { tier, adaptive, spatial } = await readPlaybackQuality();
+  await getSupportedCodecFamilies();
   // A stop during these awaits empties the variant list. Reporting that as
   // playback-failed is the same superseded-as-failure hole as the load catch.
   if (playToken !== mine) {

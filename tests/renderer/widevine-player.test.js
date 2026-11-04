@@ -77,27 +77,43 @@ function makeShaka({ loadGate } = {}) {
       if (this.loadRejection) throw this.loadRejection;
     }
     // The candidate set the ABR manager is fed on each choice: narrowed by
-    // the load-adopted criteria's codec list (first EXACT match wins), or
-    // the full roster when the list is empty — the vendor's Zr/fo behavior.
+    // the load-adopted criteria's codec list (first EXACT match wins), then
+    // by the selection-configured criteria (exact codec, channelsCount ≤
+    // the selection's — vendor `lo` keeps variants at or under the count),
+    // or the full roster when nothing is set — the vendor's Zr/fo behavior.
     getAbrSet() {
+      let set = this.variantTracks;
       const pref = this.criteriaPreferredCodecs || [];
-      if (!pref.length) return this.variantTracks;
-      for (const codec of pref) {
-        const matching = this.variantTracks.filter((t) => t.codecs === codec);
-        if (matching.length) return matching;
+      if (!pref.length) {
+        // no load-adopted list
+      } else {
+        for (const codec of pref) {
+          const matching = set.filter((t) => t.codecs === codec);
+          if (matching.length) { set = matching; break; }
+        }
       }
-      return this.variantTracks;
+      if (this.criteriaCodec) set = set.filter((t) => t.codecs === this.criteriaCodec);
+      if (this.criteriaChannels != null) set = set.filter((t) => t.channelsCount == null || t.channelsCount <= this.criteriaChannels);
+      return set;
     }
     async unload() { this.unloaded += 1; }
     addEventListener(ev, cb) { this.listeners.push([ev, cb]); }
     getVariantTracks() { return this.variantTracks; }
     // Faithful to real Shaka: the selected variant is the ACTIVE one —
     // currentVariantFacts() keys off `active`, and plan-denial attribution
-    // reads the active family at relay time.
+    // reads the active family at relay time. Also models the vendor's
+    // selectVariantTrack side effect: the selection RE-CONFIGURES the choice
+    // criteria with the selected rung (audioCodec + channelCount — vendor
+    // `If`: criteria.configure({channelCount: f.audio.channelsCount,
+    // audioCodec: f.audio.codecs})), which confines the ABR candidate set to
+    // the selected family until the next selection — the criteria
+    // confinement behind the adaptive flip bug.
     selectVariantTrack(t) {
       this.selected = t;
       for (const v of this.variantTracks) v.active = false;
       t.active = true;
+      this.criteriaCodec = t.codecs || null;
+      this.criteriaChannels = t.channelsCount || null;
     }
     getConfiguration() { return this.configureCalls[this.configureCalls.length - 1] || {}; }
     getBandwidthEstimate() { return 100000000; }
@@ -602,39 +618,36 @@ describe('spatial / Atmos opt-in (playback_spatial)', () => {
     expect(player.getState().hdSessionBlockedByPlan).toBe(false);
   });
 
-  test('the load-time pick rides a low estimate — never a codec list (the roster and the ABR set stay full)', async () => {
+  test('the load-time pick is never steered — no codec list, no seed estimate (the roster and the ABR set stay full)', async () => {
     const { sh, player } = load({
       electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true } })
     });
     const audio = makeAudio();
     await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
     const p = sh.playerInstances[0];
-    // Pre-load, on every play: a LOW defaultBandwidthEstimate (the chooser
-    // falls back to the CHEAPEST playable rung — an opus rung granted on
-    // every playable plan) with useNetworkInformation pinned off (the
-    // browser's downlink would override the seed) — and preferredAudioCodecs
-    // NEVER set: a load-time codec list hits two vendor hazards (the parse
-    // filter writes the narrowed manifest back; the load-adopted criteria
-    // never un-syncs the list and confines ABR to one family) — rounds 3-4
-    // blockers, both modeled by this fake, so a reintroduction fails loudly
-    // through the assertions below.
-    const preLoad = p.configureCalls.find((c) => c.abr && 'defaultBandwidthEstimate' in c.abr && c.abr.defaultBandwidthEstimate <= 1000);
-    expect(preLoad).toBeDefined();
-    // Ordering: the low-estimate configure must PRECEDE load() — the
-    // load-time pick is estimate-driven, and a configure landing after
-    // load() would leave the pick on the 1e6 default/downlink again.
-    const preLoadIndex = p.configureCalls.indexOf(preLoad);
-    expect(preLoadIndex).toBeLessThan(p.configureCountAtLoad);
-    expect(preLoad.abr.useNetworkInformation).toBe(false);
+    // preferredAudioCodecs NEVER set — a load-time codec list hits two vendor
+    // hazards (the parse filter writes the narrowed manifest back; the
+    // load-adopted criteria never un-syncs the list and confines ABR to one
+    // family) — rounds 3-4 blockers, both modeled by this fake, so a
+    // reintroduction fails loudly through the assertions below.
     const lists = p.configureCalls.filter((c) => Array.isArray(c.preferredAudioCodecs) && c.preferredAudioCodecs.length);
     expect(lists).toEqual([]);
-    // The manifest roster survived: the max-tier adaptive pick computes from
-    // the FULL roster (FLAC rung seeds the estimate), and the ABR candidate
-    // set spans every family — not collapsed, not confined to opus.
-    expect(p.getConfiguration().abr.defaultBandwidthEstimate).toBe(1902230);
+    // No seed estimate either: the estimator's samples survive plays (the
+    // ABR manager is reused), so a seed only steers the FIRST track after
+    // launch — onto the bottom rung, which then plays first (no
+    // clearBufferSwitch to climb away). And the load-time pick needs no
+    // steering: the default criteria's preferredAudioChannelCount (2) keeps
+    // 6-channel spatial rungs out of the load-time set, and the plan gate
+    // stops accounts that can't play before any manifest request.
+    const seedCfgs = p.configureCalls.filter((c) => c.abr && 'defaultBandwidthEstimate' in c.abr && c.abr.defaultBandwidthEstimate <= 1000);
+    expect(seedCfgs).toEqual([]);
+    const abrCfg = p.configureCalls.find((c) => c.abr && c.abr.enabled === true && c.abr.defaultBandwidthEstimate === 1902230);
+    expect(abrCfg).toBeDefined(); // the tier's own seed, at applyConfig time only
+    // The manifest roster survived and the ABR candidate set spans every
+    // (2-channel) family — not collapsed, not confined.
     const abrCodecs = p.getAbrSet().map((t) => t.codecs);
-    expect(abrCodecs).toEqual(expect.arrayContaining(['opus', 'flac', 'ec-3']));
-    expect(p.selected).toBeNull(); // adaptive: the manager starts at the estimate, no manual select
+    expect(abrCodecs).toEqual(expect.arrayContaining(['opus', 'flac']));
+    expect(p.selected).toBeNull(); // adaptive: the manager owns the choice
   });
 
   test('a settings toggle landing during the load window reaches the incoming track (the quality read is post-load)', async () => {
@@ -681,6 +694,35 @@ describe('spatial / Atmos opt-in (playback_spatial)', () => {
     // Attributed to the REQUEST-time family (spatial), never the current one.
     expect(player.getState().spatialBlockedByPlan).toBe(true);
     expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+  });
+
+  test('turning spatial OFF mid-track under ADAPTIVE leaves the ec-3 rung (criteria de-confinement)', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3'); // the locked spatial pick
+    // The selection confined the choice criteria to the ec-3 family —
+    // enabling ABR alone would keep streaming ec-3 until the next track.
+    expect(p.getAbrSet().map((t) => t.codecs)).toEqual(['ec-3']);
+    // Toggle the preference off and adaptive on, mid-track.
+    el.store.__values.playback_spatial = false;
+    el.store.__values.playback_abr = true;
+    await player.applyQuality();
+    // The tier rung was pre-selected BEFORE enabling ABR — the selection
+    // re-configures the criteria onto the new rung's family, and the
+    // manager takes over from there. (The pre-select trips Shaka's
+    // "selected track will be overridden" advisory — accepted: the manager
+    // is meant to take over.)
+    expect(p.selected.codecs).toBe('flac');
+    const abrCodecs = p.getAbrSet().map((t) => t.codecs);
+    expect(abrCodecs).toContain('flac');
+    expect(abrCodecs).not.toContain('ec-3');
+    const abrCfg = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
+    expect(abrCfg).toBeDefined();
+    expect(abrCfg.abr.restrictions.maxBandwidth).toBe(Infinity);
   });
 
   test('spatial off (default): the ec-3 rung is invisible, FLAC wins as before', async () => {

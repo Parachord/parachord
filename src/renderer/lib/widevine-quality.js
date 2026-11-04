@@ -36,9 +36,11 @@
 // the only spatial family ever admitted, and only when the user opts in
 // (`playback_spatial` store key): when the preference is on and the
 // manifest carries a decodable spatial set, the pick is made WITHIN the
-// spatial rungs (the tier ceiling still shapes which one, with the same
-// flooring rule — the preference never drops back to stereo while spatial
-// is available) and the variant is LOCKED (ABR's restrictions are
+// spatial rungs — the tier ceiling shapes which one, with the same
+// flooring rule, for max/high (never a silent drop back to stereo) — while
+// standard/saver let the CEILING win (a tier ceiling is the one promise the
+// setting makes; a data-limiting tier never trades it for the family
+// preference — no spatial rung under it means stereo). The pick is LOCKED (ABR's restrictions are
 // bandwidth-only and cannot pin a codec family, so adaptive would roam
 // off the spatial pick into stereo rungs under the same ceiling). A
 // spatial-less manifest, or a build whose probe rejects E-AC-3, selects
@@ -138,9 +140,14 @@ function variantsSorted(variants) {
 
 // The tier's variant from the manifest's playable audio. Rules:
 //   spatial   when `{ spatial: true }` and the roster carries decodable
-//             spatial rungs, the pick is made WITHIN them (tier ceiling
-//             applies inside the spatial set, same flooring rule) — the
-//             preference is a family override, not a tier
+//             spatial rungs, the pick is made WITHIN them — for max/high the
+//             tier ceiling shapes which rung with the same flooring rule
+//             (never a silent drop back to stereo while spatial is
+//             available); for standard/saver the CEILING WINS — a tier
+//             ceiling is the one promise the setting makes, and a
+//             data-limiting tier never trades it for the family preference,
+//             so a spatial set with nothing under the ceiling falls back to
+//             the stereo pick
 //   max       the highest-bandwidth playable variant overall
 //   other     the highest-bandwidth playable variant AT OR BELOW the tier
 //             ceiling; if nothing is under it, the lowest-bandwidth playable
@@ -154,7 +161,18 @@ function selectShakaVariant(variants, tier, opts) {
   let playable = variants.filter((v) => variantPlayable(v, spatial));
   if (spatial) {
     const spatialPlayable = playable.filter(variantSpatial);
-    if (spatialPlayable.length) playable = spatialPlayable;
+    if (spatialPlayable.length) {
+      const ceiling = TIER_CEILING_BPS[t];
+      const underCeiling = ceiling != null ? spatialPlayable.filter((v) => (Number(v.bandwidth) || 0) <= ceiling) : spatialPlayable;
+      if (t === 'standard' || t === 'saver') {
+        // The ceiling wins: a spatial rung fits, or stereo takes the pick.
+        playable = underCeiling.length ? underCeiling : playable.filter((v) => !variantSpatial(v));
+      } else {
+        // max/high: the preference outranks the ceiling — flooring inside
+        // the spatial set, never a drop back to stereo.
+        playable = spatialPlayable;
+      }
+    }
   }
   if (!playable.length) return null;
   const sorted = variantsSorted(playable);

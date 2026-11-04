@@ -169,15 +169,19 @@ describe('spatial / Atmos opt-in', () => {
     // Stereo families unaffected by the flag.
     expect(variantPlayable({ codecs: 'flac' }, true)).toBe(true);
   });
-  test('spatial on: the pick is made WITHIN the spatial rungs (ec-3 only)', () => {
+  test('spatial on: max/high pick WITHIN the spatial rungs (ec-3 only); standard/saver let the CEILING win', () => {
     // max: the top ec-3 rung — NOT the 24-bit FLAC, whose bandwidth is higher.
     expect(selectShakaVariant(SPATIAL_VARIANTS, 'max', { spatial: true })).toMatchObject({ id: '8', codecs: 'ec-3' });
     // high (≤500k): the 450k ec-3 rung fits the corridor.
     expect(selectShakaVariant(SPATIAL_VARIANTS, 'high', { spatial: true })).toMatchObject({ id: '9' });
-    // standard (≤200k): no spatial rung fits — the same flooring rule, inside
-    // the spatial set (cheapest ec-3, never a drop back to stereo).
-    expect(selectShakaVariant(SPATIAL_VARIANTS, 'standard', { spatial: true })).toMatchObject({ id: '9' });
-    expect(selectShakaVariant(SPATIAL_VARIANTS, 'saver', { spatial: true })).toMatchObject({ id: '9' });
+    // standard (≤200k) / saver (≤100k): no spatial rung fits, and the tier
+    // ceiling is the one promise the setting makes — stereo takes the pick,
+    // never a 450k spatial floor on a data-limiting tier.
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'standard', { spatial: true })).toMatchObject({ id: '1', codecs: 'opus' });
+    expect(selectShakaVariant(SPATIAL_VARIANTS, 'saver', { spatial: true })).toMatchObject({ id: '1', codecs: 'opus' });
+    // A spatial rung that DOES fit a low corridor is still taken.
+    const cheapSpatial = SPATIAL_VARIANTS.concat([{ id: '12', codecs: 'ec-3', bandwidth: 95000, audioSamplingRate: 48000, channelsCount: 6 }]);
+    expect(selectShakaVariant(cheapSpatial, 'saver', { spatial: true })).toMatchObject({ id: '12' });
   });
   test('spatial on but no spatial rungs (or none this build decodes): unchanged selection', () => {
     const stereoOnly = SPATIAL_VARIANTS.filter((v) => !variantSpatial(v));
