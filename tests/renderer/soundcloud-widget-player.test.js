@@ -34,6 +34,15 @@ describe('SoundCloud widget player', () => {
     expect(params.get('auto_play')).toBe('true');
   });
 
+  test('the iframe may use DRM: tracks SoundCloud only serves encrypted never start without it (#1244)', () => {
+    const { win, iframe } = fakeWindow();
+    const player = createSoundCloudWidgetPlayer({ win, log: quiet });
+    player.load('https://soundcloud.com/edsheeran/shape-of-you').catch(() => {});
+    const allow = iframe.setAttribute.mock.calls.find(([name]) => name === 'allow')[1];
+    expect(allow.split(';').map((s) => s.trim())).toEqual(expect.arrayContaining(['autoplay', 'encrypted-media']));
+    player.stop();
+  });
+
   test('a playable track: subscribes on ready, then resolves once the position advances', async () => {
     const w = fakeWindow();
     const player = createSoundCloudWidgetPlayer({ win: w.win, log: quiet });
