@@ -6,8 +6,22 @@ const { createBandcampEmbedPlayer, START_TIMEOUT_MS } = require('../../src/rende
 const EMBED = 'https://bandcamp.com/EmbeddedPlayer/track=1/';
 const PAGE = 'https://artist.bandcamp.com/track/a-song';
 
-function setup({ prepare } = {}) {
-  const iframe = { setAttribute: jest.fn(), style: {}, src: '' };
+function setup({ prepare, heldLoad } = {}) {
+  // A real iframe reports its page only once that page has finished loading.
+  // By default this one finishes straight away; heldLoad lets a test hold it.
+  const loadListeners = [];
+  let currentSrc = '';
+  const iframe = {
+    setAttribute: jest.fn(),
+    style: {},
+    addEventListener: (type, fn) => { if (type === 'load') loadListeners.push(fn); },
+    finishLoad: () => { loadListeners.forEach((fn) => fn()); },
+    get src() { return currentSrc; },
+    set src(value) {
+      currentSrc = value;
+      if (!heldLoad) Promise.resolve().then(() => iframe.finishLoad());
+    }
+  };
   let onState = null;
   const bridge = {
     prepare: jest.fn(prepare || (async () => ({ success: true, url: EMBED }))),
@@ -22,7 +36,7 @@ function setup({ prepare } = {}) {
   };
   const player = createBandcampEmbedPlayer({ win, log: { error() {}, warn() {} } });
   const report = (state) => onState({ audio: true, hasSrc: true, paused: false, ended: false, t: 0, dur: 0, errorCode: null, token: bridge.start.mock.calls.at(-1)?.[0].token, ...state });
-  const settle = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+  const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
   return { player, bridge, iframe, report, settle, win };
 }
 
@@ -100,6 +114,69 @@ describe('load', () => {
     player.load(PAGE, {}, { bandcampTrackId: 2 }).catch(() => {});
     await assertion;
     player.stop();
+  });
+
+  // #1242: replaying a track loads the same URL, so the old page keeps matching
+  // it until the new one commits. Driving it then clicks the old page, reads its
+  // old position as "started", and the new page never gets a click.
+  test('does not drive the frame until the page it asked for has loaded', async () => {
+    const { player, bridge, iframe, settle } = setup({ heldLoad: true });
+    player.load(PAGE, {}, { bandcampTrackId: 1 }).catch(() => {});
+    await settle();
+    expect(iframe.src).toBe(EMBED);
+    expect(bridge.start).not.toHaveBeenCalled();
+    iframe.finishLoad();
+    await settle();
+    expect(bridge.start).toHaveBeenCalledTimes(1);
+  });
+
+  test('a replay with no stop first waits for the reload too', async () => {
+    const { player, bridge, iframe, report, settle } = setup({ heldLoad: true });
+    player.load(PAGE, {}, { bandcampTrackId: 1 }).catch(() => {});
+    await settle();
+    iframe.finishLoad();
+    await settle();
+    report({ t: 12, paused: false, dur: 200, ended: false, errorCode: null });
+    bridge.start.mockClear();
+    player.load(PAGE, {}, { bandcampTrackId: 1 }).catch(() => {});
+    await settle();
+    expect(bridge.start).not.toHaveBeenCalled();
+    iframe.finishLoad();
+    await settle();
+    expect(bridge.start).toHaveBeenCalledTimes(1);
+  });
+
+  test('a page finishing after a newer load or a stop starts nothing', async () => {
+    const { player, bridge, iframe, settle } = setup({ heldLoad: true });
+    player.load(PAGE, {}, { bandcampTrackId: 1 }).catch(() => {});
+    await settle();
+    player.stop();
+    iframe.finishLoad();
+    await settle();
+    expect(bridge.start).not.toHaveBeenCalled();
+
+    player.load(PAGE, {}, { bandcampTrackId: 1 }).catch(() => {});
+    await settle();
+    player.load(PAGE, {}, { bandcampTrackId: 1 }).catch(() => {});
+    await settle();
+    iframe.finishLoad();
+    await settle();
+    expect(bridge.start).toHaveBeenCalledTimes(1);
+  });
+
+  test('a page that never finishes loading is reported unplayable', async () => {
+    jest.useFakeTimers();
+    try {
+      const { player, bridge, settle } = setup({ heldLoad: true });
+      const result = player.load(PAGE, {}, { bandcampTrackId: 1 });
+      const rejected = expect(result).rejects.toMatchObject({ reason: 'unplayable' });
+      await settle();
+      jest.advanceTimersByTime(START_TIMEOUT_MS + 1);
+      await rejected;
+      expect(bridge.start).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('a stop during prepare never reaches the iframe or starts anything', async () => {
@@ -234,7 +311,7 @@ describe('stop', () => {
     expect(bridge.stop).not.toHaveBeenCalled();
   });
   test('without the bridge a load is simply refused', async () => {
-    const iframe = { setAttribute() {}, style: {}, src: '' };
+    const iframe = { setAttribute() {}, style: {}, src: '', addEventListener() {} };
     const player = createBandcampEmbedPlayer({ win: { document: { createElement: () => iframe, body: { appendChild() {} } } }, log: { error() {}, warn() {} } });
     await expect(player.load(PAGE, {}, {})).rejects.toMatchObject({ reason: 'unplayable' });
   });
