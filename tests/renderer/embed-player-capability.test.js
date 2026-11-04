@@ -1,4 +1,4 @@
-// Embedded-player resolvers (SoundCloud's widget today) are routed by
+// Embedded-player resolvers (SoundCloud's widget, Bandcamp's embed) are routed by
 // capability, never by resolver id, and the manifest stays parseable by the
 // mobile clients.
 const fs = require('fs');
@@ -17,6 +17,40 @@ describe('embedded-player routing', () => {
     expect(manifest.capabilities.embedPlayer).toBe(true);
     expect(manifest.embedPlayer).toEqual({ adapter: 'soundcloud-widget' });
     expect(EMBED_PLAYER_KINDS).toContain(manifest.embedPlayer.adapter);
+  });
+
+  test('Bandcamp opts in too, and stays stream: false so the mobile apps keep routing it to the browser', () => {
+    const manifest = JSON.parse(read('plugins-src/bandcamp/manifest.json'));
+    expect(manifest.capabilities.embedPlayer).toBe(true);
+    expect(manifest.capabilities.stream).toBe(false);
+    expect(manifest.embedPlayer).toEqual({ adapter: 'bandcamp-embed' });
+    expect(EMBED_PLAYER_KINDS).toContain(manifest.embedPlayer.adapter);
+    // An app without the adapter must not take it: 0.9.12 knows the capability
+    // but not this adapter, and would fail the source.
+    expect(manifest.manifest.minAppVersion.desktop).toBe('0.9.13');
+  });
+
+  test('Bandcamp links to its track page, which "Open in Bandcamp" opens', () => {
+    expect(embedLinkFor('bandcamp-embed', { bandcampUrl: 'https://a.bandcamp.com/track/b' })).toBe('https://a.bandcamp.com/track/b');
+    expect(embedLinkFor('bandcamp-embed', {})).toBeNull();
+  });
+
+  test('the embedded-player branch runs ahead of the stream: false one, and hands the adapter the source', () => {
+    const embedAt = engineSrc.indexOf('const embedKind = embedPlayerKind(resolverId);');
+    const externalAt = engineSrc.indexOf('if (!resolver.capabilities.stream) {');
+    expect(embedAt).toBeGreaterThan(-1);
+    expect(externalAt).toBeGreaterThan(embedAt);
+    expect(engineSrc).toMatch(/\}, sourceToPlay\);/);
+  });
+
+  test('an adapter this build does not have is not an embedded player', () => {
+    expect(appSrc).toContain("EMBED_PLAYER_KINDS.includes(kind) ? kind : null");
+  });
+
+  test('the floating mini window is gone', () => {
+    for (const rel of ['main.js', 'preload.js', 'src/renderer/app.js', 'src/renderer/hooks/use-playback-engine.js']) {
+      expect(read(rel)).not.toMatch(/playbackWindow|playback-window/);
+    }
   });
 
   test('every plugin keeps boolean capability values (Android and iOS decode Map<String, Boolean>)', () => {
