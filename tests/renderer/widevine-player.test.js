@@ -114,6 +114,13 @@ function makeShaka({ loadGate } = {}) {
       t.active = true;
       this.criteriaCodec = t.codecs || null;
       this.criteriaChannels = t.channelsCount || null;
+      // Faithful to the vendor: a MANUAL selection fires 'variantchanged',
+      // never 'adaptation' (the same switch path emits one or the other).
+      for (const [ev, cb] of (this.listeners || [])) {
+        if (ev === 'variantchanged') {
+          try { cb({ type: 'variantchanged' }); } catch { /* listener owns nothing */ }
+        }
+      }
     }
     getConfiguration() { return this.configureCalls[this.configureCalls.length - 1] || {}; }
     getBandwidthEstimate() { return 100000000; }
@@ -723,6 +730,31 @@ describe('spatial / Atmos opt-in (playback_spatial)', () => {
     const abrCfg = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
     expect(abrCfg).toBeDefined();
     expect(abrCfg.abr.restrictions.maxBandwidth).toBe(Infinity);
+  });
+
+  test('a mid-track toggle notifies the variant listener (the stream-quality record follows manual selections)', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3');
+    // The host's stream-quality record rides the variant listener — which
+    // must hear MANUAL selections too ('variantchanged'), or a mid-track
+    // toggle switches the audio and leaves the playbar's quality popup on
+    // the old rung (live-caught).
+    const seen = [];
+    player.setVariantListener((facts) => { if (facts) seen.push(facts.codec); });
+    el.store.__values.playback_spatial = false;
+    await player.applyQuality();
+    expect(p.selected.codecs).toBe('flac');
+    expect(seen).toContain('flac'); // notified with the new rung's facts
+    // And back into spatial: the listener hears ec-3.
+    el.store.__values.playback_spatial = true;
+    await player.applyQuality();
+    expect(p.selected.codecs).toBe('ec-3');
+    expect(seen).toContain('ec-3');
   });
 
   test('spatial off (default): the ec-3 rung is invisible, FLAC wins as before', async () => {

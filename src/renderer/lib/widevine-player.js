@@ -425,6 +425,13 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   if (!player) {
     player = new shaka.Player();
     player.addEventListener('adaptation', () => notifyVariantChange());
+    // Manual selections (selectVariantTrack — the locked tier/spatial picks,
+    // and the adaptive de-confinement pre-select) fire 'variantchanged', NOT
+    // 'adaptation' (the vendor emits one or the other from the same switch
+    // path). Without this listener a mid-track quality/spatial toggle
+    // switches the audio but the host's stream-quality record — and the
+    // playbar's quality popup — stays on the old rung (live-caught).
+    player.addEventListener('variantchanged', () => notifyVariantChange());
     player.addEventListener('error', (e) => {
       const d = (e && e.detail) || {};
       lastError = ('shaka ' + (d.code !== undefined ? d.code : (e && e.message) || 'error')).slice(0, 240);
