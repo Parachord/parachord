@@ -6,6 +6,10 @@
 
 ---
 
+## Bandcamp
+
+- **Bandcamp tracks play inside Parachord.** They used to open a small floating window with little control over playback. They now play through Bandcamp's own player, hidden in the app, with seek, volume, the real track length, and the queue moving on when a track ends. The Buy link is still there for any track on Bandcamp. A track Bandcamp won't play moves on to another source.
+
 ## Search
 
 - **A local file you click in Search plays.** Clicking a file Parachord hadn't matched up yet, most likely one you'd just added, could show "No Enabled Source" and tell you to check your resolver settings, which wouldn't help. It now plays from your library.
