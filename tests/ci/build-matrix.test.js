@@ -1,12 +1,12 @@
 // macos-latest runners get scarce, and the Intel build needs one too: it
-// cross-compiles on the same arm64 machine. So PRs and main build Mac once, and
-// only releases build Intel. A release needs both, because the release job merges
-// the two Mac manifests for the auto-updater.
+// cross-compiles on the same arm64 machine. So PRs don't build Mac, main builds it
+// once, and only releases build Intel. A release needs both, because the release
+// job merges the two Mac manifests for the auto-updater.
 const fs = require('fs');
 const path = require('path');
 
 const yml = fs.readFileSync(path.join(__dirname, '../../.github/workflows/build.yml'), 'utf8');
-const expr = yml.match(/include: >-\s*\n\s*\$\{\{ fromJSON\(format\('\[\{0\}\{1\}\]',\s*\n\s*(.+?) && '(\{.+?\},)' \|\| '',\s*\n\s*'(.+?)'\)\) \}\}/);
+const expr = yml.match(/include: >-\s*\n\s*\$\{\{ fromJSON\(format\('\[\{0\}\{1\}\{2\}\]',\s*\n\s*(.+?) && '(\{.+?\}),?' \|\| '',\s*\n\s*(.+?) && '(\{.+?\}),?' \|\| '',\s*\n\s*'(.+?)'\)\) \}\}/);
 
 const name = (j) => `build (${j.os}, ${j.platform}, ${j.arch}${j.arch_label ? `, ${j.arch_label}` : ''})`;
 
@@ -15,7 +15,8 @@ describe('the build matrix', () => {
     expect(expr).not.toBeNull();
   });
   const intel = JSON.parse(expr[2].replace(/,$/, ''));
-  const always = JSON.parse(`[${expr[3]}]`);
+  const mac = JSON.parse(expr[4].replace(/,$/, ''));
+  const always = JSON.parse(`[${expr[5]}]`);
 
   test('only tags and manual runs build Intel', () => {
     expect(expr[1]).toContain("startsWith(github.ref, 'refs/tags/')");
@@ -23,16 +24,20 @@ describe('the build matrix', () => {
     expect(name(intel)).toBe('build (macos-latest, mac, x64, Intel)');
   });
 
-  test('every other build always runs, with the job names the required checks use', () => {
+  test('pull requests skip Mac, and everything else builds Apple Silicon', () => {
+    expect(expr[3]).toBe("github.event_name != 'pull_request'");
+    expect(name(mac)).toBe('build (macos-latest, mac, arm64, Apple-Silicon)');
+  });
+
+  test('Linux and Windows always run, with the job names the required checks use', () => {
     expect(always.map(name)).toEqual([
-      'build (macos-latest, mac, arm64, Apple-Silicon)',
       'build (ubuntu-latest, linux, x64)',
       'build (windows-latest, win, x64)'
     ]);
   });
 
   test('every entry has what the build steps read', () => {
-    for (const j of [intel, ...always]) {
+    for (const j of [intel, mac, ...always]) {
       expect(Object.keys(j).sort()).toEqual(['arch', 'arch_label', 'os', 'platform']);
     }
   });
