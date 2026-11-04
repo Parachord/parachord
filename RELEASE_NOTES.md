@@ -22,6 +22,10 @@
 
 - **A track with no album shows no album.** A track opened from a link used to get "Single" or its service's name as its album, which could open an unrelated release from the album art and ended up in your scrobbles. Tracks saved that way keep showing as saved, and saving one again doesn't add a duplicate.
 
+## Playback
+
+- **Tracks with more than one artist find their matches.** Music services write a shared credit differently: "Erykah Badu and The Alchemist" on one, "Erykah Badu & The Alchemist" or "Erykah Badu, The Alchemist" on another. Parachord read those as different artists and threw away the right recording, so these tracks could show fewer sources than they have, or none. It now treats "and", "&", commas, "x" and "feat." as the same credit, and a different artist that only shares a name with one of them is still turned down.
+
 ## Search
 
 - **A local file you click in Search plays.** Clicking a file Parachord hadn't matched up yet, most likely one you'd just added, could show "No Enabled Source" and tell you to check your resolver settings, which wouldn't help. It now plays from your library.

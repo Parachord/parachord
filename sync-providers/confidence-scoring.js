@@ -28,12 +28,18 @@
 // byte-aligned with app.js#normalizeStr and the Kotlin equivalents on
 // Android.
 function normalizeStr(s) {
+  return _foldStr(s).replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+// The folding half of normalizeStr, punctuation and spaces still in place. NFKD
+// also turns a full-width "（" or "＆" and a no-break space into their plain
+// forms, so the patterns below only have to spell those.
+function _foldStr(s) {
   return (s || '')
     .toString()
     .toLowerCase()
     .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .replace(/[^\p{L}\p{N}]/gu, '');
+    .replace(/\p{M}/gu, '');
 }
 
 // Containment check: either string contains the other (after normalization).
@@ -43,18 +49,63 @@ function _contains(a, b) {
   return a.includes(b) || b.includes(a);
 }
 
+// What services join a multi-artist credit with. Runs on _foldStr output. The
+// words need a space on both sides, so a name that starts or ends with one
+// stays whole ("Little Feat", "Malcolm X", "X Ambassadors", "And One").
+const ARTIST_CREDIT_JOIN = /,|&| (?:and|x) | [(\[]?(?:feat\.?|ft\.?|featuring) /;
+
+// The names an artist credit lists, each normalized. Empty pieces (a stray
+// join, an Oxford comma) are dropped.
+function _creditedNames(artist) {
+  return new Set(_foldStr(artist).split(ARTIST_CREDIT_JOIN).map(normalizeStr).filter(Boolean));
+}
+
+function _isSubset(a, b) {
+  return a.size > 0 && [...a].every((name) => b.has(name));
+}
+
+// Is this the same artist credit? Services write one credit differently ("A and
+// B", "A & B", "A, B", "A feat. B", "A x B"), and stripping the punctuation
+// leaves a stray "and" or "feat" that defeats containment. So besides plain
+// containment, the credited names are compared whole: every name on one side
+// must be credited on the other, in any order. Names are compared exactly, so
+// sharing one name out of two isn't enough ("Simon & Garfunkel" is not "Simon &
+// Schuster") and neither is sharing a word ("Paul Simon" is not "Simon &
+// Garfunkel"). A lone name can't pass this way unless containment already
+// passes, so this only adds matches between credits of two or more names.
+// Mirrored by parachord-mobile's ResolverModels.kt.
+function _artistsMatch(a, b) {
+  if (_contains(normalizeStr(a), normalizeStr(b))) return true;
+  const namesA = _creditedNames(a);
+  const namesB = _creditedNames(b);
+  return _isSubset(namesA, namesB) || _isSubset(namesB, namesA);
+}
+
+// A credit in brackets at the very end of a title: "Song (feat. A)", "Song [ft.
+// A]". Runs on _foldStr output. Brackets are required: a bare "ft" or "feat" can
+// be part of the title.
+const TRAILING_TITLE_CREDIT = / *[(\[] *(?:feat|ft|featuring)[. ][^)\]]*[)\]] *$/;
+
+// Containment, or the same title once a trailing credit comes off both sides,
+// which is how "Song (feat. A)" meets "Song (ft. A)" or "Song (feat. A & B)"
+// meets "Song (feat. A and B)". This second check is equality on purpose: it
+// must not let "Hello (feat. A)" reach "Hello Goodbye" by containment.
+function _titlesMatch(a, b) {
+  if (_contains(normalizeStr(a), normalizeStr(b))) return true;
+  const bareA = normalizeStr(_foldStr(a).replace(TRAILING_TITLE_CREDIT, ''));
+  const bareB = normalizeStr(_foldStr(b).replace(TRAILING_TITLE_CREDIT, ''));
+  return !!bareA && bareA === bareB;
+}
+
 // Boolean gate — does the resolver's returned track plausibly match what we
-// asked for? Both axes (artist AND title) must containment-match. This is
-// the same gate `findBestMatch` uses inside the playback path.
+// asked for? Both axes (artist AND title) must match: see _artistsMatch and
+// _titlesMatch. This is the same gate `findBestMatch` uses inside the playback
+// path.
 function validateResolvedTrack(result, targetArtist, targetTitle) {
   if (!result || !result.artist || !result.title) return false;
-  const resultArtist = normalizeStr(result.artist);
-  const resultTitle = normalizeStr(result.title);
-  const normTargetArtist = normalizeStr(targetArtist);
-  const normTargetTitle = normalizeStr(targetTitle);
   return (
-    _contains(resultArtist, normTargetArtist) &&
-    _contains(resultTitle, normTargetTitle)
+    _artistsMatch(result.artist, targetArtist) &&
+    _titlesMatch(result.title, targetTitle)
   );
 }
 
@@ -89,7 +140,7 @@ function pickIsrc(track) {
 // sides is the same recording whatever the artist/title strings look like
 // across services, so that scores 1.0 outright (parachord#926 — Plex, Spotify
 // and Apple Music all surface these). Otherwise returns 0.95 when both title
-// and artist containment-match, else 0.50. Trusts an authoritative
+// and artist match, else 0.50. Trusts an authoritative
 // resolver-supplied confidence (e.g. direct ID match from spotifyId /
 // appleMusicId) only when validation passes.
 function calculateConfidence(originalTrack, foundTrack) {
