@@ -63,22 +63,92 @@ module.exports = {
     }
   },
   resolve: async function (artist, track, album, config) {
-    var normalizeStr = function (s) {
-      return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // The platform's gate (validateResolvedTrack in
+    // sync-providers/confidence-scoring.js), copied because an .axe function can't
+    // import it. This plugin doesn't filter with it: the last line still hands back
+    // the top result for the gate to judge. But resolve returns one track, so a wrong
+    // artist ranked above the right one would be all the gate sees.
+    // tests/resolver/plugin-credit-preference.test.js holds this to the shared credit
+    // vectors. Android runs this function too (Tier 2 of its Apple Music resolver), so
+    // no property-escape literal, which would stop the whole function parsing on an
+    // engine without them: the guarded constructor falls back to ASCII, so a non-Latin
+    // name misses here and reaches the top-result fallback.
+    var MARKS = /[̀-ͯ]/g;
+    var NON_ALNUM = /[^a-z0-9]/g;
+    try {
+      MARKS = new RegExp('\\p{M}', 'gu');
+      NON_ALNUM = new RegExp('[^\\p{L}\\p{N}]', 'gu');
+    } catch (e) {}
+    var fold = function (s) {
+      s = (s || '').toString().toLowerCase();
+      if (typeof s.normalize === 'function') s = s.normalize('NFKD');
+      return s.replace(MARKS, '');
     };
-    var targetArtist = normalizeStr(artist);
-    var targetTrack = normalizeStr(track);
-    var matchFromResults = function (results) {
+    var norm = function (s) {
+      return fold(s).replace(NON_ALNUM, '');
+    };
+    var contains = function (a, b) {
+      return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);
+    };
+    // The words need a space on both sides, so "Little Feat" and "Malcolm X" stay
+    // whole. The brackets on a title credit are required: "ft" can be title text.
+    var ARTIST_JOIN = /,|&| (?:and|x) | [(\[]?(?:feat\.?|ft\.?|featuring) /i;
+    var TITLE_CREDIT = / *[(\[] *(?:feat|ft|featuring)[. ][^)\]]*[)\]] *$/i;
+    var creditedNames = function (credit) {
+      var parts = fold(credit).split(ARTIST_JOIN);
+      var names = [];
+      for (var p = 0; p < parts.length; p++) {
+        var name = norm(parts[p]);
+        if (name && names.indexOf(name) === -1) names.push(name);
+      }
+      return names;
+    };
+    var isSubset = function (a, b) {
+      if (a.length === 0) return false;
+      for (var n = 0; n < a.length; n++) {
+        if (b.indexOf(a[n]) === -1) return false;
+      }
+      return true;
+    };
+    var artistsMatch = function (a, b) {
+      if (contains(norm(a), norm(b))) return true;
+      var namesA = creditedNames(a);
+      var namesB = creditedNames(b);
+      return isSubset(namesA, namesB) || isSubset(namesB, namesA);
+    };
+    var titlesMatch = function (a, b) {
+      if (contains(norm(a), norm(b))) return true;
+      var bare = norm(fold(a).replace(TITLE_CREDIT, ''));
+      return !!bare && bare === norm(fold(b).replace(TITLE_CREDIT, ''));
+    };
+    var matches = function (r) {
+      return !!r && !!r.artist && !!r.title && artistsMatch(r.artist, artist) && titlesMatch(r.title, track);
+    };
+    var targetArtist = norm(artist);
+    var targetTrack = norm(track);
+    var requestedNames = creditedNames(artist);
+    // What the gate accepts is wider than what was asked for: it also takes a shorter
+    // title ("Stay" for "Stay With Me") and one name of a credit. So a result that
+    // holds the whole request goes first, whichever way its credit is joined.
+    var holdsRequest = function (r) {
+      var names = creditedNames(r.artist);
+      return (
+        !!targetTrack &&
+        norm(r.title).indexOf(targetTrack) !== -1 &&
+        ((!!targetArtist && norm(r.artist).indexOf(targetArtist) !== -1) ||
+          (isSubset(names, requestedNames) && isSubset(requestedNames, names)))
+      );
+    };
+    var firstWhere = function (results, test) {
       for (var i = 0; i < results.length; i++) {
-        var r = results[i];
-        if (
-          normalizeStr(r.artist).includes(targetArtist) &&
-          normalizeStr(r.title).includes(targetTrack)
-        ) {
-          return r;
-        }
+        if (test(results[i])) return results[i];
       }
       return null;
+    };
+    // The album search stops early only for the requested track itself: a looser match
+    // here would end the resolve before the artist + title search below can find it.
+    var matchFromResults = function (results) {
+      return firstWhere(results, holdsRequest);
     };
     if (album) {
       if (!window._amAlbumCache) {
@@ -87,7 +157,7 @@ module.exports = {
       if (!window._amAlbumPending) {
         window._amAlbumPending = {};
       }
-      var albumKey = normalizeStr(artist + '|' + album);
+      var albumKey = norm(artist + '|' + album);
       var cached = window._amAlbumCache[albumKey];
       if (cached) {
         var match = matchFromResults(cached);
@@ -118,7 +188,7 @@ module.exports = {
     var query = artist + ' ' + track;
     var results = await this.search(query, config);
     if (results.length === 0) return null;
-    var match = matchFromResults(results);
+    var match = matchFromResults(results) || firstWhere(results, matches);
     return match || results[0];
   },
   lookupUrl: async function (url, config) {

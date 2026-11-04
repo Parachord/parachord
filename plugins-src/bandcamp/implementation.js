@@ -97,21 +97,71 @@ module.exports = {
     }
   },
   resolve: async function (artist, track, album, config) {
-    // Prefer the first result that passes an artist+title containment check (the
-    // same shape as validateResolvedTrack in confidence-scoring.js), so the
-    // downstream 0.6 confidence floor doesn't drop a correct match that isn't
-    // ranked first. This is only a ranking hint - the platform-native confidence
-    // gate is still authoritative - so it uses engine-portable ASCII normalization
-    // (no Unicode property-escape regex, guarded String.normalize) because this .axe also runs in the
-    // mobile JS runtime. Non-Latin names normalize to '' and fall through to
-    // the top result that is not another version.
-    var norm = function (s) {
+    // Prefer the first result the platform's gate would accept
+    // (validateResolvedTrack in sync-providers/confidence-scoring.js, copied because
+    // an .axe function can't import it), so the downstream 0.6 confidence floor
+    // doesn't drop a correct match that isn't ranked first. This is only a ranking
+    // hint, and the gate still has the last word on whatever comes back:
+    // tests/resolver/plugin-credit-preference.test.js holds it to the shared credit
+    // vectors. This .axe also runs in the mobile JS runtime, so no property-escape
+    // literal, which would stop the whole function parsing on an engine without them.
+    // The guarded constructor falls back to ASCII, where non-Latin names normalize to
+    // '' and fall through to the top result that is not another version.
+    var MARKS = /[̀-ͯ]/g;
+    var NON_ALNUM = /[^a-z0-9]/g;
+    try {
+      MARKS = new RegExp('\\p{M}', 'gu');
+      NON_ALNUM = new RegExp('[^\\p{L}\\p{N}]', 'gu');
+    } catch (e) {}
+    var fold = function (s) {
       s = (s || '').toString().toLowerCase();
-      if (typeof s.normalize === 'function') s = s.normalize('NFKD').replace(/[̀-ͯ]/g, '');
-      return s.replace(/[^a-z0-9]/g, '');
+      if (typeof s.normalize === 'function') s = s.normalize('NFKD');
+      return s.replace(MARKS, '');
+    };
+    var norm = function (s) {
+      return fold(s).replace(NON_ALNUM, '');
     };
     var contains = function (a, b) {
       return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);
+    };
+    // The words need a space on both sides, so "Little Feat" and "Malcolm X" stay
+    // whole. The brackets on a title credit are required: "ft" can be title text.
+    var ARTIST_JOIN = /,|&| (?:and|x) | [(\[]?(?:feat\.?|ft\.?|featuring) /i;
+    var TITLE_CREDIT = / *[(\[] *(?:feat|ft|featuring)[. ][^)\]]*[)\]] *$/i;
+    var creditedNames = function (credit) {
+      var parts = fold(credit).split(ARTIST_JOIN);
+      var names = [];
+      for (var p = 0; p < parts.length; p++) {
+        var name = norm(parts[p]);
+        if (name && names.indexOf(name) === -1) names.push(name);
+      }
+      return names;
+    };
+    var isSubset = function (a, b) {
+      if (a.length === 0) return false;
+      for (var n = 0; n < a.length; n++) {
+        if (b.indexOf(a[n]) === -1) return false;
+      }
+      return true;
+    };
+    var artistsMatch = function (a, b) {
+      if (contains(norm(a), norm(b))) return true;
+      var namesA = creditedNames(a);
+      var namesB = creditedNames(b);
+      return isSubset(namesA, namesB) || isSubset(namesB, namesA);
+    };
+    var titlesMatch = function (a, b) {
+      if (contains(norm(a), norm(b))) return true;
+      var bare = norm(fold(a).replace(TITLE_CREDIT, ''));
+      return !!bare && bare === norm(fold(b).replace(TITLE_CREDIT, ''));
+    };
+    var matches = function (r) {
+      return !!r && !!r.artist && !!r.title && artistsMatch(r.artist, artist) && titlesMatch(r.title, track);
+    };
+    var requestedNames = creditedNames(artist);
+    var sameCredit = function (credit) {
+      var names = creditedNames(credit);
+      return isSubset(names, requestedNames) && isSubset(requestedNames, names);
     };
     //
     // Bandcamp's search API ranks covers, remixes and live versions by other
@@ -120,9 +170,10 @@ module.exports = {
     // "Steven Gilpin (covering the Foo Fighters)" contains "Foo Fighters". The
     // first containment hit used to win, so the playbar's Buy link pointed at
     // "Cleopatra (Live from Wrigley Field)" while plain "Cleopatra" sat lower
-    // in the same results. So: an exact match first, then a containment match
-    // that is not a different version (a version word the requested title
-    // doesn't have, in the title or the uploader's name), else nothing.
+    // in the same results. So: an exact match first, however the credit is
+    // joined, then a match the gate would accept that is not a different version
+    // (a version word the requested title doesn't have, in the title or the
+    // uploader's name), else nothing.
     var stripFeat = function (s) {
       return (s || '')
         .toString()
@@ -155,19 +206,16 @@ module.exports = {
         var rt = norm(stripFeat(results[i].title));
         // Label accounts often title a track "Artist - Title".
         if (rt.indexOf(targetArtist) === 0 && rt !== targetArtist) rt = rt.slice(targetArtist.length);
-        if (ra === targetArtist && rt === targetTitle && !isVariant(results[i])) return results[i];
+        if ((ra === targetArtist || sameCredit(results[i].artist)) && rt === targetTitle && !isVariant(results[i]))
+          return results[i];
       }
     }
     for (i = 0; i < results.length; i++) {
-      if (
-        !isVariant(results[i]) &&
-        contains(norm(results[i].artist), targetArtist) &&
-        contains(norm(results[i].title), targetTitle)
-      )
-        return results[i];
+      if (!isVariant(results[i]) && matches(results[i])) return results[i];
     }
-    // Non-Latin names normalize to '' and reach here; hand back the top
-    // result that is not another version and let the confidence gate decide.
+    // Nothing the gate would accept (and, on an engine without property escapes,
+    // any non-Latin name): hand back the top result that is not another version
+    // and let the confidence gate decide.
     for (i = 0; i < results.length; i++) {
       if (!isVariant(results[i])) return results[i];
     }
