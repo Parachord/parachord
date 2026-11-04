@@ -462,8 +462,99 @@ describe('applyConfig shaping', () => {
     // max caps at Infinity — an explicit reset, since an absent/{} restriction
     // would be a merge no-op and a prior tier's ceiling would persist.
     expect(adaptive.abr.restrictions.maxBandwidth).toBe(Infinity);
-    expect(adaptive.abr.defaultBandwidthEstimate).toBe(1902230);
+    expect(adaptive.abr.defaultBandwidthEstimate).toBe(2002348); // ceil(rung/0.95) — lands ON the tier rung (1902230/0.95)
     expect(p.selected).toBeNull(); // the manager starts at the estimate — no selectVariantTrack warning
+  });
+
+  test('play() configures manifest.enableAudioGroups:false before load — the cross-family ABR set (#1243)', async () => {
+    // With the default (true), the DASH parser stamps every stream with its
+    // AdaptationSet's id as groupId and shaka's choice criteria builds the
+    // ABR candidate set as ONE AdaptationSet — Amazon puts each codec family
+    // in its own set, so the set is opus-only and adaptive at Max can never
+    // reach FLAC. Without group ids (and with the default smooth codec
+    // switching) the set spans the stereo families — pinned against the
+    // vendored bundle in tests/renderer/widevine-shaka-adaptation.test.js.
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    const atLoad = p.configureCalls[p.configureCountAtLoad - 1];
+    expect(atLoad).toBeDefined();
+    expect(atLoad.manifest).toEqual({ enableAudioGroups: false });
+    expect(atLoad.drm.servers['com.widevine.alpha']).toContain('parachord-license://amazonmusic');
+  });
+
+  test('the #1243 repair: a locked high play (opus) then adaptive max re-anchors the criteria on the tier\'s FLAC rung', async () => {
+    // A manual selection narrows the choice criteria onto the selected
+    // rung's family, and player.configure() never re-widens it — enabling
+    // ABR alone after a locked high play kept the candidate set confined to
+    // opus rungs under an uncapped ceiling (max never reached FLAC, the
+    // live-reported #1243 shape). The adaptive path re-anchors: select the
+    // tier's rung FIRST, then hand control to the manager.
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'high', playback_abr: false } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected && p.selected.codecs).toBe('opus'); // the locked high pick
+    expect(p.getAbrSet().map((t) => t.codecs)).toEqual(['opus', 'opus']); // confined to the opus family
+    expect(player.getState().criteriaNarrowed).toBe(true);
+    // Switch to adaptive max mid-track.
+    el.store.__values.playback_quality = 'max';
+    el.store.__values.playback_abr = true;
+    await player.applyQuality();
+    // The tier's FLAC rung was selected BEFORE enabling ABR — the selection
+    // re-anchors the criteria, and the manager takes over from the FLAC
+    // family's rungs under the (uncapped) ceiling.
+    expect(p.selected && p.selected.codecs).toBe('flac');
+    expect(p.selected.bandwidth).toBe(1902230);
+    const abrCodecs = p.getAbrSet().map((t) => t.codecs);
+    expect(abrCodecs).toEqual(['flac']);
+    const abrCfg = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
+    expect(abrCfg).toBeDefined();
+    expect(abrCfg.abr.restrictions.maxBandwidth).toBe(Infinity);
+  });
+
+  test('the repair never fires on a FRESH adaptive play — a low estimate legitimately starts on an opus rung', async () => {
+    // On a fresh load the criteria is wide: the active variant merely
+    // reflects the manager's own estimate-based pick. Re-anchoring there
+    // would force the tier's top family onto a connection the estimator
+    // just called weak (fresh adaptive max on a slow link must be allowed to
+    // sit on opus). Only a selection made by this engine narrows the
+    // criteria, so the repair is gated on that.
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(player.getState().criteriaNarrowed).toBe(false);
+    // Simulate the manager's own pick marking an opus rung active.
+    const opusRung = p.variantTracks.find((t) => t.codecs === 'opus');
+    opusRung.active = true;
+    el.store.__values.playback_quality = 'max'; // target family flac ≠ active opus
+    await player.applyQuality();
+    expect(p.selected).toBeNull(); // no re-anchor — the manager owns the choice
+    expect(p.getAbrSet().map((t) => t.codecs)).toEqual(expect.arrayContaining(['opus', 'flac']));
+  });
+
+  test('same-family tier switches under adaptive do not re-select (no needless buffer clear)', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'high', playback_abr: false } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('opus');
+    el.store.__values.playback_abr = true;
+    el.store.__values.playback_quality = 'saver'; // still an opus target rung
+    await player.applyQuality();
+    expect(p.selected.id).toBe(3); // the locked high pick is untouched — same family
+    const abrCfg = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
+    expect(abrCfg.abr.restrictions.maxBandwidth).toBe(100000);
   });
 
   test('restriction RESET on tier swap (H1 regression): corridors never stick', async () => {
@@ -648,8 +739,8 @@ describe('spatial / Atmos opt-in (playback_spatial)', () => {
     // stops accounts that can't play before any manifest request.
     const seedCfgs = p.configureCalls.filter((c) => c.abr && 'defaultBandwidthEstimate' in c.abr && c.abr.defaultBandwidthEstimate <= 1000);
     expect(seedCfgs).toEqual([]);
-    const abrCfg = p.configureCalls.find((c) => c.abr && c.abr.enabled === true && c.abr.defaultBandwidthEstimate === 1902230);
-    expect(abrCfg).toBeDefined(); // the tier's own seed, at applyConfig time only
+    const abrCfg = p.configureCalls.find((c) => c.abr && c.abr.enabled === true && c.abr.defaultBandwidthEstimate === 2002348);
+    expect(abrCfg).toBeDefined(); // the tier's own seed (rung/0.95), at applyConfig time only
     // The manifest roster survived and the ABR candidate set spans every
     // (2-channel) family — not collapsed, not confined.
     const abrCodecs = p.getAbrSet().map((t) => t.codecs);

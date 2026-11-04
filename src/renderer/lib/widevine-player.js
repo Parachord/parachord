@@ -24,7 +24,7 @@
 
 'use strict';
 
-const { shakaPlaybackConfig } = require('./widevine-quality');
+const { shakaPlaybackConfig, widevineCodecFamily } = require('./widevine-quality');
 
 const QUALITY_STORE_KEY = 'playback_quality';
 const ABR_STORE_KEY = 'playback_abr';
@@ -39,6 +39,14 @@ let activeResolverId = null;
 let lastError = null;
 let variantListener = null;
 let lastQualityRead = null; // debug: the tier/adaptive seen by the last play/applyQuality
+// True when THIS track has had a manual selectVariantTrack from applyConfig
+// (the locked tier/spatial picks, or the adaptive re-anchor below). Shaka's
+// choice criteria survives configure() (player.configure never re-widens its
+// audio fields), so any selection narrows the ABR candidate set to the
+// selected rung's codec family until the next load() adopts a fresh, wide
+// criteria — the flag is how the adaptive path knows the set is confined
+// and a re-anchor is owed. A fresh load clears it (see play()).
+let criteriaNarrowed = false;
 let trackSession = null; // { resolverId, entity, trackContext, started }
 let loadStartStamp = 0;
 let playToken = 0; // per-call token: a superseded play must never reach the element
@@ -303,35 +311,46 @@ function applyConfig(config) {
     return target;
   }
   if (config.abrEnabled) {
-    // CRITERIA DE-CONFINEMENT (review: the adaptive flip-out-of-spatial bug):
-    // a locked SPATIAL pick re-configured shaka's choice criteria with the
-    // ec-3 rung (selectVariantTrack sets the criteria's channelCount/audioCodec
-    // to the selected track — verified in the vendor), and player.configure()
-    // never re-widens it. Enabling ABR alone would keep the candidate set
-    // confined to the spatial rungs — turning the preference OFF mid-track
-    // (adaptive) would keep streaming ec-3 until the next track. Select the
-    // tier's rung FIRST — the selection re-configures the criteria onto the
-    // new rung's family/channels — then hand control to the manager. This
-    // trips Shaka's "selected track will be overridden" advisory; accepted:
-    // the manager IS meant to take over from here.
+    // CRITERIA RE-ANCHOR (the general form of the de-confinement fix):
+    // a MANUAL selection — selectVariantTrack — re-configures shaka's choice
+    // criteria onto the selected rung's codec family and channel count
+    // (verified in the vendor), and player.configure() never re-widens it,
+    // so the ABR candidate set stays confined to that family. The ec-3 case
+    // (a locked spatial pick flipping back to adaptive stereo) was the first
+    // known instance; ANY locked play does it: locked high then adaptive max
+    // kept roaming opus rungs under an uncapped ceiling, never reaching
+    // FLAC. When this engine narrowed the criteria on this track AND the
+    // tier's target rung sits in a different family, select the target rung
+    // FIRST — the selection re-anchors the criteria onto the tier's family
+    // (the ABR set then spans that family's rungs under the ceiling) — then
+    // hand control to the manager. This trips Shaka's "selected track will
+    // be overridden" advisory; accepted: the manager IS meant to take over.
+    // The criteriaNarrowed gate is load-bearing: on a FRESH play the criteria
+    // is wide and the active variant merely reflects the manager's own
+    // estimate-based pick (a low estimate legitimately starts adaptive max
+    // on an opus rung) — re-anchoring there would force the tier's top family
+    // onto a connection the estimator just called weak.
     const active = (player.getVariantTracks() || []).find((t) => t.active);
-    if (active && String(active.codecs || '').toLowerCase().startsWith('ec-3')) {
+    const activeFamily = active ? widevineCodecFamily(active.codecs || active.codec) : null;
+    if (criteriaNarrowed && active && activeFamily !== config.codecFamily) {
       const target = configTargetTrack();
       if (target) {
         try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
       }
     }
     // The manager starts at the tier's rung via defaultBandwidthEstimate and
-    // roams ≤ ceiling.
+    // roams ≤ ceiling. seedBandwidth (rung/0.95 — see widevine-quality.js)
+    // lands the pre-sample estimate ON the tier rung, not one below it.
     player.configure({
       preferredAudioCodecs: [],
-      abr: { enabled: true, restrictions, defaultBandwidthEstimate: config.variantBandwidth || undefined }
+      abr: { enabled: true, restrictions, defaultBandwidthEstimate: config.seedBandwidth || config.variantBandwidth || undefined }
     });
     return;
   }
   player.configure({ abr: { enabled: false, restrictions: { maxBandwidth: Infinity } }, preferredAudioCodecs: [] });
   const target = configTargetTrack();
   if (target) {
+    criteriaNarrowed = true;
     try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
   }
 }
@@ -480,7 +499,24 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   const licenseServerUri = `parachord-license://${resolverId}${result.sessionId ? `?s=${encodeURIComponent(result.sessionId)}` : ''}`;
   player.configure({
     drm: { servers: { 'com.widevine.alpha': licenseServerUri } },
-    streaming: { rebufferingGoal: 2, bufferingGoal: 10 }
+    streaming: { rebufferingGoal: 2, bufferingGoal: 10 },
+    // enableAudioGroups: false — THE cross-family adaptive fix (#1243).
+    // With it on (the default), the DASH parser stamps every stream with
+    // its AdaptationSet's id as groupId, and the ABR candidate set shaka's
+    // choice criteria builds (shaka.media.AdaptationSet) rejects variants
+    // whose groupId differs from the anchor's — Amazon puts each codec
+    // family in its own AdaptationSet (live capture: "three opus plus two
+    // FLAC renditions across five adaptation sets"), so the set is ONE
+    // family, anchored on the first variant in manifest order (an opus
+    // rung). Adaptive at Max could therefore NEVER reach FLAC — the ABR
+    // roamed opus rungs under an uncapped ceiling no matter the bandwidth
+    // estimate, while locked plays crossed families fine via
+    // selectVariantTrack. With no group ids, and the default smooth codec
+    // switching (SourceBuffer.changeType — present in Electron), the set
+    // spans the stereo families; the 6-channel ec-3 and channel-less
+    // mha/mhm spatial rungs stay excluded by the channel guards. Verified
+    // against the vendored 4.16.55: tests/renderer/widevine-shaka-adaptation.test.js.
+    manifest: { enableAudioGroups: false }
     // NO load-time steering: shaka's ABR picks a variant the moment load()
     // parses the manifest (the default estimate, or the browser's downlink)
     // and fires that variant's KID license request before our locked
@@ -562,6 +598,11 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     err.reason = 'playback-failed';
     throw err;
   }
+  // The fresh load adopted a fresh, WIDE choice criteria (the vendor creates
+  // one per parse and player.load installs it) — whatever a previous track's
+  // selections narrowed is gone. The ABR path's re-anchor decision starts
+  // from clean state for this track.
+  criteriaNarrowed = false;
   applyConfig(config);
   // The token lets callers make teardown CONDITIONAL on not having moved on
   // (review: a stale stop() after the generation advanced must not cancel the
@@ -641,6 +682,7 @@ function getState() {
     errorCode: audioElement && audioElement.error ? audioElement.error.code : null,
     variantFacts: currentVariantFacts(),
     qualitySeen: lastQualityRead,
+    criteriaNarrowed,
     hdSessionBlockedByPlan,
     spatialBlockedByPlan,
     shaka

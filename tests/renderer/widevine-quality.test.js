@@ -107,10 +107,10 @@ describe('shakaPlaybackConfig', () => {
   });
   test('adaptive caps at tier ceiling, not family', () => {
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'saver', true)).toEqual({
-      abrEnabled: true, codecFamily: 'opus', variantId: '1', variantBandwidth: 53059, maxBandwidth: 100000, preferredCodecs: []
+      abrEnabled: true, codecFamily: 'opus', variantId: '1', variantBandwidth: 53059, seedBandwidth: 55852, maxBandwidth: 100000, preferredCodecs: []
     });
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'max', true)).toEqual({
-      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, maxBandwidth: null, preferredCodecs: []
+      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, seedBandwidth: 2002348, maxBandwidth: null, preferredCodecs: []
     });
   });
   test('adaptive FLOOR mirrors the locked floor (M3): never a zero-variant restriction', () => {
@@ -205,7 +205,7 @@ describe('spatial / Atmos opt-in', () => {
     );
     // Spatial on but nothing spatial playable: adaptive behaves as before.
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'max', true, { spatial: true })).toEqual({
-      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, maxBandwidth: null, preferredCodecs: []
+      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, seedBandwidth: 2002348, maxBandwidth: null, preferredCodecs: []
     });
   });
 });

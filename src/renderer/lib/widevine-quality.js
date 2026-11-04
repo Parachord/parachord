@@ -207,6 +207,19 @@ function shakaPlaybackConfig(variants, tier, adaptive, opts) {
     codecFamily: family,
     variantId: variant.id,
     variantBandwidth: bandwidth,
+    // The manager's pre-sample estimate seed. The vendored chooser picks a
+    // rung when the estimate sits in [rung/0.95, nextRung/0.85] (its
+    // bandwidthDowngradeTarget/bandwidthUpgradeTarget), so seeding exactly
+    // the tier rung's bandwidth lands ONE RUNG BELOW it — adaptive max
+    // started at FLAC 1.06M instead of the Ultra rung. Seeding rung/0.95
+    // lands ON the rung (the windows are contiguous, so the seed never
+    // overshoots into the rung above). CEIL, never round: the floor is
+    // rung/0.95 itself, and rounding 1902230/0.95 down to 2002347 lands
+    // 0.37bps BELOW it — back on the rung below. Only matters before the
+    // EWMA has ~128KB sampled (first track after launch;
+    // navigator.connection.downlink overrides the seed pre-sample anyway
+    // when the browser reports one).
+    seedBandwidth: Math.ceil(bandwidth / 0.95),
     // Adaptive floor mirrors the locked-mode floor: when the cheapest
     // playable variant exceeds the ceiling, cap at that variant instead —
     // capping below it leaves the restriction filter with zero variants
