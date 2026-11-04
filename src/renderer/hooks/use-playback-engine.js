@@ -36,7 +36,7 @@
 // all read through refs at call time (the reason the dance tolerated any
 // declaration position in the first place).
 
-const { isOtherVersion } = require('../lib/track-variants');
+const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
 const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
@@ -135,7 +135,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
   // Confidence module side-load (dual-load in index.html / require in sync
   // providers); reading inside the hook body keeps it call-time safe.
-  const { normalizeStr, validateResolvedTrack, MIN_CONFIDENCE_THRESHOLD } = window.ConfidenceScoring;
+  const { validateResolvedTrack, MIN_CONFIDENCE_THRESHOLD } = window.ConfidenceScoring;
 
   const {
     loadedResolversRef,
@@ -746,44 +746,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         // the old local duplicate had drifted from the canonical guard.
 
         // Helper to find best matching result from search results
-        const findBestMatch = (results, targetArtist, targetTitle, targetMbid, targetIsrc) => {
-          if (!results || results.length === 0) return null;
-          // Tier 1: exact MusicBrainz recording MBID — a definitive identity
-          // match that's immune to artist/title formatting differences.
-          if (targetMbid) {
-            const m = results.find(r => (r.mbid || r.recordingMbid) && (r.mbid === targetMbid || r.recordingMbid === targetMbid));
-            if (m) return m;
-          }
-          // Tier 2: exact ISRC — also a definitive recording-identity match.
-          if (targetIsrc) {
-            const ti = String(targetIsrc).trim().toUpperCase();
-            const m = results.find(r => r.isrc && String(r.isrc).trim().toUpperCase() === ti);
-            if (m) return m;
-          }
-          const normTargetArtist = normalizeStr(targetArtist);
-          const normTargetTitle = normalizeStr(targetTitle);
-          // Tier 3: exact normalized name (artist + title)
-          for (const r of results) {
-            if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
-              return r;
-            }
-          }
-          // Tier 4: a contains match that is not another version (a cover,
-          // remix or live cut the target title doesn't name). Tier 5: any
-          // contains match, so "Song - Remastered"-style catalog titles and
-          // variant-only results still resolve.
-          for (const r of results) {
-            if (!isOtherVersion(r, targetArtist, targetTitle) && validateResolvedTrack(r, targetArtist, targetTitle)) {
-              return r;
-            }
-          }
-          for (const r of results) {
-            if (validateResolvedTrack(r, targetArtist, targetTitle)) {
-              return r;
-            }
-          }
-          return null;
-        };
+        const findBestMatch = (results, targetArtist, targetTitle, mbid, isrc) =>
+          pickTrackMatch(results, targetArtist, targetTitle, { mbid, isrc });
 
         // Fire MBID Mapper lookup in parallel with resolver searches
         // This gives us a canonical recording identity to improve cross-resolver matching

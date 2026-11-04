@@ -14,6 +14,7 @@
 
 const { getTool } = require('../../tools/dj-tools');
 const { runPlaybackControl } = require('../../tools/playback-control');
+const { pickTrackMatch } = require('../../sync-providers/track-match');
 
 // Extract executeDjTool and related code from app.js
 // Since app.js is a monolithic React component, we recreate the pure functions here
@@ -32,10 +33,10 @@ const executeDjTool = async (name, args, context) => {
         if (!results || results.length === 0) {
           return { success: false, error: `Could not find "${args.title}" by ${args.artist}` };
         }
-        const bestMatch = results.find(r =>
-          r.artist?.toLowerCase() === args.artist.toLowerCase() &&
-          r.title?.toLowerCase() === args.title.toLowerCase()
-        ) || results[0];
+        const bestMatch = pickTrackMatch(results, args.artist, args.title);
+        if (!bestMatch) {
+          return { success: false, error: `Could not find "${args.title}" by ${args.artist}` };
+        }
         await context.playTrack(bestMatch);
         return { success: true, track: { artist: bestMatch.artist, title: bestMatch.title, album: bestMatch.album } };
       }
@@ -67,11 +68,8 @@ const executeDjTool = async (name, args, context) => {
             targetArtist: firstTrack.artist,
             targetTitle: firstTrack.title
           });
-          if (results && results.length > 0) {
-            const match = results.find(r =>
-              r.artist?.toLowerCase() === firstTrack.artist.toLowerCase() &&
-              r.title?.toLowerCase() === firstTrack.title.toLowerCase()
-            ) || results[0];
+          const match = pickTrackMatch(results, firstTrack.artist, firstTrack.title);
+          if (match) {
             await context.playTrack(match);
             startedPlaying = true;
           }
@@ -215,7 +213,7 @@ describe('DJ Tools - executeDjTool', () => {
       expect(context.playTrack).toHaveBeenCalledWith(expect.objectContaining({ artist: 'Radiohead', title: 'Creep' }));
     });
 
-    test('falls back to first result when no exact match', async () => {
+    test('plays another version when it is the only match', async () => {
       context.search.mockResolvedValue([
         { artist: 'Radiohead', title: 'Creep (Live)', album: 'Live Album' }
       ]);
@@ -225,6 +223,18 @@ describe('DJ Tools - executeDjTool', () => {
       expect(result.success).toBe(true);
       expect(result.track.title).toBe('Creep (Live)');
       expect(context.playTrack).toHaveBeenCalled();
+    });
+
+    test('refuses a result that is a different song (#1241)', async () => {
+      context.search.mockResolvedValue([
+        { artist: 'The Avett Brothers', title: 'Untitled #4', album: 'Other' }
+      ]);
+
+      const result = await executeDjTool('play', { artist: 'Biohio', title: 'Happy Me' }, context);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Could not find');
+      expect(context.playTrack).not.toHaveBeenCalled();
     });
 
     test('returns error when no results found', async () => {
@@ -669,5 +679,52 @@ describe('registry exposes the new tools', () => {
     expect(seek.parameters.properties.offset_ms.type).toBe('number');
     const pos = getTool('get_position');
     expect(pos.parameters.type).toBe('object');
+  });
+});
+
+// These run the real wrappers in tools/dj-tools.js, not the inline copy above.
+describe('tools/dj-tools.js never plays a different song (#1241)', () => {
+  const WRONG = { artist: 'The Avett Brothers', title: 'Untitled #4', album: 'Other' };
+  let context;
+
+  beforeEach(() => {
+    context = {
+      search: jest.fn().mockResolvedValue([WRONG]),
+      playTrack: jest.fn().mockResolvedValue(undefined),
+      clearQueue: jest.fn(),
+      addToQueue: jest.fn().mockResolvedValue(undefined),
+      getQueue: jest.fn().mockReturnValue([]),
+      getCurrentTrack: jest.fn().mockReturnValue(null),
+      getIsPlaying: jest.fn().mockReturnValue(false),
+    };
+  });
+
+  test('play reports not found and keeps the queue', async () => {
+    const result = await getTool('play').execute({ artist: 'Biohio', title: 'Happy Me' }, context);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Could not find');
+    expect(context.playTrack).not.toHaveBeenCalled();
+    expect(context.clearQueue).not.toHaveBeenCalled();
+  });
+
+  test('play still plays the requested track', async () => {
+    const right = { artist: 'Biohio', title: 'Happy Me', album: 'Album' };
+    context.search.mockResolvedValue([WRONG, right]);
+
+    const result = await getTool('play').execute({ artist: 'Biohio', title: 'Happy Me' }, context);
+
+    expect(result.success).toBe(true);
+    expect(context.playTrack).toHaveBeenCalledWith(right);
+  });
+
+  test('queue_add does not start a different song', async () => {
+    const result = await getTool('queue_add').execute({
+      tracks: [{ artist: 'Biohio', title: 'Happy Me' }],
+      playFirst: true,
+    }, context);
+
+    expect(context.playTrack).not.toHaveBeenCalled();
+    expect(result.nowPlaying).toBe(false);
   });
 });
