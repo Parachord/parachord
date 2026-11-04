@@ -1963,6 +1963,7 @@ const { ArtistPage } = require('./components/artist-page');
 const { SearchPage } = require('./components/search-page');
 const { useStableHandlers } = require('./lib/stable-handlers');
 const { runPlaybackControl } = require('../../tools/playback-control');
+const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
 
 
@@ -2259,61 +2260,8 @@ const executeDjTool = async (name, args, context) => {
           total: results?.length || 0
         };
       }
-      case 'queue_add': {
-        const currentTrack = context.getCurrentTrack();
-        const nothingPlaying = !currentTrack;
-        let startedPlaying = false;
-        let notFound = null;
-        let tracksToQueue = args.tracks;
-
-        // Deduplicate: if the first track in the list matches what's currently playing,
-        // skip it to avoid double-play (models often call play + queue_add with overlapping tracks)
-        if (currentTrack && tracksToQueue.length > 0) {
-          const first = tracksToQueue[0];
-          if (first.artist?.toLowerCase() === currentTrack.artist?.toLowerCase() &&
-              first.title?.toLowerCase() === currentTrack.title?.toLowerCase()) {
-            tracksToQueue = tracksToQueue.slice(1);
-          }
-        }
-
-        // If nothing is playing, resolve and play the first track immediately
-        if (nothingPlaying && tracksToQueue.length > 0) {
-          const firstTrack = tracksToQueue[0];
-          const results = await context.search(`${firstTrack.artist} ${firstTrack.title}`, {
-            earlyReturn: true,
-            targetArtist: firstTrack.artist,
-            targetTitle: firstTrack.title
-          });
-          const match = pickTrackMatch(results, firstTrack.artist, firstTrack.title);
-          if (match) {
-            await context.playTrack(match);
-            startedPlaying = true;
-          } else {
-            notFound = { artist: firstTrack.artist, title: firstTrack.title };
-          }
-          // Remaining tracks go to queue
-          tracksToQueue = tracksToQueue.slice(1);
-        }
-
-        // Add remaining tracks to queue as unresolved metadata
-        // The queue's ResolutionScheduler will resolve them in priority order
-        if (tracksToQueue.length > 0) {
-          const metadataTracks = tracksToQueue.map(t => ({
-            artist: t.artist,
-            title: t.title,
-            album: t.album || null
-          }));
-          await context.addToQueue(metadataTracks, args.position || 'last');
-        }
-
-        const totalAdded = tracksToQueue.length + (startedPlaying ? 1 : 0);
-        return {
-          success: totalAdded > 0,
-          added: totalAdded,
-          nowPlaying: startedPlaying,
-          ...(notFound ? { notFound, error: `Could not find "${notFound.title}" by ${notFound.artist}` } : {})
-        };
-      }
+      case 'queue_add':
+        return runQueueAdd(args, context);
       case 'queue_remove': {
         const queue = context.getQueue();
         const toRemove = [];
@@ -3071,7 +3019,10 @@ class AIChatService {
         case 'play': return result.track ? `Now playing "${result.track.title}" by ${result.track.artist}` : 'Started playback';
         case 'control': return `Playback ${result.action}`;
         case 'search': return `Found ${result.results?.length || 0} results`;
-        case 'queue_add': return `Added ${result.added} track(s) to queue`;
+        case 'queue_add': {
+          const skipped = (result.notFound || []).map((t) => `"${t.title}" by ${t.artist}`).join(', ');
+          return `Added ${result.added} track(s) to queue${skipped ? `. Could not find ${skipped}` : ''}`;
+        }
         case 'queue_clear': return 'Queue cleared';
         case 'create_playlist': return `Created playlist "${result.playlist?.name}"`;
         case 'shuffle': return `Shuffle ${result.shuffle ? 'enabled' : 'disabled'}`;

@@ -15,6 +15,7 @@
 const { getTool } = require('../../tools/dj-tools');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
+const { runQueueAdd } = require('../../tools/queue-add');
 
 // Extract executeDjTool and related code from app.js
 // Since app.js is a monolithic React component, we recreate the pure functions here
@@ -56,42 +57,8 @@ const executeDjTool = async (name, args, context) => {
           total: results?.length || 0
         };
       }
-      case 'queue_add': {
-        const nothingPlaying = !context.getCurrentTrack();
-        let startedPlaying = false;
-        let tracksToQueue = args.tracks;
-
-        if (nothingPlaying && args.tracks.length > 0) {
-          const firstTrack = args.tracks[0];
-          const results = await context.search(`${firstTrack.artist} ${firstTrack.title}`, {
-            earlyReturn: true,
-            targetArtist: firstTrack.artist,
-            targetTitle: firstTrack.title
-          });
-          const match = pickTrackMatch(results, firstTrack.artist, firstTrack.title);
-          if (match) {
-            await context.playTrack(match);
-            startedPlaying = true;
-          }
-          tracksToQueue = args.tracks.slice(1);
-        }
-
-        if (tracksToQueue.length > 0) {
-          const metadataTracks = tracksToQueue.map(t => ({
-            artist: t.artist,
-            title: t.title,
-            album: t.album || null
-          }));
-          await context.addToQueue(metadataTracks, args.position || 'last');
-        }
-
-        const totalAdded = tracksToQueue.length + (startedPlaying ? 1 : 0);
-        return {
-          success: totalAdded > 0,
-          added: totalAdded,
-          nowPlaying: startedPlaying
-        };
-      }
+      case 'queue_add':
+        return runQueueAdd(args, context);
       case 'queue_remove': {
         const queue = context.getQueue();
         const toRemove = [];
@@ -400,6 +367,117 @@ describe('DJ Tools - executeDjTool', () => {
       }, context);
 
       expect(context.addToQueue).toHaveBeenCalledWith(expect.anything(), 'next');
+    });
+
+    describe('a track that is not found (#1259)', () => {
+      const hits = {
+        'Swapmeet I Know!': [{ artist: 'Swapmeet', title: 'I Know!', album: 'Mount Zero' }],
+        'Queen Bohemian Rhapsody': [{ artist: 'Queen', title: 'Bohemian Rhapsody' }]
+      };
+      const wrong = [{ artist: 'The Avett Brothers', title: 'Untitled #4' }];
+
+      beforeEach(() => {
+        context.getCurrentTrack.mockReturnValue(null);
+        context.search.mockImplementation(async (query) => hits[query] || wrong);
+      });
+
+      test('starts with the first track found, and queues the rest', async () => {
+        const result = await executeDjTool('queue_add', {
+          tracks: [
+            { artist: 'Biohio', title: 'Happy Me' },
+            { artist: 'Swapmeet', title: 'I Know!' },
+            { artist: 'Queen', title: 'Bohemian Rhapsody' }
+          ]
+        }, context);
+
+        expect(context.playTrack).toHaveBeenCalledTimes(1);
+        expect(context.playTrack).toHaveBeenCalledWith(hits['Swapmeet I Know!'][0]);
+        expect(context.addToQueue).toHaveBeenCalledWith(
+          [expect.objectContaining({ artist: 'Queen', title: 'Bohemian Rhapsody' })],
+          'last'
+        );
+        expect(result).toEqual({
+          success: true,
+          added: 2,
+          nowPlaying: true,
+          notFound: [{ artist: 'Biohio', title: 'Happy Me' }]
+        });
+      });
+
+      test('lists every track it skipped on the way to the first one found', async () => {
+        const result = await executeDjTool('queue_add', {
+          tracks: [
+            { artist: 'Biohio', title: 'Happy Me' },
+            { artist: 'Biohio', title: 'Love' },
+            { artist: 'Swapmeet', title: 'I Know!' }
+          ]
+        }, context);
+
+        expect(result.nowPlaying).toBe(true);
+        expect(result.added).toBe(1);
+        expect(result.notFound).toEqual([
+          { artist: 'Biohio', title: 'Happy Me' },
+          { artist: 'Biohio', title: 'Love' }
+        ]);
+      });
+
+      test('stops searching once one is found', async () => {
+        await executeDjTool('queue_add', {
+          tracks: [
+            { artist: 'Swapmeet', title: 'I Know!' },
+            { artist: 'Biohio', title: 'Happy Me' }
+          ]
+        }, context);
+
+        expect(context.search).toHaveBeenCalledTimes(1);
+      });
+
+      test('when none are found it says so and leaves the queue alone', async () => {
+        const result = await executeDjTool('queue_add', {
+          tracks: [
+            { artist: 'Biohio', title: 'Happy Me' },
+            { artist: 'Biohio', title: 'Love' }
+          ]
+        }, context);
+
+        expect(result).toEqual({
+          success: false,
+          added: 0,
+          nowPlaying: false,
+          notFound: [
+            { artist: 'Biohio', title: 'Happy Me' },
+            { artist: 'Biohio', title: 'Love' }
+          ],
+          error: 'Could not find any of the requested tracks'
+        });
+        expect(context.playTrack).not.toHaveBeenCalled();
+        expect(context.addToQueue).not.toHaveBeenCalled();
+        expect(context.clearQueue).not.toHaveBeenCalled();
+      });
+
+      test('with something already playing it searches nothing', async () => {
+        context.getCurrentTrack.mockReturnValue({ artist: 'Current', title: 'Playing' });
+
+        const result = await executeDjTool('queue_add', {
+          tracks: [{ artist: 'Biohio', title: 'Happy Me' }]
+        }, context);
+
+        expect(context.search).not.toHaveBeenCalled();
+        expect(result).toEqual({ success: true, added: 1, nowPlaying: false });
+      });
+
+      test('the app runs this code, not a copy', () => {
+        const app = require('fs').readFileSync(
+          require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+        expect(app).toMatch(/case 'queue_add':\s*\n?\s*return runQueueAdd\(args, context\);/);
+      });
+
+      test('the chat summary names what was skipped', () => {
+        const app = require('fs').readFileSync(
+          require('path').join(__dirname, '../../src/renderer/app.js'), 'utf8');
+        const start = app.indexOf('summarizeToolResults(toolResults) {');
+        expect(app.slice(start, app.indexOf("case 'queue_clear'", start))).toContain('Could not find ${skipped}');
+      });
     });
 
     test('handles single track when nothing playing and search fails', async () => {
