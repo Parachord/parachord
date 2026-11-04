@@ -62,9 +62,14 @@ async function main() {
   const latest = await api(`actions/workflows/${run.workflow_id}/runs?${query}`);
   const latestRunId = latest.workflow_runs[0] ? latest.workflow_runs[0].id : run.id;
 
-  // Empty for a fork's PR, which then counts as open.
-  const pr = (run.pull_requests || [])[0];
-  const prClosed = pr ? (await api(`pulls/${pr.number}`)).state !== 'open' : false;
+  // Looked up by branch: a run's own pull_requests list is empty once the PR
+  // closes, and always for a fork.
+  let prClosed = false;
+  if (run.event === 'pull_request') {
+    const head = `${run.head_repository.owner.login}:${run.head_branch}`;
+    const open = await api(`pulls?${new URLSearchParams({ state: 'open', head, per_page: '1' })}`);
+    prClosed = open.length === 0;
+  }
 
   const plan = planRerun({ run, jobs, annotations, latestRunId, prClosed });
   console.log(`Run ${run.id}: ${plan.rerun ? 'rerunning' : 'leaving it'}, ${plan.reason}`);
