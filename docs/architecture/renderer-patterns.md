@@ -17,3 +17,11 @@
   - `action: { label, onClick }` — adds a button to the toast (extends default to 6000ms unless `duration` overrides).
 - **CSS variables for theming**: All colors use CSS vars, supporting light/dark themes.
 - **useEffect dep array TDZ trap**: React evaluates a `useEffect`'s deps array synchronously during render — so any variable referenced in the deps array must be declared before the `useEffect` call site in source order. The callback body itself runs after render and captures by closure, so it can freely reference later-declared `const` / function values; only the deps array is constrained. Practical implication: if you're adding a new effect that depends on, say, `cacheLoaded` (declared at app.js ~L8878), the effect must live below that line. Logical-grouping with other related effects sometimes loses to this constraint — see the Cross-Resolver Enrichment slow-trickle effect, which lives in the cacheLoaded-effects cluster (~L9818) rather than next to its sibling background-sync effect (~L6177). A leading comment at the natural placement point ("moved past the cacheLoaded declaration — see L9820") keeps future readers from being surprised.
+
+## Tracks with no album
+
+A track with no album has `album: ''`, never a stand-in. `isPlaceholderAlbum(album, sources)` in `src/renderer/lib/collection-ids.js` is the one rule: nothing, "Single", or the name of one of the track's own sources. It never lists service names, so a new plugin is covered, and it doesn't go through `normalizeForId`, which strips non-Latin text to nothing.
+
+A saved track's id includes the album it was saved with, so a changed album stops the id matching. **Ask whether a track is saved through `findSavedTrack`**, never by comparing ids: it tries the track's id, then the generated id, then artist and title against rows whose album is a placeholder. Two real albums stay two tracks. `clearPlaceholderAlbums` clears old placeholders when the collection loads and keeps the ids. It leaves rows a provider synced alone, since "Single" from a provider is that release's real name.
+
+A row saved with no album and a provider's copy of the same track with its real album are still two rows after a sync, because the sync paths build ids from the album. That was already true.
