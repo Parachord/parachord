@@ -14,6 +14,10 @@
 
 - **Bandcamp tracks play inside Parachord.** They used to open a small floating window with little control over playback. They now play through Bandcamp's own player, hidden in the app, with seek, volume, the real track length, and the queue moving on when a track ends. The Buy link is still there for any track on Bandcamp. A track Bandcamp won't play moves on to another source.
 
+## SoundCloud
+
+- **More SoundCloud tracks play.** Tracks that SoundCloud serves only in encrypted form were refused by its player inside the app. They play now.
+
 ## Library
 
 - **A track with no album shows no album.** A track opened from a link used to get "Single" or its service's name as its album, which could open an unrelated release from the album art and ended up in your scrobbles. Tracks saved that way keep showing as saved, and saving one again doesn't add a duplicate.
@@ -24,6 +28,7 @@
 
 ## Links
 
+- **A link or AI request no longer plays the wrong song.** `parachord://play` links, chat links and the AI's play and queue tools could play something else entirely when no search result matched what was asked for. They now say they couldn't find it, and a `parachord://play` link that finds nothing leaves your queue and current track alone.
 - **A `parachord://` link that opens the app keeps your plugins' sources.** If the link was handled before your saved settings had finished loading, a plugin like Subsonic looked signed out for its first search, so the track played from another service with no warning. This was rare, most likely on a slow disk. Plugins now read their saved settings directly when that happens. Thanks to @theli-ua for finding it.
 
 ## Sync
