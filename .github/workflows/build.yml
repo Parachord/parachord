@@ -26,23 +26,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            platform: mac
-            arch: arm64
-            arch_label: Apple-Silicon
-          - os: macos-latest
-            platform: mac
-            arch: x64
-            arch_label: Intel
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-            arch_label: ''
-          - os: windows-latest
-            platform: win
-            arch: x64
-            arch_label: ''
+        # Intel builds only for releases and manual runs. It cross-compiles on the
+        # same arm64 runner as Apple Silicon, and those get scarce, so PRs and main
+        # build Mac once. A release needs both: the release job merges their
+        # manifests for the auto-updater. The job names must match the "Main"
+        # ruleset's required checks.
+        include: >-
+          ${{ fromJSON(format('[{0}{1}]',
+            (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && '{"os":"macos-latest","platform":"mac","arch":"x64","arch_label":"Intel"},' || '',
+            '{"os":"macos-latest","platform":"mac","arch":"arm64","arch_label":"Apple-Silicon"},{"os":"ubuntu-latest","platform":"linux","arch":"x64","arch_label":""},{"os":"windows-latest","platform":"win","arch":"x64","arch_label":""}')) }}
 
     runs-on: ${{ matrix.os }}
 
