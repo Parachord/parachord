@@ -22,6 +22,10 @@
 
 - **A playlist you import from a URL while sync setup finishes stays in your list.** Setting up sync could take minutes, and a hosted playlist imported during that time could disappear from your playlists until they next reloaded. Thanks to @theli-ua for finding and fixing it.
 
+## AI DJ
+
+- **Resume means resume.** Asking the AI DJ or an MCP client to resume a paused track could skip to the next one in your queue. It now carries on with the track you paused. Asking to pause something already paused, or to resume something already playing, also no longer does the opposite.
+
 ---
 
 # Parachord v0.9.12
