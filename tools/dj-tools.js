@@ -9,6 +9,8 @@
  * with OpenAI, Anthropic, Ollama, and other LLM tool calling APIs.
  */
 
+const { runPlaybackControl } = require('./playback-control');
+
 /**
  * @typedef {Object} ToolContext
  * @property {function(string): Promise<Array>} search - Search for tracks
@@ -123,12 +125,8 @@ const controlTool = {
   execute: async ({ action }, context) => {
     switch (action) {
       case 'pause':
-        context.handlePause();
-        return { success: true, action: 'paused' };
-
       case 'resume':
-        context.handleResume();
-        return { success: true, action: 'resumed' };
+        return runPlaybackControl(action, context);
 
       case 'skip':
         context.handleNext();

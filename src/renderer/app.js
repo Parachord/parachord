@@ -1961,6 +1961,7 @@ const { PlaylistViewPage } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
 const { SearchPage } = require('./components/search-page');
 const { useStableHandlers } = require('./lib/stable-handlers');
+const { runPlaybackControl } = require('../../tools/playback-control');
 
 
 
@@ -2238,29 +2239,8 @@ const executeDjTool = async (name, args, context) => {
         await context.playTrack(bestMatch);
         return { success: true, track: { artist: bestMatch.artist, title: bestMatch.title, album: bestMatch.album } };
       }
-      case 'control': {
-        switch (args.action) {
-          case 'pause': context.handlePause(); return { success: true, action: 'paused' };
-          case 'resume':
-          case 'start': {
-            // If nothing is playing and there's a queue, play the first queue item
-            const isPlaying = context.getIsPlaying();
-            const queue = context.getQueue();
-            if (!isPlaying && queue.length > 0) {
-              // Play first track from queue
-              const firstTrack = queue[0];
-              await context.playTrack(firstTrack);
-              return { success: true, action: 'started', track: { artist: firstTrack.artist, title: firstTrack.title } };
-            }
-            // Otherwise toggle play/pause (resume)
-            context.handleResume();
-            return { success: true, action: 'resumed' };
-          }
-          case 'skip': context.handleNext(); return { success: true, action: 'skipped' };
-          case 'previous': context.handlePrevious(); return { success: true, action: 'previous' };
-          default: return { success: false, error: `Unknown action: ${args.action}` };
-        }
-      }
+      case 'control':
+        return runPlaybackControl(args.action, context);
       case 'search': {
         const results = await context.search(args.query);
         const limit = args.limit || 10;

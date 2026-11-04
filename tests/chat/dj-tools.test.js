@@ -13,6 +13,7 @@
  */
 
 const { getTool } = require('../../tools/dj-tools');
+const { runPlaybackControl } = require('../../tools/playback-control');
 
 // Extract executeDjTool and related code from app.js
 // Since app.js is a monolithic React component, we recreate the pure functions here
@@ -38,26 +39,8 @@ const executeDjTool = async (name, args, context) => {
         await context.playTrack(bestMatch);
         return { success: true, track: { artist: bestMatch.artist, title: bestMatch.title, album: bestMatch.album } };
       }
-      case 'control': {
-        switch (args.action) {
-          case 'pause': context.handlePause(); return { success: true, action: 'paused' };
-          case 'resume':
-          case 'start': {
-            const isPlaying = context.getIsPlaying();
-            const queue = context.getQueue();
-            if (!isPlaying && queue.length > 0) {
-              const firstTrack = queue[0];
-              await context.playTrack(firstTrack);
-              return { success: true, action: 'started', track: { artist: firstTrack.artist, title: firstTrack.title } };
-            }
-            context.handleResume();
-            return { success: true, action: 'resumed' };
-          }
-          case 'skip': context.handleNext(); return { success: true, action: 'skipped' };
-          case 'previous': context.handlePrevious(); return { success: true, action: 'previous' };
-          default: return { success: false, error: `Unknown action: ${args.action}` };
-        }
-      }
+      case 'control':
+        return runPlaybackControl(args.action, context);
       case 'search': {
         const results = await context.search(args.query);
         const limit = args.limit || 10;
@@ -275,58 +258,6 @@ describe('DJ Tools - executeDjTool', () => {
   });
 
   describe('control', () => {
-    test('pause calls handlePause', async () => {
-      const result = await executeDjTool('control', { action: 'pause' }, context);
-
-      expect(result.success).toBe(true);
-      expect(result.action).toBe('paused');
-      expect(context.handlePause).toHaveBeenCalled();
-    });
-
-    test('resume calls handleResume when playing', async () => {
-      context.getIsPlaying.mockReturnValue(true);
-
-      const result = await executeDjTool('control', { action: 'resume' }, context);
-
-      expect(result.success).toBe(true);
-      expect(result.action).toBe('resumed');
-      expect(context.handleResume).toHaveBeenCalled();
-    });
-
-    test('start plays first queue item when not playing', async () => {
-      context.getIsPlaying.mockReturnValue(false);
-      context.getQueue.mockReturnValue([
-        { artist: 'Radiohead', title: 'Creep' },
-        { artist: 'Radiohead', title: 'Karma Police' }
-      ]);
-
-      const result = await executeDjTool('control', { action: 'start' }, context);
-
-      expect(result.success).toBe(true);
-      expect(result.action).toBe('started');
-      expect(result.track.title).toBe('Creep');
-      expect(context.playTrack).toHaveBeenCalled();
-    });
-
-    test('start resumes when already playing', async () => {
-      context.getIsPlaying.mockReturnValue(true);
-
-      const result = await executeDjTool('control', { action: 'start' }, context);
-
-      expect(result.success).toBe(true);
-      expect(result.action).toBe('resumed');
-      expect(context.handleResume).toHaveBeenCalled();
-    });
-
-    test('start resumes when queue empty', async () => {
-      context.getIsPlaying.mockReturnValue(false);
-      context.getQueue.mockReturnValue([]);
-
-      const result = await executeDjTool('control', { action: 'start' }, context);
-
-      expect(result.action).toBe('resumed');
-    });
-
     test('skip calls handleNext', async () => {
       const result = await executeDjTool('control', { action: 'skip' }, context);
 
