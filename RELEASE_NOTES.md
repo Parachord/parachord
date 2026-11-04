@@ -6,6 +6,10 @@
 
 ---
 
+## Search
+
+- **A local file you click in Search plays.** Clicking a file Parachord hadn't matched up yet, most likely one you'd just added, could show "No Enabled Source" and tell you to check your resolver settings, which wouldn't help. It now plays from your library.
+
 ## Links
 
 - **A `parachord://` link that opens the app keeps your plugins' sources.** If the link was handled before your saved settings had finished loading, a plugin like Subsonic looked signed out for its first search, so the track played from another service with no warning. This was rare, most likely on a slow disk. Plugins now read their saved settings directly when that happens. Thanks to @theli-ua for finding it.
