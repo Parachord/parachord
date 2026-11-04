@@ -101,6 +101,26 @@ describe('selectShakaVariant (bandwidth-only tiers)', () => {
   });
 });
 
+describe('loadTimePickCap (the load-time pick rides the tier ceiling)', () => {
+  test('each tier maps to its ceiling; max is uncapped', () => {
+    expect(loadTimePickCap('saver')).toBe(100000);
+    expect(loadTimePickCap('standard')).toBe(200000);
+    expect(loadTimePickCap('high')).toBe(500000);
+    expect(loadTimePickCap('max')).toBe(Infinity);
+  });
+  test('legacy tier names normalize; unknown tiers cap like max', () => {
+    expect(loadTimePickCap('low')).toBe(100000);
+    expect(loadTimePickCap('BEST_AVAILABLE')).toBe(Infinity);
+    expect(loadTimePickCap('nonsense')).toBe(Infinity);
+    expect(loadTimePickCap(null)).toBe(Infinity);
+  });
+  test('a refused FLAC family caps at the high ceiling — binding for max only', () => {
+    expect(loadTimePickCap('max', { flacRefused: true })).toBe(500000); // below every observed Amazon FLAC rung
+    expect(loadTimePickCap('high', { flacRefused: true })).toBe(500000); // unchanged — already at the ceiling
+    expect(loadTimePickCap('saver', { flacRefused: true })).toBe(100000); // the tier is still the tighter bound
+  });
+});
+
 describe('dropUnplayableAdaptationSets (the spanning ABR set vs the undecodable families)', () => {
   // The captured Atmos manifest shape (B0CPSG7191): stereo opus/flac sets, the
   // 6-channel ec-3 JOC set, and the AC-4 IMS set whose rungs ride 2-channel

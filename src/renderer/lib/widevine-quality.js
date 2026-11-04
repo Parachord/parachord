@@ -216,6 +216,7 @@ function familyDropCapBps(playable, allVariants, opts) {
   const sorted = variantsSorted(playable.filter((v) => variantPlayable(v, spatial)));
   if (!sorted.length) return null;
   const topPlayable = Number(sorted[0].bandwidth) || 0;
+  if (!(topPlayable > 0)) return null; // bandwidth-less roster — nothing to cap at (the safe direction is uncapped)
   for (const v of allVariants) {
     const family = widevineCodecFamily(variantCodec(v));
     if (!WIDEVINE_PLAYABLE_FAMILIES.has(family)) continue; // spatial/categorical families are handled by the channel guard, the opt-in or the manifest filter
