@@ -73,15 +73,63 @@ module.exports = {
     }
   },
   resolve: async function (artist, track, album, config) {
-    var norm = function (s) {
+    // The platform's gate (validateResolvedTrack in
+    // sync-providers/confidence-scoring.js), copied because an .axe function can't
+    // import it. A result dropped here never reaches that gate, so this has to
+    // accept what it accepts: tests/resolver/plugin-credit-match.test.js holds the
+    // two together over the shared credit vectors. No property-escape literal, which
+    // would stop the whole function parsing on an engine without them: the guarded
+    // constructor falls back to ASCII, so a non-Latin name misses instead.
+    var MARKS = /[̀-ͯ]/g;
+    var NON_ALNUM = /[^a-z0-9]/g;
+    try {
+      MARKS = new RegExp('\\p{M}', 'gu');
+      NON_ALNUM = new RegExp('[^\\p{L}\\p{N}]', 'gu');
+    } catch (e) {}
+    var fold = function (s) {
       s = (s || '').toString().toLowerCase();
-      try {
-        s = s.normalize('NFKD');
-      } catch (e) {}
-      return s.replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]/gu, '');
+      if (typeof s.normalize === 'function') s = s.normalize('NFKD');
+      return s.replace(MARKS, '');
+    };
+    var norm = function (s) {
+      return fold(s).replace(NON_ALNUM, '');
     };
     var contains = function (a, b) {
       return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);
+    };
+    // The words need a space on both sides, so "Little Feat" and "Malcolm X" stay
+    // whole. The brackets on a title credit are required: "ft" can be title text.
+    var ARTIST_JOIN = /,|&| (?:and|x) | [(\[]?(?:feat\.?|ft\.?|featuring) /i;
+    var TITLE_CREDIT = / *[(\[] *(?:feat|ft|featuring)[. ][^)\]]*[)\]] *$/i;
+    var creditedNames = function (credit) {
+      var parts = fold(credit).split(ARTIST_JOIN);
+      var names = [];
+      for (var p = 0; p < parts.length; p++) {
+        var name = norm(parts[p]);
+        if (name && names.indexOf(name) === -1) names.push(name);
+      }
+      return names;
+    };
+    var isSubset = function (a, b) {
+      if (a.length === 0) return false;
+      for (var n = 0; n < a.length; n++) {
+        if (b.indexOf(a[n]) === -1) return false;
+      }
+      return true;
+    };
+    var artistsMatch = function (a, b) {
+      if (contains(norm(a), norm(b))) return true;
+      var namesA = creditedNames(a);
+      var namesB = creditedNames(b);
+      return isSubset(namesA, namesB) || isSubset(namesB, namesA);
+    };
+    var titlesMatch = function (a, b) {
+      if (contains(norm(a), norm(b))) return true;
+      var bare = norm(fold(a).replace(TITLE_CREDIT, ''));
+      return !!bare && bare === norm(fold(b).replace(TITLE_CREDIT, ''));
+    };
+    var matches = function (r) {
+      return !!r && !!r.artist && !!r.title && artistsMatch(r.artist, artist) && titlesMatch(r.title, track);
     };
     var targetArtist = norm(artist);
     var targetTitle = norm(track);
@@ -98,11 +146,11 @@ module.exports = {
     // The first containment hit used to win, so a live cut, remix or karaoke
     // version ranked above the original was what played and scrobbled (the
     // same flaw the Bandcamp resolver had). Pass 1: an exact artist + title
-    // match, ignoring feat. credits. Pass 2: a containment match that is not
-    // another version (a version word the requested title lacks; the list
-    // matches src/renderer/lib/track-variants.js). Pass 3: any containment
-    // match, since a "Remastered" or live track by the right artist is still
-    // better than nothing on a service whose catalog is the artist's own.
+    // match, ignoring feat. credits and how the credit is joined. Pass 2: a match
+    // that is not another version (a version word the requested title lacks; the
+    // list matches src/renderer/lib/track-variants.js). Pass 3: any match, since a
+    // "Remastered" or live track by the right artist is still better than nothing
+    // on a service whose catalog is the artist's own.
     var stripFeat = function (s) {
       return (s || '')
         .toString()
@@ -121,23 +169,26 @@ module.exports = {
     };
     var exactArtist = norm(stripFeat(artist));
     var exactTitle = norm(stripFeat(track));
-    var containing = results.filter(function (r) {
-      return contains(norm(r.artist), targetArtist) && contains(norm(r.title), targetTitle);
-    });
+    var requestedNames = creditedNames(artist);
+    var sameCredit = function (credit) {
+      var names = creditedNames(credit);
+      return isSubset(names, requestedNames) && isSubset(requestedNames, names);
+    };
+    var matching = results.filter(matches);
     if (exactArtist && exactTitle) {
-      for (var i = 0; i < containing.length; i++) {
+      for (var i = 0; i < matching.length; i++) {
         if (
-          norm(stripFeat(containing[i].artist)) === exactArtist &&
-          norm(stripFeat(containing[i].title)) === exactTitle &&
-          !isVariant(containing[i])
+          (norm(stripFeat(matching[i].artist)) === exactArtist || sameCredit(matching[i].artist)) &&
+          norm(stripFeat(matching[i].title)) === exactTitle &&
+          !isVariant(matching[i])
         )
-          return containing[i];
+          return matching[i];
       }
     }
-    for (var j = 0; j < containing.length; j++) {
-      if (!isVariant(containing[j])) return containing[j];
+    for (var j = 0; j < matching.length; j++) {
+      if (!isVariant(matching[j])) return matching[j];
     }
-    return containing[0] || null;
+    return matching[0] || null;
   },
   play: async function (track, config) {
     // Host-owned: with capabilities.widevine the host's handlePlay drives the
