@@ -10,6 +10,10 @@
 
 - **A `parachord://` link that opens the app keeps your plugins' sources.** If the link was handled before your saved settings had finished loading, a plugin like Subsonic looked signed out for its first search, so the track played from another service with no warning. This was rare, most likely on a slow disk. Plugins now read their saved settings directly when that happens. Thanks to @theli-ua for finding it.
 
+## Sync
+
+- **A playlist you import from a URL while sync setup finishes stays in your list.** Setting up sync could take minutes, and a hosted playlist imported during that time could disappear from your playlists until they next reloaded. Thanks to @theli-ua for finding and fixing it.
+
 ---
 
 # Parachord v0.9.12
