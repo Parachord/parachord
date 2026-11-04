@@ -12,6 +12,11 @@
 // START_TIMEOUT_MS is reported `unplayable`, a failed source for the engine to
 // route around. Each load has a token, and a state or answer from an earlier
 // one is ignored. stop() blanks the iframe: leaving a track halts it.
+//
+// Main is told to drive the page only once the iframe has finished loading it.
+// Main finds the frame by its URL, and on a replay the old page has that URL
+// until the new one commits: driving it then clicks the old page, takes its old
+// position as "started", and leaves the new page paused at 0:00 (#1242).
 
 'use strict';
 
@@ -39,6 +44,7 @@ function createBandcampEmbedPlayer({
   let volume = 1;
   let handlers = {};
   let pendingStart = null; // { resolve, reject, timer }
+  let onFrameLoaded = null; // runs once when the page the current load asked for finishes
   let listening = false;
 
   const bridge = () => (win && win.electron && win.electron.bandcampEmbed) || null;
@@ -121,6 +127,11 @@ function createBandcampEmbedPlayer({
     iframe.setAttribute('aria-hidden', 'true');
     iframe.setAttribute('tabindex', '-1');
     iframe.style.cssText = 'position:fixed;width:400px;height:120px;left:-2000px;bottom:0;opacity:0;pointer-events:none;border:0;';
+    iframe.addEventListener('load', () => {
+      const run = onFrameLoaded;
+      onFrameLoaded = null;
+      if (run) run();
+    });
     doc.body.appendChild(iframe);
     return iframe;
   };
@@ -137,6 +148,7 @@ function createBandcampEmbedPlayer({
   // `source` carries the track id when the resolver found one.
   const load = (link, nextHandlers = {}, source = {}) => {
     settleStart(errorWithReason('Bandcamp embed load superseded', 'superseded'));
+    onFrameLoaded = null;
     const previous = active ? token : null;
     token += 1;
     const myToken = token;
@@ -167,12 +179,17 @@ function createBandcampEmbedPlayer({
         if (token === myToken) settleStart(errorWithReason('Bandcamp embed could not load this track', 'unplayable'));
       };
       Promise.resolve(b.prepare({ bandcampUrl: link, bandcampTrackId: source && source.bandcampTrackId }))
-        .then(async (prepared) => {
+        .then((prepared) => {
           if (token !== myToken) return;
           if (!prepared || !prepared.success) { refuse(); return; }
-          ensureIframe().src = prepared.url;
-          const startedUp = await b.start({ token: myToken, url: prepared.url, volume });
-          if (!startedUp || !startedUp.success) refuse();
+          const frame = ensureIframe();
+          onFrameLoaded = () => {
+            if (token !== myToken) return;
+            Promise.resolve(b.start({ token: myToken, url: prepared.url, volume }))
+              .then((startedUp) => { if (!startedUp || !startedUp.success) refuse(); })
+              .catch(refuse);
+          };
+          frame.src = prepared.url;
         })
         .catch(refuse);
     });
@@ -180,6 +197,7 @@ function createBandcampEmbedPlayer({
 
   const stop = () => {
     settleStart(errorWithReason('Bandcamp embed stopped', 'superseded'));
+    onFrameLoaded = null;
     const wasActive = active;
     const lastToken = token;
     token += 1;
