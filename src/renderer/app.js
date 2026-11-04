@@ -1198,6 +1198,7 @@ const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
+const { pickTrackMatch } = require('../../sync-providers/track-match');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistListenbrainzMbid } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
@@ -2232,10 +2233,12 @@ const executeDjTool = async (name, args, context) => {
         if (!results || results.length === 0) {
           return { success: false, error: `Could not find "${args.title}" by ${args.artist}` };
         }
-        const bestMatch = results.find(r =>
-          r.artist?.toLowerCase() === args.artist.toLowerCase() &&
-          r.title?.toLowerCase() === args.title.toLowerCase()
-        ) || results[0];
+        // The search can return only other songs, and a result can't be
+        // refused later: handlePlay would compare it with itself (#1241).
+        const bestMatch = pickTrackMatch(results, args.artist, args.title);
+        if (!bestMatch) {
+          return { success: false, error: `Could not find "${args.title}" by ${args.artist}` };
+        }
         context.clearQueue();
         await context.playTrack(bestMatch);
         return { success: true, track: { artist: bestMatch.artist, title: bestMatch.title, album: bestMatch.album } };
@@ -2260,6 +2263,7 @@ const executeDjTool = async (name, args, context) => {
         const currentTrack = context.getCurrentTrack();
         const nothingPlaying = !currentTrack;
         let startedPlaying = false;
+        let notFound = null;
         let tracksToQueue = args.tracks;
 
         // Deduplicate: if the first track in the list matches what's currently playing,
@@ -2280,13 +2284,12 @@ const executeDjTool = async (name, args, context) => {
             targetArtist: firstTrack.artist,
             targetTitle: firstTrack.title
           });
-          if (results && results.length > 0) {
-            const match = results.find(r =>
-              r.artist?.toLowerCase() === firstTrack.artist.toLowerCase() &&
-              r.title?.toLowerCase() === firstTrack.title.toLowerCase()
-            ) || results[0];
+          const match = pickTrackMatch(results, firstTrack.artist, firstTrack.title);
+          if (match) {
             await context.playTrack(match);
             startedPlaying = true;
+          } else {
+            notFound = { artist: firstTrack.artist, title: firstTrack.title };
           }
           // Remaining tracks go to queue
           tracksToQueue = tracksToQueue.slice(1);
@@ -2307,7 +2310,8 @@ const executeDjTool = async (name, args, context) => {
         return {
           success: totalAdded > 0,
           added: totalAdded,
-          nowPlaying: startedPlaying
+          nowPlaying: startedPlaying,
+          ...(notFound ? { notFound, error: `Could not find "${notFound.title}" by ${notFound.artist}` } : {})
         };
       }
       case 'queue_remove': {
@@ -11141,14 +11145,15 @@ const Parachord = () => {
           // overwrites currentTrack with the real track when it fires;
           // failure paths in the catch block at the bottom of the switch
           // clear the placeholder. Skip for `chat` (doesn't replace
-          // playback) and `import` (writes to library, doesn't play).
-          if (command === 'play' || command === 'listen-along') {
+          // playback), `import` (writes to library, doesn't play) and a plain
+          // parachord://play, which searches first: a link it can't match
+          // must leave the current track playing (#1241).
+          if (command === 'listen-along' || ['album', 'playlist', 'radio'].includes(playKind)) {
             const placeholderTitle =
               command === 'listen-along' ? `Connecting to ${params.user || 'friend'}…` :
               playKind === 'album' ? (params.title || 'Loading album…') :
               playKind === 'playlist' ? (params.title || 'Loading playlist…') :
-              playKind === 'radio' ? (params.name || params.title || 'Loading radio…') :
-              (params.title || 'Loading…');
+              (params.name || params.title || 'Loading radio…');
             const placeholderArtist =
               playKind === 'album' || playKind === 'playlist' || playKind === 'radio' ? '' :
               (params.artist || '');
@@ -11324,31 +11329,30 @@ const Parachord = () => {
 
             // Default: parachord://play?artist=X&title=Y (single-track play)
             if (params.artist && params.title) {
-              // Match album/playlist/radio: tear down spinoff/listen-along
-              // and clear the prior queue so a single-track play replaces
-              // the playback context cleanly instead of injecting one
-              // track into whatever was already going.
-              if (spinoffModeRef.current && exitSpinoffRef.current) {
-                exitSpinoffRef.current();
-              }
-              if (listenAlongFriendRef.current && deactivateListenAlongRef.current) {
-                deactivateListenAlongRef.current();
-              }
-              clearQueue();
               const results = await searchResolvers(`${params.artist} ${params.title}`, {
                 earlyReturn: true,
                 targetArtist: params.artist,
                 targetTitle: params.title
               });
-              if (results && results.length > 0) {
-                const match = results.find(r =>
-                  r.artist?.toLowerCase() === params.artist.toLowerCase() &&
-                  r.title?.toLowerCase() === params.title.toLowerCase()
-                ) || results[0];
+              // Pick before touching anything: a link to a track we can't find
+              // must not wipe the queue or end a listen-along (#1241).
+              const match = pickTrackMatch(results, params.artist, params.title);
+              if (match) {
+                // Match album/playlist/radio: tear down spinoff/listen-along
+                // and clear the prior queue so a single-track play replaces
+                // the playback context cleanly instead of injecting one
+                // track into whatever was already going.
+                if (spinoffModeRef.current && exitSpinoffRef.current) {
+                  exitSpinoffRef.current();
+                }
+                if (listenAlongFriendRef.current && deactivateListenAlongRef.current) {
+                  deactivateListenAlongRef.current();
+                }
+                clearQueue();
                 await handlePlayRef.current(match);
                 showToast(`Playing "${match.title}" by ${match.artist}`);
               } else {
-                showToast(`Could not find "${params.title}" by ${params.artist}`);
+                showToast(`Could not find "${params.title}" by ${params.artist}`, 'error');
               }
             }
             break;
@@ -16623,14 +16627,9 @@ ${trackListXml}
               targetArtist: artist,
               targetTitle: title
             });
-            if (results && results.length > 0) {
-              const match = results.find(r =>
-                r.artist?.toLowerCase() === artist?.toLowerCase() &&
-                r.title?.toLowerCase() === title?.toLowerCase()
-              ) || results[0];
-              if (match?.album) {
-                albumName = match.album;
-              }
+            const match = pickTrackMatch(results, artist, title);
+            if (match?.album) {
+              albumName = match.album;
             }
           } catch (err) {
             // Search failed, continue without album
@@ -17086,12 +17085,11 @@ ${trackListXml}
                             targetArtist: params.artist,
                             targetTitle: params.title
                           });
-                          if (results && results.length > 0) {
-                            const match = results.find(r =>
-                              r.artist?.toLowerCase() === params.artist.toLowerCase() &&
-                              r.title?.toLowerCase() === params.title.toLowerCase()
-                            ) || results[0];
+                          const match = pickTrackMatch(results, params.artist, params.title);
+                          if (match) {
                             await handlePlayRef.current(match);
+                          } else {
+                            showToast(`Could not find "${params.title}" by ${params.artist}`, 'error');
                           }
                         }
                         break;

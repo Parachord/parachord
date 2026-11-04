@@ -10,6 +10,7 @@
  */
 
 const { runPlaybackControl } = require('./playback-control');
+const { pickTrackMatch } = require('../sync-providers/track-match');
 
 /**
  * @typedef {Object} ToolContext
@@ -82,11 +83,15 @@ const playTool = {
       };
     }
 
-    // Find best match (exact artist/title match preferred)
-    const bestMatch = results.find(r =>
-      r.artist?.toLowerCase() === artist.toLowerCase() &&
-      r.title?.toLowerCase() === title.toLowerCase()
-    ) || results[0];
+    // The search can return only other songs, and a result can't be refused
+    // later: handlePlay would compare it with itself (#1241).
+    const bestMatch = pickTrackMatch(results, artist, title);
+    if (!bestMatch) {
+      return {
+        success: false,
+        error: `Could not find "${title}" by ${artist}`
+      };
+    }
 
     // Clear the queue before playing (user expects fresh start when they say "play")
     context.clearQueue();
@@ -306,11 +311,8 @@ const queueAddTool = {
         targetArtist: firstTrack.artist,
         targetTitle: firstTrack.title
       });
-      if (results && results.length > 0) {
-        const match = results.find(r =>
-          r.artist?.toLowerCase() === firstTrack.artist.toLowerCase() &&
-          r.title?.toLowerCase() === firstTrack.title.toLowerCase()
-        ) || results[0];
+      const match = pickTrackMatch(results, firstTrack.artist, firstTrack.title);
+      if (match) {
         await context.playTrack(match);
         startedPlaying = true;
         playedTrack = firstTrack;
