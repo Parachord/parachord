@@ -9,12 +9,15 @@
 //      returns) rejects variants whose `groupId` differs from the anchor's.
 //      With manifest.enableAudioGroups:true (the default), the DASH parser
 //      stamps every stream with its AdaptationSet's id as groupId — and
-//      Amazon puts each codec family in its own AdaptationSet. The set is
-//      therefore ONE family, anchored on the first variant in manifest order
-//      (an opus rung): with group ids present, the ABR candidate set NEVER
-//      contains FLAC, whatever the bandwidth estimate. This is why adaptive
-//      at Max settled on opus 326k while locked plays crossed families fine
-//      (selectVariantTrack crosses adaptation sets directly).
+//      Amazon's stereo rungs ride family-pure AdaptationSets (a set never
+//      mixes codec families; live capture: "three opus plus two FLAC
+//      renditions across five adaptation sets"). The set is therefore ONE
+//      family, anchored on the first variant the criteria filters leave (an
+//      opus rung for Amazon's manifest order): with group ids present, the
+//      ABR candidate set NEVER contains FLAC, whatever the bandwidth
+//      estimate. This is why adaptive at Max settled on opus 326k while
+//      locked plays crossed families fine (selectVariantTrack crosses
+//      adaptation sets directly).
 //   2. With enableAudioGroups:false (what widevine-player configures before
 //      load), DASH assigns no groupId and — on a smooth-codec-switch
 //      platform (SourceBuffer.changeType, present in Electron) — the set
@@ -201,5 +204,90 @@ describe('the ABR manager over the spanning set (tier corridors, real SimpleAbrM
     const firstPick = mgr.chooseVariant(true);
     expect(firstPick.audio.codecs).toBe('flac');
     expect(firstPick.bandwidth).toBe(1902230); // ON the tier rung, not one below
+  });
+});
+
+// The flag, end to end: a real DashParser run over a two-AdaptationSet MPD
+// in Amazon's shape (family-pure sets), feeding the real choice criteria. If
+// a shaka upgrade renames or stops honoring manifest.enableAudioGroups, the
+// parsed streams keep per-set group ids and the first test below fails —
+// forcing a re-read of the new vendor before cross-family adaptive silently
+// regresses.
+const MPD = `<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT10S" minBufferTime="PT2S">
+  <Period id="0" duration="PT10S">
+    <AdaptationSet id="10" contentType="audio" mimeType="audio/mp4" segmentAlignment="true">
+      <Representation id="a1" codecs="opus" bandwidth="53059">
+        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>
+        <SegmentTemplate media="seg$Number$.mp4" initialization="init.mp4" duration="4" timescale="1" startNumber="1"/>
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet id="20" contentType="audio" mimeType="audio/mp4" segmentAlignment="true">
+      <Representation id="b1" codecs="fLaC" bandwidth="1062133">
+        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>
+        <SegmentTemplate media="seg$Number$.mp4" initialization="init.mp4" duration="4" timescale="1" startNumber="1"/>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
+
+async function parseWith(enableAudioGroups) {
+  // Serve the MPD through a scheme plugin — under Node the bundled HttpXHR
+  // plugin has no XMLHttpRequest to ride. Priority 5 + clear replaces it.
+  shaka.net.NetworkingEngine.registerScheme(
+    'http',
+    async (uri) => ({ uri, originalUri: uri, data: new Uint8Array(Buffer.from(MPD, 'utf8')).buffer, headers: {}, timeMs: 10 }),
+    5,
+    true
+  );
+  const cfg = shaka.util.PlayerConfiguration.createDefault();
+  const net = new shaka.net.NetworkingEngine();
+  net.configure(cfg.networking);
+  const parser = new shaka.dash.DashParser();
+  parser.configure({ ...cfg.manifest, enableAudioGroups }, () => cfg.drm);
+  const manifest = await parser.start('http://localhost/test.mpd', {
+    networkingEngine: net,
+    filterManifest: async () => {},
+    makeTextStreamsForClosedCaptions: () => [],
+    onTimelineRegionAdded: () => {},
+    onEvent: () => {},
+    onError: () => {},
+    isLowLatencyMode: () => false,
+    updateDuration: () => {},
+    newDrmInfo: () => {},
+    onManifestUpdated: () => {},
+    getBandwidthEstimate: () => 1e6,
+    onMetadata: () => {}
+  });
+  return { manifest, cfg };
+}
+
+describe('the real DashParser × the choice criteria (manifest.enableAudioGroups, end to end)', () => {
+  test('enableAudioGroups:true (the default): per-set group ids — the ABR set is one family (the #1243 bug shape)', async () => {
+    const { manifest, cfg } = await parseWith(true);
+    expect(manifest.variants.map((v) => v.audio.groupId)).toEqual(['10', '20']);
+    const crit = cfg.adaptationSetCriteriaFactory();
+    crit.configure({
+      language: '', role: '', videoRole: '', channelCount: 0, hdrLevel: 'AUTO', spatialAudio: false,
+      videoLayout: '', audioLabel: '', videoLabel: '', codecSwitchingStrategy: cfg.mediaSource.codecSwitchingStrategy,
+      audioCodec: '', activeAudioCodec: '', activeAudioChannelCount: 0,
+      preferredAudioCodecs: [], preferredAudioChannelCount: 2
+    });
+    const set = Array.from(crit.create(manifest.variants).values());
+    expect(set.map((v) => v.audio.codecs)).toEqual(['opus']); // FLAC walled off by groupId
+  });
+
+  test('enableAudioGroups:false (what widevine-player configures): no group ids — the set spans families', async () => {
+    const { manifest, cfg } = await parseWith(false);
+    expect(manifest.variants.map((v) => v.audio.groupId)).toEqual([null, null]);
+    const crit = cfg.adaptationSetCriteriaFactory();
+    crit.configure({
+      language: '', role: '', videoRole: '', channelCount: 0, hdrLevel: 'AUTO', spatialAudio: false,
+      videoLayout: '', audioLabel: '', videoLabel: '', codecSwitchingStrategy: cfg.mediaSource.codecSwitchingStrategy,
+      audioCodec: '', activeAudioCodec: '', activeAudioChannelCount: 0,
+      preferredAudioCodecs: [], preferredAudioChannelCount: 2
+    });
+    const set = Array.from(crit.create(manifest.variants).values());
+    expect(set.map((v) => v.audio.codecs).sort()).toEqual(['fLaC', 'opus']);
   });
 });

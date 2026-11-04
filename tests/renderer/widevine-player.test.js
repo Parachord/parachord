@@ -72,6 +72,13 @@ function makeShaka({ loadGate } = {}) {
       // never syncs that field back out — a load-time list narrows the ABR
       // candidate set forever, even after applyConfig re-sends [].
       this.criteriaPreferredCodecs = pref || [];
+      // Model the vendor's fresh-load criteria adoption (Zo/p.load case 20:
+      // every player.load() installs the fresh PreloadManager's fresh, WIDE
+      // criteria): a new load clears whatever the previous track's manual
+      // selections narrowed the choice criteria to (criteriaCodec/
+      // criteriaChannels, set by selectVariantTrack below).
+      this.criteriaCodec = null;
+      this.criteriaChannels = null;
       if (this.loadGate) await this.loadGate; // test hook: pause mid-load
       this.loadedUris.push(uri);
       if (this.loadRejection) throw this.loadRejection;
@@ -538,6 +545,38 @@ describe('applyConfig shaping', () => {
     el.store.__values.playback_quality = 'max'; // target family flac ≠ active opus
     await player.applyQuality();
     expect(p.selected).toBeNull(); // no re-anchor — the manager owns the choice
+    expect(p.getAbrSet().map((t) => t.codecs)).toEqual(expect.arrayContaining(['opus', 'flac']));
+  });
+
+  test('the per-play reset: after a locked play, the NEXT play stays repair-free (jest.resetModules is not what resets it)', async () => {
+    // A locked play narrows the criteria and sets the flag; a fresh play()
+    // resets it right after load succeeds (the fresh load adopted a wide
+    // criteria). Without that reset, every adaptive play after any locked
+    // one would fire the re-anchor and confine the track to the tier's top
+    // family regardless of estimate — the exact behavior the flag gates.
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'high', playback_abr: false } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('opus'); // the locked pick set the flag
+    expect(player.getState().criteriaNarrowed).toBe(true);
+    // Second play on the SAME engine/module instance (no resetModules in
+    // between): adaptive max.
+    el.store.__values.playback_abr = true;
+    el.store.__values.playback_quality = 'max';
+    await player.stop();
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    expect(player.getState().criteriaNarrowed).toBe(false);
+    // Model the vendor's fresh load: no manual selection, no active rung —
+    // then the manager's own pick marks an opus rung active (low estimate).
+    p.selected = null;
+    for (const v of p.variantTracks) v.active = false;
+    const opusRung = p.variantTracks.find((t) => t.codecs === 'opus');
+    opusRung.active = true;
+    await player.applyQuality();
+    expect(p.selected).toBeNull();
     expect(p.getAbrSet().map((t) => t.codecs)).toEqual(expect.arrayContaining(['opus', 'flac']));
   });
 

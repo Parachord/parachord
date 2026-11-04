@@ -350,6 +350,10 @@ function applyConfig(config) {
   player.configure({ abr: { enabled: false, restrictions: { maxBandwidth: Infinity } }, preferredAudioCodecs: [] });
   const target = configTargetTrack();
   if (target) {
+    // Set before the try: the vendor configures the criteria BEFORE the
+    // switch, so even a throwing selection may leave the criteria narrowed —
+    // a spuriously-true flag costs one redundant best-effort re-anchor, a
+    // missed one re-confines ABR to the wrong family.
     criteriaNarrowed = true;
     try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
   }
@@ -557,6 +561,15 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     URL.revokeObjectURL(uri);
   }
   if (playToken !== mine) throw supersededError();
+  // The fresh load just adopted a fresh, WIDE choice criteria (the vendor
+  // creates one per parse and player.load installs it) — whatever a previous
+  // track's selections narrowed is gone. Reset the flag HERE, before the
+  // post-load awaits below: a settings-toggle applyQuality() landing in that
+  // window passes its guards and would otherwise run adaptive config against
+  // the PREVIOUS track's stale flag — firing the re-anchor on a fresh, wide
+  // criteria and confining the new track to the tier's top family even on a
+  // weak link, exactly what the flag's gate exists to prevent.
+  criteriaNarrowed = false;
   bindElementEvents(audio);
   const kidGroupsByFamily = {};
   for (const group of (result.protectionSets || [])) {
@@ -598,11 +611,6 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     err.reason = 'playback-failed';
     throw err;
   }
-  // The fresh load adopted a fresh, WIDE choice criteria (the vendor creates
-  // one per parse and player.load installs it) — whatever a previous track's
-  // selections narrowed is gone. The ABR path's re-anchor decision starts
-  // from clean state for this track.
-  criteriaNarrowed = false;
   applyConfig(config);
   // The token lets callers make teardown CONDITIONAL on not having moved on
   // (review: a stale stop() after the generation advanced must not cancel the
@@ -638,6 +646,9 @@ async function stop({ token } = {}) {
   trackSession = null;
   activeResolverId = null;
   lastError = null;
+  // Nothing is playing — the criteria state is stale either way, and a
+  // truthful getState() diagnostic is worth the reset.
+  criteriaNarrowed = false;
   clearAudible();
   if (player) {
     try { await player.unload(); } catch { /* already unloaded */ }
