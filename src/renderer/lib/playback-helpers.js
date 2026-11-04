@@ -73,10 +73,35 @@ async function savedPluginConfig(resolverId, inMemory, readStored) {
   }
 }
 
+// The resolvers a sources object can actually play. It also holds two things
+// that are not sources: `{ noMatch: true }` sentinels (asked, found nothing) and
+// the UI's `__noMatchAll: true` marker (every resolver said so, gray the row),
+// which reaches handlePlay because rows pass trackSources[id] as track.sources.
+// Counting the marker as a source skipped the on-demand resolve and ended at
+// "No Enabled Source".
+function playableSourceIds(sources) {
+  return Object.keys(sources || {}).filter((id) => {
+    const source = sources[id];
+    return !!source && typeof source === 'object' && !source.noMatch;
+  });
+}
+
+// Whether the background re-check of a cached entry found something new. Only
+// real sources count on either side: a sentinel holds the resolver's id, so
+// comparing raw keys read `{ a: noMatch }` against a fresh `{ a: real }` as
+// unchanged, kept the sentinel and refreshed its timestamp, and a track rejected
+// under older scoring rules stayed that way for as long as it kept being viewed.
+function sourcesChangedOnRecheck(cachedSources, freshSources) {
+  const ids = (sources) => JSON.stringify(playableSourceIds(sources).sort());
+  return ids(cachedSources) !== ids(freshSources);
+}
+
 module.exports = {
   unsupportedAudioMessage,
   dropSubsonicSecrets,
   playbackDurationSeconds,
   compareCandidateSources,
+  playableSourceIds,
+  sourcesChangedOnRecheck,
   savedPluginConfig,
 };
