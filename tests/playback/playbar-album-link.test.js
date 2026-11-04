@@ -23,12 +23,21 @@ function extract(startMarker, endMarker) {
 const { normalizeStr } = require('../../sync-providers/confidence-scoring');
 const helpersSrc = extract('window.pickAlbumNameForTrack = ', '// Coalesce bursts of per-key state writes');
 const win = {};
-new Function('window', 'normalizeStr', helpersSrc)(win, normalizeStr);
+const { isPlaceholderAlbum } = require('../../src/renderer/lib/collection-ids');
+new Function('window', 'normalizeStr', 'isPlaceholderAlbum', helpersSrc)(win, normalizeStr, isPlaceholderAlbum);
 const { pickAlbumNameForTrack, pickReleaseGroupForAlbum } = win;
 
 describe('pickAlbumNameForTrack', () => {
   test('uses the track\'s own album first', () => {
     expect(pickAlbumNameForTrack({ album: ' OK Computer ', sources: { spotify: { album: 'Other' } } })).toBe('OK Computer');
+  });
+  test('a placeholder on the track itself doesn\'t count, so the sources get their turn', () => {
+    expect(pickAlbumNameForTrack({ album: 'Single', sources: { spotify: { album: 'In Rainbows' } } })).toBe('In Rainbows');
+    expect(pickAlbumNameForTrack({ album: 'SoundCloud', sources: { soundcloud: {}, spotify: { album: 'In Rainbows' } } })).toBe('In Rainbows');
+    expect(pickAlbumNameForTrack({ album: 'Single', sources: {} })).toBe('');
+  });
+  test('a real album named like a service still counts when the track has no such source', () => {
+    expect(pickAlbumNameForTrack({ album: 'YouTube', sources: { spotify: {} } })).toBe('YouTube');
   });
   test('falls back to a resolved source\'s album, skipping Apple\'s "Single" filler and noMatch slots', () => {
     expect(pickAlbumNameForTrack({ album: '', sources: { applemusic: { album: 'Single' }, spotify: { album: 'In Rainbows' } } })).toBe('In Rainbows');
