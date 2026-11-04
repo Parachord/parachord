@@ -32,7 +32,7 @@ module.exports = {
         id: 'bandcamp-' + (r.id || url),
         title: r.name,
         artist: r.band_name || 'Unknown Artist',
-        album: r.album_name || 'Single',
+        album: r.album_name || '',
         duration: 210,
         sources: ['bandcamp'],
         bandcampUrl: url,

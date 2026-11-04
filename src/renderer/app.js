@@ -193,18 +193,18 @@ window.iTunesRateLimiter = (() => {
 // Album name for a track that may have none on its own record (tracks played
 // from search, chat cards, playlists, radio and Last.fm top tracks often
 // arrive with album ''): the track's field, else any resolved source's album
-// (Apple Music's web search fills 'Single' when it has nothing; skip that),
+// (a placeholder like 'Single' or the service's own name doesn't count),
 // else the mapper's canonical release name. Pure; used by the playbar's
 // album-art click so it always has something to open.
 window.pickAlbumNameForTrack = (track, mapperResult) => {
   const clean = (s) => (typeof s === 'string' ? s.trim() : '');
   if (!track) return '';
   const own = clean(track.album);
-  if (own) return own;
+  if (own && !isPlaceholderAlbum(own, track.sources)) return own;
   const sources = track.sources && typeof track.sources === 'object' ? Object.values(track.sources) : [];
   for (const s of sources) {
     const a = clean(s && s.album);
-    if (a && a.toLowerCase() !== 'single' && !s.noMatch) return a;
+    if (a && !isPlaceholderAlbum(a, track.sources) && !s.noMatch) return a;
   }
   return clean(mapperResult && mapperResult.release_name);
 };
@@ -877,7 +877,7 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
     id: 'applemusic-' + track.trackId,
     title: track.trackName,
     artist: track.artistName,
-    album: track.collectionName || 'Single',
+    album: track.collectionName || '',
     duration: Math.floor((track.trackTimeMillis || 0) / 1000),
     sources: ['applemusic'],
     appleMusicId: String(track.trackId),
@@ -919,7 +919,7 @@ window.appleMusicLookupSong = async (songId, storefront = 'us') => {
             id: 'applemusic-' + song.id,
             title: song.attributes.name,
             artist: song.attributes.artistName,
-            album: song.attributes.albumName || 'Single',
+            album: song.attributes.albumName || '',
             duration: Math.floor((song.attributes.durationInMillis || 0) / 1000),
             sources: ['applemusic'],
             appleMusicId: String(song.id),
@@ -946,7 +946,7 @@ window.appleMusicLookupSong = async (songId, storefront = 'us') => {
     id: 'applemusic-' + track.trackId,
     title: track.trackName,
     artist: track.artistName,
-    album: track.collectionName || 'Single',
+    album: track.collectionName || '',
     duration: Math.floor((track.trackTimeMillis || 0) / 1000),
     sources: ['applemusic'],
     appleMusicId: String(track.trackId),
@@ -1185,7 +1185,7 @@ window.isMusicKitAvailable = () => {
 
 // Collection track/album/artist ids (must match sync-providers/spotify.js);
 // in lib/collection-ids.js so the extracted page modules can share them.
-const { normalizeForId, generateTrackId, generateAlbumId, generateArtistId } = require('./lib/collection-ids');
+const { normalizeForId, generateTrackId, generateAlbumId, generateArtistId, isPlaceholderAlbum, findSavedTrack, clearPlaceholderAlbums } = require('./lib/collection-ids');
 
 // Generate a unique hash from a string (for deterministic pattern generation)
 // Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
@@ -6008,19 +6008,22 @@ const Parachord = () => {
   const [cacheLoaded, setCacheLoaded] = useState(false);
 
   // Global stream playback quality (Widevine/DASH resolvers: Amazon Music
-  // today). Store keys playback_quality/playback_abr drive lib/widevine-player's
-  // variant selection; changes apply live to the current stream.
+  // today). Store keys playback_quality/playback_abr/playback_spatial drive
+  // lib/widevine-player's variant selection; changes apply live to the
+  // current stream. playback_spatial is the Dolby-Atmos opt-in (E-AC-3 JOC).
   const [playbackQuality, setPlaybackQuality] = useState('max');
   const [playbackAbr, setPlaybackAbr] = useState(true);
+  const [playbackSpatial, setPlaybackSpatial] = useState(false);
   // qualityLoaded gates the persist effect below — otherwise the writer
   // fires on mount with defaults before the read returns (review #5 M6).
   const [qualityLoaded, setQualityLoaded] = useState(false);
   useEffect(() => {
     if (!cacheLoaded || !window.electron?.store) return;
     (async () => {
-      const [q, a] = await Promise.all([
+      const [q, a, s] = await Promise.all([
         window.electron.store.get('playback_quality').catch(() => null),
-        window.electron.store.get('playback_abr').catch(() => null)
+        window.electron.store.get('playback_abr').catch(() => null),
+        window.electron.store.get('playback_spatial').catch(() => null)
       ]);
       // Normalized: stored values can predate the corridor vocabulary
       // ('balanced', 'STANDARD') and the select must show a matching tier.
@@ -6029,6 +6032,7 @@ const Parachord = () => {
         : null;
       if (normalized) setPlaybackQuality(normalized);
       if (typeof a === 'boolean') setPlaybackAbr(a);
+      if (typeof s === 'boolean') setPlaybackSpatial(s);
       setQualityLoaded(true);
     })();
   }, [cacheLoaded]);
@@ -6039,13 +6043,14 @@ const Parachord = () => {
     (async () => {
       await Promise.all([
         window.electron.store.set('playback_quality', playbackQuality),
-        window.electron.store.set('playback_abr', playbackAbr)
+        window.electron.store.set('playback_abr', playbackAbr),
+        window.electron.store.set('playback_spatial', playbackSpatial)
       ]);
       if (window.__parachordWidevine && typeof window.__parachordWidevine.applyQuality === 'function') {
         window.__parachordWidevine.applyQuality();
       }
     })();
-  }, [playbackQuality, playbackAbr, cacheLoaded, qualityLoaded]);
+  }, [playbackQuality, playbackAbr, playbackSpatial, cacheLoaded, qualityLoaded]);
 
   // Playback-queue state domain — extracted to src/renderer/hooks/use-playback-queue
   // (Track 2b slice 2, parachord#1098). The destructured names are identical
@@ -6381,13 +6386,17 @@ const Parachord = () => {
 
   // Convert raw track metadata to a proper track object with sources
   const createTrackFromMeta = (trackMeta, resolverId, sourceUrl = null) => {
-    const trackId = `${trackMeta.artist}-${trackMeta.title}-${trackMeta.album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    // No album is no album: a placeholder would reach scrobbles and art and
+    // album lookups as if it were real. The id keeps its 'Single' so it stays
+    // the same as for tracks opened before this.
+    const album = isPlaceholderAlbum(trackMeta.album, [resolverId]) ? '' : trackMeta.album;
+    const trackId = `${trackMeta.artist}-${trackMeta.title}-${album || 'Single'}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
     const track = {
       id: trackId,
       status: 'ready',
       title: trackMeta.title,
       artist: trackMeta.artist,
-      album: trackMeta.album || 'Single',
+      album,
       duration: trackMeta.duration || 180,
       albumArt: trackMeta.albumArt,
       sourceUrl: sourceUrl,
@@ -12547,11 +12556,13 @@ ${trackListXml}
             return item;
           };
 
-          const migratedTracks = (cleanedCount > 0 ? cleanedTracks : data.tracks || []).map(migrateItem);
+          // Placeholder albums saved by older versions. Ids stay as they are.
+          const { tracks: albumCleanedTracks, changed: clearedAlbumCount } = clearPlaceholderAlbums(cleanedCount > 0 ? cleanedTracks : data.tracks || []);
+          const migratedTracks = albumCleanedTracks.map(migrateItem);
           const migratedAlbums = (data.albums || []).map(migrateItem);
           const migratedArtists = (data.artists || []).map(migrateItem);
 
-          const needsSave = cleanedCount > 0 || migratedCount > 0;
+          const needsSave = cleanedCount > 0 || migratedCount > 0 || clearedAlbumCount > 0;
           const finalData = {
             ...data,  // Preserve any additional fields (e.g., version, lastModified, metadata)
             tracks: migratedTracks,
@@ -12564,6 +12575,9 @@ ${trackListXml}
           }
           if (migratedCount > 0) {
             console.log(`Migrated ${migratedCount} collection items to include syncSources`);
+          }
+          if (clearedAlbumCount > 0) {
+            console.log(`Cleared placeholder albums on ${clearedAlbumCount} collection tracks`);
           }
 
           console.log(`[Collection] Loaded: ${finalData.tracks?.length || 0} tracks, ${finalData.albums?.length || 0} albums, ${finalData.artists?.length || 0} artists`);
@@ -13706,7 +13720,7 @@ ${trackListXml}
 
     setCollectionData(prev => {
       // Check for duplicate
-      if (prev.tracks.some(t => t.id === trackId)) {
+      if (findSavedTrack(prev.tracks, track)) {
         showToast(`${track.title} is already in your collection`);
         return prev;
       }
@@ -13975,6 +13989,14 @@ ${trackListXml}
         const generatedId = generateTrackId(track.artist, track.title, track.album);
         existingIndex = prev.tracks.findIndex(t => t.id === generatedId);
         matchId = generatedId;
+      }
+      // A row saved with a placeholder album matches on artist and title.
+      if (existingIndex === -1) {
+        const saved = findSavedTrack(prev.tracks, track);
+        if (saved) {
+          existingIndex = prev.tracks.indexOf(saved);
+          matchId = saved.id;
+        }
       }
       if (existingIndex === -1) {
         showToast(`${track.title} is not in your collection`);
@@ -14538,7 +14560,7 @@ ${trackListXml}
       tracks.forEach(track => {
         const trackId = generateTrackId(track.artist, track.title, track.album);
 
-        if (!newTracks.some(t => t.id === trackId)) {
+        if (!findSavedTrack(newTracks, track)) {
           newTracks.push({
             id: trackId,
             title: track.title,
@@ -42384,7 +42406,7 @@ useEffect(() => {
                     }, 'Playback Quality'),
                     React.createElement('p', {
                       style: { fontSize: '12px', color: 'var(--text-secondary)' }
-                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/immersive-only variants are never selected.')
+                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/Atmos rungs need the preference below.')
                   ),
                   React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '10px', gap: '12px' } },
                     React.createElement('div', null,
@@ -42428,6 +42450,33 @@ useEffect(() => {
                     },
                       React.createElement('option', { value: 'on' }, 'On'),
                       React.createElement('option', { value: 'off' }, 'Off')
+                    )
+                  ),
+                  React.createElement('div', {
+                    className: 'flex items-center justify-between',
+                    style: { marginTop: '10px', gap: '12px' }
+                  },
+                    React.createElement('div', null,
+                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Prefer Dolby Atmos mixes'),
+                      React.createElement('p', {
+                        style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                      }, 'Plays the 5.1 core of a track’s Atmos mix when available. This isn’t full Atmos: it’s mixed down on stereo output, and it replaces lossless FLAC at the Max tier.')
+                    ),
+                    React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer flex-shrink-0' },
+                      React.createElement('input', {
+                        type: 'checkbox',
+                        checked: playbackSpatial === true,
+                        onChange: (e) => setPlaybackSpatial(e.target.checked),
+                        className: 'sr-only peer'
+                      }),
+                      React.createElement('div', {
+                        className: 'w-full h-full rounded-full transition-colors',
+                        style: { backgroundColor: playbackSpatial === true ? 'var(--accent-primary)' : 'rgba(0, 0, 0, 0.15)' }
+                      }),
+                      React.createElement('div', {
+                        className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                        style: { transform: playbackSpatial === true ? 'translateX(20px)' : 'translateX(0)' }
+                      })
                     )
                   )
                 ),
@@ -43768,7 +43817,7 @@ useEffect(() => {
           currentTrack && !trackLoading ? [
             React.createElement(Tooltip, {
               key: 'album-art-tooltip',
-              content: currentTrack.album ? `View "${currentTrack.album}" · Drag to add to playlist` : 'Drag to add to playlist',
+              content: window.pickAlbumNameForTrack(currentTrack, null) ? `View "${window.pickAlbumNameForTrack(currentTrack, null)}" · Drag to add to playlist` : 'Drag to add to playlist',
               position: 'top',
               variant: 'dark'
             },
@@ -43854,8 +43903,7 @@ useEffect(() => {
               onContextMenu: (e) => {
                 e.preventDefault();
                 if (window.electron?.contextMenu?.showTrackMenu) {
-                  const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
-                  const isInCollection = collectionData.tracks.some(t => t.id === trackId || (currentTrack.id && t.id === currentTrack.id));
+                  const isInCollection = !!findSavedTrack(collectionData.tracks, currentTrack);
                   window.electron.contextMenu.showTrackMenu({
                     type: 'track',
                     track: currentTrack,
@@ -44330,8 +44378,7 @@ useEffect(() => {
           // Heart/favorite button
           (() => {
             if (!currentTrack) return null;
-            const trackId = generateTrackId(currentTrack.artist, currentTrack.title, currentTrack.album);
-            const isInCollection = collectionData.tracks.some(t => t.id === trackId || (currentTrack.id && t.id === currentTrack.id));
+            const isInCollection = !!findSavedTrack(collectionData.tracks, currentTrack);
             return React.createElement(Tooltip, {
               content: isInCollection ? 'Remove from collection' : 'Save to collection',
               position: 'top',
@@ -48648,8 +48695,10 @@ useEffect(() => {
                           setIsPlaying(false);
                         }
                       }
-                      // Prime-plan HD block is account-scoped. The next
-                      // sign-in may be an HD account; don't keep FLAC off.
+                      // Plan blocks are account-scoped (the FLAC/HD and
+                      // spatial/ec-3 KID-group latches). The next sign-in may
+                      // be an account that clears either; don't keep the
+                      // refused families off.
                       if (window.__parachordWidevine && typeof window.__parachordWidevine.clearPlanBlocks === 'function') {
                         window.__parachordWidevine.clearPlanBlocks();
                       }

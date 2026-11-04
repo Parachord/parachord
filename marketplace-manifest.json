@@ -31,7 +31,7 @@
     {
       "id": "bandcamp",
       "name": "Bandcamp",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "author": "Parachord Team",
       "description": "Find and purchase music on Bandcamp. Opens tracks in browser for streaming.",
       "icon": "🎸",
@@ -116,7 +116,7 @@
     {
       "id": "applemusic",
       "name": "Apple Music",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "author": "Parachord Team",
       "description": "Stream music via Apple Music with MusicKit. Requires Apple Music subscription and MusicKit developer token.",
       "icon": "🍎",
