@@ -8,7 +8,10 @@
     "icon": "🎥",
     "color": "#FF0000",
     "homepage": "https://youtube.com",
-    "email": "support@parachord.com"
+    "email": "support@parachord.com",
+    "minAppVersion": {
+      "desktop": "0.9.13"
+    }
   },
   "capabilities": {
     "resolve": true,

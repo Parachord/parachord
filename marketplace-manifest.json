@@ -85,7 +85,10 @@
         "indie",
         "soundcloud",
         "oauth"
-      ]
+      ],
+      "minAppVersion": {
+        "desktop": "0.9.13"
+      }
     },
     {
       "id": "youtube",
@@ -111,7 +114,10 @@
         "free",
         "video",
         "youtube"
-      ]
+      ],
+      "minAppVersion": {
+        "desktop": "0.9.13"
+      }
     },
     {
       "id": "applemusic",

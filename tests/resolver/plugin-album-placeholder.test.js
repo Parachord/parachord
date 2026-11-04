@@ -83,3 +83,14 @@ describe('YouTube with no album', () => {
     expect(track.album).toBeUndefined();
   });
 });
+
+describe('apps older than the fix keep the old plugins', () => {
+  // Without an album these tracks hit the desktop's old handling: "Single" as
+  // the album, and a saved track that stops matching (#1237). That's fixed in
+  // 0.9.13, so 0.9.12 stays on the copies it has. The floor is per platform, so
+  // mobile still gets them.
+  test.each([['soundcloud'], ['youtube']])('%s needs the desktop release with the fix', (id) => {
+    const { manifest } = JSON.parse(fs.readFileSync(path.join(PLUGINS_SRC, id, 'manifest.json'), 'utf8'));
+    expect(manifest.minAppVersion).toEqual({ desktop: '0.9.13' });
+  });
+});
