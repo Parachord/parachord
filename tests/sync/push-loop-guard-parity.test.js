@@ -21,10 +21,6 @@
  *   wizard's manual sync is exempt from cancel-on-focus by design (sync.md
  *   "Wizard sync is exempt" — the user is engaged with the wizard; the sync
  *   runs to completion).
- * - The background loop's post-save `setPlaylists` merges in-memory hosted
- *   playlists (`hostedOnly`); the wizard loop's is a plain replace. Found
- *   while writing this test — reported on #1223 as a candidate divergence
- *   bug for its own PR, so it is deliberately NOT asserted here yet.
  */
 
 const fs = require('fs');
@@ -133,6 +129,13 @@ const PARITY_GUARDS = [
       'sync.pushPlaylist(',
       'resolveTracks',
       { text: 'syncedAt: Date.now()', min: 2 },
+    ],
+  },
+  {
+    name: 'post-save setPlaylists preserves in-memory hosted playlists (hostedOnly merge)',
+    markers: [
+      'const hostedOnly = prev.filter(p => p.sourceUrl && !diskIds.has(p.id));',
+      'return [...allPlaylists, ...hostedOnly];',
     ],
   },
   {
