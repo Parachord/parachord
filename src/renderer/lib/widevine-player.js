@@ -350,10 +350,11 @@ function applyConfig(config) {
   player.configure({ abr: { enabled: false, restrictions: { maxBandwidth: Infinity } }, preferredAudioCodecs: [] });
   const target = configTargetTrack();
   if (target) {
-    // Set before the try: the vendor configures the criteria BEFORE the
-    // switch, so even a throwing selection may leave the criteria narrowed —
-    // a spuriously-true flag costs one redundant best-effort re-anchor, a
-    // missed one re-confines ABR to the wrong family.
+    // Set before the try, conservatively: 4.16.55's selectVariantTrack runs
+    // the switch FIRST and the criteria configure second, so a throw can land
+    // on either side of the narrowing — a spuriously-true flag costs one
+    // redundant best-effort re-anchor, a missed one re-confines ABR to the
+    // wrong family.
     criteriaNarrowed = true;
     try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
   }
