@@ -1962,6 +1962,7 @@ const { ArtistPage } = require('./components/artist-page');
 const { SearchPage } = require('./components/search-page');
 const { useStableHandlers } = require('./lib/stable-handlers');
 const { runPlaybackControl } = require('../../tools/playback-control');
+const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
 
 
 
@@ -7106,7 +7107,9 @@ const Parachord = () => {
     const resolver = findLoadedResolver(id);
     if (!resolver?.capabilities?.embedPlayer) return null;
     const kind = resolver.embedPlayer?.adapter;
-    return typeof kind === 'string' && kind ? kind : null;
+    // A plugin can name an adapter this build doesn't have (a newer plugin in an
+    // older app): it isn't an embedded player here, and its play() still works.
+    return typeof kind === 'string' && EMBED_PLAYER_KINDS.includes(kind) ? kind : null;
   };
   // Audio Parachord plays itself, through either path (volume support, the
   // Spotify poll skip).
@@ -9929,57 +9932,6 @@ const Parachord = () => {
     window.electron.extension.getStatus().then(status => {
       setExtensionConnected(status.connected);
     });
-
-    // Playback window event handlers (for Bandcamp embedded player, etc.)
-    if (window.electron?.playbackWindow?.onEvent) {
-      window.electron.playbackWindow.onEvent((eventType) => {
-        // Ignore playback window events when local file is playing
-        if (audioRef.current && !audioRef.current.paused) {
-          console.log(`🎵 Playback window event: ${eventType} (ignored - local file playing)`);
-          return;
-        }
-        console.log(`🎵 Playback window event: ${eventType}`);
-        switch (eventType) {
-          case 'playing':
-            setIsPlaying(true);
-            setBrowserPlaybackActive(true);
-            setIsExternalPlayback(true);
-            // Clear the waiting flag - playback window is now connected and playing
-            if (waitingForBrowserPlaybackRef.current) {
-              console.log('✅ Playback window playing, clearing wait flag');
-              waitingForBrowserPlaybackRef.current = false;
-            }
-            break;
-          case 'paused':
-            setIsPlaying(false);
-            break;
-          case 'ended':
-            console.log('🎵 Playback window track ended, advancing to next');
-            setBrowserPlaybackActive(false);
-            // Clear the waiting flag - browser track has ended, we're no longer waiting for it to connect
-            waitingForBrowserPlaybackRef.current = false;
-            // Use ref to avoid stale closure in useEffect
-            if (handleNextRef.current) handleNextRef.current();
-            break;
-        }
-      });
-    }
-
-    if (window.electron?.playbackWindow?.onClosed) {
-      window.electron.playbackWindow.onClosed(() => {
-        // Ignore when local file is playing
-        if (audioRef.current && !audioRef.current.paused) {
-          console.log('🎵 Playback window closed (ignored - local file playing)');
-          return;
-        }
-        console.log('🎵 Playback window closed');
-        setBrowserPlaybackActive(false);
-        // Clear the waiting flag - browser window is closed, we're no longer waiting for it
-        waitingForBrowserPlaybackRef.current = false;
-        // Don't auto-advance, just stop playback
-        setIsPlaying(false);
-      });
-    }
   }, []);
 
   // Embedded player event handlers
@@ -15461,12 +15413,6 @@ ${trackListXml}
       setBrowserPlaybackActive(false);
     }
 
-    // Close previous playback window if one is active (for Bandcamp, etc.)
-    if (window.electron?.playbackWindow?.close) {
-      console.log('🔄 Closing previous playback window');
-      await window.electron.playbackWindow.close();
-    }
-
     try {
       // Mark that we're waiting for browser to connect - prevents premature handleNext() calls
       waitingForBrowserPlaybackRef.current = true;
@@ -15481,23 +15427,9 @@ ${trackListXml}
         }
       }, 10000);
 
-      // Use the embedded playback window for Bandcamp tracks (loads the page and auto-plays)
-      const bandcampUrl = track.bandcampUrl || track.sources?.bandcamp?.bandcampUrl;
-      if (resolverId === 'bandcamp' && bandcampUrl && window.electron?.playbackWindow?.open) {
-        // Pass pre-resolved IDs so main process can build embed URL instantly
-        const bcOpts = {};
-        const trackId = track.bandcampTrackId || track.sources?.bandcamp?.bandcampTrackId;
-        const albumId = track.bandcampAlbumId || track.sources?.bandcamp?.bandcampAlbumId;
-        if (trackId) bcOpts.bandcampTrackId = trackId;
-        if (albumId) bcOpts.bandcampAlbumId = albumId;
-        await window.electron.playbackWindow.open(bandcampUrl, bcOpts);
-        console.log(`🎸 Opened ${track.title} in playback window via Bandcamp`);
-      } else {
-        // Fall back to resolver's play() for other external resolvers (YouTube, etc.)
-        const config = await getResolverConfig(resolverId);
-        await resolver.play(track, config);
-        console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
-      }
+      const config = await getResolverConfig(resolverId);
+      await resolver.play(track, config);
+      console.log(`🌐 Opened ${track.title} in browser via ${resolver.name}`);
 
       // NOTE: Do NOT clear safety timeout here - it should only expire if the
       // playback window never fires a 'playing' event. The 'playing' event
@@ -42544,7 +42476,7 @@ useEffect(() => {
                       .filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id))
                       .map(resolver => {
                         // Resolvers where in-app volume control is not available
-                        const isVolumeDisabled = !resolver.capabilities?.stream || resolver.id === 'applemusic';
+                        const isVolumeDisabled = (!resolver.capabilities?.stream && !resolver.capabilities?.embedPlayer) || resolver.id === 'applemusic';
                         const disabledReason = resolver.id === 'applemusic' ? 'System vol' : 'Browser';
                         const offset = resolverVolumeOffsets[resolver.id] || 0;
 

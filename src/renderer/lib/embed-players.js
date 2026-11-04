@@ -5,13 +5,14 @@
 // adapter in a top-level `"embedPlayer": { "adapter": "<name>" }` block (not
 // in `capabilities`: Android and iOS decode capability values as booleans,
 // and a string there makes them drop the whole plugin). The host routes by
-// that capability (never by resolver id), so a second service is one adapter
+// that capability (never by resolver id), so another service is one adapter
 // here plus those manifest lines. Adapters are host code on purpose:
 // each speaks its service's player protocol itself, so no third-party script
 // runs in the main renderer beside window.electron.
 //
 // An adapter's player exposes:
-//   load(link, handlers) → Promise   resolves once playback has advanced;
+//   load(link, handlers, source) → Promise
+//                                    resolves once playback has advanced;
 //                                    rejects with reason 'unplayable' (the
 //                                    service won't play it here) or
 //                                    'superseded'
@@ -23,18 +24,25 @@
 // handlers: onProgress(seconds), onDuration(seconds), onPlay(), onPause(),
 // onFinish().
 //
-// linkFor(source) picks the link the adapter loads from a resolver's source
-// record. Players are created on first use (this module loads under plain
+// linkFor(source) picks the link from a resolver's source record: the track's
+// page on the service, which is also what "Open in <service>" opens. An adapter
+// that needs more than the link to load a track reads it from `source`.
+// Players are created on first use (this module loads under plain
 // Node, where there is no document).
 
 'use strict';
 
 const { createSoundCloudWidgetPlayer } = require('./soundcloud-widget-player');
+const { createBandcampEmbedPlayer } = require('./bandcamp-embed-player');
 
 const ADAPTERS = {
   'soundcloud-widget': {
     create: () => createSoundCloudWidgetPlayer(),
     linkFor: (source) => (source && source.soundcloudUrl) || null
+  },
+  'bandcamp-embed': {
+    create: () => createBandcampEmbedPlayer(),
+    linkFor: (source) => (source && source.bandcampUrl) || null
   }
 };
 

@@ -477,20 +477,14 @@ contextBridge.exposeInMainWorld('electron', {
     list: () => ipcRenderer.invoke('sync:tombstones:list')
   },
 
-  // Playback window operations (for Bandcamp, etc. with autoplay)
-  playbackWindow: {
-    open: (url, options) => ipcRenderer.invoke('open-playback-window', url, options),
-    close: () => ipcRenderer.invoke('close-playback-window'),
-    toggle: () => ipcRenderer.invoke('playback-window-toggle'),
-    onClosed: (callback) => {
-      ipcRenderer.on('playback-window-closed', () => {
-        callback();
-      });
-    },
-    onEvent: (callback) => {
-      ipcRenderer.on('playback-window-event', (event, eventType) => {
-        callback(eventType);
-      });
+  // Bandcamp's hidden embed, driven from main (main-process/ipc/bandcamp-embed.js)
+  bandcampEmbed: {
+    prepare: (source) => ipcRenderer.invoke('bandcamp-embed:prepare', source),
+    start: (args) => ipcRenderer.invoke('bandcamp-embed:start', args),
+    command: (args) => ipcRenderer.invoke('bandcamp-embed:command', args),
+    stop: (args) => ipcRenderer.invoke('bandcamp-embed:stop', args),
+    onState: (callback) => {
+      ipcRenderer.on('bandcamp-embed:state', (event, state) => callback(state));
     }
   },
 

@@ -188,12 +188,6 @@ function createMockElectron() {
       }
     },
 
-    // Playback window (for Bandcamp)
-    playbackWindow: {
-      open: jest.fn(),
-      close: jest.fn()
-    },
-
     // Resolvers
     resolvers: {
       loadBuiltin: jest.fn().mockResolvedValue([])
