@@ -6008,19 +6008,22 @@ const Parachord = () => {
   const [cacheLoaded, setCacheLoaded] = useState(false);
 
   // Global stream playback quality (Widevine/DASH resolvers: Amazon Music
-  // today). Store keys playback_quality/playback_abr drive lib/widevine-player's
-  // variant selection; changes apply live to the current stream.
+  // today). Store keys playback_quality/playback_abr/playback_spatial drive
+  // lib/widevine-player's variant selection; changes apply live to the
+  // current stream. playback_spatial is the Dolby-Atmos opt-in (E-AC-3 JOC).
   const [playbackQuality, setPlaybackQuality] = useState('max');
   const [playbackAbr, setPlaybackAbr] = useState(true);
+  const [playbackSpatial, setPlaybackSpatial] = useState(false);
   // qualityLoaded gates the persist effect below — otherwise the writer
   // fires on mount with defaults before the read returns (review #5 M6).
   const [qualityLoaded, setQualityLoaded] = useState(false);
   useEffect(() => {
     if (!cacheLoaded || !window.electron?.store) return;
     (async () => {
-      const [q, a] = await Promise.all([
+      const [q, a, s] = await Promise.all([
         window.electron.store.get('playback_quality').catch(() => null),
-        window.electron.store.get('playback_abr').catch(() => null)
+        window.electron.store.get('playback_abr').catch(() => null),
+        window.electron.store.get('playback_spatial').catch(() => null)
       ]);
       // Normalized: stored values can predate the corridor vocabulary
       // ('balanced', 'STANDARD') and the select must show a matching tier.
@@ -6029,6 +6032,7 @@ const Parachord = () => {
         : null;
       if (normalized) setPlaybackQuality(normalized);
       if (typeof a === 'boolean') setPlaybackAbr(a);
+      if (typeof s === 'boolean') setPlaybackSpatial(s);
       setQualityLoaded(true);
     })();
   }, [cacheLoaded]);
@@ -6039,13 +6043,14 @@ const Parachord = () => {
     (async () => {
       await Promise.all([
         window.electron.store.set('playback_quality', playbackQuality),
-        window.electron.store.set('playback_abr', playbackAbr)
+        window.electron.store.set('playback_abr', playbackAbr),
+        window.electron.store.set('playback_spatial', playbackSpatial)
       ]);
       if (window.__parachordWidevine && typeof window.__parachordWidevine.applyQuality === 'function') {
         window.__parachordWidevine.applyQuality();
       }
     })();
-  }, [playbackQuality, playbackAbr, cacheLoaded, qualityLoaded]);
+  }, [playbackQuality, playbackAbr, playbackSpatial, cacheLoaded, qualityLoaded]);
 
   // Playback-queue state domain — extracted to src/renderer/hooks/use-playback-queue
   // (Track 2b slice 2, parachord#1098). The destructured names are identical
@@ -42384,7 +42389,7 @@ useEffect(() => {
                     }, 'Playback Quality'),
                     React.createElement('p', {
                       style: { fontSize: '12px', color: 'var(--text-secondary)' }
-                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/immersive-only variants are never selected.')
+                    }, 'Stream quality for sources that play through the shared player (Amazon Music and future stream resolvers). Bandwidth ceilings only — codec is irrelevant to the tier; spatial/Atmos rungs need the preference below.')
                   ),
                   React.createElement('div', { className: 'flex items-center justify-between', style: { marginBottom: '10px', gap: '12px' } },
                     React.createElement('div', null,
@@ -42428,6 +42433,33 @@ useEffect(() => {
                     },
                       React.createElement('option', { value: 'on' }, 'On'),
                       React.createElement('option', { value: 'off' }, 'Off')
+                    )
+                  ),
+                  React.createElement('div', {
+                    className: 'flex items-center justify-between',
+                    style: { marginTop: '10px', gap: '12px' }
+                  },
+                    React.createElement('div', null,
+                      React.createElement('p', { style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' } }, 'Prefer Dolby Atmos mixes'),
+                      React.createElement('p', {
+                        style: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }
+                      }, 'Plays the 5.1 core of a track’s Atmos mix when available. This isn’t full Atmos: it’s mixed down on stereo output, and it replaces lossless FLAC at the Max tier.')
+                    ),
+                    React.createElement('label', { className: 'relative inline-block w-10 h-5 cursor-pointer flex-shrink-0' },
+                      React.createElement('input', {
+                        type: 'checkbox',
+                        checked: playbackSpatial === true,
+                        onChange: (e) => setPlaybackSpatial(e.target.checked),
+                        className: 'sr-only peer'
+                      }),
+                      React.createElement('div', {
+                        className: 'w-full h-full rounded-full transition-colors',
+                        style: { backgroundColor: playbackSpatial === true ? 'var(--accent-primary)' : 'rgba(0, 0, 0, 0.15)' }
+                      }),
+                      React.createElement('div', {
+                        className: 'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                        style: { transform: playbackSpatial === true ? 'translateX(20px)' : 'translateX(0)' }
+                      })
                     )
                   )
                 ),
@@ -48648,8 +48680,10 @@ useEffect(() => {
                           setIsPlaying(false);
                         }
                       }
-                      // Prime-plan HD block is account-scoped. The next
-                      // sign-in may be an HD account; don't keep FLAC off.
+                      // Plan blocks are account-scoped (the FLAC/HD and
+                      // spatial/ec-3 KID-group latches). The next sign-in may
+                      // be an account that clears either; don't keep the
+                      // refused families off.
                       if (window.__parachordWidevine && typeof window.__parachordWidevine.clearPlanBlocks === 'function') {
                         window.__parachordWidevine.clearPlanBlocks();
                       }

@@ -10,7 +10,8 @@
 // user sets it once and every stream source honors it.
 //
 // Tiers are BANDWIDTH ceilings — nothing else. Codec is irrelevant to the
-// tier choice (aside from the explicit spatial exclusion below):
+// tier choice. Spatial/immersive codecs are a separate, deliberate
+// preference (below), not a tier:
 //
 //   saver    ≤ 100 kbps
 //   standard ≤ 200 kbps
@@ -25,10 +26,26 @@
 // Adaptive floors at the cheapest playable variant when the corridor is
 // empty (never a zero-variant restriction filter).
 //
-// Spatial/immersive codecs (mha1 = Dolby AC-4 Atmos, mhm1 = MPEG-H) ride
-// Amazon manifests at the top of the bandwidth ladder (up to 1.6 Mbps) but
-// nothing in Chromium decodes them, so they're excluded by name — that is a
-// decompressability filter, not a tier rule. Everything else is bps-driven.
+// SPATIAL / ATMOS (opt-in, `{ spatial: true }`): Amazon manifests carry
+// immersive rendition sets alongside the stereo ladder — E-AC-3 JOC
+// (`ec-3`, the Dolby Digital Plus Atmos master: 5.1 + JOC object
+// metadata), Dolby AC-4 (`ac-4.02.02.00`, IMS) and MPEG-H (`mha1`/`mhm1`).
+// Chromium's ffmpeg decodes E-AC-3 (software decode of the 5.1 core; the
+// JOC object layer is folded into the bed — a downmix, not object
+// rendering), but has NO AC-4 or MPEG-H decoder on any build, so ec-3 is
+// the only spatial family ever admitted, and only when the user opts in
+// (`playback_spatial` store key): when the preference is on and the
+// manifest carries a decodable spatial set, the pick is made WITHIN the
+// spatial rungs — the tier ceiling shapes which one, with the same
+// flooring rule, for max/high (never a silent drop back to stereo) — while
+// standard/saver let the CEILING win (a tier ceiling is the one promise the
+// setting makes; a data-limiting tier never trades it for the family
+// preference — no spatial rung under it means stereo). The pick is LOCKED (ABR's restrictions are
+// bandwidth-only and cannot pin a codec family, so adaptive would roam
+// off the spatial pick into stereo rungs under the same ceiling). A
+// spatial-less manifest, or a build whose probe rejects E-AC-3, selects
+// exactly as before. The runtime decode probe lives in widevine-player
+// (`getSupportedCodecFamilies`); this module encodes only the policy.
 //
 // Pure, module-global safe (tests run under bare node; the renderer loads
 // this through the app bundle).
@@ -61,21 +78,30 @@ function normalizePlaybackQuality(value) {
   return LEGACY_TIER_MAP[v] || null;
 }
 
-// Codec bucket from a codec string, only used to EXCLUDE spatial codecs
-// from the playable roster (they carry spatial content, not a tier).
+// Codec bucket from a codec string: the stereo families plus the spatial
+// ones. Used to admit/exclude spatial codecs from the playable roster
+// (they carry spatial content, not a tier) and to report the pick's family.
 function widevineCodecFamily(codec) {
   const c = String(codec || '').toLowerCase();
   if (c.startsWith('flac')) return 'flac';
   if (c.startsWith('opus')) return 'opus';
   if (c.startsWith('mp4a') || c.startsWith('aac')) return 'aac';
+  // Spatial/immersive families.
+  if (c.startsWith('ec-3')) return 'ec3';
+  if (c.startsWith('ac-4')) return 'ac4';
+  if (c.startsWith('mha') || c.startsWith('mhm')) return 'mpegh';
   return c || null;
 }
 
-// Chromium (and Shaka on it) cannot decode spatial/immersive codecs — Dolby
-// AC-4 (mha1, Atmos JOC) and MPEG-H (mhm1) ride Amazon manifests alongside
-// the stereo tiers (live-verified: Get Lucky's manifest has 5 spatial reps
-// out of 16, up to 1.6 Mbps). The web player filters them silently; so do
-// we, always.
+// Spatial/immersive codec families. Chromium's ffmpeg has no AC-4 or MPEG-H
+// decoder on ANY build (categorical, not per-build); E-AC-3 decodes in
+// software (the 5.1 core — the JOC object layer is not rendered). The
+// runtime probe (widevine-player's getSupportedCodecFamilies) decides
+// whether THIS build takes ec-3; the policy here admits ec3 only, and only
+// on the user's opt-in.
+const SPATIAL_CODEC_FAMILIES = new Set(['ec3', 'ac4', 'mpegh']);
+
+// Stereo/lossless families — always roster candidates (probe permitting).
 const WIDEVINE_PLAYABLE_FAMILIES = new Set(['flac', 'opus', 'aac']);
 
 function variantCodec(variant) {
@@ -83,8 +109,19 @@ function variantCodec(variant) {
   return variant.codecs || variant.codec || null;
 }
 
-function variantPlayable(variant) {
-  return !!variant && WIDEVINE_PLAYABLE_FAMILIES.has(widevineCodecFamily(variantCodec(variant)));
+function variantSpatial(variant) {
+  return !!variant && SPATIAL_CODEC_FAMILIES.has(widevineCodecFamily(variantCodec(variant)));
+}
+
+// Playable roster membership: stereo families always; `ec3` (E-AC-3 JOC,
+// the Dolby Digital Plus Atmos master) only under the spatial opt-in;
+// `ac4`/`mpegh` never (no Chromium decoder — categorical, probe-independent).
+function variantPlayable(variant, spatialAllowed) {
+  if (!variant) return false;
+  const family = widevineCodecFamily(variantCodec(variant));
+  if (family === 'ec3') return spatialAllowed === true;
+  if (SPATIAL_CODEC_FAMILIES.has(family)) return false;
+  return WIDEVINE_PLAYABLE_FAMILIES.has(family);
 }
 
 // Deterministic order: bandwidth desc, then sample rate desc, then channels
@@ -101,18 +138,42 @@ function variantsSorted(variants) {
   });
 }
 
-// The tier's variant from the manifest's playable audio (spatial excluded,
-// everything else bandwidth-ordered). Rules:
-//   max      the highest-bandwidth playable variant overall
-//   other    the highest-bandwidth playable variant AT OR BELOW the tier
-//            ceiling; if nothing is under it, the lowest-bandwidth playable
-//            variant overall (flooring, never a ceiling break)
+// The tier's variant from the manifest's playable audio. Rules:
+//   spatial   when `{ spatial: true }` and the roster carries decodable
+//             spatial rungs, the pick is made WITHIN them — for max/high the
+//             tier ceiling shapes which rung with the same flooring rule
+//             (never a silent drop back to stereo while spatial is
+//             available); for standard/saver the CEILING WINS — a tier
+//             ceiling is the one promise the setting makes, and a
+//             data-limiting tier never trades it for the family preference,
+//             so a spatial set with nothing under the ceiling falls back to
+//             the stereo pick
+//   max       the highest-bandwidth playable variant overall
+//   other     the highest-bandwidth playable variant AT OR BELOW the tier
+//             ceiling; if nothing is under it, the lowest-bandwidth playable
+//             variant overall (flooring, never a ceiling break)
 // Unknown tier (normalize fails) or empty list → null (the engine reports
 // playback-failed).
-function selectShakaVariant(variants, tier) {
+function selectShakaVariant(variants, tier, opts) {
   if (!Array.isArray(variants) || variants.length === 0) return null;
   const t = normalizePlaybackQuality(tier) || 'max';
-  const playable = variants.filter(variantPlayable);
+  const spatial = !!(opts && opts.spatial);
+  let playable = variants.filter((v) => variantPlayable(v, spatial));
+  if (spatial) {
+    const spatialPlayable = playable.filter(variantSpatial);
+    if (spatialPlayable.length) {
+      const ceiling = TIER_CEILING_BPS[t];
+      const underCeiling = ceiling != null ? spatialPlayable.filter((v) => (Number(v.bandwidth) || 0) <= ceiling) : spatialPlayable;
+      if (t === 'standard' || t === 'saver') {
+        // The ceiling wins: a spatial rung fits, or stereo takes the pick.
+        playable = underCeiling.length ? underCeiling : playable.filter((v) => !variantSpatial(v));
+      } else {
+        // max/high: the preference outranks the ceiling — flooring inside
+        // the spatial set, never a drop back to stereo.
+        playable = spatialPlayable;
+      }
+    }
+  }
   if (!playable.length) return null;
   const sorted = variantsSorted(playable);
   if (t === 'max') return sorted[0];
@@ -128,12 +189,15 @@ function selectShakaVariant(variants, tier) {
 // (the cross-family roster always visible — preference lists filtered
 // getVariantTracks in an earlier iteration and are deleted on purpose).
 // Codec family is reported for observability only, never for configuration.
-function shakaPlaybackConfig(variants, tier, adaptive) {
-  const variant = selectShakaVariant(variants, tier);
+// A SPATIAL pick is always locked (see the header): ABR's restrictions are
+// bandwidth-shaped and cannot pin a codec family, so adaptive would roam off
+// the deliberate spatial pick into stereo rungs under the same ceiling.
+function shakaPlaybackConfig(variants, tier, adaptive, opts) {
+  const variant = selectShakaVariant(variants, tier, opts);
   if (!variant) return null;
   const bandwidth = Number(variant.bandwidth) || null;
   const family = widevineCodecFamily(variantCodec(variant));
-  if (!adaptive) {
+  if (!adaptive || variantSpatial(variant)) {
     return { abrEnabled: false, variantId: variant.id, variantBandwidth: bandwidth, codecFamily: family, preferredCodecs: [] };
   }
   const t = normalizePlaybackQuality(tier) || 'max';
@@ -160,7 +224,9 @@ const api = {
   TIER_CEILING_BPS,
   normalizePlaybackQuality,
   widevineCodecFamily,
+  SPATIAL_CODEC_FAMILIES,
   WIDEVINE_PLAYABLE_FAMILIES,
+  variantSpatial,
   variantPlayable,
   variantsSorted,
   selectShakaVariant,

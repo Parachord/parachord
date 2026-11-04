@@ -69,6 +69,11 @@
       // music-metadata emits 'MPEG 1 Layer 3' (older versions 'Layer III')
       if (raw.includes('layer 3') || raw.includes('layer iii') || raw === 'mp3') return 'MP3';
       if (raw === 'aac' || raw === 'mp4a' || raw.startsWith('mp4a') || raw.includes('aac')) return 'AAC';
+      // E-AC-3 JOC — the Dolby Digital Plus Atmos master (widevine variant
+      // facts report the codec string before the first dot, i.e. 'ec-3').
+      // The ◗◖ glyph pair (not the word "Atmos") marks the spatial rung in
+      // the playbar's stream-quality popup — compact and label-neutral.
+      if (raw.startsWith('ec-3') || raw === 'ec3') return 'E-AC-3 ◗◖';
     }
     // No recognised codec label (music-metadata didn't report one, or it's a
     // codec not mapped above such as Vorbis or Opus) — fall back to the

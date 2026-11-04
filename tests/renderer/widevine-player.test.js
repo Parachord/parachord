@@ -24,7 +24,7 @@ function makeAudio() {
   };
 }
 
-function makeShaka() {
+function makeShaka({ loadGate } = {}) {
   const schemeHandlers = new Map();
   const playerInstances = [];
   class FakePlayer {
@@ -33,13 +33,17 @@ function makeShaka() {
       this.loadedUris = [];
       this.unloaded = 0;
       this.listeners = [];
+      this.loadGate = loadGate || null; // test hook: pause inside load()
       this.variantTracks = [
         { id: 1, codecs: 'opus', bandwidth: 53059, audioSamplingRate: 48000, channelsCount: 2 },
         { id: 3, codecs: 'opus', bandwidth: 325595, audioSamplingRate: 48000, channelsCount: 2 },
-        { id: 7, codecs: 'flac', bandwidth: 1902230, audioSamplingRate: 48000, channelsCount: 2 }
+        { id: 7, codecs: 'flac', bandwidth: 1902230, audioSamplingRate: 48000, channelsCount: 2 },
+        // E-AC-3 JOC (Dolby Digital Plus Atmos) rung — B0CPSG7191 capture.
+        { id: 8, codecs: 'ec-3', bandwidth: 770130, audioSamplingRate: 48000, channelsCount: 6 }
       ];
       this.selected = null;
       this.loadRejection = null; // set to make load() reject as Shaka would
+      this.configureCountAtLoad = null; // configured-at-load ordering evidence
       playerInstances.push(this);
     }
     async attach() {}
@@ -47,11 +51,77 @@ function makeShaka() {
     configure(cfg) { this.configureCalls.push(cfg); } // REFERENCE capture — a JSON
     // deep-clone would serialize maxBandwidth: Infinity to null and mask the
     // exact restriction-reset bug the H1 regression test pins.
-    async load(uri) { this.loadedUris.push(uri); if (this.loadRejection) throw this.loadRejection; }
+    async load(uri) {
+      this.configureCountAtLoad = this.configureCalls.length;
+      // Model the vendor's parse-time filter (Pf/Qf): with a non-empty
+      // preferredAudioCodecs and dontChooseCodecs UNSET, shaka narrows the
+      // manifest's variant list to the FIRST listed codec with prefix
+      // matches and WRITES IT BACK — the round-3 review blocker (a collapsed
+      // roster that selection can never see past without a re-load).
+      const cfg = this.configureCalls[this.configureCalls.length - 1] || {};
+      const pref = cfg.preferredAudioCodecs || [];
+      if (pref.length && !(cfg.streaming && cfg.streaming.dontChooseCodecs)) {
+        for (const codec of pref) {
+          const matching = this.variantTracks.filter((t) => t.codecs && String(t.codecs).startsWith(codec));
+          if (matching.length) { this.variantTracks = matching; break; }
+        }
+      }
+      // Model the criteria ADOPTED AT LOAD (the round-4 review blocker):
+      // the LoadManager takes over a criteria configured with the
+      // preferredAudioCodecs list set before load(), and player.configure()
+      // never syncs that field back out — a load-time list narrows the ABR
+      // candidate set forever, even after applyConfig re-sends [].
+      this.criteriaPreferredCodecs = pref || [];
+      if (this.loadGate) await this.loadGate; // test hook: pause mid-load
+      this.loadedUris.push(uri);
+      if (this.loadRejection) throw this.loadRejection;
+    }
+    // The candidate set the ABR manager is fed on each choice: narrowed by
+    // the load-adopted criteria's codec list (first EXACT match wins), then
+    // by the selection-configured criteria (exact codec, channelsCount ≤
+    // the selection's — vendor `lo` keeps variants at or under the count),
+    // or the full roster when nothing is set — the vendor's Zr/fo behavior.
+    getAbrSet() {
+      let set = this.variantTracks;
+      const pref = this.criteriaPreferredCodecs || [];
+      if (!pref.length) {
+        // no load-adopted list
+      } else {
+        for (const codec of pref) {
+          const matching = set.filter((t) => t.codecs === codec);
+          if (matching.length) { set = matching; break; }
+        }
+      }
+      if (this.criteriaCodec) set = set.filter((t) => t.codecs === this.criteriaCodec);
+      if (this.criteriaChannels != null) set = set.filter((t) => t.channelsCount == null || t.channelsCount <= this.criteriaChannels);
+      return set;
+    }
     async unload() { this.unloaded += 1; }
     addEventListener(ev, cb) { this.listeners.push([ev, cb]); }
     getVariantTracks() { return this.variantTracks; }
-    selectVariantTrack(t) { this.selected = t; }
+    // Faithful to real Shaka: the selected variant is the ACTIVE one —
+    // currentVariantFacts() keys off `active`, and plan-denial attribution
+    // reads the active family at relay time. Also models the vendor's
+    // selectVariantTrack side effect: the selection RE-CONFIGURES the choice
+    // criteria with the selected rung (audioCodec + channelCount — vendor
+    // `If`: criteria.configure({channelCount: f.audio.channelsCount,
+    // audioCodec: f.audio.codecs})), which confines the ABR candidate set to
+    // the selected family until the next selection — the criteria
+    // confinement behind the adaptive flip bug.
+    selectVariantTrack(t) {
+      this.selected = t;
+      for (const v of this.variantTracks) v.active = false;
+      t.active = true;
+      this.criteriaCodec = t.codecs || null;
+      this.criteriaChannels = t.channelsCount || null;
+      // Faithful to the vendor: a MANUAL selection fires 'variantchanged',
+      // never 'adaptation' (the same switch path emits one or the other).
+      for (const [ev, cb] of (this.listeners || [])) {
+        if (ev === 'variantchanged') {
+          try { cb({ type: 'variantchanged' }); } catch { /* listener owns nothing */ }
+        }
+      }
+    }
     getConfiguration() { return this.configureCalls[this.configureCalls.length - 1] || {}; }
     getBandwidthEstimate() { return 100000000; }
   }
@@ -83,7 +153,7 @@ function load({ shaka, electron, codecSupport } = {}) {
   jest.resetModules();
   const sh = shaka || makeShaka();
   const el = electron || makeElectron();
-  const full = { flac: true, opus: true, aac: true };
+  const full = { flac: true, opus: true, aac: true, ec3: true };
   const support = codecSupport ? { ...full, ...codecSupport } : full;
   global.window = {
     shaka: sh,
@@ -95,7 +165,8 @@ function load({ shaka, electron, codecSupport } = {}) {
         if (JSON.stringify(configs).includes('distinctiveIdentifier')) {
           throw new Error('TypeError: Failed to read distinctiveIdentifier property');
         }
-        if (support.emeFlacReject) throw new Error('NotSupportedError');
+        if (support.emeFlacReject && JSON.stringify(configs).includes('flac')) throw new Error('NotSupportedError');
+        if (support.emeEc3Reject && JSON.stringify(configs).includes('ec-3')) throw new Error('NotSupportedError');
         if (support.emeFlacEmpty) return null;
         return { getConfiguration: () => configs };
       }
@@ -105,6 +176,7 @@ function load({ shaka, electron, codecSupport } = {}) {
         if (/flac/.test(type)) return !!support.flac;
         if (/opus/.test(type)) return !!support.opus;
         if (/mp4a/.test(type)) return !!support.aac;
+        if (/ec-3/.test(type)) return !!support.ec3;
         return false;
       }
     }
@@ -468,12 +540,271 @@ describe('codec support probing (the Linux FLAC-only-on-paper regression)', () =
 
   test('all variants unsupported → honest playback-failed, not a stall', async () => {
     const { player } = load({
-      codecSupport: { flac: false, opus: false, aac: false },
+      codecSupport: { flac: false, opus: false, aac: false, ec3: false },
       electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
     });
     const audio = makeAudio();
     await expect(player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } }))
       .rejects.toMatchObject({ reason: 'playback-failed', message: expect.stringContaining('this build can play') });
+  });
+});
+
+describe('spatial / Atmos opt-in (playback_spatial)', () => {
+  test('spatial on: the E-AC-3 JOC rung is picked and LOCKED, even at max over higher-bandwidth FLAC', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected && p.selected.codecs).toBe('ec-3');
+    expect(p.selected.bandwidth).toBe(770130); // not the 1902230 flac
+    // Locked: no abr-enabled configure call after the pick.
+    const abrCfgs = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true);
+    expect(abrCfgs).toEqual([]);
+    const locked = p.configureCalls.filter((c) => c.abr && c.abr.enabled === false).pop();
+    expect(locked.abr.restrictions.maxBandwidth).toBe(Infinity); // restriction reset, same as every locked pick
+    // Diagnostics: the quality read surfaces the preference.
+    expect(player.getState().qualitySeen).toMatchObject({ tier: 'max', adaptive: true, spatial: true });
+  });
+
+  test('spatial on × FLAC plan-blocked: the ec-3 rung still wins (never a silent drop to opus)', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    // Play 1, spatial OFF: picks FLAC, and the relay denies with the plan
+    // refusal while FLAC is the active variant — the FLAC latch trips (the
+    // live Prime-plan capture shape).
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p1 = sh.playerInstances[0];
+    expect(p1.selected.codecs).toBe('flac');
+    el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for HD' });
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic?v=1', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
+    expect(player.getState().hdSessionBlockedByPlan).toBe(true);
+    expect(player.getState().spatialBlockedByPlan).toBe(false);
+    // Play 2, spatial ON: FLAC is out of the roster, the spatial set stays —
+    // the pick is the ec-3 rung, NOT a drop to top opus.
+    el.store.__values.playback_spatial = true;
+    await player.stop();
+    const audio2 = makeAudio();
+    await player.play(audio2, { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    const p2 = sh.playerInstances[0];
+    expect(p2.selected.codecs).toBe('ec-3');
+    expect(p2.selected.bandwidth).toBe(770130);
+  });
+
+  test('a spatial KID plan denial latches the SPATIAL family only — FLAC survives, spatial stops asking', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: true } })
+    });
+    // Play 1, spatial ON: the ec-3 rung is the active variant; the relay
+    // denies while it is — the refusal attributes to the SPATIAL KID
+    // group, never to FLAC.
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p1 = sh.playerInstances[0];
+    expect(p1.selected.codecs).toBe('ec-3');
+    el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for spatial' });
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic?v=1', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
+    expect(player.getState().spatialBlockedByPlan).toBe(true);
+    expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+    // Play 2: ec-3 is out of the roster (no per-track retry loop) and FLAC
+    // is still IN — the pick falls to the FLAC rung, not opus.
+    await player.stop();
+    const audio2 = makeAudio();
+    await player.play(audio2, { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    const p2 = sh.playerInstances[0];
+    expect(p2.selected.codecs).toBe('flac');
+    expect(p2.selected.bandwidth).toBe(1902230);
+    // And clearPlanBlocks resets both latches (sign-out semantics).
+    player.clearPlanBlocks();
+    expect(player.getState().spatialBlockedByPlan).toBe(false);
+    expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+  });
+
+  test('the load-time pick is never steered — no codec list, no seed estimate (the roster and the ABR set stay full)', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    // preferredAudioCodecs NEVER set — a load-time codec list hits two vendor
+    // hazards (the parse filter writes the narrowed manifest back; the
+    // load-adopted criteria never un-syncs the list and confines ABR to one
+    // family) — rounds 3-4 blockers, both modeled by this fake, so a
+    // reintroduction fails loudly through the assertions below.
+    const lists = p.configureCalls.filter((c) => Array.isArray(c.preferredAudioCodecs) && c.preferredAudioCodecs.length);
+    expect(lists).toEqual([]);
+    // No seed estimate either: the estimator's samples survive plays (the
+    // ABR manager is reused), so a seed only steers the FIRST track after
+    // launch — onto the bottom rung, which then plays first (no
+    // clearBufferSwitch to climb away). And the load-time pick needs no
+    // steering: the default criteria's preferredAudioChannelCount (2) keeps
+    // 6-channel spatial rungs out of the load-time set, and the plan gate
+    // stops accounts that can't play before any manifest request.
+    const seedCfgs = p.configureCalls.filter((c) => c.abr && 'defaultBandwidthEstimate' in c.abr && c.abr.defaultBandwidthEstimate <= 1000);
+    expect(seedCfgs).toEqual([]);
+    const abrCfg = p.configureCalls.find((c) => c.abr && c.abr.enabled === true && c.abr.defaultBandwidthEstimate === 1902230);
+    expect(abrCfg).toBeDefined(); // the tier's own seed, at applyConfig time only
+    // The manifest roster survived and the ABR candidate set spans every
+    // (2-channel) family — not collapsed, not confined.
+    const abrCodecs = p.getAbrSet().map((t) => t.codecs);
+    expect(abrCodecs).toEqual(expect.arrayContaining(['opus', 'flac']));
+    expect(p.selected).toBeNull(); // adaptive: the manager owns the choice
+  });
+
+  test('a settings toggle landing during the load window reaches the incoming track (the quality read is post-load)', async () => {
+    let finishLoad;
+    const { sh, player, el } = load({
+      shaka: makeShaka({ loadGate: new Promise((res) => { finishLoad = res; }) }),
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: false } })
+    });
+    const audio = makeAudio();
+    const playPromise = player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    await new Promise(r => setTimeout(r, 25));
+    // The toggle lands while the manifest is loading.
+    el.store.__values.playback_spatial = true;
+    finishLoad();
+    await playPromise;
+    const p = sh.playerInstances[0];
+    // The post-load quality read picked the toggle up: the ec-3 rung plays,
+    // not the stale spatial=false FLAC pick.
+    expect(p.selected.codecs).toBe('ec-3');
+    expect(p.selected.bandwidth).toBe(770130);
+  });
+
+  test('a denial landing after the active variant switched family attributes to the REQUEST-time family', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3'); // the family active at request time
+    // A relay whose denial lands AFTER the variant switched to flac (the
+    // load-time pick → locked-selection handover window).
+    let resolveDenial;
+    el.bridge.relayLicense.mockImplementationOnce(() => new Promise((res) => {
+      resolveDenial = () => res({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for spatial' });
+    }));
+    const handler = sh.schemeHandlers.get('parachord-license');
+    const pending = handler('parachord-license://amazonmusic?v=1', { body: new ArrayBuffer(4), uris: [] });
+    await new Promise(r => setImmediate(r));
+    // The active variant switches to flac while the relay is in flight.
+    p.selectVariantTrack(p.variantTracks.find(t => t.codecs === 'flac'));
+    resolveDenial();
+    await expect(pending).rejects.toBeTruthy();
+    // Attributed to the REQUEST-time family (spatial), never the current one.
+    expect(player.getState().spatialBlockedByPlan).toBe(true);
+    expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+  });
+
+  test('turning spatial OFF mid-track under ADAPTIVE leaves the ec-3 rung (criteria de-confinement)', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3'); // the locked spatial pick
+    // The selection confined the choice criteria to the ec-3 family —
+    // enabling ABR alone would keep streaming ec-3 until the next track.
+    expect(p.getAbrSet().map((t) => t.codecs)).toEqual(['ec-3']);
+    // Toggle the preference off and adaptive on, mid-track.
+    el.store.__values.playback_spatial = false;
+    el.store.__values.playback_abr = true;
+    await player.applyQuality();
+    // The tier rung was pre-selected BEFORE enabling ABR — the selection
+    // re-configures the criteria onto the new rung's family, and the
+    // manager takes over from there. (The pre-select trips Shaka's
+    // "selected track will be overridden" advisory — accepted: the manager
+    // is meant to take over.)
+    expect(p.selected.codecs).toBe('flac');
+    const abrCodecs = p.getAbrSet().map((t) => t.codecs);
+    expect(abrCodecs).toContain('flac');
+    expect(abrCodecs).not.toContain('ec-3');
+    const abrCfg = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
+    expect(abrCfg).toBeDefined();
+    expect(abrCfg.abr.restrictions.maxBandwidth).toBe(Infinity);
+  });
+
+  test('a mid-track toggle notifies the variant listener (the stream-quality record follows manual selections)', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3');
+    // The host's stream-quality record rides the variant listener — which
+    // must hear MANUAL selections too ('variantchanged'), or a mid-track
+    // toggle switches the audio and leaves the playbar's quality popup on
+    // the old rung (live-caught).
+    const seen = [];
+    player.setVariantListener((facts) => { if (facts) seen.push(facts.codec); });
+    el.store.__values.playback_spatial = false;
+    await player.applyQuality();
+    expect(p.selected.codecs).toBe('flac');
+    expect(seen).toContain('flac'); // notified with the new rung's facts
+    // And back into spatial: the listener hears ec-3.
+    el.store.__values.playback_spatial = true;
+    await player.applyQuality();
+    expect(p.selected.codecs).toBe('ec-3');
+    expect(seen).toContain('ec-3');
+  });
+
+  test('spatial off (default): the ec-3 rung is invisible, FLAC wins as before', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac');
+    expect(player.getState().qualitySeen).toMatchObject({ spatial: false });
+  });
+
+  test('spatial on but the build rejects E-AC-3 (MSE or EME probe): stereo selection unchanged', async () => {
+    const { sh, player } = load({
+      codecSupport: { ec3: false },
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac');
+  });
+
+  test('EME rejection alone drops ec-3 (the FLAC-probe class, mirrored)', async () => {
+    const { sh, player } = load({
+      codecSupport: { emeEc3Reject: true },
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac');
+  });
+
+  test('applyQuality flips into (and out of) the spatial rung mid-play', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac');
+    el.store.__values.playback_spatial = true;
+    await player.applyQuality();
+    expect(p.selected.codecs).toBe('ec-3');
+    expect(p.selected.bandwidth).toBe(770130);
+    el.store.__values.playback_spatial = false;
+    await player.applyQuality();
+    expect(p.selected.codecs).toBe('flac');
   });
 });
 
