@@ -25,4 +25,26 @@ function playlistListenbrainzMbid(summary, playlists) {
   return lbMbidOf(playlists.find(p => p && p.id === id));
 }
 
-module.exports = { playlistListenbrainzMbid };
+// What a share should do. A link to a playlist that's gone from ListenBrainz
+// 404s for everyone, its owner included, and the sync record can't tell us: it
+// only learns on the next push, which may be months away. So ask first.
+//
+// checkExists(mbid) answers true, false, or null for "couldn't tell". Only a
+// clear false stops the share: being offline or rate limited shouldn't.
+async function playlistShareTarget(summary, playlists, checkExists) {
+  const mbid = playlistListenbrainzMbid(summary, playlists);
+  if (!mbid) return { status: 'not-synced' };
+  const id = summary && (summary.playlistId || summary.id);
+  const stored = id && Array.isArray(playlists) ? playlists.find(p => p && p.id === id) : null;
+  const mirror = (stored || summary)?.syncedTo?.listenbrainz;
+  if (mirror?.pendingAction === 'remote-deleted') return { status: 'gone' };
+  let exists = null;
+  try {
+    exists = checkExists ? await checkExists(mbid) : null;
+  } catch {
+    exists = null;
+  }
+  return exists === false ? { status: 'gone' } : { status: 'ok', mbid };
+}
+
+module.exports = { playlistListenbrainzMbid, playlistShareTarget };

@@ -439,6 +439,7 @@ contextBridge.exposeInMainWorld('electron', {
     cancel: (providerId) => ipcRenderer.invoke('sync:cancel', providerId),
     fetchPlaylists: (providerId) => ipcRenderer.invoke('sync:fetch-playlists', providerId),
     fetchPlaylistTracks: (providerId, playlistExternalId) => ipcRenderer.invoke('sync:fetch-playlist-tracks', providerId, playlistExternalId),
+    playlistExists: (providerId, playlistExternalId) => ipcRenderer.invoke('sync:playlist-exists', providerId, playlistExternalId),
     pushPlaylist: (providerId, playlistExternalId, tracks, metadata) => ipcRenderer.invoke('sync:push-playlist', providerId, playlistExternalId, tracks, metadata),
     createPlaylist: (providerId, name, description, tracks, localPlaylistId = null) => ipcRenderer.invoke('sync:create-playlist', providerId, name, description, tracks, localPlaylistId),
     // Per-playlist Sync channel toggle (parachord#911). enabled=false + { deleteRemote }

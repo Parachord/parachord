@@ -1200,7 +1200,7 @@ const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
-const { playlistListenbrainzMbid } = require('./lib/playlist-share');
+const { playlistShareTarget } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
@@ -12823,14 +12823,22 @@ ${trackListXml}
       // the context menus via main), not the playlist, so the sync fields come
       // from the stored playlist by id (parachord#1084: without this every
       // share ended at the "sync to ListenBrainz first" toast).
-      const lbMbid = playlistListenbrainzMbid(collection, playlistsRef.current);
-      if (!lbMbid) {
+      const target = await playlistShareTarget(collection, playlistsRef.current, async (mbid) => {
+        const answer = await window.electron?.sync?.playlistExists?.('listenbrainz', mbid);
+        return answer ? answer.exists : null;
+      });
+      if (target.status === 'not-synced') {
         showToast(
           'Sync this playlist to ListenBrainz first to enable sharing via Achordion.',
           'info',
         );
         return;
       }
+      if (target.status === 'gone') {
+        showToast('This playlist is no longer on ListenBrainz, so its link would not open.', 'error');
+        return;
+      }
+      const lbMbid = target.mbid;
       let url = `https://achordion.xyz/playlist/${lbMbid}`; // fallback
       if (window.achordion?.fetchEntityLink) {
         const result = await window.achordion.fetchEntityLink(

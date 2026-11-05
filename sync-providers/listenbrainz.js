@@ -480,6 +480,13 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
 
   return { snapshotId: newSnapshotId, unresolvedTracks };
 }
+// true / false, or null when ListenBrainz gave some other answer. Only a 404
+// means it's gone: with the owner's token, a private playlist still answers 200.
+async function playlistExists(playlistMbid, token) {
+  const res = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}`, token);
+  if (res.status === 404) return false;
+  return res.ok ? true : null;
+}
 async function updatePlaylistDetails(playlistMbid, details, token) {
   const body = {
     playlist: {
@@ -607,6 +614,7 @@ module.exports = {
   fetchPlaylistTracks,
   createPlaylist,
   updatePlaylistTracks,
+  playlistExists,
   updatePlaylistDetails,
   deletePlaylist,
   nativeIdOf,

@@ -59,7 +59,7 @@ function makeHarness({ provider = {}, storeData = {}, generatedToken = 'AM-DEV',
 
 const CHANNELS = [
   'sync:cleanup-duplicate-playlists', 'sync:fetch-playlist-tracks', 'sync:fetch-playlists',
-  'sync:follow-artists', 'sync:push-playlist', 'sync:relink-orphaned-playlists',
+  'sync:follow-artists', 'sync:playlist-exists', 'sync:push-playlist', 'sync:relink-orphaned-playlists',
   'sync:remove-albums', 'sync:remove-tracks', 'sync:save-albums', 'sync:save-tracks',
   'sync:tombstones:add-batch', 'sync:tombstones:clear-batch', 'sync:tombstones:list',
   'sync:unfollow-artists',
@@ -103,6 +103,47 @@ describe('sync-playlists IPC surface', () => {
     const update = calls.provider.find((c) => c.method === 'updatePlaylistTracks');
     expect(update.args[0]).toBe('lb-1');
     expect(update.args[1]).toBeTruthy(); // the resolve/push payload
+  });
+
+  test('sync:push-playlist reports a remote playlist that no longer exists', async () => {
+    const { handlers, calls } = makeHarness({
+      storeData: LB_STORE,
+      provider: { updatePlaylistTracks: async () => ({ snapshotId: null, unresolvedTracks: [], remoteDeleted: true }) },
+    });
+    const result = await handlers.get('sync:push-playlist')(null, 'listenbrainz', 'lb-gone', [{ title: 'T', artist: 'A' }]);
+    expect(result).toEqual({
+      success: false,
+      error: 'PLAYLIST_NOT_FOUND',
+      message: 'The remote playlist no longer exists',
+    });
+    expect(calls.achordion).toEqual([]);
+  });
+
+  describe('sync:playlist-exists', () => {
+    test('asks the provider with a token', async () => {
+      const seen = [];
+      const { handlers } = makeHarness({
+        storeData: LB_STORE,
+        provider: { playlistExists: async (...a) => { seen.push(a); return false; } },
+      });
+      await expect(handlers.get('sync:playlist-exists')(null, 'listenbrainz', 'lb-1')).resolves.toEqual({ exists: false });
+      expect(seen[0][0]).toBe('lb-1');
+      expect(seen[0][1]).toBeTruthy();
+    });
+
+    test('unknown when the provider has no check, no token, or fails', async () => {
+      const noCheck = makeHarness({ storeData: LB_STORE });
+      await expect(noCheck.handlers.get('sync:playlist-exists')(null, 'listenbrainz', 'x')).resolves.toEqual({ exists: null });
+
+      const noToken = makeHarness({ provider: { playlistExists: async () => true } });
+      await expect(noToken.handlers.get('sync:playlist-exists')(null, 'listenbrainz', 'x')).resolves.toEqual({ exists: null });
+
+      const failing = makeHarness({
+        storeData: LB_STORE,
+        provider: { playlistExists: async () => { throw new Error('boom'); } },
+      });
+      await expect(failing.handlers.get('sync:playlist-exists')(null, 'listenbrainz', 'x')).resolves.toEqual({ exists: null });
+    });
   });
 
   test('sync:cleanup-duplicate-playlists runs the relink phase, then dedup keeps the richest linked remote', async () => {

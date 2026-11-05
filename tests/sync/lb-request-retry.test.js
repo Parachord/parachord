@@ -100,3 +100,25 @@ describe('lbRequest retry-with-backoff (#868)', () => {
     expect(init.body).toBe(JSON.stringify({ a: 1 }));
   });
 });
+
+describe('playlistExists', () => {
+  const { playlistExists } = require('../../sync-providers/listenbrainz');
+  const answer = (status) => { global.fetch = jest.fn(async () => ({ ok: status >= 200 && status < 300, status, headers: { get: () => null }, text: async () => '' })); };
+  const realFetch = global.fetch;
+  afterEach(() => { global.fetch = realFetch; });
+
+  test('true when ListenBrainz has it', async () => {
+    answer(200);
+    await expect(playlistExists('mbid', 'tok')).resolves.toBe(true);
+  });
+
+  test('false only on a 404', async () => {
+    answer(404);
+    await expect(playlistExists('mbid', 'tok')).resolves.toBe(false);
+  });
+
+  test('unknown on any other answer', async () => {
+    answer(401);
+    await expect(playlistExists('mbid', 'tok')).resolves.toBeNull();
+  });
+});

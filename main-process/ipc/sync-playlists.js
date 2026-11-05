@@ -249,6 +249,13 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     // Push track changes
     const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token, lbHydrationOpts(providerId));
 
+    // A provider can answer that the remote is gone without throwing
+    // (ListenBrainz's 404). Reporting success here recorded a fresh sync against
+    // a dead playlist, and Share kept handing out a link that 404s.
+    if (result?.remoteDeleted) {
+      return { success: false, error: 'PLAYLIST_NOT_FOUND', message: 'The remote playlist no longer exists' };
+    }
+
     // Fire-and-forget: if this push touched an LB-anchored playlist (either
     // we just pushed to LB, OR the local has an LB mirror via sync_playlist_links),
     // tell Achordion about the playlist's mirror set. Look up the local
@@ -285,6 +292,21 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
       return { success: false, error: 'PLAYLIST_NOT_FOUND', message: 'The remote playlist no longer exists' };
     }
     return { success: false, error: error.message };
+  }
+});
+
+  // Is this remote playlist still there? { exists: true | false | null }, where
+  // null means the check couldn't answer. Share asks before handing out a link.
+ipcMain.handle('sync:playlist-exists', async (event, providerId, playlistExternalId) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.playlistExists) return { exists: null };
+  try {
+    const token = getSyncProviderToken(providerId);
+    if (!token) return { exists: null };
+    return { exists: await provider.playlistExists(playlistExternalId, token) };
+  } catch (error) {
+    console.warn(`[Sync] playlistExists failed for ${providerId}: ${error.message}`);
+    return { exists: null };
   }
 });
 
