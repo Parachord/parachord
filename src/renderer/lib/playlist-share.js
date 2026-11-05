@@ -25,4 +25,30 @@ function playlistListenbrainzMbid(summary, playlists) {
   return lbMbidOf(playlists.find(p => p && p.id === id));
 }
 
-module.exports = { playlistListenbrainzMbid };
+// What a share should do. Sharing is what makes a playlist's visibility matter:
+//  - gone: the link 404s for everyone, its owner included. The sync record can't
+//    tell us, since it only learns on the next push, which may be months away.
+//  - private: the link only opens for the owner, so ask before making it public.
+//
+// checkStatus(mbid) answers { exists, isPublic }, each null for "couldn't tell".
+// Only a clear answer changes anything: being offline or rate limited shouldn't
+// stop a share.
+async function playlistShareTarget(summary, playlists, checkStatus) {
+  const mbid = playlistListenbrainzMbid(summary, playlists);
+  if (!mbid) return { status: 'not-synced' };
+  const id = summary && (summary.playlistId || summary.id);
+  const stored = id && Array.isArray(playlists) ? playlists.find(p => p && p.id === id) : null;
+  const mirror = (stored || summary)?.syncedTo?.listenbrainz;
+  if (mirror?.pendingAction === 'remote-deleted') return { status: 'gone' };
+  let answer = null;
+  try {
+    answer = checkStatus ? await checkStatus(mbid) : null;
+  } catch {
+    answer = null;
+  }
+  if (answer?.exists === false) return { status: 'gone' };
+  if (answer?.isPublic === false) return { status: 'private', mbid };
+  return { status: 'ok', mbid };
+}
+
+module.exports = { playlistListenbrainzMbid, playlistShareTarget };

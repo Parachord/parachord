@@ -480,6 +480,37 @@ async function updatePlaylistTracks(playlistMbid, tracks, token, opts = {}) {
 
   return { snapshotId: newSnapshotId, unresolvedTracks };
 }
+// { exists, isPublic }, each null when ListenBrainz didn't say. Only a 404 means
+// it's gone: with the owner's token, a private playlist still answers 200.
+async function playlistStatus(playlistMbid, token) {
+  const res = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}`, token);
+  if (res.status === 404) return { exists: false, isPublic: null };
+  if (!res.ok) return { exists: null, isPublic: null };
+  const data = await res.json();
+  const isPublic = data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist']?.public;
+  return { exists: true, isPublic: typeof isPublic === 'boolean' ? isPublic : null };
+}
+// ListenBrainz rebuilds collaborators from the edit's extension, so leaving them
+// out silently removes everyone. Read them first, and edit nothing if that fails.
+// Fields left out of the body (title, annotation) stay as they are.
+async function setPlaylistPublic(playlistMbid, isPublic, token) {
+  const cur = await lbRequest(`/1/playlist/${encodeURIComponent(playlistMbid)}`, token);
+  if (!cur.ok) throw new Error(`LB fetch playlist returned ${cur.status}`);
+  const data = await cur.json();
+  const ext = data?.playlist?.extension?.['https://musicbrainz.org/doc/jspf#playlist'] || {};
+  const body = {
+    playlist: {
+      extension: {
+        'https://musicbrainz.org/doc/jspf#playlist': {
+          public: isPublic,
+          collaborators: Array.isArray(ext.collaborators) ? ext.collaborators : [],
+        },
+      },
+    },
+  };
+  const res = await lbRequest(`/1/playlist/edit/${encodeURIComponent(playlistMbid)}`, token, { method: 'POST', body });
+  if (!res.ok) throw new Error(`LB edit playlist returned ${res.status}`);
+}
 async function updatePlaylistDetails(playlistMbid, details, token) {
   const body = {
     playlist: {
@@ -607,6 +638,8 @@ module.exports = {
   fetchPlaylistTracks,
   createPlaylist,
   updatePlaylistTracks,
+  playlistStatus,
+  setPlaylistPublic,
   updatePlaylistDetails,
   deletePlaylist,
   nativeIdOf,

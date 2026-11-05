@@ -100,3 +100,70 @@ describe('lbRequest retry-with-backoff (#868)', () => {
     expect(init.body).toBe(JSON.stringify({ a: 1 }));
   });
 });
+
+describe('playlist visibility', () => {
+  const { playlistStatus, setPlaylistPublic } = require('../../sync-providers/listenbrainz');
+  const KEY = 'https://musicbrainz.org/doc/jspf#playlist';
+  const body = (ext) => ({ playlist: { title: 'P', extension: { [KEY]: ext } } });
+  const reply = (status, json = {}) => ({ ok: status >= 200 && status < 300, status, headers: { get: () => null }, text: async () => JSON.stringify(json), json: async () => json });
+  const realFetch = global.fetch;
+  afterEach(() => { global.fetch = realFetch; });
+
+  describe('playlistStatus', () => {
+    test('a public playlist', async () => {
+      global.fetch = jest.fn(async () => reply(200, body({ public: true })));
+      await expect(playlistStatus('mbid', 'tok')).resolves.toEqual({ exists: true, isPublic: true });
+    });
+
+    test('a private playlist', async () => {
+      global.fetch = jest.fn(async () => reply(200, body({ public: false })));
+      await expect(playlistStatus('mbid', 'tok')).resolves.toEqual({ exists: true, isPublic: false });
+    });
+
+    test('exists with no visibility field is unknown visibility, not private', async () => {
+      global.fetch = jest.fn(async () => reply(200, { playlist: { title: 'P' } }));
+      await expect(playlistStatus('mbid', 'tok')).resolves.toEqual({ exists: true, isPublic: null });
+    });
+
+    test('gone only on a 404', async () => {
+      global.fetch = jest.fn(async () => reply(404));
+      await expect(playlistStatus('mbid', 'tok')).resolves.toEqual({ exists: false, isPublic: null });
+    });
+
+    test('unknown on any other answer', async () => {
+      global.fetch = jest.fn(async () => reply(401));
+      await expect(playlistStatus('mbid', 'tok')).resolves.toEqual({ exists: null, isPublic: null });
+    });
+  });
+
+  describe('setPlaylistPublic', () => {
+    const sentBody = () => JSON.parse(global.fetch.mock.calls.find((c) => c[1]?.method === 'POST')[1].body);
+
+    // ListenBrainz rebuilds collaborators from the edit's extension: leaving
+    // them out silently removes everyone.
+    test('sends the visibility and keeps the collaborators', async () => {
+      global.fetch = jest.fn(async (url, opts) => (opts?.method === 'POST' ? reply(200, { status: 'ok' }) : reply(200, body({ public: false, collaborators: ['ana', 'bo'] }))));
+      await setPlaylistPublic('mbid', true, 'tok');
+      expect(global.fetch.mock.calls.find((c) => c[1]?.method === 'POST')[0]).toContain('/1/playlist/edit/mbid');
+      expect(sentBody()).toEqual({ playlist: { extension: { [KEY]: { public: true, collaborators: ['ana', 'bo'] } } } });
+    });
+
+    test('sends no title or description, so they stay as they are', async () => {
+      global.fetch = jest.fn(async (url, opts) => (opts?.method === 'POST' ? reply(200, {}) : reply(200, body({ public: false }))));
+      await setPlaylistPublic('mbid', true, 'tok');
+      expect(Object.keys(sentBody().playlist)).toEqual(['extension']);
+      expect(sentBody().playlist.extension[KEY].collaborators).toEqual([]);
+    });
+
+    test('edits nothing if it cannot read the current collaborators', async () => {
+      global.fetch = jest.fn(async () => reply(401));
+      await expect(setPlaylistPublic('mbid', true, 'tok')).rejects.toThrow('401');
+      expect(global.fetch.mock.calls.some((c) => c[1]?.method === 'POST')).toBe(false);
+    });
+
+    test('throws when the edit is refused', async () => {
+      global.fetch = jest.fn(async (url, opts) => (opts?.method === 'POST' ? reply(403, { error: 'no' }) : reply(200, body({ public: false }))));
+      await expect(setPlaylistPublic('mbid', true, 'tok')).rejects.toThrow('403');
+    });
+  });
+});

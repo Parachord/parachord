@@ -59,8 +59,8 @@ function makeHarness({ provider = {}, storeData = {}, generatedToken = 'AM-DEV',
 
 const CHANNELS = [
   'sync:cleanup-duplicate-playlists', 'sync:fetch-playlist-tracks', 'sync:fetch-playlists',
-  'sync:follow-artists', 'sync:push-playlist', 'sync:relink-orphaned-playlists',
-  'sync:remove-albums', 'sync:remove-tracks', 'sync:save-albums', 'sync:save-tracks',
+  'sync:follow-artists', 'sync:playlist-status', 'sync:push-playlist', 'sync:relink-orphaned-playlists',
+  'sync:remove-albums', 'sync:remove-tracks', 'sync:save-albums', 'sync:save-tracks', 'sync:set-playlist-public',
   'sync:tombstones:add-batch', 'sync:tombstones:clear-batch', 'sync:tombstones:list',
   'sync:unfollow-artists',
 ];
@@ -103,6 +103,75 @@ describe('sync-playlists IPC surface', () => {
     const update = calls.provider.find((c) => c.method === 'updatePlaylistTracks');
     expect(update.args[0]).toBe('lb-1');
     expect(update.args[1]).toBeTruthy(); // the resolve/push payload
+  });
+
+  test('sync:push-playlist reports a remote playlist that no longer exists', async () => {
+    const { handlers, calls } = makeHarness({
+      storeData: LB_STORE,
+      provider: { updatePlaylistTracks: async () => ({ snapshotId: null, unresolvedTracks: [], remoteDeleted: true }) },
+    });
+    const result = await handlers.get('sync:push-playlist')(null, 'listenbrainz', 'lb-gone', [{ title: 'T', artist: 'A' }]);
+    expect(result).toEqual({
+      success: false,
+      error: 'PLAYLIST_NOT_FOUND',
+      message: 'The remote playlist no longer exists',
+    });
+    expect(calls.achordion).toEqual([]);
+  });
+
+  describe('sync:playlist-status', () => {
+    test('asks the provider with a token', async () => {
+      const seen = [];
+      const { handlers } = makeHarness({
+        storeData: LB_STORE,
+        provider: { playlistStatus: async (...a) => { seen.push(a); return { exists: true, isPublic: false }; } },
+      });
+      await expect(handlers.get('sync:playlist-status')(null, 'listenbrainz', 'lb-1')).resolves.toEqual({ exists: true, isPublic: false });
+      expect(seen[0][0]).toBe('lb-1');
+      expect(seen[0][1]).toBeTruthy();
+    });
+
+    test('unknown when the provider has no check, no token, or fails', async () => {
+      const unknown = { exists: null, isPublic: null };
+      const noCheck = makeHarness({ storeData: LB_STORE });
+      await expect(noCheck.handlers.get('sync:playlist-status')(null, 'listenbrainz', 'x')).resolves.toEqual(unknown);
+
+      const noToken = makeHarness({ provider: { playlistStatus: async () => ({ exists: true, isPublic: true }) } });
+      await expect(noToken.handlers.get('sync:playlist-status')(null, 'listenbrainz', 'x')).resolves.toEqual(unknown);
+
+      const failing = makeHarness({
+        storeData: LB_STORE,
+        provider: { playlistStatus: async () => { throw new Error('boom'); } },
+      });
+      await expect(failing.handlers.get('sync:playlist-status')(null, 'listenbrainz', 'x')).resolves.toEqual(unknown);
+    });
+  });
+
+  describe('sync:set-playlist-public', () => {
+    test('asks the provider and reports success', async () => {
+      const seen = [];
+      const { handlers } = makeHarness({
+        storeData: LB_STORE,
+        provider: { setPlaylistPublic: async (...a) => { seen.push(a); } },
+      });
+      await expect(handlers.get('sync:set-playlist-public')(null, 'listenbrainz', 'lb-1', true)).resolves.toEqual({ success: true });
+      expect(seen[0].slice(0, 2)).toEqual(['lb-1', true]);
+      expect(seen[0][2]).toBeTruthy();
+    });
+
+    test('reports a failure, and refuses without a token or provider support', async () => {
+      const failing = makeHarness({
+        storeData: LB_STORE,
+        provider: { setPlaylistPublic: async () => { throw new Error('LB said no'); } },
+      });
+      await expect(failing.handlers.get('sync:set-playlist-public')(null, 'listenbrainz', 'x', true)).resolves.toEqual({ success: false, error: 'LB said no' });
+
+      const noToken = makeHarness({ provider: { setPlaylistPublic: async () => {} } });
+      expect((await noToken.handlers.get('sync:set-playlist-public')(null, 'listenbrainz', 'x', true)).success).toBe(false);
+
+      const noSupport = makeHarness({ storeData: LB_STORE });
+      expect((await noSupport.handlers.get('sync:set-playlist-public')(null, 'listenbrainz', 'x', true)).success).toBe(false);
+    });
   });
 
   test('sync:cleanup-duplicate-playlists runs the relink phase, then dedup keeps the richest linked remote', async () => {

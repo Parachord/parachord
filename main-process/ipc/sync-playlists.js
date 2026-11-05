@@ -249,6 +249,13 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     // Push track changes
     const result = await provider.updatePlaylistTracks(playlistExternalId, tracks, token, lbHydrationOpts(providerId));
 
+    // A provider can answer that the remote is gone without throwing
+    // (ListenBrainz's 404). Reporting success here recorded a fresh sync against
+    // a dead playlist, and Share kept handing out a link that 404s.
+    if (result?.remoteDeleted) {
+      return { success: false, error: 'PLAYLIST_NOT_FOUND', message: 'The remote playlist no longer exists' };
+    }
+
     // Fire-and-forget: if this push touched an LB-anchored playlist (either
     // we just pushed to LB, OR the local has an LB mirror via sync_playlist_links),
     // tell Achordion about the playlist's mirror set. Look up the local
@@ -284,6 +291,37 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
     if (error.message?.includes('404') || error.message?.includes('Not Found') || error.status === 404) {
       return { success: false, error: 'PLAYLIST_NOT_FOUND', message: 'The remote playlist no longer exists' };
     }
+    return { success: false, error: error.message };
+  }
+});
+
+  // Is this remote playlist still there, and who can see it? { exists, isPublic },
+  // each null when the check couldn't answer. Share asks before handing out a link.
+ipcMain.handle('sync:playlist-status', async (event, providerId, playlistExternalId) => {
+  const unknown = { exists: null, isPublic: null };
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.playlistStatus) return unknown;
+  try {
+    const token = getSyncProviderToken(providerId);
+    if (!token) return unknown;
+    return await provider.playlistStatus(playlistExternalId, token);
+  } catch (error) {
+    console.warn(`[Sync] playlistStatus failed for ${providerId}: ${error.message}`);
+    return unknown;
+  }
+});
+
+ipcMain.handle('sync:set-playlist-public', async (event, providerId, playlistExternalId, isPublic) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.setPlaylistPublic) {
+    return { success: false, error: 'Provider does not support playlist visibility' };
+  }
+  try {
+    const token = getSyncProviderToken(providerId);
+    if (!token) return { success: false, error: 'Not authenticated' };
+    await provider.setPlaylistPublic(playlistExternalId, isPublic === true, token);
+    return { success: true };
+  } catch (error) {
     return { success: false, error: error.message };
   }
 });
