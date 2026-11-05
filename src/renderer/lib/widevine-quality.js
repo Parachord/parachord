@@ -183,6 +183,48 @@ function selectShakaVariant(variants, tier, opts) {
   return under.length ? under[0] : sorted[sorted.length - 1];
 }
 
+// The tier's cap for the LOAD-TIME pick (review #1247 point 1): shaka's ABR
+// chooses a variant the moment load() parses the manifest — before
+// applyConfig lands — and with the spanning ABR set nothing keeps that pick
+// inside the user's tier: every locked Saver/Standard/High track fetched a
+// FLAC init segment + license before the locked selection arrived. Capping
+// the pre-load configure's abr.restrictions.maxBandwidth at the tier ceiling
+// keeps the load-time pick on the tier's rung family without touching the
+// estimate seed or preferredAudioCodecs (the two load-time hazards).
+// `flacRefused` (a FLAC-rejecting probe, or the plan latch) further caps at
+// the HIGH corridor ceiling: the load-time pick must never ask for a family
+// the process has been refused — every observed Amazon FLAC/HD rung (≥ 850k)
+// sits above it. Max with FLAC playable stays uncapped: a load-time FLAC
+// request on a fast link IS what that tier asks for.
+function loadTimePickCap(tier, opts) {
+  const t = normalizePlaybackQuality(tier) || 'max';
+  let cap = TIER_CEILING_BPS[t] != null ? TIER_CEILING_BPS[t] : Infinity;
+  if (opts && opts.flacRefused) cap = Math.min(cap, TIER_CEILING_BPS.high);
+  return cap;
+}
+
+// The family-drop cap for shakaPlaybackConfig (see its comment): the top
+// selection-playable rung's bandwidth when the full roster carries a
+// playable-family rung above the whole selection-playable roster, else null
+// (no cap). "Selection-playable" = the same filter selectShakaVariant uses
+// (variantPlayable with the spatial opt-in): the cap must sit at the top rung
+// the tier can actually stream, not the top of the family-filtered roster —
+// a probe-accepted ec-3 rung is never a stereo tier's rung.
+function familyDropCapBps(playable, allVariants, opts) {
+  if (!Array.isArray(allVariants) || !allVariants.length) return null;
+  const spatial = !!(opts && opts.spatial);
+  const sorted = variantsSorted(playable.filter((v) => variantPlayable(v, spatial)));
+  if (!sorted.length) return null;
+  const topPlayable = Number(sorted[0].bandwidth) || 0;
+  if (!(topPlayable > 0)) return null; // bandwidth-less roster — nothing to cap at (the safe direction is uncapped)
+  for (const v of allVariants) {
+    const family = widevineCodecFamily(variantCodec(v));
+    if (!WIDEVINE_PLAYABLE_FAMILIES.has(family)) continue; // spatial/categorical families are handled by the channel guard, the opt-in or the manifest filter
+    if ((Number(v.bandwidth) || 0) > topPlayable) return topPlayable;
+  }
+  return null;
+}
+
 // The player's Shaka configuration for (tier, adaptive): locked strictly to
 // the tier's rung; adaptive starts at the tier ceiling and roams below it.
 // NO codec preference: tiers are bandwidth corridors across the full roster
@@ -192,6 +234,21 @@ function selectShakaVariant(variants, tier, opts) {
 // A SPATIAL pick is always locked (see the header): ABR's restrictions are
 // bandwidth-shaped and cannot pin a codec family, so adaptive would roam off
 // the deliberate spatial pick into stereo rungs under the same ceiling.
+//
+// FAMILY-DROP CAP (review #1247 point 2): pass the UNFILTERED manifest roster
+// as opts.allVariants alongside the playable one. `playableVariants`
+// (widevine-player) drops whole families — a FLAC-rejecting probe, the
+// CUSTOMER_NOT_ELIGIBLE plan latch — but the ABR candidate set is built from
+// the SHAKA-side manifest, which never hears about our filter: with the
+// spanning set, adaptive at Max would pick the refused FLAC rung on a good
+// link, mint the license, get refused again and fail the track — the repeat
+// the latch exists to stop. When the full roster carries a playable-family
+// rung ABOVE the whole playable roster (the observed refusal shape: Amazon's
+// FLAC/HD rungs sit above every lossy rung), the adaptive maxBandwidth is
+// capped at the top playable rung — the ABR roams the playable roster and
+// cannot reach the refused family. Interior refused rungs (below the
+// playable top) cannot be excluded by a one-sided band; no observed refusal
+// has that shape.
 function shakaPlaybackConfig(variants, tier, adaptive, opts) {
   const variant = selectShakaVariant(variants, tier, opts);
   if (!variant) return null;
@@ -202,17 +259,38 @@ function shakaPlaybackConfig(variants, tier, adaptive, opts) {
   }
   const t = normalizePlaybackQuality(tier) || 'max';
   const ceiling = t === 'max' ? null : TIER_CEILING_BPS[t];
+  const familyDropCap = familyDropCapBps(variants, opts && opts.allVariants, opts);
   return {
     abrEnabled: true,
     codecFamily: family,
     variantId: variant.id,
     variantBandwidth: bandwidth,
+    // The manager's pre-sample estimate seed. The vendored chooser picks a
+    // rung when the estimate sits in [rung/0.95, nextRung/0.85] (its
+    // bandwidthDowngradeTarget/bandwidthUpgradeTarget; consecutive windows
+    // OVERLAP — nextRung/0.95 < nextRung/0.85 — and the higher rung wins the
+    // overlap; the only unmatched region is BELOW the lowest rung's floor,
+    // which falls back to the lowest rung), so seeding exactly the tier
+    // rung's bandwidth lands ONE RUNG BELOW it: the rung's own bandwidth sits
+    // below its own floor (bw < bw/0.95), matching only the rung below.
+    // Seeding rung/0.95 lands ON the rung, and never overshoots into the
+    // rung above: the next rung's bandwidth is strictly higher, so
+    // ceil(rung/0.95) < nextRung/0.95 stays below the next rung's own
+    // floor. CEIL, never round: the floor IS rung/0.95, and rounding
+    // 1902230/0.95 down to 2002347 lands 0.37bps below it — back on the
+    // rung below. Only matters before the EWMA has ~128KB sampled (first
+    // track after launch; navigator.connection.downlink overrides the seed
+    // pre-sample anyway when the browser reports one).
+    seedBandwidth: Math.ceil(bandwidth / 0.95),
     // Adaptive floor mirrors the locked-mode floor: when the cheapest
     // playable variant exceeds the ceiling, cap at that variant instead —
     // capping below it leaves the restriction filter with zero variants
     // and the player with nothing (resolver-neutral class: a future
-    // provider whose manifest starts at 320k).
-    maxBandwidth: ceiling == null ? null : Math.max(ceiling, bandwidth),
+    // provider whose manifest starts at 320k). The family-drop cap composes
+    // by min(): it only tightens below refused-family rungs.
+    maxBandwidth: familyDropCap == null
+      ? (ceiling == null ? null : Math.max(ceiling, bandwidth))
+      : Math.min(familyDropCap, ceiling == null ? Infinity : Math.max(ceiling, bandwidth)),
     preferredCodecs: []
   };
 }
@@ -230,7 +308,8 @@ const api = {
   variantPlayable,
   variantsSorted,
   selectShakaVariant,
-  shakaPlaybackConfig
+  shakaPlaybackConfig,
+  loadTimePickCap
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof globalThis !== 'undefined') globalThis.ParachordWidevineQuality = api;

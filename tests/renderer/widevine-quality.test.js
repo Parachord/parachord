@@ -11,7 +11,8 @@ const {
   variantSpatial,
   variantPlayable,
   selectShakaVariant,
-  shakaPlaybackConfig
+  shakaPlaybackConfig,
+  loadTimePickCap
 } = require('../../src/renderer/lib/widevine-quality');
 
 const LIVE_VARIANTS = [
@@ -99,6 +100,26 @@ describe('selectShakaVariant (bandwidth-only tiers)', () => {
   });
 });
 
+describe('loadTimePickCap (the load-time pick rides the tier ceiling)', () => {
+  test('each tier maps to its ceiling; max is uncapped', () => {
+    expect(loadTimePickCap('saver')).toBe(100000);
+    expect(loadTimePickCap('standard')).toBe(200000);
+    expect(loadTimePickCap('high')).toBe(500000);
+    expect(loadTimePickCap('max')).toBe(Infinity);
+  });
+  test('legacy tier names normalize; unknown tiers cap like max', () => {
+    expect(loadTimePickCap('low')).toBe(100000);
+    expect(loadTimePickCap('BEST_AVAILABLE')).toBe(Infinity);
+    expect(loadTimePickCap('nonsense')).toBe(Infinity);
+    expect(loadTimePickCap(null)).toBe(Infinity);
+  });
+  test('a refused FLAC family caps at the high ceiling — binding for max only', () => {
+    expect(loadTimePickCap('max', { flacRefused: true })).toBe(500000); // below every observed Amazon FLAC rung
+    expect(loadTimePickCap('high', { flacRefused: true })).toBe(500000); // unchanged — already at the ceiling
+    expect(loadTimePickCap('saver', { flacRefused: true })).toBe(100000); // the tier is still the tighter bound
+  });
+});
+
 describe('shakaPlaybackConfig', () => {
   test('locked with preferredCodecs empty — family-free selection', () => {
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'standard', false)).toEqual({
@@ -107,10 +128,10 @@ describe('shakaPlaybackConfig', () => {
   });
   test('adaptive caps at tier ceiling, not family', () => {
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'saver', true)).toEqual({
-      abrEnabled: true, codecFamily: 'opus', variantId: '1', variantBandwidth: 53059, maxBandwidth: 100000, preferredCodecs: []
+      abrEnabled: true, codecFamily: 'opus', variantId: '1', variantBandwidth: 53059, seedBandwidth: 55852, maxBandwidth: 100000, preferredCodecs: []
     });
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'max', true)).toEqual({
-      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, maxBandwidth: null, preferredCodecs: []
+      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, seedBandwidth: 2002348, maxBandwidth: null, preferredCodecs: []
     });
   });
   test('adaptive FLOOR mirrors the locked floor (M3): never a zero-variant restriction', () => {
@@ -205,7 +226,7 @@ describe('spatial / Atmos opt-in', () => {
     );
     // Spatial on but nothing spatial playable: adaptive behaves as before.
     expect(shakaPlaybackConfig(LIVE_VARIANTS, 'max', true, { spatial: true })).toEqual({
-      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, maxBandwidth: null, preferredCodecs: []
+      abrEnabled: true, codecFamily: 'flac', variantId: '7', variantBandwidth: 1902230, seedBandwidth: 2002348, maxBandwidth: null, preferredCodecs: []
     });
   });
 });
