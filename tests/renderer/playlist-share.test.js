@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { playlistListenbrainzMbid, playlistShareTarget } = require('../../src/renderer/lib/playlist-share');
+const { playlistListenbrainzMbid, playlistShareTarget, notSyncedSharePrompt } = require('../../src/renderer/lib/playlist-share');
 
 const MBID = '0b1f6a7c-1d2e-4f3a-9b8c-7d6e5f4a3b2c';
 const playlists = [
@@ -121,5 +121,41 @@ describe('playlistShareTarget', () => {
     const dialog = app.indexOf('confirmDialog.show && React.createElement');
     const backdrop = app.slice(dialog, app.indexOf('e.stopPropagation()', dialog));
     expect(backdrop).not.toContain('onConfirm');
+  });
+});
+
+// Copy Link is the only way to a playlist link, and links go through ListenBrainz.
+// Without a next step, someone on Spotify alone hit a toast with nowhere to go.
+describe('notSyncedSharePrompt', () => {
+  test('not connected to ListenBrainz: offers to connect', () => {
+    for (const config of [null, undefined, {}, { userToken: '' }]) {
+      expect(notSyncedSharePrompt(config)).toEqual({
+        message: 'Playlist links go through ListenBrainz. Connect your account with a user token to share this playlist.',
+        actionLabel: 'Connect ListenBrainz',
+        next: 'connect',
+      });
+    }
+  });
+
+  test('connected, but this playlist is not on ListenBrainz: offers sync settings', () => {
+    expect(notSyncedSharePrompt({ userToken: 'tok' })).toEqual({
+      message: 'Sync this playlist to ListenBrainz first to enable sharing via Achordion.',
+      actionLabel: 'Sync Settings',
+      next: 'sync',
+    });
+  });
+
+  test('the share path offers the button, and each button goes somewhere', () => {
+    const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+    const start = app.indexOf('const publishCollectionSmartLink = useCallback');
+    const body = app.slice(start, app.indexOf("if (target.status === 'gone')", start));
+    expect(body).toContain('notSyncedSharePrompt(');
+    expect(body).toContain("store.get('scrobbler-config-listenbrainz')");
+    expect(body).toContain('openListenBrainzSettingsRef.current');
+    expect(body).toContain("openSyncSetupModalRef.current('listenbrainz')");
+    // Sharing needs the token, and a username alone doesn't save one. The field
+    // is optional and hidden under Advanced, so the button has to open it.
+    const opener = app.slice(app.indexOf('openListenBrainzSettingsRef.current = '), app.indexOf('openListenBrainzSettingsRef.current = ') + 400);
+    expect(opener).toContain('setListenbrainzAdvancedOpen(true)');
   });
 });

@@ -1200,7 +1200,7 @@ const { createBrokenArtRetry } = require('./lib/broken-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
-const { playlistShareTarget } = require('./lib/playlist-share');
+const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
@@ -3680,6 +3680,7 @@ const Parachord = () => {
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const pendingSyncSetupRef = useRef(null); // Track pending sync setup after Spotify auth redirect
   const spotifyAuthSucceededAtRef = useRef(0); // Last Spotify auth success; guards the sync flow against re-auth loops (parachord#986)
+  const openListenBrainzSettingsRef = useRef(null); // Settings → Plugins, on ListenBrainz (read from stale closures)
   const openSyncSetupModalRef = useRef(null); // Ref for openSyncSetupModal to avoid stale closures
 
   // Provider branding for sync UI
@@ -9157,6 +9158,14 @@ const Parachord = () => {
     });
   };
   openSyncSetupModalRef.current = openSyncSetupModal;
+  openListenBrainzSettingsRef.current = () => {
+    setActiveView('settings');
+    setSettingsTab('plugins');
+    const listenbrainzService = metaServices.find(s => s.id === 'listenbrainz');
+    if (listenbrainzService) setSelectedResolver(listenbrainzService);
+    // Sharing needs the token, and a username alone doesn't save one.
+    setListenbrainzAdvancedOpen(true);
+  };
 
   // Start sync from modal
   const startSync = async () => {
@@ -12828,9 +12837,19 @@ ${trackListXml}
         window.electron?.sync?.playlistStatus?.('listenbrainz', mbid)
       ));
       if (target.status === 'not-synced') {
+        const lbConfig = await window.electron.store.get('scrobbler-config-listenbrainz').catch(() => null);
+        const prompt = notSyncedSharePrompt(lbConfig);
         showToast(
-          'Sync this playlist to ListenBrainz first to enable sharing via Achordion.',
+          prompt.message,
           'info',
+          {
+            label: prompt.actionLabel,
+            onClick: () => {
+              if (prompt.next === 'connect') openListenBrainzSettingsRef.current?.();
+              else openSyncSetupModalRef.current('listenbrainz');
+            }
+          },
+          { duration: 8000 }
         );
         return;
       }
