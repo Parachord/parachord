@@ -902,6 +902,37 @@ describe('the family-failure fallback (#1262) — block the family, re-select th
     expect(adaptive.abr.restrictions.maxBandwidth).toBe(325595);
   });
 
+  test('a teardown-race append error during the NEXT play load never blocks a family (the session token gate)', async () => {
+    // The reviewer's race: play 2 is mid-load while play 1's session is
+    // still live. A 3015 wrapping a closed-MediaSource throw (the vendor's
+    // own teardown class) attributes to play 1's locked family — the
+    // fallback must decline (a dead play's attribution) and let it propagate,
+    // never blocking a good family for the process.
+    let finishLoad;
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3'); // play 1's locked spatial pick
+    // Play 2 parks inside load(): the gate goes on the (singleton) fake player
+    // between the two plays.
+    p.loadGate = new Promise((res) => { finishLoad = res; });
+    const play2 = player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    await new Promise((r) => setImmediate(r));
+    // The teardown-race error fires while play 2 owns the token and play 1's
+    // session is still the live trackSession.
+    const errorCb = p.listeners.find(([ev]) => ev === 'error')[1];
+    errorCb({ detail: { severity: 2, code: 3015, message: 'The mediaSource_ status was closed' } });
+    await expect(player.untilAudible()).rejects.toMatchObject({ reason: 'playback-failed' }); // propagated, not suppressed
+    expect(player.getState().blockedFamilies).toEqual({}); // and no family was blocked
+    finishLoad();
+    await play2; // play 2 owns the current token and completes normally
+    expect(player.getState().blockedFamilies).toEqual({}); // still nothing blocked
+  });
+
   test('a playback-failed family is a BUILD fact — clearPlanBlocks (sign-out) keeps it', async () => {
     const { sh, player } = load({
       electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
