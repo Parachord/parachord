@@ -2,6 +2,8 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
+const SEARCH_MAX_WORDS = 32;
+
 class LocalFilesDatabase {
   constructor(userDataPath) {
     this.dbPath = path.join(userDataPath, 'local-files.db');
@@ -221,24 +223,43 @@ class LocalFilesDatabase {
     return this.db.prepare(`SELECT file_path FROM tracks`).all().map((row) => row.file_path);
   }
 
+  // The search box, and every "artist title" search: the play deep links, the
+  // AI play and queue tools, MCP and the track-art album lookup all search for
+  // the two names joined, which no single column holds. So a row also matches
+  // when every word of the query is a whole word somewhere in its title, artist
+  // or album. Whole words because the artist + album cover lookup takes a result
+  // with art: "Go" + "It" must not pull in Gorillaz "Sit Down". Those rows rank
+  // below any phrase match, so a phrase search keeps the rows it had, and the
+  // exact "artist title" ranks first so that the row limit can't cut it.
   search(query) {
     const normalized = this.normalize(query);
     const pattern = `%${normalized}%`;
+    // A cap, because SQLite refuses a very long AND chain. Dropping the extra
+    // words only widens the match, and callers pick from the results.
+    const words = normalized.split(/\s+/).filter(Boolean).slice(0, SEARCH_MAX_WORDS);
+    const haystack = `(' ' || COALESCE(title_normalized, '') || ' ' || COALESCE(artist_normalized, '') || ' ' || COALESCE(album_normalized, '') || ' ')`;
+    const allWords = words.length > 1
+      ? `OR (${words.map(() => `${haystack} LIKE ?`).join(' AND ')})`
+      : '';
     const stmt = this.db.prepare(`
       SELECT * FROM tracks
       WHERE title_normalized LIKE ?
          OR artist_normalized LIKE ?
          OR album_normalized LIKE ?
+         ${allWords}
       ORDER BY
         CASE
+          WHEN artist_normalized || ' ' || title_normalized = ? THEN 0
           WHEN title_normalized LIKE ? THEN 1
           WHEN artist_normalized LIKE ? THEN 2
-          ELSE 3
+          WHEN album_normalized LIKE ? THEN 3
+          ELSE 4
         END,
         artist, album, track_number
       LIMIT 50
     `);
-    return stmt.all(pattern, pattern, pattern, pattern, pattern);
+    const wordPatterns = words.length > 1 ? words.map((word) => `% ${word} %`) : [];
+    return stmt.all(pattern, pattern, pattern, ...wordPatterns, normalized, pattern, pattern, pattern);
   }
 
   // Albums whose name contains the query, one row per album and album artist

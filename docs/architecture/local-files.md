@@ -51,6 +51,12 @@ Big libraries (50k–150k tracks) used to freeze the app for tens of seconds dur
 
 **Library scan progress toast.** Throttled at 250ms so navigating away from the scan screen mid-import still shows scan status. Prevents the "did it freeze?" reaction.
 
+### Searching by "artist title"
+
+`LocalFilesDatabase.search` serves the Search page and every caller that joins two names into one query: `parachord://play?artist=&title=`, the chat-link copy of it, the AI and MCP `play` and `queue_add` tools, the album-name lookup for track art (all "artist title"), and the resolver step of `getAlbumArt` ("artist album"). No column holds the joined string, so a phrase match alone never found a track that exists only as a local file: the link showed "Could not find" while searching for one word of the title worked. A row now also matches when every word of the query is a whole word somewhere in its title, artist or album.
+
+Whole words, not substrings, because the `getAlbumArt` step accepts any result with art: "Go" + "It" must not bring back Gorillaz "Sit Down". Rows rank exact "artist title" first (so the 50-row limit can't cut it), then the phrase in the title, artist and album as before, then the rows that only hold all the words, so a phrase search keeps every row it had. One-word queries are unchanged. The words are capped at 32 because SQLite refuses a very long AND chain; dropping words only widens the match, and callers still pick with `pickTrackMatch`. At 150k tracks a multi-word search takes about 65-95 ms against about 30 ms for the phrase match alone. Tests: `tests/local-files/search-combined-query.test.js`, against a real SQLite file.
+
 ### Album queries for the catalog fallback
 
 `localFiles:searchAlbums(query)` and `localFiles:getAlbumTracks({ album, albumArtist })` (`LocalFilesDatabase.searchAlbums` / `getAlbumTracks`) back the Local Files plugin's `searchAlbums` / `lookupAlbum`, which the album pages use when MusicBrainz can't supply a track list (docs/architecture/plugins.md, "Album search"). `search()` can't serve this: it matches tracks and stops at 50 rows, so a big album was cut short and an album name shared with a song title was crowded out. `searchAlbums` groups by `album_normalized` and the album artist (else the track artist); `getAlbumTracks` returns every track in disc and track order, matching the artist in JS with the same `normalize` the columns were stored with (there is no normalized album-artist column). Tests: `tests/local-files/album-queries.test.js`, against a real SQLite file.
