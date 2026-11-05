@@ -22,6 +22,7 @@
 
 const path = require('path');
 const Tombstones = require('../../sync-engine/tombstones');
+const { flagDeadMirrors } = require('../../sync-engine/dead-mirrors');
 
 function registerSyncStartIpc({
   ipcMain,
@@ -793,8 +794,16 @@ ipcMain.handle('sync:start', async (event, providerId, options = {}) => {
         }
       }
 
+      // Flag mirrors deleted on the provider. Without this only a push notices,
+      // and an unedited playlist never pushes (parachord#1269).
+      const { playlists: playlistsToSave } = await flagDeadMirrors(currentPlaylists, remotePlaylists, provider, {
+        providerId,
+        token,
+        isCancelled,
+      });
+
       // Save playlists (including any that succeeded before a failure)
-      store.set('local_playlists', currentPlaylists);
+      store.set('local_playlists', playlistsToSave);
       results.playlists = { added: playlistsAdded, updated: playlistsUpdated, failed: playlistsFailed };
       console.log(`[Sync] Playlists synced: ${playlistsAdded} added, ${playlistsUpdated} with updates${playlistsFailed > 0 ? `, ${playlistsFailed} failed` : ''}`);
     }

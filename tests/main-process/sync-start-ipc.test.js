@@ -61,6 +61,7 @@ function makeHarness({ provider = {}, storeData = {}, spotifyToken = 'SP-TOK', g
     writeCollectionAtomic: async (p, collection) => { calls.collectionWrites.push({ p, collection }); },
     getSyncLinks: () => ({}),
     legacyPlaylistSyncEnabled: () => true,
+    getChannelOverride: () => undefined,
   });
   return { handlers, store, event, sent, calls, providerObj };
 }
@@ -175,6 +176,50 @@ describe('sync:start gates', () => {
     const result = await handlers.get('sync:start')({ sender: { send() {} } }, 'spotify', {});
     expect(result.errorCode).toBeUndefined();
     expect(result.success).toBe(true);
+  });
+});
+
+describe('sync:start finds mirrors deleted on the provider (#1269)', () => {
+  const LB = { 'scrobbler-config-listenbrainz': { userToken: 'LB-TOK' } };
+  const event = { sender: { send() {} } };
+  const stored = (id, externalId) => ({ id, title: id, syncedTo: { listenbrainz: { externalId } } });
+
+  function run(provider, settings = { syncPlaylists: true }) {
+    const harness = makeHarness({
+      provider: { fetchPlaylists: async () => ({ playlists: [{ externalId: 'there', name: 'There', tracks: [] }] }), ...provider },
+      storeData: { ...LB, local_playlists: [stored('kept', 'there'), stored('deleted', 'gone')] },
+    });
+    return harness.handlers.get('sync:start')(event, 'listenbrainz', { settings }).then((result) => ({ result, harness }));
+  }
+
+  test('saves the flag on a confirmed deleted mirror, and only there', async () => {
+    const asked = [];
+    const { result, harness } = await run({
+      playlistStatus: async (id, token) => { asked.push([id, token]); return { exists: false, isPublic: null }; },
+    });
+    expect(result.success).toBe(true);
+    expect(asked).toEqual([['gone', 'LB-TOK']]);
+    const saved = harness.store.data.local_playlists;
+    expect(saved.find((p) => p.id === 'deleted').syncedTo.listenbrainz.pendingAction).toBe('remote-deleted');
+    expect(saved.find((p) => p.id === 'kept').syncedTo.listenbrainz.pendingAction).toBeUndefined();
+  });
+
+  test('a mirror the provider still has is not flagged, though the list left it out', async () => {
+    const { result, harness } = await run({ playlistStatus: async () => ({ exists: true, isPublic: false }) });
+    expect(result.success).toBe(true);
+    expect(harness.store.data.local_playlists.find((p) => p.id === 'deleted').syncedTo.listenbrainz.pendingAction).toBeUndefined();
+  });
+
+  test('a failing check does not fail the sync', async () => {
+    const { result, harness } = await run({ playlistStatus: async () => { throw new Error('boom'); } });
+    expect(result.success).toBe(true);
+    expect(harness.store.data.local_playlists.find((p) => p.id === 'deleted').syncedTo.listenbrainz.pendingAction).toBeUndefined();
+  });
+
+  test('nothing is checked when playlists are not being synced', async () => {
+    const asked = [];
+    await run({ playlistStatus: async (id) => { asked.push(id); return { exists: false, isPublic: null }; } }, { syncPlaylists: false });
+    expect(asked).toEqual([]);
   });
 });
 
