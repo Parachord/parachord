@@ -37,6 +37,8 @@
 
 ## Sync
 
+- **Sharing a private ListenBrainz playlist asks first.** Copy Link used to hand out a link that only opened for you. It now asks whether to make the playlist public before copying, and Cancel changes nothing.
+- **A playlist you deleted on ListenBrainz no longer looks synced.** The app kept recording a sync against it, and Copy Link gave a link that wouldn't open. Parachord now stops pushing to it, and Copy Link says it's gone. Nothing is recreated.
 - **A playlist you import from a URL while sync setup finishes stays in your list.** Setting up sync could take minutes, and a hosted playlist imported during that time could disappear from your playlists until they next reloaded. Thanks to @theli-ua for finding and fixing it.
 
 ## AI DJ
