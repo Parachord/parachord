@@ -225,43 +225,6 @@ function familyDropCapBps(playable, allVariants, opts) {
   return null;
 }
 
-// Categorically undecodable families — no Chromium ffmpeg decoder on ANY
-// build, admitted by no setting: AC-4 IMS and MPEG-H. Their rungs ride
-// 2-channel stereo bandwidths INSIDE the tier corridors (live capture
-// B0CPSG7191: ac-4.02.02.00 at 115k/260k), so the spanning ABR set can
-// reach them — the channel guard only excludes the 6-channel (ec-3) and
-// null-channel (mha/mhm) shapes — unless the set carries shaka's Dolby
-// spatial descriptor, which not every provider includes. A mid-track ABR
-// pick of one would stall the track on an undecodable stream. Drop their
-// AdaptationSets from the MPD before the blob-URL load so the ABR candidate
-// set IS the decodable roster. ec-3 sets STAY (the spatial opt-in picks
-// them; the wide set's channel guard keeps their 6-channel rungs out). A set
-// mixing decodable and undecodable Representations stays (conservative —
-// the decodable rungs must survive).
-function dropUnplayableAdaptationSets(xml) {
-  const text = String(xml || '');
-  if (!text) return text;
-  let out = '';
-  let last = 0;
-  let dropped = 0;
-  for (const match of text.matchAll(/<AdaptationSet[\s\S]*?<\/AdaptationSet>/g)) {
-    const set = match[0];
-    const setTag = set.slice(0, set.indexOf('>') + 1);
-    const setCodecs = (setTag.match(/\scodecs="([^"]*)"/) || [])[1] || null;
-    const reps = [...set.matchAll(/<Representation\s[^>]*>/g)].map((m) =>
-      ((m[0].match(/\scodecs="([^"]*)"/) || [])[1]) || setCodecs || '');
-    const undecodable = reps.length > 0 && reps.every((c) => {
-      const family = widevineCodecFamily(c);
-      return family === 'ac4' || family === 'mpegh';
-    });
-    if (!undecodable) continue;
-    out += text.slice(last, match.index);
-    last = match.index + set.length;
-    dropped += 1;
-  }
-  return dropped ? out + text.slice(last) : text;
-}
-
 // The player's Shaka configuration for (tier, adaptive): locked strictly to
 // the tier's rung; adaptive starts at the tier ceiling and roams below it.
 // NO codec preference: tiers are bandwidth corridors across the full roster
@@ -346,8 +309,7 @@ const api = {
   variantsSorted,
   selectShakaVariant,
   shakaPlaybackConfig,
-  loadTimePickCap,
-  dropUnplayableAdaptationSets
+  loadTimePickCap
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 if (typeof globalThis !== 'undefined') globalThis.ParachordWidevineQuality = api;

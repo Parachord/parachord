@@ -24,7 +24,7 @@
 
 'use strict';
 
-const { shakaPlaybackConfig, widevineCodecFamily, loadTimePickCap, dropUnplayableAdaptationSets } = require('./widevine-quality');
+const { shakaPlaybackConfig, widevineCodecFamily, loadTimePickCap } = require('./widevine-quality');
 
 const QUALITY_STORE_KEY = 'playback_quality';
 const ABR_STORE_KEY = 'playback_abr';
@@ -516,6 +516,16 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   // which the post-load applyConfig re-sends with the authoritative value.
   const preload = await readPlaybackQuality();
   const support = await getSupportedCodecFamilies();
+  // A stop/skip during these awaits (the review's temp test): without this
+  // check the stopped play still calls load(), re-seizes activeResolverId
+  // after stop() cleared it, and the minted session idles open — the matched
+  // close the load catch does, thrown as the same supersession it is.
+  if (playToken !== mine) {
+    if (result.sessionId) {
+      fanoutWidevineEvent('stopped', { resolverId, sessionId: result.sessionId, positionMs: 0 });
+    }
+    throw supersededError();
+  }
   const flacRefused = hdSessionBlockedByPlan || support.flac === false;
   const loadCap = loadTimePickCap(preload.tier, { flacRefused });
   player.configure({
@@ -561,12 +571,10 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   activeResolverId = resolverId;
 
   // Blob URL, not a data: URI — manifests can exceed Chromium's ~2MB URL cap.
-  // Undecodable AdaptationSets (AC-4 / MPEG-H — no Chromium decoder on any
-  // build, and their stereo rungs sit INSIDE the tier corridors where the
-  // spanning ABR set can reach them) are dropped first: the ABR candidate set
-  // is then the decodable roster.
-  const manifestText = dropUnplayableAdaptationSets(result.manifest);
-  const blob = new Blob([manifestText], { type: 'application/dash+xml' });
+  // (The AC-4 / MPEG-H rungs need no pre-filter: shaka's own playable filter
+  // drops them — the CDM rejects their mediaCapabilities.decodingInfo probe —
+  // so they never reach getVariantTracks() or the ABR candidate set.)
+  const blob = new Blob([result.manifest], { type: 'application/dash+xml' });
   const uri = URL.createObjectURL(blob);
   try {
     await player.load(uri);
@@ -708,7 +716,12 @@ function getState() {
         bandwidthEstimate: player.getBandwidthEstimate ? player.getBandwidthEstimate() : null,
         variants: tracks.length,
         activeIds: tracks.filter((t) => t.active).map((t) => t.id),
-        playableBandwidths: tracks.map((t) => t.bandwidth).sort((a, b) => a - b).filter((v, i, arr) => arr.indexOf(v) === i)
+        playableBandwidths: tracks.map((t) => t.bandwidth).sort((a, b) => a - b).filter((v, i, arr) => arr.indexOf(v) === i),
+        // The distinct codecs in the manifest as shaka serves them — answers
+        // "what families did this track's roster actually carry" (the Linux
+        // SD/LD-ladder reading, the Atmos-track AC-4 check) straight from
+        // DevTools on a stock build.
+        variantCodecs: tracks.map((t) => t.codecs).filter((v, i, arr) => arr.indexOf(v) === i).sort()
       };
     }
   } catch { /* debug only */ }

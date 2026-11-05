@@ -473,6 +473,44 @@ describe('applyConfig shaping', () => {
     expect(p.selected).toBeNull(); // the manager starts at the estimate — no selectVariantTrack warning
   });
 
+  test('a stop() during the pre-load reads never reaches load(): the play bows out superseded and match-closes its session', async () => {
+    // The review's temp test, made permanent: hold store.get, stop() the
+    // engine, release. Without the post-await token check the stopped play
+    // still called load(), re-seized activeResolverId after stop() cleared
+    // it, and its minted session never got the matched close.
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true } })
+    });
+    const audio = makeAudio();
+    let releaseStore;
+    const gate = new Promise((res) => { releaseStore = res; });
+    let held = false;
+    const realGet = el.store.get;
+    el.store.get = async (key) => {
+      if (!held) { held = true; await gate; }
+      return realGet(key);
+    };
+    el.bridge.getManifest.mockResolvedValueOnce({ success: true, manifest: '<MPD/>', sessionId: 'S1' });
+    const playPromise = player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    // Let the manifest mint resolve; the play is now parked in the held
+    // store.get inside the pre-load read.
+    for (let i = 0; i < 20 && !held; i += 1) await Promise.resolve();
+    await new Promise((r) => setImmediate(r));
+    expect(held).toBe(true);
+    await player.stop();
+    expect(player.getState().activeResolverId).toBeNull(); // stop() cleared it
+    releaseStore();
+    await expect(playPromise).rejects.toMatchObject({ reason: 'superseded' });
+    const p = sh.playerInstances[0];
+    expect(p.loadedUris).toEqual([]); // the stopped play never called load()
+    expect(player.getState().activeResolverId).toBeNull(); // and never re-seized it
+    // The minted session got its matched close (stop() itself emitted nothing
+    // — no trackSession yet).
+    const stops = el.bridge.playerEvent.mock.calls.filter(([, ev]) => ev && ev.type === 'stopped');
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).toEqual(['amazonmusic', expect.objectContaining({ sessionId: 'S1' })]);
+  });
+
   test('the pre-load configure caps the LOAD-TIME pick at the tier ceiling (#1247 review point 1)', async () => {
     // The load-time pick fires before applyConfig lands; with the spanning
     // ABR set nothing else kept it inside the user's tier — every locked

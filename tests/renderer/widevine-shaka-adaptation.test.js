@@ -44,7 +44,7 @@ if (!globalThis.SourceBuffer.prototype.changeType) {
 }
 
 const shaka = require('../../vendor/shaka-player.compiled.js');
-const { shakaPlaybackConfig, dropUnplayableAdaptationSets, widevineCodecFamily } = require('../../src/renderer/lib/widevine-quality');
+const { shakaPlaybackConfig } = require('../../src/renderer/lib/widevine-quality');
 
 // The live variant table observed 2026-10 for an HD-tier account (Get Lucky)
 // — tests/resolver/amazon-music-logic.test.js LIVE_REPS. Stereo families
@@ -266,49 +266,6 @@ async function parseWith(enableAudioGroups) {
   return parseWithText(MPD, enableAudioGroups);
 }
 
-// The captured Atmos manifest shape (B0CPSG7191, 2026-11): the stereo opus/
-// flac sets of the two-set fixture above, plus the 6-channel ec-3 JOC set, a
-// 2-channel AC-4 IMS set (115k/260k — INSIDE the tier corridors) and an
-// MPEG-H set — the shapes dropUnplayableAdaptationSets exists for.
-const ATOMS_MPD = `<?xml version="1.0"?>
-<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT10S" minBufferTime="PT2S">
-  <Period id="0" duration="PT10S">
-    <AdaptationSet id="10" contentType="audio" mimeType="audio/mp4" segmentAlignment="true">
-      <Representation id="a1" codecs="opus" bandwidth="51352">
-        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>
-        <SegmentTemplate media="seg$Number$.mp4" initialization="init.mp4" duration="4" timescale="1" startNumber="1"/>
-      </Representation>
-    </AdaptationSet>
-    <AdaptationSet id="20" contentType="audio" mimeType="audio/mp4" segmentAlignment="true">
-      <Representation id="b1" codecs="fLaC" bandwidth="1723851">
-        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>
-        <SegmentTemplate media="seg$Number$.mp4" initialization="init.mp4" duration="4" timescale="1" startNumber="1"/>
-      </Representation>
-    </AdaptationSet>
-    <AdaptationSet id="30" contentType="audio" mimeType="audio/mp4" segmentAlignment="true">
-      <Representation id="c1" codecs="ec-3" bandwidth="770130">
-        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="6"/>
-        <SegmentTemplate media="seg$Number$.mp4" initialization="init.mp4" duration="4" timescale="1" startNumber="1"/>
-      </Representation>
-    </AdaptationSet>
-    <AdaptationSet id="40" contentType="audio" mimeType="audio/mp4" segmentAlignment="true">
-      <Representation id="d1" codecs="ac-4.02.02.00" bandwidth="259980">
-        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>
-        <SegmentTemplate media="seg$Number$.mp4" initialization="init.mp4" duration="4" timescale="1" startNumber="1"/>
-      </Representation>
-      <Representation id="d2" codecs="ac-4.02.02.00" bandwidth="115479">
-        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>
-        <SegmentTemplate media="seg$Number$.mp4" initialization="init.mp4" duration="4" timescale="1" startNumber="1"/>
-      </Representation>
-    </AdaptationSet>
-    <AdaptationSet id="50" contentType="audio" mimeType="audio/mp4" segmentAlignment="true">
-      <Representation id="e1" codecs="mha1.0x0e" bandwidth="1612557">
-        <SegmentTemplate media="seg$Number$.mp4" initialization="init.mp4" duration="4" timescale="1" startNumber="1"/>
-      </Representation>
-    </AdaptationSet>
-  </Period>
-</MPD>`;
-
 describe('the real DashParser × the choice criteria (manifest.enableAudioGroups, end to end)', () => {
   test('enableAudioGroups:true (the default): per-set group ids — the ABR set is one family (the #1243 bug shape)', async () => {
     const { manifest, cfg } = await parseWith(true);
@@ -336,30 +293,5 @@ describe('the real DashParser × the choice criteria (manifest.enableAudioGroups
     });
     const set = Array.from(crit.create(manifest.variants).values());
     expect(set.map((v) => v.audio.codecs).sort()).toEqual(['fLaC', 'opus']);
-  });
-
-  test('dropUnplayableAdaptationSets × the real parser: the AC-4 rungs leave the manifest, the spanning set is the decodable roster', async () => {
-    // The captured Atmos shape (B0CPSG7191): stereo opus + flac, 6-channel
-    // ec-3 JOC, and the 2-channel AC-4 IMS rungs at 115k/260k — INSIDE the
-    // tier corridors, reachable by the spanning set unless the set carries
-    // shaka's Dolby spatial descriptor. The filter drops the AC-4/MPEG-H
-    // sets before the blob-URL load; the real parser then never yields an
-    // ac-4 variant and the ABR set spans only the decodable families.
-    const filteredMpd = dropUnplayableAdaptationSets(ATOMS_MPD);
-    expect(filteredMpd).not.toBe(ATOMS_MPD); // something was dropped
-    const { manifest, cfg } = await parseWithText(filteredMpd, false);
-    const codecs = manifest.variants.map((v) => v.audio.codecs);
-    expect(codecs.some((c) => String(c).startsWith('ac-4'))).toBe(false);
-    expect(codecs.some((c) => String(c).startsWith('ec-3'))).toBe(true); // the opt-in's rungs survive
-    const crit = cfg.adaptationSetCriteriaFactory();
-    crit.configure({
-      language: '', role: '', videoRole: '', channelCount: 0, hdrLevel: 'AUTO', spatialAudio: false,
-      videoLayout: '', audioLabel: '', videoLabel: '', codecSwitchingStrategy: cfg.mediaSource.codecSwitchingStrategy,
-      audioCodec: '', activeAudioCodec: '', activeAudioChannelCount: 0,
-      preferredAudioCodecs: [], preferredAudioChannelCount: 2
-    });
-    const set = Array.from(crit.create(manifest.variants).values());
-    const setFamilies = set.map((v) => widevineCodecFamily(v.audio.codecs)).sort();
-    expect(setFamilies).toEqual(['flac', 'opus']); // decodable roster only — no ac-4, no ec-3 (6-channel guard)
   });
 });

@@ -12,8 +12,7 @@ const {
   variantPlayable,
   selectShakaVariant,
   shakaPlaybackConfig,
-  loadTimePickCap,
-  dropUnplayableAdaptationSets
+  loadTimePickCap
 } = require('../../src/renderer/lib/widevine-quality');
 
 const LIVE_VARIANTS = [
@@ -118,74 +117,6 @@ describe('loadTimePickCap (the load-time pick rides the tier ceiling)', () => {
     expect(loadTimePickCap('max', { flacRefused: true })).toBe(500000); // below every observed Amazon FLAC rung
     expect(loadTimePickCap('high', { flacRefused: true })).toBe(500000); // unchanged — already at the ceiling
     expect(loadTimePickCap('saver', { flacRefused: true })).toBe(100000); // the tier is still the tighter bound
-  });
-});
-
-describe('dropUnplayableAdaptationSets (the spanning ABR set vs the undecodable families)', () => {
-  // The captured Atmos manifest shape (B0CPSG7191): stereo opus/flac sets, the
-  // 6-channel ec-3 JOC set, and the AC-4 IMS set whose rungs ride 2-channel
-  // stereo bandwidths INSIDE the tier corridors (115k/260k) — plus an MPEG-H
-  // set. With the spanning ABR set, those interior AC-4/MPEG-H rungs are
-  // reachable unless the set carries shaka's Dolby spatial descriptor, so
-  // their AdaptationSets are dropped before the blob-URL load.
-  const MPD = `<?xml version="1.0"?>
-<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT200S">
-  <Period>
-    <AdaptationSet id="10" contentType="audio" mimeType="audio/mp4">
-      <Representation id="1" codecs="opus" bandwidth="51352" audioSamplingRate="48000"/>
-      <Representation id="3" codecs="opus" bandwidth="323352" audioSamplingRate="48000"/>
-    </AdaptationSet>
-    <AdaptationSet id="20" contentType="audio" mimeType="audio/mp4">
-      <Representation id="7" codecs="fLaC" bandwidth="1723851" audioSamplingRate="44100"/>
-    </AdaptationSet>
-    <AdaptationSet id="30" contentType="audio" mimeType="audio/mp4">
-      <Representation id="8" codecs="ec-3" bandwidth="770130" audioSamplingRate="48000"/>
-    </AdaptationSet>
-    <AdaptationSet id="40" contentType="audio" mimeType="audio/mp4">
-      <Representation id="10" codecs="ac-4.02.02.00" bandwidth="259980" audioSamplingRate="48000"/>
-      <Representation id="11" codecs="ac-4.02.02.00" bandwidth="115479" audioSamplingRate="48000"/>
-    </AdaptationSet>
-    <AdaptationSet id="50" contentType="audio" mimeType="audio/mp4">
-      <Representation id="12" codecs="mha1.0x0e" bandwidth="1612557" audioSamplingRate="48000"/>
-      <Representation id="13" codecs="mhm1.0x0d" bandwidth="1077894" audioSamplingRate="48000"/>
-    </AdaptationSet>
-  </Period>
-</MPD>`;
-
-  test('drops the AC-4 and MPEG-H sets, keeps opus/flac/ec-3 intact', () => {
-    const out = dropUnplayableAdaptationSets(MPD);
-    expect(out).not.toContain('ac-4');
-    expect(out).not.toContain('mha1');
-    expect(out).not.toContain('mhm1');
-    // Every decodable family survives byte-for-byte — including ec-3 (the
-    // spatial opt-in picks it; the wide set's channel guard keeps it out).
-    for (const keep of ['codecs="opus"', 'codecs="fLaC"', 'codecs="ec-3"', 'id="1"', 'id="7"', 'id="8"']) {
-      expect(out).toContain(keep);
-    }
-    // No half-dropped fragments: the remaining XML is well-formed enough that
-    // the kept Representation counts survive.
-    expect(out.match(/<Representation /g).length).toBe(4);
-    expect(out.match(/<AdaptationSet /g).length).toBe(3);
-  });
-
-  test('a set mixing decodable and undecodable Representations STAYS (conservative)', () => {
-    const mixed = MPD.replace('codecs="opus" bandwidth="51352"', 'codecs="ac-4.02.02.00" bandwidth="51352"');
-    const out = dropUnplayableAdaptationSets(mixed);
-    expect(out).toContain('codecs="ac-4.02.02.00" bandwidth="51352"'); // the set was kept — its opus rung must survive
-    expect(out).toContain('codecs="opus"');
-  });
-
-  test('identity for text with no AdaptationSets / no Representations', () => {
-    expect(dropUnplayableAdaptationSets('<MPD/>')).toBe('<MPD/>');
-    expect(dropUnplayableAdaptationSets('')).toBe('');
-    expect(dropUnplayableAdaptationSets(null)).toBe(''); // null/undefined collapse to empty, like the store does
-    const emptySet = '<AdaptationSet id="1" contentType="audio"/>';
-    expect(dropUnplayableAdaptationSets(emptySet)).toBe(emptySet);
-  });
-
-  test('a set whose codecs live on the AdaptationSet tag still drops', () => {
-    const setLevel = '<AdaptationSet id="40" codecs="ac-4.02.02.00"><Representation id="10" bandwidth="259980"/></AdaptationSet>';
-    expect(dropUnplayableAdaptationSets(setLevel)).not.toContain('ac-4');
   });
 });
 
