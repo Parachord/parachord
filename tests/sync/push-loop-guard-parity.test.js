@@ -190,7 +190,18 @@ const PARITY_GUARDS = [
 // loop both fail — either direction is drift. Someone adding a real occurrence
 // to both loops bumps the count in the list; that's the cost of a gate over
 // code this sensitive.
-function missingGuards(region) {
+//
+// Comments are stripped before counting, so commenting a guard out fails like
+// deleting it, and a comment quoting a marker doesn't count as an occurrence.
+// A `//` right after a colon is left alone, for the URLs in strings.
+function stripComments(region) {
+  return region
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+function missingGuards(rawRegion) {
+  const region = stripComments(rawRegion);
   const missing = [];
   for (const guard of PARITY_GUARDS) {
     for (const marker of guard.markers) {
@@ -236,6 +247,28 @@ describe('legacy playlist push/create twin loops (background sync + post-wizard)
     const [background, wizard] = regions;
     expect(background).toContain('backgroundSyncCancelledRef.current');
     expect(wizard).not.toContain('backgroundSyncCancelledRef');
+  });
+
+  test('negative control: an extra occurrence in one loop fails (counts are exact, not floors)', () => {
+    const [background] = regions;
+    const missing = missingGuards(`${background}\nmodifiedPlaylistIds.add(playlist.id);\n`);
+    expect(missing.some((m) => m.includes('modifiedPlaylistIds.add('))).toBe(true);
+  });
+
+  test('negative control: commenting a guard out fails, whichever comment style', () => {
+    const [, wizard] = regions;
+    const guard = 'const sourceProvider = playlist.syncedFrom?.resolver;';
+    expect(wizard).toContain(guard);
+    for (const commented of [`// ${guard}`, `/* ${guard} */`]) {
+      const missing = missingGuards(wizard.replace(guard, commented));
+      expect(missing.some((m) => m.includes(guard))).toBe(true);
+    }
+  });
+
+  test('a comment that quotes a marker does not count as a second occurrence', () => {
+    const [background] = regions;
+    const quoted = `${background}\n// see modifiedPlaylistIds.add( above\nfoo(); // and modifiedPlaylistIds.add( here\n/* modifiedPlaylistIds.add( */\n`;
+    expect(missingGuards(quoted)).toEqual([]);
   });
 
   test('negative control: dropping a guard from one loop fails the parity check', () => {
