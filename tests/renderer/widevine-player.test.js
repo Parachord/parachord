@@ -224,7 +224,7 @@ describe('license scheme relay', () => {
     // The license relay fails with the HD eligibility reason → session flag.
     const handler = sh.schemeHandlers.get('parachord-license');
     await expect(handler('parachord-license://amazonmusic?v=2', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
-    expect(player.getState().hdSessionBlockedByPlan).toBe(true);
+    expect(player.getState().blockedFamilies).toEqual({ flac: 'license-denied' });
     // Subsequent max-tier play sees the FLAC rung put out of the roster.
     await player.stop();
     const audio2 = makeAudio();
@@ -349,9 +349,9 @@ describe('stale teardowns (review round 2)', () => {
     await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
     const handler = sh.schemeHandlers.get('parachord-license');
     await expect(handler('parachord-license://amazonmusic?v=2', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
-    expect(player.getState().hdSessionBlockedByPlan).toBe(true);
+    expect(player.getState().blockedFamilies).toEqual({ flac: 'license-denied' });
     player.clearPlanBlocks();
-    expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+    expect(player.getState().blockedFamilies).toEqual({});
     await player.stop();
     await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
     expect(sh.playerInstances[0].selected.bandwidth).toBe(1902230);
@@ -548,7 +548,7 @@ describe('applyConfig shaping', () => {
     el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for HD' });
     const handler = sh.schemeHandlers.get('parachord-license');
     await expect(handler('parachord-license://amazonmusic?v=2', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
-    expect(player.getState().hdSessionBlockedByPlan).toBe(true);
+    expect(player.getState().blockedFamilies).toEqual({ flac: 'license-denied' });
     // Second play on the latched process: max + adaptive.
     el.store.__values.playback_abr = true;
     await player.stop();
@@ -781,6 +781,172 @@ describe('codec support probing (the Linux FLAC-only-on-paper regression)', () =
   });
 });
 
+describe('the family-failure fallback (#1262) — block the family, re-select the next best thing', () => {
+  function fireError(sh, code) {
+    const p = sh.playerInstances[0];
+    const errorCb = p.listeners.find(([ev]) => ev === 'error')[1];
+    errorCb({ detail: { severity: 2, code, message: 'Shaka Error ' + code } });
+  }
+  async function settle(ms = 0) {
+    for (let i = 0; i < (ms ? 1 : 6); i += 1) {
+      await new Promise((r) => (ms ? setTimeout(r, ms) : setImmediate(r)));
+    }
+  }
+
+  test('the #1262 regression: a locked spatial pick whose append fails (3014) blocks the family and falls back to stereo, not a failed play', async () => {
+    // The observed Linux shape: the probe admits the spatial family, the
+    // locked pick selects it, and the SourceBuffer rejects its data. The
+    // play must fall back to the next best rung, not fail every track.
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    let fatal = null;
+    global.window.__parachordWidevineFatal = (msg) => { fatal = msg; };
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3'); // the locked spatial pick
+    fireError(sh, 3014);
+    await settle(); // the async re-selection runs
+    // The family is out for the process, codec-free keyed by family.
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed' });
+    // The re-selection fell back to the next best rung (stereo FLAC at max).
+    expect(p.selected.codecs).toBe('flac');
+    expect(p.selected.bandwidth).toBe(1902230);
+    // The play was NOT failed: no fatal surfaced.
+    expect(fatal).toBeNull();
+    // And the next play with the opt-in still on never tries the failed
+    // family again — stereo straight away.
+    await player.stop();
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    expect(p.selected.codecs).toBe('flac');
+  });
+
+  test('a license refusal mid-play falls back too — the error it causes is suppressed once (the family)', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    let fatal = null;
+    global.window.__parachordWidevineFatal = (msg) => { fatal = msg; };
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac'); // locked max
+    el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for HD' });
+    const handler = sh.schemeHandlers.get('parachord-license');
+    await expect(handler('parachord-license://amazonmusic?v=1', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
+    expect(player.getState().blockedFamilies).toEqual({ flac: 'license-denied' });
+    // The shaka error the refusal causes (a DRM-range critical) is attributed
+    // to the just-latched family and the play re-selects instead of failing.
+    fireError(sh, 6002);
+    await settle();
+    expect(p.selected.codecs).toBe('opus'); // next best thing at max
+    expect(p.selected.bandwidth).toBe(325595);
+    expect(fatal).toBeNull();
+  });
+
+  test('a repeat failure for the SAME family propagates — the fallback did not take', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    let fatal = null;
+    global.window.__parachordWidevineFatal = (msg) => { fatal = msg; };
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    // Two errors before the async re-selection lands: the first is taken by
+    // the fallback, the second for the already-blocked family propagates.
+    fireError(sh, 3014);
+    fireError(sh, 3014);
+    // Pre-start, the propagated fatal rejects untilAudible (failAudible).
+    await expect(player.untilAudible()).rejects.toMatchObject({ reason: 'playback-failed' });
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed' });
+  });
+
+  test('the fallback is bounded: when every family has failed, the play fails honestly', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    // The spatial lock fails → FLAC → opus → nothing left.
+    fireError(sh, 3014); // ec-3 blocked, re-selects FLAC
+    await settle();
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed' });
+    fireError(sh, 3014); // flac blocked, re-selects opus
+    await settle();
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed', flac: 'playback-failed' });
+    fireError(sh, 3014); // opus blocked — no next best thing left
+    await settle();
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed', flac: 'playback-failed', opus: 'playback-failed' });
+    // The roster is empty: the fallback declines and the error propagates.
+    await expect(player.untilAudible()).rejects.toMatchObject({ reason: 'playback-failed' });
+  });
+
+  test('an adaptive play attributes the append failure to the ACTIVE family (the manager\'s own pick)', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    // Nothing selected by our code (adaptive) — the ABR's own pick marks the
+    // FLAC rung active.
+    const flacRung = p.variantTracks.find((t) => t.codecs === 'flac');
+    flacRung.active = true;
+    fireError(sh, 3014);
+    await settle();
+    expect(player.getState().blockedFamilies).toEqual({ flac: 'playback-failed' });
+    // The re-configured adaptive ceiling now caps below the blocked family's
+    // rungs (the family-drop cap: the shaka-side roster still carries FLAC).
+    const adaptive = p.configureCalls.filter((c) => c.abr && c.abr.enabled === true).pop();
+    expect(adaptive.abr.restrictions.maxBandwidth).toBe(325595);
+  });
+
+  test('a teardown-race append error during the NEXT play load never blocks a family (the session token gate)', async () => {
+    // The reviewer's race: play 2 is mid-load while play 1's session is
+    // still live. A 3015 wrapping a closed-MediaSource throw (the vendor's
+    // own teardown class) attributes to play 1's locked family — the
+    // fallback must decline (a dead play's attribution) and let it propagate,
+    // never blocking a good family for the process.
+    let finishLoad;
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('ec-3'); // play 1's locked spatial pick
+    // Play 2 parks inside load(): the gate goes on the (singleton) fake player
+    // between the two plays.
+    p.loadGate = new Promise((res) => { finishLoad = res; });
+    const play2 = player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    await new Promise((r) => setImmediate(r));
+    // The teardown-race error fires while play 2 owns the token and play 1's
+    // session is still the live trackSession.
+    const errorCb = p.listeners.find(([ev]) => ev === 'error')[1];
+    errorCb({ detail: { severity: 2, code: 3015, message: 'The mediaSource_ status was closed' } });
+    await expect(player.untilAudible()).rejects.toMatchObject({ reason: 'playback-failed' }); // propagated, not suppressed
+    expect(player.getState().blockedFamilies).toEqual({}); // and no family was blocked
+    finishLoad();
+    await play2; // play 2 owns the current token and completes normally
+    expect(player.getState().blockedFamilies).toEqual({}); // still nothing blocked
+  });
+
+  test('a playback-failed family is a BUILD fact — clearPlanBlocks (sign-out) keeps it', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
+    });
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    fireError(sh, 3014);
+    await settle();
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed' });
+    player.clearPlanBlocks(); // sign-out: account facts clear, build facts stay
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed' });
+  });
+});
+
 describe('spatial / Atmos opt-in (playback_spatial)', () => {
   test('spatial on: the E-AC-3 JOC rung is picked and LOCKED, even at max over higher-bandwidth FLAC', async () => {
     const { sh, player } = load({
@@ -814,8 +980,7 @@ describe('spatial / Atmos opt-in (playback_spatial)', () => {
     el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for HD' });
     const handler = sh.schemeHandlers.get('parachord-license');
     await expect(handler('parachord-license://amazonmusic?v=1', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
-    expect(player.getState().hdSessionBlockedByPlan).toBe(true);
-    expect(player.getState().spatialBlockedByPlan).toBe(false);
+    expect(player.getState().blockedFamilies).toEqual({ flac: 'license-denied' });
     // Play 2, spatial ON: FLAC is out of the roster, the spatial set stays —
     // the pick is the ec-3 rung, NOT a drop to top opus.
     el.store.__values.playback_spatial = true;
@@ -841,8 +1006,7 @@ describe('spatial / Atmos opt-in (playback_spatial)', () => {
     el.bridge.relayLicense.mockResolvedValueOnce({ success: false, licenseDenied: false, denialReason: 'CUSTOMER_NOT_ELIGIBLE', error: 'not eligible for spatial' });
     const handler = sh.schemeHandlers.get('parachord-license');
     await expect(handler('parachord-license://amazonmusic?v=1', { body: new ArrayBuffer(4), uris: [] })).rejects.toBeTruthy();
-    expect(player.getState().spatialBlockedByPlan).toBe(true);
-    expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'license-denied' });
     // Play 2: ec-3 is out of the roster (no per-track retry loop) and FLAC
     // is still IN — the pick falls to the FLAC rung, not opus.
     await player.stop();
@@ -851,10 +1015,9 @@ describe('spatial / Atmos opt-in (playback_spatial)', () => {
     const p2 = sh.playerInstances[0];
     expect(p2.selected.codecs).toBe('flac');
     expect(p2.selected.bandwidth).toBe(1902230);
-    // And clearPlanBlocks resets both latches (sign-out semantics).
+    // And clearPlanBlocks resets the account-fact latch (sign-out semantics).
     player.clearPlanBlocks();
-    expect(player.getState().spatialBlockedByPlan).toBe(false);
-    expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+    expect(player.getState().blockedFamilies).toEqual({});
   });
 
   test('the load-time pick is never steered — no codec list, no seed estimate (the roster and the ABR set stay full)', async () => {
@@ -931,8 +1094,7 @@ describe('spatial / Atmos opt-in (playback_spatial)', () => {
     resolveDenial();
     await expect(pending).rejects.toBeTruthy();
     // Attributed to the REQUEST-time family (spatial), never the current one.
-    expect(player.getState().spatialBlockedByPlan).toBe(true);
-    expect(player.getState().hdSessionBlockedByPlan).toBe(false);
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'license-denied' });
   });
 
   test('turning spatial OFF mid-track under ADAPTIVE leaves the ec-3 rung (criteria de-confinement)', async () => {

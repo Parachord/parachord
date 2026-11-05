@@ -148,19 +148,19 @@ function ensureLicenseScheme() {
       const err = new Error((result && result.error) || 'license relay failed');
       if (result && result.licenseDenied) err.licenseDenied = true;
       // Eligibility refusals (CUSTOMER_NOT_ELIGIBLE — live-verified on a
-      // Prime plan for the HD KID group, and the same refusal shape applies
-      // to the spatial ec-3 KID group) are process-level facts: stop asking
+      // Prime plan for the HD KID group) are account-level facts: stop asking
       // for the refused family. Which group was refused is read off the
       // variant that was active WHEN THE REQUEST FIRED — the CDM asks for
       // the selected variant's group, and the challenge bytes are opaque.
-      // The current play survives on the other KID groups unless the refused
-      // group was the locked selection's own family (a locked spatial pick
-      // whose KID is refused fails this play — the lossy and HD FLAC groups
-      // keep playing); the NEXT selection drops the refused rungs.
+      // Family-keyed and codec-free (#1262): whatever family's KID was asked
+      // for is out, and the error this refusal causes is handed to the
+      // family-failure fallback (next-best re-selection) when it lands.
       if (result && HD_CONTENT_DENIAL_STATUSES.has(result.denialReason)) {
-        const activeCodec = factsAtRequest && factsAtRequest.codec ? String(factsAtRequest.codec).toLowerCase() : null;
-        if (activeCodec === 'ec-3') spatialBlockedByPlan = true;
-        else hdSessionBlockedByPlan = true;
+        const family = factsAtRequest && factsAtRequest.codec ? widevineCodecFamily(String(factsAtRequest.codec).split('.')[0]) : null;
+        if (family) {
+          blockedFamilies.set(family, 'license-denied');
+          pendingDenialLatch = { family, playToken };
+        }
       }
       throw err;
     }
@@ -176,21 +176,29 @@ function ensureLicenseScheme() {
 // tier fails shaka 4012 (RESTRICTIONS_CANNOT_BE_MET) there even though
 // MediaSource is fine everywhere. Hornet-era Linux never played FLAC for the
 // same underlying reason). Probe both layers once per process.
-// Plan-level latches set once Amazon answers a license relay with an
-// eligibility denial (CUSTOMER_NOT_ELIGIBLE — the Prime-plan capture): the
-// refused KID group's family stops being asked for the whole account
-// session (the refusal would otherwise repeat per track). Which group was
-// refused is read off the variant active WHEN THE LICENSE REQUEST FIRED (a
-// snapshot taken before the relay await — the round-trip can outlive a
-// variant switch, so denial-time state may name the wrong family); the CDM
-// asks for the selected variant's group; the challenge bytes are opaque.
-// FLAC keeps the legacy unconditional latch; the spatial group (the ec-3
-// KID set) latches its own flag so a spatial refusal drops the ec-3 rungs
-// instead of wrongly taking FLAC down with it. Process-level, matching the
-// dmls session it was issued under; both clear on sign-out.
-let hdSessionBlockedByPlan = false;
-let spatialBlockedByPlan = false;
+// Families this process has stopped asking for, and why — the ONE
+// family-failure table (#1262), keyed by codec family (widevineCodecFamily
+// vocabulary: flac/opus/aac/ec3/...), never by a hardcoded codec or a
+// special spatial case. Two reasons with different lifetimes:
+//   'license-denied'  the KID group for that family came back refused
+//                     (CUSTOMER_NOT_ELIGIBLE) — an ACCOUNT fact, cleared on
+//                     sign-out: the next account's plan may cover it. Which
+//                     group was refused is read off the variant active WHEN
+//                     THE LICENSE REQUEST FIRED (the challenge bytes are
+//                     opaque; the round-trip can outlive a variant switch).
+//   'playback-failed' the media stack rejected the family's data (the
+//                     SourceBuffer append failed) — a BUILD fact, never
+//                     cleared in-process: no retry changes the decoder.
+// Whatever family fails, playableVariants drops it and the tier logic picks
+// the best remaining rung — the next-best thing, family-agnostic.
+const blockedFamilies = new Map(); // family -> 'license-denied' | 'playback-failed'
 const HD_CONTENT_DENIAL_STATUSES = new Set(['CUSTOMER_NOT_ELIGIBLE']);
+// A license refusal latched moments ago (the family + the play it happened
+// in): the critical error the refusal causes is attributed to this family so
+// the family-failure fallback can re-select instead of failing the play.
+// Consumed by the error path; a stale one (the error never surfaced) is
+// simply overwritten by the next denial.
+let pendingDenialLatch = null; // { family, playToken } | null
 
 // untilAudible(): resolves once the element is actually playing, rejects on a
 // CRITICAL Shaka error before that (a license 4xx arrives as an error event
@@ -217,8 +225,82 @@ function untilAudible() {
   return new Promise((resolve, reject) => audibleWaiters.push({ resolve, reject }));
 }
 function clearPlanBlocks() {
-  hdSessionBlockedByPlan = false;
-  spatialBlockedByPlan = false;
+  // Sign-out: the license denials are ACCOUNT facts — the next account's
+  // plan may cover the families this one was refused. The build facts
+  // (append failures) stay: the decoder did not change with the account.
+  for (const [family, reason] of Array.from(blockedFamilies)) {
+    if (reason === 'license-denied') blockedFamilies.delete(family);
+  }
+}
+
+// The SourceBuffer refused the appended data (the append error-event pair —
+// 3014 MEDIA_SOURCE_OPERATION_FAILED / 3015 MEDIA_SOURCE_OPERATION_THREW):
+// the stream this play is appending cannot be handled by this build.
+const APPEND_FAILURE_CODES = new Set([3014, 3015]);
+
+// Which family a failing stream belongs to. For a LOCKED selection the locked
+// family is what this play is switching to — the vendor's active flag can
+// still read the PRE-switch rung mid-switch (live-observed in the #1262
+// dump: the ec-3 append failed while the active flag read the opus rung), so
+// the locked target is the authoritative attribution. For an adaptive play
+// the active variant is the manager's own pick and attributes correctly.
+function failingFamilyForError() {
+  if (trackSession && trackSession.lockedFamily) return trackSession.lockedFamily;
+  const facts = currentVariantFacts();
+  return facts && facts.codec ? widevineCodecFamily(String(facts.codec).split('.')[0]) : null;
+}
+
+// The family-failure fallback (#1262): an error attributable to a family —
+// a license refusal that latched moments ago (pendingDenialLatch), or an
+// append failure for the family this play is streaming — blocks that family
+// and re-selects from the shrunken roster (the NEXT BEST THING: whatever the
+// tier logic picks without the failed family) instead of failing the play.
+// Codec-free by design: any family, any reason, the same next-best path.
+// Returns true when the fallback took the error (the caller suppresses the
+// error surfaces); false when it must propagate: no attributable family, a
+// repeat for an already-failed family (the re-selection did not take), or no
+// rung left to switch to. Terminating: every suppression latches a family,
+// and the family count is finite.
+function fallbackToNextBestFamily(err) {
+  const code = err ? err.code : undefined;
+  // Only the CURRENT play's session: a teardown-race error during the next
+  // play's load/unload (3015 wrapping addSourceBuffer throws on a closed
+  // MediaSource — the vendor's own "status was 'closed'" class) must not
+  // block a good family for the process on a dead play's attribution.
+  if (!trackSession || trackSession.playToken !== playToken) return false;
+  let family = null;
+  let reason = null;
+  if (pendingDenialLatch) {
+    // A license denial latched moments ago; the critical error it caused is
+    // arriving now. Only a CRITICAL error (severity 2, the DRM range — a
+    // license failure is always one) may consume the latch: an unrelated
+    // recoverable error in the microtask window must not eat the suppression.
+    // The latch is the once-guard for that denial; a fresh denial re-arms it
+    // (a new license round trip), and if the re-selection keeps failing to
+    // take, the still-selected family's appends fail and the append branch
+    // propagates.
+    const critical = (err && err.severity === 2) || (typeof code === 'number' && code >= 6000 && code < 7000);
+    if (critical && pendingDenialLatch.playToken === playToken) {
+      family = pendingDenialLatch.family;
+      reason = 'license-denied';
+    }
+    pendingDenialLatch = null;
+  }
+  if (!family && APPEND_FAILURE_CODES.has(code)) {
+    family = failingFamilyForError();
+    if (!family || blockedFamilies.has(family)) return false; // a repeat — the earlier fallback did not take
+    reason = 'playback-failed';
+  }
+  if (!family || !reason) return false;
+  blockedFamilies.set(family, reason);
+  // Is there a next best thing to switch to? Nothing left → the error must
+  // propagate and the play fail honestly.
+  const roster = player ? playableVariants(player.getVariantTracks()) : [];
+  if (!roster.length) return false;
+  // Re-select (async, best-effort). If the switch does not take, the same
+  // family errors again — already blocked — and the error propagates.
+  void applyQuality().catch(() => {});
+  return true;
 }
 
 let supportedCodecFamilies = null;
@@ -338,8 +420,17 @@ function applyConfig(config) {
     if (criteriaNarrowed && active && activeFamily !== config.codecFamily) {
       const target = configTargetTrack();
       if (target) {
+        // The switch target is what this play streams from here — the
+        // family-failure attribution follows the LAST manual selection (the
+        // vendor's active flag can still read the pre-switch rung mid-switch).
+        if (trackSession) trackSession.lockedFamily = config.codecFamily;
         try { player.selectVariantTrack(target, true); } catch { /* selection is best-effort */ }
       }
+    } else if (trackSession) {
+      // No manual switch this round: the manager roams, and an error
+      // attributes by the variant active WHEN IT FIRES — a stale manual
+      // selection's family must not mis-attribute the manager's own pick.
+      trackSession.lockedFamily = null;
     }
     // The manager starts at the tier's rung via defaultBandwidthEstimate and
     // roams ≤ ceiling. seedBandwidth (rung/0.95 — see widevine-quality.js)
@@ -353,6 +444,10 @@ function applyConfig(config) {
   player.configure({ abr: { enabled: false, restrictions: { maxBandwidth: Infinity } }, preferredAudioCodecs: [] });
   const target = configTargetTrack();
   if (target) {
+    // What this play is trying to stream: the family-failure fallback
+    // attributes append failures to the locked selection's family (the
+    // vendor's active flag can still read the pre-switch rung mid-switch).
+    if (trackSession) trackSession.lockedFamily = config.codecFamily;
     // Set before the try, conservatively: 4.16.55's selectVariantTrack runs
     // the switch FIRST and the criteria configure second, so a throw can land
     // on either side of the narrowing — a spuriously-true flag costs one
@@ -399,12 +494,11 @@ function currentVariantFacts() {
 function playableVariants(tracks) {
   // Callers: await getSupportedCodecFamilies() once before selection.
   const support = { ...(supportedCodecFamilies || { flac: true, opus: true, aac: true, ec3: true }) };
-  // Plan-level refusals: the FLAC KID group (hdSessionBlockedByPlan) or the
-  // spatial ec-3 KID group (spatialBlockedByPlan) got CUSTOMER_NOT_ELIGIBLE
-  // from the license relay — put the refused family out of the roster for
-  // the process, each flag scoped to its own family.
-  if (hdSessionBlockedByPlan) support.flac = false;
-  if (spatialBlockedByPlan) support.ec3 = false;
+  // Family failures (#1262's one table): a family whose KID group was
+  // refused (license-denied) or whose data the media stack rejected
+  // (playback-failed) is out of the roster for the process/account; the
+  // tier logic picks the best remaining rung — whatever family it is.
+  for (const family of blockedFamilies.keys()) support[family] = false;
   return (tracks || []).filter((t) => {
     const c = String(t && (t.codecs || t.codec) || '').toLowerCase();
     if (c.startsWith('flac')) return support.flac;
@@ -436,6 +530,10 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   const mine = ++playToken;
   lastError = null;
   clearAudible();
+  // A stale denial latch from a previous play never attributes this play's
+  // errors (the playToken check covers it); drop it so a fresh play starts
+  // clean.
+  pendingDenialLatch = null;
   loadStartStamp = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
   const result = await window.electron.widevine.getManifest(resolverId, entity || {});
   // A stop/skip during the mint wins over the manifest's own failure:
@@ -482,6 +580,17 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
       };
       recentErrors.push(lastErrorDetail);
       if (recentErrors.length > 20) recentErrors.shift();
+      // FAMILY-FAILURE FALLBACK (#1262): before surfacing anything, give the
+      // error to the next-best mechanism. A family whose stream the engine
+      // cannot take (a license refusal whose denial latched moments ago, or
+      // the SourceBuffer rejecting the family's data — 3014/3015) is
+      // blocked for the process and the play re-selects from the shrunken
+      // roster instead of failing: whatever family it was, stereo is the next
+      // best thing when the failed family was spatial, the lossy ladder when
+      // it was FLAC — codec-free by design. The suppression is bounded: each
+      // one latches a new family, and a repeat for an already-blocked family
+      // (the re-selection did not take) propagates the fatal.
+      if (fallbackToNextBestFamily(d)) return;
       if (typeof window.__parachordWidevineError === 'function') window.__parachordWidevineError(lastError, activeResolverId);
       // CRITICAL (severity 2) or a DRM-range code: the player will not
       // recover. Before the element is audible this rejects untilAudible()
@@ -526,7 +635,7 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
     }
     throw supersededError();
   }
-  const flacRefused = hdSessionBlockedByPlan || support.flac === false;
+  const flacRefused = blockedFamilies.has('flac') || support.flac === false;
   const loadCap = loadTimePickCap(preload.tier, { flacRefused });
   player.configure({
     drm: { servers: { 'com.widevine.alpha': licenseServerUri } },
@@ -611,6 +720,7 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   }
   trackSession = {
     resolverId,
+    playToken: mine, // the family-failure fallback only acts for the CURRENT play's session — a teardown-race error during the next play's load must not block this play's family
     sessionId: result.sessionId || null,
     kidGroupsByFamily,
     // Telemetry/stats attribute the SERVED pressing: Amazon's substitution
@@ -739,8 +849,7 @@ function getState() {
     variantFacts: currentVariantFacts(),
     qualitySeen: lastQualityRead,
     criteriaNarrowed,
-    hdSessionBlockedByPlan,
-    spatialBlockedByPlan,
+    blockedFamilies: Object.fromEntries(blockedFamilies),
     shaka
   };
 }
