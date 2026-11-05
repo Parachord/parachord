@@ -237,6 +237,11 @@ function clearPlanBlocks() {
 // 3014 MEDIA_SOURCE_OPERATION_FAILED / 3015 MEDIA_SOURCE_OPERATION_THREW):
 // the stream this play is appending cannot be handled by this build.
 const APPEND_FAILURE_CODES = new Set([3014, 3015]);
+// The baseline every build decodes. An append error here is a bad segment, not a
+// build that can't play the family: blocking it for the process would leave
+// nothing to fall back to, so the service stays unplayable until a restart. The
+// error surfaces instead, this track fails, and the next one tries again.
+const NEVER_BLOCKED_ON_APPEND_FAILURE = new Set(['opus', 'aac']);
 
 // Which family a failing stream belongs to. For a LOCKED selection the locked
 // family is what this play is switching to — the vendor's active flag can
@@ -255,7 +260,9 @@ function failingFamilyForError() {
 // append failure for the family this play is streaming — blocks that family
 // and re-selects from the shrunken roster (the NEXT BEST THING: whatever the
 // tier logic picks without the failed family) instead of failing the play.
-// Codec-free by design: any family, any reason, the same next-best path.
+// Codec-free by design: any family, any reason, the same next-best path. The one
+// exception is NEVER_BLOCKED_ON_APPEND_FAILURE, the baseline an append error can't
+// rule out.
 // Returns true when the fallback took the error (the caller suppresses the
 // error surfaces); false when it must propagate: no attributable family, a
 // repeat for an already-failed family (the re-selection did not take), or no
@@ -288,6 +295,7 @@ function fallbackToNextBestFamily(err) {
   }
   if (!family && APPEND_FAILURE_CODES.has(code)) {
     family = failingFamilyForError();
+    if (NEVER_BLOCKED_ON_APPEND_FAILURE.has(family)) return false;
     if (!family || blockedFamilies.has(family)) return false; // a repeat — the earlier fallback did not take
     reason = 'playback-failed';
   }
