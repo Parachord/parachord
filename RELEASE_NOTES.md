@@ -8,6 +8,7 @@
 
 ## Amazon Music
 
+- **Adaptive at Max reaches lossless.** With Adaptive on, Amazon Music stayed on lossy opus at about 326 kbps at the Max tier. It now reaches FLAC on a good connection, and lower tiers stay inside their limit from the start of each track.
 - **Prefer Dolby Atmos mixes.** A new option in Settings, under Playback Quality, plays the 5.1 core of a track's Atmos mix on Amazon Music when one is available. This isn't full Atmos: it's mixed down on stereo output, and it replaces lossless FLAC at the Max tier, so it's off by default. Saver and Standard keep their data limits and play stereo when no Atmos version fits. Thanks to @theli-ua.
 
 ## Bandcamp
