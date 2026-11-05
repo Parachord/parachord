@@ -4,6 +4,10 @@ const fs = require('fs');
 
 const SEARCH_MAX_WORDS = 32;
 
+// Bump when normalize() changes: the normalized columns are stored, and a file
+// that hasn't changed is never scanned again, so every row is rewritten once.
+const NORMALIZED_COLUMNS_VERSION = 1;
+
 class LocalFilesDatabase {
   constructor(userDataPath) {
     this.dbPath = path.join(userDataPath, 'local-files.db');
@@ -84,11 +88,54 @@ class LocalFilesDatabase {
     if (!columns.some(c => c.name === 'isrc')) {
       this.db.exec("ALTER TABLE tracks ADD COLUMN isrc TEXT");
     }
+
+    this.rewriteNormalizedColumns();
   }
 
+  // Runs once per NORMALIZED_COLUMNS_VERSION, in one transaction. If it fails,
+  // the rows keep their old values and the next start tries again; a library
+  // that searches less well beats one that doesn't open.
+  rewriteNormalizedColumns() {
+    if (this.db.pragma('user_version', { simple: true }) >= NORMALIZED_COLUMNS_VERSION) return;
+    try {
+      const rows = this.db.prepare(`
+        SELECT id, title, artist, album, title_normalized, artist_normalized, album_normalized
+        FROM tracks
+      `).all();
+      const update = this.db.prepare(`
+        UPDATE tracks SET title_normalized = ?, artist_normalized = ?, album_normalized = ? WHERE id = ?
+      `);
+      this.db.transaction(() => {
+        for (const row of rows) {
+          const title = this.normalize(row.title);
+          const artist = this.normalize(row.artist);
+          const album = this.normalize(row.album);
+          if (title !== row.title_normalized || artist !== row.artist_normalized || album !== row.album_normalized) {
+            update.run(title, artist, album, row.id);
+          }
+        }
+        this.db.pragma(`user_version = ${NORMALIZED_COLUMNS_VERSION}`);
+      })();
+    } catch (err) {
+      console.warn('[LocalFiles] Could not rewrite the normalized columns:', err.message);
+    }
+  }
+
+  // Folds a name the way the match gate does (normalizeStr in
+  // sync-providers/confidence-scoring.js), keeping the spaces: lower case, no
+  // accents, letters and digits of any script. It used to keep only ASCII, so
+  // "光" was stored and searched as nothing and matched every row, and "Björk"
+  // was stored as "bjrk", which the plain spelling the gate accepts couldn't
+  // find. No LIKE wildcard survives this.
   normalize(str) {
     if (!str) return '';
-    return str.toLowerCase().trim().replace(/[^\w\s]/g, '');
+    return str
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   // Watch folder methods
@@ -233,6 +280,8 @@ class LocalFilesDatabase {
   // exact "artist title" ranks first so that the row limit can't cut it.
   search(query) {
     const normalized = this.normalize(query);
+    // Only punctuation or emoji: an empty pattern would match every row.
+    if (!normalized) return [];
     const pattern = `%${normalized}%`;
     // A cap, because SQLite refuses a very long AND chain. Dropping the extra
     // words only widens the match, and callers pick from the results.
@@ -304,6 +353,9 @@ class LocalFilesDatabase {
     const artistNorm = this.normalize(artist);
     const trackNorm = this.normalize(track);
     const albumNorm = album ? this.normalize(album) : null;
+    // A title that is only punctuation or emoji names nothing, and an empty
+    // pattern would match every row.
+    if (!trackNorm) return [];
 
     let stmt;
     let results;
