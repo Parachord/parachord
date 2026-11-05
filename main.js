@@ -3004,6 +3004,10 @@ registerAuthServerIpc({ ipcMain, store, getAuthServerState: () => authServerStat
 // (2026-11-01): main-process/ipc/metabrainz-ipv4.js.
 const { registerMetaBrainzIpv4Ipc } = require('./main-process/ipc/metabrainz-ipv4');
 registerMetaBrainzIpv4Ipc({ ipcMain, userAgent: METABRAINZ_UA });
+// Plex-scoped HTTP for the Plex resolver (plex.tv, *.plex.direct and the
+// user's saved server connections only; see main-process/ipc/plex-fetch.js).
+const { registerPlexFetchIpc } = require('./main-process/ipc/plex-fetch');
+registerPlexFetchIpc({ ipcMain, store });
 
 // ─── In-app announcements ────────────────────────────────────────────────────
 // Polls a public JSON file on achordion.xyz for product announcements

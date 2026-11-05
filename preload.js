@@ -146,6 +146,14 @@ contextBridge.exposeInMainWorld('electron', {
   // MusicBrainz / Cover Art Archive over IPv4, the fallback when their IPv6
   // endpoint fails (src/renderer/lib/metabrainz-ipv4.js)
   metabrainzFetchIpv4: (url, options) => ipcRenderer.invoke('metabrainz-fetch-ipv4', url, options),
+  // Plex talks to the user's own servers on the LAN (private IPs, *.plex.direct
+  // hosts, sometimes self-signed TLS). Renderer fetch is blocked by CORS and
+  // proxy-fetch refuses private IPs, so Plex requests go through a dedicated
+  // main-process handler scoped to Plex hosts and the user's saved servers
+  // (main-process/ipc/plex-fetch.js).
+  plex: {
+    fetch: (url, options) => ipcRenderer.invoke('plex-fetch', url, options)
+  },
 
   // Crypto utilities for scrobbling
   crypto: {

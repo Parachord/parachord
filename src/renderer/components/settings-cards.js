@@ -14,6 +14,21 @@ const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 //   2. Enabled + needs setup (full color, checkmark, orange "!", "Setup required")
 //   3. Not enabled (grayed, "Available")
 //   4. Installing (spinner overlay)
+// Settings panel for a plugin that renders its own UI: settings.authType
+// 'custom' in the manifest and renderSettings(ctx) in the .axe (Plex is the
+// first). This wrapper is a real component, so the plugin may call hooks
+// through ctx.React as long as it calls them unconditionally. A render error
+// shows in place instead of taking the settings modal down.
+const PluginSettingsPanel = ({ resolver, ctx }) => {
+  try {
+    return resolver.renderSettings(ctx) || null;
+  } catch (e) {
+    console.error(`⚠️ ${resolver.id} renderSettings failed:`, e);
+    return React.createElement('p', { style: { padding: '16px 0', fontSize: '12px', color: '#dc2626' } },
+      `${resolver.name || resolver.id} settings failed to render: ${e.message}`);
+  }
+};
+
 // statusLabel (with statusTitle as its tooltip) replaces "Setup required" for
 // a resolver that is set up but limited, e.g. Amazon without Music Unlimited.
 const ResolverCard = React.memo(({
@@ -644,6 +659,7 @@ const FriendMiniPlaybar = ({ track, getAlbumArt, onPlay, onContextMenu }) => {
 };
 
 module.exports = {
+  PluginSettingsPanel,
   ResolverCard,
   McpSettingsSection,
   ScrobblerSettingsCard,

@@ -1008,6 +1008,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       else if (trackOrSource.bandcampUrl) resolverId = 'bandcamp';
       else if (trackOrSource.soundcloudId) resolverId = 'soundcloud';
       else if (trackOrSource.filePath || trackOrSource.fileUrl) resolverId = 'localfiles';
+      // A resolver result tags itself with `sources: ['<id>']` (every bundled
+      // .axe does), which covers plugins with no host-known id field.
+      else if (Array.isArray(trackOrSource.sources) && typeof trackOrSource.sources[0] === 'string') resolverId = trackOrSource.sources[0];
       // Fallback: use the 'source' property if set (added by search tagging)
       else if (trackOrSource.source && typeof trackOrSource.source === 'string') {
         resolverId = trackOrSource.source;
@@ -1649,7 +1652,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return;
     }
 
-    // HTML5 stream resolvers (capabilities.html5Stream: Subsonic, or any
+    // HTML5 stream resolvers (capabilities.html5Stream: Subsonic, Plex, or any
     // self-hosted server): the .axe's getStreamUrl builds a direct stream URL
     // from the saved config (never from the track) and the shared element
     // fetches it cross-origin with Range support. The host does not name them.
