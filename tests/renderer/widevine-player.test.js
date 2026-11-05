@@ -845,6 +845,42 @@ describe('the family-failure fallback (#1262) — block the family, re-select th
     expect(fatal).toBeNull();
   });
 
+  // A generic append error is not proof a build can't decode the baseline. One
+  // bad opus segment used to block opus for the process, with nothing left to
+  // fall back to, so Amazon stayed unplayable until a restart.
+  test('an append failure never blocks opus: this track fails, and the next one still plays opus', async () => {
+    const { sh, player, el } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'saver', playback_abr: false } })
+    });
+    let fatal = null;
+    global.window.__parachordWidevineFatal = (msg) => { fatal = msg; };
+    const audio = makeAudio();
+    await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    audio.fire('playing');
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('opus');
+    fireError(sh, 3014);
+    await settle();
+    expect(player.getState().blockedFamilies).toEqual({});
+    expect(fatal).toContain('3014'); // the host skips this track, as it did before the fallback
+    await player.stop();
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B2' } });
+    expect(p.selected.codecs).toBe('opus');
+  });
+
+  test('an append failure still blocks a non-baseline family', async () => {
+    const { sh, player } = load({
+      electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: false } })
+    });
+    await player.play(makeAudio(), { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
+    const p = sh.playerInstances[0];
+    expect(p.selected.codecs).toBe('flac');
+    fireError(sh, 3014);
+    await settle();
+    expect(player.getState().blockedFamilies).toEqual({ flac: 'playback-failed' });
+    expect(p.selected.codecs).toBe('opus');
+  });
+
   test('a repeat failure for the SAME family propagates — the fallback did not take', async () => {
     const { sh, player } = load({
       electron: makeElectron({ storeValues: { playback_quality: 'max', playback_abr: true, playback_spatial: true } })
@@ -868,17 +904,17 @@ describe('the family-failure fallback (#1262) — block the family, re-select th
     });
     const audio = makeAudio();
     await player.play(audio, { resolverId: 'amazonmusic', entity: { asin: 'B1' } });
-    // The spatial lock fails → FLAC → opus → nothing left.
+    // The spatial lock fails → FLAC → opus → the play fails.
     fireError(sh, 3014); // ec-3 blocked, re-selects FLAC
     await settle();
     expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed' });
     fireError(sh, 3014); // flac blocked, re-selects opus
     await settle();
     expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed', flac: 'playback-failed' });
-    fireError(sh, 3014); // opus blocked — no next best thing left
+    fireError(sh, 3014); // opus is the baseline: it stays unblocked, and this play fails
     await settle();
-    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed', flac: 'playback-failed', opus: 'playback-failed' });
-    // The roster is empty: the fallback declines and the error propagates.
+    expect(player.getState().blockedFamilies).toEqual({ ec3: 'playback-failed', flac: 'playback-failed' });
+    // The fallback declines and the error propagates.
     await expect(player.untilAudible()).rejects.toMatchObject({ reason: 'playback-failed' });
   });
 
