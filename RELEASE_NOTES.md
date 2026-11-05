@@ -27,6 +27,7 @@
 
 ## Playback
 
+- **A track with no cover stops showing the last track's cover.** If Parachord couldn't find a cover, the playbar kept the previous track's for as long as the track played. It now clears once the search for a cover comes up empty, and right away for a track with no album.
 - **Tracks with more than one artist find their matches.** Music services write a shared credit differently: "Erykah Badu and The Alchemist" on one, "Erykah Badu & The Alchemist" or "Erykah Badu, The Alchemist" on another. Parachord read those as different artists and threw away the right recording, so these tracks could show fewer sources than they have, or none. It now treats "and", "&", commas, "x" and "feat." as the same credit, and a different artist that only shares a name with one of them is still turned down.
 
 ## Search
@@ -43,6 +44,8 @@
 - **Copy Link on a playlist that isn't on ListenBrainz offers a next step.** It used to stop at a message. It now has a button to connect ListenBrainz, or to open sync settings if you're already connected.
 - **Sharing a private ListenBrainz playlist asks first.** Copy Link used to hand out a link that only opened for you. It now asks whether to make the playlist public before copying, and Cancel changes nothing.
 - **A playlist you deleted on ListenBrainz no longer looks synced.** The app kept recording a sync against it, and Copy Link gave a link that wouldn't open. Parachord now stops pushing to it, and Copy Link says it's gone. Nothing is recreated.
+- **Playlists deleted on ListenBrainz get noticed sooner.** They were only spotted if you edited the playlist, so one could sit there for months. Each sync now checks, and the playlist's page offers to delete your copy, stop syncing or create it again.
+- **Stop syncing on a deleted playlist stays stopped.** If the playlist was also synced to another service, the next sync could create it again on the one you'd stopped.
 - **A playlist you import from a URL while sync setup finishes stays in your list.** Setting up sync could take minutes, and a hosted playlist imported during that time could disappear from your playlists until they next reloaded. Thanks to @theli-ua for finding and fixing it.
 
 ## AI DJ
