@@ -25,26 +25,30 @@ function playlistListenbrainzMbid(summary, playlists) {
   return lbMbidOf(playlists.find(p => p && p.id === id));
 }
 
-// What a share should do. A link to a playlist that's gone from ListenBrainz
-// 404s for everyone, its owner included, and the sync record can't tell us: it
-// only learns on the next push, which may be months away. So ask first.
+// What a share should do. Sharing is what makes a playlist's visibility matter:
+//  - gone: the link 404s for everyone, its owner included. The sync record can't
+//    tell us, since it only learns on the next push, which may be months away.
+//  - private: the link only opens for the owner, so ask before making it public.
 //
-// checkExists(mbid) answers true, false, or null for "couldn't tell". Only a
-// clear false stops the share: being offline or rate limited shouldn't.
-async function playlistShareTarget(summary, playlists, checkExists) {
+// checkStatus(mbid) answers { exists, isPublic }, each null for "couldn't tell".
+// Only a clear answer changes anything: being offline or rate limited shouldn't
+// stop a share.
+async function playlistShareTarget(summary, playlists, checkStatus) {
   const mbid = playlistListenbrainzMbid(summary, playlists);
   if (!mbid) return { status: 'not-synced' };
   const id = summary && (summary.playlistId || summary.id);
   const stored = id && Array.isArray(playlists) ? playlists.find(p => p && p.id === id) : null;
   const mirror = (stored || summary)?.syncedTo?.listenbrainz;
   if (mirror?.pendingAction === 'remote-deleted') return { status: 'gone' };
-  let exists = null;
+  let answer = null;
   try {
-    exists = checkExists ? await checkExists(mbid) : null;
+    answer = checkStatus ? await checkStatus(mbid) : null;
   } catch {
-    exists = null;
+    answer = null;
   }
-  return exists === false ? { status: 'gone' } : { status: 'ok', mbid };
+  if (answer?.exists === false) return { status: 'gone' };
+  if (answer?.isPublic === false) return { status: 'private', mbid };
+  return { status: 'ok', mbid };
 }
 
 module.exports = { playlistListenbrainzMbid, playlistShareTarget };

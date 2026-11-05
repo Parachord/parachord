@@ -295,18 +295,34 @@ ipcMain.handle('sync:push-playlist', async (event, providerId, playlistExternalI
   }
 });
 
-  // Is this remote playlist still there? { exists: true | false | null }, where
-  // null means the check couldn't answer. Share asks before handing out a link.
-ipcMain.handle('sync:playlist-exists', async (event, providerId, playlistExternalId) => {
+  // Is this remote playlist still there, and who can see it? { exists, isPublic },
+  // each null when the check couldn't answer. Share asks before handing out a link.
+ipcMain.handle('sync:playlist-status', async (event, providerId, playlistExternalId) => {
+  const unknown = { exists: null, isPublic: null };
   const provider = SyncEngine.getProvider(providerId);
-  if (!provider || !provider.playlistExists) return { exists: null };
+  if (!provider || !provider.playlistStatus) return unknown;
   try {
     const token = getSyncProviderToken(providerId);
-    if (!token) return { exists: null };
-    return { exists: await provider.playlistExists(playlistExternalId, token) };
+    if (!token) return unknown;
+    return await provider.playlistStatus(playlistExternalId, token);
   } catch (error) {
-    console.warn(`[Sync] playlistExists failed for ${providerId}: ${error.message}`);
-    return { exists: null };
+    console.warn(`[Sync] playlistStatus failed for ${providerId}: ${error.message}`);
+    return unknown;
+  }
+});
+
+ipcMain.handle('sync:set-playlist-public', async (event, providerId, playlistExternalId, isPublic) => {
+  const provider = SyncEngine.getProvider(providerId);
+  if (!provider || !provider.setPlaylistPublic) {
+    return { success: false, error: 'Provider does not support playlist visibility' };
+  }
+  try {
+    const token = getSyncProviderToken(providerId);
+    if (!token) return { success: false, error: 'Not authenticated' };
+    await provider.setPlaylistPublic(playlistExternalId, isPublic === true, token);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
 });
 

@@ -5504,6 +5504,7 @@ const Parachord = () => {
       title: options.title || '',
       message: options.message || '',
       onConfirm: options.onConfirm || null,
+      confirmLabel: options.confirmLabel || null,
       actionButton: options.actionButton || null,
     });
   };
@@ -12823,10 +12824,9 @@ ${trackListXml}
       // the context menus via main), not the playlist, so the sync fields come
       // from the stored playlist by id (parachord#1084: without this every
       // share ended at the "sync to ListenBrainz first" toast).
-      const target = await playlistShareTarget(collection, playlistsRef.current, async (mbid) => {
-        const answer = await window.electron?.sync?.playlistExists?.('listenbrainz', mbid);
-        return answer ? answer.exists : null;
-      });
+      const target = await playlistShareTarget(collection, playlistsRef.current, (mbid) => (
+        window.electron?.sync?.playlistStatus?.('listenbrainz', mbid)
+      ));
       if (target.status === 'not-synced') {
         showToast(
           'Sync this playlist to ListenBrainz first to enable sharing via Achordion.',
@@ -12836,6 +12836,26 @@ ${trackListXml}
       }
       if (target.status === 'gone') {
         showToast('This playlist is no longer on ListenBrainz, so its link would not open.', 'error');
+        return;
+      }
+      // A private playlist's link only opens for its owner. Opening it yourself
+      // is fine; copying it to send to someone else isn't, so ask first.
+      if (target.status === 'private' && !openInBrowser && !opts.visibilityConfirmed) {
+        showConfirmDialog({
+          type: 'info',
+          title: 'Make this playlist public?',
+          message: `"${collection.title}" is private on ListenBrainz, so its link would only open for you. If you make it public, anyone with the link can open it, and it will appear on your ListenBrainz profile.`,
+          confirmLabel: 'Make Public & Copy Link',
+          onConfirm: async () => {
+            const result = await window.electron?.sync?.setPlaylistPublic?.('listenbrainz', target.mbid, true);
+            if (!result?.success) {
+              showToast(`Could not make this playlist public: ${result?.error || 'unknown error'}`, 'error');
+              return;
+            }
+            publishCollectionSmartLink(collection, { visibilityConfirmed: true });
+          },
+          actionButton: { label: 'Cancel' }
+        });
         return;
       }
       const lbMbid = target.mbid;
@@ -50996,7 +51016,7 @@ useEffect(() => {
               borderRadius: '10px',
               cursor: 'pointer'
             }
-          }, 'OK')
+          }, confirmDialog.confirmLabel || 'OK')
         )
       )
     ),

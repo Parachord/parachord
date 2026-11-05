@@ -58,19 +58,24 @@ describe('wiring', () => {
 // owner included. Sharing has to say so instead of handing the link out.
 describe('playlistShareTarget', () => {
   const summary = { id: 'playlist-1', title: 'Pushed' };
-  const gone = async () => false;
-  const there = async () => true;
+  const gone = async () => ({ exists: false, isPublic: null });
+  const open = async () => ({ exists: true, isPublic: true });
+  const hidden = async () => ({ exists: true, isPublic: false });
 
   test('a playlist that is not on ListenBrainz is not shareable, and nothing is asked', async () => {
-    const check = jest.fn(there);
+    const check = jest.fn(open);
     await expect(playlistShareTarget({ id: 'spotify-y' }, playlists, check)).resolves.toEqual({ status: 'not-synced' });
     expect(check).not.toHaveBeenCalled();
   });
 
-  test('a playlist that exists gives its MBID', async () => {
-    const check = jest.fn(there);
+  test('a public playlist gives its MBID', async () => {
+    const check = jest.fn(open);
     await expect(playlistShareTarget(summary, playlists, check)).resolves.toEqual({ status: 'ok', mbid: MBID });
     expect(check).toHaveBeenCalledWith(MBID);
+  });
+
+  test('a private playlist is reported, with its MBID', async () => {
+    await expect(playlistShareTarget(summary, playlists, hidden)).resolves.toEqual({ status: 'private', mbid: MBID });
   });
 
   test('a playlist that is gone is reported', async () => {
@@ -78,16 +83,19 @@ describe('playlistShareTarget', () => {
   });
 
   test('a mirror already marked remote-deleted is gone, and nothing is asked', async () => {
-    const check = jest.fn(there);
+    const check = jest.fn(open);
     const flagged = [{ id: 'playlist-1', syncedTo: { listenbrainz: { externalId: MBID, pendingAction: 'remote-deleted' } } }];
     await expect(playlistShareTarget(summary, flagged, check)).resolves.toEqual({ status: 'gone' });
     expect(check).not.toHaveBeenCalled();
   });
 
   test('when the check cannot answer, the link is still handed out', async () => {
-    await expect(playlistShareTarget(summary, playlists, async () => null)).resolves.toEqual({ status: 'ok', mbid: MBID });
-    await expect(playlistShareTarget(summary, playlists, async () => { throw new Error('offline'); })).resolves.toEqual({ status: 'ok', mbid: MBID });
-    await expect(playlistShareTarget(summary, playlists)).resolves.toEqual({ status: 'ok', mbid: MBID });
+    const ok = { status: 'ok', mbid: MBID };
+    await expect(playlistShareTarget(summary, playlists, async () => null)).resolves.toEqual(ok);
+    await expect(playlistShareTarget(summary, playlists, async () => ({ exists: null, isPublic: null }))).resolves.toEqual(ok);
+    await expect(playlistShareTarget(summary, playlists, async () => ({ exists: true, isPublic: null }))).resolves.toEqual(ok);
+    await expect(playlistShareTarget(summary, playlists, async () => { throw new Error('offline'); })).resolves.toEqual(ok);
+    await expect(playlistShareTarget(summary, playlists)).resolves.toEqual(ok);
   });
 
   test('the share path uses it and has a message for a missing playlist', () => {
@@ -96,5 +104,22 @@ describe('playlistShareTarget', () => {
     const body = app.slice(start, app.indexOf('showToast(openInBrowser ? \'Opening Achordion', start));
     expect(body).toContain('playlistShareTarget(');
     expect(body).toContain("target.status === 'gone'");
+    expect(body).toContain("target.status === 'private'");
+  });
+
+  test('only the confirm button makes a playlist public, and only when copying a link', () => {
+    const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+    const start = app.indexOf("if (target.status === 'private'");
+    const prompt = app.slice(start, app.indexOf('const lbMbid = target.mbid;', start));
+    expect(prompt).toContain('!openInBrowser');
+    expect(prompt).toContain('!opts.visibilityConfirmed');
+    const onConfirm = prompt.indexOf('onConfirm:');
+    expect(onConfirm).toBeGreaterThan(-1);
+    expect(prompt.indexOf('setPlaylistPublic')).toBeGreaterThan(onConfirm);
+    expect(prompt).toContain("actionButton: { label: 'Cancel' }");
+    // Clicking outside the dialog must not count as saying yes.
+    const dialog = app.indexOf('confirmDialog.show && React.createElement');
+    const backdrop = app.slice(dialog, app.indexOf('e.stopPropagation()', dialog));
+    expect(backdrop).not.toContain('onConfirm');
   });
 });
