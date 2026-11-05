@@ -1197,6 +1197,7 @@ const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require(
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
+const { holdPreviousPlaybarArt, trackArtKey } = require('./lib/playbar-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
@@ -3220,6 +3221,7 @@ const Parachord = () => {
   // Album art crossfade state for smooth transitions in playbar
   const [playbarAlbumArt, setPlaybarAlbumArt] = useState({ current: null, previous: null, isLoaded: false });
   const playbarAlbumArtRef = useRef(null); // Track previous art for comparison
+  const [playbarArtMissKey, setPlaybarArtMissKey] = useState(null); // trackArtKey of the last album with no cover
   const [playbarSourceDropdownOpen, setPlaybarSourceDropdownOpen] = useState(false); // Source selector dropdown
   // Track if currentTrack was restored from saved queue and needs explicit playback start
   const trackNeedsExplicitStart = useRef(false);
@@ -6037,15 +6039,18 @@ const Parachord = () => {
     playTrackCollection, addToQueue,
   } = queueDomain;
 
+  const holdPlaybarArt = holdPreviousPlaybarArt(currentTrack, playbarArtMissKey);
+
   // Handle album art crossfade transitions in playbar
   useEffect(() => {
     const newArt = currentTrack?.albumArt || null;
     const prevArt = playbarAlbumArtRef.current;
 
     if (newArt !== prevArt) {
-      // If new art is null but we had previous art, keep showing the previous art
-      // This prevents flashing placeholder when transitioning between tracks
-      if (!newArt && prevArt) {
+      // No new art yet: keep the previous cover while one may still be on the way,
+      // so a placeholder doesn't flash between tracks. Not once none is coming, or
+      // the track would show the previous track's cover.
+      if (!newArt && prevArt && holdPlaybarArt) {
         return;
       }
 
@@ -6065,7 +6070,7 @@ const Parachord = () => {
         return () => clearTimeout(clearPrevious);
       }
     }
-  }, [currentTrack?.albumArt]);
+  }, [currentTrack?.albumArt, holdPlaybarArt]);
 
   // Check if spinoff is available for the current track
   useEffect(() => {
@@ -29659,8 +29664,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch album art for current track if missing
   useEffect(() => {
     if (currentTrack && !currentTrack.albumArt && currentTrack.artist && currentTrack.album) {
-      getAlbumArt(currentTrack.artist, currentTrack.album).then(artUrl => {
-        if (artUrl) {
+      const artKey = trackArtKey(currentTrack);
+      getAlbumArt(currentTrack.artist, currentTrack.album).catch(() => null).then(artUrl => {
+        if (!artUrl) {
+          setPlaybarArtMissKey(artKey);
+        } else {
           setCurrentTrack(prev => {
             // Only update if still the same track and still missing art
             if (prev && prev.artist === currentTrack.artist && prev.title === currentTrack.title && !prev.albumArt) {
