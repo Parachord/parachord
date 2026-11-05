@@ -384,18 +384,19 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   React.createElement('button', {
                     className: 'text-xs px-3 py-1.5 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors',
                     onClick: async () => {
-                      // Keep local, stop syncing to this provider
-                      const updatedSyncedTo = { ...playlist.syncedTo };
-                      delete updatedSyncedTo[providerId];
-                      const hasAnySyncedTo = Object.keys(updatedSyncedTo).length > 0;
-                      const updatedPlaylist = {
-                        ...playlist,
-                        syncedTo: hasAnySyncedTo ? updatedSyncedTo : undefined,
-                        localOnly: !hasAnySyncedTo ? true : playlist.localOnly
-                      };
-                      setSelectedPlaylist(updatedPlaylist);
-                      setPlaylists(prev => prev.map(p => p.id === playlist.id ? updatedPlaylist : p));
-                      await window.electron.playlists.save(updatedPlaylist);
+                      // Keep local, stop syncing to this provider. Through the
+                      // Sync menu's path, not by editing syncedTo here: with no
+                      // channel override, a playlist with another mirror looks
+                      // "not yet created" to the push loop, which would recreate
+                      // what was just deleted. Reload so a stale copy can't undo it.
+                      const result = await window.electron.sync.setChannel(playlist.id, providerId, false);
+                      if (!result?.success) {
+                        showToast(`Could not stop syncing to ${providerName}: ${result?.error || 'unknown error'}`, 'error');
+                        return;
+                      }
+                      const fresh = await window.electron.playlists.load();
+                      setPlaylists(fresh);
+                      setSelectedPlaylist(fresh.find(p => p.id === playlist.id) || null);
                     }
                   }, 'Stop syncing'),
                   React.createElement('button', {
