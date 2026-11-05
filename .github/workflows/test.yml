@@ -40,6 +40,16 @@ jobs:
           # tracked, and a --check run AFTER pretest's writer cannot fail
           # (the writer has already regenerated everything on disk).
           CI: true
+      - name: Vibresia shaders have not drifted
+        # The built-in visualiser draws Vibresia's scenes. Its copy of the
+        # shaders has to be the same shaders, or a scene that looks right in
+        # Vibresia looks wrong here. The check compares Parachord's copy
+        # against Vibresia's source. It skips itself when the Vibresia
+        # checkout is not there, which is the case in CI — the copy is
+        # refreshed by scripts/extract-vibresia-scenes.py, and the compile
+        # check (scripts/check-vibresia-scenes.js) runs locally against a
+        # built Vibresia app.
+        run: node scripts/check-vibresia-shaders.js
       - name: Generated outputs are committed (plugin drift gate)
         # tests/plugins/axes-drift.test.js replacement: the writer must be a
         # no-op against what the PR committed. A PR that edits plugins-src/

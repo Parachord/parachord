@@ -2,7 +2,16 @@
 
 **Release date:** not yet released
 
-> Subsonic and other plugins no longer lose a track's source when a link opens the app.
+> Parachord draws its own visuals now: Vibresia scenes, drawn live from the music it is playing. And a `parachord://` link that opens the app keeps your plugins' sources.
+
+---
+
+## Visualizer
+
+- **Vibresia scenes, drawn inside Parachord.** Press **Visualizer** at the bottom of the sidebar and the music you are playing turns into a picture: ribbons twisting through glass, a tunnel of grid lines, spectrum bars, hyperspace streaks, and a dozen more. Pick a scene, or leave it on Auto Scan and it moves between them on the beat. It is Vibresia's own scenes and Vibresia's own shaders, so they look exactly as they do in the Vibresia app.
+- **It draws the music Parachord is playing.** The picture comes from the audio element your current source is playing through, so it follows the track Parachord resolved — not whatever else is on your computer. There is no second app to install, no system-audio permission to grant, and nothing to route.
+- **Nothing about your music changes.** The visualiser reads audio that is already playing, in Parachord's own window. It does not decrypt, record, download or save anything, and it never sees a key. Your copy-protection rules are unchanged.
+- **A scene that will not compile says so in words**, in a strip under the picture, rather than showing a black rectangle.
 
 ---
 

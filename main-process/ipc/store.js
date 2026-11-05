@@ -43,6 +43,9 @@ const ALLOWED_STORE_KEYS = new Set([
   'cached_announcements', 'dismissed_announcement_ids',
   'playlists_sort',
   'hidden_friend_keys',
+  // The scene the built-in visualiser is drawing, so the visualiser comes
+  // back the way it was left.
+  'visualizer_scene',
   // Added 2026-10-12 after finding main had been silently dropping these
   // (store-set returns false and logs "Blocked store-set"; the renderer never
   // sees the failure). cache_critics_picks / hosted_playlists /
