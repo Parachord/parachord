@@ -51,4 +51,21 @@ async function playlistShareTarget(summary, playlists, checkStatus) {
   return { status: 'ok', mbid };
 }
 
-module.exports = { playlistListenbrainzMbid, playlistShareTarget };
+// The next step for a playlist that isn't on ListenBrainz. `config` is the
+// ListenBrainz scrobbler config, which is where its token lives.
+function notSyncedSharePrompt(config) {
+  if (!config || !config.userToken) {
+    return {
+      message: 'Playlist links go through ListenBrainz. Connect your account with a user token to share this playlist.',
+      actionLabel: 'Connect ListenBrainz',
+      next: 'connect',
+    };
+  }
+  return {
+    message: 'Sync this playlist to ListenBrainz first to enable sharing via Achordion.',
+    actionLabel: 'Sync Settings',
+    next: 'sync',
+  };
+}
+
+module.exports = { playlistListenbrainzMbid, playlistShareTarget, notSyncedSharePrompt };
