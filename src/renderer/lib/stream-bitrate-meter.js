@@ -22,7 +22,7 @@
 // localfiles and the Widevine branch attach richer exact records (file parse,
 // Shaka's active variant) and never feed this meter.
 //
-// The estimate describes the average of the last keepWindows windows — VBR
+// The estimate is the median of the last keepWindows windows — VBR
 // tracks wander within it, and isStreamQualityChange's tolerance decides
 // whether an update is worth a re-render. Pure module: plain Node for jest.
 

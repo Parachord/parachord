@@ -406,6 +406,16 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         attachStreamQualityFacts(owner, { bitrate, origin: 'measured' });
       } catch { /* bitrate is best-effort */ }
     };
+    // Every new load on the element (a new track for any owner) funnels through
+    // `emptied`: restart the meter AND the attach dedup there, or a second
+    // track whose median lands on the same integer as the previous track's
+    // last attach — a CBR transcode, the common subsonic case — never gets a
+    // record (the fresh currentTrack carries no streamQuality; the dedup
+    // would still hold the old value).
+    audio.addEventListener('emptied', () => {
+      bitrateMeter.reset();
+      lastAttachedBitrate = null;
+    });
 
     // Read-only debug accessors (CDP/console) — diagnosing progress/owner
     // issues has repeatedly required reaching this element.
