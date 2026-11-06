@@ -54,12 +54,12 @@ describe('stream-quality engine wiring (markers)', () => {
 
   test('every new load on the element restarts the meter and the attach dedup', () => {
     const emptied = lineOf("audio.addEventListener('emptied', () => {");
-    const resetMeter = lineOf('      bitrateMeter.reset();');
-    const resetDedup = lineOf('      lastAttachedBitrate = null;');
     const dedupGuard = lineOf('if (!bitrate || bitrate === lastAttachedBitrate) return;');
+    // The resets are the listener's first statements — not merely somewhere
+    // after it in a 3400-line file.
+    expect(lineOf('      bitrateMeter.reset();')).toBe(emptied + 1);
+    expect(lineOf('      lastAttachedBitrate = null;')).toBe(emptied + 2);
     expect(emptied).toBeGreaterThan(dedupGuard);
-    expect(resetMeter).toBeGreaterThan(emptied);
-    expect(resetDedup).toBeGreaterThan(emptied);
   });
 
   test('the embedded-player branch feeds the same attach entry', () => {
