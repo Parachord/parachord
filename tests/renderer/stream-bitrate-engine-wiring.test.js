@@ -32,8 +32,8 @@ describe('stream-quality engine wiring (markers)', () => {
   });
 
   test('the attach entry keys on the resolver actually playing and the save-guard', () => {
-    expect(engineSrc).toContain('if (!prev || prev._activeResolver !== resolverId) return prev;');
-    expect(engineSrc).toContain('!window.isStreamQualityChange(existing, next)) return prev;');
+    // The rules themselves are unit-tested in stream-quality-attach.test.js.
+    expect(engineSrc).toContain('setCurrentTrack(prev => window.withStreamQualityFacts(prev, resolverId, facts));');
   });
 
   test('the timeupdate listener samples, gated to html5Stream owners', () => {

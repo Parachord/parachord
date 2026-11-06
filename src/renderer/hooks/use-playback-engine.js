@@ -301,28 +301,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // meter below, and the embedded players' onStreamQuality handler. The
   // isStreamQualityChange save-guard applies to every path through here (a
   // measured VBR bitrate moves on almost every window; only a >10% move is
-  // worth re-creating currentTrack).
+  // worth re-creating currentTrack). The merge is withStreamQualityFacts in
+  // stream-quality.js, which also handles a track with no keyed entry for the
+  // resolver (one played straight from a search result).
   // ---------------------------------------------------------------
   const attachStreamQualityFacts = (resolverId, facts) => {
-    if (!resolverId || !facts || typeof facts !== 'object') return;
-    setCurrentTrack(prev => {
-      // Keyed to the resolver actually playing, the pickStreamQuality rule.
-      if (!prev || prev._activeResolver !== resolverId) return prev;
-      const source = prev.sources && prev.sources[resolverId];
-      if (!source) return prev;
-      const existing = source.streamQuality;
-      const next = { ...(existing || {}), ...facts };
-      if (existing
-        && typeof window.isStreamQualityChange === 'function'
-        && !window.isStreamQualityChange(existing, next)) return prev;
-      return {
-        ...prev,
-        sources: {
-          ...(prev.sources || {}),
-          [resolverId]: { ...source, streamQuality: next }
-        }
-      };
-    });
+    setCurrentTrack(prev => window.withStreamQualityFacts(prev, resolverId, facts));
   };
 
   const playDemoAudio = (track) => {
