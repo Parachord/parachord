@@ -26,8 +26,13 @@ const { isBandcampEmbedUrl, resolveBandcampEmbedUrl } = require('../bandcamp-emb
 const POLL_MS = 500;
 // A position or duration past this (a month) isn't a real one.
 const MAX_SECONDS = 2592000;
+// Decoded audio bytes past this (a TiB — a month of 320 kbps is ~100 GB)
+// isn't a real one either. The value feeds a median bitrate meter; the cap
+// only bounds nonsense a third-party page could send.
+const MAX_BYTES = 2 ** 40;
 
 const seconds = (value) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_SECONDS ? value : 0);
+const byteCount = (value) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_BYTES ? Math.round(value) : null);
 
 function sanitizeEmbedState(raw) {
   if (typeof raw !== 'string') return null;
@@ -41,7 +46,8 @@ function sanitizeEmbedState(raw) {
     ended: state.ended === true,
     t: seconds(state.t),
     dur: seconds(state.dur),
-    errorCode: Number.isInteger(state.errorCode) ? state.errorCode : null
+    errorCode: Number.isInteger(state.errorCode) ? state.errorCode : null,
+    decodedBytes: byteCount(state.decodedBytes)
   };
 }
 

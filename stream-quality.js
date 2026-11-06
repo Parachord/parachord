@@ -37,6 +37,17 @@
  *     codec/sample rate and the init segment's FLAC STREAMINFO bit depth /
  *     channels, from which the SD/HD/Ultra HD tier is derived — the record
  *     attaches only what the captured manifest and init segment prove)
+ *   - subsonic and bandcamp (measured bitrate only — the shared players'
+ *     decoded-byte meter, src/renderer/lib/stream-bitrate-meter.js: what the
+ *     playing element has actually decoded, sampled against media time. No
+ *     resolver code: the resolver's own API-tagged file properties (Subsonic)
+ *     stay held back because the server may transcode)
+ *
+ * A track played straight from a search result (a link, a chat link, the AI's
+ * play tool) has no keyed entry to attach to: its `sources` is an array of
+ * resolver ids and the flat track is the source record, so the record sits on
+ * the track. Read through pickStreamQuality and write through
+ * withStreamQualityFacts, which both handle that.
  * Loaded by index.html for the renderer and require()d by the tests.
  */
 (function () {
@@ -47,11 +58,45 @@
    * preferred one.
    */
   function pickStreamQuality(track, playingResolverId) {
-    if (!playingResolverId) return null;
-    const src = track && track.sources ? track.sources[playingResolverId] : null;
-    if (!src || src.noMatch) return null;
-    const q = src.streamQuality;
+    if (!playingResolverId || !track) return null;
+    const src = keyedSource(track, playingResolverId);
+    if (src && src.noMatch) return null;
+    const holder = src || (track._activeResolver === playingResolverId ? track : null);
+    const q = holder && holder.streamQuality;
     return (q && typeof q === 'object') ? q : null;
+  }
+
+  // The playing resolver's entry in track.sources, when sources is keyed. A
+  // track played straight from a search result (a link, a chat link, the AI's
+  // play tool) has an array of resolver ids there instead, and the flat track
+  // is itself the source record, so its streamQuality sits on the track.
+  function keyedSource(track, resolverId) {
+    const sources = track.sources;
+    if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return null;
+    return sources[resolverId] || null;
+  }
+
+  /**
+   * The track with measured `facts` merged into the record of `resolverId`, or
+   * the same track object when nothing should change: that resolver isn't the
+   * one playing (the pickStreamQuality rule), or isStreamQualityChange says the
+   * move is too small to be worth re-creating currentTrack.
+   *
+   * Never adds an entry to sources or turns an array into an object. Replay and
+   * the source menu read those as playable sources.
+   */
+  function withStreamQualityFacts(track, resolverId, facts) {
+    if (!track || !resolverId || !facts || typeof facts !== 'object') return track;
+    if (track._activeResolver !== resolverId) return track;
+    const src = keyedSource(track, resolverId);
+    const existing = (src || track).streamQuality;
+    const next = { ...(existing || {}), ...facts };
+    if (existing && !isStreamQualityChange(existing, next)) return track;
+    if (!src) return { ...track, streamQuality: next };
+    return {
+      ...track,
+      sources: { ...track.sources, [resolverId]: { ...src, streamQuality: next } }
+    };
   }
 
   /** Short display label for the codec, with container/extension fallback. */
@@ -124,9 +169,10 @@
     return Math.abs(b - a) / a > BITRATE_CHANGE_TOLERANCE;
   }
 
-  const api = { pickStreamQuality, streamQualityCodecLabel, formatStreamQuality, isStreamQualityChange };
+  const api = { pickStreamQuality, withStreamQualityFacts, streamQualityCodecLabel, formatStreamQuality, isStreamQualityChange };
   if (typeof window !== 'undefined') {
     window.pickStreamQuality = pickStreamQuality;
+    window.withStreamQualityFacts = withStreamQualityFacts;
     window.streamQualityCodecLabel = streamQualityCodecLabel;
     window.formatStreamQuality = formatStreamQuality;
     window.isStreamQualityChange = isStreamQualityChange;

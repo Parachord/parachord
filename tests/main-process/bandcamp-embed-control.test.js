@@ -71,6 +71,23 @@ describe('bcState', () => {
     page.el.error = { code: 4 };
     expect(state(page).errorCode).toBe(4);
   });
+  test('decoded audio bytes are reported when the element exposes them', () => {
+    const page = pageWith();
+    page.run('bcStart()');
+    page.el.webkitAudioDecodedByteCount = 4096;
+    expect(state(page).decodedBytes).toBe(4096);
+  });
+  test('a page whose element does not expose decoded bytes reports null', () => {
+    const page = pageWith();
+    page.run('bcStart()');
+    expect(state(page).decodedBytes).toBeNull();
+  });
+  test('a non-number decoded count is reported as null', () => {
+    const page = pageWith();
+    page.run('bcStart()');
+    page.el.webkitAudioDecodedByteCount = 'lots';
+    expect(state(page).decodedBytes).toBeNull();
+  });
 });
 
 describe('the controls', () => {

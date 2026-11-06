@@ -22,7 +22,12 @@
 //                                    currentTime, duration, volume, play(),
 //                                    pause() — what seek/volume/transport drive
 // handlers: onProgress(seconds), onDuration(seconds), onPlay(), onPause(),
-// onFinish().
+// onFinish(), and the optional onStreamQuality(facts) — a measured
+// streamQuality fragment ({ bitrate (kbps), origin: 'measured' }, the root
+// stream-quality.js contract) an adapter emits when the service's player
+// exposes what the stream actually decodes (Bandcamp's embed reports its
+// page's decoded audio bytes; SoundCloud's widget does not, and never calls
+// it). The engine merges it into the playing track's source record.
 //
 // linkFor(source) picks the link from a resolver's source record: the track's
 // page on the service, which is also what "Open in <service>" opens. An adapter

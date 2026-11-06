@@ -214,17 +214,24 @@ describe('stop', () => {
 
 describe('sanitizeEmbedState', () => {
   test('keeps a good answer', () => {
-    expect(sanitizeEmbedState(JSON.stringify({ audio: true, hasSrc: true, paused: true, ended: true, t: 1.5, dur: 2, errorCode: 4 })))
-      .toEqual({ audio: true, hasSrc: true, paused: true, ended: true, t: 1.5, dur: 2, errorCode: 4 });
+    expect(sanitizeEmbedState(JSON.stringify({ audio: true, hasSrc: true, paused: true, ended: true, t: 1.5, dur: 2, errorCode: 4, decodedBytes: 4096 })))
+      .toEqual({ audio: true, hasSrc: true, paused: true, ended: true, t: 1.5, dur: 2, errorCode: 4, decodedBytes: 4096 });
   });
   test.each([['not json'], [null], [undefined], [42], ['null'], ['[]']])('%p is no state', (raw) => {
     expect(sanitizeEmbedState(raw)).toBeNull();
   });
   test('coerces anything odd the page sends', () => {
-    expect(sanitizeEmbedState(JSON.stringify({ audio: 'yes', hasSrc: 1, paused: 'x', ended: {}, t: 'NaN', dur: -3, errorCode: 'bad', extra: '<script>' })))
-      .toEqual({ audio: false, hasSrc: false, paused: true, ended: false, t: 0, dur: 0, errorCode: null });
+    expect(sanitizeEmbedState(JSON.stringify({ audio: 'yes', hasSrc: 1, paused: 'x', ended: {}, t: 'NaN', dur: -3, errorCode: 'bad', decodedBytes: 'lots', extra: '<script>' })))
+      .toEqual({ audio: false, hasSrc: false, paused: true, ended: false, t: 0, dur: 0, errorCode: null, decodedBytes: null });
   });
   test('an absurd position or duration is dropped', () => {
     expect(sanitizeEmbedState(JSON.stringify({ t: 1e12, dur: 1e12 }))).toMatchObject({ t: 0, dur: 0 });
+  });
+  test('decoded bytes pass as a non-negative count, negative or absurd ones are dropped', () => {
+    expect(sanitizeEmbedState(JSON.stringify({ decodedBytes: 80123 }))).toMatchObject({ decodedBytes: 80123 });
+    expect(sanitizeEmbedState(JSON.stringify({ decodedBytes: 4096.8 }))).toMatchObject({ decodedBytes: 4097 });
+    expect(sanitizeEmbedState(JSON.stringify({ decodedBytes: -1 }))).toMatchObject({ decodedBytes: null });
+    expect(sanitizeEmbedState(JSON.stringify({ decodedBytes: 1e15 }))).toMatchObject({ decodedBytes: null });
+    expect(sanitizeEmbedState(JSON.stringify({}))).toMatchObject({ decodedBytes: null });
   });
 });
