@@ -245,6 +245,83 @@ describe('handlers', () => {
   });
 });
 
+describe('stream quality', () => {
+  // 320 kbps = 40,000 decoded bytes per second of media time.
+  const BYTES_PER_SEC = 40000;
+
+  test('reports the measured bitrate once enough windows have closed', async () => {
+    const onStreamQuality = jest.fn();
+    const { report } = await playing({ onStreamQuality });
+    report({ t: 1, dur: 200, decodedBytes: BYTES_PER_SEC });
+    report({ t: 3, dur: 200, decodedBytes: BYTES_PER_SEC * 3 });
+    report({ t: 5, dur: 200, decodedBytes: BYTES_PER_SEC * 5 });
+    expect(onStreamQuality).not.toHaveBeenCalled(); // 2 windows
+    report({ t: 7, dur: 200, decodedBytes: BYTES_PER_SEC * 7 });
+    expect(onStreamQuality).toHaveBeenCalledTimes(1);
+    expect(onStreamQuality).toHaveBeenCalledWith({ bitrate: 320, origin: 'measured' });
+    // A steady rate keeps it quiet (isStreamQualityChange's tolerance class).
+    report({ t: 9, dur: 200, decodedBytes: BYTES_PER_SEC * 9 });
+    report({ t: 11, dur: 200, decodedBytes: BYTES_PER_SEC * 11 });
+    expect(onStreamQuality).toHaveBeenCalledTimes(1);
+  });
+
+  test('follows the median when the rate actually moves', async () => {
+    const onStreamQuality = jest.fn();
+    const { report } = await playing({ onStreamQuality });
+    let t = 1;
+    let bytes = BYTES_PER_SEC;
+    const feed = (kbps, windows) => {
+      for (let w = 0; w < windows; w += 1) {
+        t += 2;
+        bytes += (kbps * 1000 / 8) * 2;
+        report({ t, dur: 200, decodedBytes: bytes });
+      }
+    };
+    feed(320, 4);
+    expect(onStreamQuality).toHaveBeenLastCalledWith({ bitrate: 320, origin: 'measured' });
+    // 500 kbps for long enough that the median of the last windows crosses.
+    feed(500, 9);
+    expect(onStreamQuality).toHaveBeenLastCalledWith({ bitrate: 500, origin: 'measured' });
+  });
+
+  test('states without decoded bytes (older control scripts) never report', async () => {
+    const onStreamQuality = jest.fn();
+    const { report } = await playing({ onStreamQuality });
+    report({ t: 2, dur: 200 });
+    report({ t: 4, dur: 200 });
+    report({ t: 6, dur: 200 });
+    report({ t: 8, dur: 200 });
+    expect(onStreamQuality).not.toHaveBeenCalled();
+  });
+
+  test('a new load restarts the meter', async () => {
+    const first = jest.fn();
+    const { player, report, settle } = setup();
+    const loadedFirst = player.load(PAGE, { onStreamQuality: first }, { bandcampTrackId: 1 });
+    await settle();
+    report({ t: 1, dur: 200, decodedBytes: BYTES_PER_SEC });
+    await loadedFirst;
+    report({ t: 3, dur: 200, decodedBytes: BYTES_PER_SEC * 3 });
+    report({ t: 5, dur: 200, decodedBytes: BYTES_PER_SEC * 5 });
+    report({ t: 7, dur: 200, decodedBytes: BYTES_PER_SEC * 7 });
+    report({ t: 9, dur: 200, decodedBytes: BYTES_PER_SEC * 9 });
+    expect(first).toHaveBeenCalledTimes(1);
+
+    const second = jest.fn();
+    const loadedSecond = player.load(PAGE, { onStreamQuality: second }, { bandcampTrackId: 1 });
+    await settle();
+    report({ t: 1, dur: 200, decodedBytes: BYTES_PER_SEC });
+    await loadedSecond;
+    report({ t: 3, dur: 200, decodedBytes: BYTES_PER_SEC * 3 });
+    report({ t: 5, dur: 200, decodedBytes: BYTES_PER_SEC * 5 });
+    report({ t: 7, dur: 200, decodedBytes: BYTES_PER_SEC * 7 });
+    // The meter restarted with the new load: only two windows since.
+    expect(second).not.toHaveBeenCalled();
+    report({ t: 9, dur: 200, decodedBytes: BYTES_PER_SEC * 9 });
+    expect(second).toHaveBeenCalledWith({ bitrate: 320, origin: 'measured' });
+  });
+});
+
 describe('the element facade', () => {
   test('reads position, duration and pause state', async () => {
     const { player, report } = await playing();

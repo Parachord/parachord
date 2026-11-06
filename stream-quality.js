@@ -37,6 +37,11 @@
  *     codec/sample rate and the init segment's FLAC STREAMINFO bit depth /
  *     channels, from which the SD/HD/Ultra HD tier is derived — the record
  *     attaches only what the captured manifest and init segment prove)
+ *   - subsonic and bandcamp (measured bitrate only — the shared players'
+ *     decoded-byte meter, src/renderer/lib/stream-bitrate-meter.js: what the
+ *     playing element has actually decoded, sampled against media time. No
+ *     resolver code: the resolver's own API-tagged file properties (Subsonic)
+ *     stay held back because the server may transcode)
  * Loaded by index.html for the renderer and require()d by the tests.
  */
 (function () {

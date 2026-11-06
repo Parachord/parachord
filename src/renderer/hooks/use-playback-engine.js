@@ -53,6 +53,13 @@ if (typeof window !== 'undefined') window.__parachordWidevine = __widevinePlayer
 const { embedPlayer, embedLinkFor, stopAllEmbedPlayers } = require('../lib/embed-players');
 if (typeof window !== 'undefined') window.__parachordEmbedPlayer = embedPlayer;
 
+// The measured-bitrate meter behind the shared players' streamQuality
+// records (lib/stream-bitrate-meter.js): decoded audio bytes sampled against
+// media time, reduced to a running median. Fed by the shared HTML5 element
+// (html5Stream resolvers) and the Bandcamp embed adapter — never by
+// resolver code. See the streamQuality contract in root stream-quality.js.
+const { createStreamBitrateMeter } = require('../lib/stream-bitrate-meter');
+
 // The 30s stream-error toast throttle — module scope so re-renders don't
 // reset it (the hook body runs on every render; a hook-local let resets at
 // 0 each time, voiding the throttle on the first error after any progress
@@ -284,6 +291,40 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   React.useEffect(() => { handlePlayRef.current = handlePlay; });
   React.useEffect(() => { startSpinoffRef.current = startSpinoff; });
 
+  // ---------------------------------------------------------------
+  // Stream-quality facts (the root stream-quality.js contract): measured
+  // facts from the shared players merge into the PLAYING track's own source
+  // record — keyed by the resolver ACTUALLY playing, never a preferred one
+  // (the pickStreamQuality rule). The widevine branch's attachStreamQuality
+  // does this for Shaka's variant facts on its own track guard; this is the
+  // shared entry for everything measured: the shared element's decoded-byte
+  // meter below, and the embedded players' onStreamQuality handler. The
+  // isStreamQualityChange save-guard applies to every path through here (a
+  // measured VBR bitrate moves on almost every window; only a >10% move is
+  // worth re-creating currentTrack).
+  // ---------------------------------------------------------------
+  const attachStreamQualityFacts = (resolverId, facts) => {
+    if (!resolverId || !facts || typeof facts !== 'object') return;
+    setCurrentTrack(prev => {
+      // Keyed to the resolver actually playing, the pickStreamQuality rule.
+      if (!prev || prev._activeResolver !== resolverId) return prev;
+      const source = prev.sources && prev.sources[resolverId];
+      if (!source) return prev;
+      const existing = source.streamQuality;
+      const next = { ...(existing || {}), ...facts };
+      if (existing
+        && typeof window.isStreamQualityChange === 'function'
+        && !window.isStreamQualityChange(existing, next)) return prev;
+      return {
+        ...prev,
+        sources: {
+          ...(prev.sources || {}),
+          [resolverId]: { ...source, streamQuality: next }
+        }
+      };
+    });
+  };
+
   const playDemoAudio = (track) => {
     if (!audioContext) return;
     if (currentSource) {
@@ -342,6 +383,30 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     console.log('🎵 Creating shared HTML5 audio element');
     const audio = new Audio();
     audioRef.current = audio;
+
+    // Measured stream bitrate for html5Stream resolvers (Subsonic): what the
+    // element has ACTUALLY decoded (webkitAudioDecodedByteCount, via
+    // lib/stream-bitrate-meter) — the direct stream has no manifest to read
+    // facts from, and the resolver's API-tagged fields are held back because
+    // the server may transcode (see the subsonic plugin's search). localfiles
+    // (file-parse facts) and the Widevine branch (Shaka's active variant)
+    // attach exact records and never come through here.
+    const bitrateMeter = createStreamBitrateMeter();
+    let lastAttachedBitrate = null;
+    const sampleStreamBitrate = () => {
+      try {
+        const el = audioRef.current;
+        const owner = ownerOf(el);
+        if (!el || !owner || !isHtml5StreamResolver(owner)) return;
+        const decoded = el.webkitAudioDecodedByteCount;
+        if (typeof decoded !== 'number' || !Number.isFinite(decoded) || decoded < 0) return;
+        const bitrate = bitrateMeter.sample(el.currentTime, decoded);
+        if (!bitrate || bitrate === lastAttachedBitrate) return;
+        lastAttachedBitrate = bitrate;
+        attachStreamQualityFacts(owner, { bitrate, origin: 'measured' });
+      } catch { /* bitrate is best-effort */ }
+    };
+
     // Read-only debug accessors (CDP/console) — diagnosing progress/owner
     // issues has repeatedly required reaching this element.
     if (typeof window !== 'undefined') {
@@ -358,6 +423,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           window.scrobbleManager.onProgressUpdate(currentTime);
         }
       }
+      // The measured-bitrate sample rides the same tick (html5Stream owners
+      // only; seeks and loads self-correct inside the meter).
+      sampleStreamBitrate();
     });
     const adoptElementDuration = () => {
       if (!ownerOf(audioRef.current)) return;
@@ -1353,6 +1421,14 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           // its frame can still pause it: keep the UI in step.
           onPause: () => { if (isCurrentPlay()) setIsPlaying(false); },
           onPlay: () => { if (isCurrentPlay()) setIsPlaying(true); },
+          // Measured stream-quality facts when the adapter's player can
+          // produce them (Bandcamp's embed reports its page's decoded audio
+          // bytes; SoundCloud's widget reports nothing). Merged into the
+          // playing track's source record keyed by this resolver.
+          onStreamQuality: (facts) => {
+            if (!isCurrentPlay()) return;
+            attachStreamQualityFacts(resolverId, facts);
+          },
           onFinish: () => {
             if (!isCurrentPlay()) return;
             console.log(`🎵 ${serviceName} playback ended`);

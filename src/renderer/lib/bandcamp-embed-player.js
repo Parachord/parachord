@@ -20,6 +20,11 @@
 
 'use strict';
 
+// The measured-bitrate meter (lib/stream-bitrate-meter.js): decoded audio
+// bytes sampled against media time. See the stream-quality contract in the
+// root stream-quality.js.
+const { createStreamBitrateMeter } = require('./stream-bitrate-meter');
+
 const START_TIMEOUT_MS = 15000;
 
 function errorWithReason(message, reason) {
@@ -46,6 +51,10 @@ function createBandcampEmbedPlayer({
   let pendingStart = null; // { resolve, reject, timer }
   let onFrameLoaded = null; // runs once when the page the current load asked for finishes
   let listening = false;
+  // Measured stream bitrate: one meter per player (one embedded player per
+  // adapter), restarted on every load.
+  let streamMeter = createStreamBitrateMeter();
+  let emittedBitrate = null;
 
   const bridge = () => (win && win.electron && win.electron.bandcampEmbed) || null;
 
@@ -108,6 +117,18 @@ function createBandcampEmbedPlayer({
       return;
     }
 
+    // Measured stream bitrate: decoded bytes off the embed's own <audio>,
+    // sampled against the reported position. Older control-script copies
+    // (and the mobile byte-for-byte copies until they update) report no
+    // decodedBytes — the meter just stays idle.
+    if (state.decodedBytes != null && state.decodedBytes >= 0) {
+      const bitrate = streamMeter.sample(state.t, state.decodedBytes);
+      if (bitrate && bitrate !== emittedBitrate) {
+        emittedBitrate = bitrate;
+        call('onStreamQuality', { bitrate, origin: 'measured' });
+      }
+    }
+
     if (state.t !== position) {
       position = state.t;
       call('onProgress', position);
@@ -142,6 +163,8 @@ function createBandcampEmbedPlayer({
     paused = true;
     position = 0;
     duration = 0;
+    streamMeter.reset();
+    emittedBitrate = null;
   };
 
   // `link` is the track's Bandcamp page (what "Open in Bandcamp" opens);
