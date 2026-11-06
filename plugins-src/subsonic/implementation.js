@@ -1,4 +1,4 @@
-// Source of truth for plugins/subsonic.axe v0.3.0
+// Source of truth for plugins/subsonic.axe v0.3.2
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -204,30 +204,75 @@ module.exports = {
       };
 
       var h = ensureHelpers();
-      var url = h.apiUrl(
-        config,
-        'search3',
-        'f=json&query=' +
-          encodeURIComponent(query.trim()) +
-          '&songCount=20&artistCount=0&albumCount=0',
-      );
-      if (!url) {
-        console.log('Subsonic: no server URL configured, skipping search');
-        return [];
+
+      // One search3 call. Returns the raw songs, or null when there is no
+      // server to ask or the call failed (each reason logs, as before).
+      var searchOnce = async function (q) {
+        var url = h.apiUrl(
+          config,
+          'search3',
+          'f=json&query=' + encodeURIComponent(q) + '&songCount=20&artistCount=0&albumCount=0',
+        );
+        if (!url) {
+          console.log('Subsonic: no server URL configured, skipping search');
+          return null;
+        }
+        var resp = await fetch(url);
+        if (!resp.ok) {
+          console.warn('Subsonic: search failed, HTTP ' + resp.status);
+          return null;
+        }
+        var data = await resp.json();
+        var sub = data && data['subsonic-response'];
+        if (!sub || sub.status !== 'ok') {
+          var apiErr = sub && sub.error ? sub.error.code + ' ' + sub.error.message : 'bad response';
+          console.warn('Subsonic: API error:', apiErr);
+          return null;
+        }
+        return (sub.searchResult3 && sub.searchResult3.song) || [];
+      };
+
+      var songs = await searchOnce(query.trim());
+      if (songs === null) return [];
+
+      // A query with CJK in it is matched by Navidrome word-for-word as
+      // written — a literal substring of the title/album/artist text,
+      // punctuation included (its non-CJK FTS path strips punctuation on both
+      // sides instead). The same title tagged two ways, 'ぶっ生き返す!!' and
+      // 'ぶっ生き返す！！' (half-width and full-width exclamation marks), is no
+      // substring match either way, so the track as spelled by the request
+      // finds nothing. So when such a query finds nothing, ask again with its
+      // runs of letters and numbers, each its own word: every run is a
+      // substring of the spelling we were given (a library tagged exactly like
+      // the request is no worse off — the first ask already found it), and a
+      // library with the punctuation spelled the other way matches too. The
+      // re-ask only happens after a miss, which was a dead end before, so a
+      // server that reads the query differently keeps getting it as written.
+      // No property-escape literal (an engine without them must still parse
+      // the function); a query left with no runs keeps the miss.
+      if (songs.length === 0) {
+        try {
+          var CJK = new RegExp(
+            '[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]',
+            'u',
+          );
+          var NON_ALNUM = new RegExp('[^\\p{L}\\p{N}]', 'gu');
+          if (CJK.test(query)) {
+            var runs = query.trim().split(NON_ALNUM);
+            var words = [];
+            for (var i = 0; i < runs.length; i++) {
+              if (runs[i]) words.push(runs[i]);
+            }
+            var folded = words.length ? words.join(' ') : '';
+            if (folded && folded !== query.trim()) {
+              console.log(
+                'Subsonic: CJK query found nothing as written, asking again as "' + folded + '"',
+              );
+              songs = (await searchOnce(folded)) || [];
+            }
+          }
+        } catch (e) {}
       }
-      var resp = await fetch(url);
-      if (!resp.ok) {
-        console.warn('Subsonic: search failed, HTTP ' + resp.status);
-        return [];
-      }
-      var data = await resp.json();
-      var sub = data && data['subsonic-response'];
-      if (!sub || sub.status !== 'ok') {
-        var apiErr = sub && sub.error ? sub.error.code + ' ' + sub.error.message : 'bad response';
-        console.warn('Subsonic: API error:', apiErr);
-        return [];
-      }
-      var songs = (sub.searchResult3 && sub.searchResult3.song) || [];
       var results = [];
       for (var i = 0; i < songs.length; i++) {
         var s = songs[i];
@@ -368,18 +413,54 @@ module.exports = {
       if (!window.__subsonicHelpers) await this.getStreamUrl({ subsonicId: 'init' }, config);
       var h = window.__subsonicHelpers;
       if (!h) return [];
-      var url = h.apiUrl(
-        config,
-        'search3',
-        'f=json&query=' + encodeURIComponent(term) + '&songCount=0&artistCount=0&albumCount=20',
-      );
-      if (!url) return [];
-      var resp = await fetch(url);
-      if (!resp.ok) return [];
-      var data = await resp.json();
-      var sub = data && data['subsonic-response'];
-      if (!sub || sub.status !== 'ok') return [];
-      var albums = (sub.searchResult3 && sub.searchResult3.album) || [];
+
+      // One albums-only search3 call. Returns the raw albums, or null when
+      // there is no server to ask or the call failed.
+      var askAlbums = async function (t) {
+        var url = h.apiUrl(
+          config,
+          'search3',
+          'f=json&query=' + encodeURIComponent(t) + '&songCount=0&artistCount=0&albumCount=20',
+        );
+        if (!url) return null;
+        var resp = await fetch(url);
+        if (!resp.ok) return null;
+        var data = await resp.json();
+        var sub = data && data['subsonic-response'];
+        if (!sub || sub.status !== 'ok') return null;
+        return (sub.searchResult3 && sub.searchResult3.album) || [];
+      };
+
+      var albums = await askAlbums(term);
+      if (albums === null) return [];
+
+      // The same CJK re-ask as search(): an album name with CJK in it is
+      // matched by Navidrome word-for-word with punctuation as written, so
+      // '!!' vs '！！' in the same title is a miss there. Runs of letters and
+      // numbers, asked only after a miss; a query left with no runs keeps it.
+      if (albums.length === 0) {
+        try {
+          var CJK = new RegExp(
+            '[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]',
+            'u',
+          );
+          var NON_ALNUM = new RegExp('[^\\p{L}\\p{N}]', 'gu');
+          if (CJK.test(term)) {
+            var runs = term.split(NON_ALNUM);
+            var words = [];
+            for (var i = 0; i < runs.length; i++) {
+              if (runs[i]) words.push(runs[i]);
+            }
+            var folded = words.length ? words.join(' ') : '';
+            if (folded && folded !== term) {
+              console.log(
+                'Subsonic: CJK album query found nothing as written, asking again as "' + folded + '"',
+              );
+              albums = (await askAlbums(folded)) || [];
+            }
+          }
+        } catch (e) {}
+      }
       var out = [];
       for (var i = 0; i < albums.length; i++) {
         var a = albums[i];

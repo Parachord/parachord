@@ -94,7 +94,7 @@ beforeEach(() => {
 describe('subsonic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('subsonic');
-    expect(axe.manifest.version).toBe('0.3.1');
+    expect(axe.manifest.version).toBe('0.3.2');
   });
 
   test('declares streaming capabilities with userpass auth', () => {
@@ -254,6 +254,129 @@ describe('subsonic server URL normalization', () => {
     } else {
       expect(results[0].subsonicServer).toBe(expected);
     }
+  });
+});
+
+// Navidrome's backend for a query containing CJK (persistence/sql_search.go in
+// its repo): every whitespace-separated word of the query must literally be a
+// substring of the title/album/artist/album-artist text — punctuation included,
+// no width folding ('!!' is not '！！'). Its non-CJK (FTS) path strips
+// punctuation on both sides, so only a CJK query needs the letter/number
+// re-ask.
+function navidromeCjk(rows) {
+  const fields = (row) => [row.title, row.album, row.artist, row.albumArtist || row.artist];
+  return jest.fn(async (url) => {
+    const query = new URL(url).searchParams.get('query');
+    const words = query.split(/\s+/).filter(Boolean);
+    const found = rows.filter((row) =>
+      words.every((w) => fields(row).some((f) => String(f || '').toLowerCase().includes(w.toLowerCase())))
+    );
+    return okResponse(found);
+  });
+}
+
+// The reported case (live 2026-11): MusicBrainz titles the track 'ぶっ生き返す!!'
+// (half-width) while the Navidrome library is tagged 'ぶっ生き返す！！' (full-
+// width) — one title, two punctuation spellings. The query is asked as written
+// first; only a zero-result answer re-asks with the query's letter/number runs,
+// so the punctuation spelling stops deciding the match and nothing the server
+// found before changes.
+describe('subsonic search re-asks a CJK query as its letter runs after a miss', () => {
+  const askedQueries = () =>
+    global.fetch.mock.calls.map((url) => new URL(url).searchParams.get('query'));
+
+  test("half-width '!!' in the query finds a full-width '！！' in the library", async () => {
+    const resolver = instantiate(axe);
+    const song = { ...SONG, id: 'jp-1', title: 'ぶっ生き返す！！', artist: 'マキシマムザホルモン', album: 'ぶっ生き返す！！' };
+    global.fetch = navidromeCjk([song]);
+    const results = await resolver.search('マキシマムザホルモン ぶっ生き返す!!', CONFIG);
+    expect(askedQueries()).toEqual([
+      'マキシマムザホルモン ぶっ生き返す!!',
+      'マキシマムザホルモン ぶっ生き返す',
+    ]);
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe('ぶっ生き返す！！');
+  });
+
+  test("a wave dash and a full-width tilde (〜 U+301C vs ～ U+FF5E) are the same class", async () => {
+    // Live-reported (2026-11): the same title spelled with the Shift-JIS wave
+    // dash on one side and the full-width tilde on the other (the CP932
+    // mapping split). Any punctuation pair works the same way: the re-ask
+    // drops punctuation entirely, and the gate strips it.
+    const resolver = instantiate(axe);
+    const row = { id: 'jp-2', title: '恐喝～kyokatsu～', artist: 'マキシマムザホルモン', album: '恐喝～kyokatsu～', duration: 200 };
+    global.fetch = navidromeCjk([row]);
+    const hit = await resolver.resolve('マキシマムザホルモン', '恐喝〜kyokatsu〜', '恐喝〜kyokatsu〜', CONFIG);
+    expect(hit && hit.title).toBe('恐喝～kyokatsu～');
+    expect(askedQueries()).toEqual(['マキシマムザホルモン 恐喝〜kyokatsu〜', 'マキシマムザホルモン 恐喝 kyokatsu']);
+  });
+
+  test("full-width '！！' in the query finds a half-width '!!' in the library", async () => {
+    const resolver = instantiate(axe);
+    const row = { id: 'jp-1', title: 'ぶっ生き返す!!', artist: 'マキシマムザホルモン', album: 'ぶっ生き返す!!', duration: 200 };
+    global.fetch = navidromeCjk([row]);
+    const hit = await resolver.resolve('マキシマムザホルモン', 'ぶっ生き返す！！', 'ぶっ生き返す！！', CONFIG);
+    expect(hit && hit.title).toBe('ぶっ生き返す!!');
+  });
+
+  test('a library tagged exactly like the request is found on the first ask (no re-ask)', async () => {
+    const resolver = instantiate(axe);
+    const row = { id: 'jp-1', title: 'ぶっ生き返す!!', artist: 'マキシマムザホルモン', album: 'ぶっ生き返す!!', duration: 200 };
+    global.fetch = navidromeCjk([row]);
+    const hit = await resolver.resolve('マキシマムザホルモン', 'ぶっ生き返す!!', 'ぶっ生き返す!!', CONFIG);
+    expect(hit && hit.title).toBe('ぶっ生き返す!!');
+    expect(askedQueries()).toEqual(['マキシマムザホルモン ぶっ生き返す!!']);
+  });
+
+  test('a CJK miss on a failed ask is not re-asked', async () => {
+    const resolver = instantiate(axe);
+    const calls = mockFetch(() => ({ ok: false, status: 502, json: async () => ({}) }));
+    const results = await resolver.search('マキシマムザホルモン ぶっ生き返す!!', CONFIG);
+    expect(results).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a CJK miss on an API error is not re-asked either', async () => {
+    const resolver = instantiate(axe);
+    const calls = mockFetch(() => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ 'subsonic-response': { status: 'error', error: { code: 40, message: 'Wrong username or password' } } }),
+    }));
+    const results = await resolver.search('マキシマムザホルモン ぶっ生き返す!!', CONFIG);
+    expect(results).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('a CJK query already made of runs is asked once (the re-ask would repeat it)', async () => {
+    const resolver = instantiate(axe);
+    global.fetch = navidromeCjk([]);
+    const results = await resolver.search('マキシマムザホルモン ぶっ生き返す', CONFIG);
+    expect(results).toEqual([]);
+    expect(askedQueries()).toEqual(['マキシマムザホルモン ぶっ生き返す']);
+  });
+
+  test('a query with no CJK is never re-asked (Navidrome strips punctuation server-side on its FTS path)', async () => {
+    const resolver = instantiate(axe);
+    // a hit: one ask, as written — AC/DC keeps its slash and Jay-Z its hyphen,
+    // the forms Navidrome turns into ("Jay Z" OR JayZ*)
+    const calls = mockFetch(() => okResponse([SONG]));
+    await resolver.search('AC/DC Back in Black', CONFIG);
+    expect(calls[0]).toContain('query=' + encodeURIComponent('AC/DC Back in Black'));
+    await resolver.search('Jay-Z', CONFIG);
+    expect(calls[1]).toContain('query=' + encodeURIComponent('Jay-Z'));
+    // a miss: still one ask — the re-ask is CJK-only
+    await resolver.search('Jay-Zzzz', CONFIG);
+    expect(calls).toHaveLength(3);
+  });
+
+  test("a Latin word inside a CJK query is re-asked as its runs", async () => {
+    const resolver = instantiate(axe);
+    const row = { id: 'jp-1', title: "Let's 五線譜！！", artist: 'バンド', album: "Let's 五線譜！！", duration: 200 };
+    global.fetch = navidromeCjk([row]);
+    const hit = await resolver.resolve('バンド', "Let's 五線譜!!", null, CONFIG);
+    expect(hit && hit.title).toBe("Let's 五線譜！！");
+    expect(askedQueries()).toEqual(["バンド Let's 五線譜!!", 'バンド Let s 五線譜']);
   });
 });
 
@@ -461,6 +584,26 @@ describe('subsonic album search (capabilities.albumSearch)', () => {
     }]);
     // no credentialed URL in what is returned
     expect(JSON.stringify(albums)).not.toMatch(/[?&]t=|[?&]s=|password/);
+  });
+
+  test('re-asks a CJK album query as its letter runs after a miss', async () => {
+    const resolver = instantiate(axe);
+    const album = { id: 'al-jp', name: 'ぶっ生き返す！！', artist: 'マキシマムザホルモン', year: 2007, songCount: 3 };
+    const calls = mockFetch((url) => {
+      const query = new URL(url).searchParams.get('query');
+      return subsonicOk(
+        query === 'マキシマムザホルモン ぶっ生き返す'
+          ? { searchResult3: { album: [album] } }
+          : { searchResult3: {} },
+      );
+    });
+    const albums = await resolver.searchAlbums({ artist: 'マキシマムザホルモン', title: 'ぶっ生き返す!!' }, CONFIG);
+    expect(calls.map((url) => new URL(url).searchParams.get('query'))).toEqual([
+      'マキシマムザホルモン ぶっ生き返す!!',
+      'マキシマムザホルモン ぶっ生き返す',
+    ]);
+    expect(albums[0].name).toBe('ぶっ生き返す！！');
+    expect(albums[0].url).toBe('subsonic:album:al-jp');
   });
 
   test('lookupAlbum loads getAlbum songs in disc and track order', async () => {
