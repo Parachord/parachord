@@ -46534,8 +46534,8 @@ useEffect(() => {
                         marginTop: '4px'
                       }
                     }, authPort === 8888
-                      ? 'Add this to your SoundCloud app\'s Redirect URI'
-                      : `Add this to your SoundCloud app's Redirect URI. Parachord's local server is on port ${authPort}, so signing in to SoundCloud needs your own app credentials here: the built-in sign-in only works on port 8888.`)
+                      ? 'Add this to your SoundCloud app\'s Redirect URI. The same app also works with Parachord on Android and iOS.'
+                      : `Add this to your SoundCloud app's Redirect URI. Parachord's local server is on port ${authPort}, so signing in to SoundCloud needs your own app credentials here: the built-in sign-in only works on port 8888. Parachord on Android and iOS always signs in on port 8888, so an app registered for port ${authPort} won't sign in on your phone.`)
                   ),
                   React.createElement('div', { className: 'flex gap-2' },
                     React.createElement('button', {
