@@ -28,6 +28,7 @@
 
 ## Playback
 
+- **Japanese, Chinese and Korean titles find their match on Subsonic.** On Navidrome, a title spelled with different punctuation, like `!!` in one place and `！！` in your tags, came back with nothing, so the track never showed Subsonic as a source. Parachord now asks again without the punctuation. Thanks to @theli-ua.
 - **See the bitrate of what's playing on Subsonic and Bandcamp.** Hovering the track title now shows the bitrate Parachord measures from the audio as it plays, so a Subsonic server's real stream rate shows up rather than what its library claims. Thanks to @theli-ua.
 - **A track with no cover stops showing the last track's cover.** If Parachord couldn't find a cover, the playbar kept the previous track's for as long as the track played. It now clears once the search for a cover comes up empty, and right away for a track with no album.
 - **Tracks with more than one artist find their matches.** Music services write a shared credit differently: "Erykah Badu and The Alchemist" on one, "Erykah Badu & The Alchemist" or "Erykah Badu, The Alchemist" on another. Parachord read those as different artists and threw away the right recording, so these tracks could show fewer sources than they have, or none. It now treats "and", "&", commas, "x" and "feat." as the same credit, and a different artist that only shares a name with one of them is still turned down.
