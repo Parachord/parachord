@@ -28,6 +28,7 @@
 
 ## Playback
 
+- **Spinoff works for more songs.** Last.fm has no similar-track list for some very popular songs, like "Shape of You", so the Spinoff button stayed greyed out. When Last.fm has fewer than five similar tracks, Spinoff now adds top tracks from similar artists, spread out so the same artist doesn't play twice in a row.
 - **Japanese, Chinese and Korean titles find their match on Subsonic.** On Navidrome, a title spelled with different punctuation, like `!!` in one place and `！！` in your tags, came back with nothing, so the track never showed Subsonic as a source. Parachord now asks again without the punctuation. Thanks to @theli-ua.
 - **See the bitrate of what's playing on Subsonic and Bandcamp.** Hovering the track title now shows the bitrate Parachord measures from the audio as it plays, so a Subsonic server's real stream rate shows up rather than what its library claims. Thanks to @theli-ua.
 - **A track with no cover stops showing the last track's cover.** If Parachord couldn't find a cover, the playbar kept the previous track's for as long as the track played. It now clears once the search for a cover comes up empty, and right away for a track with no album.
