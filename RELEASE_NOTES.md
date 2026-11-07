@@ -18,6 +18,7 @@
 
 ## SoundCloud
 
+- **One SoundCloud app for desktop and phone.** If you use your own SoundCloud app, the Redirect URI hint now says it also works with Parachord on Android and iOS, from their next update. If you've changed Parachord's local server port, it says the phones always sign in on port 8888.
 - **More SoundCloud tracks play.** Tracks that SoundCloud serves only in encrypted form were refused by its player inside the app. They play now.
 
 ## Library
