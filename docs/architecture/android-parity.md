@@ -47,7 +47,8 @@ for (playlist in localPlaylists) {
         // Create new remote; link on success.
         createRemote(playlist)
     } else if (playlist.locallyModified) {
-        // Push updates; on 404 mark pendingAction = "remote-deleted".
+        // Push updates. On a 404, desktop marks pendingAction = "remote-deleted"
+        // and shows a banner; mobile detaches the mirror instead (see below).
         pushToRemote(playlist, syncInfo.externalId)
     }
 }
@@ -69,6 +70,8 @@ for (playlist in localPlaylists) {
     }
 }
 ```
+
+**A playlist deleted on the provider is handled differently on purpose.** Desktop keeps the mirror, flagged `pendingAction: 'remote-deleted'`, and the playlist page's banner offers Delete locally too, Stop syncing and Re-create. Mobile detaches the mirror instead: it drops the link and N-way token and excludes that provider in the playlist's channel override ([parachord-mobile#528](https://github.com/Parachord/parachord-mobile/pull/528), `DeadMirrorReconcile.kt`). Desktop also looks for them on every sync, with mobile's rules: a mirror missing from the provider's full list is only a suspect, only a definite 404 confirms it, and more than 30 missing at once checks nothing. On desktop that check covers ListenBrainz mirrors in the legacy sync path only (parachord#1271); elsewhere a deleted mirror is found when a push gets a 404. Links are per device and neither client recreates the playlist, so the difference damages no data. Decided in parachord#1269; don't port the flag to mobile.
 
 Both the background timer and any "sync now" action must run the full create-OR-push-update flow, not just create-if-missing. If you split them into two code paths, make sure both do the same work — don't let only the background timer push updates, or users won't see uploads until the next cadence tick.
 
