@@ -1200,6 +1200,7 @@ const { createBrokenArtRetry } = require('./lib/broken-art');
 const { holdPreviousPlaybarArt, trackArtKey } = require('./lib/playbar-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
+const { checkSpinoffAvailable, lastfmJsonFetcher } = require('./lib/spinoff-pool');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
@@ -30651,29 +30652,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Fetch similar tracks from Last.fm API (for Spinoff feature)
 
   // Check if similar tracks are available for spinoff (lightweight check)
+  // The Spinoff button is enabled when Last.fm has any similar track, or failing
+  // that any similar artist: spinoff tops the pool up from those (#1281).
   const checkSpinoffAvailability = async (artistName, trackName) => {
-    if (!artistName || !trackName) return false;
-
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) {
-      console.log('🔀 Spinoff availability check skipped: no API key');
-      return false;
-    }
-
     try {
-      // Request just 1 track to check if any similar tracks exist
-      const url = `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(artistName)}&track=${encodeURIComponent(trackName)}&api_key=${apiKey}&format=json&limit=1`;
-
-      const response = await lastfmFetch(url);
-      if (!response.ok) {
-        console.log('🔀 Spinoff availability check failed:', response.status);
-        return false;
-      }
-
-      const data = await response.json();
-      const hasSimilarTracks = data.similartracks?.track?.length > 0;
-      console.log(`🔀 Spinoff availability for "${trackName}": ${hasSimilarTracks}`);
-      return hasSimilarTracks;
+      const available = await checkSpinoffAvailable({
+        fetchJson: lastfmJsonFetcher(lastfmFetch),
+        apiKey: getLastfmApiKey(),
+        artist: artistName,
+        title: trackName
+      });
+      console.log(`🔀 Spinoff availability for "${trackName}": ${available}`);
+      return available;
     } catch (error) {
       console.error('Failed to check spinoff availability:', error);
       return false;

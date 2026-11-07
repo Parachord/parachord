@@ -51,6 +51,8 @@ if (typeof window !== 'undefined') window.__parachordWidevine = __widevinePlayer
 // media-element facade through window.__parachordEmbedPlayer for seek and
 // volume.
 const { embedPlayer, embedLinkFor, stopAllEmbedPlayers } = require('../lib/embed-players');
+// Spinoff's pool: similar tracks, topped up from similar artists (#1281).
+const { buildSpinoffPool, lastfmJsonFetcher } = require('../lib/spinoff-pool');
 if (typeof window !== 'undefined') window.__parachordEmbedPlayer = embedPlayer;
 
 // The measured-bitrate meter behind the shared players' streamQuality
@@ -3058,49 +3060,6 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     window.__parachordWidevineSetVariantListener = (cb) => __widevinePlayer.setVariantListener(cb);
   }
 
-  const fetchSimilarTracks = async (artistName, trackName) => {
-    if (!artistName || !trackName) return [];
-
-    const apiKey = getLastfmApiKey();
-    if (!apiKey) {
-      console.log('🔀 Last.fm similar tracks skipped: no API key');
-      return [];
-    }
-
-    try {
-      const url = `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(artistName)}&track=${encodeURIComponent(trackName)}&api_key=${apiKey}&format=json&limit=20`;
-
-      console.log(`🔀 Fetching similar tracks for "${trackName}" by ${artistName}`);
-      const response = await lastfmFetch(url);
-      if (!response.ok) {
-        console.error('Last.fm similar tracks request failed:', response.status);
-        return [];
-      }
-
-      const data = await response.json();
-      if (data.similartracks?.track) {
-        const tracks = data.similartracks.track.map(t => ({
-          title: t.name,
-          artist: t.artist?.name || 'Unknown Artist',
-          match: Math.round(parseFloat(t.match) * 100),
-          source: 'lastfm-similar'
-        }));
-        // Shuffle the tracks for variety (Fisher-Yates shuffle)
-        for (let i = tracks.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
-        }
-        console.log(`🔀 Found ${tracks.length} similar tracks (shuffled)`);
-        return tracks;
-      }
-
-      return [];
-    } catch (error) {
-      console.error('Failed to fetch similar tracks from Last.fm:', error);
-      return [];
-    }
-  };
-
   const resolveSpinoffSeed = async (seed) => {
     if (!seed || !seed.artist) {
       console.log('🔀 Cannot start spinoff: missing track info');
@@ -3345,11 +3304,25 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     listenAlongEndAfterSongRef.current = null;
 
     try {
-      const similarTracks = await fetchSimilarTracks(track.artist, track.title);
-
+      // Similar tracks, topped up from the seed artist's similar artists when
+      // Last.fm has fewer than a handful (lib/spinoff-pool.js, #1281).
+      const pool = await buildSpinoffPool({
+        fetchJson: lastfmJsonFetcher(lastfmFetch),
+        apiKey: getLastfmApiKey(),
+        artist: track.artist,
+        title: track.title
+      });
+      if (pool.failed) {
+        showToast('Failed to fetch similar tracks');
+        return;
+      }
+      const similarTracks = pool.tracks;
       if (similarTracks.length === 0) {
         showToast(`No similar tracks found for "${track.title}"`);
         return;
+      }
+      if (pool.usedFallback) {
+        console.log(`🔀 Few similar tracks for "${track.title}": topped up from similar artists`);
       }
 
       // Save current playback context to restore when spinoff ends
