@@ -36,6 +36,20 @@ Subsystem detail lives in `docs/architecture/`, moved there verbatim from this f
 | `parachord://` deep links | [protocol.md](docs/architecture/protocol.md), [docs/protocol-schema.md](docs/protocol-schema.md) | `protocol-url.js`, the protocol switch in `src/renderer/app.js` |
 | Renderer patterns, full text (summary below) | [renderer-patterns.md](docs/architecture/renderer-patterns.md) | `src/renderer/` |
 
+## After you change how a feature works, update its docs
+
+**A material change to how a feature works updates its documentation in the same PR.** Before calling the change done, search the docs for the feature and correct anything it makes untrue or incomplete:
+
+- the area's file in `docs/architecture/`, from the table above;
+- `docs/features/`;
+- `docs/protocol-schema.md`, which is public and read by people building integrations;
+- `README.md`;
+- this file, if a rule or invariant here changes.
+
+Then say in the PR which docs you changed, or that none needed changing. A doc that still describes the old behavior is worse than none, because the next person or agent works from it.
+
+A bug fix that only restores documented behavior needs no doc change. `docs/plans/` holds historical records, so leave those as written. Release notes are separate (see Releasing).
+
 ## Invariants that apply everywhere
 
 One line each; the linked doc has the reasons and the incidents behind them.
