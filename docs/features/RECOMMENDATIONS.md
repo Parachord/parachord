@@ -17,7 +17,7 @@ Related: [METADATA_SOURCES.md](../architecture/METADATA_SOURCES.md) (artist imag
 | Fresh Drops | Sidebar; Home "New from artists you love" | MusicBrainz release groups per artist | Collection, library, listening history | Release groups (albums, EPs, singles) | Nothing (empty with no collection or scrobbler) |
 | Critical Darlings | Sidebar; Home "Acclaimed by critics" | Achordion critics feed | Not personalized | Albums | Nothing |
 | Pop of the Tops | Sidebar | Apple Music RSS charts; Last.fm charts | Not personalized | Albums, tracks | Nothing |
-| Spinoff | Playbar button | Last.fm `track.getsimilar` | The playing track | Tracks | Nothing |
+| Spinoff | Playbar button | Last.fm `track.getsimilar`, topped up from `artist.getsimilar` + `artist.gettoptracks` | The playing track | Tracks | Nothing |
 | Collection Radio | Home; Collection page; menu; `parachord://collection-radio` | Shuffle of the user's own tracks | Collection + local library | Tracks | Nothing |
 | Protocol radio | `parachord://play/radio` | External pool (JSPF / XSPF / JSON), e.g. ListenBrainz lb-radio | Publisher-supplied | Tracks | ListenBrainz token for lb-radio URLs |
 | Concerts | Sidebar "Concerts"; artist page "On Tour" | Bandsintown, Songkick, SeatGeek, Ticketmaster plugins | Collection, listening history | Events | At least one concert plugin with a key |
@@ -131,9 +131,11 @@ Not personalized. No other chart sources exist. `src/charts-utils.js` is a copy 
 
 ## Spinoff
 
-Code: `startSpinoff`, `fetchSimilarTracks`, availability check `checkSpinoffAvailability`.
+Code: `startSpinoff` (playback hook), the pool and availability rules in `src/renderer/lib/spinoff-pool.js`, availability check `checkSpinoffAvailability` (app.js).
 
 The playbar Spinoff button seeds from the playing track with Last.fm `track.getsimilar&limit=20`, shuffled. The availability check calls `track.getsimilar&limit=1` on every track change. The pool lives in `spinoffTracksRef`; the next five tracks are resolved ahead. When the pool runs out, spinoff exits and playback returns to the queue. Seed spinoff has no refill. No ListenBrainz or Achordion source is used.
+
+**Few similar tracks (#1281).** Last.fm has no similar-track data for some of the most played songs ("Shape of You" answers an empty list). When `track.getsimilar` returns fewer than 5 tracks, the pool is topped up from the seed artist's similar artists: `artist.getsimilar` (top 8), then `artist.gettoptracks&limit=3` for each, dealt round-robin with the artist order shuffled every round so no two tracks in a row share an artist. Last.fm's own similar tracks come first, and the seed track and duplicates are left out. Only an empty answer or Last.fm's error 6 ("not found") falls back; a failed request stops there, so an outage costs one request, not ten. The availability check asks `artist.getsimilar&limit=1` only when `track.getsimilar&limit=1` is empty, so the button is disabled only when both are.
 
 ## Collection Radio
 
