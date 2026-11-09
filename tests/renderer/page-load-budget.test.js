@@ -11,6 +11,11 @@
  *     release id ......................................... 1
  *     unflagged release-group id ......................... 2   (a 404 probe, then the browse)
  *
+ *   The album page's source dropdown (#1238) is deliberately NOT in these
+ *   budgets: its group-editions fetch (fetchReleaseGroupReleases) runs when
+ *   the user opens the dropdown, after the page loaded, and is usually cached
+ *   by the browse that loaded the page (tests/renderer/album-versions.test.js).
+ *
  *   Artist page, uncached (src/renderer/lib/artist-discography.js)
  *     MBID known to the caller (Search, credits) ......... 3   (albums, EPs, singles)
  *     MBID from the mapper, or a name .................... 4   (a lookup or search, then the 3)
@@ -196,7 +201,7 @@ describe('app.js uses these, so the budgets are the real ones', () => {
 
   test('the album page and its hover prefetch go through loadRelease', () => {
     expect(slice('const fetchReleaseData = async (release, artist) => {', '// Prefetch release tracks on hover'))
-      .toMatch(/await releaseLookupRef\.current\.loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}\)/);
+      .toMatch(/await releaseLookupRef\.current\.loadRelease\(\{\s*id: releaseId,\s*isReleaseGroup: sessionPick \? false : release\.isReleaseGroup\s*\}\)/);
     expect(slice('const prefetchReleaseTracks = async (release, artist) => {', '\n  };'))
       .toMatch(/await releaseLookupRef\.current\.loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}, bgFetch\)/);
     expect(app).toMatch(/createReleaseLookup\(\{\s*getCache: \(\) => releaseDetailsCache\.current,/);

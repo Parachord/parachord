@@ -107,7 +107,9 @@ describe('app.js wiring', () => {
     // page-load-budget.test.js counts it (1 request for a flagged group)
     expect(releaseLookup).toMatch(/const skipProbe = !!isReleaseGroup && !\(getCache\(\)\[id\] && getCache\(\)\[id\]\.alias\);/);
     expect(releaseLookup).toMatch(/let response = skipProbe \? null : await fetchReleaseDetails\(id, fetchImpl\);/);
-    expect(fetchRelease).toMatch(/await releaseLookupRef\.current\.loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}\)/);
+    // with no session edition pick (#1238) the call is exactly the flagged
+    // group open; a pick redirects the group to the picked release
+    expect(fetchRelease).toMatch(/await releaseLookupRef\.current\.loadRelease\(\{\s*id: releaseId,\s*isReleaseGroup: sessionPick \? false : release\.isReleaseGroup\s*\}\)/);
   });
 
   // An album opened from the artist page used to cost three MusicBrainz

@@ -144,7 +144,7 @@ describe('the catalogs race MusicBrainz', () => {
   test('fetchReleaseData does not blank a catalog list already on screen, and MusicBrainz success replaces it', () => {
     const body = fnBody('const fetchReleaseData = async (release, artist) => {');
     expect(body).toMatch(/const keepCatalogList = [\s\S]*?shownRelease\._catalogSource[\s\S]*?if \(!keepCatalogList\) \{\s*setCurrentRelease\(partialRelease\);/);
-    expect(body).toMatch(/setCurrentRelease\(releaseInfo\);/);
+    expect(body).toMatch(/setCurrentRelease\(prev => \(prev && prev\._pickingEdition \? prev : releaseInfo\)\);/);
     // a MusicBrainz failure with the catalog list showing leaves it be
     expect(body).toMatch(/onScreen\._catalogSource && onScreen\.tracks[\s\S]*?setLoadingRelease\(false\);\s*return;/);
   });

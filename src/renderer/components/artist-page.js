@@ -40,10 +40,12 @@ const ARTIST_PAGE_HANDLERS = [
   'handlePlaylistDragEnd',
   'handleSearchInput',
   'loadArtistConcerts',
+  'openAlbumVersions',
   'prefetchReleaseTracks',
   'reprioritizeAlbumArtQueue',
   'resolveRelatedArtistImages',
   'retryReleaseLoad',
+  'selectAlbumVersion',
   'setQueueWithContext',
 ];
 
@@ -54,6 +56,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     addToQueue,
     albumArtObserver,
     albumArtQueue,
+    albumVersions,
     artistBio,
     artistConcerts,
     artistConcertsLoaded,
@@ -97,6 +100,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     loadingExtendedInfo,
     loadingRelated,
     loadingRelease,
+    openAlbumVersions,
     playbackContext,
     prefetchReleaseTracks,
     prefetchedReleasesRef,
@@ -111,6 +115,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
     resolveRelatedArtistImages,
     resolvers,
     retryReleaseLoad,
+    selectAlbumVersion,
     setAddToPlaylistPanel,
     setArtistBio,
     setArtistConcertsTicketFlyout,
@@ -652,6 +657,12 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             // Visibility tracking for resolution scheduler
             releaseTrackRowRefs: releaseTrackRowRefs,
             releaseObserverRef: releaseObserverRef,
+            // The album source dropdown (#1238): the editions of this album
+            // (the MusicBrainz group's releases and the resolvers' editions),
+            // loaded lazily when the dropdown opens.
+            albumVersions: albumVersions,
+            onOpenAlbumVersions: openAlbumVersions,
+            onSelectAlbumVersion: selectAlbumVersion,
             // Album action props (hover buttons on album art)
             onAlbumPlay: (rel) => {
               if (rel.tracks?.length > 0) {

@@ -17,6 +17,7 @@ const { Play } = Icons;
 const hashString = require('../lib/hash-string');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { formatCalendarDate } = require('../lib/calendar-date');
+const { normalizeAlbumTitle, albumVersionsKey } = require('../lib/album-catalog');
 
 // Generate a unique pattern/gradient for an artist based on their name
 // Returns an object with CSS gradient and optional SVG pattern
@@ -980,6 +981,166 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
   );
 };
 
+// AlbumVersionsMenu — the album page's source dropdown panel (#1238): the
+// editions of the album on screen. One section per source: the MusicBrainz
+// release group's official releases, then one per active album-search service
+// that carries an edition. All presentational, props-driven:
+//   release: the release on screen (its id / _catalogSource mark the current
+//             edition, its title disambiguates same-titled releases)
+//   versions: the app's loaded list ({ loading, mb: { releases } | null,
+//             catalogs: [{ resolverId, resolverName, albums }] }) — already
+//             keyed to this album by ReleasePage, or null while it loads
+//   resolvers: the resolver list (badge colors for the catalog sections)
+//   onSelect(version): { kind: 'mb', release } | { kind: 'catalog',
+//             resolverId, resolverName, album }
+//   onClose:    close the dropdown after a pick
+const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClose }) => {
+  // One row of a version: main line (edition), secondary line
+  // (date · country · track count). The current edition carries the check
+  // and doesn't re-click (re-picking it would flash the skeleton for the
+  // same list).
+  const versionRow = (current, main, secondary, onPick, key) => React.createElement('button', {
+    key,
+    onClick: (e) => {
+      e.stopPropagation();
+      if (current || !onPick) return;
+      onPick();
+      if (onClose) onClose();
+    },
+    className: `w-full px-3 py-1.5 text-left flex items-start gap-2 no-drag ${current ? 'cursor-default' : 'text-white hover:bg-white/10'}`,
+    style: { fontSize: '12px', border: 'none', backgroundColor: 'transparent' }
+  },
+    React.createElement('span', {
+      style: { width: '14px', flexShrink: 0, fontSize: '11px', lineHeight: '17px', color: 'var(--accent-soft)' }
+    }, current ? '✓' : ''),
+    React.createElement('span', { className: 'min-w-0', style: { flex: '1 1 0' } },
+      React.createElement('span', {
+        className: 'block truncate',
+        style: { fontWeight: 500, color: current ? 'var(--accent-soft)' : '#ffffff' }
+      }, main),
+      secondary && React.createElement('span', {
+        className: 'block truncate',
+        style: { fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.55)', marginTop: '1px' }
+      }, secondary)
+    )
+  );
+  const sectionHeader = (icon, title, key) => React.createElement('div', {
+    key,
+    className: 'flex items-center gap-2 px-3 pt-2 pb-1',
+    style: { fontSize: '10px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255, 255, 255, 0.5)' }
+  }, icon, title);
+  const shimmerRows = (key) => [0, 1].map((i) => React.createElement('div', {
+    key: `${key}-shimmer-${i}`,
+    className: 'flex items-center gap-2 px-3 py-2'
+  },
+    React.createElement('div', {
+      className: 'rounded shimmer-light animate-shimmer',
+      style: { width: '82%', height: '10px', backgroundSize: '200% 100%', animationDelay: `${i * 100}ms` }
+    })
+  ));
+
+  const mbCurrent = !release._catalogSource;
+  const catalogSections = versions?.catalogs || [];
+  // Nothing to pick: the list settled and no source contributed a section (a
+  // MusicBrainz part that is still pending, or an absent one, is not
+  // "nothing" — and a list that never loaded isn't either).
+  const nothingLoaded = !!versions && !versions.loading
+    && (!versions.mb || (versions.mb.releases || []).length === 0)
+    && catalogSections.length === 0;
+  const mbHeader = () => sectionHeader(
+    React.createElement(ResolverIcon, { resolverId: 'musicbrainz', size: 12, fill: 'rgba(255,255,255,0.7)' }),
+    'MusicBrainz',
+    'mb-header'
+  );
+
+  // MusicBrainz: the group's official releases. The row's main line is the
+  // disambiguation when there is one, else the release's own title when it
+  // differs from the album's, else the formats — most releases share the
+  // album's title, so the formats tell editions apart. mb.releases === null
+  // is the part still on its way (shimmer under the header).
+  const mbSection = versions?.mb
+    ? (versions.mb.releases
+      ? (versions.mb.releases.length > 0 ? [
+          mbHeader(),
+          ...versions.mb.releases.map((row) => {
+            const isCurrent = mbCurrent && release.id === row.id;
+            const formats = row.formats && row.formats.length ? row.formats.join(' + ') : null;
+            const differingTitle = row.title && normalizeAlbumTitle(row.title) !== normalizeAlbumTitle(release.title) ? row.title : null;
+            const main = row.disambiguation || differingTitle || formats || 'Release';
+            const secondary = [
+              main !== formats ? formats : null,
+              formatCalendarDate(row.date, 'short', ''),
+              row.country,
+              row.trackCount ? `${row.trackCount} tracks` : null
+            ].filter(Boolean).join(' · ');
+            return versionRow(isCurrent, main, secondary,
+              () => onSelect && onSelect({ kind: 'mb', release: row }),
+              `mb-${row.id}`);
+          })
+        ] : [])
+      : [mbHeader(), ...shimmerRows('mb')])
+    : [];
+
+  // Each active album-search service that carries an edition of this album
+  // (sections appear as they answer).
+  const catalogSectionElements = catalogSections.map((section) => [
+    sectionHeader(
+      React.createElement('span', {
+        style: {
+          width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
+          backgroundColor: resolvers.find(r => r.id === section.resolverId)?.color || '#555',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }
+      }, React.createElement(ResolverIcon, { resolverId: section.resolverId, size: 9 })),
+      section.resolverName || section.resolverId,
+      `catalog-${section.resolverId}`
+    ),
+    ...section.albums.map((album, i) => {
+      const isCurrent = release._catalogSource?.resolverId === section.resolverId
+        && release._catalogSource?.url && release._catalogSource.url === album.url;
+      const secondary = [
+        formatCalendarDate(album.releaseDate, 'short', ''),
+        album.trackCount ? `${album.trackCount} tracks` : null
+      ].filter(Boolean).join(' · ');
+      return versionRow(isCurrent, album.name, secondary,
+        () => onSelect && onSelect({ kind: 'catalog', resolverId: section.resolverId, resolverName: section.resolverName, album }),
+        `catalog-${section.resolverId}-${album.id || i}`);
+    })
+  ]);
+
+  // Still resolving: a shimmer footer under the sections that already
+  // answered; a list that never loaded for this key (the state update hasn't
+  // landed, or the page changed under the open dropdown) is shimmer alone —
+  // no headers for parts that may not exist.
+  const loadingFooter = !versions
+    ? shimmerRows('pending')
+    : (versions.loading ? shimmerRows('more') : []);
+
+  const emptyNote = nothingLoaded
+    ? [React.createElement('div', {
+        key: 'no-versions',
+        className: 'px-3 py-2.5',
+        style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.55)' }
+      }, 'No other versions found')]
+    : [];
+
+  return React.createElement('div', {
+    className: 'absolute left-0 top-full mt-1 rounded-lg py-1 z-30 no-drag scrollable-content',
+    style: {
+      backgroundColor: 'var(--tooltip-bg)',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+      minWidth: '280px', maxWidth: '340px', maxHeight: '320px',
+      overflowY: 'auto'
+    },
+    onClick: (e) => e.stopPropagation()
+  },
+    ...mbSection,
+    ...catalogSectionElements,
+    ...loadingFooter,
+    ...emptyNote
+  );
+};
+
 // ReleasePage component - Shows full album/EP/single with tracklist
 const ReleasePage = ({
   release,
@@ -1008,6 +1169,14 @@ const ReleasePage = ({
   setShareDropdownOpen,
   publishCollectionSmartLink,
   copyCollectionEmbedCode,
+  // The album source dropdown (#1238): the editions of this album (the
+  // MusicBrainz release group's releases and the resolvers' editions).
+  // albumVersions is the app's loaded list (keyed by the album — artist +
+  // title, the sameAlbumIdentity key); onOpenAlbumVersions loads it lazily
+  // when the dropdown opens; onSelectAlbumVersion switches the page.
+  albumVersions,
+  onOpenAlbumVersions,
+  onSelectAlbumVersion,
   // A load that failed (release._loadError) offers a retry
   onRetryLoad
 }) => {
@@ -1042,6 +1211,38 @@ const ReleasePage = ({
     resizeObserver.observe(containerRef.current);
     return () => resizeObserver.disconnect();
   }, []);
+
+  // ── The album source dropdown (#1238) ──
+  // Which edition of this album the page shows: another official release of
+  // the MusicBrainz release group, or an edition one of the user's services
+  // carries. Opens lazily (onOpenAlbumVersions loads the list), one dropdown
+  // at a time with Share, and closes on an outside click like Share does.
+  const [sourceOpen, setSourceOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (!sourceOpen) return undefined;
+    const close = () => setSourceOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [sourceOpen]);
+
+  // The loaded list belongs to this album and this release group only (the
+  // app keys it that way, albumVersionsKey). A page that changes key under
+  // the open dropdown — another album, or the same album learning its group
+  // id mid-load — closes it, so a stale list never renders and the reopen
+  // loads the right one.
+  const versionsKey = albumVersionsKey(release);
+  React.useEffect(() => { setSourceOpen(false); }, [versionsKey]);
+  const versions = (albumVersions && versionsKey && albumVersions.key === versionsKey) ? albumVersions : null;
+  const toggleSourceOpen = (e) => {
+    e.stopPropagation();
+    const next = !sourceOpen;
+    setSourceOpen(next);
+    setShareDropdownOpen(false);
+    if (next && onOpenAlbumVersions) onOpenAlbumVersions();
+  };
+  // What the track list on screen came from: the catalog source's name, or
+  // MusicBrainz (the page's default source). Null while it still loads.
+  const currentSourceName = release._catalogSource?.name || (release.tracks ? 'MusicBrainz' : null);
 
   // Responsive sizes based on container width
   const isCompact = containerWidth < 700;
@@ -1295,10 +1496,43 @@ const ReleasePage = ({
             style: { fontSize: '0.75rem', marginTop: '2px' },
             title: 'MusicBrainz could not supply this album, so its track list came from another catalog'
           }, `Track list from ${release._catalogSource.name}`),
+
+          // Album source dropdown (#1238): pick another edition of this album
+          // — another official release of the MusicBrainz release group, or an
+          // edition one of the user's services carries. Sits above Share.
+          React.createElement('div', { className: 'relative', style: { width: `${albumArtSize}px`, marginTop: '14px' } },
+            React.createElement('button', {
+              onClick: toggleSourceOpen,
+              className: 'px-2 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 no-drag',
+              style: {
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-secondary)',
+                backgroundColor: 'transparent',
+                cursor: 'pointer'
+              },
+              onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-primary)'; },
+              onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; },
+              title: 'Pick another edition of this album (MusicBrainz releases, or an edition your services carry)'
+            },
+              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M19 11H5m14 0a2 2 0 012 2v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0v-.5A1.5 1.5 0 0110.5 5h3A1.5 1.5 0 0115 6.5V7m-8 0h8' })
+              ),
+              currentSourceName ? `Source: ${currentSourceName}` : 'Source',
+              React.createElement('span', { style: { fontSize: '9px', marginLeft: '1px' } }, sourceOpen ? '▲' : '▼')
+            ),
+            sourceOpen && React.createElement(AlbumVersionsMenu, {
+              release,
+              versions,
+              resolvers,
+              onSelect: onSelectAlbumVersion,
+              onClose: () => setSourceOpen(false)
+            })
+          ),
+
           // Share button
           React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: `${albumArtSize}px` } },
             React.createElement('button', {
-              onClick: (e) => { e.stopPropagation(); setShareDropdownOpen(shareDropdownOpen === 'album' ? false : 'album'); },
+              onClick: (e) => { e.stopPropagation(); setSourceOpen(false); setShareDropdownOpen(shareDropdownOpen === 'album' ? false : 'album'); },
               className: 'px-2 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-md text-xs font-medium transition-colors flex items-center gap-1 no-drag'
             },
               React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
@@ -1662,6 +1896,7 @@ module.exports = {
   SearchHistoryItem,
   CollectionArtistCard,
   CollectionAlbumCard,
+  AlbumVersionsMenu,
   ReleaseCard,
   ReleasePage,
 };

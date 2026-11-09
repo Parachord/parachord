@@ -121,7 +121,12 @@ describe('catalogAlbumToRelease', () => {
     ]);
     expect(release.tracks[0].length).toBe(180400); // ms, as MusicBrainz gives it
     expect(release.tracks[2].length).toBe(null);
-    expect(release._catalogSource).toEqual({ resolverId: 'applemusic', name: 'Apple Music' });
+    expect(release._catalogSource).toEqual({ resolverId: 'applemusic', name: 'Apple Music', url: null });
+  });
+
+  test('carries the album url the source dropdown marks the current edition by', () => {
+    const withUrl = catalogAlbumToRelease({ ...album, url: 'https://music.apple.com/us/album/dulling-the-horns/1' }, { resolverId: 'applemusic', resolverName: 'Apple Music' });
+    expect(withUrl._catalogSource.url).toBe('https://music.apple.com/us/album/dulling-the-horns/1');
   });
 
   test('drops service-specific fields so the usual resolution runs', () => {

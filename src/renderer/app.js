@@ -635,7 +635,8 @@ const { createIpv4Fallback } = require('./lib/metabrainz-ipv4');
 const {
   isMusicBrainzId, resolverIdFromReleaseId, pickCatalogAlbum, orderCatalogResolvers,
   catalogAlbumToRelease, catalogAlbumToSearchResult, sameAlbumIdentity,
-  normalizeAlbumTitle, normalizeArtistName
+  normalizeAlbumTitle, normalizeArtistName, isCatalogAlbumEdition, albumMatchScore,
+  albumVersionsGroup, albumVersionsKey
 } = require('./lib/album-catalog');
 const {
   deezerArtistImageFromSearch, firstArtistImage, createArtistImageMissCache
@@ -3399,6 +3400,21 @@ const Parachord = () => {
   const currentReleaseRef = useRef(null);
   currentReleaseRef.current = currentRelease;
   const [loadingRelease, setLoadingRelease] = useState(false);
+  // The album page's source dropdown (#1238): the editions of the album on
+  // screen — the release group's official releases on MusicBrainz and the
+  // editions the active album-search resolvers carry. Loaded lazily when the
+  // dropdown opens (openAlbumVersions), keyed by the album (artist + title,
+  // sameAlbumIdentity's key), so a page move never shows another album's
+  // list. Shape: { key, loading, mb: { releaseGroupId, releases } | null,
+  // catalogs: [{ resolverId, resolverName, albums }] }.
+  const [albumVersions, setAlbumVersions] = useState(null);
+  const albumVersionsRef = useRef(null);
+  useEffect(() => { albumVersionsRef.current = albumVersions; }, [albumVersions]);
+  // Bumped on every openAlbumVersions load. A load's writers and its
+  // `loading` flip match their own epoch, so a load superseded by another
+  // page's load (or a retry of the same album's) can neither append sections
+  // to the newer entry nor flip its `loading` off early.
+  const albumVersionsEpochRef = useRef(0);
   const [prefetchedReleases, setPrefetchedReleases] = useState({}); // Cache for on-hover prefetched release tracks: { releaseId: { tracks: [...], title, albumArt } }
   const prefetchedReleasesRef = useRef(prefetchedReleases); // Ref to avoid stale closure in context menu handlers
   const prefetchInProgressRef = useRef(new Set()); // Track which releases are currently being prefetched
@@ -19889,6 +19905,10 @@ ${trackListXml}
       releaseType: release.releaseType,
       albumArt: release.albumArt || albumArtCache.current[release.id]?.url || partialCachedArt || onScreenArt || null,
       tracks: null, // null indicates tracks are loading
+      // The album page's source dropdown (#1238) needs to know whether this
+      // id is a release group while the page is still loading
+      // (albumVersionsGroup): an artist-page card carries isReleaseGroup.
+      isReleaseGroup: release.isReleaseGroup || undefined,
       _isPartial: true
     };
     // A catalog track list already on screen for this album (the catalogs'
@@ -19919,7 +19939,7 @@ ${trackListXml}
       });
       return !!found && showCatalogRelease({
         found,
-        requested: { id: release.id, title: release.title, albumArt: partialRelease.albumArt, date: release.date, releaseType: release.releaseType },
+        requested: { id: release.id, title: release.title, albumArt: partialRelease.albumArt, date: release.date, releaseType: release.releaseType, isReleaseGroup: release.isReleaseGroup || undefined },
         artist: typeof artist === 'object' ? artist : { id: null, name: catalogArtistName },
         canApply: releaseStillWaiting
       });
@@ -19944,8 +19964,14 @@ ${trackListXml}
       // A release id, or a release group's first official release with its
       // track list (loadRelease: an id known to be a group skips the
       // release-id probe, a guaranteed 404). One request either way.
-      let releaseId = release.id;
-      const releaseDetailsResponse = await releaseLookupRef.current.loadRelease({ id: release.id, isReleaseGroup: release.isReleaseGroup });
+      // An edition the user picked in the source dropdown (#1238) wins for
+      // the session: opening this group loads the picked release from cache.
+      const sessionPick = albumEditionPicksRef.current.get(release.id) || null;
+      let releaseId = sessionPick || release.id;
+      const releaseDetailsResponse = await releaseLookupRef.current.loadRelease({
+        id: releaseId,
+        isReleaseGroup: sessionPick ? false : release.isReleaseGroup
+      });
       if (releaseDetailsResponse.noReleases) {
         throw new Error('No official releases found for this release-group');
       }
@@ -20021,7 +20047,9 @@ ${trackListXml}
       };
 
       console.log('Release data loaded:', tracks.length, 'tracks');
-      setCurrentRelease(releaseInfo);
+      // An edition switch is in flight (#1238): its skeleton waits for the
+      // picked edition, and this load's default release must not displace it.
+      setCurrentRelease(prev => (prev && prev._pickingEdition ? prev : releaseInfo));
       setLoadingRelease(false);
 
       // Update collection album's track count if album is in collection
@@ -20450,8 +20478,17 @@ ${trackListXml}
     });
     if (release.tracks.length === 0) return false;
     if (artist?.name) release.artist = artist;
-    setCurrentRelease(prev => (canApply(prev) ? release : prev));
-    setLoadingRelease(false);
+    // A page still waiting on MusicBrainz keeps its group (#1238): the source
+    // dropdown lists the group's editions even while the catalog list is up.
+    if (!release.releaseGroupMbid && requested.isReleaseGroup && isMusicBrainzId(requested.id)) {
+      release.releaseGroupMbid = requested.id;
+    }
+    // An edition switch in flight (#1238) owns the page's skeleton; the
+    // catalog race's default pick must not displace it.
+    const canApplyNow = (prev) => canApply(prev) && !prev._pickingEdition;
+    const applied = !!canApplyNow(currentReleaseRef.current);
+    setCurrentRelease(prev => (canApplyNow(prev) ? release : prev));
+    if (applied) setLoadingRelease(false);
     release.tracks.forEach(track => {
       const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', release.title || 'noalbum');
       resolveAlbumTrack({ ...track, id: trackId }, artistName);
@@ -20461,7 +20498,7 @@ ${trackListXml}
 
   const showReleaseLoadError = (expectedId, error, retry) => {
     const message = error?.userMessage || describeMusicBrainzError(error, { online: navigator.onLine });
-    setCurrentRelease(prev => (prev && prev.id === expectedId && !prev.tracks)
+    setCurrentRelease(prev => (prev && prev.id === expectedId && !prev.tracks && !prev._pickingEdition)
       ? { ...prev, _loadError: message, _retry: retry }
       : prev);
     setLoadingRelease(false);
@@ -20472,6 +20509,256 @@ ${trackListXml}
     if (!retry) return;
     if (retry.kind === 'chartsAlbum') openChartsAlbum(retry.album);
     else fetchReleaseData(retry.release, retry.artist);
+  };
+
+  // ── The album page's source dropdown (#1238) ──
+  //
+  // Which edition of the album the page shows: another official release of
+  // the MusicBrainz release group (the digital 18-track edition instead of
+  // the 9-track CD pickRelease chose), or an edition one of the active
+  // album-search resolvers carries (Spotify's "Queen I (2011 Remaster)").
+  // Loaded lazily, when the dropdown opens: a page's critical path has a
+  // MusicBrainz budget (tests/renderer/page-load-budget.test.js) and this
+  // must not add to it. The group's editions usually cost nothing — the
+  // browse fetchReleaseGroupDetails already made kept them (release-lookup's
+  // rememberGroupReleases).
+  //
+  // An edition the user picks sticks for the SESSION (albumEditionPicksRef
+  // below), not the persisted releaseDetailsCache: the pick must not
+  // override pickRelease's default for other launches.
+  const albumEditionPicksRef = useRef(new Map()); // session edition picks: release-group id -> release id
+
+  const openAlbumVersions = () => {
+    const release = currentReleaseRef.current;
+    const key = albumVersionsKey(release);
+    if (!key) return;
+    const artistName = release.artist?.name || release.artist;
+    // Same album, same group, and its list loaded or loading: keep it. A
+    // list that settled with NOTHING usable (the MusicBrainz part failed, no
+    // catalog answered) is retried on the next open — an outage shouldn't pin
+    // "No other versions found" to the album for the whole session. A
+    // FAILED MusicBrainz part is retried too (mb.failed), so a partial answer
+    // with a failed browse recovers on the next open; a group that genuinely
+    // has no official releases (not a failure) stays as it answered.
+    const currentEntry = albumVersionsRef.current;
+    if (currentEntry?.key === key && (currentEntry.loading
+      || (currentEntry.mb && !currentEntry.mb.failed && currentEntry.mb.releases)
+      || (!currentEntry.mb && currentEntry.catalogs.length > 0))) return;
+
+    // Which release group's editions to list (albumVersionsGroup: a
+    // still-loading page knows its group only when it was opened by one).
+    const releaseGroupId = albumVersionsGroup(release);
+
+    const epoch = ++albumVersionsEpochRef.current;
+    const entry = { epoch, key, loading: true, mb: releaseGroupId ? { releaseGroupId, releases: null } : null, catalogs: [] };
+    albumVersionsRef.current = entry;
+    setAlbumVersions(entry);
+
+    // `loading` covers every part; it flips when the last one answers (a
+    // part that answers with nothing still answers). mb.releases === null
+    // means "the MusicBrainz part is still on its way".
+    let pending = 0;
+    const settled = () => {
+      pending -= 1;
+      if (pending <= 0) setAlbumVersions(prev => (prev && prev.epoch === epoch ? { ...prev, loading: false } : prev));
+    };
+    const stillThisAlbum = (prev) => prev && prev.epoch === epoch;
+
+    if (releaseGroupId) {
+      pending += 1;
+      (async () => {
+        let failed = false;
+        try {
+          const response = await releaseLookupRef.current.fetchReleaseGroupReleases(releaseGroupId);
+          failed = !(response.ok && Array.isArray(response.releases));
+          const releases = failed ? [] : response.releases;
+          setAlbumVersions(prev => (stillThisAlbum(prev) ? { ...prev, mb: { releaseGroupId, releases, failed: failed || undefined } } : prev));
+        } catch (e) {
+          console.warn('Album editions load failed:', e?.message || e);
+          failed = true;
+          setAlbumVersions(prev => (stillThisAlbum(prev) ? { ...prev, mb: { releaseGroupId, releases: [], failed: true } } : prev));
+        } finally {
+          settled();
+        }
+      })();
+    }
+
+    // The resolvers: every edition of this album the user's active
+    // album-search services carry, in the user's priority order. Each section
+    // appears as it answers; a miss adds nothing (the section is simply
+    // absent — a resolver that doesn't have the album isn't news).
+    const loader = resolverLoaderRef.current;
+    const activeIds = activeResolversRef.current || [];
+    let searchResolvers = [];
+    try {
+      searchResolvers = loader?.getAlbumSearchResolvers
+        ? orderCatalogResolvers(
+            loader.getAlbumSearchResolvers().filter(r => activeIds.includes(r.id)),
+            { activeIds, order: resolverOrderRef.current || [] }
+          )
+        : [];
+    } catch (e) {
+      console.warn('Album edition resolvers failed:', e?.message || e);
+    }
+    searchResolvers.forEach((resolver) => {
+        pending += 1;
+        (async () => {
+          try {
+            const config = await getResolverConfig(resolver.id);
+            const albums = (await withCatalogTimeout(loader.searchAlbums(resolver.id, { artist: artistName, title: release.title }, config))) || [];
+            // Same album, edition aside (isCatalogAlbumEdition: "Queen II" is
+            // not a version of "Queen I"), best match first.
+            const editions = albums
+              .filter(a => isCatalogAlbumEdition({ artist: artistName, title: release.title }, a))
+              .sort((a, b) => albumMatchScore({ artist: artistName, title: release.title }, b) - albumMatchScore({ artist: artistName, title: release.title }, a));
+            if (editions.length > 0) {
+              setAlbumVersions(prev => (stillThisAlbum(prev)
+                ? { ...prev, catalogs: [...prev.catalogs, { resolverId: resolver.id, resolverName: resolver.name, albums: editions }] }
+                : prev));
+            }
+          } catch (e) {
+            console.warn(`Album editions from ${resolver.id} failed:`, e?.message || e);
+          } finally {
+            settled();
+          }
+        })();
+      });
+
+    if (pending === 0) setAlbumVersions(prev => (stillThisAlbum(prev) ? { ...prev, loading: false } : prev));
+  };
+
+  // Switch the page to the picked edition: an MB release of the group, or an
+  // edition from a resolver's catalog. The track list reloads and every track
+  // resolves through the usual pass (the page keeps its artist, title, cover
+  // and track-id basis, the same choice showCatalogRelease makes for the
+  // catalog race), so playback still picks per track by the user's own
+  // priorities — the track-source badges stay the per-track override.
+  //
+  // The skeleton the switch puts up carries a stamp (`_pickingEdition`), so a
+  // second pick supersedes the first (the slower first fetch no-ops against
+  // the second's stamp) and a page the user moved to is never overwritten.
+  const selectAlbumVersion = async (version) => {
+    const release = currentReleaseRef.current;
+    if (!release || !release.title || !release.artist?.name) return;
+    // One pick at a time: while another edition is loading, the page on screen
+    // is that pick's skeleton — a second pick's restore would strand the page
+    // on a dead skeleton if the first pick lands empty-handed. The dropdown
+    // reopen after this pick lands offers the next one.
+    if (release._pickingEdition) return;
+    const artistName = release.artist.name;
+    // The loading flag is shared by every album page; clear it only when the
+    // release on screen is still this album's (or already settled), and not
+    // while a NEWER pick's skeleton is on screen (its stamp).
+    const clearLoading = (stamp) => {
+      const now = currentReleaseRef.current;
+      if (now && now._pickingEdition && now._pickingEdition !== stamp) return;
+      if (!now || now.tracks || sameAlbumIdentity(now, release)) setLoadingRelease(false);
+    };
+
+    if (version?.kind === 'mb' && version.release?.id) {
+      const stamp = `mb\u0000${version.release.id}`;
+      setCurrentRelease(prev => (prev && sameAlbumIdentity(prev, release)
+        // isReleaseGroup must go: the id below is a release id, and a release
+        // id is not a group id (albumVersionsGroup)
+        ? { ...prev, id: version.release.id, tracks: null, _loadError: null, _catalogSource: undefined, isReleaseGroup: undefined, _pickingEdition: stamp }
+        : prev));
+      setLoadingRelease(true);
+      const applies = (prev) => prev && prev._pickingEdition === stamp && !prev.tracks;
+      try {
+        const response = await releaseLookupRef.current.fetchReleaseDetails(version.release.id);
+        if (!response.ok) throw new Error(`Failed to fetch release (HTTP ${response.status})`);
+        const releaseData = await response.json();
+        const tracks = [];
+        if (releaseData.media && releaseData.media.length > 0) {
+          releaseData.media.forEach((medium, mediumIndex) => {
+            if (medium.tracks) {
+              medium.tracks.forEach(track => {
+                tracks.push({
+                  position: track.position,
+                  title: track.title || track.recording?.title || 'Unknown Track',
+                  length: track.length,
+                  recording: track.recording,
+                  mbid: track.recording?.id || null,
+                  artistMbids: track.recording?.['artist-credit']?.map(ac => ac.artist?.id).filter(Boolean) || [],
+                  mediumIndex: mediumIndex + 1,
+                  mediumTitle: medium.title
+                });
+              });
+            }
+          });
+        }
+        const releaseInfo = {
+          id: releaseData.id,
+          releaseGroupMbid: releaseData['release-group']?.id || release.releaseGroupMbid || null,
+          title: releaseData.title || release.title,
+          artist: release.artist,
+          date: releaseData.date || release.date,
+          releaseType: release.releaseType,
+          tracks,
+          albumArt: release.albumArt,
+          barcode: releaseData.barcode,
+          country: releaseData.country,
+          label: releaseData['label-info']?.[0]?.label?.name
+        };
+        setCurrentRelease(prev => (applies(prev) ? releaseInfo : prev));
+        clearLoading(stamp);
+        // The pick sticks for the session: reopening this album loads the
+        // picked edition instead of pickRelease's default (fetchReleaseData
+        // consults albumEditionPicksRef). Only a pick that actually landed is
+        // remembered (a superseded or navigated-away pick is not), and only a
+        // release with tracks — a data-less vinyl stub must not pin the group
+        // to an empty list.
+        if (releaseInfo.releaseGroupMbid && tracks.length > 0 && applies(currentReleaseRef.current)) {
+          albumEditionPicksRef.current.set(releaseInfo.releaseGroupMbid, releaseInfo.id);
+        }
+        console.log(`✅ [release] Switched to ${releaseData.title} (${tracks.length} tracks)`);
+        tracks.forEach(track => {
+          const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', releaseInfo.title || 'noalbum');
+          resolveAlbumTrack({ ...track, id: trackId }, artistName);
+        });
+      } catch (e) {
+        console.warn('Album release switch failed:', e?.message || e);
+        setCurrentRelease(prev => (applies(prev) ? release : prev));
+        clearLoading(stamp);
+        showToast("Couldn't load that release from MusicBrainz", 'error');
+      }
+      return;
+    }
+
+    if (version?.kind === 'catalog' && version.resolverId && version.album?.url) {
+      const loader = resolverLoaderRef.current;
+      if (!loader?.lookupAlbumFrom) return;
+      const stamp = `catalog\u0000${version.resolverId}\u0000${version.album.url}`;
+      setCurrentRelease(prev => (prev && sameAlbumIdentity(prev, release)
+        ? { ...prev, tracks: null, _loadError: null, _catalogSource: undefined, _pickingEdition: stamp }
+        : prev));
+      setLoadingRelease(true);
+      const applies = (prev) => prev && prev._pickingEdition === stamp && !prev.tracks;
+      try {
+        const config = await getResolverConfig(version.resolverId);
+        const found = await withCatalogTimeout(loader.lookupAlbumFrom(version.resolverId, version.album.url, config));
+        if (!found) throw new Error('no album');
+        const newRelease = catalogAlbumToRelease(found.album, {
+          resolverId: version.resolverId,
+          resolverName: version.resolverName || found.resolverName,
+          requested: { id: release.id, title: release.title, artistName, albumArt: release.albumArt, date: release.date, releaseType: release.releaseType }
+        });
+        if (!newRelease.tracks.length) throw new Error('empty track list');
+        newRelease.artist = release.artist;
+        newRelease.releaseGroupMbid = release.releaseGroupMbid || null;
+        setCurrentRelease(prev => (applies(prev) ? newRelease : prev));
+        clearLoading(stamp);
+        newRelease.tracks.forEach(track => {
+          const trackId = trackSlug(artistName || 'unknown', track.title || 'untitled', newRelease.title || 'noalbum');
+          resolveAlbumTrack({ ...track, id: trackId }, artistName);
+        });
+      } catch (e) {
+        console.warn('Album catalog edition switch failed:', e?.message || e);
+        setCurrentRelease(prev => (applies(prev) ? release : prev));
+        clearLoading(stamp);
+        showToast(`Couldn't load that edition from ${version.resolverName || version.resolverId}`, 'error');
+      }
+    }
   };
 
   // The services' catalogs race MusicBrainz for an album's track list. Every
@@ -20498,19 +20785,22 @@ ${trackListXml}
     (async () => {
       const waiting = currentReleaseRef.current;
       if (!waiting || waiting.tracks || waiting._loadError) return;
+      // An edition switch is in flight (#1238): its skeleton waits for the
+      // picked edition, and the race's default catalog pick must not fill it.
+      if (waiting._pickingEdition) return;
       // A release with a service's id is already loading from the catalogs
       // (fetchReleaseData skips MusicBrainz for those).
       const knownIds = (resolverLoaderRef.current?.getAllResolvers?.() || []).map(r => r.id);
       if (resolverIdFromReleaseId(waiting.id, knownIds)) return;
       if (waiting.id && cachedReleaseDetails(waiting.id)) return;
-      const stillThisAlbum = (prev) => !!prev && !prev.tracks && !prev._loadError && sameAlbumIdentity(prev, waiting);
+      const stillThisAlbum = (prev) => !!prev && !prev.tracks && !prev._loadError && !prev._pickingEdition && sameAlbumIdentity(prev, waiting);
       try {
         const found = await loadAlbumFromCatalogs({ artist: waiting.artist.name, title: waiting.title, catalog: waiting._catalog || null });
         if (cancelled || !found || !stillThisAlbum(currentReleaseRef.current)) return;
         console.log(`📀 "${waiting.title}": ${found.resolverId}'s track list answered before MusicBrainz, showing it meanwhile`);
         showCatalogRelease({
           found,
-          requested: { id: waiting.id, title: waiting.title, albumArt: waiting.albumArt, date: waiting.date, releaseType: waiting.releaseType },
+          requested: { id: waiting.id, title: waiting.title, albumArt: waiting.albumArt, date: waiting.date, releaseType: waiting.releaseType, isReleaseGroup: waiting.isReleaseGroup || undefined },
           artist: waiting.artist,
           canApply: stillThisAlbum
         });
@@ -33701,8 +33991,9 @@ useEffect(() => {
   const artistPageHandlers = useStableHandlers({
     addToQueue, copyParachordLink, fetchArtistData, fetchReleaseData, getArtistBio,
     getArtistTopTracks, getLastfmApiKey, getRelatedArtists, handlePlay,
-    handlePlaylistDragEnd, handleSearchInput, loadArtistConcerts, prefetchReleaseTracks,
-    reprioritizeAlbumArtQueue, resolveRelatedArtistImages, retryReleaseLoad, setQueueWithContext,
+    handlePlaylistDragEnd, handleSearchInput, loadArtistConcerts, openAlbumVersions,
+    prefetchReleaseTracks, reprioritizeAlbumArtQueue, resolveRelatedArtistImages,
+    retryReleaseLoad, selectAlbumVersion, setQueueWithContext,
   });
 
   // Stable function props for the memo'd PlaylistViewPage (keys must match
@@ -34908,7 +35199,7 @@ useEffect(() => {
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement(ArtistPage, {
-          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
+          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServiceConfigs: metaServiceConfigs,
