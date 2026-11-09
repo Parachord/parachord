@@ -419,20 +419,53 @@ const AppleMusicSyncProvider = {
    * Check if tokens are valid
    */
   async checkAuth(token) {
-    try {
-      const { developerToken, userToken } = JSON.parse(token);
-      if (!developerToken || !userToken) return false;
+    return (await this.checkAuthStatus(token)).ok;
+  },
 
+  /**
+   * Like checkAuth, but also returns Apple's HTTP status, so the sync setup can
+   * tell a rejected sign-in (401, which signing in again may fix) from any other
+   * refusal, and say which it was. parachord#1288: with only ok/not-ok, every
+   * refusal re-authorized and then said "Unknown error".
+   * status is null when there was no answer (no token, or no connection).
+   * @returns {Promise<{ok: boolean, status: number|null}>}
+   */
+  async checkAuthStatus(token) {
+    let developerToken, userToken;
+    try {
+      ({ developerToken, userToken } = JSON.parse(token));
+    } catch {
+      return { ok: false, status: null };
+    }
+    if (!developerToken || !userToken) return { ok: false, status: null };
+    try {
       const response = await fetch(`${APPLE_MUSIC_API_BASE}/me/library/songs?limit=1`, {
         headers: {
           'Authorization': `Bearer ${developerToken}`,
           'Music-User-Token': userToken
         }
       });
-      return response.ok;
+      return { ok: response.ok, status: response.status };
     } catch {
-      return false;
+      return { ok: false, status: null };
     }
+  },
+
+  /**
+   * What to tell the person when checkAuthStatus failed. Names Apple's status
+   * so a bug report carries it, and says what's worth checking. Hints only:
+   * Apple doesn't say why it refused.
+   * @param {number|null} status
+   * @returns {string}
+   */
+  describeAuthFailure(status) {
+    if (!status) return "Couldn't reach Apple Music. Check your connection and try again.";
+    if (status === 401) return "Apple Music didn't accept the sign-in (HTTP 401). Try Settings → Apple Music → Connect again.";
+    if (status === 403) return 'Apple Music refused access to your library (HTTP 403). Check that your Apple Music subscription is active and Sync Library is on in the Music app.';
+    if (status === 404) return "Apple Music couldn't find your library (HTTP 404). Check that Sync Library is on in the Music app.";
+    if (status === 429) return 'Apple Music is limiting requests (HTTP 429). Try again in a few minutes.';
+    if (status >= 500) return `Apple Music is having trouble right now (HTTP ${status}). Try again later.`;
+    return `Apple Music refused the request (HTTP ${status}).`;
   },
 
   /**

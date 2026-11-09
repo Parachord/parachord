@@ -9020,76 +9020,84 @@ const Parachord = () => {
         // Spotify opens external browser, auth flow continues in onAuthSuccess callback
         return;
       }
-      // Apple Music: stored token may have expired — try re-authorizing for a fresh one
+      // Apple Music: stored token may have expired — try re-authorizing for a fresh one.
+      // Only a 401 (or no answer at all) can be fixed by signing in again; any other
+      // refusal goes straight to the error, which names Apple's status (parachord#1288).
       if (providerId === 'applemusic') {
-        console.log('[Sync] Apple Music auth check failed, attempting re-authorization for fresh token...');
-        const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
-        let freshToken = null;
+        const reauthCanHelp = !authStatus.status || authStatus.status === 401;
+        if (reauthCanHelp) {
+          console.log('[Sync] Apple Music auth check failed, attempting re-authorization for fresh token...');
+          const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+          let freshToken = null;
 
-        // Try MusicKit JS re-authorization — macOS only for the same reason
-        // as the initial-auth path above: the popup is broken on non-macOS
-        // and there's no working fallback for the silent re-auth case.
-        // Non-macOS re-auth happens via the user clicking Connect in
-        // Settings (which routes through the auth-window flow).
-        if (musicKitWeb && window.electron?.platform === 'darwin') {
-          try {
-            const devToken = await getMusicKitDeveloperToken();
-            const status = musicKitWeb.getAuthStatus();
-            if (!status.configured && devToken) {
-              await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
-            }
-            const authResult = await musicKitWeb.authorize();
-            freshToken = authResult.userToken || musicKitWeb.getUserToken();
-          } catch (error) {
-            console.log('[Sync] MusicKit JS re-auth failed:', error.message);
-          }
-        } else if (musicKitWeb) {
-          console.log('[Sync] Skipping MusicKit JS re-auth popup on non-macOS (use Settings → Apple Music → Connect)');
-        }
-
-        // Fallback: try native MusicKit on macOS
-        if (!freshToken && window.electron?.musicKit) {
-          try {
-            const result = await window.electron.musicKit.fetchUserToken();
-            if (result.success && result.userToken) {
-              freshToken = result.userToken;
-            }
-          } catch (error) {
-            console.log('[Sync] Native MusicKit re-auth failed:', error.message);
-          }
-        }
-
-        if (freshToken) {
-          // Persist the fresh token and retry auth check
-          localStorage.setItem('musickit_user_token', freshToken);
-          if (window.electron?.store) {
-            await window.electron.store.set('applemusic_user_token', freshToken);
-            await window.electron.store.set('applemusic_authorized', true);
-          }
-          authStatus = await window.electron.sync.checkAuth(providerId);
-
-          // Enable the Apple Music resolver so tracks can be resolved/played
-          if (authStatus.authenticated) {
-            setAppleMusicConnected(true);
-            setActiveResolvers(prev => {
-              if (!prev.includes('applemusic')) {
-                return [...prev, 'applemusic'];
+          // Try MusicKit JS re-authorization — macOS only for the same reason
+          // as the initial-auth path above: the popup is broken on non-macOS
+          // and there's no working fallback for the silent re-auth case.
+          // Non-macOS re-auth happens via the user clicking Connect in
+          // Settings (which routes through the auth-window flow).
+          if (musicKitWeb && window.electron?.platform === 'darwin') {
+            try {
+              const devToken = await getMusicKitDeveloperToken();
+              const status = musicKitWeb.getAuthStatus();
+              if (!status.configured && devToken) {
+                await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
               }
-              return prev;
-            });
-            setResolverOrder(prev => {
-              if (!prev.includes('applemusic')) {
-                return insertInCanonicalOrder(prev, 'applemusic');
-              }
-              return prev;
-            });
+              const authResult = await musicKitWeb.authorize();
+              freshToken = authResult.userToken || musicKitWeb.getUserToken();
+            } catch (error) {
+              console.log('[Sync] MusicKit JS re-auth failed:', error.message);
+            }
+          } else if (musicKitWeb) {
+            console.log('[Sync] Skipping MusicKit JS re-auth popup on non-macOS (use Settings → Apple Music → Connect)');
           }
+
+          // Fallback: try native MusicKit on macOS
+          if (!freshToken && window.electron?.musicKit) {
+            try {
+              const result = await window.electron.musicKit.fetchUserToken();
+              if (result.success && result.userToken) {
+                freshToken = result.userToken;
+              }
+            } catch (error) {
+              console.log('[Sync] Native MusicKit re-auth failed:', error.message);
+            }
+          }
+
+          if (freshToken) {
+            // Persist the fresh token and retry auth check
+            localStorage.setItem('musickit_user_token', freshToken);
+            if (window.electron?.store) {
+              await window.electron.store.set('applemusic_user_token', freshToken);
+              await window.electron.store.set('applemusic_authorized', true);
+            }
+            authStatus = await window.electron.sync.checkAuth(providerId);
+
+            // Enable the Apple Music resolver so tracks can be resolved/played
+            if (authStatus.authenticated) {
+              setAppleMusicConnected(true);
+              setActiveResolvers(prev => {
+                if (!prev.includes('applemusic')) {
+                  return [...prev, 'applemusic'];
+                }
+                return prev;
+              });
+              setResolverOrder(prev => {
+                if (!prev.includes('applemusic')) {
+                  return insertInCanonicalOrder(prev, 'applemusic');
+                }
+                return prev;
+              });
+            }
+          }
+
+        } else {
+          console.warn(`[Sync] Apple Music auth check got HTTP ${authStatus.status}; signing in again can't fix that, not re-authorizing`);
         }
 
         if (!authStatus.authenticated) {
           const reason = authStatus.error || 'Unknown error';
           console.error('[Sync] Apple Music auth failed after re-auth attempt:', reason);
-          showToast(`Apple Music sync failed: ${reason}`, 'error');
+          showToast(`Apple Music sync failed: ${reason}`, 'error', null, { duration: 10000 });
           return;
         }
       }
