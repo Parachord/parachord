@@ -133,7 +133,7 @@ describe('app.js wiring', () => {
     expect(releaseLookup).toMatch(/response = await fetchReleaseGroupDetails\(id, fetchImpl\);/);
     expect(fetchRelease).not.toMatch(/release\?release-group=\$\{release\.id\}/);
     const prefetch = slice('const prefetchReleaseTracks = async (release, artist) => {', '\n  };');
-    expect(prefetch).toMatch(/await releaseLookupRef\.current\.loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}, bgFetch\)/);
+    expect(prefetch).toMatch(/await releaseLookupRef\.current\.loadRelease\(\{\s*id: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \|\| release\.id,\s*isReleaseGroup: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \? false : release\.isReleaseGroup\s*\}, bgFetch\)/);
     expect(prefetch).not.toMatch(/release\?release-group=\$\{release\.id\}/);
   });
 

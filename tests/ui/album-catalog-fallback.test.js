@@ -41,7 +41,8 @@ describe('fetchReleaseData', () => {
   const body = fnBody('const fetchReleaseData = async (release, artist) => {');
 
   test('an album with a service id skips MusicBrainz', () => {
-    const skip = body.indexOf('if (!isMusicBrainzId(release.id)) {');
+    // an MB edition pick can open that fence (the pick's release is a real MB id)
+    const skip = body.indexOf("if (!isMusicBrainzId(release.id) && pickEdition?.kind !== 'mb') {");
     const firstMb = body.indexOf('releaseLookupRef.current.loadRelease(');
     expect(skip).toBeGreaterThan(-1);
     expect(skip).toBeLessThan(firstMb);

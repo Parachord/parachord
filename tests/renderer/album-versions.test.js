@@ -180,6 +180,25 @@ describe('album-catalog: which release group the dropdown lists', () => {
   });
 });
 
+describe('album-catalog: the keys an album\'s picked edition is remembered under', () => {
+  const { albumEditionPickKeys } = require('../../src/renderer/lib/album-catalog');
+
+  test('the album\'s identity first, then its group', () => {
+    expect(albumEditionPickKeys({ groupId: RG, artist: 'Absolute Elsewhere', title: 'Absolute Elsewhere' }))
+      .toEqual([`album:absoluteelsewhere\u0000absoluteelsewhere`, `group:${RG}`]);
+  });
+
+  test('an album with no group is remembered by identity alone', () => {
+    expect(albumEditionPickKeys({ groupId: null, artist: 'Wild Pink', title: 'Dulling the Horns' }))
+      .toEqual(['album:wildpink\u0000dullingthehorns']);
+  });
+
+  test('edition suffixes aside in the title key', () => {
+    expect(albumEditionPickKeys({ artist: 'Queen', title: 'Queen I (Deluxe)' }))
+      .toEqual(['album:queen\u0000queeni']);
+  });
+});
+
 describe('album-catalog: which catalog results are editions of the album', () => {
   const target = { artist: 'Queen', title: 'Queen I' };
 
@@ -226,12 +245,16 @@ describe('the app wiring (source markers)', () => {
     expect(app).toMatch(/loader\.searchAlbums\(resolver\.id, \{ artist: artistName, title: release\.title \}, config\)/);
   });
 
-  test('selectAlbumVersion switches through the release lookup and the catalog, and the pick sticks for the session', () => {
+  test('selectAlbumVersion switches through the release lookup and the cached catalog lookup, and the pick sticks for the session', () => {
     expect(app).toMatch(/releaseLookupRef\.current\.fetchReleaseDetails\(version\.release\.id\)/);
-    expect(app).toMatch(/albumEditionPicksRef.current.set\(releaseInfo\.releaseGroupMbid, releaseInfo\.id\)/);
-    // the session pick redirects the group open in fetchReleaseData
-    expect(app).toMatch(/albumEditionPicksRef.current.get\(release\.id\)/);
-    expect(app).toMatch(/loader\.lookupAlbumFrom\(version\.resolverId, version\.album\.url, config\)/);
+    expect(app).toMatch(/await lookupAlbumEditionCached\(version\.resolverId, version\.album\.url\)/);
+    // both pick keys are written (group + album identity)
+    expect(app).toMatch(/for \(const k of albumEditionPickKeys\(\{ groupId: releaseInfo\.releaseGroupMbid, artist: artistName, title: release\.title \}\)\)/);
+    // the pick is consulted (group first, then identity) by the album open, the
+    // card actions, the hover prefetch and the playbar open
+    expect(app).toMatch(/const pickEdition = editionPickFor\(\{/);
+    expect(app).toMatch(/const prefetchedEdition = editionPickFor\(\{/);
+    expect(app).toMatch(/const pickedEdition = editionPickFor\(\{ artist: track\.artist, title: albumName \}\)/);
   });
 
   test('the artist page feeds ReleasePage the versions and the two handlers', () => {

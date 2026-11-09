@@ -203,7 +203,7 @@ describe('app.js uses these, so the budgets are the real ones', () => {
     expect(slice('const fetchReleaseData = async (release, artist) => {', '// Prefetch release tracks on hover'))
       .toMatch(/await releaseLookupRef\.current\.loadRelease\(\{\s*id: releaseId,\s*isReleaseGroup: sessionPick \? false : release\.isReleaseGroup\s*\}\)/);
     expect(slice('const prefetchReleaseTracks = async (release, artist) => {', '\n  };'))
-      .toMatch(/await releaseLookupRef\.current\.loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}, bgFetch\)/);
+      .toMatch(/await releaseLookupRef\.current\.loadRelease\(\{\s*id: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \|\| release\.id,\s*isReleaseGroup: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \? false : release\.isReleaseGroup\s*\}, bgFetch\)/);
     expect(app).toMatch(/createReleaseLookup\(\{\s*getCache: \(\) => releaseDetailsCache\.current,/);
   });
 

@@ -154,6 +154,21 @@ function albumVersionsKey(release) {
   return `${normalizeArtistName(artist)}\u0000${normalizeAlbumTitle(release.title)}\u0000${albumVersionsGroup(release) || ''}`;
 }
 
+// The keys an album's picked edition (#1238) is remembered under, for the
+// session: by the album's release group when one is known, and by the album's
+// identity (artist + title) so a page opened without its group (a release id,
+// the playbar) still finds the pick. Both keys are written on a pick; a
+// consult tries the identity key first, then the group key (an opener's id
+// may be either).
+function albumEditionPickKeys({ groupId = null, artist = null, title = null } = {}) {
+  const keys = [];
+  if (artist && title) {
+    keys.push(`album:${normalizeArtistName(artist)}\u0000${normalizeAlbumTitle(title)}`);
+  }
+  if (groupId) keys.push(`group:${groupId}`);
+  return keys;
+}
+
 // Which resolvers to ask, in order: one named first (the service a release
 // id came from), then the user's active services in their priority order,
 // then every other installed resolver that supports album search. A plugin
@@ -240,6 +255,7 @@ module.exports = {
   isCatalogAlbumEdition,
   albumVersionsGroup,
   albumVersionsKey,
+  albumEditionPickKeys,
   orderCatalogResolvers,
   catalogAlbumToRelease,
   catalogAlbumToSearchResult,
