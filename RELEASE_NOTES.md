@@ -23,6 +23,8 @@
 
 ## Library
 
+- **Albums open with all their tracks.** When MusicBrainz lists several editions of an album, Parachord used whichever came first, which could be one disc of a set. George Michael's "The Faith Tour" opened with 9 of its 18 tracks. It now prefers the digital edition, which is what the streaming services carry, then the standard one. A `parachord://album` link also now plays every disc, not just the first.
+- **Release dates show the right day.** An album page could show the day before its release date if you're west of UTC, so "November 5" for a November 6 release, and a date with only a year could show December 31 of the year before. Dates now read as written.
 - **Links and the AI DJ find tracks that exist only as local files.** A `parachord://play` link, a chat link or an AI request to play a track you have only on disk said "Could not find" unless another service also had it. Searching for an artist and a song title together now finds your local files, in the Search box too.
 - **Local files with non-Latin names can be found.** Searching for "光" or "Кино", or following a link to them, used to return unrelated tracks from your library instead. Accented names also match their plain spelling now, so "Bjork" finds "Björk". Your library updates itself the first time you start this version.
 - **A track with no album shows no album.** A track opened from a link used to get "Single" or its service's name as its album, which could open an unrelated release from the album art and ended up in your scrobbles. Tracks saved that way keep showing as saved, and saving one again doesn't add a duplicate.
