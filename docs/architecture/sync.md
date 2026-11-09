@@ -301,6 +301,11 @@ End-to-end flow that all four enable: Android edit → Spotify remote → deskto
 | `sync:relink-orphaned-playlists` | Standalone relink. Rarely needed — cleanup calls it. |
 | `sync-links:get-all` / `:set` / `:remove` | Direct access to the durable link map. |
 
+**The sign-in check (`sync:check-auth`) re-authenticates only when signing in again can help.** A 401, or no answer at all, can be fixed by a fresh sign-in. Any other refusal can't, and re-authenticating on it loops.
+
+- **Spotify** (parachord#986): a 403, 429 or 5xx on a fresh token is reported as authenticated with the status, and the sync itself reports the real error.
+- **Apple Music** (parachord#1288): `checkAuthStatus` asks for one library song and keeps Apple's status. A refusal is never treated as valid, because a 403 on the library (no subscription, or Sync Library off in the Music app) would only fail again in the sync. `sync:check-auth` returns `{ authenticated: false, status, error }`, with `error` from `describeAuthFailure(status)`. The renderer re-authorizes only on a 401 or no status, and otherwise shows that error. It used to say "Unknown error" for every refusal, which told nobody anything.
+
 ### Invariants & Traps
 
 - **Don't drop `syncedTo` on save.** The most common regression. The main-process `playlists-save` handler replaces the stored record outright, so any field missing from a save payload is deleted on disk. Build payloads by spreading the whole playlist and overriding only what you compute, never by listing fields to keep: `savePlaylistToStore` does this through `window.buildPlaylistSavePayload` (protocol-url.js, tests in `tests/sync/playlist-save-payload.test.js`). Its old hand-written list omitted `localOnly` and `description`, so editing a "Local only" playlist's tracks re-enabled sync for it. UI-only flags (`isEphemeral`, `isExternal`, `tracksLoaded`) are stripped there; add any new UI-only playlist flag to that list.

@@ -93,6 +93,18 @@ ipcMain.handle('sync:check-auth', async (event, providerId) => {
     return { authenticated: false, error: 'No token found' };
   }
 
+  // Apple Music: keep Apple's status and say what it means. Unlike Spotify
+  // below, a refusal is never treated as a valid token: a 403 on the library
+  // (no subscription, Sync Library off) would only fail again in the sync. The
+  // renderer re-authorizes only on a 401 or no answer (parachord#1288).
+  if (providerId === 'applemusic' && typeof provider.checkAuthStatus === 'function') {
+    const { ok, status } = await provider.checkAuthStatus(token);
+    if (ok) return { authenticated: true, status };
+    console.warn(`[Sync] Apple Music auth check failed: ${status ? `HTTP ${status}` : 'no answer'}`);
+    const error = typeof provider.describeAuthFailure === 'function' ? provider.describeAuthFailure(status) : undefined;
+    return { authenticated: false, status, error };
+  }
+
   // Spotify: only a 401 means the token itself is bad. A 403/429/5xx on a
   // freshly issued token can't be fixed by logging in again, and reporting
   // it as "not authenticated" made the sync flow re-open the consent screen

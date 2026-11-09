@@ -131,6 +131,27 @@ describe('sync:check-auth', () => {
     await expect(handlers.get('sync:check-auth')(null, 'applemusic')).resolves.toEqual({ authenticated: true });
   });
 
+  test('#1288 applemusic: a refusal keeps the status and a readable error, and is not treated as valid', async () => {
+    const { handlers } = makeHarness({
+      storeData: { applemusic_user_token: 'U' },
+      provider: {
+        checkAuthStatus: async () => ({ ok: false, status: 403 }),
+        describeAuthFailure: (s) => `refused (HTTP ${s})`,
+      },
+    });
+    await expect(handlers.get('sync:check-auth')(null, 'applemusic')).resolves.toEqual({
+      authenticated: false, status: 403, error: 'refused (HTTP 403)',
+    });
+  });
+
+  test('#1288 applemusic: ok passes the status through', async () => {
+    const { handlers } = makeHarness({
+      storeData: { applemusic_user_token: 'U' },
+      provider: { checkAuthStatus: async () => ({ ok: true, status: 200 }), describeAuthFailure: () => 'x' },
+    });
+    await expect(handlers.get('sync:check-auth')(null, 'applemusic')).resolves.toEqual({ authenticated: true, status: 200 });
+  });
+
   test('listenbrainz: token lives in the scrobbler config and the error says so', async () => {
     const noToken = makeHarness();
     await expect(noToken.handlers.get('sync:check-auth')(null, 'listenbrainz')).resolves.toEqual({
