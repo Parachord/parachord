@@ -1964,6 +1964,7 @@ const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
 const { SearchPage } = require('./components/search-page');
+const { VisualizerPanel, allScenes: vibresiaScenes } = require('./components/visualizer-panel');
 const { useStableHandlers } = require('./lib/stable-handlers');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
@@ -3344,6 +3345,18 @@ const Parachord = () => {
   const [searchHistory, setSearchHistory] = useState([]);
   const [filteredHistoryMatches, setFilteredHistoryMatches] = useState([]); // History entries matching current query
   const [activeView, setActiveView] = useState(null); // null until restored from storage or defaults to 'home'
+  // The built-in visualiser (Vibresia). `visualizerOpen` is whether the panel
+  // is on screen; `visualizerScene` is which scene it is drawing. The scene
+  // is remembered across sessions so the visualiser comes back the way it
+  // was left.
+  const [visualizerOpen, setVisualizerOpen] = useState(false);
+  const [visualizerScene, setVisualizerScene] = useState('ribbons');
+  // The scene is remembered, so the visualiser comes back the way it was
+  // left. The read waits for cacheLoaded so the write effect below cannot
+  // fire on mount with the default and overwrite the stored choice. The
+  // effects themselves sit below cacheLoaded's declaration, because a deps
+  // array may only name a binding declared above it.
+  const [visualizerSceneLoaded, setVisualizerSceneLoaded] = useState(false);
   const [viewHistory, setViewHistory] = useState([]); // Navigation history for back button
   const [forwardHistory, setForwardHistory] = useState([]); // Navigation history for forward button
   const [artistHistory, setArtistHistory] = useState([]); // Stack of previous artist names for back navigation
@@ -5967,6 +5980,29 @@ const Parachord = () => {
   // (the hook's saved-queue effect reads it; its old home sat BELOW
   // deps-array uses of the hook's returned names).
   const [cacheLoaded, setCacheLoaded] = useState(false);
+
+  // The visualiser's scene is remembered, so it comes back the way it was
+  // left. These effects sit here because a deps array may only name a
+  // binding declared above it, and cacheLoaded is declared just above.
+  //
+  // The read is gated on cacheLoaded so the write below cannot fire on mount
+  // with the default and overwrite the choice the user actually made.
+  useEffect(() => {
+    if (!cacheLoaded || !window.electron?.store) return;
+    (async () => {
+      const saved = await window.electron.store.get('visualizer_scene').catch(() => null);
+      // A saved scene that no longer exists (a scene was dropped) falls back
+      // to the default rather than leaving the panel with nothing to draw.
+      if (typeof saved === 'string' && vibresiaScenes().some((s) => s.id === saved)) {
+        setVisualizerScene(saved);
+      }
+      setVisualizerSceneLoaded(true);
+    })();
+  }, [cacheLoaded]);
+  useEffect(() => {
+    if (!cacheLoaded || !visualizerSceneLoaded || !window.electron?.store) return;
+    window.electron.store.set('visualizer_scene', visualizerScene).catch(() => {});
+  }, [cacheLoaded, visualizerSceneLoaded, visualizerScene]);
 
   // Global stream playback quality (Widevine/DASH resolvers: Amazon Music
   // today). Store keys playback_quality/playback_abr/playback_spatial drive
@@ -34362,6 +34398,32 @@ useEffect(() => {
             borderTop: '1px solid var(--border-subtle)'
           }
         },
+          // The visualiser. It is a panel over the app rather than a page,
+          // so it gets its own button here: the picture is the point, and
+          // a page would put the player somewhere else while it draws.
+          React.createElement('button', {
+            className: 'w-full flex items-center gap-2 cursor-pointer transition-colors mb-3',
+            style: {
+              color: visualizerOpen ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              fontWeight: visualizerOpen ? '500' : '400'
+            },
+            onClick: () => setVisualizerOpen((v) => !v),
+            title: 'Visualizer — draw the music with Vibresia'
+          },
+            React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+              React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M9 18V5l12-2v13' }),
+              React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
+              React.createElement('circle', { cx: 18, cy: 16, r: 3 })
+            ),
+            React.createElement('span', {
+              style: {
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em'
+              }
+            }, 'Visualizer')
+          ),
           React.createElement('button', {
             className: 'w-full flex items-center gap-2 cursor-pointer transition-colors',
             style: {
@@ -34385,6 +34447,22 @@ useEffect(() => {
           )
         )
       ),
+
+      // The visualiser: a Vibresia scene over the whole window, drawn from
+      // the music Parachord is playing. The audio comes from the element
+      // the current source plays through (the shared <audio> for local
+      // files, Subsonic and Amazon; an embedded player's own element for
+      // SoundCloud), so the scene follows the track rather than the app.
+      visualizerOpen && React.createElement(VisualizerPanel, {
+        enabled: true,
+        sceneId: visualizerScene,
+        onSceneChange: setVisualizerScene,
+        audioElement: mediaElementFor(currentTrack?._activeResolver),
+        trackTitle: currentTrack?.title || null,
+        trackArtist: currentTrack?.artist || null,
+        isPlaying: isPlaying,
+        onClose: () => setVisualizerOpen(false)
+      }),
 
       // Toast notification - refined styling with optional action button
       toast && React.createElement('div', {
