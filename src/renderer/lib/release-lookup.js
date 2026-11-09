@@ -22,6 +22,8 @@
 // getCache: () => the cache object (app.js replaces releaseDetailsCache.current
 // wholesale when the saved caches load, so it is read on every call).
 
+const { pickRelease } = require('./release-pick');
+
 const MB_HEADERS = { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' };
 
 function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () => Date.now(), log = () => {} }) {
@@ -65,21 +67,23 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
     }
   };
 
-  // A release group's first official release WITH its track list, in one
-  // MusicBrainz request: the browse takes inc=recordings, and its release
+  // A release group's best official release WITH its track list, in one
+  // MusicBrainz request: the browse takes inc=recordings, and each release
   // carries everything the /release/<id>?inc=recordings+artist-credits lookup
-  // does (plus label-info). Opening a group used to cost a browse for the
+  // does (plus label-info). Up to 25 releases come back, and pickRelease
+  // (release-pick.js) chooses: the first one listed was often a CD with fewer
+  // tracks than the digital edition (#1288). Opening a group used to cost a browse for the
   // release id and then that lookup, two slots in the 1.1s queue. Same result
   // shape as fetchReleaseDetails; an empty group answers
   // { ok: false, status: 404, noReleases: true }.
   const fetchReleaseGroupDetails = async (releaseGroupId, fetchImpl = defaultFetch) => {
     const response = await fetchImpl(
-      `https://musicbrainz.org/ws/2/release?release-group=${releaseGroupId}&status=official&inc=recordings+artist-credits+labels&fmt=json&limit=1`,
+      `https://musicbrainz.org/ws/2/release?release-group=${releaseGroupId}&status=official&inc=recordings+artist-credits+labels+release-groups&fmt=json&limit=25`,
       { headers: MB_HEADERS }
     );
     if (!response.ok) return response;
     const body = await response.json();
-    const data = body.releases && body.releases[0];
+    const data = pickRelease(body.releases);
     if (!data || !data.id) return { ok: false, status: 404, noReleases: true };
     getCache()[data.id] = { data, timestamp: now() };
     rememberReleaseGroupAlias(releaseGroupId, data.id);

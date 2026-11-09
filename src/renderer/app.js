@@ -642,6 +642,7 @@ const {
 } = require('./lib/artist-image-chain');
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
+const { pickRelease } = require('./lib/release-pick');
 const { createReleaseLookup } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
@@ -10938,18 +10939,22 @@ const Parachord = () => {
         if (!/^[a-f0-9-]{36}$/i.test(params.mbid)) {
           throw new Error('Invalid MBID format');
         }
-        // redirect: 'error' prevents SSRF via 3xx redirects to private hosts
-        // (isPublicHttpUrl only validates the initial URL, not the final destination).
-        const mbResp = await fetch(
-          `https://musicbrainz.org/ws/2/release?release-group=${encodeURIComponent(params.mbid)}&inc=recordings+artist-credits&limit=1&fmt=json`,
-          { headers: { 'User-Agent': 'Parachord/1.0.0 (https://parachord.com)' }, redirect: 'error' }
+        // Through the shared lookup, so the link plays the same edition the album
+        // page shows (pickRelease, #1288). redirect: 'error' prevents SSRF via 3xx
+        // redirects to private hosts (isPublicHttpUrl only validates the initial
+        // URL, not the final destination).
+        const groupResponse = await fetchReleaseGroupDetails(
+          params.mbid,
+          (url, init) => fetch(url, { ...(init || {}), redirect: 'error' })
         );
-        if (!mbResp.ok) throw new Error(`MusicBrainz lookup failed: ${mbResp.status}`);
-        const mbData = await mbResp.json();
-        const release = mbData.releases?.[0];
+        if (!groupResponse.ok && !groupResponse.noReleases) {
+          throw new Error(`MusicBrainz lookup failed: ${groupResponse.status}`);
+        }
+        const release = groupResponse.ok ? await groupResponse.json() : null;
         if (!release) return { displayName: 'Album', tracks: [] };
         const albumArtist = release['artist-credit']?.[0]?.name;
-        const tracks = (release.media?.[0]?.tracks || []).map(t => {
+        // Every disc, not just the first.
+        const tracks = (release.media || []).flatMap(m => m?.tracks || []).map(t => {
           const trackArtist = t['artist-credit']?.[0]?.name || albumArtist;
           if (!trackArtist || !t.title) return null;
           const out = { artist: trackArtist, title: t.title, album: release.title };
@@ -13782,11 +13787,12 @@ ${trackListXml}
       if (!releaseGroup) return { miss: true };
       // inc=media carries each medium's track-count, so no full tracklist fetch.
       const relResponse = await fetch(
-        `https://musicbrainz.org/ws/2/release?release-group=${releaseGroup.id}&status=official&inc=media&fmt=json&limit=1`,
+        `https://musicbrainz.org/ws/2/release?release-group=${releaseGroup.id}&status=official&inc=media&fmt=json&limit=25`,
         MB_HEADERS
       );
       if (!relResponse.ok) return { transient: true };
-      const release = (await relResponse.json()).releases?.[0];
+      // The same edition the album page shows (pickRelease, #1288).
+      const release = pickRelease((await relResponse.json()).releases);
       if (!release) return { miss: true };
       return { trackCount: trackCountFromRelease(release) };
     };
@@ -20244,20 +20250,13 @@ ${trackListXml}
       const artistName = album['artist-credit']?.[0]?.name || 'Unknown Artist';
       const bgFetch = (url, init) => fetch(url, { ...(init || {}), mbBackground: true });
 
-      // Search albums use release-group IDs, so fetch the first release from the group
-      const releaseGroupResponse = await bgFetch(
-        `https://musicbrainz.org/ws/2/release?release-group=${album.id}&status=official&fmt=json&limit=1`,
-        { headers: { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' }}
-      );
-
-      if (!releaseGroupResponse.ok) return;
-
-      const releaseGroupData = await releaseGroupResponse.json();
-      if (!releaseGroupData.releases || releaseGroupData.releases.length === 0) return;
-
-      const releaseId = releaseGroupData.releases[0].id;
-      // Opening this album later reuses the lookup (fetchReleaseData).
-      rememberReleaseGroupAlias(album.id, releaseId);
+      // Search albums use release-group IDs. The shared lookup picks the same
+      // release the album page will (pickRelease, #1288), caches its track list
+      // and remembers the group as its alias, so opening the album later and
+      // the fetchReleaseDetails below are both cache hits.
+      const groupResponse = await fetchReleaseGroupDetails(album.id, bgFetch);
+      if (!groupResponse.ok) return;
+      const releaseId = groupResponse.releaseId;
       releaseGroupPicksRef.current.set(artistName, album.title, album);
 
       // Fetch the release details with tracks
@@ -24631,13 +24630,11 @@ ${tracks}
 
       if (!release && album.releaseGroupId) {
         // Direct lookup by release-group ID (Fresh Drops — much more reliable than string search)
-        const rgResponse = await fetch(
-          `https://musicbrainz.org/ws/2/release?release-group=${album.releaseGroupId}&fmt=json&limit=1&inc=artist-credits`,
-          { headers: mbHeaders }
-        );
+        // through the shared lookup, so it picks the same edition as every other
+        // album page (pickRelease, #1288) and caches its track list.
+        const rgResponse = await fetchReleaseGroupDetails(album.releaseGroupId);
         if (rgResponse.ok) {
-          const rgData = await rgResponse.json();
-          release = rgData.releases?.[0];
+          release = await rgResponse.json();
         }
       }
 

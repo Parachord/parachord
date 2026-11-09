@@ -116,7 +116,9 @@ describe('app.js wiring', () => {
   const groupDetails = releaseLookup.slice(releaseLookup.indexOf('const fetchReleaseGroupDetails = async (releaseGroupId, fetchImpl = defaultFetch) => {'), releaseLookup.indexOf('\n  };', releaseLookup.indexOf('const fetchReleaseGroupDetails = async')));
 
   test('a release group loads its release and track list in one request', () => {
-    expect(groupDetails).toContain('release?release-group=${releaseGroupId}&status=official&inc=recordings+artist-credits+labels&fmt=json&limit=1');
+    expect(groupDetails).toContain('release?release-group=${releaseGroupId}&status=official&inc=recordings+artist-credits+labels+release-groups&fmt=json&limit=25');
+    // the best edition, not the first one MusicBrainz lists (#1288)
+    expect(groupDetails).toContain('const data = pickRelease(body.releases);');
     expect(groupDetails.match(/fetchImpl\(/g)).toHaveLength(1);
     // cached like a release lookup, and the group remembered as its alias
     expect(groupDetails).toMatch(/getCache\(\)\[data\.id\] = \{ data, timestamp: now\(\) \};/);
