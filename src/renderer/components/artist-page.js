@@ -22,6 +22,7 @@
 const { Tooltip } = require('./ui-atoms');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
 const { trackSlug } = require('../lib/track-slug');
+const { formatCalendarDate } = require('../lib/calendar-date');
 const { generateArtistId } = require('../lib/collection-ids');
 const { parseBioMarkup } = require('../lib/discogs-markup');
 
@@ -1288,18 +1289,8 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         lineHeight: '1.4'
                       }
                     },
-                      (() => {
-                        const date = artistExtendedInfo.foundedDate;
-                        if (date.length === 4) return date; // Just year
-                        if (date.length === 7) {
-                          const [year, month] = date.split('-');
-                          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                          return `${monthNames[parseInt(month) - 1]} ${year}`;
-                        }
-                        // Full date
-                        const d = new Date(date);
-                        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                      })()
+                      // A calendar date, read in local time so a full date isn't shown a day early (#1288).
+                      formatCalendarDate(artistExtendedInfo.foundedDate, 'short')
                     )
                   ),
 
