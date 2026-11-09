@@ -159,9 +159,12 @@ describe('card click opens the release page before the lookup', () => {
 
   test('shows the placeholder before the first MusicBrainz request, and never navigates again', () => {
     const show = body.indexOf('showReleasePlaceholder({');
-    const firstFetch = body.indexOf('musicbrainz.org/ws/2/');
+    // A MusicBrainz request is either a literal ws/2 URL or the shared
+    // release-group lookup, which the Fresh Drops path uses since #1288.
+    const firstFetch = Math.min(...[body.indexOf('musicbrainz.org/ws/2/'), body.indexOf('fetchReleaseGroupDetails(')]
+      .filter((i) => i > -1));
     expect(show).toBeGreaterThan(-1);
-    expect(firstFetch).toBeGreaterThan(-1);
+    expect(Number.isFinite(firstFetch)).toBe(true);
     expect(show).toBeLessThan(firstFetch);
     expect(body).not.toMatch(/navigateTo\('artist'\)/);
   });
