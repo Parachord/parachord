@@ -16,6 +16,7 @@ const { Play } = Icons;
 // exported back so app.js's own call sites keep the same binding.
 const hashString = require('../lib/hash-string');
 const { trackSlug, slug } = require('../lib/track-slug');
+const { formatCalendarDate } = require('../lib/calendar-date');
 
 // Generate a unique pattern/gradient for an artist based on their name
 // Returns an object with CSS gradient and optional SVG pattern
@@ -1023,16 +1024,9 @@ const ReleasePage = ({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Format full date nicely
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'Unknown';
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    } catch {
-      return dateStr;
-    }
-  };
+  // Format a release date nicely. It's a calendar date, so it's read in local
+  // time: new Date("2026-11-06") is still November 5 in the Americas (#1288).
+  const formatDate = (dateStr) => formatCalendarDate(dateStr, 'long', 'Unknown');
 
   // Use a ref to track container width for responsive layout
   const [containerWidth, setContainerWidth] = React.useState(800);
