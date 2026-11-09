@@ -116,9 +116,9 @@ Produces release groups, including EPs and singles. Art (`fetchNewReleasesAlbumA
 
 ## Critical Darlings
 
-Code: `loadCriticsPicks`, legacy feed `fetchLegacyCriticsPicks`.
+Code: `loadCriticsPicks`.
 
-Source: `https://achordion.xyz/api/critical-darlings/feed.xml`. Fresh items first, topped up to 25 from the cache and then from the legacy `rssground.com/p/uncoveries` feed while the list is short. If the Achordion fetch fails, the cache is shown, or the legacy feed if the cache is empty. Art (`fetchCriticsPicksAlbumArt`): `getCachedAlbumArt` first, then `getAlbumArt` (the one album-art pipeline: MusicBrainz and the Cover Art Archive, then resolvers, iTunes and Deezer). Picks restored from the cache without a cover get another art pass at startup once resolvers are ready, since a cache under 4 hours old skips `loadCriticsPicks`. Not personalized, nothing to configure. Cache `cache_critics_picks`, refetched after 4 hours; the unread dot only tracks the fresh feed.
+Source: `https://achordion.xyz/api/critical-darlings/feed.xml`. Fresh items first, topped up to 25 from the local cache of earlier picks. If the Achordion fetch fails, the cache is shown, and an empty cache shows an error. The legacy RSSground feed that used to top the list up during Achordion's ramp-up was removed in #964, once the feed carried 25 or more picks on its own. Art (`fetchCriticsPicksAlbumArt`): `getCachedAlbumArt` first, then `getAlbumArt` (the one album-art pipeline: MusicBrainz and the Cover Art Archive, then resolvers, iTunes and Deezer). Picks restored from the cache without a cover get another art pass at startup once resolvers are ready, since a cache under 4 hours old skips `loadCriticsPicks`. Not personalized, nothing to configure. Cache `cache_critics_picks`, refetched after 4 hours; the unread dot only tracks the fresh feed.
 
 ## Pop of the Tops (charts)
 
