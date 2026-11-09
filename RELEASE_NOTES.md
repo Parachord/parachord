@@ -46,6 +46,7 @@
 
 ## Sync
 
+- **Apple Music sync setup says what went wrong.** When Apple refused the library check, Set Up Library Sync signed in again, failed the same way, and showed "Unknown error". It now shows Apple's answer and what to check, like an inactive subscription or Sync Library being off in the Music app, and only signs in again when that could help.
 - **Copy Link on a playlist that isn't on ListenBrainz offers a next step.** It used to stop at a message. It now has a button to connect ListenBrainz, or to open sync settings if you're already connected.
 - **Sharing a private ListenBrainz playlist asks first.** Copy Link used to hand out a link that only opened for you. It now asks whether to make the playlist public before copying, and Cancel changes nothing.
 - **A playlist you deleted on ListenBrainz no longer looks synced.** The app kept recording a sync against it, and Copy Link gave a link that wouldn't open. Parachord now stops pushing to it, and Copy Link says it's gone. Nothing is recreated.
