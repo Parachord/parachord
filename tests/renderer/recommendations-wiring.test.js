@@ -100,5 +100,30 @@ describe('recommendations wiring', () => {
     expect(row).toMatch(/isNowPlaying \? 'bg-purple-50'/);
     expect(row).toMatch(/isNowPlaying \? '▶' : String\(index \+ 1\)\.padStart\(2, '0'\)/);
     expect(row).toMatch(/color: isNowPlaying \? 'var\(--accent-primary\)'/);
+
+  test('"load more" is guarded by a ref and appends from the functional update (review round 2)', () => {
+    const i = app.indexOf('const loadMoreRecommendationSection = async');
+    const fn = app.slice(i, app.indexOf('\n  };', i));
+    // The ref guard (the state read is stale in the click closure).
+    expect(fn).toMatch(/recommendationsLoadingMoreRef\.current\[section\.key\]\) return;/);
+    expect(fn).toMatch(/delete recommendationsLoadingMoreRef\.current\[section\.key\];/);
+    // The append reads `prev`, not the post-commit-synced ref.
+    expect(fn).toMatch(/items: \[\.\.\.\(\(prev\[key\] \|\| \{ items: \[\] \}\)\.items \|\| \[\]\), \.\.\.result\.items\]/);
+    expect(fn).not.toMatch(/expandedSectionsRef\.current\[key\]/);
+  });
+
+  test('a readiness failure drops the provider\'s stale cached sections (a transient failure keeps them)', () => {
+    const i = app.indexOf('const loadRecommendations = async');
+    const fn = app.slice(i, app.indexOf('\n  };', i));
+    expect(fn).toMatch(/if \(!error\?\.notReady && cache\.providers\[provider\.id\]\)/);
+  });
+
+  test('the LLM stream does not churn: observer keyed on the song-id digest, seen-hash writes skipped when unchanged', () => {
+    const i = app.indexOf('const recommendationSongsKey = useMemo');
+    expect(i).toBeGreaterThan(-1);
+    const observerDeps = app.match(/\}, \[activeView, recommendationSongsKey, updateSchedulerVisibility, recommendationsScrollContainerReady\]\);/);
+    expect(observerDeps).toBeTruthy();
+    const seen = app.slice(app.indexOf('const markDiscoverySeen = useCallback'), app.indexOf('}, []);', app.indexOf('const markDiscoverySeen = useCallback')));
+    expect(seen).toMatch(/if \(discoverySeenHashes\.current\[feature\] === hash\) return;/);
   });
 });

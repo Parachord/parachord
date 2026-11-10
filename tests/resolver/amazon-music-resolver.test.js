@@ -927,11 +927,13 @@ describe('amazonmusic recommendations (the recommendations capability)', () => {
     await expect(resolver.expandRecommendationSection('uri:///x/aStrategy', 'aStrategy.20', {})).resolves.toEqual({ items: [], nextCursor: null });
   });
 
-  test('expandRecommendationSection: notReady on readiness failures, empty on a bare miss', async () => {
+  test('expandRecommendationSection: notReady on readiness failures, and unknown failure reasons are notReady too (never a cached miss)', async () => {
     global.window = { electron: { amazonMusic: { expandRecommendationSection: jest.fn().mockResolvedValue({ success: false, reason: 'not-signed-in' }) } } };
     const resolver = instantiate(axe);
     await expect(resolver.expandRecommendationSection('uri:///x/aStrategy', null, {})).rejects.toMatchObject({ notReady: true, code: 'not-signed-in' });
     global.window = { electron: { amazonMusic: { expandRecommendationSection: jest.fn().mockResolvedValue({ success: false, reason: 'weird-new-reason' }) } } };
-    await expect(resolver.expandRecommendationSection('uri:///x/aStrategy', null, {})).resolves.toEqual({ items: [], nextCursor: null });
+    // Any unmapped failure reason is notReady — a future reason string must not
+    // silently become a miss the page caches.
+    await expect(resolver.expandRecommendationSection('uri:///x/aStrategy', null, {})).rejects.toMatchObject({ notReady: true, code: 'weird-new-reason' });
   });
 });

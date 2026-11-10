@@ -554,12 +554,9 @@ module.exports = {
       var result = await window.electron.amazonMusic.getRecommendations();
       if (!result || !result.success) {
         var reason = result && result.reason;
-        if (
-          reason === 'not-ready' ||
-          reason === 'not-signed-in' ||
-          reason === 'no-cdm' ||
-          reason === 'load-failed'
-        ) {
+        if (reason) {
+          // A readiness failure (or any unmapped failure — the page must never
+          // cache a failure as a miss) is notReady, never a quiet miss.
           var err = new Error('Amazon Music not ready');
           err.notReady = true;
           err.code = reason;
@@ -612,12 +609,7 @@ module.exports = {
       var result = await window.electron.amazonMusic.expandRecommendationSection(id, afterCursor || null);
       if (!result || !result.success) {
         var reason = result && result.reason;
-        if (
-          reason === 'not-ready' ||
-          reason === 'not-signed-in' ||
-          reason === 'no-cdm' ||
-          reason === 'load-failed'
-        ) {
+        if (reason) {
           var err = new Error('Amazon Music not ready');
           err.notReady = true;
           err.code = reason;

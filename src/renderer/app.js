@@ -4808,6 +4808,10 @@ const Parachord = () => {
   // Mark a discovery feature as seen (user has viewed it)
   const markDiscoverySeen = useCallback(async (feature, hash) => {
     if (!hash || !window.electron?.store) return;
+    // Skip unchanged hashes: the LLM's streaming updates re-merge the
+    // recommendations sections once per streamed item, and a store write per
+    // item is churn the flat page never had.
+    if (discoverySeenHashes.current[feature] === hash) return;
     discoverySeenHashes.current[feature] = hash;
     setDiscoveryUnread(prev => ({ ...prev, [feature]: false }));
     await window.electron.store.set(`discovery_seen_${feature}`, hash);
@@ -11042,7 +11046,7 @@ const Parachord = () => {
   // are web pages, not tracklist documents, so they must go through the
   // resolver lookupPlaylist path (the same one handleImportPlaylistFromUrl
   // uses).
-const resolveProviderPlaylistUrl = async (rawUrl) => {
+  const resolveProviderPlaylistUrl = async (rawUrl) => {
     const classified = window.classifyPlaylistUrl(rawUrl);
 
     // Achordion → its public XSPF endpoint, then the standard tracklist parser.
@@ -22960,10 +22964,18 @@ ${trackListXml}
 
   // Every song track on the page — the generic Songs bucket plus any titled
   // section's songs (a provider's titled sections can carry tracks) — for the
-  // scheduler effects below.
+  // scheduler effects below. The OBSERVER effect keys on a digest of the ids
+  // (recommendationSongsKey), not the array identity: the LLM's streaming
+  // updates re-merge the sections once per streamed item, and a new array
+  // identity per item would disconnect/recreate the observer each time over
+  // the SAME songs.
   const recommendationSongs = useMemo(
     () => recommendations.sections.flatMap(s => s.items.filter(i => i.type === 'song').map(i => i.track)),
     [recommendations.sections]
+  );
+  const recommendationSongsKey = useMemo(
+    () => recommendationSongs.map(t => t && t.id).join('|'),
+    [recommendationSongs]
   );
   const recommendationSongsRef = useRef([]);
   useEffect(() => { recommendationSongsRef.current = recommendationSongs; }, [recommendationSongs]);
@@ -23094,7 +23106,7 @@ ${trackListXml}
     }, 50);
 
     return () => recommendationsObserverRef.current?.disconnect();
-  }, [activeView, recommendationSongs, updateSchedulerVisibility, recommendationsScrollContainerReady]);
+  }, [activeView, recommendationSongsKey, updateSchedulerVisibility, recommendationsScrollContainerReady]);
 
   // Register page context for songs charts tracks resolution (Apple Music or Last.fm)
   useEffect(() => {
@@ -27010,9 +27022,10 @@ Return ONLY the JSON array, no other text.`;
 
     // Per-provider session cache: a provider that answered recently is not
     // asked again within the TTL (CACHE_TTL.recommendations, 1h). An EMPTY
-    // answer is never cached — the flat page's rule ("Not cached, so the next
-    // visit asks again"): a genuine miss re-asks next visit, and a transient
-    // network failure never blanks a provider for the whole hour.
+    // answer is never SERVED from the cache — the flat page's rule ("Not
+    // cached, so the next visit asks again"): a genuine miss re-asks next
+    // visit, and a transient network failure never blanks a provider for the
+    // whole hour.
     const cache = recommendationsCache.current;
     const now = Date.now();
     const fresh = {};
@@ -27092,9 +27105,12 @@ Return ONLY the JSON array, no other text.`;
       } catch (error) {
         console.warn(`⭐ Recommendations from ${provider.name || provider.id} failed:`, error?.message || error);
         failed++;
-        // Keep the cached result (even an expired one) so a transient failure
-        // does not blank a section that was on screen.
-        if (cache.providers[provider.id]) fresh[provider.id] = cache.providers[provider.id];
+        // Keep the cached result (even an expired one) so a TRANSIENT failure
+        // does not blank a section that was on screen. A readiness failure
+        // (signed out, offline — the plugin's deliberate notReady throws) is
+        // different: the cached sections belong to a session that cannot
+        // refresh them, so they are dropped instead of resurrected forever.
+        if (!error?.notReady && cache.providers[provider.id]) fresh[provider.id] = cache.providers[provider.id];
       }
     }));
 
@@ -27119,11 +27135,17 @@ Return ONLY the JSON array, no other text.`;
   // "Load more" for a titled section whose provider can paginate
   // (expandRecommendationSection): fetch the next page and merge it into the
   // section. The fetched items live in expandedSections so a re-merge (the LLM
-  // streaming an update) keeps them.
+  // streaming an update) keeps them. The in-flight guard is a REF (the state
+  // read is stale in the click closure until a re-render commits, so two quick
+  // clicks both passed it), and the append builds from the functional
+  // update's `prev` (the ref is only synced post-commit, so a second expansion
+  // landing before the re-render would otherwise overwrite the first page).
+  const recommendationsLoadingMoreRef = useRef({});
   const loadMoreRecommendationSection = async (section) => {
     const loader = resolverLoaderRef.current;
     if (!section?.resolverId || !section?.sectionId || !loader) return;
-    if (recommendationsLoadingMore[section.key]) return;
+    if (recommendationsLoadingMoreRef.current[section.key]) return;
+    recommendationsLoadingMoreRef.current[section.key] = true;
     setRecommendationsLoadingMore(prev => ({ ...prev, [section.key]: true }));
     const key = `${section.resolverId}|${section.sectionId}`;
     try {
@@ -27132,14 +27154,12 @@ Return ONLY the JSON array, no other text.`;
       if (!result || !Array.isArray(result.items) || result.items.length === 0) {
         // Nothing more from the provider: remember the exhaustion so the
         // button goes away (a force-refresh resets it).
-        const prevExpansion = expandedSectionsRef.current[key] || { items: [] };
-        setExpandedSections(prev => ({ ...prev, [key]: { ...prevExpansion, exhausted: true } }));
+        setExpandedSections(prev => ({ ...prev, [key]: { ...(prev[key] || { items: [] }), exhausted: true } }));
       } else {
-        const prevItems = (expandedSectionsRef.current[key] || { items: [] }).items || [];
         setExpandedSections(prev => ({
           ...prev,
           [key]: {
-            items: [...prevItems, ...result.items],
+            items: [...((prev[key] || { items: [] }).items || []), ...result.items],
             nextCursor: result.nextCursor || null,
             exhausted: !result.nextCursor
           }
@@ -27149,6 +27169,7 @@ Return ONLY the JSON array, no other text.`;
       console.warn(`⭐ Failed to expand recommendation section ${section.title || key}:`, error?.message || error);
       showToast(`Couldn't load more from ${section.resolverName || 'the service'}`, 'error');
     } finally {
+      delete recommendationsLoadingMoreRef.current[section.key];
       setRecommendationsLoadingMore(prev => ({ ...prev, [section.key]: false }));
     }
   };
@@ -30928,13 +30949,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   const recommendationImageFetchesRef = useRef(new Set());
   useEffect(() => {
     if (activeView !== 'recommendations' && activeView !== 'home') return;
-    // On Home only the For You card needs one image — fetch just the first
-    // missing artist item there; the full page fetches everything.
+    // On Home only the For You card needs one photo — the first ARTIST item
+    // (the preview derives its image from it); the full page fetches everything.
     let budget = activeView === 'recommendations' ? Infinity : 1;
     for (const section of recommendations.sections) {
       for (const item of section.items) {
         if (budget <= 0) break;
         if (item.type !== 'artist' && item.type !== 'album') continue;
+        if (activeView === 'home' && item.type !== 'artist') continue;
         if (item.imageUrl || recommendationImages[item.id] || recommendationImageFetchesRef.current.has(item.id)) continue;
         recommendationImageFetchesRef.current.add(item.id);
         budget--;
@@ -39751,7 +39773,7 @@ useEffect(() => {
             // allSongs is the section's FULL song list (the collapsed view
             // shows a slice of it): the queue context after a clicked row is
             // the whole remainder, like the flat page, not just the visible tail.
-            const songRow = (item, index, sectionSongs, allSongs, section) => {
+            const songRow = (item, index, allSongs, section) => {
               const track = item.track;
               const resolvedSources = trackSources[track.id] || track.sources || {};
               const hasResolved = Object.keys(resolvedSources).length > 0;
@@ -39804,7 +39826,7 @@ useEffect(() => {
                       type: 'track',
                       track,
                       sourceType: 'recommendations',
-                      sourceName: 'Recommendations'
+                      sourceName: section.title || 'Recommendations'
                     });
                   }
                 }
@@ -39954,7 +39976,7 @@ useEffect(() => {
                   ...visibleCards.map((item, index) => cardFor(item, index))
                 ),
                 visibleSongs.length > 0 && React.createElement('div', { className: 'space-y-0' },
-                  ...visibleSongs.map((item, index) => songRow(item, index, visibleSongs, songItems, section))
+                  ...visibleSongs.map((item, index) => songRow(item, index, songItems, section))
                 )
               );
             };

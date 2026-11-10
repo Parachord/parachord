@@ -1712,6 +1712,13 @@ const amazonWebPlayer = {
         for (const r of captured.filter(r => r.headers)) {
           const req = amazonSeeMoreRequest([r.body]);
           if (!req) continue;
+          // Only THIS section's request: our own concurrent template replay of
+          // a DIFFERENT section echoes into the session-wide capture with the
+          // same operationName (unlike the spec search, where
+          // variables.searchText distinguishes echo from page — a see-more
+          // echo differs only in variables.id). Minting or returning it would
+          // serve the wrong section's items, session-cached under this key.
+          if (req.variables && req.variables.id && req.variables.id !== sectionId) continue;
           const ts = Number(r.headers['csrf-ts'] || r.headers['Csrf-ts']) || 0;
           if (ts >= bestTs) { bestTs = ts; entry = r; request = req; }
         }

@@ -335,6 +335,28 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
     expect(replayGql).toHaveBeenCalledTimes(2);
   });
 
+  test('the see-more page flow never mints or returns a DIFFERENT section\'s echo (variables.id guard)', async () => {
+    const win = fakeWin('https://music.amazon.com/browse/music-items/home/recommendation/browse-home_mp3PrimeAlbumsStrategy');
+    ensureWindow.mockResolvedValue(win);
+    layoutSearch.mockResolvedValue('desktop');
+    // Our own concurrent template replay of ANOTHER section, echoing into the
+    // session-wide capture with the FRESHER csrf-ts than the page's own request.
+    const otherSectionBody = { ...SEE_MORE_BODY, variables: { ...SEE_MORE_BODY.variables, id: 'uri:///recommendations/browse-home/browse-home_newReleasesForYouStrategy' } };
+    attachGqlCapture.mockReturnValue({ captured: [
+      { id: 1, body: JSON.stringify(otherSectionBody), url: 'https://gql.music.amazon.com/', headers: { ...CAPTURED_HEADERS, 'csrf-ts': '9999' } },
+      { id: 2, body: JSON.stringify(SEE_MORE_BODY), url: 'https://gql.music.amazon.com/', headers: { ...CAPTURED_HEADERS, 'csrf-ts': '2000' } }
+    ], detach: jest.fn() });
+    replayGql.mockResolvedValue({ parsed: seeMoreData([{ node: albumNode('B07QYGJGVC', 'Sons of Northern Darkness', 'Immortal') }], { hasNextPage: false, token: null }) });
+    const parsed = await amazonWebPlayer.seeMorePageFlow(SECTION_ID);
+    expect(parsed.section.items[0].name).toBe('Sons of Northern Darkness');
+    // Minted from the page's own request — not the fresher echo.
+    expect(amazonWebPlayer.seeMoreTemplate.headers['csrf-ts']).toBe('2000');
+    expect(amazonWebPlayer.seeMoreTemplate.body.variables.id).toBe(SECTION_ID);
+    const [, entry, body] = replayGql.mock.calls[0];
+    expect(entry.headers['csrf-ts']).toBe('2000');
+    expect(body.variables.id).toBe(SECTION_ID);
+  });
+
   test('a section with nothing more answers empty (a miss, not an error)', async () => {
     amazonWebPlayer.seeMoreTemplate = makeSpecSearchTemplate({
       url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: SEE_MORE_BODY, capturedAt: Date.now()
