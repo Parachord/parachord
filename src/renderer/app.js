@@ -27154,12 +27154,20 @@ Return ONLY the JSON array, no other text.`;
         // button goes away (a force-refresh resets it).
         setExpandedSections(prev => ({ ...prev, [key]: { ...(prev[key] || { items: [] }), exhausted: true } }));
       } else {
+        // No-advance guard (the same rule paginatePlaylistTracks enforces for
+        // playlist pages): a provider answering the very cursor that was sent
+        // re-served the same window. A cursor like that would make the
+        // self-advancing Show-more effect fetch the identical page forever
+        // (the provider's page cache answers instantly, so each loop is an
+        // append + full-app render) — treat it as exhausted instead.
+        const noAdvance = result.nextCursor != null && result.nextCursor === section.nextCursor;
+        const nextCursor = noAdvance ? null : (result.nextCursor || null);
         setExpandedSections(prev => ({
           ...prev,
           [key]: {
             items: [...((prev[key] || { items: [] }).items || []), ...result.items],
-            nextCursor: result.nextCursor || null,
-            exhausted: !result.nextCursor
+            nextCursor,
+            exhausted: !nextCursor
           }
         }));
       }

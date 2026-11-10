@@ -162,4 +162,17 @@ describe('the single Show-more control with background pagination', () => {
     expect(view).toMatch(/'Show less'/);
     expect(view).not.toMatch(/'Load more'/);
   });
+
+  test('a page answering the cursor it was sent is exhausted, not fetched again (no-advance)', () => {
+    const i = app.indexOf('const loadMoreRecommendationSection = async');
+    const fn = app.slice(i, app.indexOf('\n  };', i));
+    expect(i).toBeGreaterThan(-1);
+    // The same rule paginatePlaylistTracks enforces for playlist pages: the
+    // self-advancing effect would fetch the identical page forever (the
+    // provider's page cache answers instantly) — the repeated cursor ends
+    // the chain instead.
+    expect(fn).toContain('result.nextCursor != null && result.nextCursor === section.nextCursor');
+    expect(fn).toContain('const nextCursor = noAdvance ? null : (result.nextCursor || null);');
+    expect(fn).toContain('exhausted: !nextCursor');
+  });
 });
