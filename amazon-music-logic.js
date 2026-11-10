@@ -947,22 +947,29 @@ function searchArtistImageFromGql(data, artistName) {
 }
 
 // --- Recommendations (capabilities.recommendations in the plugin) ---------
-// The home page (https://music.amazon.com/) fires BrowseHomePage (APQ, no
-// inline query); its response's data.browse.recommendationConnection.edges
+// The home page's MUSIC tab (https://music.amazon.com/music) fires
+// MusicHomePage (APQ, no inline query; the full home at / fires
+// BrowseHomePage with stations and audiobooks mixed in — the music tab is
+// the music-only query); its response's data.browse.recommendationConnection.edges
 // are the "Albums for You" / "New Releases for You" / "Your Frequent Plays"
-// sections, each item a Track / Album / Artist / Audiobook / ... node
-// (live-captured 2026-11: section node = { id: the recommender strategy uri,
-// name, description, itemType (ALBUM/AUDIOBOOK/PODCAST_SHOW/MIXED), tags,
-// recommendedContent.edges[].node }). data.t1r is a single "featured play"
-// hero whose type varies (a Station today, a PodcastEpisode an hour later)
-// and stations/podcasts are not playable in Parachord, so it is skipped.
+// sections, each item a Track / Album / Artist / ... node
+// (live-captured 2026-11: section node = { id: the recommender strategy uri
+// (uri:///recommendations/music-home/<strategy>), name, description, itemType
+// (ALBUM/MIXED), tags, recommendedContent.edges[].node }). EVERY section
+// propagates; a station-only one has no mappable items (a Station node never
+// maps) and disappears on its own. data.t1r is the page's top row — the
+// user's station-mix ("My Soundtrack" / "My Likes and More": a Station
+// parentContainer with a playMusic track row, live-captured 2026-11) — and
+// stations are not playable in Parachord, so it is skipped; data.genres is
+// navigation chips, not things to play.
 // The "See More" button on each section is an SPA route,
 // /browse/music-items/home/recommendation/<strategy>, which fires
-// RecommenderSeeMorePage (vars { id: the full strategy uri, firstLimit: 20,
-// ... }) — the section expansion; its response's
+// RecommenderSeeMorePage (vars { id: uri:///recommendations/browse-home/<strategy>
+// — the BROWSE-home prefix even for a music-home strategy, live-verified
+// 2026-11 — firstLimit: 20, ... }) — the section expansion; its response's
 // data.recommender.edges[0].node.recommendedContent carries { edges,
 // pageInfo } where pageInfo.token is the OFFSET CURSOR
-// ('<strategy>.<count>', e.g. 'browse-home_mp3PrimeAlbumsStrategy.20') that
+// ('<strategy>.<count>', e.g. 'music-home_mp3PrimeAlbumsStrategy.20') that
 // advances the next request passed as the afterCursor variable (live-verified
 // page 2; the Relay-style endCursor is a null decoy here).
 
@@ -1031,32 +1038,36 @@ function recommendationItemFromGqlNode(node) {
   return null;
 }
 
-// Find the page's own BrowseHomePage among captured request bodies. Matched
-// on operationName — the page fires exactly one op under this name (unlike
-// SpecSearchSeeMorePage, where the SAME operation carries the track/album/
-// artist specs, which is why the spec matcher matches on variables.searchText
-// instead). The LAST match wins: a re-render fires it again, and the freshest
-// headers ride the last one. Returns the request or null.
-function amazonBrowseHomeRequest(bodies) {
+// Find the page's own MusicHomePage among captured request bodies (the MUSIC
+// tab of the home page, https://music.amazon.com/music, fires it — the
+// music-only home; the full home at / fires BrowseHomePage with stations and
+// audiobooks mixed in). Matched on operationName — the page fires exactly one
+// op under this name (unlike SpecSearchSeeMorePage, where the SAME operation
+// carries the track/album/artist specs, which is why the spec matcher matches
+// on variables.searchText instead). The LAST match wins: a re-render fires it
+// again, and the freshest headers ride the last one. Returns the request or
+// null.
+function amazonMusicHomeRequest(bodies) {
   let found = null;
   for (const raw of (Array.isArray(bodies) ? bodies : [])) {
     let parsed;
     try { parsed = JSON.parse(raw); } catch (e) { continue; }
     const batch = Array.isArray(parsed) ? parsed : [parsed];
     for (const req of batch) {
-      if (req && req.operationName === 'BrowseHomePage' && req.variables && typeof req.variables === 'object') found = req;
+      if (req && req.operationName === 'MusicHomePage' && req.variables && typeof req.variables === 'object') found = req;
     }
   }
   return found;
 }
 
-// The BrowseHomePage response -> the recommendations provider shape:
+// The MusicHomePage response -> the recommendations provider shape:
 // { sections: [{ id: strategy uri, title, description, items }], envelope }.
-// Sections with no mappable items disappear (an audiobooks-only section is
-// not music). An absent data.browse (hornet renamed the field) is envelope
-// false — structural, the caller must throw not-ready rather than cache a
-// miss. data.t1r is skipped on purpose (see the block comment).
-function recommendationsFromBrowseHome(data) {
+// EVERY section propagates — a station-only one has no mappable items (a
+// Station node never maps), so it disappears on its own; mixed sections keep
+// their mappable items. An absent data.browse (hornet renamed the field) is
+// envelope false — structural, the caller must throw not-ready rather than
+// cache a miss. data.t1r is skipped on purpose (see the block comment).
+function recommendationsFromMusicHome(data) {
   if (!data || typeof data !== 'object' || !('browse' in data)) {
     return { sections: [], envelope: false };
   }
@@ -1112,6 +1123,20 @@ function amazonSeeMorePageUrl(sectionId) {
   const strategy = recommendationStrategyId(sectionId);
   if (!strategy) return null;
   return 'https://music.amazon.com/browse/music-items/home/recommendation/' + encodeURIComponent(strategy);
+}
+
+// The variables.id a section's see-more REQUEST carries. The see-more page
+// always prefixes the uri with browse-home — even for a music-home strategy
+// (a music-home section's own id is uri:///recommendations/music-home/<strategy>,
+// but its see-more request asks for uri:///recommendations/browse-home/<strategy>,
+// live-verified 2026-11 on the page's own See More button) — so the echo guard
+// and the replay's id patch must use THIS id, never the section's own. Browse-home
+// ids (the playlists strategy) are already in this form and pass through
+// unchanged. Accepts the section's full uri or a bare strategy.
+function seeMoreSectionIdFor(sectionId) {
+  const strategy = recommendationStrategyId(sectionId);
+  if (!strategy) return null;
+  return 'uri:///recommendations/browse-home/' + strategy;
 }
 
 // A deep clone of a see-more request body with the section variables patched:
@@ -1836,8 +1861,9 @@ module.exports = {
   artistFromGqlSearchNode,
   searchArtistImageFromGql,
   recommendationItemFromGqlNode,
-  amazonBrowseHomeRequest,
-  recommendationsFromBrowseHome,
+  amazonMusicHomeRequest,
+  recommendationsFromMusicHome,
+  seeMoreSectionIdFor,
   amazonSeeMoreRequest,
   recommendationStrategyId,
   amazonSeeMorePageUrl,
