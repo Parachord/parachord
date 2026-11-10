@@ -382,6 +382,72 @@ class ResolverLoader {
   }
 
   /**
+   * Resolvers and meta-services that provide recommendations for the
+   * Recommendations page: they declare capabilities.recommendations and
+   * implement getRecommendations (docs/architecture/plugins.md,
+   * "Recommendations"). A meta-service is only materialized into the loader
+   * when it passes this capability's gate (app.js initResolvers), so the
+   * filter is complete for both kinds.
+   * @returns {object[]}
+   */
+  getRecommendationResolvers() {
+    return this.getAllResolvers().filter(r =>
+      r.capabilities?.recommendations &&
+      typeof r.getRecommendations === 'function'
+    );
+  }
+
+  /**
+   * Ask one provider for its recommendation sections.
+   * @param {string} resolverId
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<object[]>} sections ({ id: string|null, title: string|null,
+   *          description, items: [{ type, id, name, artist?, imageUrl?, url?,
+   *          reason?, duration? }] }); [] when the provider has nothing.
+   *          REJECTS when the plugin's call throws — the Recommendations page
+   *          catches per provider and keeps the rest.
+   */
+  async getRecommendations(resolverId, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.recommendations || typeof resolver.getRecommendations !== 'function') {
+      return [];
+    }
+    try {
+      const result = await resolver.getRecommendations(configOverride || resolver.config || {});
+      const sections = result && Array.isArray(result.sections) ? result.sections : [];
+      return sections.filter(s => s && Array.isArray(s.items));
+    } catch (error) {
+      console.error(`Recommendations error for ${resolverId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ask one provider for the next page of an expandable recommendation
+   * section (the provider's expandRecommendationSection). Providers that do
+   * not paginate do not implement it and answer null.
+   * @param {string} resolverId
+   * @param {string} sectionId - the provider's own section id (section.id)
+   * @param {string|null} afterCursor - the cursor the last page returned
+   * @param {object} configOverride - Optional config to override resolver's stored config
+   * @returns {Promise<{items: object[], nextCursor: string|null}|null>}
+   */
+  async expandRecommendationSection(resolverId, sectionId, afterCursor = null, configOverride = null) {
+    const resolver = this.resolvers.get(resolverId);
+    if (!resolver || !resolver.capabilities?.recommendations || typeof resolver.expandRecommendationSection !== 'function' || !sectionId) {
+      return null;
+    }
+    try {
+      const result = await resolver.expandRecommendationSection(sectionId, afterCursor, configOverride || resolver.config || {});
+      if (!result || !Array.isArray(result.items)) return null;
+      return { items: result.items, nextCursor: result.nextCursor || null };
+    } catch (error) {
+      console.error(`Recommendation section expansion error for ${resolverId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Resolvers that can find a photo of an artist by name: they declare
    * capabilities.artistImage and implement searchArtistImage
    * (docs/architecture/plugins.md, "searchArtistImage"). getArtistImage asks

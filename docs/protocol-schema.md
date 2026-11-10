@@ -461,19 +461,10 @@ parachord://friend/jane123/top-albums?period=overall
 Open the recommendations page.
 
 ```
-parachord://recommendations/{tab?}
-```
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `tab` | No | Tab: `artists`, `songs` |
-
-**Examples:**
-```
 parachord://recommendations
-parachord://recommendations/artists
-parachord://recommendations/songs
 ```
+
+The page used to carry a tab (`artists` / `songs`); it is sectioned now and has no tabs. A `tab` path segment (`parachord://recommendations/artists`, `parachord://recommendations/songs`) is still accepted for older links and ignored.
 
 ### Charts
 

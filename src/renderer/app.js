@@ -1206,6 +1206,9 @@ const { checkSpinoffAvailable, lastfmJsonFetcher } = require('./lib/spinoff-pool
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
+const {
+  blockedItemPick, normalizeRecommendationSections, buildRecommendationSections, shuffleupagusSection
+} = require('./lib/recommendation-model');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
 const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
@@ -3308,13 +3311,48 @@ const Parachord = () => {
   const searchQueryRef = useRef('');
   const abortControllerRef = useRef(null);
   const searchInputRef = useRef(null); // Ref for search input to support Ctrl+F focus
-  // Recommendations state
+  // Recommendations state — the sectioned display model built by
+  // src/renderer/lib/recommendation-model.js from every recommendations
+  // provider (plugins with the `recommendations` capability + Shuffleupagus).
+  // Sections: generic buckets (Artists/Songs/Albums/Playlists) first, then
+  // provider-titled sections.
   const [recommendations, setRecommendations] = useState({
-    artists: [],
-    tracks: [],
+    sections: [],
     loading: true,
     error: null
   });
+  // Per-provider normalized sections (recommendation-model shapes), kept in a
+  // ref so the LLM's streaming updates can re-merge the display model without
+  // refetching providers.
+  const providerSectionsRef = useRef({}); // { [resolverId]: { resolverName, sections } }
+  // Which resolvers implement expandRecommendationSection (titled sections
+  // get a "load more" only when their provider can paginate).
+  const expandableResolverIdsRef = useRef([]);
+  // Items a "load more" already fetched for a titled section + the next
+  // cursor, so a re-merge keeps the expanded rows.
+  const [expandedSections, setExpandedSections] = useState({}); // { [`${resolverId}|${sectionId}`]: { items, nextCursor } }
+  const expandedSectionsRef = useRef({});
+  // Recommendation item images (LLM album art / artist photos — provider
+  // items that carry their own imageUrl skip this). Keyed by item id;
+  // coalesced writes (one setRecommendations per image lookup was the
+  // 2026-10-17 scroll stutter — same class as trackSources).
+  const [recommendationImages, setRecommendationImages] = useState({}); // itemId → { url: string|null, loaded: boolean }
+  const recommendationImagesWriterRef = useRef(null);
+  if (!recommendationImagesWriterRef.current) {
+    recommendationImagesWriterRef.current = window.createCoalescedUpdater((batch) => {
+      setRecommendationImages(prev => {
+        const next = { ...prev };
+        for (const [key, ops] of batch) next[key] = window.applyCoalescedOps(prev[key], ops);
+        return next;
+      });
+    }, 100);
+  }
+  // Section collapse state: a section shows only its first few items until
+  // expanded (the user's collapse choice survives re-merges by section key).
+  const [recommendationsExpandedSections, setRecommendationsExpandedSections] = useState(() => new Set());
+  const recommendationsExpandedSectionsRef = useRef(new Set());
+  // "load more" in-flight markers per section key
+  const [recommendationsLoadingMore, setRecommendationsLoadingMore] = useState({});
   // Pagination state - how many items to show per column
   const [displayLimits, setDisplayLimits] = useState({
     artists: 5,
@@ -3465,12 +3503,27 @@ const Parachord = () => {
     criticsPickPreview: [],         // Preview of critical darlings
     weeklyJams: null,               // ListenBrainz weekly jams playlist
     weeklyExploration: null,        // ListenBrainz weekly exploration playlist
-    surpriseMeSeeds: [],            // Seeds for AI playlist generation
-    aiRecommendations: null         // AI-generated recommendations: { albums: [], artists: [], loading: false }
+    surpriseMeSeeds: []             // Seeds for AI playlist generation
   });
+  // Shuffleupagus (LLM) suggestions, rendered as a titled section on the
+  // Recommendations page. Used to live on Home as
+  // homeData.aiRecommendations; same shape: { albums: [], artists: [],
+  // loading: false } or null.
+  const [aiRecommendations, setAiRecommendations] = useState(null);
+  const aiRecommendationsRef = useRef(null); // Ref for refreshMergedRecommendations
+  // Sync the ref, then re-merge the display model — this is the ONLY path the
+  // LLM's streamed updates reach the page through (the merged section is
+  // rebuilt from the provider results + this state; nothing else re-merges on
+  // an LLM update). refreshMergedRecommendations is declared further down the
+  // component body — the closure resolves it at effect-run time, which is
+  // always after both declarations exist.
+  useEffect(() => {
+    aiRecommendationsRef.current = aiRecommendations;
+    refreshMergedRecommendations();
+  }, [aiRecommendations]);
   const previousAiSuggestions = useRef({ albums: [], artists: [] }); // Track previous suggestions for variety
   const aiSuggestionsRefreshing = useRef(false); // Guard against duplicate AI suggestion fetches
-  const [homeVisitCount, setHomeVisitCount] = useState(0); // Increments each time user navigates to Home
+  const [recommendationsVisitCount, setRecommendationsVisitCount] = useState(0); // Increments each visit to the Recommendations view (suggestion refresh trigger)
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
   const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
@@ -3495,17 +3548,6 @@ const Parachord = () => {
   }
   const queueTrackSources = (key, value, opts) => trackSourcesWriterRef.current.queue(key, value, opts);
   const flushTrackSources = () => trackSourcesWriterRef.current.flush();
-  // Same for the Recommendations page's artist images: one setRecommendations
-  // per image lookup was one full render per artist.
-  const recArtistImageWriterRef = useRef(null);
-  if (!recArtistImageWriterRef.current) {
-    recArtistImageWriterRef.current = window.createCoalescedUpdater((batch) => {
-      setRecommendations(prev => ({
-        ...prev,
-        artists: prev.artists.map(a => batch.has(a.id) ? { ...a, ...window.applyCoalescedOps(a, batch.get(a.id)) } : a)
-      }));
-    }, 100);
-  }
   const [activeResolvers, setActiveResolvers] = useState(['bandcamp', 'localfiles']);
   const [resolverOrder, setResolverOrder] = useState(['bandcamp', 'localfiles']);
   const resolverSettingsLoaded = useRef(false);  // Track if we've loaded settings from storage
@@ -3628,6 +3670,8 @@ const Parachord = () => {
 
   // Meta Services state (Last.fm, ListenBrainz, etc.)
   const [metaServices, setMetaServices] = useState([]); // Loaded meta service plug-ins
+  const metaServicesRef = useRef([]); // Ref for async paths (the recommendations provider list)
+  useEffect(() => { metaServicesRef.current = metaServices; }, [metaServices]);
   const [metaServiceConfigs, setMetaServiceConfigs] = useState({}); // { lastfm: { username, apiKey }, listenbrainz: { username, userToken } }
   const [lastfmAdvancedOpen, setLastfmAdvancedOpen] = useState(false); // Advanced section accordion state
   const [lastfmUsernameInput, setLastfmUsernameInput] = useState(''); // Input field value
@@ -4695,8 +4739,6 @@ const Parachord = () => {
 
   // Recommendations page state
   const [recommendationsHeaderCollapsed, setRecommendationsHeaderCollapsed] = useState(false);
-  const [recommendationsTab, setRecommendationsTab] = useState('artists'); // 'artists' | 'songs'
-  const [recommendationsSourceFilter, setRecommendationsSourceFilter] = useState('all'); // 'all' | 'listenbrainz' | 'lastfm'
 
   // History page state
   const [historyTab, setHistoryTab] = useState('topTracks'); // 'topTracks' | 'topAlbums' | 'topArtists' | 'recent'
@@ -5100,11 +5142,10 @@ const Parachord = () => {
     }
   }, [activeView]);
 
-  // Reset recommendations header collapse and tab when leaving recommendations view
+  // Reset recommendations header collapse when leaving recommendations view
   useEffect(() => {
     if (activeView !== 'recommendations') {
       setRecommendationsHeaderCollapsed(false);
-      setRecommendationsTab('artists');
     }
   }, [activeView]);
 
@@ -7618,6 +7659,10 @@ const Parachord = () => {
     artistImage: 90 * 24 * 60 * 60 * 1000, // 90 days
     artistExtendedInfo: 30 * 24 * 60 * 60 * 1000, // 30 days (band info rarely changes)
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
+    // Per-recommendations-provider bound: providers are not on an interactive
+    // path (the page shows the other sections meanwhile), so the bound is
+    // generous — Amazon's capture-and-replay home flow alone can take seconds.
+    recommendationProvider: 20 * 1000,
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
     charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
     newReleases: 6 * 60 * 60 * 1000,        // 6 hours (new releases don't change that often)
@@ -8042,7 +8087,7 @@ const Parachord = () => {
   };
 
   // Cache for recommendations data (tracks from API)
-  const recommendationsCache = useRef({ tracks: null, timestamp: 0 });
+  const recommendationsCache = useRef({ providers: {}, timestamp: 0 }); // { [resolverId]: { sections, fetchedAt } }, session-only
 
   // Cache for charts data (keyed by source-country, e.g., 'apple-us', 'lastfm-us')
   const chartsCache = useRef({});
@@ -8254,13 +8299,19 @@ const Parachord = () => {
         const metaServicesWithConcerts = metaServiceAxes.filter(axe =>
           axe.capabilities?.concerts && axe.implementation?.searchArtistEvents
         );
+        // Meta services with the recommendations capability (the Recommendations
+        // page calls getRecommendations on them; lastfm/listenbrainz since
+        // their fetches moved out of app.js)
+        const metaServicesWithRecommendations = metaServiceAxes.filter(axe =>
+          axe.capabilities?.recommendations && axe.implementation?.getRecommendations
+        );
         // Meta services with playback-telemetry capability — fired on track start/scrobble
         // via window.scrobbleManager. The plugin's init() self-registers with the manager.
         const metaServicesWithPlaybackTelemetry = metaServiceAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init
         );
 
-        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat, ${metaServicesWithConcerts.length} with concerts, ${metaServicesWithPlaybackTelemetry.length} with playback telemetry)`);
+        console.log(`📦 Found ${contentResolverAxes.length} content resolvers, ${metaServiceAxes.length} meta services (${metaServicesWithGenerate.length} with AI generate, ${metaServicesWithChat.length} with AI chat, ${metaServicesWithConcerts.length} with concerts, ${metaServicesWithRecommendations.length} with recommendations, ${metaServicesWithPlaybackTelemetry.length} with playback telemetry)`);
 
         // Load content resolvers through the resolver loader
         const resolvers = await resolverLoader.current.loadResolvers(contentResolverAxes);
@@ -8289,6 +8340,10 @@ const Parachord = () => {
           metaServicesWithConcerts.length > 0
             ? resolverLoader.current.loadResolvers(metaServicesWithConcerts).then(r =>
                 console.log(`🎫 Loaded ${r.length} concert service(s):`, r.map(s => s.name).join(', ')))
+            : Promise.resolve(),
+          metaServicesWithRecommendations.length > 0
+            ? resolverLoader.current.loadResolvers(metaServicesWithRecommendations).then(r =>
+                console.log(`⭐ Loaded ${r.length} recommendation service(s):`, r.map(s => s.name).join(', ')))
             : Promise.resolve(),
           metaServicesWithPlaybackTelemetry.length > 0
             ? resolverLoader.current.loadResolvers(metaServicesWithPlaybackTelemetry).then(async r => {
@@ -8368,11 +8423,13 @@ const Parachord = () => {
           return !!(metaConfig?.enabled || metaConfig?.apiKey);
         });
 
-        // Re-load meta services with generate/chat/playback-telemetry capabilities into resolver loader
+        // Re-load meta services with generate/chat/recommendations/playback-telemetry capabilities into resolver loader
         const withGenerate = filteredAxes.filter(axe =>
           axe.capabilities?.generate && axe.implementation?.generate);
         const withChat = filteredAxes.filter(axe =>
           axe.capabilities?.chat && axe.implementation?.chat);
+        const withRecommendations = filteredAxes.filter(axe =>
+          axe.capabilities?.recommendations && axe.implementation?.getRecommendations);
         const withPlaybackTelemetry = filteredAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
@@ -8381,6 +8438,8 @@ const Parachord = () => {
             ? resolverLoaderRef.current.loadResolvers(withGenerate) : Promise.resolve(),
           withChat.length > 0
             ? resolverLoaderRef.current.loadResolvers(withChat) : Promise.resolve(),
+          withRecommendations.length > 0
+            ? resolverLoaderRef.current.loadResolvers(withRecommendations) : Promise.resolve(),
           withPlaybackTelemetry.length > 0
             ? resolverLoaderRef.current.loadResolvers(withPlaybackTelemetry).then(async () => {
                 for (const axe of withPlaybackTelemetry) {
@@ -10826,95 +10885,95 @@ const Parachord = () => {
     navigator.mediaSession.playbackState = currentTrack ? (isPlaying ? 'playing' : 'paused') : 'none';
   }, [isPlaying, currentTrack]);
 
+  // Turn a provider playlist *page* URL into a playable tracklist (component
+  // scope: the protocol handler and the Recommendations page's playlist cards
+  // both play through it). Mirrors the mobile DeepLinkHandler contract for
+  // parachord://play/playlist?url=<provider-url> (parachord#930): these URLs
+  // are web pages, not tracklist documents, so they must go through the
+  // resolver lookupPlaylist path (the same one handleImportPlaylistFromUrl
+  // uses).
+const resolveProviderPlaylistUrl = async (rawUrl) => {
+    const classified = window.classifyPlaylistUrl(rawUrl);
+
+    // Achordion → its public XSPF endpoint, then the standard tracklist parser.
+    if (classified.kind === 'achordion') {
+      const resp = await fetch(classified.xspfUrl, {
+        redirect: 'error',
+        headers: buildProtocolFetchHeaders(classified.xspfUrl),
+      });
+      if (!resp.ok) throw new Error(`Achordion playlist fetch failed: ${resp.status}`);
+      const body = await resp.text();
+      if (body.length > 100 * 1024) throw new Error('Playlist response too large (max 100KB)');
+      return window.parseProtocolTracklist(body, resp.headers.get('content-type') || 'application/xspf+xml');
+    }
+
+    // SoundCloud short link → resolve the redirect to the canonical /sets/ URL
+    // via the main process (a renderer fetch to SoundCloud is CORS-blocked),
+    // then sniff the resolver below. Re-run the SSRF guard on the resolved URL
+    // (proxy-fetch doesn't re-validate each redirect hop) and require it to
+    // land back on SoundCloud.
+    let url = rawUrl;
+    if (classified.kind === 'soundcloud-short') {
+      let canonical = null;
+      try {
+        const res = await window.electron.proxyFetch(rawUrl, { method: 'HEAD' });
+        canonical = res && res.finalUrl;
+      } catch { /* leave canonical null → throw below */ }
+      let canonHost = '';
+      try { canonHost = new URL(canonical).hostname.toLowerCase(); } catch { canonHost = ''; }
+      if (!canonical || !window.isPublicHttpUrl(canonical) ||
+          !(canonHost === 'soundcloud.com' || canonHost.endsWith('.soundcloud.com'))) {
+        throw new Error('Could not resolve SoundCloud link');
+      }
+      url = canonical;
+    }
+
+    // Resolver-sniffable provider playlist (Spotify / Apple Music / SoundCloud
+    // canonical). Same lookupPlaylist path handleImportPlaylistFromUrl uses.
+    const loader = resolverLoaderRef.current;
+    const resolverId = loader && loader.findResolverForUrl(url);
+    if (resolverId && loader.getUrlType(url) === 'playlist') {
+      const config = await getResolverConfig(resolverId);
+      const result = await loader.lookupPlaylist(url, config);
+      const playlist = result && result.playlist;
+      const tracks = ((playlist && playlist.tracks) || [])
+        .map(t => {
+          const out = { artist: t.artist, title: t.title };
+          if (t.album) out.album = t.album;
+          if (t.spotifyId) out.spotifyId = t.spotifyId;
+          if (t.appleMusicId) out.appleMusicId = t.appleMusicId;
+          if (t.amazonAsin) out.amazonAsin = t.amazonAsin;
+          if (t.isrc) out.isrc = t.isrc;
+          return out;
+        })
+        .filter(t => t.artist && t.title);
+      if (tracks.length === 0) {
+        throw new Error(`Could not load playlist from ${resolverId}. Make sure ${resolverId} is connected and the playlist is accessible.`);
+      }
+      const name = playlist.name || playlist.title || 'Playlist';
+      const owner = playlist.owner || playlist.creator || playlist.artist;
+      const albumArt = playlist.albumArt || playlist.image || playlist.artwork;
+      return {
+        displayName: owner ? `${name} — ${owner}` : name,
+        tracks,
+        ...(albumArt ? { albumArt } : {}),
+      };
+    }
+
+    // Short link resolved but the canonical URL isn't a recognized playlist
+    // page — surface it rather than letting the caller HTML-parse the page.
+    if (classified.kind === 'soundcloud-short') {
+      throw new Error('SoundCloud link is not a playlist');
+    }
+
+    return null; // not a provider playlist page → caller parses as a tracklist document
+  };
+
   // Protocol URL handler (parachord:// deep links)
   useEffect(() => {
     if (!window.electron?.onProtocolUrl) return;
 
-    // Turn a provider playlist *page* URL (Spotify / Apple Music / SoundCloud /
-    // Achordion) into a normalized { displayName, tracks, albumArt? }, mirroring
-    // the mobile DeepLinkHandler contract for parachord://play/playlist?url=
-    // <provider-url> (parachord#930). These URLs are web pages, not tracklist
-    // documents, so feeding them to parseProtocolTracklist finds zero tracks —
-    // they must go through the resolver lookupPlaylist path (the same one
-    // handleImportPlaylistFromUrl uses). Returns null when the URL isn't a
-    // recognized provider playlist page, so the caller falls back to parsing it
-    // as a hosted tracklist document (XSPF/JSPF/JSON).
-    const resolveProviderPlaylistUrl = async (rawUrl) => {
-      const classified = window.classifyPlaylistUrl(rawUrl);
 
-      // Achordion → its public XSPF endpoint, then the standard tracklist parser.
-      if (classified.kind === 'achordion') {
-        const resp = await fetch(classified.xspfUrl, {
-          redirect: 'error',
-          headers: buildProtocolFetchHeaders(classified.xspfUrl),
-        });
-        if (!resp.ok) throw new Error(`Achordion playlist fetch failed: ${resp.status}`);
-        const body = await resp.text();
-        if (body.length > 100 * 1024) throw new Error('Playlist response too large (max 100KB)');
-        return window.parseProtocolTracklist(body, resp.headers.get('content-type') || 'application/xspf+xml');
-      }
-
-      // SoundCloud short link → resolve the redirect to the canonical /sets/ URL
-      // via the main process (a renderer fetch to SoundCloud is CORS-blocked),
-      // then sniff the resolver below. Re-run the SSRF guard on the resolved URL
-      // (proxy-fetch doesn't re-validate each redirect hop) and require it to
-      // land back on SoundCloud.
-      let url = rawUrl;
-      if (classified.kind === 'soundcloud-short') {
-        let canonical = null;
-        try {
-          const res = await window.electron.proxyFetch(rawUrl, { method: 'HEAD' });
-          canonical = res && res.finalUrl;
-        } catch { /* leave canonical null → throw below */ }
-        let canonHost = '';
-        try { canonHost = new URL(canonical).hostname.toLowerCase(); } catch { canonHost = ''; }
-        if (!canonical || !window.isPublicHttpUrl(canonical) ||
-            !(canonHost === 'soundcloud.com' || canonHost.endsWith('.soundcloud.com'))) {
-          throw new Error('Could not resolve SoundCloud link');
-        }
-        url = canonical;
-      }
-
-      // Resolver-sniffable provider playlist (Spotify / Apple Music / SoundCloud
-      // canonical). Same lookupPlaylist path handleImportPlaylistFromUrl uses.
-      const loader = resolverLoaderRef.current;
-      const resolverId = loader && loader.findResolverForUrl(url);
-      if (resolverId && loader.getUrlType(url) === 'playlist') {
-        const config = await getResolverConfig(resolverId);
-        const result = await loader.lookupPlaylist(url, config);
-        const playlist = result && result.playlist;
-        const tracks = ((playlist && playlist.tracks) || [])
-          .map(t => {
-            const out = { artist: t.artist, title: t.title };
-            if (t.album) out.album = t.album;
-            if (t.spotifyId) out.spotifyId = t.spotifyId;
-            if (t.appleMusicId) out.appleMusicId = t.appleMusicId;
-            if (t.amazonAsin) out.amazonAsin = t.amazonAsin;
-            if (t.isrc) out.isrc = t.isrc;
-            return out;
-          })
-          .filter(t => t.artist && t.title);
-        if (tracks.length === 0) {
-          throw new Error(`Could not load playlist from ${resolverId}. Make sure ${resolverId} is connected and the playlist is accessible.`);
-        }
-        const name = playlist.name || playlist.title || 'Playlist';
-        const owner = playlist.owner || playlist.creator || playlist.artist;
-        const albumArt = playlist.albumArt || playlist.image || playlist.artwork;
-        return {
-          displayName: owner ? `${name} — ${owner}` : name,
-          tracks,
-          ...(albumArt ? { albumArt } : {}),
-        };
-      }
-
-      // Short link resolved but the canonical URL isn't a recognized playlist
-      // page — surface it rather than letting the caller HTML-parse the page.
-      if (classified.kind === 'soundcloud-short') {
-        throw new Error('SoundCloud link is not a playlist');
-      }
-
-      return null; // not a provider playlist page → caller parses as a tracklist document
-    };
 
     // Resolve any of the protocol play-input shapes into a normalized tracklist.
     // Used by parachord://play-album, play-playlist, play-radio.
@@ -11391,7 +11450,6 @@ const Parachord = () => {
           // === Navigation Commands ===
           case 'home':
             setActiveView('home');
-            setHomeVisitCount(c => c + 1);
             break;
 
           case 'artist': {
@@ -11559,11 +11617,10 @@ const Parachord = () => {
           }
 
           case 'recommendations': {
-            const [tab] = segments;
+            // The old flat page had /artists and /songs tabs; the sectioned
+            // page has no tabs, and a tab segment in the URL is ignored.
             setActiveView('recommendations');
-            if (tab && ['artists', 'songs'].includes(tab)) {
-              setRecommendationsTab(tab);
-            }
+            setRecommendationsVisitCount(c => c + 1);
             break;
           }
 
@@ -14606,7 +14663,7 @@ ${trackListXml}
 
   // Persist AI suggestions when they finish loading (so they appear instantly on next session)
   useEffect(() => {
-    const aiRecs = homeData.aiRecommendations;
+    const aiRecs = aiRecommendations;
     if (cacheLoaded && window.electron?.store && aiRecs && !aiRecs.loading && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0)) {
       window.electron.store.set('cache_ai_suggestions', {
         albums: aiRecs.albums,
@@ -14614,7 +14671,7 @@ ${trackListXml}
         timestamp: Date.now()
       });
     }
-  }, [homeData.aiRecommendations, cacheLoaded]);
+  }, [aiRecommendations, cacheLoaded]);
 
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -18176,70 +18233,17 @@ ${trackListXml}
       const aiSuggestionsData = d['cache_ai_suggestions'];
       const savedLastView = d['last_active_view'];
 
-      // Load AI suggestions cache (show previous session's suggestions instantly)
+      // Load AI suggestions cache (show previous session's suggestions instantly).
+      // Item images (art for albums missing it, artist photos) are filled in
+      // by the recommendationImages effect once the recommendations view
+      // renders the section — nothing to backfill here.
       if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
-        setHomeData(prev => ({
-          ...prev,
-          aiRecommendations: {
-            albums: aiSuggestionsData.albums || [],
-            artists: aiSuggestionsData.artists || [],
-            loading: false
-          }
-        }));
+        setAiRecommendations({
+          albums: aiSuggestionsData.albums || [],
+          artists: aiSuggestionsData.artists || [],
+          loading: false
+        });
         console.log(`📦 Loaded AI suggestions from cache (${aiSuggestionsData.albums?.length || 0} albums, ${aiSuggestionsData.artists?.length || 0} artists)`);
-
-        // Resolve album art for cached suggestions that are missing it.
-        // albumArtCache.current is already populated above, so cache hits are instant.
-        // Network lookups (cache misses) happen in the background without blocking.
-        const albumsMissingArt = (aiSuggestionsData.albums || []).filter(a => !a.art && a.artist && a.title);
-        if (albumsMissingArt.length > 0) {
-          console.log(`🎨 Resolving art for ${albumsMissingArt.length} cached AI suggestion(s)...`);
-          setTimeout(() => {
-            for (const album of albumsMissingArt) {
-              getAlbumArt(album.artist, album.title).then(artUrl => {
-                if (artUrl) {
-                  setHomeData(prev => {
-                    if (!prev.aiRecommendations) return prev;
-                    return {
-                      ...prev,
-                      aiRecommendations: {
-                        ...prev.aiRecommendations,
-                        albums: prev.aiRecommendations.albums.map(a =>
-                          a.title === album.title && a.artist === album.artist ? { ...a, art: artUrl } : a
-                        )
-                      }
-                    };
-                  });
-                }
-              }).catch(() => {});
-            }
-          }, 100);
-        }
-
-        // Resolve artist images for cached suggestions missing them
-        const artistsMissingImages = (aiSuggestionsData.artists || []).filter(a => !a.image && a.name);
-        if (artistsMissingImages.length > 0) {
-          setTimeout(() => {
-            for (const artist of artistsMissingImages) {
-              getArtistImage(artist.name).then(imgResult => {
-                if (imgResult?.url) {
-                  setHomeData(prev => {
-                    if (!prev.aiRecommendations) return prev;
-                    return {
-                      ...prev,
-                      aiRecommendations: {
-                        ...prev.aiRecommendations,
-                        artists: prev.aiRecommendations.artists.map(a =>
-                          a.name === artist.name ? { ...a, image: imgResult.url } : a
-                        )
-                      }
-                    };
-                  });
-                }
-              }).catch(() => {});
-            }
-          }, 100);
-        }
       }
 
       // *** EARLY VIEW RESTORATION ***
@@ -18303,13 +18307,12 @@ ${trackListXml}
             }
             console.log(`📦 Restoring last view: library [${savedLastView.collectionTab || 'tracks'}]`);
           } else if (savedLastView.view === 'recommendations') {
-            // Restore recommendations view with tab
+            // Restore recommendations view (the old flat page persisted a
+            // recommendationsTab; the sectioned page has no tabs, and the old
+            // saved value is ignored)
             setActiveView('recommendations');
             setViewHistory(['library', 'recommendations']);
-            if (savedLastView.recommendationsTab) {
-              setRecommendationsTab(savedLastView.recommendationsTab);
-            }
-            console.log(`📦 Restoring last view: recommendations [${savedLastView.recommendationsTab || 'artists'}]`);
+            console.log('📦 Restoring last view: recommendations');
           } else if (savedLastView.view === 'playlist-view' && savedLastView.playlistId) {
             // Restore playlist detail view - need to find the playlist by ID
             setActiveView('playlist-view');
@@ -18892,9 +18895,6 @@ ${trackListXml}
     if (activeView === 'library') {
       viewData.collectionTab = collectionTab;
     }
-    if (activeView === 'recommendations') {
-      viewData.recommendationsTab = recommendationsTab;
-    }
     if (activeView === 'playlist-view' && selectedPlaylist) {
       viewData.playlistId = selectedPlaylist.id;
       viewData.playlistTitle = selectedPlaylist.title;
@@ -18914,13 +18914,13 @@ ${trackListXml}
     }
 
     window.electron.store.set('last_active_view', viewData);
-    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.releaseTitle ? ` -> ${viewData.releaseTitle}` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.recommendationsTab ? ` [${viewData.recommendationsTab}]` : ''}${viewData.playlistTitle ? ` (${viewData.playlistTitle})` : ''}${viewData.friendId ? ` (friend: ${viewData.friendId})` : ''}`);
-  }, [activeView, currentArtist?.name, artistPageTab, currentRelease?.id, historyTab, settingsTab, collectionTab, recommendationsTab, selectedPlaylist?.id, currentFriend?.id, friendHistoryTab]);
+    console.log(`📦 Saved last view: ${activeView}${viewData.artistName ? ` (${viewData.artistName})` : ''}${viewData.releaseTitle ? ` -> ${viewData.releaseTitle}` : ''}${viewData.historyTab ? ` [${viewData.historyTab}]` : ''}${viewData.settingsTab ? ` [${viewData.settingsTab}]` : ''}${viewData.collectionTab ? ` [${viewData.collectionTab}]` : ''}${viewData.playlistTitle ? ` (${viewData.playlistTitle})` : ''}${viewData.friendId ? ` (friend: ${viewData.friendId})` : ''}`);
+  }, [activeView, currentArtist?.name, artistPageTab, currentRelease?.id, historyTab, settingsTab, collectionTab, selectedPlaylist?.id, currentFriend?.id, friendHistoryTab]);
 
   // Mark discovery features as seen when user views them (clears unread badge)
   useEffect(() => {
-    if (activeView === 'recommendations' && recommendations.artists.length > 0) {
-      const hash = generateDiscoveryHash(recommendations.artists, a => a.name);
+    if (activeView === 'recommendations' && recommendations.sections.length > 0) {
+      const hash = generateDiscoveryHash(recommendations.sections.flatMap(s => s.items), i => i.name);
       markDiscoverySeen('recommendations', hash);
     } else if (activeView === 'critics-picks' && criticsPicks.length > 0) {
       const hash = generateDiscoveryHash(criticsPicks);
@@ -18935,7 +18935,7 @@ ${trackListXml}
       const hash = generateDiscoveryHash(concerts);
       markDiscoverySeen('concerts', hash);
     }
-  }, [activeView, recommendations.artists, criticsPicks, charts, newReleases, concerts, generateDiscoveryHash, markDiscoverySeen]);
+  }, [activeView, recommendations.sections, criticsPicks, charts, newReleases, concerts, generateDiscoveryHash, markDiscoverySeen]);
 
   // Load pending history data once cache is fully loaded
   useEffect(() => {
@@ -22678,32 +22678,54 @@ ${trackListXml}
     return () => friendsObserverRef.current?.disconnect();
   }, [pinnedFriendIds, updateSchedulerVisibility]);
 
+  // Every song track on the page — the generic Songs bucket plus any titled
+  // section's songs (Amazon's mixed sections carry tracks) — for the resolution
+  // scheduler effects below.
+  const recommendationSongs = useMemo(
+    () => recommendations.sections.flatMap(s => s.items.filter(i => i.type === 'song').map(i => i.track)),
+    [recommendations.sections]
+  );
+  const recommendationSongsRef = useRef([]);
+  useEffect(() => { recommendationSongsRef.current = recommendationSongs; }, [recommendationSongs]);
+  // The legacy ref the observer callbacks read (they predate the sections
+  // model): kept in sync with the same flat song list.
+  useEffect(() => { recommendationsTracksRef.current = recommendationSongs; }, [recommendationSongs]);
+
+  // Home's For You card previews the first recommended artist (generic bucket
+  // first, then any titled section's artist items) with its photo from
+  // recommendationImages — the shape home-page.js always read
+  // ({ artists: [{ name, image }] }).
+  const recommendationsPreview = useMemo(() => {
+    const artistItems = recommendations.sections.flatMap(s => s.items.filter(i => i.type === 'artist'));
+    return {
+      artists: artistItems.slice(0, 1).map(a => ({
+        name: a.name,
+        image: a.imageUrl || (recommendationImages[a.id] && recommendationImages[a.id].url) || null
+      }))
+    };
+  }, [recommendations.sections, recommendationImages]);
+
   // Register page context for recommendations tracks resolution
   useEffect(() => {
-    if (activeView === 'recommendations' && recommendationsTab === 'songs' && recommendations.tracks.length > 0) {
+    if (activeView === 'recommendations' && recommendationSongs.length > 0) {
       const cleanup = registerPageContext('recommendations-tracks');
       return () => {
         abortSchedulerContext('recommendations-tracks', { afterCurrentBatch: true });
         cleanup();
       };
     }
-  }, [activeView, recommendationsTab, recommendations.tracks.length, registerPageContext, abortSchedulerContext]);
-
-  // Keep ref in sync with recommendations tracks for observer callback
-  useEffect(() => {
-    recommendationsTracksRef.current = recommendations.tracks;
-  }, [recommendations.tracks]);
+  }, [activeView, recommendationSongs.length, registerPageContext, abortSchedulerContext]);
 
   // IntersectionObserver for recommendations tracks visibility
   useEffect(() => {
-    if (activeView !== 'recommendations' || recommendationsTab !== 'songs') {
+    if (activeView !== 'recommendations') {
       recommendationsObserverRef.current?.disconnect();
       visibleRecommendationsTrackIds.current.clear();
       setRecommendationsScrollContainerReady(false);
       return;
     }
 
-    const tracks = recommendations.tracks;
+    const tracks = recommendationSongsRef.current;
     if (tracks.length === 0) return;
 
     // Clear stale visible track IDs when filter changes (or on initial setup)
@@ -22792,7 +22814,7 @@ ${trackListXml}
     }, 50);
 
     return () => recommendationsObserverRef.current?.disconnect();
-  }, [activeView, recommendationsTab, recommendations.tracks, updateSchedulerVisibility, recommendationsScrollContainerReady, recommendationsSourceFilter]);
+  }, [activeView, recommendationSongs, updateSchedulerVisibility, recommendationsScrollContainerReady]);
 
   // Register page context for songs charts tracks resolution (Apple Music or Last.fm)
   useEffect(() => {
@@ -23985,8 +24007,8 @@ ${trackListXml}
         await clearMetaServiceConfig(resolverId);
         // Clear cached data that depends on this service
         if (resolverId === 'lastfm' || resolverId === 'listenbrainz') {
-          setRecommendations({ artists: [], tracks: [], loading: false, error: 'not_configured' });
-          recommendationsCache.current = { tracks: null, timestamp: 0 };
+          setRecommendations({ sections: [], loading: false, error: 'not_configured' });
+          recommendationsCache.current = { providers: {}, timestamp: 0 };
         }
         if (resolverId === 'listenbrainz') {
           setHomeData(prev => ({ ...prev, weeklyJams: null, weeklyExploration: null }));
@@ -26588,221 +26610,284 @@ Return ONLY the JSON array, no other text.`;
     }
   };
 
-  // Load Recommendations from Last.fm and/or ListenBrainz (merged and de-duped)
+  // ── Recommendations ────────────────────────────────────────────────────
+  // The Recommendations page is provider-driven: every plugin with the
+  // `recommendations` capability (content resolvers and meta-services alike)
+  // answers getRecommendations with sections of typed items
+  // (docs/architecture/plugins.md, "Recommendations"), and the Shuffleupagus
+  // (LLM) suggestions render as one titled section built from
+  // aiRecommendations. loadRecommendations fetches each provider (a
+  // per-provider session cache in recommendationsCache), and
+  // refreshMergedRecommendations rebuilds the display model through
+  // buildRecommendationSections — the LLM streams into its own state and
+  // re-merges without refetching anyone, and the blocklist re-applies on
+  // every merge so a block made since a cache was filled takes effect at once
+  // (parachord#1006, same rule the flat page had).
+
+  // The providers, in display order: ACTIVE content resolvers in the user's
+  // priority order, then meta-services (never in activeIds — orderCatalogResolvers
+  // puts them after, in manifest order; a meta-service's own config check
+  // decides whether it has anything, and an unconfigured one answers [] with
+  // no request).
+  const recommendationProviders = () => {
+    const loader = resolverLoaderRef.current;
+    if (!loader?.getRecommendationResolvers) return [];
+    const activeIds = activeResolversRef.current || [];
+    const order = resolverOrderRef.current || [];
+    const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
+    return orderCatalogResolvers(
+      loader.getRecommendationResolvers().filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
+      { activeIds, order }
+    );
+  };
+
+  // Rebuild the display model from the current provider results + the LLM
+  // suggestions. Called after every provider fetch and every LLM streaming
+  // update — cheap and idempotent. The blocklist applies to EVERY item the
+  // page can show, at merge time: the providers' base sections, the items a
+  // "load more" fetched (expandedSections — they bypass the base-section
+  // filter), and the Shuffleupagus section — so a block made since any of
+  // those were filled takes effect immediately (parachord#1006's rule, carried
+  // over from the flat page's cached path).
+  const refreshMergedRecommendations = () => {
+    const blocklist = window.recommendationBlocklist;
+    const notBlocked = (items) => blocklist
+      ? blocklist.filterBlocked(recommendationBlocklistRef.current, items, blockedItemPick)
+      : items;
+    const providers = Object.values(providerSectionsRef.current).map(p => ({
+      ...p,
+      sections: blocklist
+        ? p.sections
+            .map(s => ({ ...s, items: notBlocked(s.items) }))
+            .filter(s => s.items.length > 0)
+        : p.sections
+    }));
+    const expandedSections = blocklist
+      ? Object.fromEntries(Object.entries(expandedSectionsRef.current).map(([key, expansion]) => [
+          key,
+          { ...expansion, items: notBlocked(expansion.items || []) }
+        ]))
+      : expandedSectionsRef.current;
+    // The Shuffleupagus items (the raw LLM albums/artists carry no `type` —
+    // blockedItemPick speaks the typed item shape, so the filter runs on the
+    // section items, after shuffleupagusSection maps them).
+    const rawShuffle = shuffleupagusSection(aiRecommendationsRef.current || {});
+    const shuffle = blocklist && rawShuffle
+      ? {
+          ...rawShuffle,
+          sections: rawShuffle.sections
+            .map(s => ({ ...s, items: notBlocked(s.items) }))
+            .filter(s => s.items.length > 0)
+        }
+      : rawShuffle;
+    const sections = buildRecommendationSections({
+      providers,
+      shuffleupagus: shuffle,
+      expandedSections,
+      expandableResolverIds: expandableResolverIdsRef.current
+    });
+    setRecommendations(prev => ({ ...prev, sections }));
+
+    // Unread badge (discovery): new content turns the dot on until the page
+    // is seen — hashed over item names like the flat page hashed artist names.
+    if (sections.length > 0) {
+      const hash = generateDiscoveryHash(sections.flatMap(s => s.items), i => i.name);
+      checkDiscoveryUnread('recommendations', hash);
+    }
+  };
+
   const loadRecommendations = async (forceRefresh = false) => {
-    // Check if Last.fm or ListenBrainz is configured
-    const lastfmConfig = metaServiceConfigs.lastfm;
-    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
+    const providers = recommendationProviders();
+    const chatServices = getChatServices();
+    const llmPossible = chatServices.some(isServiceEnabled) && aiIncludeHistoryRef.current;
 
-    if (!lastfmConfig?.username && !listenbrainzConfig?.username) {
-      console.log('⭐ No recommendation service configured, skipping recommendations load');
-      setRecommendations({
-        artists: [],
-        tracks: [],
-        loading: false,
-        error: 'not_configured'
-      });
+    // A source is "configured" when it can produce recommendations: a
+    // Last.fm/ListenBrainz username, an active recommendations-capable content
+    // resolver, or an enabled chat provider with sharing on (Shuffleupagus).
+    // A signed-out resolver (Amazon before sign-in) is configured-but-not-ready:
+    // its section simply does not appear.
+    const metaConfigs = metaServiceConfigsRef.current || {};
+    const hasLastfm = !!metaConfigs.lastfm?.username;
+    const hasListenbrainz = !!metaConfigs.listenbrainz?.username;
+    const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
+    const hasActiveResolverProvider = providers.some(p => !metaIds.has(p.id));
+    if (!hasLastfm && !hasListenbrainz && !hasActiveResolverProvider && !llmPossible) {
+      console.log('⭐ No recommendation source configured, skipping recommendations load');
+      setRecommendations({ sections: [], loading: false, error: 'not_configured' });
       return;
     }
 
-    // Check if we have valid cached data
+    // Per-provider session cache: a provider that answered recently is not
+    // asked again within the TTL (CACHE_TTL.recommendations, 1h). An EMPTY
+    // answer is never cached — the flat page's rule ("Not cached, so the next
+    // visit asks again"): a genuine miss re-asks next visit, and a transient
+    // network failure never blanks a provider for the whole hour.
+    const cache = recommendationsCache.current;
     const now = Date.now();
-    const cacheValid = !forceRefresh &&
-                       recommendationsCache.current.tracks &&
-                       (now - recommendationsCache.current.timestamp) < CACHE_TTL.recommendations;
-
-    if (cacheValid) {
-      console.log(`⭐ Using cached recommendations (${Math.round((now - recommendationsCache.current.timestamp) / 60000)}m old)`);
-      // parachord#1006: honour the blocklist on the cached path too, since a
-      // block made since the cache was filled must take effect immediately.
-      const tracks = window.recommendationBlocklist
-        ? window.recommendationBlocklist.filterBlocked(recommendationBlocklistRef.current, recommendationsCache.current.tracks)
-        : recommendationsCache.current.tracks;
-
-      // Extract unique artists, pre-populating images from cache for instant display
-      const artistMap = new Map();
-      tracks.forEach(track => {
-        if (track.artist && !artistMap.has(track.artist)) {
-          const normalizedName = track.artist.trim().toLowerCase();
-          const cachedImage = artistImageCache.current[normalizedName];
-          const imageCacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
-
-          artistMap.set(track.artist, {
-            id: track.artist.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-            name: track.artist,
-            image: imageCacheValid ? cachedImage.url : null,
-            imageLoaded: imageCacheValid
-          });
-        }
-      });
-      const artists = Array.from(artistMap.values());
-
-      setRecommendations({
-        artists,
-        tracks,
-        loading: false,
-        error: null
-      });
-
-      // Check for new content (unread badge) - use artist names as key
-      const hash = generateDiscoveryHash(artists, a => a.name);
-      checkDiscoveryUnread('recommendations', hash);
-
-      // Fetch images for artists not in cache
-      const artistsNeedingImages = artists.filter(a => !a.imageLoaded);
-      if (artistsNeedingImages.length > 0) {
-        resolveRecommendationArtistImages(artistsNeedingImages);
+    const fresh = {};
+    const toFetch = [];
+    for (const provider of providers) {
+      const cached = !forceRefresh && cache.providers[provider.id];
+      if (cached && cached.sections.length > 0 && (now - cached.fetchedAt) < CACHE_TTL.recommendations) {
+        fresh[provider.id] = cached;
+        continue;
       }
-      return;
+      toFetch.push(provider);
     }
 
-    setRecommendations(prev => ({ ...prev, loading: true, error: null }));
+    // A forced refresh also forgets the "load more" pages (their items merge
+    // into the refreshed sections; a stale cursor must not survive a re-fetch).
+    if (forceRefresh) {
+      expandedSectionsRef.current = {};
+      setExpandedSections({});
+    }
 
-    try {
-      // Fetch from both services in parallel if both are configured
-      const fetchPromises = [];
-
-      if (listenbrainzConfig?.username) {
-        console.log(`⭐ Loading Recommendations from ListenBrainz for ${listenbrainzConfig.username}...`);
-        fetchPromises.push(
-          loadListenbrainzRecommendations(listenbrainzConfig.username)
-            .catch(err => { console.error('ListenBrainz recommendations error:', err); return []; })
-        );
-      } else {
-        fetchPromises.push(Promise.resolve([]));
+    const applyFresh = () => {
+      // Insertion order = display order (the fetch completion order is not).
+      const ordered = {};
+      for (const provider of providers) {
+        if (fresh[provider.id]) ordered[provider.id] = fresh[provider.id];
       }
+      providerSectionsRef.current = ordered;
+      expandableResolverIdsRef.current = providers
+        .filter(p => typeof p.expandRecommendationSection === 'function')
+        .map(p => p.id);
+      refreshMergedRecommendations();
+    };
 
-      if (lastfmConfig?.username) {
-        console.log(`⭐ Loading Recommendations from Last.fm for ${lastfmConfig.username}...`);
-        fetchPromises.push(
-          loadLastfmRecommendations(lastfmConfig.username)
-            .catch(err => { console.error('Last.fm recommendations error:', err); return []; })
-        );
-      } else {
-        fetchPromises.push(Promise.resolve([]));
-      }
-
-      const [listenbrainzTracks, lastfmTracks] = await Promise.all(fetchPromises);
-
-      // Merge and de-dupe tracks (ListenBrainz first since it has MBID metadata)
-      const seenTracks = new Set();
-      const tracks = [];
-      // parachord#1006: drop anything the user blocked. Tracks carry artist +
-      // title (+ album when the service supplies it), so blocked artists,
-      // albums and tracks all apply.
-      const isBlockedTrack = (t) => !!window.recommendationBlocklist
-        && window.recommendationBlocklist.isBlocked(recommendationBlocklistRef.current, t);
-
-      for (const track of listenbrainzTracks) {
-        if (isBlockedTrack(track)) continue;
-        const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}`;
-        if (!seenTracks.has(key)) {
-          seenTracks.add(key);
-          tracks.push({ ...track, source: 'listenbrainz' });
-        }
-      }
-
-      for (const track of lastfmTracks) {
-        if (isBlockedTrack(track)) continue;
-        const key = `${track.artist.toLowerCase().trim()}|${track.title.toLowerCase().trim()}`;
-        if (!seenTracks.has(key)) {
-          seenTracks.add(key);
-          tracks.push({ ...track, source: 'lastfm' });
-        }
-      }
-
-      console.log(`⭐ Merged ${listenbrainzTracks.length} ListenBrainz + ${lastfmTracks.length} Last.fm tracks → ${tracks.length} unique tracks`);
-
-      if (tracks.length === 0) {
-        // Not cached, so the next visit asks again.
-        setRecommendations({
-          artists: [],
-          tracks: [],
-          loading: false,
-          error: emptyRecommendationsMessage(!!listenbrainzConfig?.username, !!lastfmConfig?.username)
-        });
-        return;
-      }
-
-      // Cache the merged tracks for quick reload
-      recommendationsCache.current = {
-        tracks,
-        timestamp: Date.now()
-      };
-
-      // Extract unique artists, pre-populating images from cache for instant display
-      const artistMap = new Map();
-      const now = Date.now();
-      tracks.forEach(track => {
-        if (track.artist && !artistMap.has(track.artist)) {
-          const normalizedName = track.artist.trim().toLowerCase();
-          const cachedImage = artistImageCache.current[normalizedName];
-          const cacheValid = cachedImage && (now - cachedImage.timestamp) < CACHE_TTL.artistImage;
-
-          artistMap.set(track.artist, {
-            id: track.artist.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-            name: track.artist,
-            image: cacheValid ? cachedImage.url : null,
-            imageLoaded: cacheValid // Already loaded if we have valid cache
-          });
-        }
-      });
-      const artists = Array.from(artistMap.values());
-      const cachedCount = artists.filter(a => a.imageLoaded).length;
-
-      console.log(`⭐ Extracted ${artists.length} unique artists (${cachedCount} with cached images)`);
-
-      // Set initial state with tracks (sources empty, will resolve via scheduler)
-      setRecommendations({
-        artists,
-        tracks,
-        loading: false,
-        error: null
-      });
-
-      // Check for new content (unread badge) - use artist names as key
-      const hash = generateDiscoveryHash(artists, a => a.name);
-      checkDiscoveryUnread('recommendations', hash);
-
-      // Only fetch images for artists not already in cache
-      const artistsNeedingImages = artists.filter(a => !a.imageLoaded);
-      if (artistsNeedingImages.length > 0) {
-        resolveRecommendationArtistImages(artistsNeedingImages);
-      } else {
-        console.log(`⭐ All artist images loaded from cache`);
-      }
-
-    } catch (error) {
-      console.error('Failed to load Recommendations:', error);
+    if (toFetch.length === 0) {
+      applyFresh();
+      // Everything came from cache (or no provider exists): the same empty
+      // check the post-fetch path runs, so a return visit to an all-empty
+      // page still says why instead of rendering nothing.
+      const anySections = Object.values(providerSectionsRef.current).some(p => p.sections.length > 0);
+      const llm = aiRecommendationsRef.current;
+      const llmHas = !!(llm && ((llm.albums || []).length > 0 || (llm.artists || []).length > 0));
       setRecommendations(prev => ({
         ...prev,
         loading: false,
-        error: 'Failed to load recommendations. Please try again.'
+        error: (!anySections && !llmHas) ? emptyRecommendationsMessage({ hasListenbrainz, hasLastfm }) : null
       }));
-    }
-  };
-
-  // Load recommendations from Last.fm
-  const loadLastfmRecommendations = async (username) => {
-    const response = await fetch(`https://www.last.fm/player/station/user/${encodeURIComponent(username)}/recommended`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Last.fm recommendations: ${response.status}`);
+      return;
     }
 
-    const data = await response.json();
-    const playlist = data.playlist || [];
+    // A provider that already produced sections keeps them visible while a
+    // partial refresh runs; the skeleton only covers a truly empty page.
+    setRecommendations(prev => ({ ...prev, loading: prev.sections.length === 0, error: null }));
 
-    // Transform tracks to app format with empty sources (will be resolved)
-    return playlist.map((track, index) => ({
-      id: track.spelling_id || `rec-${index}-${track.name}-${track.artists?.[0]?.name}`.replace(/\s+/g, '-'),
-      title: track.name || track._name,
-      artist: track.artists?.[0]?.name || track.artists?.[0]?._name || 'Unknown Artist',
-      duration: track.duration || null,
-      sources: {} // Will be populated by resolver pipeline
+    const loader = resolverLoaderRef.current;
+    let failed = 0;
+    await Promise.all(toFetch.map(async (provider) => {
+      try {
+        const config = await getResolverConfig(provider.id);
+        // Providers are not on an interactive path (the page shows the other
+        // sections meanwhile), so the bound is generous — Amazon's page flow
+        // alone can take several seconds. The timer is cleared when the
+        // provider wins, so it does not linger to the process end.
+        let timer = null;
+        const raw = await Promise.race([
+          loader.getRecommendations(provider.id, config),
+          new Promise(resolve => {
+            timer = setTimeout(() => resolve(null), CACHE_TTL.recommendationProvider);
+            if (typeof timer.unref === 'function') timer.unref();
+          })
+        ]);
+        clearTimeout(timer);
+        if (raw == null) throw new Error('timed out');
+        fresh[provider.id] = {
+          ...normalizeRecommendationSections(raw, { resolverId: provider.id, resolverName: provider.name }),
+          fetchedAt: Date.now()
+        };
+      } catch (error) {
+        console.warn(`⭐ Recommendations from ${provider.name || provider.id} failed:`, error?.message || error);
+        failed++;
+        // Keep the cached result (even an expired one) so a transient failure
+        // does not blank a section that was on screen.
+        if (cache.providers[provider.id]) fresh[provider.id] = cache.providers[provider.id];
+      }
     }));
+
+    recommendationsCache.current = { providers: { ...fresh }, timestamp: Date.now() };
+    applyFresh();
+
+    const anySections = Object.values(fresh).some(p => p.sections.length > 0);
+    const llm = aiRecommendationsRef.current;
+    const llmHas = !!(llm && ((llm.albums || []).length > 0 || (llm.artists || []).length > 0));
+    if (!anySections && !llmHas) {
+      if (failed === toFetch.length && failed > 0) {
+        setRecommendations({ sections: [], loading: false, error: 'Failed to load recommendations. Please try again.' });
+      } else {
+        // Not cached, so the next visit asks again.
+        setRecommendations({ sections: [], loading: false, error: emptyRecommendationsMessage({ hasListenbrainz, hasLastfm }) });
+      }
+      return;
+    }
+    setRecommendations(prev => ({ ...prev, loading: false, error: null }));
   };
 
-  // Load recommendations from ListenBrainz
+  // "Load more" for a titled section whose provider can paginate
+  // (expandRecommendationSection): fetch the next page and merge it into the
+  // section. The fetched items live in expandedSections so a re-merge (the LLM
+  // streaming an update) keeps them.
+  const loadMoreRecommendationSection = async (section) => {
+    const loader = resolverLoaderRef.current;
+    if (!section?.resolverId || !section?.sectionId || !loader) return;
+    if (recommendationsLoadingMore[section.key]) return;
+    setRecommendationsLoadingMore(prev => ({ ...prev, [section.key]: true }));
+    const key = `${section.resolverId}|${section.sectionId}`;
+    try {
+      const config = await getResolverConfig(section.resolverId);
+      const result = await loader.expandRecommendationSection(section.resolverId, section.sectionId, section.nextCursor, config);
+      if (!result || !Array.isArray(result.items) || result.items.length === 0) {
+        // Nothing more from the provider: remember the exhaustion so the
+        // button goes away (a force-refresh resets it).
+        const prevExpansion = expandedSectionsRef.current[key] || { items: [] };
+        setExpandedSections(prev => ({ ...prev, [key]: { ...prevExpansion, exhausted: true } }));
+      } else {
+        const prevItems = (expandedSectionsRef.current[key] || { items: [] }).items || [];
+        setExpandedSections(prev => ({
+          ...prev,
+          [key]: {
+            items: [...prevItems, ...result.items],
+            nextCursor: result.nextCursor || null,
+            exhausted: !result.nextCursor
+          }
+        }));
+      }
+    } catch (error) {
+      console.warn(`⭐ Failed to expand recommendation section ${section.title || key}:`, error?.message || error);
+      showToast(`Couldn't load more from ${section.resolverName || 'the service'}`, 'error');
+    } finally {
+      setRecommendationsLoadingMore(prev => ({ ...prev, [section.key]: false }));
+    }
+  };
+
+  // Re-merge when a "load more" answered (the merged section keeps the extra
+  // items and the cursor) and when the expanded-section set changes.
+  useEffect(() => {
+    expandedSectionsRef.current = expandedSections;
+    if (Object.keys(expandedSections).length > 0) refreshMergedRecommendations();
+  }, [expandedSections]);
+
+  // Collapse toggling for the sectioned page: a section shows its first few
+  // items until expanded (the user's choice survives re-merges by section key).
+  useEffect(() => {
+    recommendationsExpandedSectionsRef.current = recommendationsExpandedSections;
+  }, [recommendationsExpandedSections]);
+  const toggleRecommendationSection = (key) => {
+    setRecommendationsExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  // Last.fm and ListenBrainz recommendations now come from their plugins'
+  // getRecommendations (plugins-src/{lastfm,listenbrainz}/implementation.js)
+  // through the loader capability above — the fetches used to live here.
+  // (The Recommendations page's own fetches were the last app.js code that
+  // talked to a service by name instead of through a plugin capability.)
+  //
   // ListenBrainz fetch helper with retry on 429 rate limits
   const fetchListenBrainz = async (url, maxRetries = 3) => {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -26827,49 +26912,6 @@ Return ONLY the JSON array, no other text.`;
       }
     }
     return fetch(url); // Final attempt
-  };
-
-  const loadListenbrainzRecommendations = async (username) => {
-    // ListenBrainz has a recommendations endpoint that returns personalized playlists
-    // First try to get recommendation playlists
-    const playlistsResponse = await fetchListenBrainz(`https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/playlists/recommendations`);
-
-    if (playlistsResponse.ok) {
-      const playlistsData = await playlistsResponse.json();
-      const playlists = playlistsData.playlists || [];
-
-      // Get the most recent recommendation playlist
-      if (playlists.length > 0) {
-        const latestPlaylist = playlists[0];
-        const playlistId = latestPlaylist.playlist?.identifier?.split('/').pop();
-
-        if (playlistId) {
-          // Fetch the full playlist with tracks
-          const playlistResponse = await fetchListenBrainz(`https://api.listenbrainz.org/1/playlist/${playlistId}`);
-          if (playlistResponse.ok) {
-            const playlistData = await playlistResponse.json();
-            const tracks = playlistData.playlist?.track || [];
-
-            return tracks.map((track, index) => ({
-              id: track.identifier?.[0]?.split('/').pop() || `lb-rec-${index}-${track.title}`.replace(/\s+/g, '-'),
-              title: track.title || 'Unknown Track',
-              artist: track.creator || 'Unknown Artist',
-              duration: track.duration ? Math.floor(track.duration / 1000) : null,
-              sources: {},
-              mbid: track.identifier?.[0]?.split('/').pop() || null
-            }));
-          }
-        }
-      }
-    }
-
-    // No recommendation playlist yet (new accounts, or before ListenBrainz has
-    // generated one). This used to fall back to the user's own top recordings
-    // of the month, shown as recommendations: the opposite of what the page
-    // promises (parachord#1021). Nothing from ListenBrainz instead; the page
-    // says why when no source has anything.
-    console.log('⭐ No ListenBrainz recommendation playlist yet');
-    return [];
   };
 
   // Load weekly jams and weekly exploration playlists from ListenBrainz
@@ -27422,100 +27464,77 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     return list ? list.tracks : [];
   };
 
-  // Load AI recommendations when HOME is active and an AI plugin is enabled.
+  // Fetch a fresh batch of Shuffleupagus suggestions (the LLM's albums and
+  // artists). Component scope: the auto-fetch effect below runs it per visit
+  // decision, and the Shuffleupagus section's Refresh button runs it directly.
   // By default the suggestions on screen stay until the user presses Refresh;
-  // with "Refresh Home suggestions on every visit" on, each visit fetches a
-  // new batch, keeping cached/previous results visible until it arrives.
-  // Either way Home fetches when it has no albums to show (no Refresh button).
-  useEffect(() => {
-    const fetchAiRecommendations = async () => {
-      if (activeView !== 'home' || !cacheLoaded) return;
-      if (aiSuggestionsRefreshing.current) return; // Already fetching
-      if (!shouldAutoRefreshHomeSuggestions({
-        autoRefresh: homeSuggestionsAutoRefreshRef.current,
-        suggestions: homeData.aiRecommendations
-      })) return;
+  // with "Refresh Shuffleupagus suggestions on every visit" on, each visit
+  // fetches a new batch, keeping cached/previous results visible until it
+  // arrives. Either way the view fetches when it has no albums to show.
+  const fetchAiRecommendations = async () => {
+    if (aiSuggestionsRefreshing.current) return; // Already fetching
+    const chatServices = getChatServices();
+    const hasEnabledChat = chatServices.some(isServiceEnabled);
+    if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
 
-      const chatServices = getChatServices();
-      const hasEnabledChat = chatServices.some(isServiceEnabled);
+    aiSuggestionsRefreshing.current = true;
 
-      if (!hasEnabledChat || !aiIncludeHistoryRef.current) return;
+    // Mark as loading but keep existing cached data visible on screen
+    setAiRecommendations(prev => ({
+      albums: prev?.albums || [],
+      artists: prev?.artists || [],
+      loading: true
+    }));
 
-      aiSuggestionsRefreshing.current = true;
-
-      // Mark as loading but keep existing cached data visible on screen
-      setHomeData(prev => ({
-        ...prev,
-        aiRecommendations: {
-          albums: prev.aiRecommendations?.albums || [],
-          artists: prev.aiRecommendations?.artists || [],
-          loading: true
-        }
-      }));
-
-      // Accumulate fresh albums in a local array — swap all at once when done
-      // so cached albums (with art) stay visible the entire time instead of being
-      // cleared on the first fresh album arrival.
-      const freshAlbums = [];
-      const onUpdate = ({ artists, newAlbum }) => {
-        if (artists) {
-          // Artists arrived — replace cached artists with fresh ones
-          setHomeData(prev => ({
-            ...prev,
-            aiRecommendations: { ...prev.aiRecommendations, artists }
-          }));
-          for (const artist of artists) {
-            getArtistImage(artist.name).then(imgResult => {
-              setHomeData(prev => {
-                if (!prev.aiRecommendations) return prev;
-                return { ...prev, aiRecommendations: { ...prev.aiRecommendations, artists: prev.aiRecommendations.artists.map(a => a.name === artist.name ? { ...a, image: imgResult?.url || null } : a) } };
-              });
-            }).catch(() => {});
-          }
-        }
-        if (newAlbum) {
-          // Accumulate — don't push to state yet (cached albums stay visible)
-          freshAlbums.push(newAlbum);
-          // Pre-fetch art so it's ready when we swap the batch in
-          getAlbumArt(newAlbum.artist, newAlbum.title).then(artUrl => {
-            if (artUrl) {
-              const idx = freshAlbums.findIndex(a => a.title === newAlbum.title && a.artist === newAlbum.artist);
-              if (idx >= 0) freshAlbums[idx] = { ...freshAlbums[idx], art: artUrl };
-              // Also update state if the batch has already been swapped in
-              setHomeData(prev => {
-                if (!prev.aiRecommendations) return prev;
-                return { ...prev, aiRecommendations: { ...prev.aiRecommendations, albums: prev.aiRecommendations.albums.map(a => a.title === newAlbum.title && a.artist === newAlbum.artist ? { ...a, art: artUrl } : a) } };
-              });
-            }
-          }).catch(() => {});
-        }
-      };
-
-      const result = await loadAiRecommendations(onUpdate);
-      aiSuggestionsRefreshing.current = false;
-      if (result) {
-        // Swap in the full fresh batch at once (with any art that loaded during validation)
-        setHomeData(prev => ({
-          ...prev,
-          aiRecommendations: {
-            ...prev.aiRecommendations,
-            albums: freshAlbums.length > 0 ? freshAlbums : (prev.aiRecommendations?.albums || []),
-            loading: false
-          }
-        }));
-      } else {
-        // LLM call failed — keep cached data visible if we have any, otherwise clear
-        setHomeData(prev => {
-          const existing = prev.aiRecommendations;
-          if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
-            return { ...prev, aiRecommendations: { ...existing, loading: false } };
-          }
-          return { ...prev, aiRecommendations: null };
-        });
+    // Accumulate fresh albums in a local array — swap all at once when done
+    // so cached albums (with art) stay visible the entire time instead of being
+    // cleared on the first fresh album arrival.
+    const freshAlbums = [];
+    const onUpdate = ({ artists, newAlbum }) => {
+      if (artists) {
+        // Artists arrived — replace cached artists with fresh ones
+        setAiRecommendations(prev => ({ ...(prev || { albums: [] }), artists }));
+      }
+      if (newAlbum) {
+        // Accumulate — don't push to state yet (cached albums stay visible)
+        freshAlbums.push(newAlbum);
       }
     };
+
+    const result = await loadAiRecommendations(onUpdate);
+    aiSuggestionsRefreshing.current = false;
+    if (result) {
+      // Swap in the full fresh batch at once (with any art that loaded during validation)
+      setAiRecommendations(prev => ({
+        ...(prev || { albums: [], artists: [] }),
+        albums: freshAlbums.length > 0 ? freshAlbums : (prev?.albums || []),
+        loading: false
+      }));
+    } else {
+      // LLM call failed — keep cached data visible if we have any, otherwise clear
+      setAiRecommendations(prev => {
+        if (prev?.albums?.length > 0 || prev?.artists?.length > 0) {
+          return { ...prev, loading: false };
+        }
+        return null;
+      });
+    }
+  };
+
+  // The auto-fetch trigger: on a Recommendations view visit, when the
+  // decision (lib/home-suggestions-refresh.js) says so. The suggestions render
+  // as the page's "Shuffleupagus" section; images arrive through the
+  // recommendationImages effect.
+  useEffect(() => {
+    if (activeView !== 'recommendations' || !cacheLoaded) return;
+    if (!shouldAutoRefreshHomeSuggestions({
+      autoRefresh: homeSuggestionsAutoRefreshRef.current,
+      suggestions: aiRecommendations
+    })) return;
     fetchAiRecommendations();
-  }, [activeView, cacheLoaded, metaServices, homeVisitCount]);
+    // fetchAiRecommendations is recreated every render; the effect must not
+    // key on it — its guards (refreshing, decision) make re-entry safe.
+  }, [activeView, cacheLoaded, metaServices, recommendationsVisitCount]);
 
   // Load charts when navigating to discover page (Pop of the Tops), re-fetch if stale
   useEffect(() => {
@@ -27615,9 +27634,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Load discovery data (recommendations, charts, critics picks) for HOME view previews
   useEffect(() => {
     if (activeView === 'home' && cacheLoaded) {
-      // Load recommendations if user has a scrobbler connected and hasn't loaded yet
-      const hasScrobbler = metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username;
-      if (hasScrobbler && recommendations.artists.length === 0 && !recommendations.error) {
+      // Load recommendations if any provider can produce them and none loaded
+      // yet (the For You card previews the first recommended artist).
+      const metaConfigsHome = metaServiceConfigsRef.current || {};
+      const hasScrobbler = metaConfigsHome.lastfm?.username || metaConfigsHome.listenbrainz?.username;
+      const homeMetaIds = new Set((metaServicesRef.current || []).map(s => s.id));
+      const hasResolverProvider = recommendationProviders().some(p => !homeMetaIds.has(p.id));
+      if (recommendations.sections.length === 0 && !recommendations.error && (hasScrobbler || hasResolverProvider)) {
         loadRecommendations();
       }
       // Load charts if not already loaded
@@ -27633,24 +27656,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Resolve recommendation tracks using the resolver pipeline
   // Fetch images for recommended artists
-  const resolveRecommendationArtistImages = async (artists) => {
-    console.log(`⭐ Fetching images for ${artists.length} recommended artists...`);
-
-    // Writes are coalesced (recArtistImageWriterRef): N images → a handful of
-    // renders instead of N, which matters while the user scrolls the grid.
-    for (const artist of artists) {
-      try {
-        const result = await getArtistImage(artist.name);
-        recArtistImageWriterRef.current.queue(artist.id, { image: result?.url || null, imageLoaded: true }, { merge: true });
-      } catch (err) {
-        console.error(`Error fetching image for ${artist.name}:`, err);
-        // Mark as loaded even on error so we show fallback icon instead of spinner
-        recArtistImageWriterRef.current.queue(artist.id, { imageLoaded: true }, { merge: true });
-      }
-    }
-    recArtistImageWriterRef.current.flush();
-    console.log(`⭐ Finished fetching recommended artist images`);
-  };
+  // Recommendation item images are fetched by the effect below (keyed by item
+  // id into the recommendationImages map) — the old per-artist loop wrote one
+  // setRecommendations per image and was replaced by the coalesced writer.
 
   // Fetch images for search result artists
   const resolveSearchArtistImages = async (artists) => {
@@ -30480,6 +30488,40 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     fetchArtistBioSnippet();
   }, [searchDetailCategory, searchPreviewItem?.id]);
 
+  // Recommendation item images (LLM album art / artist photos — provider items
+  // that carry their own imageUrl skip this): queue one fetch per item that is
+  // on the page with no image yet and no fetch in flight, and write results
+  // through the coalesced recommendationImagesWriterRef (one full render per
+  // batch, not per image). Lives below getAlbumArt/getArtistImage — those are
+  // declared above at module scope of the component and referenced from the
+  // effect body, so they must not appear in the deps array below (the TDZ
+  // trap: the array is evaluated during render).
+  const recommendationImageFetchesRef = useRef(new Set());
+  useEffect(() => {
+    if (activeView !== 'recommendations' && activeView !== 'home') return;
+    // On Home only the For You card needs one image — fetch just the first
+    // missing artist item there; the full page fetches everything.
+    let budget = activeView === 'recommendations' ? Infinity : 1;
+    for (const section of recommendations.sections) {
+      for (const item of section.items) {
+        if (budget <= 0) break;
+        if (item.type !== 'artist' && item.type !== 'album') continue;
+        if (item.imageUrl || recommendationImages[item.id] || recommendationImageFetchesRef.current.has(item.id)) continue;
+        recommendationImageFetchesRef.current.add(item.id);
+        budget--;
+        const write = (url) => recommendationImagesWriterRef.current.queue(item.id, { url: url || null, loaded: true }, { merge: true });
+        // Album art / artist photos are decoration: getAlbumArt and
+        // getArtistImage run their MusicBrainz requests in the background
+        // lane, never holding a foreground slot.
+        if (item.type === 'album') {
+          getAlbumArt(item.artist || '', item.name).then(write).catch(() => write(null));
+        } else {
+          getArtistImage(item.name).then(result => write(result?.url || null)).catch(() => write(null));
+        }
+      }
+    }
+  }, [activeView, recommendations.sections, recommendationImages]);
+
   // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
   const getLastfmBio = async (artistName) => {
     if (!artistName) return null;
@@ -31568,8 +31610,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Navigation helpers
   const navigateTo = (view) => {
-    if (view === 'home') {
-      setHomeVisitCount(c => c + 1); // Trigger AI suggestions refresh
+    if (view === 'recommendations') {
+      setRecommendationsVisitCount(c => c + 1); // Trigger Shuffleupagus suggestions refresh
     }
     if (view !== activeView) {
       // Clear search state when leaving search view
@@ -31623,7 +31665,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return 'parachord://home';
       }
       case 'recommendations':
-        return recommendationsTab ? `parachord://recommendations/${recommendationsTab}` : 'parachord://recommendations';
+        return 'parachord://recommendations';
       case 'discover':
         return 'parachord://charts';
       case 'critics-picks':
@@ -33944,12 +33986,11 @@ useEffect(() => {
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
   const homePageHandlers = useStableHandlers({
-    activateListenAlong, addToQueue, copyParachordLink, deactivateListenAlong,
-    fetchAlbumTracksFromMusicBrainz, fetchArtistData, getAlbumArt, getArtistImage,
-    getArtistTopTracks, getChatServices, handleCollectionAlbumClick, handlePlay,
-    handlePlayPause, handleStartCollectionStation, isOnAir, isServiceEnabled,
-    loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    loadWeeklyJamTracks, navigateTo, navigateToFriend, openAiChat,
+    activateListenAlong, copyParachordLink, deactivateListenAlong,
+    fetchArtistData, getArtistTopTracks, handleCollectionAlbumClick, handlePlay,
+    handlePlayPause, handleStartCollectionStation, isOnAir,
+    loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
+    loadWeeklyJamTracks, navigateTo, navigateToFriend,
     openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
     setQueueWithContext,
   });
@@ -36136,10 +36177,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, setWhatsNewOpen, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, weeklyJamCovers, whatsNewDismissedVersion,
-          // Not read by the page directly; read during its render through a
-          // stable handler, so it must invalidate the memo.
-          _metaServices: metaServices,
+          allPlaylistCovers, allResolvers, appVersion, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setWhatsNewOpen, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, weeklyJamCovers, whatsNewDismissedVersion,
           ...homePageHandlers
         }),
 
@@ -38821,7 +38859,12 @@ useEffect(() => {
         );
         })(),
 
-        // Recommendations view with collapsible hero header
+        // Recommendations view with collapsible hero header — the sectioned
+        // page: generic buckets (Artists / Songs / Albums / Playlists) first,
+        // then provider-titled sections (Amazon Music's rows), then the
+        // Shuffleupagus (LLM) section. Every section shows a few items with a
+        // Show-all button; providers that paginate (expandRecommendationSection)
+        // get a Load more.
         activeView === 'recommendations' && React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
           style: { overflow: 'hidden', minHeight: 0 }
@@ -38865,38 +38908,17 @@ useEffect(() => {
                 },
                 onContextMenu: copyParachordLink
               }, 'RECOMMENDATIONS'),
-              // Tabs in expanded state
-              React.createElement('div', {
-                className: 'flex items-center gap-1 mt-6',
-                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
-              },
-                [
-                  { key: 'artists', label: `${recommendations.artists.length} Artists` },
-                  { key: 'songs', label: `${recommendations.tracks.length} Songs` }
-                ].map((tab, index) => [
-                  index > 0 && React.createElement('span', {
-                    key: `sep-expanded-${tab.key}`,
-                    className: 'text-white/50 mx-2'
-                  }, '|'),
-                  React.createElement('button', {
-                    key: `expanded-${tab.key}`,
-                    onClick: () => setRecommendationsTab(tab.key),
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                      recommendationsTab === tab.key
-                        ? 'text-white'
-                        : 'text-white/60 hover:text-white'
-                    }`
-                  }, tab.label)
-                ]).flat().filter(Boolean)
-              ),
               React.createElement('p', {
-                className: 'mt-2 text-white/70 text-sm'
+                className: 'mt-6 text-white/85 text-sm font-medium uppercase tracking-wider',
+                style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
               }, metaServiceConfigs.listenbrainz?.username
                 ? `Personalized picks for ${metaServiceConfigs.listenbrainz.username}`
                 : metaServiceConfigs.lastfm?.username
                   ? `Personalized picks for ${metaServiceConfigs.lastfm.username}`
-                  : 'Connect your Last.fm or ListenBrainz account to get started'
-              )
+                  : 'Personalized picks from your services'),
+              React.createElement('p', {
+                className: 'mt-2 text-white/70 text-sm'
+              }, 'From your connected services and Shuffleupagus')
             ),
             // COLLAPSED STATE - Inline layout matching artist page
             recommendationsHeaderCollapsed && React.createElement('div', {
@@ -38906,7 +38928,6 @@ useEffect(() => {
                 transition: 'opacity 300ms ease-out'
               }
             },
-              // Left: Title
               React.createElement('h1', {
                 className: 'text-2xl font-light text-white mr-6',
                 style: {
@@ -38916,50 +38937,537 @@ useEffect(() => {
                 },
                 onContextMenu: copyParachordLink
               }, 'RECOMMENDATIONS'),
-              // Tabs (next to title, like artist page)
-              React.createElement('div', {
-                className: 'flex items-center gap-1',
+              React.createElement('p', {
+                className: 'text-white/70 text-sm truncate',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
-              },
-                [
-                  { key: 'artists', label: `${recommendations.artists.length} Artists` },
-                  { key: 'songs', label: `${recommendations.tracks.length} Songs` }
-                ].map((tab, index) => [
-                  index > 0 && React.createElement('span', {
-                    key: `sep-collapsed-${tab.key}`,
-                    className: 'text-white/50 mx-2'
-                  }, '|'),
-                  React.createElement('button', {
-                    key: `collapsed-${tab.key}`,
-                    onClick: () => setRecommendationsTab(tab.key),
-                    className: `px-2 py-1 text-sm font-medium uppercase tracking-wider transition-colors no-drag ${
-                      recommendationsTab === tab.key
-                        ? 'text-white'
-                        : 'text-white/60 hover:text-white'
-                    }`
-                  }, tab.label)
-                ]).flat().filter(Boolean)
-              )
+              }, 'Personalized picks from your services and Shuffleupagus')
             )
           ),
-          // Scrollable content area
+          // Scrollable content area — the sectioned page
           (() => {
-            // Check if both services are configured (show filter bar even while loading)
-            const hasBothServicesConfigured = metaServiceConfigs.listenbrainz?.username && metaServiceConfigs.lastfm?.username;
+            const sections = recommendations.sections;
+            const llmSectionPresent = sections.some(s => s.resolverId === 'shuffleupagus');
+            const llmLoading = !!aiRecommendations?.loading && !llmSectionPresent;
+            const BUCKET_TITLES = { artist: 'Artists', song: 'Songs', album: 'Albums', playlist: 'Playlists' };
+            // A collapsed section shows this many items (cards); songs show fewer rows.
+            const SECTION_PREVIEW = 6;
+            const SONG_PREVIEW = 5;
 
-            // Compute filtered recommendations data
-            const listenbrainzTrackCount = recommendations.tracks.filter(t => t.source === 'listenbrainz').length;
-            const lastfmTrackCount = recommendations.tracks.filter(t => t.source === 'lastfm').length;
-            const hasBothSourcesWithData = listenbrainzTrackCount > 0 && lastfmTrackCount > 0;
+            // The image for a card: the provider's own URL first, then the
+            // fetched recommendationImages entry ({ url, loaded }).
+            const imageFor = (item) => item.imageUrl
+              || ((recommendationImages[item.id] || {}).url)
+              || null;
+            const imageLoadedFor = (item) => !!item.imageUrl || !!(recommendationImages[item.id] || {}).loaded;
 
-            // Filter tracks based on source filter
-            const filteredTracks = recommendationsSourceFilter === 'all'
-              ? recommendations.tracks
-              : recommendations.tracks.filter(t => t.source === recommendationsSourceFilter);
+            // Play a recommended playlist: resolve it through the provider
+            // playlist path (resolver-loader lookupPlaylist — Amazon included)
+            // and play the tracks, without importing anything.
+            const playRecommendationPlaylist = async (item) => {
+              if (!item.url) return;
+              setTrackLoading(true);
+              try {
+                const resolved = await resolveProviderPlaylistUrl(item.url);
+                if (resolved && resolved.tracks && resolved.tracks.length > 0) {
+                  playTrackCollection(resolved.tracks, { type: 'playlist', name: item.name });
+                } else {
+                  setTrackLoading(false);
+                  showToast(`Could not load ${item.name} — is the service connected?`, 'error');
+                }
+              } catch (error) {
+                setTrackLoading(false);
+                showToast(error?.message || `Could not load ${item.name}`, 'error');
+              }
+            };
 
-            // Get unique artists from filtered tracks
-            const filteredArtistNames = new Set(filteredTracks.map(t => t.artist));
-            const filteredArtists = recommendations.artists.filter(a => filteredArtistNames.has(a.name));
+            // ── Cards ─────────────────────────────────────────────────────
+            const artistCard = (item, index) => {
+              const recsArtistPattern = generateArtistPattern(item.name);
+              const img = imageFor(item);
+              const imgLoaded = imageLoadedFor(item);
+              return React.createElement('div', {
+                key: item.id,
+                className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
+                style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
+                draggable: true,
+                onDragStart: (e) => {
+                  e.dataTransfer.effectAllowed = 'copy';
+                  e.dataTransfer.setData('text/plain', JSON.stringify({
+                    type: 'artist',
+                    artist: { id: item.id, name: item.name, image: img }
+                  }));
+                },
+                onClick: () => fetchArtistData(item.name),
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (window.electron?.contextMenu?.showTrackMenu) {
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'artist',
+                      artist: { id: item.id, name: item.name, image: img }
+                    });
+                  }
+                }
+              },
+                React.createElement('div', {
+                  className: 'aspect-square relative group/art',
+                  style: { background: imgLoaded && !img ? recsArtistPattern.gradient : 'var(--placeholder-bg)' }
+                },
+                  !imgLoaded && React.createElement('div', {
+                    className: 'absolute inset-0 shimmer-strong animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(index * 30, 300)}ms` }
+                  }),
+                  img && React.createElement('img', {
+                    src: img,
+                    alt: item.name,
+                    className: 'absolute inset-0 w-full h-full object-cover'
+                  }),
+                  React.createElement('div', {
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
+                    style: { pointerEvents: 'auto' }
+                  },
+                    React.createElement('button', {
+                      onClick: async (e) => {
+                        e.stopPropagation();
+                        setTrackLoading(true);
+                        const tracks = await getArtistTopTracks(item.name);
+                        if (tracks.length > 0) {
+                          const context = { type: 'artist', name: item.name };
+                          const [firstTrack, ...remainingTracks] = tracks;
+                          const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
+                          setQueueWithContext(remainingTracks, context, true);
+                          handlePlay(taggedFirstTrack);
+                        } else {
+                          setTrackLoading(false);
+                          showToast(`No top tracks found for ${item.name}`, 'error');
+                        }
+                      },
+                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      style: { border: 'none', cursor: 'pointer' },
+                      title: 'Play top 10 tracks'
+                    }, React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })),
+                    React.createElement('button', {
+                      onClick: async (e) => {
+                        e.stopPropagation();
+                        const tracks = await getArtistTopTracks(item.name);
+                        if (tracks.length > 0) {
+                          addToQueue(tracks, { type: 'artist', name: item.name });
+                          showToast(`Added ${tracks.length} top tracks from ${item.name} to queue`);
+                        } else {
+                          showToast(`No top tracks found for ${item.name}`, 'error');
+                        }
+                      },
+                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                      title: 'Add top 10 to queue'
+                    }, React.createElement(QueueTop10Icon, { size: 20 }))
+                  )
+                ),
+                React.createElement('div', { className: 'p-3' },
+                  item.reason
+                    ? React.createElement(FixedTooltip, { content: item.reason },
+                        React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name))
+                    : React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name)
+                )
+              );
+            };
+
+            const albumCard = (item, index) => {
+              const art = imageFor(item);
+              const artLoaded = imageLoadedFor(item);
+              const albumTracksFor = async () => {
+                let albumTracks = (collectionData?.tracks || [])
+                  .filter(t => t.artist === item.artist && t.album === item.name)
+                  .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+                if (albumTracks.length === 0) {
+                  showToast(`Loading ${item.name}...`, 'info');
+                  albumTracks = await fetchAlbumTracksFromMusicBrainz(item.artist, item.name, art);
+                }
+                return albumTracks;
+              };
+              return React.createElement('div', {
+                key: item.id,
+                className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
+                style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
+                draggable: true,
+                onDragStart: (e) => {
+                  e.dataTransfer.effectAllowed = 'copy';
+                  e.dataTransfer.setData('text/plain', JSON.stringify({
+                    type: 'album',
+                    album: { title: item.name, artist: item.artist, art }
+                  }));
+                },
+                onClick: () => handleCollectionAlbumClick({ title: item.name, artist: item.artist }),
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (window.electron?.contextMenu?.showTrackMenu) {
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'release',
+                      name: item.name,
+                      album: { title: item.name, artist: item.artist, art }
+                    });
+                  }
+                }
+              },
+                React.createElement('div', {
+                  className: 'aspect-square relative group/art',
+                  style: { background: 'var(--placeholder-bg)' }
+                },
+                  !artLoaded && React.createElement('div', {
+                    className: 'absolute inset-0 shimmer-strong animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(index * 30, 300)}ms` }
+                  }),
+                  art && React.createElement('img', {
+                    src: art,
+                    alt: item.name,
+                    className: 'absolute inset-0 w-full h-full object-cover'
+                  }),
+                  React.createElement('div', {
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                    style: { borderRadius: '6px', zIndex: 20 }
+                  },
+                    React.createElement('button', {
+                      onClick: async (e) => {
+                        e.stopPropagation();
+                        const albumTracks = await albumTracksFor();
+                        if (albumTracks.length > 0) {
+                          setAddToPlaylistPanel({
+                            open: true,
+                            tracks: albumTracks,
+                            sourceName: `${item.name} by ${item.artist}`,
+                            sourceType: 'album'
+                          });
+                        } else {
+                          showToast('Could not load album tracks', 'error');
+                        }
+                      },
+                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                      title: 'Add to Playlist'
+                    },
+                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                      )
+                    ),
+                    React.createElement('button', {
+                      onClick: async (e) => {
+                        e.stopPropagation();
+                        const albumTracks = await albumTracksFor();
+                        if (albumTracks.length > 0) {
+                          playTrackCollection(albumTracks, { type: 'album', name: item.name, artist: item.artist });
+                        } else {
+                          showToast('Could not load album tracks', 'error');
+                        }
+                      },
+                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      style: { border: 'none', cursor: 'pointer' },
+                      title: 'Play album'
+                    }, React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })),
+                    React.createElement('button', {
+                      onClick: async (e) => {
+                        e.stopPropagation();
+                        const albumTracks = await albumTracksFor();
+                        if (albumTracks.length > 0) {
+                          addToQueue(albumTracks, { type: 'album', name: item.name, artist: item.artist });
+                          showToast(`Added ${albumTracks.length} tracks from ${item.name}`, 'success');
+                        } else {
+                          showToast('Could not load album tracks', 'error');
+                        }
+                      },
+                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                      title: 'Add album to queue'
+                    },
+                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
+                      )
+                    )
+                  )
+                ),
+                React.createElement('div', { className: 'p-3' },
+                  item.reason
+                    ? React.createElement(FixedTooltip, { content: item.reason },
+                        React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name))
+                    : React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name),
+                  React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, item.artist || '')
+                )
+              );
+            };
+
+            const playlistCard = (item, index) => {
+              const art = imageFor(item);
+              const artLoaded = imageLoadedFor(item);
+              return React.createElement('div', {
+                key: item.id,
+                className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
+                style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
+                onClick: () => playRecommendationPlaylist(item),
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (item.url && window.electron?.shell?.openExternal) {
+                    window.electron.shell.openExternal(item.url);
+                  }
+                }
+              },
+                React.createElement('div', {
+                  className: 'aspect-square relative group/art',
+                  style: { background: 'var(--placeholder-bg)' }
+                },
+                  !artLoaded && React.createElement('div', {
+                    className: 'absolute inset-0 shimmer-strong animate-shimmer',
+                    style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(index * 30, 300)}ms` }
+                  }),
+                  art && React.createElement('img', {
+                    src: art,
+                    alt: item.name,
+                    className: 'absolute inset-0 w-full h-full object-cover'
+                  }),
+                  React.createElement('div', {
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
+                    style: { borderRadius: '6px', zIndex: 20 }
+                  },
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        playRecommendationPlaylist(item);
+                      },
+                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      style: { border: 'none', cursor: 'pointer' },
+                      title: 'Play playlist'
+                    }, React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })),
+                    item.url && React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        handleImportPlaylistFromUrl(item.url);
+                      },
+                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                      title: 'Import playlist'
+                    },
+                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
+                      )
+                    )
+                  )
+                ),
+                React.createElement('div', { className: 'p-3' },
+                  React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name)
+                )
+              );
+            };
+
+            const cardFor = (item, index) => (
+              item.type === 'artist' ? artistCard(item, index)
+                : item.type === 'album' ? albumCard(item, index)
+                : playlistCard(item, index)
+            );
+
+            // ── Song rows (resolve through the shared scheduler) ─────────
+            // allSongs is the section's FULL song list (the collapsed view
+            // shows a slice of it): the queue context after a clicked row is
+            // the whole remainder, like the flat page, not just the visible tail.
+            const songRow = (item, index, sectionSongs, allSongs, section) => {
+              const track = item.track;
+              const resolvedSources = trackSources[track.id] || track.sources || {};
+              const hasResolved = Object.keys(resolvedSources).length > 0;
+              const isResolving = Object.keys(resolvedSources).length === 0;
+              const queueTail = (playResolverId) => {
+                const tracksAfter = allSongs.slice(index + 1).map(i => i.track);
+                const context = { type: 'recommendations', name: section.title || 'Recommendations' };
+                setQueueWithContext(tracksAfter, context);
+                handlePlay(playResolverId ? { ...track, preferredResolver: playResolverId } : track);
+              };
+              return React.createElement('div', {
+                key: track.id,
+                'data-track-id': track.id,
+                ref: (el) => {
+                  if (el) {
+                    recommendationsTrackRowRefs.current.set(track.id, el);
+                    if (recommendationsObserverRef.current) {
+                      recommendationsObserverRef.current.observe(el);
+                    }
+                  } else {
+                    recommendationsTrackRowRefs.current.delete(track.id);
+                  }
+                },
+                draggable: true,
+                onDragStart: (e) => {
+                  setDraggingTrackForPlaylist(track);
+                  e.dataTransfer.effectAllowed = 'copy';
+                  e.dataTransfer.setData('text/plain', JSON.stringify({
+                    type: 'track',
+                    track: { id: track.id, title: track.title, artist: track.artist, duration: track.duration, sources: track.sources || {} }
+                  }));
+                },
+                onDragEnd: () => handlePlaylistDragEnd(),
+                className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group no-drag ${
+                  isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'
+                }`,
+                style: { borderRadius: '8px', marginBottom: '2px' },
+                onClick: () => queueTail(),
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  if (window.electron?.contextMenu?.showTrackMenu) {
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'track',
+                      track,
+                      sourceType: 'recommendations',
+                      sourceName: 'Recommendations'
+                    });
+                  }
+                }
+              },
+                React.createElement('span', {
+                  className: 'flex-shrink-0 text-right',
+                  style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' }
+                }, String(index + 1).padStart(2, '0')),
+                React.createElement('span', {
+                  className: 'truncate transition-colors',
+                  style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
+                }, track.title),
+                React.createElement('span', {
+                  className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
+                  style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    fetchArtistData(track.artist);
+                  }
+                }, track.artist),
+                React.createElement('span', {
+                  className: 'text-right tabular-nums flex-shrink-0',
+                  style: { pointerEvents: 'none', width: '50px', fontSize: '12px', color: 'var(--text-tertiary)' }
+                }, formatTime(track.duration)),
+                React.createElement('div', {
+                  className: 'flex items-center gap-1 justify-end',
+                  style: { width: '140px', flexShrink: 0, minHeight: '24px' }
+                },
+                  isResolving
+                    ? React.createElement('div', { className: 'flex items-center gap-1' },
+                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
+                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
+                      )
+                    : hasResolved ? (() => {
+                        const bestConf = getBestSourceConfidence(resolvedSources);
+                        return Object.entries(resolvedSources)
+                          .filter(([resolverId]) => playbackResolvers.includes(resolverId))
+                          .sort(([aId], [bId]) => {
+                            const aIndex = resolverOrder.indexOf(aId);
+                            const bIndex = resolverOrder.indexOf(bId);
+                            return aIndex - bIndex;
+                          })
+                          .map(([resolverId, source]) => {
+                            const resolver = allResolvers.find(r => r.id === resolverId);
+                            if (!resolver || !resolver.play) return null;
+                            return React.createElement('button', {
+                              key: resolverId,
+                              className: 'no-drag',
+                              onClick: (e) => {
+                                e.stopPropagation();
+                                queueTail(resolverId);
+                              },
+                              style: {
+                                width: '20px',
+                                height: '20px',
+                                borderRadius: '4px',
+                                backgroundColor: resolver.color,
+                                border: 'none',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                pointerEvents: 'auto',
+                                opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
+                                transition: 'transform 0.1s'
+                              },
+                              onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
+                              onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
+                              title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
+                            }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
+                          });
+                      })()
+                    : React.createElement('div', { className: 'flex items-center gap-1' },
+                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', title: 'Resolving track...' }),
+                        React.createElement('div', { className: 'w-5 h-5 rounded shimmer-light animate-shimmer', style: { animationDelay: '0.1s' } })
+                      )
+                )
+              );
+            };
+
+            // ── One section ────────────────────────────────────────────────
+            const renderSection = (section) => {
+              const expanded = recommendationsExpandedSections.has(section.key);
+              const songItems = section.items.filter(i => i.type === 'song');
+              const cardItems = section.items.filter(i => i.type !== 'song');
+              const visibleCards = expanded ? cardItems : cardItems.slice(0, SECTION_PREVIEW);
+              const visibleSongs = expanded ? songItems : songItems.slice(0, SONG_PREVIEW);
+              const hiddenCount = section.items.length - visibleCards.length - visibleSongs.length;
+              const loadingMore = !!recommendationsLoadingMore[section.key];
+              // Collapse is offered once a section was expandable: more than
+              // the preview of EITHER kind (a 6-song, no-cards section expands
+              // past SONG_PREVIEW and must be able to fold back).
+              const expandable = cardItems.length > SECTION_PREVIEW || songItems.length > SONG_PREVIEW;
+              // The Shuffleupagus section carries its own Refresh (the LLM
+              // batch stays until refreshed — lib/home-suggestions-refresh.js).
+              const isShuffleupagus = section.resolverId === 'shuffleupagus';
+              return React.createElement('div', { key: section.key, className: 'mb-8' },
+                React.createElement('div', { className: 'flex items-center justify-between mb-4 gap-4' },
+                  React.createElement('div', { className: 'min-w-0' },
+                    React.createElement('h2', { className: 'text-lg font-semibold text-gray-900 flex items-center gap-2' },
+                      section.title || BUCKET_TITLES[section.bucketType] || 'Recommendations',
+                      section.resolverName && React.createElement('span', {
+                        className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded',
+                        style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' }
+                      }, section.resolverName),
+                      React.createElement('span', { className: 'text-xs font-normal text-gray-400' }, `${section.items.length}`)
+                    ),
+                    section.description && React.createElement('p', { className: 'text-sm text-gray-500 mt-0.5 truncate' }, section.description)
+                  ),
+                  React.createElement('div', { className: 'flex items-center gap-2 flex-shrink-0' },
+                    isShuffleupagus && React.createElement('button', {
+                      onClick: () => fetchAiRecommendations(),
+                      disabled: !!aiRecommendations?.loading,
+                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
+                      style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)', opacity: aiRecommendations?.loading ? 0.6 : 1 },
+                      onMouseEnter: (e) => { if (!aiRecommendations?.loading) e.currentTarget.style.backgroundColor = 'var(--hover-bg)'; },
+                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
+                      title: 'Ask Shuffleupagus for a new batch of suggestions'
+                    }, aiRecommendations?.loading ? 'Thinking…' : 'Refresh'),
+                    hiddenCount > 0 && React.createElement('button', {
+                      onClick: () => toggleRecommendationSection(section.key),
+                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
+                      style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' },
+                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg)',
+                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)'
+                    }, `Show all ${section.items.length}`),
+                    hiddenCount === 0 && expanded && expandable && React.createElement('button', {
+                      onClick: () => toggleRecommendationSection(section.key),
+                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
+                      style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' },
+                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg)',
+                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)'
+                    }, 'Show less'),
+                    section.canLoadMore && React.createElement('button', {
+                      onClick: () => loadMoreRecommendationSection(section),
+                      disabled: loadingMore,
+                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
+                      style: { backgroundColor: 'var(--accent-primary)', color: '#ffffff', opacity: loadingMore ? 0.6 : 1 },
+                      title: `More from ${section.resolverName || 'the service'}`
+                    }, loadingMore ? 'Loading…' : 'Load more')
+                  )
+                ),
+                visibleCards.length > 0 && React.createElement('div', {
+                  className: 'grid gap-4',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
+                },
+                  ...visibleCards.map((item, index) => cardFor(item, index))
+                ),
+                visibleSongs.length > 0 && React.createElement('div', { className: 'space-y-0' },
+                  ...visibleSongs.map((item, index) => songRow(item, index, visibleSongs, songItems, section))
+                )
+              );
+            };
 
             return React.createElement('div', {
               ref: (el) => {
@@ -38978,473 +39486,118 @@ useEffect(() => {
                 if (decision !== null) setRecommendationsHeaderCollapsed(decision);
               }
             },
-              // Sticky filter bar - show when both services are configured (even during loading)
-              hasBothServicesConfigured && React.createElement('div', {
-                className: 'sticky top-0 z-10 flex items-center px-6 py-3',
-              style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
-              },
-                // Source filter pills
-                React.createElement('div', { className: 'flex gap-2' },
-                  [
-                    { value: 'all', label: 'All', count: recommendations.tracks.length },
-                    { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzTrackCount },
-                    { value: 'lastfm', label: 'Last.fm', count: lastfmTrackCount }
-                  ].map(({ value, label, count }) =>
-                    React.createElement('button', {
-                      key: value,
-                      onClick: () => setRecommendationsSourceFilter(value),
-                      className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                        recommendationsSourceFilter === value
-                          ? value === 'listenbrainz' ? 'bg-orange-500 text-white'
-                            : value === 'lastfm' ? 'bg-red-600 text-white'
-                            : 'bg-amber-500 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`
-                    }, recommendations.loading ? label : `${label} (${count})`)
-                  )
-                )
-              ),
-              // Content with padding
               React.createElement('div', { className: 'p-6' },
-                // Loading state - show skeleton for active tab
-                recommendations.loading ?
-              React.createElement('div', null,
-                // Artists tab skeleton while the recommendations are fetched. The
-                // cards shimmer their own images once they exist, but until the
-                // fetch returns there are no cards, and the default tab rendered
-                // blank (86dd867 removed this as a "double skeleton"). Same grid,
-                // card box and text-line height as the cards, so nothing shifts.
-                recommendationsTab === 'artists' && React.createElement('div', {
-                  className: 'grid gap-4',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                },
-                  ...Array(12).fill(null).map((_, i) =>
+                // Loading state - section-shaped skeletons while nothing is loaded
+                recommendations.loading && sections.length === 0 ?
+                  React.createElement('div', null,
+                    React.createElement('div', { className: 'mb-4' }, React.createElement('div', { className: 'h-6 w-40 rounded shimmer-light animate-shimmer' })),
                     React.createElement('div', {
-                      key: `rec-artist-skeleton-${i}`,
-                      className: 'rounded-lg overflow-hidden',
-                      style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' }
+                      className: 'grid gap-4',
+                      style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                     },
-                      React.createElement('div', {
-                        className: 'aspect-square shimmer-strong animate-shimmer',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(i * 30, 300)}ms` }
-                      }),
-                      React.createElement('div', { className: 'p-3' },
-                        // A text-sm line is 20px tall; the bar sits inside it.
-                        React.createElement('div', { style: { height: '20px', display: 'flex', alignItems: 'center' } },
+                      ...Array(10).fill(null).map((_, i) =>
+                        React.createElement('div', {
+                          key: `rec-skeleton-${i}`,
+                          className: 'rounded-lg overflow-hidden',
+                          style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' }
+                        },
                           React.createElement('div', {
-                            className: 'h-3.5 w-3/4 rounded shimmer-light animate-shimmer',
-                            style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(i * 30, 300) + 50}ms` }
-                          })
-                        )
-                      )
-                    )
-                  )
-                ),
-                // Songs skeleton (when songs tab active)
-                recommendationsTab === 'songs' && React.createElement('div', { className: 'space-y-0' },
-                  ...Array(15).fill(null).map((_, i) =>
-                    React.createElement('div', {
-                      key: `rec-track-skeleton-${i}`,
-                      className: 'flex items-center gap-4 py-2 px-3 border-b border-gray-100'
-                    },
-                      React.createElement('div', {
-                        className: 'w-8 h-4 shimmer-light animate-shimmer flex-shrink-0',
-                        style: { backgroundSize: '200% 100%', animationDelay: `${i * 50}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-4 shimmer-light animate-shimmer',
-                        style: { flex: '1 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 50 + 25}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-4 shimmer-light animate-shimmer',
-                        style: { flex: '0.7 1 0', minWidth: 0, backgroundSize: '200% 100%', animationDelay: `${i * 50 + 50}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'h-4 shimmer-light animate-shimmer flex-shrink-0',
-                        style: { width: '50px', backgroundSize: '200% 100%', animationDelay: `${i * 50 + 75}ms` }
-                      }),
-                      React.createElement('div', {
-                        className: 'flex gap-1 flex-shrink-0',
-                        style: { width: '140px' }
-                      },
-                        React.createElement('div', {
-                          className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 100}ms` }
-                        }),
-                        React.createElement('div', {
-                          className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                          style: { backgroundSize: '200% 100%', animationDelay: `${i * 50 + 125}ms` }
-                        })
-                      )
-                    )
-                  )
-                )
-              )
-            // Not configured state
-            : recommendations.error === 'not_configured' ?
-              React.createElement('div', { className: 'text-center py-16' },
-                React.createElement('div', {
-                  className: 'w-20 h-20 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center'
-                },
-                  React.createElement('svg', { className: 'w-10 h-10 text-gray-400', fill: 'currentColor', viewBox: '0 0 24 24' },
-                    React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
-                  )
-                ),
-                React.createElement('h3', {
-                  className: 'text-xl font-medium text-gray-900 mb-2'
-                }, 'Connect a music service'),
-                React.createElement('p', { className: 'text-gray-500 mb-6 max-w-md mx-auto' },
-                  'Get personalized music recommendations based on your listening history. Connect your Last.fm or ListenBrainz account to get started.'
-                ),
-                React.createElement('div', { className: 'flex gap-3 justify-center' },
-                  React.createElement('button', {
-                    onClick: () => {
-                      setActiveView('settings');
-                      setSettingsTab('plugins');
-                      // Find and select the ListenBrainz service
-                      const listenbrainzService = metaServices.find(s => s.id === 'listenbrainz');
-                      if (listenbrainzService) {
-                        setSelectedResolver(listenbrainzService);
-                      }
-                    },
-                    className: 'px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium'
-                  }, 'Connect ListenBrainz'),
-                  React.createElement('button', {
-                    onClick: () => {
-                      setActiveView('settings');
-                      setSettingsTab('plugins');
-                      // Find and select the Last.fm service
-                      const lastfmService = metaServices.find(s => s.id === 'lastfm');
-                      if (lastfmService) {
-                        setSelectedResolver(lastfmService);
-                      }
-                    },
-                    className: 'px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium'
-                  }, 'Connect Last.fm')
-                )
-              )
-            // Other error state
-            : recommendations.error ?
-              React.createElement('div', { className: 'text-center py-12' },
-                React.createElement('div', { className: 'text-gray-400 mb-4' }, recommendations.error),
-                React.createElement('button', {
-                  onClick: loadRecommendations,
-                  className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
-                }, 'Try Again')
-              )
-            // Results - show content based on active tab
-            : React.createElement('div', null,
-                // Artists tab content - Square card design with Play/Queue hover
-                recommendationsTab === 'artists' && filteredArtists.length > 0 && React.createElement('div', {
-                  className: 'grid gap-4',
-                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                },
-                  ...filteredArtists.map((artist, index) => {
-                    const recsArtistPattern = generateArtistPattern(artist.name);
-                    return React.createElement('div', {
-                      key: artist.id,
-                      className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
-                      style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                      draggable: true,
-                      onDragStart: (e) => {
-                        e.dataTransfer.effectAllowed = 'copy';
-                        e.dataTransfer.setData('text/plain', JSON.stringify({
-                          type: 'artist',
-                          artist: {
-                            id: artist.id,
-                            name: artist.name,
-                            image: artist.image
-                          }
-                        }));
-                      },
-                      onClick: () => fetchArtistData(artist.name),
-                      onContextMenu: (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
-                            type: 'artist',
-                            artist: {
-                              id: artist.id,
-                              name: artist.name,
-                              image: artist.image
-                            }
-                          });
-                        }
-                      }
-                    },
-                      // Square image container - gray while loading, pattern only when imageLoaded && no image
-                      React.createElement('div', {
-                        className: 'aspect-square relative group/art',
-                        style: { background: artist.imageLoaded && !artist.image ? recsArtistPattern.gradient : 'var(--placeholder-bg)' }
-                      },
-                        // Shimmer while loading (imageLoaded not yet true)
-                        !artist.imageLoaded && React.createElement('div', {
-                          className: 'absolute inset-0 shimmer-strong animate-shimmer',
-                          style: { backgroundSize: '200% 100%' }
-                        }),
-                        // Initials fallback (only show when imageLoaded && no image)
-                        artist.imageLoaded && !artist.image && React.createElement('div', {
-                          className: 'absolute inset-0 flex items-center justify-center',
-                          style: { color: recsArtistPattern.textColor, opacity: 0.4 }
-                        },
-                          React.createElement('span', {
-                            className: 'font-bold tracking-wider',
-                            style: { fontSize: '2.5rem', textShadow: '0 2px 8px rgba(0,0,0,0.3)' }
-                          }, recsArtistPattern.initials)
-                        ),
-                        // Artist image
-                        artist.image && React.createElement('img', {
-                          src: artist.image,
-                          alt: artist.name,
-                          className: 'absolute inset-0 w-full h-full object-cover'
-                        }),
-                        // Hover overlay with Play and Queue buttons - Top 10 icons
-                        React.createElement('div', {
-                          className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3',
-                          style: { pointerEvents: 'auto' }
-                        },
-                          // Play top 10 button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              setTrackLoading(true);
-                              const tracks = await getArtistTopTracks(artist.name);
-                              if (tracks.length > 0) {
-                                const context = { type: 'artist', name: artist.name };
-                                const [firstTrack, ...remainingTracks] = tracks;
-                                // Tag the first track with context so queue navigation works correctly
-                                const taggedFirstTrack = { ...firstTrack, _playbackContext: context };
-                                setQueueWithContext(remainingTracks, context, true);
-                                handlePlay(taggedFirstTrack);
-                              } else {
-                                setTrackLoading(false);
-                                showToast(`No top tracks found for ${artist.name}`, 'error');
-                              }
-                            },
-                            className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
-                            style: { border: 'none', cursor: 'pointer' },
-                            title: 'Play top 10 tracks'
-                          },
-                            React.createElement(PlayTop10Icon, { size: 26, className: 'text-gray-800' })
-                          ),
-                          // Add top 10 to Queue button
-                          React.createElement('button', {
-                            onClick: async (e) => {
-                              e.stopPropagation();
-                              const tracks = await getArtistTopTracks(artist.name);
-                              if (tracks.length > 0) {
-                                addToQueue(tracks, { type: 'artist', name: artist.name });
-                                showToast(`Added ${tracks.length} top tracks from ${artist.name} to queue`);
-                              } else {
-                                showToast(`No top tracks found for ${artist.name}`, 'error');
-                              }
-                            },
-                            className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
-                            style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                            title: 'Add top 10 to queue'
-                          },
-                            React.createElement(QueueTop10Icon, { size: 20 })
+                            className: 'aspect-square shimmer-strong animate-shimmer',
+                            style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(i * 30, 300)}ms` }
+                          }),
+                          React.createElement('div', { className: 'p-3' },
+                            React.createElement('div', { style: { height: '20px', display: 'flex', alignItems: 'center' } },
+                              React.createElement('div', {
+                                className: 'h-3.5 w-3/4 rounded shimmer-light animate-shimmer',
+                                style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(i * 30, 300) + 50}ms` }
+                              })
+                            )
                           )
                         )
-                      ),
-                      // Artist name
-                      React.createElement('div', { className: 'p-3' },
-                        React.createElement('p', {
-                          className: 'font-medium text-gray-900 truncate text-sm transition-colors'
-                        }, artist.name)
                       )
-                    );
-                  })
-                ),
-
-                // Artists tab empty state
-                recommendationsTab === 'artists' && filteredArtists.length === 0 && React.createElement('div', {
-                  className: 'text-center py-12 text-gray-400'
-                }, recommendationsSourceFilter !== 'all' ? `No artists from ${recommendationsSourceFilter === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}.` : 'No recommended artists found.'),
-
-                // Songs tab content - track list table
-                recommendationsTab === 'songs' && filteredTracks.length > 0 && React.createElement('div', { className: 'space-y-0' },
-                  ...filteredTracks.map((track, index) => {
-                      // Use track.id to look up resolved sources from trackSources state
-                      const resolvedSources = trackSources[track.id] || track.sources || {};
-                      const hasResolved = Object.keys(resolvedSources).length > 0;
-                      const isResolving = Object.keys(resolvedSources).length === 0;
-
-                      return React.createElement('div', {
-                        key: track.id,
-                        'data-track-id': track.id,
-                        ref: (el) => {
-                          if (el) {
-                            recommendationsTrackRowRefs.current.set(track.id, el);
-                            if (recommendationsObserverRef.current) {
-                              recommendationsObserverRef.current.observe(el);
-                            }
-                          } else {
-                            recommendationsTrackRowRefs.current.delete(track.id);
-                          }
-                        },
-                        draggable: true,
-                        onDragStart: (e) => {
-                          setDraggingTrackForPlaylist(track); // Enable playlist drop target
-                          e.dataTransfer.effectAllowed = 'copy';
-                          e.dataTransfer.setData('text/plain', JSON.stringify({
-                            type: 'track',
-                            track: {
-                              id: track.id,
-                              title: track.title,
-                              artist: track.artist,
-                              duration: track.duration,
-                              sources: track.sources || {}
-                            }
-                          }));
-                        },
-                        onDragEnd: () => {
-                          handlePlaylistDragEnd();
-                        },
-                        className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${
-                          isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'
-                        }`,
-                        style: { borderRadius: '8px', marginBottom: '2px' },
+                    )
+                  )
+                // Not configured state
+                : recommendations.error === 'not_configured' ?
+                  React.createElement('div', { className: 'text-center py-16' },
+                    React.createElement('div', {
+                      className: 'w-20 h-20 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center'
+                    },
+                      React.createElement('svg', { className: 'w-10 h-10 text-gray-400', fill: 'currentColor', viewBox: '0 0 24 24' },
+                        React.createElement('path', { d: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z' })
+                      )
+                    ),
+                    React.createElement('h3', {
+                      className: 'text-xl font-medium text-gray-900 mb-2'
+                    }, 'Connect a music service'),
+                    React.createElement('p', { className: 'text-gray-500 mb-6 max-w-md mx-auto' },
+                      'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, sign in to Amazon Music, or enable an AI chat provider for Shuffleupagus suggestions.'
+                    ),
+                    React.createElement('div', { className: 'flex gap-3 justify-center' },
+                      React.createElement('button', {
                         onClick: () => {
-                          // Set remaining tracks as queue and play this track
-                          const tracksAfter = filteredTracks.slice(index + 1);
-                          const context = { type: 'recommendations', name: 'Recommendations' };
-                          setQueueWithContext(tracksAfter, context);
-                          handlePlay(track);
-                        },
-                        onContextMenu: (e) => {
-                          e.preventDefault();
-                          if (window.electron?.contextMenu?.showTrackMenu) {
-                            window.electron.contextMenu.showTrackMenu({
-                              type: 'track',
-                              track: track,
-                              sourceType: 'recommendations',
-                              sourceName: 'Recommendations'
-                            });
+                          setActiveView('settings');
+                          setSettingsTab('plugins');
+                          const listenbrainzService = metaServices.find(s => s.id === 'listenbrainz');
+                          if (listenbrainzService) {
+                            setSelectedResolver(listenbrainzService);
                           }
-                        }
+                        },
+                        className: 'px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium'
+                      }, 'Connect ListenBrainz'),
+                      React.createElement('button', {
+                        onClick: () => {
+                          setActiveView('settings');
+                          setSettingsTab('plugins');
+                          const lastfmService = metaServices.find(s => s.id === 'lastfm');
+                          if (lastfmService) {
+                            setSelectedResolver(lastfmService);
+                          }
+                        },
+                        className: 'px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium'
+                      }, 'Connect Last.fm')
+                    )
+                  )
+                // Other error state
+                : recommendations.error ?
+                  React.createElement('div', { className: 'text-center py-12' },
+                    React.createElement('div', { className: 'text-gray-400 mb-4' }, recommendations.error),
+                    React.createElement('button', {
+                      onClick: () => loadRecommendations(true),
+                      className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
+                    }, 'Try Again')
+                  )
+                // Sections
+                : React.createElement('div', null,
+                    ...sections.map(renderSection),
+                    // Shuffleupagus skeleton while the LLM thinks (cached
+                    // suggestions render as a real section meanwhile)
+                    llmLoading && React.createElement('div', { className: 'mb-8' },
+                      React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
+                        React.createElement('span', { className: 'text-lg font-semibold text-gray-400' }, 'Shuffleupagus'),
+                        React.createElement('span', { className: 'text-xs text-gray-400' }, 'thinking…')
+                      ),
+                      React.createElement('div', {
+                        className: 'grid gap-4',
+                        style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                       },
-                        // Track number
-                        React.createElement('span', {
-                          className: 'flex-shrink-0 text-right',
-                          style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' }
-                        }, String(index + 1).padStart(2, '0')),
-
-                        // Track title - flexible column
-                        React.createElement('span', {
-                          className: 'truncate transition-colors',
-                          style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
-                        }, track.title),
-
-                        // Artist name - flexible column, clickable
-                        React.createElement('span', {
-                          className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
-                          style: { flex: '0.7 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-secondary)' },
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            fetchArtistData(track.artist);
-                          }
-                        }, track.artist),
-
-                        // Album name - flexible column
-                        React.createElement('span', {
-                          className: 'truncate',
-                          style: { pointerEvents: 'none', flex: '0.5 1 0', minWidth: 0, fontSize: '12px', color: 'var(--text-tertiary)' }
-                        }, track.album || ''),
-
-                        // Duration - fixed width column
-                        React.createElement('span', {
-                          className: 'text-right tabular-nums flex-shrink-0',
-                          style: { pointerEvents: 'none', width: '50px', fontSize: '12px', color: 'var(--text-tertiary)' }
-                        }, formatTime(track.duration)),
-
-                        // Resolver icons - fixed width column
-                        React.createElement('div', {
-                          className: 'flex items-center gap-1 justify-end',
-                          style: { width: '140px', flexShrink: 0, minHeight: '24px' }
-                        },
-                          isResolving ?
+                        ...Array(5).fill(null).map((_, i) =>
+                          React.createElement('div', {
+                            key: `rec-llm-skeleton-${i}`,
+                            className: 'rounded-lg overflow-hidden',
+                            style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' }
+                          },
                             React.createElement('div', {
-                              className: 'flex items-center gap-1'
-                            },
-                              React.createElement('div', {
-                                className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                                title: 'Resolving track...'
-                              }),
-                              React.createElement('div', {
-                                className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                                style: { animationDelay: '0.1s' }
-                              })
-                            )
-                          : hasResolved ? (() => {
-                              const bestConf = getBestSourceConfidence(resolvedSources);
-                              return Object.entries(resolvedSources)
-                                .filter(([resolverId]) => playbackResolvers.includes(resolverId))
-                                .sort(([aId], [bId]) => {
-                                  const aIndex = resolverOrder.indexOf(aId);
-                                  const bIndex = resolverOrder.indexOf(bId);
-                                  return aIndex - bIndex;
-                                })
-                                .map(([resolverId, source]) => {
-                                  const resolver = allResolvers.find(r => r.id === resolverId);
-                                  if (!resolver || !resolver.play) return null;
-                                  return React.createElement('button', {
-                                    key: resolverId,
-                                    className: 'no-drag',
-                                    onClick: (e) => {
-                                      e.stopPropagation();
-                                      const tracksAfter = filteredTracks.slice(index + 1);
-                                      const context = { type: 'recommendations', name: 'Recommendations' };
-                                      setQueueWithContext(tracksAfter, context);
-                                      handlePlay({ ...track, preferredResolver: resolverId });
-                                    },
-                                    style: {
-                                      width: '20px',
-                                      height: '20px',
-                                      borderRadius: '4px',
-                                      backgroundColor: resolver.color,
-                                      border: 'none',
-                                      cursor: 'pointer',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      pointerEvents: 'auto',
-                                      opacity: (source.confidence || 0) < bestConf ? 0.6 : 1,
-                                      transition: 'transform 0.1s'
-                                    },
-                                    onMouseEnter: (e) => e.currentTarget.style.transform = 'scale(1.1)',
-                                    onMouseLeave: (e) => e.currentTarget.style.transform = 'scale(1)',
-                                    title: `Play from ${resolver.name}${source.confidence ? ` (${Math.round(source.confidence * 100)}% match)` : ''}`
-                                  }, React.createElement(ResolverIcon, { resolverId, size: 12 }));
-                                });
-                            })()
-                          :
-                            // Show shimmer skeletons while resolving
-                            React.createElement('div', {
-                              className: 'flex items-center gap-1'
-                            },
-                              React.createElement('div', {
-                                className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                                title: 'Resolving track...'
-                              }),
-                              React.createElement('div', {
-                                className: 'w-5 h-5 rounded shimmer-light animate-shimmer',
-                                style: { animationDelay: '0.1s' }
-                              })
-                            )
+                              className: 'aspect-square shimmer-strong animate-shimmer',
+                              style: { backgroundSize: '200% 100%', animationDelay: `${i * 60}ms` }
+                            })
+                          )
                         )
-                      );
-                    })
-                ),
-
-                // Songs tab empty state
-                recommendationsTab === 'songs' && filteredTracks.length === 0 && React.createElement('div', {
-                  className: 'text-center py-12 text-gray-400'
-                }, recommendationsSourceFilter !== 'all' ? `No songs from ${recommendationsSourceFilter === 'listenbrainz' ? 'ListenBrainz' : 'Last.fm'}.` : 'No recommended songs found.')
+                      )
+                    )
+                  )
               )
-            )
-          );
+            );
           })()
         ),
 
@@ -42953,14 +43106,14 @@ useEffect(() => {
                       })
                     )
                   ),
-                  // Refresh Home's AI suggestions on every visit toggle
+                  // Refresh Shuffleupagus suggestions on every visit toggle
                   React.createElement('div', { className: 'flex items-center justify-between py-3' },
                     React.createElement('div', null,
                       React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
-                        'Refresh Home suggestions on every visit'
+                        'Refresh Shuffleupagus suggestions on every visit'
                       ),
                       React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
-                        'Ask Shuffleupagus for new Album and Artist Suggestions each time you open Home. When off, they stay until you press Refresh'
+                        'Ask Shuffleupagus for new album and artist suggestions each time you open the Recommendations page. When off, they stay until you press Refresh'
                       )
                     ),
                     React.createElement('button', {

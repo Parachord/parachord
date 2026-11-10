@@ -18,20 +18,19 @@ const path = require('path');
 
 const app = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'app.js'), 'utf8');
 
-describe('Recommendations artists skeleton', () => {
+describe('Recommendations sections skeleton', () => {
   const view = app.slice(app.indexOf("activeView === 'recommendations' && React.createElement"));
-  const loading = view.slice(view.indexOf('recommendations.loading ?'), view.indexOf(": recommendations.error === 'not_configured' ?"));
-  const results = view.slice(view.indexOf("recommendationsTab === 'artists' && filteredArtists.length > 0"));
+  const loading = view.slice(view.indexOf('recommendations.loading && sections.length === 0 ?'), view.indexOf(": recommendations.error === 'not_configured' ?"));
+  const cards = view.slice(view.indexOf('const renderSection = (section) => {'));
 
-  test('the Artists tab renders a skeleton grid while loading', () => {
-    expect(loading).not.toMatch(/recommendationsTab === 'artists' && null/);
-    expect(loading).toMatch(/recommendationsTab === 'artists' && React\.createElement\('div', \{/);
-    expect(loading).toMatch(/key: `rec-artist-skeleton-\$\{i\}`/);
+  test('the sectioned page renders a skeleton grid while loading', () => {
+    expect(loading).toMatch(/recommendations\.loading && sections\.length === 0 \?/);
+    expect(loading).toMatch(/key: `rec-skeleton-\$\{i\}`/);
   });
 
   test('it uses the cards\' grid and card box', () => {
     const grid = "gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))'";
-    expect(results).toContain(grid);
+    expect(cards).toContain(grid);
     expect(loading).toContain(grid);
     expect(loading).toMatch(/className: 'aspect-square shimmer-strong animate-shimmer'/);
     expect(loading).toMatch(/backgroundColor: 'var\(--card-bg\)', boxShadow: 'var\(--card-shadow\)'/);
