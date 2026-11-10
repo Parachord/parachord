@@ -186,6 +186,14 @@ let localFilesService = null;
 let userInitiatedUpdateCheck = false;
 let localFilesServiceReady = null; // Promise that resolves when service is ready
 
+// Every Spotify Web API request from the main process gives up after this
+// long. A request on a dead connection otherwise hangs for minutes instead of
+// failing: a hung poll never counts as an error (so recovery never starts),
+// and a hung pause on quit holds the app open (parachord#1300 follow-up).
+const SPOTIFY_API_TIMEOUT_MS = 5000;
+// Quitting waits on the pause, so it gets less.
+const SPOTIFY_QUIT_PAUSE_TIMEOUT_MS = 3000;
+
 // Spotify Playback Polling Service
 // Runs in main process to avoid OS timer throttling when app is backgrounded
 const spotifyPoller = {
@@ -328,7 +336,8 @@ const spotifyPoller = {
 
     try {
       const response = await fetch('https://api.spotify.com/v1/me/player', {
-        headers: { 'Authorization': `Bearer ${this.token}` }
+        headers: { 'Authorization': `Bearer ${this.token}` },
+        signal: AbortSignal.timeout(SPOTIFY_API_TIMEOUT_MS)
       });
 
       if (!response.ok) {
@@ -495,7 +504,8 @@ const spotifyPoller = {
     this.recoveryInterval = setInterval(async () => {
       try {
         const response = await fetch('https://api.spotify.com/v1/me/player', {
-          headers: { 'Authorization': `Bearer ${this.token}` }
+          headers: { 'Authorization': `Bearer ${this.token}` },
+          signal: AbortSignal.timeout(SPOTIFY_API_TIMEOUT_MS)
         });
 
         if (response.ok && response.status !== 204) {
@@ -2345,7 +2355,8 @@ const pauseSpotifyPlayback = async () => {
   try {
     const response = await fetch('https://api.spotify.com/v1/me/player/pause', {
       method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: AbortSignal.timeout(SPOTIFY_QUIT_PAUSE_TIMEOUT_MS)
     });
     if (response.ok || response.status === 204) {
       console.log('✅ Spotify playback paused on quit');
