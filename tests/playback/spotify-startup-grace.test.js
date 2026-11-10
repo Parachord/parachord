@@ -75,3 +75,34 @@ describe('startupPollVerdict', () => {
     expect(startupPollVerdict({ ...base, status: 204, data: null, elapsedMs: 6000, graceMs: 5000 })).toBe('evaluate');
   });
 });
+
+// parachord#1300: started inside its album, Spotify plays on into the album's
+// next track, so the poller times one poll for just before the end.
+describe('endCheckDelayMs', () => {
+  const { endCheckDelayMs, END_CHECK_LEAD_MS } = require('../../spotify-startup-grace');
+  const POLL = 20000;
+
+  test('an end before the next regular poll gets a check just ahead of it', () => {
+    expect(endCheckDelayMs(12000, POLL)).toBe(12000 - END_CHECK_LEAD_MS);
+  });
+
+  test('an end the regular poll will see first gets none yet', () => {
+    expect(endCheckDelayMs(60000, POLL)).toBeNull();
+    expect(endCheckDelayMs(POLL + END_CHECK_LEAD_MS, POLL)).toBeNull();
+  });
+
+  test('inside the lead it checks at once', () => {
+    expect(endCheckDelayMs(800, POLL)).toBe(0);
+  });
+
+  test('lands inside the poller\'s 2 s near-end window', () => {
+    expect(END_CHECK_LEAD_MS).toBeGreaterThan(0);
+    expect(END_CHECK_LEAD_MS).toBeLessThan(2000);
+  });
+
+  test('no time left, or no duration, means no check', () => {
+    expect(endCheckDelayMs(0, POLL)).toBeNull();
+    expect(endCheckDelayMs(-500, POLL)).toBeNull();
+    expect(endCheckDelayMs(NaN, POLL)).toBeNull();
+  });
+});
