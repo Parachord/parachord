@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { trackToHoldAfterFailure, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds } = require('../lib/playback-helpers');
+const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -317,6 +317,18 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   React.useEffect(() => {
     if (isPlaying) trackNeedsExplicitStart.current = false;
   }, [isPlaying]);
+
+  // Offline (#1297): a failed play stops on its track for Play instead of
+  // skipping, advancing or not, since the next track would fail the same way
+  // and skipping only empties the queue. isDeviceOffline is the OS's "no
+  // network"; a local file isn't asked (offline is no reason it failed, and
+  // the next local file plays). Mobile does the same (failedPlayAwaitsLoad,
+  // parachord-mobile#572/#573).
+  const deviceOffline = () => isDeviceOffline(typeof navigator !== 'undefined' ? navigator : null);
+  const announceOfflineStop = (track) => {
+    console.log(`📴 Offline: stopping on "${track?.title || 'track'}" for Play instead of skipping`);
+    showToast(OFFLINE_PLAY_MESSAGE, 'error', null, { duration: 8000 });
+  };
 
   // ---------------------------------------------------------------
   // Stream-quality facts (the root stream-quality.js contract): measured
@@ -597,6 +609,14 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         } else if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
           errorMessage = `The ${label} server returned an audio format this app cannot decode.`;
         }
+        // Offline (#1297): stop on the track for Play, advancing or not; the
+        // next stream would fail the same way.
+        if (deviceOffline()) {
+          setTrackLoading(false);
+          holdElementTrack(html5AudioTrackRef.current);
+          announceOfflineStop(html5AudioTrackRef.current);
+          return;
+        }
         if (skipIfAdvancing(`${label} playback: ${errorMessage}`)) return;
         setTrackLoading(false);
         holdElementTrack(html5AudioTrackRef.current);
@@ -640,6 +660,21 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       holdTrackForPlay(trackOrSource);
     };
 
+    // Offline (#1297): stop on this track for Play with the connection
+    // message, before any skip, source fallback or forced re-resolve (offline
+    // that re-resolve reaches nothing, and a plugin that answers null on a
+    // network error would have its miss stored as a no-match marker). True
+    // when it handled the failure; a superseded play's failure is dropped.
+    // needsNetwork: false for a local file.
+    const stopIfOffline = ({ needsNetwork = true } = {}) => {
+      if (!needsNetwork || !deviceOffline()) return false;
+      if (playbackGenerationRef.current !== thisGeneration) return true;
+      setTrackLoading(false);
+      holdFailedTrack();
+      announceOfflineStop(trackOrSource);
+      return true;
+    };
+
     // In auto-advance contexts (handleNext-driven progression OR spinoff/radio
     // mode) any playback failure should silently skip to the next track
     // instead of disrupting the user with a dialog. spinoffModeRef captures
@@ -649,7 +684,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // failure was handled silently (caller should `return` immediately),
     // false when the caller should fall through to its dialog. A failure
     // that doesn't skip stops on this track, so it is held for Play first.
-    const autoSkipIfAdvancing = (reason) => {
+    const autoSkipIfAdvancing = (reason, { needsNetwork = true } = {}) => {
+      if (stopIfOffline({ needsNetwork })) return true;
       if (!(isAdvancingTrackRef.current || spinoffModeRef.current)) {
         holdFailedTrack();
         return false;
@@ -1171,7 +1207,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             return;
           }
           setTrackLoading(false);
-          if (autoSkipIfAdvancing(`local file missing: ${localPath}`)) return;
+          if (autoSkipIfAdvancing(`local file missing: ${localPath}`, { needsNetwork: false })) return;
           showConfirmDialog({
             type: 'error',
             title: 'File Not Found',
@@ -1375,7 +1411,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           errorMessage = unsupportedAudioMessage(ext);
         }
 
-        if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`)) return;
+        if (autoSkipIfAdvancing(`local file playback: ${errorMessage}`, { needsNetwork: false })) return;
         showConfirmDialog({
           type: 'error',
           title: 'Playback Error',
@@ -1512,6 +1548,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         if ((error && error.reason === 'superseded') || !isCurrentPlay()) return;
         console.warn(`🎵 ${serviceName} can't play "${trackOrSource.title}": ${error && error.message}`);
         widget.stop();
+        // Offline it isn't this service refusing the track (#1297): no
+        // "can't play this track here, playing via …", stop on the track.
+        if (stopIfOffline()) return;
 
         // Another enabled source for this track plays instead (the
         // Spotify-unavailable fallback's shape: drop this source, replay).
@@ -2107,6 +2146,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       if (!success) {
         setTrackLoading(false); // Clear loading state on failure
         console.error(`❌ ${resolver.name} playback failed`);
+        // Offline: no retry, no "not available on Apple Music" fallback, no
+        // forced re-resolve; stop on the track (#1297).
+        if (stopIfOffline({ needsNetwork: resolverId !== 'localfiles' })) return;
 
         // For Spotify, retry once after a short delay (device may need to wake up)
         if (resolverId === 'spotify' && !sourceToPlay._spotifyRetried) {
@@ -2306,6 +2348,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       }
       console.error(`❌ Error playing with ${resolver.name}:`, error);
       setTrackLoading(false); // Clear loading state on error
+      if (stopIfOffline({ needsNetwork: resolverId !== 'localfiles' })) return;
 
       // On error, also try to re-resolve. This path used to be silent: the
       // spinner cleared and nothing happened. Say what failed, same as the
