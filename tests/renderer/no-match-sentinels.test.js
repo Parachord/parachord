@@ -61,7 +61,7 @@ describe('handlePlay on a row marked no match', () => {
 
   // Runs the real hook under renderToStaticMarkup (see use-playback-engine.test.js)
   // and hands back handlePlay with the resolver and dialog surface stubbed.
-  function engineWith(resolver) {
+  function engineWith(resolver, { spinoff = false } = {}) {
     global.React = require('react');
     global.ReactDOM = require('react-dom');
     const ReactDOMServer = require('react-dom/server');
@@ -73,9 +73,11 @@ describe('handlePlay on a row marked no match', () => {
     const noop = () => {};
     const showConfirmDialog = jest.fn();
     const queueTrackSources = jest.fn();
+    const setCurrentTrack = jest.fn();
+    const trackNeedsExplicitStart = ref(false);
 
     const volume = { volumeRef: ref(1), isMutedRef: ref(false), resolverVolumeOffsets: {}, getEffectiveVolume: (x) => x, setSpotifyVolume: noop };
-    const queue = { currentTrack: null, currentTrackRef: ref(), currentQueueRef: ref([]), setCurrentTrack: noop, setCurrentQueue: noop, playbackContext: null, setPlaybackContext: noop, playHistoryRef: ref([]) };
+    const queue = { currentTrack: null, currentTrackRef: ref(), currentQueueRef: ref([]), setCurrentTrack, setCurrentQueue: noop, playbackContext: null, setPlaybackContext: noop, playHistoryRef: ref([]) };
     const ctx = {
       resolvers: {
         loadedResolversRef: ref([resolver]),
@@ -109,7 +111,7 @@ describe('handlePlay on a row marked no match', () => {
         forgetMissingLocalFile: noop,
         showExternalTrackPromptUIRef: ref(noop),
       },
-      ui: { showToast: noop, showConfirmDialog, setActiveView: noop, setSettingsTab: noop },
+      ui: { showToast: noop, showConfirmDialog, setActiveView: noop, setSettingsTab: noop, setProgress: noop },
       scheduling: { updateSchedulerVisibility: noop, abortSchedulerContext: noop, registerPoolContext: noop, setSchedulerPlaybackIndex: noop },
     };
 
@@ -121,11 +123,11 @@ describe('handlePlay on a row marked no match', () => {
         isPlayingRef: ref(false), streamingPlaybackActiveRef: ref(false),
         spotifyToken: null, extensionConnected: null, audioContext: null,
         spinoffMode: false, setSpinoffMode: noop, spinoffSourceTrack: null, setSpinoffSourceTrack: noop, setSpinoffLoading: noop,
-        spinoffModeRef: ref(false), spinoffSourceTrackRef: ref(),
+        spinoffModeRef: ref(spinoff), spinoffSourceTrackRef: ref(),
         handleNextRef: ref(noop), handlePreviousRef: ref(noop), handlePlayPauseRef: ref(noop), handlePlayRef: ref(noop),
         startSpinoffRef: ref(), playbackPollerRef: ref(), pollingRecoveryRef: ref(), externalTrackTimeoutRef: ref(),
         externalTrackIntervalRef: ref(), waitingForBrowserPlaybackRef: ref(), pendingCloseTabIdRef: ref(),
-        trackNeedsExplicitStart: ref(), spotifyProgressBaselineRef: ref(),
+        trackNeedsExplicitStart, spotifyProgressBaselineRef: ref(),
         listenAlongFriend: null, setListenAlongFriend: noop, listenAlongFriendRef: ref(), listenAlongLastTrackRef: ref(),
         listenAlongPendingTrackRef: ref(), listenAlongUserPausedRef: ref(), listenAlongEndAfterSongRef: ref(),
       });
@@ -133,7 +135,7 @@ describe('handlePlay on a row marked no match', () => {
       return null;
     };
     ReactDOMServer.renderToStaticMarkup(global.React.createElement(Probe));
-    return { handlePlay, showConfirmDialog, queueTrackSources };
+    return { handlePlay, showConfirmDialog, queueTrackSources, setCurrentTrack, trackNeedsExplicitStart };
   }
 
   const titles = (dialog) => dialog.mock.calls.map(([d]) => d.title);
@@ -173,5 +175,31 @@ describe('handlePlay on a row marked no match', () => {
     await handlePlay(track({ __noMatchAll: true })).catch(() => {});
 
     expect(titles(showConfirmDialog)).toEqual(['No Source Found']);
+  });
+
+  // #1295: the failed track stays in the playbar, paused, for Play to load
+  // again through handlePlay (handlePlayPause's load-on-Play check).
+  test('leaves the failed track in the playbar, marked for Play to load again', async () => {
+    const { handlePlay, setCurrentTrack, trackNeedsExplicitStart } = engineWith(resolverFinding([]));
+
+    await handlePlay(track({ __noMatchAll: true })).catch(() => {});
+
+    expect(trackNeedsExplicitStart.current).toBe(true);
+    const held = setCurrentTrack.mock.calls.map(([t]) => t).filter(t => t && typeof t === 'object').pop();
+    expect(held).toEqual(expect.objectContaining({ id: 't1', title: 'Song' }));
+    expect(held).not.toHaveProperty('status');
+    expect(held).not.toHaveProperty('_activeResolver');
+  });
+
+  test('a failure while advancing skips on and holds nothing', async () => {
+    jest.useFakeTimers();
+    try {
+      const { handlePlay, showConfirmDialog, trackNeedsExplicitStart } = engineWith(resolverFinding([]), { spinoff: true });
+      await handlePlay({ ...track({ __noMatchAll: true }), _playbackContext: { type: 'spinoff' } }).catch(() => {});
+      expect(trackNeedsExplicitStart.current).toBe(false);
+      expect(titles(showConfirmDialog)).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
