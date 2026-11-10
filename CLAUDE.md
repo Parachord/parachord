@@ -93,7 +93,7 @@ All dialogs follow the same pattern: state object with `show` boolean, rendered 
 
 - `confirmDialog` (L6581): Simple OK dialog `{ show, type, title, message, onConfirm }`
 - `syncDeleteDialog` (L6605): Multi-action dialog `{ show, playlist }`
-- `devicePickerDialog` (L4989): Promise-based picker `{ show, devices[], onSelect }`
+- `amazonManageDialog`: Promise-based sign-in dialog `{ show, onResolve, relaunching }`
 
 ## Releasing
 
