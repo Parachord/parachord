@@ -190,6 +190,15 @@ const RECOMMENDATIONS_CACHE_TTL_MS = 30 * 60 * 1000;
 // a user expanded; the map is cleared on signOut).
 const SEE_MORE_CACHE_MAX = 40;
 
+// The home page's playlists strategy — the "Playlists for You" section
+// (the user's mixes: "My Discovery Mix", "My Recent Plays and More", plus
+// curated playlists). A stable strategy URI (Amazon's own ids, the same
+// class of identifier as the see-more route path — NOT an APQ hash, which
+// would renumber per redeploy and must never be hardcoded). The home page
+// rotates its sections per load and often does not render this one; the
+// see-more route answers it regardless (live-verified 2026-11).
+const PLAYLISTS_SECTION_ID = 'uri:///recommendations/browse-home/browse-home_playlistStrategy';
+
 // How long quality reads/writes wait for the __r trap to capture the live
 // playbackController store. Live observation (2026-10, hornet 1.18x):
 // storeCaptured stays false on track pages — hornet's factories appear to use
@@ -1456,7 +1465,8 @@ const amazonWebPlayer = {
   },
 
   // The home-page sections for the recommendations provider. Cached per
-  // process for RECOMMENDATIONS_CACHE_TTL_MS.
+  // process for RECOMMENDATIONS_CACHE_TTL_MS. The cached result includes the
+  // synthesized playlists section (withPlaylistsSection below).
   async getRecommendations() {
     if (!(await this.isSignedIn())) {
       throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
@@ -1472,25 +1482,58 @@ const amazonWebPlayer = {
       parse: recommendationsFromBrowseHome,
       noun: 'home recommendations'
     });
+    let sections = null;
     if (fast) {
       console.log(`[Amazon] home recommendations replay returning ${fast.sections.length} sections`);
-      this.recommendationsCache = { sections: fast.sections, fetchedAt: Date.now() };
-      return fast.sections;
-    }
-    const sections = await this.enqueueSearch(async () => {
-      // The page flow that ran while we queued may have refreshed the
-      // template — one refresh heals every expansion queued behind it.
-      const warmed = await this.tryRecommendationReplay({
-        template: this.browseHomeTemplate,
-        drop: () => { this.browseHomeTemplate = null; },
-        bodyFor: (body) => body,
-        parse: recommendationsFromBrowseHome,
-        noun: 'home recommendations'
+      sections = fast.sections;
+    } else {
+      sections = await this.enqueueSearch(async () => {
+        // The page flow that ran while we queued may have refreshed the
+        // template — one refresh heals every expansion queued behind it.
+        const warmed = await this.tryRecommendationReplay({
+          template: this.browseHomeTemplate,
+          drop: () => { this.browseHomeTemplate = null; },
+          bodyFor: (body) => body,
+          parse: recommendationsFromBrowseHome,
+          noun: 'home recommendations'
+        });
+        if (warmed) return warmed.sections;
+        return this.browseHomePageFlow();
       });
-      if (warmed) return warmed.sections;
-      return this.browseHomePageFlow();
-    });
+    }
+    // Outside the chain (the job above has completed): the home page rotates
+    // its sections per load and often does not render the playlists one.
+    sections = await this.withPlaylistsSection(sections);
     this.recommendationsCache = { sections, fetchedAt: Date.now() };
+    return sections;
+  },
+
+  // The home page rotates its sections per load (live-observed 2026-11: four
+  // different section sets in four loads) and does not always render a
+  // playlists section — but the playlists STRATEGY answers the see-more route
+  // regardless (live-verified 20 playlist items, cursor "...20"). Its first
+  // page carries the user's mixes ("My Discovery Mix", "My Recent Plays and
+  // More") plus curated playlists, all with /playlists/<id> URLs the resolver's
+  // lookupPlaylist already handles. So when the home page's sections carry no
+  // playlist items, pull the strategy's first page as a "Playlists for You"
+  // section, with the route's continuation cursor riding on it (the plugin
+  // contract's section.nextCursor) so the page's Load more paginates it.
+  // A renamed strategy or a route failure soft-fails: the home page's own
+  // sections are unaffected.
+  async withPlaylistsSection(sections) {
+    const hasPlaylists = (sections || []).some(s => (s.items || []).some(i => i.type === 'playlist'));
+    if (hasPlaylists) return sections;
+    try {
+      const parsed = await this.expandRecommendationSectionParsed(PLAYLISTS_SECTION_ID, null);
+      if (parsed && parsed.section && parsed.section.items && parsed.section.items.length) {
+        const section = { id: PLAYLISTS_SECTION_ID, title: parsed.section.title || 'Playlists for You', items: parsed.section.items };
+        if (parsed.nextCursor) section.nextCursor = parsed.nextCursor;
+        console.log(`[Amazon] home recommendations synthesized "${section.title}" (${section.items.length} playlists${section.nextCursor ? ', more available' : ''})`);
+        return [...sections, section];
+      }
+    } catch (error) {
+      console.warn('[Amazon] playlists section unavailable:', error && (error.reason ? `${error.reason} ${error.message}` : (error.message || error)));
+    }
     return sections;
   },
 
@@ -1562,21 +1605,18 @@ const amazonWebPlayer = {
   },
 
   // The next page of a titled recommendation section ("Load more"): one page
-  // of the see-more route. Cached per section+cursor for the session.
-  // Returns { items, nextCursor } in the plugin contract shape. A section the
-  // route has nothing for answers { items: [], nextCursor: null } (a real
-  // nothing-more, not an error).
-  async expandRecommendationSection(sectionId, afterCursor = null) {
+  // of the see-more route. Cached per section+cursor for the session. Returns
+  // the full parsed result ({ section: { title, items }, nextCursor }) — a
+  // section the route has nothing for carries a null section (a real
+  // nothing-more, not an error). expandRecommendationSection shapes it into the
+  // plugin contract; withPlaylistsSection reads the title off it.
+  async expandRecommendationSectionParsed(sectionId, afterCursor = null) {
     if (!(await this.isSignedIn())) {
       throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
     }
     if (!recommendationStrategyId(sectionId)) {
       throw notReady('not-ready', 'Not an Amazon recommendation section id');
     }
-    const asPage = (parsed) => ({
-      items: (parsed && parsed.section && parsed.section.items) || [],
-      nextCursor: (parsed && parsed.nextCursor) || null
-    });
     const cacheKey = sectionId + '|' + (afterCursor || '');
     const cached = this.seeMorePages.get(cacheKey);
     if (cached) return cached;
@@ -1588,9 +1628,8 @@ const amazonWebPlayer = {
       noun: 'see-more'
     });
     if (fast) {
-      const page = asPage(fast);
-      this.cacheSeeMorePage(cacheKey, page);
-      return page;
+      this.cacheSeeMorePage(cacheKey, fast);
+      return fast;
     }
     // Cold template: the see-more ROUTE (its first page) mints one. Even
     // for a cursor page — the route always answers page 1, but the minted
@@ -1607,9 +1646,8 @@ const amazonWebPlayer = {
       return this.seeMorePageFlow(sectionId);
     });
     if (!afterCursor) {
-      const page = asPage(first);
-      this.cacheSeeMorePage(cacheKey, page);
-      return page;
+      this.cacheSeeMorePage(cacheKey, first);
+      return first;
     }
     // The route answered page 1 while the cursor page was wanted: replay the
     // freshly minted template with the cursor.
@@ -1621,9 +1659,17 @@ const amazonWebPlayer = {
       noun: 'see-more cursor page'
     });
     if (!page) throw notReady('not-ready', 'Amazon see-more replay failed after a fresh capture');
-    const out = asPage(page);
-    this.cacheSeeMorePage(cacheKey, out);
-    return out;
+    this.cacheSeeMorePage(cacheKey, page);
+    return page;
+  },
+
+  // The plugin-contract shape of one expansion page: { items, nextCursor }.
+  async expandRecommendationSection(sectionId, afterCursor = null) {
+    const parsed = await this.expandRecommendationSectionParsed(sectionId, afterCursor);
+    return {
+      items: (parsed && parsed.section && parsed.section.items) || [],
+      nextCursor: (parsed && parsed.nextCursor) || null
+    };
   },
 
   cacheSeeMorePage(key, page) {

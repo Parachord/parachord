@@ -122,6 +122,10 @@ function normalizeRecommendationSections(raw, { resolverId, resolverName } = {})
     if (typeof rawSection.id === 'string' && rawSection.id.trim()) section.id = rawSection.id.trim();
     if (typeof rawSection.title === 'string' && rawSection.title.trim()) section.title = rawSection.title.trim();
     if (typeof rawSection.description === 'string' && rawSection.description.trim()) section.description = rawSection.description.trim();
+    // A provider that pre-fetches a section's first page (Amazon's synthesized
+    // "Playlists for You") carries its continuation cursor on the section, so
+    // the page's first "Load more" starts from it.
+    if (rawSection.nextCursor != null && typeof rawSection.nextCursor !== 'object') section.nextCursor = String(rawSection.nextCursor);
     sections.push(section);
   }
   return { resolverId: resolverId || null, resolverName: resolverName || null, sections };
@@ -244,7 +248,7 @@ function buildRecommendationSections({ providers, shuffleupagus, expandedSection
       resolverName: provider.resolverName,
       sectionId: section.id || null,
       canLoadMore: !!section.id && expandable.has(provider.resolverId) && !(expansion && expansion.exhausted),
-      nextCursor: (expansion && expansion.nextCursor) || null,
+      nextCursor: (expansion && expansion.nextCursor) || section.nextCursor || null,
       items: merged
     }));
   }

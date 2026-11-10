@@ -867,13 +867,26 @@ describe('amazonmusic recommendations (the recommendations capability)', () => {
     ]
   };
 
-  test('maps the bridge sections through verbatim and drops empty sections', async () => {
+  test('maps the bridge sections through and drops empty sections', async () => {
     global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue(sectionsResult) } } };
     const resolver = instantiate(axe);
     const out = await resolver.getRecommendations({});
     expect(out.sections).toHaveLength(1);
     expect(out.sections[0]).toMatchObject({ id: 'uri:///recommendations/browse-home/browse-home_mp3PrimeAlbumsStrategy', title: 'Albums for You' });
     expect(out.sections[0].items[0]).toMatchObject({ type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast' });
+  });
+
+  test('a section with its own first-page cursor (the synthesized playlists section) carries it through', async () => {
+    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({
+      success: true,
+      sections: [{ id: 'uri:///recommendations/browse-home/browse-home_playlistStrategy', title: 'Playlists for You', nextCursor: 'browse-home_playlistStrategy.20', items: [
+        { type: 'playlist', id: 'PP6417A00A9C99470BBC8834FF3BF6009A', name: 'My Discovery Mix', url: 'https://music.amazon.com/playlists/PP6417A00A9C99470BBC8834FF3BF6009A' }
+      ] }]
+    }) } } };
+    const resolver = instantiate(axe);
+    const out = await resolver.getRecommendations({});
+    expect(out.sections[0].nextCursor).toBe('browse-home_playlistStrategy.20');
+    expect(out.sections[0].items[0]).toMatchObject({ type: 'playlist', name: 'My Discovery Mix' });
   });
 
   test('a miss (empty sections) passes through as a miss, never a notReady', async () => {

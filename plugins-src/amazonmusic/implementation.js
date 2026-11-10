@@ -569,6 +569,14 @@ module.exports = {
       }
       var sections = (result.sections || []).filter(function (s) {
         return s && Array.isArray(s.items) && s.items.length > 0;
+      }).map(function (s) {
+        // The bridge's synthesized "Playlists for You" section carries its
+        // first page's continuation cursor — pass it through so the page's
+        // first "Load more" starts from it.
+        if (s.nextCursor != null) {
+          return { id: s.id, title: s.title, description: s.description, items: s.items, nextCursor: String(s.nextCursor) };
+        }
+        return s;
       });
       console.log(
         '[Amazon] resolver recommendations',

@@ -68,7 +68,7 @@ const fakeWin = (href = 'https://music.amazon.com/') => ({
 });
 
 describe('amazonWebPlayer.getRecommendations', () => {
-  let replayGql, isSignedIn, ensureWindow, layoutSearch, attachGqlCapture, cancelSearchViewPark, scheduleParkSearchView;
+  let replayGql, isSignedIn, ensureWindow, layoutSearch, attachGqlCapture, cancelSearchViewPark, scheduleParkSearchView, expandParsed;
   let saved;
 
   beforeEach(() => {
@@ -88,6 +88,9 @@ describe('amazonWebPlayer.getRecommendations', () => {
     amazonWebPlayer.seeMorePages = new Map();
     isSignedIn = jest.spyOn(amazonWebPlayer, 'isSignedIn').mockResolvedValue(true);
     replayGql = jest.spyOn(amazonWebPlayer, 'replayGql');
+    // The playlists-strategy synthesis: answered with nothing by default (the
+    // dedicated describe below pins it); individual tests override.
+    expandParsed = jest.spyOn(amazonWebPlayer, 'expandRecommendationSectionParsed').mockResolvedValue({ section: null, nextCursor: null });
     ensureWindow = jest.spyOn(amazonWebPlayer, 'ensureWindow');
     layoutSearch = jest.spyOn(amazonWebPlayer, 'layoutSearch');
     attachGqlCapture = jest.spyOn(amazonWebPlayer, 'attachGqlCapture');
@@ -98,6 +101,7 @@ describe('amazonWebPlayer.getRecommendations', () => {
   afterEach(() => {
     isSignedIn.mockRestore();
     replayGql.mockRestore();
+    expandParsed.mockRestore();
     ensureWindow.mockRestore();
     layoutSearch.mockRestore();
     attachGqlCapture.mockRestore();
@@ -121,9 +125,14 @@ describe('amazonWebPlayer.getRecommendations', () => {
       url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: BROWSE_HOME_BODY, capturedAt: Date.now()
     });
     replayGql.mockResolvedValue({ parsed: browseHomeData([{ id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } }]) });
+    expandParsed.mockResolvedValue({ section: { title: 'Playlists for You', items: [{ type: 'playlist', id: 'PP6417A00A9C99470BBC8834FF3BF6009A', name: 'My Discovery Mix' }] }, nextCursor: 'browse-home_playlistStrategy.20' });
     const sections = await amazonWebPlayer.getRecommendations();
-    expect(sections).toHaveLength(1);
+    expect(sections).toHaveLength(2);
     expect(sections[0]).toMatchObject({ id: SECTION_ID, title: 'Albums for You' });
+    // The home page carried no playlists: the playlists strategy was pulled as
+    // a titled section, with its first page's cursor riding on it.
+    expect(sections[1]).toMatchObject({ id: 'uri:///recommendations/browse-home/browse-home_playlistStrategy', title: 'Playlists for You', nextCursor: 'browse-home_playlistStrategy.20' });
+    expect(sections[1].items[0]).toMatchObject({ type: 'playlist', name: 'My Discovery Mix' });
     expect(replayGql).toHaveBeenCalledTimes(1);
     const [win, entry, body] = replayGql.mock.calls[0];
     expect(win).toBe(amazonWebPlayer.searchView);
@@ -132,6 +141,10 @@ describe('amazonWebPlayer.getRecommendations', () => {
     expect(body).toEqual(BROWSE_HOME_BODY);
     expect(ensureWindow).not.toHaveBeenCalled();
     expect(attachGqlCapture).not.toHaveBeenCalled();
+    // The synthesized result is cached: a second call re-fetches nothing.
+    await amazonWebPlayer.getRecommendations();
+    expect(replayGql).toHaveBeenCalledTimes(1);
+    expect(expandParsed).toHaveBeenCalledTimes(1);
   });
 
   test('the session cache serves a second call without a replay', async () => {
@@ -334,6 +347,57 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
   test('a non-section id is not-ready without a request', async () => {
     await expect(amazonWebPlayer.expandRecommendationSection('', null)).rejects.toMatchObject({ reason: 'not-ready' });
     expect(replayGql).not.toHaveBeenCalled();
+  });
+});
+
+describe('amazonWebPlayer.withPlaylistsSection (the synthesized "Playlists for You" section)', () => {
+  let expandParsed, isSignedIn;
+  let saved;
+
+  const albumSections = [{ id: SECTION_ID, title: 'Albums for You', items: [{ type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast' }] }];
+  const playlistSections = [{ id: 'uri:///recommendations/browse-home/other', title: 'Home playlists', items: [{ type: 'playlist', id: 'PP1', name: 'My Discovery Mix', url: 'https://music.amazon.com/playlists/PP1' }] }];
+
+  beforeEach(() => {
+    saved = { recommendationsCache: amazonWebPlayer.recommendationsCache, seeMorePages: amazonWebPlayer.seeMorePages, searchChain: amazonWebPlayer.searchChain };
+    amazonWebPlayer.recommendationsCache = null;
+    amazonWebPlayer.seeMorePages = new Map();
+    isSignedIn = jest.spyOn(amazonWebPlayer, 'isSignedIn').mockResolvedValue(true);
+    expandParsed = jest.spyOn(amazonWebPlayer, 'expandRecommendationSectionParsed');
+  });
+
+  afterEach(() => {
+    isSignedIn.mockRestore();
+    expandParsed.mockRestore();
+    amazonWebPlayer.recommendationsCache = saved.recommendationsCache;
+    amazonWebPlayer.seeMorePages = saved.seeMorePages;
+    amazonWebPlayer.searchChain = saved.searchChain;
+  });
+
+  test('no playlist items in the home sections: the playlists strategy is pulled as a titled section with its cursor', async () => {
+    expandParsed.mockResolvedValue({ section: { title: 'Playlists for You', items: [{ type: 'playlist', id: 'PP6417A00A9C99470BBC8834FF3BF6009A', name: 'My Discovery Mix' }] }, nextCursor: 'browse-home_playlistStrategy.20' });
+    const out = await amazonWebPlayer.withPlaylistsSection(albumSections);
+    expect(expandParsed).toHaveBeenCalledWith('uri:///recommendations/browse-home/browse-home_playlistStrategy', null);
+    expect(out).toHaveLength(2);
+    expect(out[1]).toMatchObject({ id: 'uri:///recommendations/browse-home/browse-home_playlistStrategy', title: 'Playlists for You', nextCursor: 'browse-home_playlistStrategy.20' });
+    expect(out[1].items[0]).toMatchObject({ type: 'playlist', name: 'My Discovery Mix' });
+  });
+
+  test('the home page already rendered playlists: no synthesis', async () => {
+    const out = await amazonWebPlayer.withPlaylistsSection(playlistSections);
+    expect(expandParsed).not.toHaveBeenCalled();
+    expect(out).toBe(playlistSections);
+  });
+
+  test('a renamed strategy or route failure soft-fails: the home sections pass through', async () => {
+    expandParsed.mockRejectedValue(Object.assign(new Error('Amazon see-more page never issued its query'), { reason: 'not-ready' }));
+    const out = await amazonWebPlayer.withPlaylistsSection(albumSections);
+    expect(out).toBe(albumSections);
+  });
+
+  test('a strategy with nothing answers no section (still soft)', async () => {
+    expandParsed.mockResolvedValue({ section: null, nextCursor: null });
+    const out = await amazonWebPlayer.withPlaylistsSection(albumSections);
+    expect(out).toBe(albumSections);
   });
 });
 
