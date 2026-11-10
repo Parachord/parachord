@@ -34,6 +34,7 @@
 ## Playback
 
 - **Play tries again after a track fails.** When a track couldn't play and Parachord showed an error, pressing Play did nothing, or resumed the song before it. The track that failed now stays in the playbar, and Play starts it again from scratch, choosing its source afresh.
+- **Offline, the queue stops instead of emptying itself.** With no network, a track that couldn't play was skipped, then the next, until the queue ran out without playing anything. Parachord now stops on the first track and says to check your connection, and Play starts it once you're back online. Local files still play offline.
 - **Spinoff works for more songs.** Last.fm has no similar-track list for some very popular songs, like "Shape of You", so the Spinoff button stayed greyed out. When Last.fm has fewer than five similar tracks, Spinoff now adds top tracks from similar artists, spread out so the same artist doesn't play twice in a row.
 - **Japanese, Chinese and Korean titles find their match on Subsonic.** On Navidrome, a title spelled with different punctuation, like `!!` in one place and `！！` in your tags, came back with nothing, so the track never showed Subsonic as a source. Parachord now asks again without the punctuation. Thanks to @theli-ua.
 - **See the bitrate of what's playing on Subsonic and Bandcamp.** Hovering the track title now shows the bitrate Parachord measures from the audio as it plays, so a Subsonic server's real stream rate shows up rather than what its library claims. Thanks to @theli-ua.
