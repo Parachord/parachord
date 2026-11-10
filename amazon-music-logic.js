@@ -946,6 +946,216 @@ function searchArtistImageFromGql(data, artistName) {
   return { url: (match && match.imageUrl) || null, envelope: true };
 }
 
+// --- Recommendations (capabilities.recommendations in the plugin) ---------
+// The home page (https://music.amazon.com/) fires BrowseHomePage (APQ, no
+// inline query); its response's data.browse.recommendationConnection.edges
+// are the "Albums for You" / "New Releases for You" / "Your Frequent Plays"
+// sections, each item a Track / Album / Artist / Audiobook / ... node
+// (live-captured 2026-11: section node = { id: the recommender strategy uri,
+// name, description, itemType (ALBUM/AUDIOBOOK/PODCAST_SHOW/MIXED), tags,
+// recommendedContent.edges[].node }). data.t1r is a single "featured play"
+// hero whose type varies (a Station today, a PodcastEpisode an hour later)
+// and stations/podcasts are not playable in Parachord, so it is skipped.
+// The "See More" button on each section is an SPA route,
+// /browse/music-items/home/recommendation/<strategy>, which fires
+// RecommenderSeeMorePage (vars { id: the full strategy uri, firstLimit: 20,
+// ... }) — the section expansion; its response's
+// data.recommender.edges[0].node.recommendedContent carries { edges,
+// pageInfo } where pageInfo.token is the OFFSET CURSOR
+// ('<strategy>.<count>', e.g. 'browse-home_mp3PrimeAlbumsStrategy.20') that
+// advances the next request passed as the afterCursor variable (live-verified
+// page 2; the Relay-style endCursor is a null decoy here).
+
+// One recommendation item from a gql entity node. Only music entities map;
+// Audiobook / PodcastEpisode / PodcastShow / Station / merch nodes are
+// dropped at parse time (the replay stays verbatim, so audiobooksEnabled /
+// merchEnabled ride the page's own variables and the parser keeps the
+// music). URLs keep Amazon's ?ref= trackers OFF the item (the node url
+// carries one; the canonical form is what the host's URL routing parses).
+function recommendationItemFromGqlNode(node) {
+  if (!node || typeof node !== 'object') return null;
+  const bareUrl = (u) => (typeof u === 'string' && u ? u.split('?')[0] : null);
+  const artist = gqlPrimaryArtistNames(node.contributingArtists);
+  if (node.__typename === 'Track') {
+    const cleaned = stripAmazonTitleMarker(node.title || node.shortTitle || '');
+    if (!node.id || !cleaned.title || !artist) return null;
+    return {
+      type: 'song',
+      id: node.id,
+      name: cleaned.title.slice(0, 200),
+      artist: artist.slice(0, 200),
+      imageUrl: gqlPrimaryImageUrl(node.images) || null,
+      url: bareUrl(node.url),
+      duration: typeof node.duration === 'number' ? node.duration : null
+    };
+  }
+  if (node.__typename === 'Album') {
+    const cleaned = stripAmazonTitleMarker(node.title || node.shortTitle || '');
+    if (!node.id || !cleaned.title || !artist) return null;
+    return {
+      type: 'album',
+      id: node.id,
+      name: cleaned.title.slice(0, 200),
+      artist: artist.slice(0, 200),
+      imageUrl: gqlPrimaryImageUrl(node.images) || null,
+      url: bareUrl(node.url) || ('https://music.amazon.com/albums/' + node.id)
+    };
+  }
+  if (node.__typename === 'Artist') {
+    if (!node.id || !node.name) return null;
+    // The artist-image pick (same rules as artistFromGqlSearchNode): widest
+    // PROFILE else widest overall, bare m.media-amazon.com URLs only.
+    const usable = (Array.isArray(node.images) ? node.images : [])
+      .filter(i => i && typeof i.url === 'string' && /^https:\/\/m\.media-amazon\.com\//i.test(i.url) && !i.url.includes('?'));
+    const widest = (l) => (l.length ? l.reduce((a, b) => ((b.width || 0) >= (a.width || 0) ? b : a)) : null);
+    const picked = widest(usable.filter(i => i.imageType === 'PROFILE')) || widest(usable);
+    return {
+      type: 'artist',
+      id: node.id,
+      name: String(node.name).slice(0, 200),
+      imageUrl: picked ? picked.url : null,
+      url: bareUrl(node.url) || ('https://music.amazon.com/artists/' + node.id)
+    };
+  }
+  if (node.__typename === 'Playlist') {
+    const name = node.title || node.name;
+    if (!node.id || !name) return null;
+    return {
+      type: 'playlist',
+      id: node.id,
+      name: String(name).slice(0, 200),
+      imageUrl: gqlPrimaryImageUrl(node.images) || null,
+      url: bareUrl(node.url)
+    };
+  }
+  return null;
+}
+
+// Find the page's own BrowseHomePage among captured request bodies. Matched
+// on operationName — the page fires exactly one op under this name (unlike
+// SpecSearchSeeMorePage, where the SAME operation carries the track/album/
+// artist specs, which is why the spec matcher matches on variables.searchText
+// instead). The LAST match wins: a re-render fires it again, and the freshest
+// headers ride the last one. Returns the request or null.
+function amazonBrowseHomeRequest(bodies) {
+  let found = null;
+  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { continue; }
+    const batch = Array.isArray(parsed) ? parsed : [parsed];
+    for (const req of batch) {
+      if (req && req.operationName === 'BrowseHomePage' && req.variables && typeof req.variables === 'object') found = req;
+    }
+  }
+  return found;
+}
+
+// The BrowseHomePage response -> the recommendations provider shape:
+// { sections: [{ id: strategy uri, title, description, items }], envelope }.
+// Sections with no mappable items disappear (an audiobooks-only section is
+// not music). An absent data.browse (hornet renamed the field) is envelope
+// false — structural, the caller must throw not-ready rather than cache a
+// miss. data.t1r is skipped on purpose (see the block comment).
+function recommendationsFromBrowseHome(data) {
+  if (!data || typeof data !== 'object' || !('browse' in data)) {
+    return { sections: [], envelope: false };
+  }
+  const conn = data.browse && data.browse.recommendationConnection;
+  const edges = (conn && Array.isArray(conn.edges)) ? conn.edges : [];
+  const sections = [];
+  for (const edge of edges) {
+    const node = edge && edge.node;
+    if (!node || typeof node !== 'object' || !node.id) continue;
+    const items = ((node.recommendedContent && Array.isArray(node.recommendedContent.edges)) ? node.recommendedContent.edges : [])
+      .map(e => recommendationItemFromGqlNode(e && e.node))
+      .filter(Boolean);
+    if (!items.length) continue;
+    const section = { id: String(node.id).slice(0, 300), title: null, items };
+    if (typeof node.name === 'string' && node.name.trim()) section.title = node.name.trim().slice(0, 200);
+    if (typeof node.description === 'string' && node.description.trim()) section.description = node.description.trim().slice(0, 300);
+    sections.push(section);
+  }
+  return { sections, envelope: true };
+}
+
+// Find the page's own RecommenderSeeMorePage among captured bodies (the
+// see-more route's request). Matched on operationName, last match wins, same
+// reasoning as amazonBrowseHomeRequest.
+function amazonSeeMoreRequest(bodies) {
+  let found = null;
+  for (const raw of (Array.isArray(bodies) ? bodies : [])) {
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { continue; }
+    const batch = Array.isArray(parsed) ? parsed : [parsed];
+    for (const req of batch) {
+      if (req && req.operationName === 'RecommenderSeeMorePage' && req.variables && typeof req.variables === 'object') found = req;
+    }
+  }
+  return found;
+}
+
+// A section's strategy suffix: the last path segment of the recommender uri
+// ('uri:///recommendations/browse-home/<strategy>' — what the see-more route
+// URL and the see-more request's variables.id both key on). Accepts the full
+// uri or a bare strategy.
+function recommendationStrategyId(sectionId) {
+  const raw = String(sectionId || '').split('?')[0];
+  if (!raw) return null;
+  const seg = raw.split('/').filter(Boolean).pop();
+  return seg || null;
+}
+
+// The see-more page URL for a section: the SPA route the home page's "See
+// More" button navigates to (live-verified 2026-11), which fires
+// RecommenderSeeMorePage. Accepts the section's full uri or a bare strategy.
+function amazonSeeMorePageUrl(sectionId) {
+  const strategy = recommendationStrategyId(sectionId);
+  if (!strategy) return null;
+  return 'https://music.amazon.com/browse/music-items/home/recommendation/' + encodeURIComponent(strategy);
+}
+
+// A deep clone of a see-more request body with the section variables patched:
+// id (the template was captured with a different section's uri) and
+// afterCursor (the previous page's pageInfo.token). Everything else —
+// firstLimit, feature flags, extensions with the APQ hash — stays
+// byte-identical to the capture.
+function seeMoreBodyWithVars(body, { sectionId, afterCursor } = {}) {
+  const out = JSON.parse(JSON.stringify(body || {}));
+  if (!out.variables || typeof out.variables !== 'object') out.variables = {};
+  if (sectionId != null) out.variables.id = sectionId;
+  if (afterCursor != null) out.variables.afterCursor = afterCursor;
+  else delete out.variables.afterCursor;
+  return out;
+}
+
+// The RecommenderSeeMorePage response -> { section, nextCursor, envelope }:
+// section is the provider's { title, items } for one expansion page,
+// nextCursor is pageInfo.token when hasNextPage (the offset cursor the next
+// request passes as afterCursor; endCursor is a decoy), null when done. An
+// absent data.recommender is envelope false — structural (hornet rename),
+// never a miss; a present connection with no usable node/edges is a real
+// "nothing more" (envelope true, section null).
+function recommendationsFromSeeMore(data) {
+  if (!data || typeof data !== 'object' || !('recommender' in data)) {
+    return { section: null, nextCursor: null, envelope: false };
+  }
+  const recommender = data.recommender;
+  const edges = (recommender && Array.isArray(recommender.edges)) ? recommender.edges : [];
+  const node = edges.length && edges[0] && edges[0].node;
+  if (!node || typeof node !== 'object') return { section: null, nextCursor: null, envelope: true };
+  const content = node.recommendedContent;
+  const items = ((content && Array.isArray(content.edges)) ? content.edges : [])
+    .map(e => recommendationItemFromGqlNode(e && e.node))
+    .filter(Boolean);
+  const pageInfo = (content && content.pageInfo) || {};
+  const nextCursor = pageInfo && pageInfo.hasNextPage && typeof pageInfo.token === 'string' && pageInfo.token
+    ? pageInfo.token
+    : null;
+  const section = { title: null, items };
+  if (typeof node.name === 'string' && node.name.trim()) section.title = node.name.trim().slice(0, 200);
+  return { section, nextCursor, envelope: true };
+}
+
 // One AlbumDetailPage tracksConnection.edges[] entry -> the album track
 // shape. Like the playlist/search row (shared contributingArtists and
 // title-marker handling) plus trackNumber, and the explicit flag from
@@ -1625,6 +1835,14 @@ module.exports = {
   amazonNormalizeArtistName,
   artistFromGqlSearchNode,
   searchArtistImageFromGql,
+  recommendationItemFromGqlNode,
+  amazonBrowseHomeRequest,
+  recommendationsFromBrowseHome,
+  amazonSeeMoreRequest,
+  recommendationStrategyId,
+  amazonSeeMorePageUrl,
+  seeMoreBodyWithVars,
+  recommendationsFromSeeMore,
   albumTrackFromGqlEdge,
   assignDiscNumbers,
   albumDetailFromGql,

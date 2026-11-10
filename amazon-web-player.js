@@ -80,6 +80,13 @@ const {
   amazonArtistSearchUrl,
   searchArtistImageFromGql,
   albumDetailFromGql,
+  recommendationsFromBrowseHome,
+  recommendationsFromSeeMore,
+  amazonBrowseHomeRequest,
+  amazonSeeMoreRequest,
+  recommendationStrategyId,
+  amazonSeeMorePageUrl,
+  seeMoreBodyWithVars,
   createSearchBreaker,
   paginatePlaylistTracks,
   amazonGqlFetchHeaders,
@@ -174,6 +181,15 @@ const SEARCH_VIEW_WARM_MS = 30000;
 // by this timeout, so the writer's drain wait is too).
 const REPLAY_TIMEOUT_MS = 12000;
 
+// How long the parsed home-page sections (getRecommendations) stay fresh in
+// the session cache: the Recommendations page refreshes at most hourly, and
+// a replay is not free (a stale template costs a page load).
+const RECOMMENDATIONS_CACHE_TTL_MS = 30 * 60 * 1000;
+
+// Upper bound on cached see-more expansion pages (one entry per section+cursor
+// a user expanded; the map is cleared on signOut).
+const SEE_MORE_CACHE_MAX = 40;
+
 // How long quality reads/writes wait for the __r trap to capture the live
 // playbackController store. Live observation (2026-10, hornet 1.18x):
 // storeCaptured stays false on track pages — hornet's factories appear to use
@@ -220,6 +236,23 @@ const amazonWebPlayer = {
   // any replay error (a stale APQ hash or rotated session headers) and on
   // signOut. See specSearch.
   specSearchTemplate: null,
+  // The captured home-page BrowseHomePage request (the recommendations flow
+  // — same makeSpecSearchTemplate contract: url + headers + APQ body; the
+  // variables are the page's own and never patched). Dropped on any replay
+  // error and on signOut. See getRecommendations.
+  browseHomeTemplate: null,
+  // The captured see-more ROUTE request (RecommenderSeeMorePage): one
+  // template serves every section and cursor — replays patch the id/
+  // afterCursor variables (seeMoreBodyWithVars). See expandRecommendationSection.
+  seeMoreTemplate: null,
+  // Session cache of the parsed home-page sections (getRecommendations) —
+  // the Recommendations page refreshes hourly at most, and a replay is not
+  // free (the template can go stale and cost a page load). Null until the
+  // first successful fetch; cleared on signOut.
+  recommendationsCache: null,
+  // Session cache of see-more expansion pages, keyed `${sectionId}|${afterCursor}`.
+  // Bounded (SEE_MORE_CACHE_MAX); cleared on signOut.
+  seeMorePages: new Map(),
   // The delayed parkSearchView fuse (SEARCH_VIEW_WARM_MS) — canceled by new
   // search activity, re-armed at its end.
   searchViewParkTimer: null,
@@ -711,8 +744,13 @@ const amazonWebPlayer = {
     // A dmls 400 REQUIRED_COOKIES means THESE headers were rejected. The
     // stored search template is the same token — reusing it makes the retry
     // fail and the user get a sign-in prompt on a live session. Drop it and
-    // mint from a page flow.
-    if (refresh) this.specSearchTemplate = null;
+    // mint from a page flow. (The recommendations templates carry the same
+    // session headers, so they go too.)
+    if (refresh) {
+      this.specSearchTemplate = null;
+      this.browseHomeTemplate = null;
+      this.seeMoreTemplate = null;
+    }
     // Fast path since the search template landed (#1152): the captured
     // spec-search request already carries exactly these headers from a real
     // page flow — the replay's freshness check is the mint's too.
@@ -1330,6 +1368,329 @@ const amazonWebPlayer = {
     });
   },
 
+  // --- Recommendations (capabilities.recommendations in the plugin) --------
+  // Two flows, both the capture-and-replay pattern everything here uses (the
+  // APQ hash renumbers per hornet redeploy — never hardcode it):
+  //
+  //   getRecommendations: the home page (https://music.amazon.com/) fires
+  //   BrowseHomePage; capture it, replay verbatim, parse
+  //   (recommendationsFromBrowseHome). A fresh template (the same
+  //   makeSpecSearchTemplate contract: url + headers + APQ body) replays from
+  //   the parked view with NO page load — the variables are the page's own.
+  //
+  //   expandRecommendationSection: the see-more ROUTE
+  //   (/browse/music-items/home/recommendation/<strategy>) fires
+  //   RecommenderSeeMorePage; a section's first expansion pays the page load,
+  //   which mints the see-more template, and every later page (any section,
+  //   any cursor) replays it with the id/afterCursor patched
+  //   (seeMoreBodyWithVars) — one template serves all sections.
+  //
+  // Both page flows share the search chain (a page load is a real
+  // navigation); replays run off it, in parallel. Results are cached per
+  // process (the page refreshes at most hourly). NOT plan-gated, like the
+  // album catalog and artist images: a Prime account's home page is still
+  // its own recommendations, the plan gate stops playback, not discovery.
+  // No breaker: recommendations are user-triggered, never on a resolution
+  // path, so a structural failure costs one capture window, not a run of
+  // them. Signed out: notReady, never cached as anything.
+  //
+  // The replay-first fast path shared by both flows. Modeled on
+  // trySpecReplay (the same gates: replay readers, the park fuse, the wall
+  // check, the 12s bound) minus the spec-search breaker. Returns the parse
+  // result (an object with envelope true), or null for any template miss —
+  // the caller queues the page flow, which re-mints. Structural responses
+  // (200 with data but no envelope) drop the template and defer to the page
+  // flow, the #1152 rule: only a fresh capture can prove a hornet rename.
+  async tryRecommendationReplay({ template, drop, bodyFor, parse, noun }) {
+    if (!specTemplateIsFresh(template, Date.now())) return null;
+    if (!this.replayGate.tryEnterReplay()) return null;
+    this.searchViewBusy++;
+    this.replayActivity++;
+    try {
+      this.cancelSearchViewPark();
+      const win = this.searchView;
+      if (!this.alive(win)) return null;
+      let href = '';
+      try { href = win.webContents.getURL(); } catch { return null; }
+      // A replay needs an Amazon-origin page world (cookies, CORS): a parked
+      // or never-loaded view means the page flow runs instead.
+      if (!isAmazonMusicPage(href)) return null;
+      if (pageBlocksPlayback(href)) {
+        console.warn(`[Amazon] recommendation replay blocked: ${href}`);
+        throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+      }
+      const body = bodyFor(template.body);
+      const slow = this.replayGql(win, template, body);
+      slow.catch(() => {}); // a late rejection after the race lost must not be unhandled
+      let timer = null;
+      let outcome;
+      try {
+        outcome = await Promise.race([
+          slow,
+          new Promise(resolve => {
+            timer = setTimeout(() => resolve({ error: `replay exceeded ${REPLAY_TIMEOUT_MS}ms` }), REPLAY_TIMEOUT_MS);
+            if (typeof timer.unref === 'function') timer.unref();
+          })
+        ]);
+      } catch (error) {
+        outcome = { error: (error && error.message) || String(error) };
+      }
+      clearTimeout(timer);
+      if (outcome.error) {
+        console.warn(`[Amazon] ${noun} template replay failed (${outcome.error}); the page flow will re-capture`);
+        drop();
+        return null;
+      }
+      const parsed = parse(outcome.parsed && outcome.parsed.data);
+      if (!parsed || parsed.envelope === false) {
+        console.warn(`[Amazon] ${noun} template replay was not the expected envelope; dropping the template`);
+        drop();
+        return null;
+      }
+      return parsed;
+    } finally {
+      this.searchViewBusy--;
+      this.replayGate.exitReplay();
+      this.scheduleParkSearchView();
+    }
+  },
+
+  // The home-page sections for the recommendations provider. Cached per
+  // process for RECOMMENDATIONS_CACHE_TTL_MS.
+  async getRecommendations() {
+    if (!(await this.isSignedIn())) {
+      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    const cached = this.recommendationsCache;
+    if (cached && (Date.now() - cached.fetchedAt) < RECOMMENDATIONS_CACHE_TTL_MS) {
+      return cached.sections;
+    }
+    const fast = await this.tryRecommendationReplay({
+      template: this.browseHomeTemplate,
+      drop: () => { this.browseHomeTemplate = null; },
+      bodyFor: (body) => body, // the page's own variables, verbatim
+      parse: recommendationsFromBrowseHome,
+      noun: 'home recommendations'
+    });
+    if (fast) {
+      console.log(`[Amazon] home recommendations replay returning ${fast.sections.length} sections`);
+      this.recommendationsCache = { sections: fast.sections, fetchedAt: Date.now() };
+      return fast.sections;
+    }
+    const sections = await this.enqueueSearch(async () => {
+      // The page flow that ran while we queued may have refreshed the
+      // template — one refresh heals every expansion queued behind it.
+      const warmed = await this.tryRecommendationReplay({
+        template: this.browseHomeTemplate,
+        drop: () => { this.browseHomeTemplate = null; },
+        bodyFor: (body) => body,
+        parse: recommendationsFromBrowseHome,
+        noun: 'home recommendations'
+      });
+      if (warmed) return warmed.sections;
+      return this.browseHomePageFlow();
+    });
+    this.recommendationsCache = { sections, fetchedAt: Date.now() };
+    return sections;
+  },
+
+  // The chained page flow behind getRecommendations: load the home page,
+  // capture its own BrowseHomePage request, mint the template, replay
+  // verbatim, parse pure. The mint prefers the capture with the FRESHEST
+  // csrf-ts: our own concurrent template replay echoes into the session-wide
+  // capture with the same constant variables (the page's request body never
+  // changes, so an echo is byte-identical to a fresh request — unlike the
+  // spec search, where variables.searchText distinguishes them), and its
+  // session-aged headers must not be re-certified as fresh.
+  async browseHomePageFlow() {
+    // A fuse armed by an earlier flow must not blank the view mid-load.
+    this.cancelSearchViewPark();
+    const win = await this.ensureWindow('search');
+    await this.layoutSearch(this.searchView);
+    console.log('[Amazon] home recommendations: loading the home page');
+    const { captured, detach } = this.attachGqlCapture();
+    try {
+      await this.replayGate.beginNavigation();
+      try {
+        await loadURLBudgeted(win, 'https://music.amazon.com/');
+      } finally {
+        this.replayGate.endNavigation();
+      }
+      // Wait for the page's own BrowseHomePage request (boot + query is ~1-3s
+      // warm; the poll window covers a slow load). The entry must have its
+      // headers — onBeforeSendHeaders fires milliseconds after
+      // onBeforeRequest, so accepting the body alone races it.
+      let entry = null;
+      let request = null;
+      let bestTs = -1;
+      for (let i = 0; i < 60 && !entry; i++) {
+        await new Promise(r => setTimeout(r, 250));
+        const href = win.isDestroyed() ? '' : win.webContents.getURL();
+        if (pageBlocksPlayback(href)) {
+          console.warn(`[Amazon] home recommendations blocked: ${href}`);
+          throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+        }
+        for (const r of captured.filter(r => r.headers)) {
+          const req = amazonBrowseHomeRequest([r.body]);
+          if (!req) continue;
+          const ts = Number(r.headers['csrf-ts'] || r.headers['Csrf-ts']) || 0;
+          if (ts >= bestTs) { bestTs = ts; entry = r; request = req; }
+        }
+      }
+      if (!entry || !request) {
+        // The page loaded but never ran its recommendations query: a hornet
+        // rename (or an SPA failure). Log what it did fire so a rename reads
+        // as a rename instead of a silent run of failed loads.
+        console.warn(`[Amazon] home page never fired BrowseHomePage; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
+        throw notReady('not-ready', 'Amazon home page never issued its recommendations query');
+      }
+      const template = makeSpecSearchTemplate({ url: entry.url, headers: entry.headers, body: request, capturedAt: Date.now() });
+      if (template) this.browseHomeTemplate = template;
+      const outcome = await this.replayGql(win, entry, request);
+      if (outcome.error) throw notReady('not-ready', outcome.error);
+      const parsed = recommendationsFromBrowseHome(outcome.parsed && outcome.parsed.data);
+      if (!parsed.envelope) {
+        console.warn('[Amazon] home recommendations response was not the expected envelope');
+        throw notReady('not-ready', 'Amazon home recommendations response was not the expected shape');
+      }
+      console.log(`[Amazon] home recommendations page flow returning ${parsed.sections.length} sections`);
+      return parsed.sections;
+    } finally {
+      detach();
+      this.scheduleParkSearchView();
+    }
+  },
+
+  // The next page of a titled recommendation section ("Load more"): one page
+  // of the see-more route. Cached per section+cursor for the session.
+  // Returns { items, nextCursor } in the plugin contract shape. A section the
+  // route has nothing for answers { items: [], nextCursor: null } (a real
+  // nothing-more, not an error).
+  async expandRecommendationSection(sectionId, afterCursor = null) {
+    if (!(await this.isSignedIn())) {
+      throw notReady('not-signed-in', 'Sign in and choose an Amazon Music profile');
+    }
+    if (!recommendationStrategyId(sectionId)) {
+      throw notReady('not-ready', 'Not an Amazon recommendation section id');
+    }
+    const asPage = (parsed) => ({
+      items: (parsed && parsed.section && parsed.section.items) || [],
+      nextCursor: (parsed && parsed.nextCursor) || null
+    });
+    const cacheKey = sectionId + '|' + (afterCursor || '');
+    const cached = this.seeMorePages.get(cacheKey);
+    if (cached) return cached;
+    const fast = await this.tryRecommendationReplay({
+      template: this.seeMoreTemplate,
+      drop: () => { this.seeMoreTemplate = null; },
+      bodyFor: (body) => seeMoreBodyWithVars(body, { sectionId, afterCursor }),
+      parse: recommendationsFromSeeMore,
+      noun: 'see-more'
+    });
+    if (fast) {
+      const page = asPage(fast);
+      this.cacheSeeMorePage(cacheKey, page);
+      return page;
+    }
+    // Cold template: the see-more ROUTE (its first page) mints one. Even
+    // for a cursor page — the route always answers page 1, but the minted
+    // template then replays any section+cursor.
+    const first = await this.enqueueSearch(async () => {
+      const warmed = await this.tryRecommendationReplay({
+        template: this.seeMoreTemplate,
+        drop: () => { this.seeMoreTemplate = null; },
+        bodyFor: (body) => seeMoreBodyWithVars(body, { sectionId, afterCursor }),
+        parse: recommendationsFromSeeMore,
+        noun: 'see-more'
+      });
+      if (warmed) return warmed;
+      return this.seeMorePageFlow(sectionId);
+    });
+    if (!afterCursor) {
+      const page = asPage(first);
+      this.cacheSeeMorePage(cacheKey, page);
+      return page;
+    }
+    // The route answered page 1 while the cursor page was wanted: replay the
+    // freshly minted template with the cursor.
+    const page = await this.tryRecommendationReplay({
+      template: this.seeMoreTemplate,
+      drop: () => {},
+      bodyFor: (body) => seeMoreBodyWithVars(body, { sectionId, afterCursor }),
+      parse: recommendationsFromSeeMore,
+      noun: 'see-more cursor page'
+    });
+    if (!page) throw notReady('not-ready', 'Amazon see-more replay failed after a fresh capture');
+    const out = asPage(page);
+    this.cacheSeeMorePage(cacheKey, out);
+    return out;
+  },
+
+  cacheSeeMorePage(key, page) {
+    this.seeMorePages.set(key, page);
+    while (this.seeMorePages.size > SEE_MORE_CACHE_MAX) {
+      this.seeMorePages.delete(this.seeMorePages.keys().next().value);
+    }
+  },
+
+  // The chained page flow behind expandRecommendationSection: load the
+  // see-more route for the section, capture its own RecommenderSeeMorePage
+  // request, mint the template (one serves every section+cursor), replay
+  // verbatim, parse pure.
+  async seeMorePageFlow(sectionId) {
+    const url = amazonSeeMorePageUrl(sectionId);
+    if (!url) throw notReady('not-ready', 'Not an Amazon recommendation section id');
+    // A fuse armed by an earlier flow must not blank the view mid-load.
+    this.cancelSearchViewPark();
+    const win = await this.ensureWindow('search');
+    await this.layoutSearch(this.searchView);
+    console.log(`[Amazon] see-more: loading ${url}`);
+    const { captured, detach } = this.attachGqlCapture();
+    try {
+      await this.replayGate.beginNavigation();
+      try {
+        await loadURLBudgeted(win, url);
+      } finally {
+        this.replayGate.endNavigation();
+      }
+      let entry = null;
+      let request = null;
+      let bestTs = -1;
+      for (let i = 0; i < 60 && !entry; i++) {
+        await new Promise(r => setTimeout(r, 250));
+        const href = win.isDestroyed() ? '' : win.webContents.getURL();
+        if (pageBlocksPlayback(href)) {
+          console.warn(`[Amazon] see-more blocked: ${href}`);
+          throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+        }
+        for (const r of captured.filter(r => r.headers)) {
+          const req = amazonSeeMoreRequest([r.body]);
+          if (!req) continue;
+          const ts = Number(r.headers['csrf-ts'] || r.headers['Csrf-ts']) || 0;
+          if (ts >= bestTs) { bestTs = ts; entry = r; request = req; }
+        }
+      }
+      if (!entry || !request) {
+        console.warn(`[Amazon] see-more page never fired RecommenderSeeMorePage; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
+        throw notReady('not-ready', 'Amazon see-more page never issued its query');
+      }
+      const template = makeSpecSearchTemplate({ url: entry.url, headers: entry.headers, body: request, capturedAt: Date.now() });
+      if (template) this.seeMoreTemplate = template;
+      const outcome = await this.replayGql(win, entry, request);
+      if (outcome.error) throw notReady('not-ready', outcome.error);
+      const parsed = recommendationsFromSeeMore(outcome.parsed && outcome.parsed.data);
+      if (!parsed.envelope) {
+        console.warn('[Amazon] see-more response was not the expected envelope');
+        throw notReady('not-ready', 'Amazon see-more response was not the expected shape');
+      }
+      console.log(`[Amazon] see-more flow returning ${parsed.section ? parsed.section.items.length : 0} items`);
+      return parsed;
+    } finally {
+      detach();
+      this.scheduleParkSearchView();
+    }
+  },
+
   // Import an album page (music.amazon.com/albums/<ASIN>) via the page's own
   // GraphQL — the same capture-and-replay pattern as lookupPlaylist. The album
   // page fires AlbumDetailPage with variables.id = the ASIN — but it also
@@ -1584,9 +1945,14 @@ const amazonWebPlayer = {
     this.authWindow = null;
     this.cookieWarned = false;
     this.searchChain = Promise.resolve();
-    // The captured request template embeds the signed-out session's headers
-    // and APQ hash — it must not replay into the next account.
+    // The captured request templates embed the signed-out session's headers
+    // and APQ hash — they must not replay into the next account. The parsed
+    // recommendations caches carry the old account's content.
     this.specSearchTemplate = null;
+    this.browseHomeTemplate = null;
+    this.seeMoreTemplate = null;
+    this.recommendationsCache = null;
+    this.seeMorePages.clear();
     this.cancelSearchViewPark();
     try {
       await this.session().clearStorageData();

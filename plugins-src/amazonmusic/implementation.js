@@ -534,4 +534,97 @@ module.exports = {
     }
     return null;
   },
+  // capabilities.recommendations (docs/architecture/plugins.md,
+  // "Recommendations"): the home page's "Albums for You" / "Your Frequent
+  // Plays" style sections, each item typed by what Amazon sent
+  // (docs/architecture/amazon-music.md, "Recommendations"). Miss policy like
+  // the album catalog's: not-ready failures throw notReady (never cached as
+  // a miss, never a sign-in prompt — the Recommendations page is background),
+  // a real miss is empty sections. A host whose bridge predates the
+  // capability is a quiet empty provider.
+  getRecommendations: async function (config) {
+    try {
+      if (
+        !window.electron ||
+        !window.electron.amazonMusic ||
+        typeof window.electron.amazonMusic.getRecommendations !== 'function'
+      ) {
+        return { sections: [] };
+      }
+      var result = await window.electron.amazonMusic.getRecommendations();
+      if (!result || !result.success) {
+        var reason = result && result.reason;
+        if (
+          reason === 'not-ready' ||
+          reason === 'not-signed-in' ||
+          reason === 'no-cdm' ||
+          reason === 'load-failed'
+        ) {
+          var err = new Error('Amazon Music not ready');
+          err.notReady = true;
+          err.code = reason;
+          throw err;
+        }
+        return { sections: [] };
+      }
+      var sections = (result.sections || []).filter(function (s) {
+        return s && Array.isArray(s.items) && s.items.length > 0;
+      });
+      console.log(
+        '[Amazon] resolver recommendations',
+        sections.length,
+        'sections,',
+        sections.reduce(function (n, s) {
+          return n + s.items.length;
+        }, 0),
+        'items',
+      );
+      return { sections: sections };
+    } catch (error) {
+      if (error && error.notReady) throw error;
+      console.error('Amazon Music recommendations error:', error);
+      return { sections: [] };
+    }
+  },
+  // The "Load more" of a titled section (the see-more route, paginated by
+  // the offset cursor the bridge returns). Same miss policy as
+  // getRecommendations; an exhausted section answers no items and no cursor,
+  // which the page renders as the end of the section.
+  expandRecommendationSection: async function (sectionId, afterCursor, config) {
+    try {
+      if (
+        !window.electron ||
+        !window.electron.amazonMusic ||
+        typeof window.electron.amazonMusic.expandRecommendationSection !== 'function'
+      ) {
+        return { items: [], nextCursor: null };
+      }
+      var id = (sectionId || '').trim();
+      if (!id) return { items: [], nextCursor: null };
+      var result = await window.electron.amazonMusic.expandRecommendationSection(id, afterCursor || null);
+      if (!result || !result.success) {
+        var reason = result && result.reason;
+        if (
+          reason === 'not-ready' ||
+          reason === 'not-signed-in' ||
+          reason === 'no-cdm' ||
+          reason === 'load-failed'
+        ) {
+          var err = new Error('Amazon Music not ready');
+          err.notReady = true;
+          err.code = reason;
+          throw err;
+        }
+        return { items: [], nextCursor: null };
+      }
+      var items = (result.items || []).filter(function (i) {
+        return i && (i.name || i.title);
+      });
+      return { items: items, nextCursor: result.nextCursor || null };
+    } catch (error) {
+      if (error && error.notReady) throw error;
+      console.error('Amazon Music recommendations see-more error:', error);
+      return { items: [], nextCursor: null };
+    }
+  },
 };
