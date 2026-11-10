@@ -127,3 +127,21 @@ describe('recommendations wiring', () => {
     expect(seen).toMatch(/if \(discoverySeenHashes\.current\[feature\] === hash\) return;/);
   });
 });
+
+describe('the single Show-more control with background pagination', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+
+  test('expanding a paginated section drives the page fetches (no separate Load-more button)', () => {
+    // The auto-fetch effect: expanded + canLoadMore + not in flight → fetch.
+    const i = app.indexOf('// "Show more" is the only section control');
+    const effect = app.slice(i, app.indexOf('}, [activeView, recommendations.sections, recommendationsExpandedSections]);', i));
+    expect(effect).toMatch(/recommendationsExpandedSections\.has\(section\.key\)\) continue;/);
+    expect(effect).toMatch(/if \(!section\.canLoadMore\) continue;/);
+    expect(effect).toMatch(/loadMoreRecommendationSection\(section\);/);
+    // One toggle: Show more / Show less — never a Load-more button.
+    const view = app.slice(app.indexOf("// Recommendations view with collapsible hero header — the sectioned"));
+    expect(view).toMatch(/'Show more'/);
+    expect(view).toMatch(/'Show less'/);
+    expect(view).not.toMatch(/'Load more'/);
+  });
+});

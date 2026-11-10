@@ -27192,6 +27192,27 @@ Return ONLY the JSON array, no other text.`;
     });
   };
 
+  // "Show more" is the only section control: expanding a paginated section
+  // also drives its page fetches. The effect self-advances — every fetched page
+  // re-merges the display model, which re-runs this effect, which fetches the
+  // next page while the section stays expanded and the provider still has more
+  // (canLoadMore turns false at exhaustion) — so the whole section fills in the
+  // background while it is open. A section with no cursor yet is fetching its
+  // FIRST page (the see-more route starts at page 1, which overlaps the section
+  // base items — the merge dedupes). Collapsing stops the chain (the expanded
+  // check), a failed page breaks it (the section state does not change on
+  // failure, so the effect does not re-fire), and the ref guard inside
+  // loadMoreRecommendationSection keeps one page in flight per section.
+  useEffect(() => {
+    if (activeView !== 'recommendations') return;
+    for (const section of recommendations.sections) {
+      if (!recommendationsExpandedSections.has(section.key)) continue;
+      if (!section.canLoadMore) continue;
+      if (recommendationsLoadingMoreRef.current[section.key]) continue;
+      loadMoreRecommendationSection(section);
+    }
+  }, [activeView, recommendations.sections, recommendationsExpandedSections]);
+
   // Last.fm and ListenBrainz recommendations now come from their plugins'
   // getRecommendations (plugins-src/{lastfm,listenbrainz}/implementation.js)
   // through the loader capability above — the fetches used to live here.
@@ -39974,7 +39995,12 @@ useEffect(() => {
                         className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded',
                         style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' }
                       }, section.resolverName),
-                      React.createElement('span', { className: 'text-xs font-normal text-gray-400' }, `${section.items.length}`)
+                      React.createElement('span', { className: 'text-xs font-normal text-gray-400' },
+                        loadingMore ? `${section.items.length}…` : `${section.items.length}`),
+                      loadingMore && React.createElement('span', {
+                        className: 'w-3 h-3 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin',
+                        title: `Loading more from ${section.resolverName || 'the service'}`
+                      })
                     ),
                     section.description && React.createElement('p', { className: 'text-sm text-gray-500 mt-0.5 truncate' }, section.description)
                   ),
@@ -39988,27 +40014,24 @@ useEffect(() => {
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
                       title: 'Ask Shuffleupagus for a new batch of suggestions'
                     }, homeData.aiRecommendations?.loading ? 'Thinking…' : 'Refresh'),
-                    hiddenCount > 0 && React.createElement('button', {
+                    // One toggle per section. Expanding a paginated section also
+                    // kicks off the background page fetches (the auto-fetch effect
+                    // below) — the header just shows a quiet "loading more…" while
+                    // they land, so there is no separate Load-more button.
+                    !expanded && (expandable || hiddenCount > 0) && React.createElement('button', {
                       onClick: () => toggleRecommendationSection(section.key),
                       className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
                       style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' },
                       onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)'
-                    }, `Show all ${section.items.length}`),
-                    hiddenCount === 0 && expanded && expandable && React.createElement('button', {
+                    }, 'Show more'),
+                    expanded && expandable && React.createElement('button', {
                       onClick: () => toggleRecommendationSection(section.key),
                       className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
                       style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' },
                       onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)'
-                    }, 'Show less'),
-                    section.canLoadMore && React.createElement('button', {
-                      onClick: () => loadMoreRecommendationSection(section),
-                      disabled: loadingMore,
-                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
-                      style: { backgroundColor: 'var(--accent-primary)', color: '#ffffff', opacity: loadingMore ? 0.6 : 1 },
-                      title: `More from ${section.resolverName || 'the service'}`
-                    }, loadingMore ? 'Loading…' : 'Load more')
+                    }, 'Show less')
                   )
                 ),
                 visibleCards.length > 0 && React.createElement('div', {
