@@ -44,6 +44,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 
 ### Artist Discovery
 - **Rich Artist Pages** - Browse full discographies powered by MusicBrainz, with biographies from Wikipedia and Discogs
+- **Album Editions** - Pick which edition of an album the page shows: any official release of its MusicBrainz release group, or an edition your services carry (Spotify's "Collector's Edition", a Bandcamp pressing, …)
 - **Related Artists** - Discover similar artists via Last.fm
 - **Album Art** - High-quality artwork from Cover Art Archive
 - **Release Filtering** - Filter by albums, EPs, singles, live releases, and compilations

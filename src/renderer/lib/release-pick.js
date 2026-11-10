@@ -16,7 +16,10 @@
 //      release date; undated releases sort last. Otherwise MusicBrainz order.
 // With no digital-only release, the same rule runs over all of them.
 //
-// This is a default, not a choice; #1238 asks for a way to pick an edition.
+// This is a default, not a choice: the album page's source dropdown (#1238)
+// lets the user pick another edition — the MusicBrainz releases of the group
+// and the resolvers' editions — and an MB pick sticks for the session
+// (albumEditionPicksRef in app.js, consulted before loadRelease).
 
 'use strict';
 

@@ -39,9 +39,9 @@ describe('formatCalendarDate', () => {
 
 describe('the pages use it', () => {
   const read = (p) => fs.readFileSync(path.join(__dirname, '../../src/renderer/components', p), 'utf8');
-  test('the album page date', () => {
+  test('the album page date (the source card\'s second line, #1238)', () => {
     const cards = read('cards.js');
-    expect(cards).toContain("formatCalendarDate(dateStr, 'long', 'Unknown')");
+    expect(cards).toContain("formatCalendarDate(release.date, 'short', '')");
   });
   test("an artist's founded date", () => {
     const artist = read('artist-page.js');

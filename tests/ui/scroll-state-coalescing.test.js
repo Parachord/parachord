@@ -231,7 +231,7 @@ describe('card click opens the release page before the lookup', () => {
       const b = app.slice(s, app.indexOf('\n  };', s));
       expect(b).toMatch(/mbBackground: true/);
       // the album page's lookup (loadRelease) or a release lookup, in the background lane
-      expect(b).toMatch(/fetchReleaseDetails\(releaseId, bgFetch\)|loadRelease\(\{ id: release\.id, isReleaseGroup: release\.isReleaseGroup \}, bgFetch\)/);
+      expect(b).toMatch(/fetchReleaseDetails\(releaseId, bgFetch\)|loadRelease\(\{\s*id: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \|\| release\.id,\s*isReleaseGroup: \(prefetchedEdition\?\.kind === 'mb' && prefetchedEdition\??\.releaseId\) \? false : release\.isReleaseGroup\s*\}, bgFetch\)/);
       expect(b).not.toMatch(/await fetch\(/);
       expect(b).not.toMatch(/fetchReleaseDetails\(releaseId\)/);
     }

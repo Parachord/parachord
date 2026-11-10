@@ -41,7 +41,8 @@ describe('fetchReleaseData', () => {
   const body = fnBody('const fetchReleaseData = async (release, artist) => {');
 
   test('an album with a service id skips MusicBrainz', () => {
-    const skip = body.indexOf('if (!isMusicBrainzId(release.id)) {');
+    // an MB edition pick can open that fence (the pick's release is a real MB id)
+    const skip = body.indexOf("if (!isMusicBrainzId(release.id) && pickEdition?.kind !== 'mb') {");
     const firstMb = body.indexOf('releaseLookupRef.current.loadRelease(');
     expect(skip).toBeGreaterThan(-1);
     expect(skip).toBeLessThan(firstMb);
@@ -144,7 +145,7 @@ describe('the catalogs race MusicBrainz', () => {
   test('fetchReleaseData does not blank a catalog list already on screen, and MusicBrainz success replaces it', () => {
     const body = fnBody('const fetchReleaseData = async (release, artist) => {');
     expect(body).toMatch(/const keepCatalogList = [\s\S]*?shownRelease\._catalogSource[\s\S]*?if \(!keepCatalogList\) \{\s*setCurrentRelease\(partialRelease\);/);
-    expect(body).toMatch(/setCurrentRelease\(releaseInfo\);/);
+    expect(body).toMatch(/setCurrentRelease\(prev => \(prev && prev\._pickingEdition \? prev : releaseInfo\)\);/);
     // a MusicBrainz failure with the catalog list showing leaves it be
     expect(body).toMatch(/onScreen\._catalogSource && onScreen\.tracks[\s\S]*?setLoadingRelease\(false\);\s*return;/);
   });

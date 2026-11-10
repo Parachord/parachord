@@ -113,6 +113,62 @@ function pickCatalogAlbum(albums, target) {
   return best;
 }
 
+// A catalog album that is the same album the page shows, edition aside —
+// the album page's source dropdown lists these (#1238): "Queen I (2011
+// Remaster)" is a version of "Queen I", "Queen II" is not. The title must be
+// EQUAL after edition suffixes were stripped (albumMatchScore's containment
+// pass is deliberately looser: "Queen I" contains into "Queen II", which is
+// fine for picking a fallback but wrong for a version list), and the artist
+// must pass any of the match rules — checked via albumMatchScore > 0, whose
+// title axis is already satisfied, so only the artist rules can fail it.
+function isCatalogAlbumEdition(target, album) {
+  if (!target || !album || !target.title || !album.name) return false;
+  if (normalizeAlbumTitle(target.title) !== normalizeAlbumTitle(album.name)) return false;
+  return albumMatchScore(target, album) > 0;
+}
+
+// The release group whose editions the album page's source dropdown lists
+// for a release (#1238): the group the release carries once it loaded, or the
+// group id a still-loading page was opened by (an artist-page card or a
+// parachord://album match carries isReleaseGroup). A plain release id must NOT
+// be treated as a group id — it is the same UUID shape, and browsing
+// release?release-group=<release id> answers an empty list — so a release-id
+// open has no group until the release itself answers with one.
+function albumVersionsGroup(release) {
+  if (!release) return null;
+  return release.releaseGroupMbid
+    || (release.isReleaseGroup && isMusicBrainzId(release.id) ? release.id : null)
+    || null;
+}
+
+// The session key of the source dropdown's data: the album's identity (artist
+// + title, sameAlbumIdentity's basis) plus the group from albumVersionsGroup.
+// A page that learns its group id mid-load (a release-id open, a catalog race
+// filling the page before MusicBrainz answers) changes key, so a list loaded
+// without a group never stands in for one that should list the group's
+// editions. Null when the release has no artist or title to key on.
+function albumVersionsKey(release) {
+  if (!release || !release.title) return null;
+  const artist = typeof release.artist === 'object' ? release.artist?.name : release.artist;
+  if (!artist) return null;
+  return `${normalizeArtistName(artist)}\u0000${normalizeAlbumTitle(release.title)}\u0000${albumVersionsGroup(release) || ''}`;
+}
+
+// The keys an album's picked edition (#1238) is remembered under, for the
+// session: by the album's release group when one is known, and by the album's
+// identity (artist + title) so a page opened without its group (a release id,
+// the playbar) still finds the pick. Both keys are written on a pick; a
+// consult tries the identity key first, then the group key (an opener's id
+// may be either).
+function albumEditionPickKeys({ groupId = null, artist = null, title = null } = {}) {
+  const keys = [];
+  if (artist && title) {
+    keys.push(`album:${normalizeArtistName(artist)}\u0000${normalizeAlbumTitle(title)}`);
+  }
+  if (groupId) keys.push(`group:${groupId}`);
+  return keys;
+}
+
 // Which resolvers to ask, in order: one named first (the service a release
 // id came from), then the user's active services in their priority order,
 // then every other installed resolver that supports album search. A plugin
@@ -168,7 +224,7 @@ function catalogAlbumToRelease(album, { resolverId, resolverName, requested = {}
     releaseType: requested.releaseType || 'album',
     albumArt: requested.albumArt || album.albumArt || null,
     tracks,
-    _catalogSource: { resolverId, name: resolverName || resolverId },
+    _catalogSource: { resolverId, name: resolverName || resolverId, url: album.url || null },
   };
 }
 
@@ -196,6 +252,10 @@ module.exports = {
   albumMatchScore,
   sameAlbumIdentity,
   pickCatalogAlbum,
+  isCatalogAlbumEdition,
+  albumVersionsGroup,
+  albumVersionsKey,
+  albumEditionPickKeys,
   orderCatalogResolvers,
   catalogAlbumToRelease,
   catalogAlbumToSearchResult,

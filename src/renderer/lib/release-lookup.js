@@ -22,9 +22,42 @@
 // getCache: () => the cache object (app.js replaces releaseDetailsCache.current
 // wholesale when the saved caches load, so it is read on every call).
 
-const { pickRelease } = require('./release-pick');
+const { pickRelease, releaseTrackCount } = require('./release-pick');
 
 const MB_HEADERS = { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' };
+
+// A release-group browse (up to 25 releases) as the album page's source
+// dropdown lists it (#1238): the editions of the album, summarized. No track
+// lists — picking one loads the release through fetchReleaseDetails, which
+// caches the full data. formats is per-medium, counted ("2×CD"), mediums
+// with no format ("--") are named by their position ("Disc 3"). firstTrack
+// is the first track's title when the browse carried tracks (inc=recordings —
+// the browse that opened the page); the light inc=media browse has none, so
+// it stays null there. It disambiguates otherwise-identical rows (two
+// disc-at-a-time CD releases of one album, no disambiguation).
+function releaseFormats(release) {
+  const counts = new Map();
+  (Array.isArray(release && release.media) ? release.media : []).forEach((medium, i) => {
+    const name = (medium && medium.format) || `Disc ${i + 1}`;
+    counts.set(name, (counts.get(name) || 0) + 1);
+  });
+  return [...counts.entries()].map(([name, n]) => (n > 1 ? `${n}×${name}` : name));
+}
+
+function summarizeGroupReleases(releases) {
+  return (Array.isArray(releases) ? releases : []).filter(r => r && r.id).map((release) => {
+    return {
+      id: release.id,
+      title: release.title || '',
+      date: release.date || null,
+      country: release.country || null,
+      disambiguation: release.disambiguation || null,
+      formats: releaseFormats(release),
+      trackCount: releaseTrackCount(release),
+      firstTrack: (release.media || []).flatMap(m => (m && m.tracks) || [])[0]?.title || null,
+    };
+  });
+}
 
 function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () => Date.now(), log = () => {} }) {
   // The cached details for a release ID, or for the release a release-group ID
@@ -63,8 +96,21 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
 
   const rememberReleaseGroupAlias = (releaseGroupId, releaseId) => {
     if (releaseGroupId && releaseId && releaseGroupId !== releaseId) {
-      getCache()[releaseGroupId] = { alias: releaseId, timestamp: now() };
+      getCache()[releaseGroupId] = { ...getCache()[releaseGroupId], alias: releaseId, timestamp: now() };
     }
+  };
+
+  // The group's editions, kept in the group's own cache entry next to its
+  // alias (which the alias write preserves). The full browse that
+  // fetchReleaseGroupDetails already made is the cheapest source: the
+  // dropdown then costs no request. A page opened by release id (the alias
+  // exists, the list does not) fetches a light browse — no inc, media
+  // summaries come by default.
+  const rememberGroupReleases = (releaseGroupId, releases) => {
+    if (!releaseGroupId || !Array.isArray(releases) || releases.length === 0) return;
+    const summaries = summarizeGroupReleases(releases);
+    if (summaries.length === 0) return;
+    getCache()[releaseGroupId] = { ...getCache()[releaseGroupId], releases: summaries, timestamp: now() };
   };
 
   // A release group's best official release WITH its track list, in one
@@ -87,7 +133,34 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
     if (!data || !data.id) return { ok: false, status: 404, noReleases: true };
     getCache()[data.id] = { data, timestamp: now() };
     rememberReleaseGroupAlias(releaseGroupId, data.id);
+    // The browse already carried every edition: keep them for the album
+    // page's source dropdown, so opening it costs no second browse.
+    rememberGroupReleases(releaseGroupId, body.releases);
     return { ok: true, status: response.status, fromCache: false, releaseId: data.id, json: async () => data };
+  };
+
+  // The album page's source dropdown: the release group's official editions
+  // (#1238), summarized. Cached when the group's browse already ran (an album
+  // opened from the artist page or search), else one light browse — no
+  // inc=recordings, the media summaries a release carries by default are
+  // enough. Not on a page's critical path: it runs when the user opens the
+  // dropdown, so it is not in the page-load budgets. A group with no
+  // official releases answers { ok: true, releases: [] }.
+  const fetchReleaseGroupReleases = async (releaseGroupId, fetchImpl = defaultFetch) => {
+    const cache = getCache();
+    const cached = cache[releaseGroupId];
+    if (cached && Array.isArray(cached.releases) && (now() - cached.timestamp) < ttlMs) {
+      return { ok: true, status: 200, fromCache: true, releases: cached.releases };
+    }
+    const response = await fetchImpl(
+      `https://musicbrainz.org/ws/2/release?release-group=${releaseGroupId}&status=official&inc=media&fmt=json&limit=25`,
+      { headers: MB_HEADERS }
+    );
+    if (!response.ok) return response;
+    const body = await response.json();
+    const releases = summarizeGroupReleases(body.releases);
+    rememberGroupReleases(releaseGroupId, body.releases);
+    return { ok: true, status: response.status, fromCache: false, releases };
   };
 
   // The album page's lookup (fetchReleaseData, and the hover prefetch with the
@@ -106,7 +179,7 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
     return response;
   };
 
-  return { cachedReleaseDetails, fetchReleaseDetails, rememberReleaseGroupAlias, fetchReleaseGroupDetails, loadRelease };
+  return { cachedReleaseDetails, fetchReleaseDetails, rememberReleaseGroupAlias, fetchReleaseGroupDetails, fetchReleaseGroupReleases, loadRelease };
 }
 
-module.exports = { createReleaseLookup };
+module.exports = { createReleaseLookup, releaseFormats };
