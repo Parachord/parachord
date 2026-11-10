@@ -181,7 +181,7 @@ module.exports = {
         .replace(/\s+(feat\.?|ft\.?|featuring)\s.*$/i, '');
     };
     var VARIANT =
-      /\b(live|remix(es|ed)?|rmx|cover(s|ed)?|covering|tribute|karaoke|instrumental|acoustic|demo|unplugged|rework|bootleg|mashup|reprise|edit|jam track|sped up|slowed|in the style of)\b/gi;
+      /\b(live|medley|remix(es|ed)?|rmx|cover(s|ed)?|covering|tribute|karaoke|instrumental|acoustic|demo|unplugged|rework|bootleg|mashup|reprise|edit|jam track|sped up|slowed|in the style of)\b/gi;
     // A version word counts only when the requested name lacks it, so
     // "Live Forever" or "Take Me Out (Live)" can still match themselves.
     var hasVariant = function (s, target) {
@@ -192,10 +192,22 @@ module.exports = {
       }
       return false;
     };
+    // A slash-joined title is a medley ("You Never Give Me Your Money/Sun
+    // King/.../Her Majesty", #1306), unless the requested title has a slash, the
+    // slash is between digits ("24/7"), is "w/", or is in the requested artist's
+    // name ("AC/DC - Back in Black"). joinsSongs in sync-providers/track-variants.js.
+    var joinsSongs = function (title) {
+      if ((track || '').toString().indexOf('/') !== -1) return false;
+      var s = (title || '').toString().toLowerCase();
+      var a = (artist || '').toString().toLowerCase();
+      if (a.indexOf('/') !== -1) s = s.split(a).join(' ');
+      s = s.replace(/\bw\/\s*/g, ' ');
+      return /[^\s\d]\s*\/\s*[^\s\d]/.test(s);
+    };
     var targetArtist = norm(stripFeat(artist));
     var targetTitle = norm(stripFeat(track));
     var isVariant = function (r) {
-      return hasVariant(r.title, track) || hasVariant(r.artist, artist);
+      return hasVariant(r.title, track) || hasVariant(r.artist, artist) || joinsSongs(r.title);
     };
     var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config);
     if (results.length === 0) return null;

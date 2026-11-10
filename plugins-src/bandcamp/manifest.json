@@ -2,7 +2,7 @@
   "manifest": {
     "id": "bandcamp",
     "name": "Bandcamp",
-    "version": "1.4.2",
+    "version": "1.4.3",
     "author": "Parachord Team",
     "description": "Find, play and purchase music on Bandcamp, through Bandcamp's own player.",
     "icon": "🎸",

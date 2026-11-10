@@ -158,8 +158,19 @@ module.exports = {
         .replace(/\s+(feat\.?|ft\.?|featuring)\s.*$/i, '');
     };
     var VARIANT =
-      /\b(live|remix(es|ed)?|rmx|cover(s|ed)?|covering|tribute|karaoke|instrumental|acoustic|demo|unplugged|rework|bootleg|mashup|reprise|edit|jam track|sped up|slowed|in the style of)\b/gi;
+      /\b(live|medley|remix(es|ed)?|rmx|cover(s|ed)?|covering|tribute|karaoke|instrumental|acoustic|demo|unplugged|rework|bootleg|mashup|reprise|edit|jam track|sped up|slowed|in the style of)\b/gi;
+    // A slash-joined title is a medley (#1306); joinsSongs in
+    // sync-providers/track-variants.js.
+    var joinsSongs = function (title) {
+      if ((track || '').toString().indexOf('/') !== -1) return false;
+      var s = (title || '').toString().toLowerCase();
+      var a = (artist || '').toString().toLowerCase();
+      if (a.indexOf('/') !== -1) s = s.split(a).join(' ');
+      s = s.replace(/\bw\/\s*/g, ' ');
+      return /[^\s\d]\s*\/\s*[^\s\d]/.test(s);
+    };
     var isVariant = function (r) {
+      if (joinsSongs(r.title)) return true;
       var words = ((r.title || '') + ' ' + (r.artist || '')).match(VARIANT) || [];
       var asked = ((track || '') + ' ' + (artist || '')).toLowerCase();
       for (var w = 0; w < words.length; w++) {
