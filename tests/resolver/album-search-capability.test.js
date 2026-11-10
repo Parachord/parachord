@@ -255,13 +255,16 @@ describe('ResolverLoader album search', () => {
     expect(loader.getAlbumSearchResolvers().map(r => r.id).sort()).toEqual(['applemusic', 'localfiles']);
   });
 
-  test('searchAlbums drops results without a name or url, and a throw is a miss', async () => {
+  test('searchAlbums drops results without a name or url; a miss is [], a throw rejects', async () => {
     const loader = await loaderWith(['localfiles']);
     const r = loader.getResolver('localfiles');
     r.searchAlbums = async () => [{ name: 'A', url: 'localfiles:album:x/A' }, { name: 'No url' }, null];
     expect(await loader.searchAlbums('localfiles', 'a b')).toEqual([{ name: 'A', url: 'localfiles:album:x/A' }]);
+    // A plugin error rejects (a caller that distinguishes a miss from a
+    // failure — the album page's edition picker retries the failed services)
     r.searchAlbums = async () => { throw new Error('boom'); };
-    expect(await loader.searchAlbums('localfiles', 'a b')).toEqual([]);
+    await expect(loader.searchAlbums('localfiles', 'a b')).rejects.toThrow('boom');
+    // a resolver without the capability is still just an empty answer
     expect(await loader.searchAlbums('youtube', 'a b')).toEqual([]);
   });
 

@@ -30,23 +30,31 @@ const MB_HEADERS = { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix
 // dropdown lists it (#1238): the editions of the album, summarized. No track
 // lists — picking one loads the release through fetchReleaseDetails, which
 // caches the full data. formats is per-medium, counted ("2×CD"), mediums
-// with no format ("--") are named by their position ("Disc 3").
+// with no format ("--") are named by their position ("Disc 3"). firstTrack
+// is the first track's title when the browse carried tracks (inc=recordings —
+// the browse that opened the page); the light inc=media browse has none, so
+// it stays null there. It disambiguates otherwise-identical rows (two
+// disc-at-a-time CD releases of one album, no disambiguation).
+function releaseFormats(release) {
+  const counts = new Map();
+  (Array.isArray(release && release.media) ? release.media : []).forEach((medium, i) => {
+    const name = (medium && medium.format) || `Disc ${i + 1}`;
+    counts.set(name, (counts.get(name) || 0) + 1);
+  });
+  return [...counts.entries()].map(([name, n]) => (n > 1 ? `${n}×${name}` : name));
+}
+
 function summarizeGroupReleases(releases) {
   return (Array.isArray(releases) ? releases : []).filter(r => r && r.id).map((release) => {
-    const counts = new Map();
-    (Array.isArray(release.media) ? release.media : []).forEach((medium, i) => {
-      const name = (medium && medium.format) || `Disc ${i + 1}`;
-      counts.set(name, (counts.get(name) || 0) + 1);
-    });
-    const formats = [...counts.entries()].map(([name, n]) => (n > 1 ? `${n}×${name}` : name));
     return {
       id: release.id,
       title: release.title || '',
       date: release.date || null,
       country: release.country || null,
       disambiguation: release.disambiguation || null,
-      formats,
+      formats: releaseFormats(release),
       trackCount: releaseTrackCount(release),
+      firstTrack: (release.media || []).flatMap(m => (m && m.tracks) || [])[0]?.title || null,
     };
   });
 }
@@ -174,4 +182,4 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
   return { cachedReleaseDetails, fetchReleaseDetails, rememberReleaseGroupAlias, fetchReleaseGroupDetails, fetchReleaseGroupReleases, loadRelease };
 }
 
-module.exports = { createReleaseLookup };
+module.exports = { createReleaseLookup, releaseFormats };

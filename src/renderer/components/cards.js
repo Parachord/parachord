@@ -18,6 +18,9 @@ const hashString = require('../lib/hash-string');
 const { trackSlug, slug } = require('../lib/track-slug');
 const { formatCalendarDate } = require('../lib/calendar-date');
 const { normalizeAlbumTitle, albumVersionsKey } = require('../lib/album-catalog');
+// A MusicBrainz country code as a readable name, for the source card's
+// region ("DE" → "Germany"), the X-codes and the gone countries included.
+const { regionName } = require('../lib/mb-region');
 
 // Generate a unique pattern/gradient for an artist based on their name
 // Returns an object with CSS gradient and optional SVG pattern
@@ -981,38 +984,90 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
   );
 };
 
-// AlbumVersionsMenu — the album page's source dropdown panel (#1238): the
-// editions of the album on screen. One section per source: the MusicBrainz
-// release group's official releases, then one per active album-search service
-// that carries an edition. All presentational, props-driven:
+// ── The album page's source picker (#1238) ──
+// Which edition of the album the page shows, and the picker for another one.
+// Two pieces, both built from the helpers just below: ReleasePage renders the
+// CLOSED card (the source's badge and name on the first line, the edition's
+// details — date · region · song count — on the second, chevron right), and
+// AlbumVersionsMenu is the OPEN panel under it ("Your services" editions,
+// then "MusicBrainz editions").
+
+// "18 songs" / "1 song": an edition's track count as a human count.
+const songCount = (n) => `${n} ${n === 1 ? 'song' : 'songs'}`;
+
+// "a · b · c" where a part may be a React element (the song-count shimmer):
+// the separators go between the parts that are actually there.
+const joinDetails = (parts) => parts.filter(Boolean).map((part, i) => React.createElement(
+  React.Fragment, { key: `detail-${i}` }, i > 0 ? ' · ' : '', part
+));
+
+// A service's badge, row size: the resolver's colour with its white icon
+// (the track-list badge kit, ui-atoms' ResolverIcon).
+const editionServiceBadge = (resolverId, color, size = 18) => React.createElement('span', {
+  style: {
+    width: `${size}px`, height: `${size}px`, borderRadius: '4px', flexShrink: 0,
+    backgroundColor: color || '#555',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+  }
+}, React.createElement(ResolverIcon, { resolverId, size: Math.round(size * 0.66) }));
+
+// MusicBrainz's badge is neutral — the service has no brand colour: a
+// bordered box with the disc icon. onDark flips it for the open panel.
+const editionMusicBrainzBadge = (size = 18, onDark = false) => React.createElement('span', {
+  style: {
+    width: `${size}px`, height: `${size}px`, borderRadius: '4px', flexShrink: 0,
+    boxSizing: 'border-box',
+    backgroundColor: onDark ? 'transparent' : 'var(--card-bg)',
+    border: onDark ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid var(--border-default)',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+  }
+}, React.createElement(ResolverIcon, { resolverId: 'musicbrainz', size: Math.round(size * 0.66), fill: onDark ? 'rgba(255, 255, 255, 0.75)' : 'var(--text-secondary)' }));
+
+// The MusicBrainz edition list folds after this many rows behind a
+// "N more editions" row — a busy classical group can have dozens, and an
+// endless panel runs past the column.
+const MB_EDITIONS_FOLD = 5;
+
+// AlbumVersionsMenu — the open panel of the album page's source card
+// (#1238): the OTHER editions of the album the page can show, in two
+// sections: "Your services" (one row per service edition, grouped per
+// service), then "MusicBrainz editions" (the release group's official
+// releases). The panel keeps the dark dropdown style (var(--tooltip-bg)).
+// All presentational, props-driven:
 //   release: the release on screen (its id / _catalogSource mark the current
 //             edition, its title disambiguates same-titled releases)
 //   versions: the app's loaded list ({ loading, mb: { releases } | null,
-//             catalogs: [{ resolverId, resolverName, albums }] }) — already
-//             keyed to this album by ReleasePage, or null while it loads
-//   resolvers: the resolver list (badge colors for the catalog sections)
+//             catalogs: [{ resolverId, resolverName, albums }], failures:
+//             [resolverId] }) — already keyed to this album by ReleasePage,
+//             or null while it loads
+//   resolvers: the resolver list (badge colors for the service rows)
 //   onSelect(version): { kind: 'mb', release } | { kind: 'catalog',
 //             resolverId, resolverName, album }
 //   onClose:    close the dropdown after a pick
 const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClose }) => {
-  // One row of a version: main line (edition), secondary line
-  // (date · country · track count). The current edition carries the check
-  // and doesn't re-click (re-picking it would flash the skeleton for the
-  // same list).
-  const versionRow = (current, main, secondary, onPick, key) => React.createElement('button', {
-    key,
+  // The "N more editions" row expands in place; the menu unmounts with the
+  // card, so the fold is back on the next open.
+  const [showAllMbEditions, setShowAllMbEditions] = React.useState(false);
+
+  // One edition row: its badge, the main line (the edition), the secondary
+  // line (date · region · song count), and the check at the right when it is
+  // the edition on screen — which is accent-tinted and doesn't re-click
+  // (re-picking it would flash the skeleton for the same list).
+  const versionRow = ({ current, badge, main, secondary, onPick, rowKey }) => React.createElement('button', {
+    key: rowKey,
     onClick: (e) => {
       e.stopPropagation();
       if (current || !onPick) return;
       onPick();
       if (onClose) onClose();
     },
-    className: `w-full px-3 py-1.5 text-left flex items-start gap-2 no-drag ${current ? 'cursor-default' : 'text-white hover:bg-white/10'}`,
-    style: { fontSize: '12px', border: 'none', backgroundColor: 'transparent' }
+    className: `w-full px-3 py-1.5 text-left flex items-center gap-2 no-drag ${current ? 'cursor-default' : 'text-white hover:bg-white/10'}`,
+    style: {
+      fontSize: '12px', border: 'none',
+      backgroundColor: current ? 'var(--accent-primary-alpha-10)' : 'transparent'
+    }
   },
-    React.createElement('span', {
-      style: { width: '14px', flexShrink: 0, fontSize: '11px', lineHeight: '17px', color: 'var(--accent-soft)' }
-    }, current ? '✓' : ''),
+    badge,
     React.createElement('span', { className: 'min-w-0', style: { flex: '1 1 0' } },
       React.createElement('span', {
         className: 'block truncate',
@@ -1022,13 +1077,16 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
         className: 'block truncate',
         style: { fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.55)', marginTop: '1px' }
       }, secondary)
-    )
+    ),
+    current && React.createElement('span', {
+      style: { flexShrink: 0, fontSize: '11px', color: 'var(--accent-soft)' }
+    }, '✓')
   );
-  const sectionHeader = (icon, title, key) => React.createElement('div', {
+  const sectionHeader = (title, key) => React.createElement('div', {
     key,
-    className: 'flex items-center gap-2 px-3 pt-2 pb-1',
+    className: 'px-3 pt-2 pb-1',
     style: { fontSize: '10px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255, 255, 255, 0.5)' }
-  }, icon, title);
+  }, title);
   const shimmerRows = (key) => [0, 1].map((i) => React.createElement('div', {
     key: `${key}-shimmer-${i}`,
     className: 'flex items-center gap-2 px-3 py-2'
@@ -1047,74 +1105,124 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
   const nothingLoaded = !!versions && !versions.loading
     && (!versions.mb || (versions.mb.releases || []).length === 0)
     && catalogSections.length === 0;
-  const mbHeader = () => sectionHeader(
-    React.createElement(ResolverIcon, { resolverId: 'musicbrainz', size: 12, fill: 'rgba(255,255,255,0.7)' }),
-    'MusicBrainz',
-    'mb-header'
-  );
+
+  // Your services: one row per service edition, grouped per service (the app
+  // answers in the user's priority order). A service with ONE edition names
+  // itself on the row; with several (Standard / Deluxe / …) each row names
+  // its own edition, or every row would read the same.
+  const servicesRows = [];
+  catalogSections.forEach((section) => {
+    const color = resolvers.find(r => r.id === section.resolverId)?.color || '#555';
+    section.albums.forEach((album, i) => {
+      const isCurrent = release._catalogSource?.resolverId === section.resolverId
+        && release._catalogSource?.url && release._catalogSource.url === album.url;
+      const secondary = [
+        // Apple answers full timestamps — the date is the first ten chars.
+        formatCalendarDate(album.releaseDate?.slice(0, 10), 'short', ''),
+        album.trackCount ? songCount(album.trackCount) : null
+      ].filter(Boolean).join(' · ');
+      servicesRows.push(versionRow({
+        current: isCurrent,
+        badge: editionServiceBadge(section.resolverId, color),
+        main: section.albums.length === 1 ? (section.resolverName || section.resolverId) : album.name,
+        secondary,
+        onPick: () => onSelect && onSelect({ kind: 'catalog', resolverId: section.resolverId, resolverName: section.resolverName, album }),
+        rowKey: `catalog-${section.resolverId}-${album.id || i}`
+      }));
+    });
+  });
+  // While the searches are out and none has answered yet the section is a
+  // shimmer stand-in; settled with nothing, it is simply absent (a service
+  // that doesn't carry the album isn't news). The section only exists when
+  // there are candidate services to ask at all (versions.serviceCount — the
+  // entry's count; a user with no album-search service must not see a
+  // shimmering "Your services" header that can never fill).
+  const hasServices = catalogSections.length > 0 || (versions?.serviceCount || 0) > 0;
+  const servicesSection = hasServices && (catalogSections.length > 0 || (versions && versions.loading))
+    ? [
+        sectionHeader('Your services', 'services-header'),
+        ...servicesRows,
+        ...(versions && versions.loading && catalogSections.length === 0 ? shimmerRows('services') : [])
+      ]
+    : [];
 
   // MusicBrainz: the group's official releases. The row's main line is the
   // disambiguation when there is one, else the release's own title when it
   // differs from the album's, else the formats — most releases share the
   // album's title, so the formats tell editions apart. mb.releases === null
   // is the part still on its way (shimmer under the header).
-  const mbSection = versions?.mb
-    ? (versions.mb.releases
-      ? (versions.mb.releases.length > 0 ? [
-          mbHeader(),
-          ...versions.mb.releases.map((row) => {
-            const isCurrent = mbCurrent && release.id === row.id;
-            const formats = row.formats && row.formats.length ? row.formats.join(' + ') : null;
-            const differingTitle = row.title && normalizeAlbumTitle(row.title) !== normalizeAlbumTitle(release.title) ? row.title : null;
-            const main = row.disambiguation || differingTitle || formats || 'Release';
-            const secondary = [
-              main !== formats ? formats : null,
-              formatCalendarDate(row.date, 'short', ''),
-              row.country,
-              row.trackCount ? `${row.trackCount} tracks` : null
-            ].filter(Boolean).join(' · ');
-            return versionRow(isCurrent, main, secondary,
-              () => onSelect && onSelect({ kind: 'mb', release: row }),
-              `mb-${row.id}`);
-          })
-        ] : [])
-      : [mbHeader(), ...shimmerRows('mb')])
-    : [];
-
-  // Each active album-search service that carries an edition of this album
-  // (sections appear as they answer).
-  const catalogSectionElements = catalogSections.map((section) => [
-    sectionHeader(
-      React.createElement('span', {
-        style: {
-          width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
-          backgroundColor: resolvers.find(r => r.id === section.resolverId)?.color || '#555',
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
+  let mbSection = [];
+  if (versions?.mb) {
+    if (!versions.mb.releases) {
+      mbSection = [sectionHeader('MusicBrainz editions', 'mb-header'), ...shimmerRows('mb')];
+    } else if (versions.mb.releases.length > 0) {
+      const editions = versions.mb.releases.map((row) => {
+        const isCurrent = mbCurrent && release.id === row.id;
+        const formats = row.formats && row.formats.length ? row.formats.join(' + ') : null;
+        const differingTitle = row.title && normalizeAlbumTitle(row.title) !== normalizeAlbumTitle(release.title) ? row.title : null;
+        const main = row.disambiguation || differingTitle || formats || 'Release';
+        const secondary = [
+          formatCalendarDate(row.date, 'short', ''),
+          regionName(row.country),
+          row.trackCount ? songCount(row.trackCount) : null
+        ].filter(Boolean).join(' · ');
+        return { row, isCurrent, main, secondary };
+      });
+      // Two rows identical line-for-line get the first track's title
+      // appended (summary.firstTrack when the browse carried recordings):
+      // it tells two same-format same-day editions apart — the classic case
+      // is a pair of disc-at-a-time CD releases with no disambiguation.
+      const lineCounts = {};
+      editions.forEach((edition) => {
+        const k = `${edition.main} ¤ ${edition.secondary}`;
+        lineCounts[k] = (lineCounts[k] || 0) + 1;
+      });
+      editions.forEach((edition) => {
+        const k = `${edition.main} ¤ ${edition.secondary}`;
+        if (lineCounts[k] > 1 && edition.row.firstTrack) {
+          edition.secondary = [edition.secondary, edition.row.firstTrack].filter(Boolean).join(' · ');
         }
-      }, React.createElement(ResolverIcon, { resolverId: section.resolverId, size: 9 })),
-      section.resolverName || section.resolverId,
-      `catalog-${section.resolverId}`
-    ),
-    ...section.albums.map((album, i) => {
-      const isCurrent = release._catalogSource?.resolverId === section.resolverId
-        && release._catalogSource?.url && release._catalogSource.url === album.url;
-      const secondary = [
-        formatCalendarDate(album.releaseDate, 'short', ''),
-        album.trackCount ? `${album.trackCount} tracks` : null
-      ].filter(Boolean).join(' · ');
-      return versionRow(isCurrent, album.name, secondary,
-        () => onSelect && onSelect({ kind: 'catalog', resolverId: section.resolverId, resolverName: section.resolverName, album }),
-        `catalog-${section.resolverId}-${album.id || i}`);
-    })
-  ]);
+      });
+      // The fold keeps the first few rows — and always the CURRENT edition
+      // (the accent row is the user's orientation cue; it must not hide
+      // behind the fold). The count on the fold row is what stays hidden.
+      const first = editions.slice(0, MB_EDITIONS_FOLD);
+      const currentBeyondFold = (!showAllMbEditions && editions.length > MB_EDITIONS_FOLD)
+        ? editions.slice(MB_EDITIONS_FOLD).find(e => e.isCurrent) || null
+        : null;
+      const rows = showAllMbEditions
+        ? editions
+        : (currentBeyondFold ? [...first, currentBeyondFold] : first);
+      const hiddenCount = editions.length - rows.length;
+      mbSection = [
+        sectionHeader('MusicBrainz editions', 'mb-header'),
+        ...rows.map((edition) => versionRow({
+          current: edition.isCurrent,
+          badge: editionMusicBrainzBadge(18, true),
+          main: edition.main,
+          secondary: edition.secondary,
+          onPick: () => onSelect && onSelect({ kind: 'mb', release: edition.row }),
+          rowKey: `mb-${edition.row.id}`
+        })),
+        ...(!showAllMbEditions && hiddenCount > 0
+          ? [React.createElement('button', {
+              key: 'mb-more-editions',
+              onClick: (e) => { e.stopPropagation(); setShowAllMbEditions(true); },
+              className: 'w-full px-3 py-1.5 text-left no-drag text-white hover:bg-white/10',
+              style: { fontSize: '11px', border: 'none', backgroundColor: 'transparent', color: 'rgba(255, 255, 255, 0.55)' }
+            }, `${hiddenCount} more editions`)]
+          : [])
+      ];
+    }
+  }
 
-  // Still resolving: a shimmer footer under the sections that already
-  // answered; a list that never loaded for this key (the state update hasn't
-  // landed, or the page changed under the open dropdown) is shimmer alone —
-  // no headers for parts that may not exist.
-  const loadingFooter = !versions
+  // A list that never loaded for this key (the state update hasn't landed,
+  // or the page changed under the open dropdown) is shimmer alone — no
+  // headers for parts that may not exist. A PARTIAL retry (a failed service
+  // re-running under answered sections) gets a shimmer footer under them.
+  const pendingShimmer = !versions
     ? shimmerRows('pending')
-    : (versions.loading ? shimmerRows('more') : []);
+    : (versions.loading && (catalogSections.length > 0 || (versions.mb && versions.mb.releases)) ? shimmerRows('more') : []);
 
   const emptyNote = nothingLoaded
     ? [React.createElement('div', {
@@ -1122,6 +1230,17 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
         className: 'px-3 py-2.5',
         style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.55)' }
       }, 'No other versions found')]
+    : [];
+
+  // Searches that failed or timed out (versions.failures): shimmer covered
+  // them while loading; once settled, a quiet hint — reopening retries them
+  // (openAlbumVersions retries a failed part on the next open).
+  const failuresNote = versions && !versions.loading && (versions.failures || []).length > 0
+    ? [React.createElement('div', {
+        key: 'failures-hint',
+        className: 'px-3 py-1.5',
+        style: { fontSize: '11px', color: 'rgba(255, 255, 255, 0.45)' }
+      }, "Some services didn't answer — reopen to retry")]
     : [];
 
   return React.createElement('div', {
@@ -1134,10 +1253,11 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     },
     onClick: (e) => e.stopPropagation()
   },
+    ...servicesSection,
     ...mbSection,
-    ...catalogSectionElements,
-    ...loadingFooter,
-    ...emptyNote
+    ...pendingShimmer,
+    ...emptyNote,
+    ...failuresNote
   );
 };
 
@@ -1193,10 +1313,6 @@ const ReleasePage = ({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Format a release date nicely. It's a calendar date, so it's read in local
-  // time: new Date("2026-11-06") is still November 5 in the Americas (#1288).
-  const formatDate = (dateStr) => formatCalendarDate(dateStr, 'long', 'Unknown');
-
   // Use a ref to track container width for responsive layout
   const [containerWidth, setContainerWidth] = React.useState(800);
   const containerRef = React.useRef(null);
@@ -1240,9 +1356,33 @@ const ReleasePage = ({
     setShareDropdownOpen(false);
     if (next && onOpenAlbumVersions) onOpenAlbumVersions();
   };
-  // What the track list on screen came from: the catalog source's name, or
-  // MusicBrainz (the page's default source). Null while it still loads.
-  const currentSourceName = release._catalogSource?.name || (release.tracks ? 'MusicBrainz' : null);
+  // ── The closed source card's content (#1238) ──
+  // First line: a catalog edition just names its service; a MusicBrainz
+  // release names its formats too ("MusicBrainz · Digital Media").
+  // Second line (editionDetails): date · region (MusicBrainz releases have
+  // one, catalog ones don't) · the song count — a shimmer bar while the
+  // track list is still on its way, left out when its load failed. The date
+  // goes through formatCalendarDate: it's a calendar date, and
+  // new Date("2026-11-06") is still November 5 in the Americas (#1288).
+  const catalogSource = release._catalogSource || null;
+  const sourceLine = catalogSource
+    ? catalogSource.name
+    : 'MusicBrainz' + (release.formats && release.formats.length ? ` · ${release.formats.join(' + ')}` : '');
+  const sourceBadge = catalogSource
+    ? editionServiceBadge(catalogSource.resolverId, resolvers.find(r => r.id === catalogSource.resolverId)?.color)
+    : editionMusicBrainzBadge();
+  const editionDetails = joinDetails([
+    formatCalendarDate(release.date, 'short', ''),
+    regionName(release.country),
+    release.tracks
+      ? songCount(release.tracks.length)
+      : (release._loadError ? null : React.createElement('span', {
+          className: 'inline-block rounded shimmer-light animate-shimmer align-middle',
+          role: 'status',
+          'aria-label': 'Loading track count',
+          style: { width: '4rem', height: '0.8em', backgroundSize: '200% 100%' }
+        }))
+  ]);
 
   // Responsive sizes based on container width
   const isCompact = containerWidth < 700;
@@ -1419,106 +1559,93 @@ const ReleasePage = ({
             )
           ),
 
-          // Title - matching ReleaseCard typography
-          React.createElement('h3', {
-            style: {
-              fontWeight: '500',
-              fontSize: '13px',
-              lineHeight: '1.4',
-              marginBottom: '3px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              color: 'var(--text-primary)',
-              letterSpacing: '0.005em',
-              pointerEvents: 'none'
-            },
-            title: release.title
-          }, release.title),
-
-          // Year and badge row - matching ReleaseCard
+          // Title - matching ReleaseCard typography, with the release-type
+          // badge beside it (#1238): the source card below carries the year
+          // now, and "Album" isn't worth a badge — only the other types
+          // (Live, EP, Single, Compilation) say what they are.
           React.createElement('div', {
             style: {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
+              marginBottom: '3px',
               pointerEvents: 'none'
             }
           },
-            // Year
-            year && React.createElement('span', {
+            React.createElement('h3', {
               style: {
-                fontSize: '11px',
-                color: 'var(--text-tertiary)',
-                fontWeight: '400'
-              }
-            }, year),
+                fontWeight: '500',
+                fontSize: '13px',
+                lineHeight: '1.4',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+                color: 'var(--text-primary)',
+                letterSpacing: '0.005em'
+              },
+              title: release.title
+            }, release.title),
             // Badge - matching ReleaseCard style
-            React.createElement('span', {
+            releaseType !== 'album' && React.createElement('span', {
               className: 'release-badge',
               style: {
                 backgroundColor: badge.bg,
-                color: badge.color
+                color: badge.color,
+                flexShrink: 0
               }
             }, releaseType.toUpperCase())
           )
         ),
 
-        // Additional metadata below card
-        React.createElement('div', { className: 'mt-3 space-y-1', style: { paddingLeft: '2px' } },
-          React.createElement('p', {
-            className: 'text-gray-500',
-            style: {
-              fontSize: isCompact ? '0.75rem' : '0.875rem',
-              transition: 'font-size 300ms ease'
-            }
-          }, formatDate(release.date)),
-          React.createElement('p', {
-            className: 'text-gray-500',
-            style: {
-              fontSize: isCompact ? '0.75rem' : '0.875rem',
-              transition: 'font-size 300ms ease'
-            }
-          }, release.tracks ? `${release.tracks.length.toString().padStart(2, '0')} Songs`
-            : release._loadError ? ''
-            // Track count still loading: the same shimmer as the track
-            // skeleton, sized like "10 Songs" so nothing shifts when it lands
-            : React.createElement('span', {
-                className: 'inline-block rounded shimmer-light animate-shimmer align-middle',
-                role: 'status',
-                'aria-label': 'Loading track count',
-                style: { width: isCompact ? '3.5rem' : '4rem', height: '0.8em', backgroundSize: '200% 100%' }
-              })),
-          // A track list from a service's catalog, not MusicBrainz (the
-          // album-page catalog fallback): say where it came from.
-          release._catalogSource && React.createElement('p', {
-            className: 'text-gray-500',
-            style: { fontSize: '0.75rem', marginTop: '2px' },
-            title: 'MusicBrainz could not supply this album, so its track list came from another catalog'
-          }, `Track list from ${release._catalogSource.name}`),
-
-          // Album source dropdown (#1238): pick another edition of this album
-          // — another official release of the MusicBrainz release group, or an
+        // The source card and Share, below the album card. The card carries
+        // the edition's details that the old metadata lines did (the date,
+        // the region, the song count, which catalog the track list came
+        // from) — and opens the edition picker (#1238).
+        React.createElement('div', { className: 'mt-3', style: { paddingLeft: '2px' } },
+          // Album source card (#1238): pick another edition of this album —
+          // another official release of the MusicBrainz release group, or an
           // edition one of the user's services carries. Sits above Share.
-          React.createElement('div', { className: 'relative', style: { width: `${albumArtSize}px`, marginTop: '14px' } },
+          React.createElement('div', { className: 'relative', style: { width: `${albumArtSize}px`, transition: 'width 300ms ease' } },
             React.createElement('button', {
               onClick: toggleSourceOpen,
-              className: 'px-2 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 no-drag',
+              className: 'w-full text-left no-drag',
+              'aria-expanded': sourceOpen,
               style: {
+                display: 'block',
                 border: '1px solid var(--border-default)',
-                color: 'var(--text-secondary)',
-                backgroundColor: 'transparent',
-                cursor: 'pointer'
+                borderRadius: '8px',
+                backgroundColor: 'var(--card-bg)',
+                padding: '8px 10px',
+                cursor: 'pointer',
+                transition: 'border-color 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-primary)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; },
+              onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'var(--text-tertiary)'; },
+              onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; },
               title: 'Pick another edition of this album (MusicBrainz releases, or an edition your services carry)'
             },
-              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M19 11H5m14 0a2 2 0 012 2v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0v-.5A1.5 1.5 0 0110.5 5h3A1.5 1.5 0 0115 6.5V7m-8 0h8' })
+              // First line: the source's badge and name, chevron at the right
+              React.createElement('span', {
+                style: { display: 'flex', alignItems: 'center', gap: '7px' }
+              },
+                sourceBadge,
+                React.createElement('span', {
+                  className: 'block truncate',
+                  style: { flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' },
+                  title: sourceLine
+                }, sourceLine),
+                React.createElement('span', {
+                  style: { fontSize: '9px', color: 'var(--text-tertiary)', flexShrink: 0 }
+                }, sourceOpen ? '▲' : '▼')
               ),
-              currentSourceName ? `Source: ${currentSourceName}` : 'Source',
-              React.createElement('span', { style: { fontSize: '9px', marginLeft: '1px' } }, sourceOpen ? '▲' : '▼')
+              // Second line: the edition's details, aligned under the name
+              React.createElement('span', {
+                style: {
+                  display: 'block', marginTop: '3px', marginLeft: '25px',
+                  fontSize: '12px', color: 'var(--text-secondary)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                }
+              }, editionDetails)
             ),
             sourceOpen && React.createElement(AlbumVersionsMenu, {
               release,

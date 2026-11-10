@@ -361,7 +361,11 @@ class ResolverLoader {
    * @param {string} resolverId
    * @param {{artist?: string, title?: string}|string} query
    * @param {object} configOverride - Optional config to override resolver's stored config
-   * @returns {Promise<object[]>} albums ({ id, name, artist, albumArt, releaseDate, trackCount, url }); [] on a miss or error
+   * @returns {Promise<object[]>} albums ({ id, name, artist, albumArt, releaseDate, trackCount, url });
+   *          [] on a miss. REJECTS when the plugin's search throws — a
+   *          caller that distinguishes a miss from a failure (the album
+   *          page's edition picker retries the failed services) needs that;
+   *          every caller today catches and continues.
    */
   async searchAlbums(resolverId, query, configOverride = null) {
     const resolver = this.resolvers.get(resolverId);
@@ -373,7 +377,7 @@ class ResolverLoader {
       return Array.isArray(albums) ? albums.filter(a => a && a.name && a.url) : [];
     } catch (error) {
       console.error(`Album search error for ${resolverId}:`, error);
-      return [];
+      throw error;
     }
   }
 

@@ -264,7 +264,7 @@ describe('the app wiring (source markers)', () => {
   });
 });
 
-describe('ReleasePage: the source button', () => {
+describe('ReleasePage: the source card', () => {
   const { ReleasePage } = require('../../src/renderer/components/cards');
   const release = {
     id: REL_A,
@@ -282,24 +282,55 @@ describe('ReleasePage: the source button', () => {
     ...extra,
   }));
 
-  test('sits above Share and names the current source', () => {
+  test('sits where the metadata lines were, above Share, and carries the edition\'s details', () => {
     const html = render(release);
-    const sourceAt = html.indexOf('Source: MusicBrainz');
+    const sourceAt = html.indexOf('title="MusicBrainz">MusicBrainz</span>');
     const shareAt = html.indexOf('>Share</button>');
     expect(sourceAt).toBeGreaterThan(-1);
     expect(shareAt).toBeGreaterThan(-1);
     expect(sourceAt).toBeLessThan(shareAt);
+    // the card's second line: date · song count (a single track is "1 song")
+    expect(html).toContain('Oct 4, 2024 · 1 song');
+    // the chevron for the picker
+    expect(html).toContain('>▼</span>');
+    // the old lines it replaced are gone: standalone year, "NN Songs"
+    expect(html).not.toContain('>2024</span>');
+    expect(html).not.toContain(' Songs');
   });
 
-  test('names the catalog source a catalog track list came from', () => {
+  test('a MusicBrainz edition names its formats', () => {
+    const html = render({ ...release, formats: ['2×CD', 'Digital Media'] });
+    expect(html).toContain('title="MusicBrainz · 2×CD + Digital Media">MusicBrainz · 2×CD + Digital Media</span>');
+  });
+
+  test('names the edition\'s region as a readable name', () => {
+    const html = render({ ...release, country: 'XE' });
+    expect(html).toContain('Oct 4, 2024 · Europe · 1 song');
+  });
+
+  test('a catalog-sourced page just names the service', () => {
     const html = render({ ...release, _catalogSource: { resolverId: 'spotify', name: 'Spotify', url: 'u' } });
-    expect(html).toContain('Source: Spotify');
+    expect(html).toContain('title="Spotify">Spotify</span>');
+    expect(html).not.toContain('MusicBrainz · ');
+    // catalog editions carry no region
+    expect(html).toContain('Oct 4, 2024 · 1 song');
   });
 
-  test('says just "Source" while the list still loads', () => {
+  test('while the track list still loads the count is a shimmer bar', () => {
     const html = render({ ...release, tracks: null });
-    expect(html).not.toContain('Source:');
-    expect(html).toContain('Source');
+    expect(html).toContain('MusicBrainz');
+    expect(html).toContain('aria-label="Loading track count"');
+    expect(html).not.toContain('1 song');
+  });
+
+  test('the release type shows beside the title only when it isn\'t a plain album', () => {
+    const live = render({ ...release, releaseType: 'live' });
+    const titleAt = live.indexOf('Absolute Elsewhere</h3>');
+    expect(titleAt).toBeGreaterThan(-1);
+    // the badge sits right beside the title, under the album cover
+    expect(live.indexOf('>LIVE</span>')).toBeGreaterThan(titleAt);
+    // a plain album: no badge at all
+    expect(render(release)).not.toContain('>ALBUM</span>');
   });
 });
 
@@ -334,20 +365,34 @@ describe('AlbumVersionsMenu', () => {
 
   const render = (props) => renderToStaticMarkup(React.createElement(AlbumVersionsMenu, props));
 
-  test('lists the MusicBrainz editions and the resolvers\' editions, marking the current one', () => {
+  test('services first, then the MusicBrainz editions, marking the current one', () => {
     const html = render({ release, versions, resolvers: [{ id: 'spotify', name: 'Spotify', color: '#1DB954' }] });
-    expect(html).toContain('MusicBrainz');
-    // the MB row on screen is marked current
+    expect(html).toContain('Your services');
+    expect(html).toContain('MusicBrainz editions');
+    expect(html.indexOf('Your services')).toBeLessThan(html.indexOf('MusicBrainz editions'));
+    // the MB row on screen is marked current: accent background + check at the right
     expect(html).toContain('✓');
-    // MB row: the disambiguation is the main line, formats join the secondary
+    expect(html).toContain('var(--accent-primary-alpha-10)');
+    // MB row: the disambiguation is the main line, then date · region · count
     expect(html).toContain('limited earbook');
-    expect(html).toContain('2×CD + Digital Media · Oct 4, 2024 · XE · 18 tracks');
+    expect(html).toContain('Oct 4, 2024 · Europe · 18 songs'); // XE is a name now
     // a same-titled release falls back to its formats as the main line
-    expect(html).toContain('CD</span>');
-    // resolver section with its editions
-    expect(html).toContain('Spotify');
+    expect(html).toContain('>CD</span>');
+    expect(html).toContain('Oct 4, 2024 · Germany · 6 songs'); // DE is a name too
+    // a service with several editions names each row by the edition
+    expect(html).toContain('Absolute Elsewhere');
     expect(html).toContain('Absolute Elsewhere (Deluxe)');
-    expect(html).toContain('Apr 11, 2025 · 18 tracks');
+    expect(html).toContain('Apr 11, 2025 · 18 songs');
+  });
+
+  test('a service with ONE edition names the service on the row', () => {
+    const single = {
+      ...versions,
+      catalogs: [{ resolverId: 'spotify', resolverName: 'Spotify', albums: [versions.catalogs[0].albums[0]] }]
+    };
+    const html = render({ release, versions: single, resolvers: [{ id: 'spotify', name: 'Spotify', color: '#1DB954' }] });
+    expect(html).toContain('>Spotify</span>');
+    expect(html).not.toContain('Absolute Elsewhere');
   });
 
   test('a catalog-sourced page marks its edition current by resolver and url', () => {
@@ -358,22 +403,39 @@ describe('AlbumVersionsMenu', () => {
     };
     const html = render({ release: catalogRelease, versions, resolvers: [{ id: 'spotify', name: 'Spotify', color: '#1DB954' }] });
     // exactly one current marker: the Spotify edition that is on screen, not
-    // an MB row (the list came from the catalog)
+    // an MB row (the list came from the catalog) — the current row's main
+    // line is the accent-coloured one
     expect(html.match(/✓/g)).toHaveLength(1);
-    expect(html).toContain('✓</span><span class="min-w-0" style="flex:1 1 0"><span class="block truncate" style="font-weight:500;color:var(--accent-soft)">Absolute Elsewhere</span>');
+    expect(html).toContain('color:var(--accent-soft)">Absolute Elsewhere</span>');
   });
 
-  test('while the MusicBrainz part is on its way, its header shows above a shimmer, no rows', () => {
-    const html = render({ release, versions: { ...versions, loading: true, mb: { releaseGroupId: RG, releases: null } }, resolvers: [] });
-    expect(html).toContain('MusicBrainz');
+  test('while the parts are on their way both sections show their header above a shimmer', () => {
+    const html = render({ release, versions: { ...versions, loading: true, catalogs: [], mb: { releaseGroupId: RG, releases: null }, serviceCount: 1 }, resolvers: [] });
+    expect(html).toContain('Your services');
+    expect(html).toContain('MusicBrainz editions');
     expect(html).toContain('animate-shimmer');
     expect(html).not.toContain('limited earbook');
+  });
+
+  test('with no album-search services there is no services section at all', () => {
+    const html = render({ release, versions: { ...versions, loading: true, catalogs: [], serviceCount: 0 }, resolvers: [] });
+    expect(html).not.toContain('Your services');
+  });
+
+  test('a partial retry (a failed service re-running) shimmers under the answered sections', () => {
+    const html = render({ release, versions: { ...versions, loading: true, catalogs: versions.catalogs.slice(0, 1), mb: versions.mb, serviceCount: 2 }, resolvers: [{ id: 'spotify', name: 'Spotify', color: '#1DB954' }] });
+    // the answered sections stay up…
+    expect(html).toContain('Absolute Elsewhere (Deluxe)');
+    expect(html).toContain('MusicBrainz editions');
+    // …and the footer shimmer says a part is still on its way
+    expect((html.match(/animate-shimmer/g) || []).length).toBeGreaterThan(0);
   });
 
   test('a list that never loaded for this key is shimmer alone, with no headers', () => {
     const html = render({ release, versions: null, resolvers: [] });
     expect(html).toContain('animate-shimmer');
-    expect(html).not.toContain('MusicBrainz');
+    expect(html).not.toContain('MusicBrainz editions');
+    expect(html).not.toContain('Your services');
     expect(html).not.toContain('No other versions found');
   });
 
@@ -384,6 +446,81 @@ describe('AlbumVersionsMenu', () => {
       resolvers: []
     });
     expect(html).toContain('No other versions found');
-    expect(html).not.toContain('>MusicBrainz<');
+    expect(html).not.toContain('>MusicBrainz editions<');
+    expect(html).not.toContain('>Your services<');
+  });
+
+  test('services that didn\'t answer leave a retry hint once the list settles', () => {
+    const html = render({ release, versions: { ...versions, failures: ['applemusic'] }, resolvers: [] });
+    expect(html).toContain('Some services didn&#x27;t answer — reopen to retry');
+    // while loading, failures are covered by the shimmer instead
+    const loading = render({ release, versions: { ...versions, loading: true, failures: ['applemusic'], mb: { releaseGroupId: RG, releases: null } }, resolvers: [] });
+    expect(loading).not.toContain('Some services');
+  });
+
+  test('a long MusicBrainz list folds behind a "N more editions" row', () => {
+    const many = {
+      ...versions,
+      catalogs: [],
+      mb: {
+        releaseGroupId: RG,
+        releases: Array.from({ length: 7 }, (_, i) => ({
+          id: `release-${i}`, title: 'Absolute Elsewhere', date: '2024-10-04', country: 'GB',
+          disambiguation: `edition ${i + 1}`, formats: ['CD'], trackCount: 6
+        }))
+      }
+    };
+    const html = render({ release, versions: many, resolvers: [] });
+    expect(html).toContain('edition 1');
+    expect(html).toContain('edition 5');
+    expect(html).not.toContain('edition 6');
+    expect(html).not.toContain('edition 7');
+    expect(html).toContain('2 more editions');
+  });
+
+  test('the current edition shows above the fold even when the list puts it lower', () => {
+    const many = {
+      ...versions,
+      catalogs: [],
+      mb: {
+        releaseGroupId: RG,
+        releases: [
+          ...Array.from({ length: 6 }, (_, i) => ({
+            id: `release-${i}`, title: 'Absolute Elsewhere', date: '2024-10-04', country: 'GB',
+            disambiguation: `edition ${i + 1}`, formats: ['CD'], trackCount: 6
+          })),
+          // the CURRENT release (release.id), sitting last
+          { id: REL_A, title: 'Absolute Elsewhere', date: '2024-10-04', country: 'GB', disambiguation: 'the current one', formats: ['CD'], trackCount: 6 }
+        ]
+      }
+    };
+    const html = render({ release, versions: many, resolvers: [] });
+    // the accent row (the current release) is visible despite sitting beyond the fold
+    expect(html).toContain('the current one');
+    expect(html).toContain('✓');
+    // and one filler edition stays hidden behind the fold row
+    expect(html).not.toContain('edition 6');
+    expect(html).toContain('1 more editions');
+  });
+
+  test('rows identical line-for-line get the first track\'s title appended', () => {
+    const twins = {
+      ...versions,
+      catalogs: [],
+      mb: {
+        releaseGroupId: RG,
+        releases: [
+          { id: 'twin-1', title: 'Absolute Elsewhere', date: '2024-10-04', country: 'GB', disambiguation: null, formats: ['CD'], trackCount: 6, firstTrack: 'Intro A' },
+          { id: 'twin-2', title: 'Absolute Elsewhere', date: '2024-10-04', country: 'GB', disambiguation: null, formats: ['CD'], trackCount: 6, firstTrack: 'Intro B' },
+          // a row with no twin keeps its line clean even though it has one
+          { id: 'single-1', title: 'Absolute Elsewhere', date: '2024-10-05', country: 'GB', disambiguation: null, formats: ['CD'], trackCount: 6, firstTrack: 'Intro C' },
+        ]
+      }
+    };
+    const html = render({ release, versions: twins, resolvers: [] });
+    expect(html).toContain('Oct 4, 2024 · United Kingdom · 6 songs · Intro A');
+    expect(html).toContain('Oct 4, 2024 · United Kingdom · 6 songs · Intro B');
+    expect(html).toContain('Oct 5, 2024 · United Kingdom · 6 songs</span>');
+    expect(html).not.toContain('Intro C');
   });
 });

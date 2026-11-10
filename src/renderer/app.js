@@ -644,7 +644,7 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
-const { createReleaseLookup } = require('./lib/release-lookup');
+const { createReleaseLookup, releaseFormats } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
@@ -20062,6 +20062,9 @@ ${trackListXml}
         date: releaseData.date || release.date,
         releaseType: release.releaseType,
         tracks: tracks,
+        // The mediums' formats ("Digital Media", "2×CD"), for the source
+        // card (#1238): "MusicBrainz · Digital Media".
+        formats: releaseFormats(releaseData),
         albumArt: release.albumArt || albumArtCache.current[release.id]?.url || cachedLookupArt
           || carriedReleaseArt(currentReleaseRef.current, { title: release.title, artist: artistNameForLookup }) || onScreenArt || null,
         barcode: releaseData.barcode,
@@ -20645,24 +20648,60 @@ ${trackListXml}
     const key = albumVersionsKey(release);
     if (!key) return;
     const artistName = release.artist?.name || release.artist;
-    // Same album, same group, and its list loaded or loading: keep it. A
-    // list that settled with NOTHING usable (the MusicBrainz part failed, no
-    // catalog answered) is retried on the next open — an outage shouldn't pin
-    // "No other versions found" to the album for the whole session. A
-    // FAILED MusicBrainz part is retried too (mb.failed), so a partial answer
-    // with a failed browse recovers on the next open; a group that genuinely
-    // has no official releases (not a failure) stays as it answered.
+
+    // The candidate services (the user's active album-search resolvers in
+    // their priority order), computed before the entry so the completeness
+    // check can use them.
+    const loader = resolverLoaderRef.current;
+    const activeIds = activeResolversRef.current || [];
+    let searchResolvers = [];
+    try {
+      searchResolvers = loader?.getAlbumSearchResolvers
+        ? orderCatalogResolvers(
+            loader.getAlbumSearchResolvers().filter(r => activeIds.includes(r.id)),
+            { activeIds, order: resolverOrderRef.current || [] }
+          )
+        : [];
+    } catch (e) {
+      console.warn('Album edition resolvers failed:', e?.message || e);
+    }
+
+    // A list in flight stays; a COMPLETE list stays — every part answered,
+    // and a genuine miss (an empty answer) is an answer. A list with FAILED
+    // parts (mb.failed, failures: a search that lost to its 8s bound while
+    // the page was busy resolving tracks, or a service that errored) is
+    // retried PARTIALLY on the next open: what answered stays on screen,
+    // only the failed parts re-run — one dead service must not blank the
+    // panel and re-ask every other service on every open.
     const currentEntry = albumVersionsRef.current;
-    if (currentEntry?.key === key && (currentEntry.loading
-      || (currentEntry.mb && !currentEntry.mb.failed && currentEntry.mb.releases)
-      || (!currentEntry.mb && currentEntry.catalogs.length > 0))) return;
+    const previous = currentEntry?.key === key ? currentEntry : null;
+    if (previous && previous.loading) return;
+    const askedBefore = new Set((previous?.asked) || []);
+    const mbAnswered = previous?.mb && !previous.mb.failed && previous.mb.releases ? previous.mb : null;
+    // Complete: no failures, the MusicBrainz part answered (or there is
+    // none), and every candidate service answered — miss or not.
+    if (previous
+      && !(previous.failures || []).length
+      && (!previous.mb || mbAnswered)
+      && searchResolvers.every(r => askedBefore.has(r.id))) return;
 
     // Which release group's editions to list (albumVersionsGroup: a
     // still-loading page knows its group only when it was opened by one).
     const releaseGroupId = albumVersionsGroup(release);
 
     const epoch = ++albumVersionsEpochRef.current;
-    const entry = { epoch, key, loading: true, mb: releaseGroupId ? { releaseGroupId, releases: null } : null, catalogs: [] };
+    const entry = {
+      epoch, key, loading: true,
+      // The answered parts carry over (a partial retry keeps them); the
+      // failed parts restart pending.
+      mb: mbAnswered || (releaseGroupId ? { releaseGroupId, releases: null } : null),
+      catalogs: previous ? previous.catalogs : [],
+      asked: [...askedBefore],
+      failures: [],
+      // How many services were candidates (the panel shows the services
+      // section only when there are some).
+      serviceCount: searchResolvers.length
+    };
     albumVersionsRef.current = entry;
     setAlbumVersions(entry);
 
@@ -20676,7 +20715,7 @@ ${trackListXml}
     };
     const stillThisAlbum = (prev) => prev && prev.epoch === epoch;
 
-    if (releaseGroupId) {
+    if (releaseGroupId && !mbAnswered) {
       pending += 1;
       (async () => {
         let failed = false;
@@ -20696,45 +20735,44 @@ ${trackListXml}
     }
 
     // The resolvers: every edition of this album the user's active
-    // album-search services carry, in the user's priority order. Each section
-    // appears as it answers; a miss adds nothing (the section is simply
-    // absent — a resolver that doesn't have the album isn't news).
-    const loader = resolverLoaderRef.current;
-    const activeIds = activeResolversRef.current || [];
-    let searchResolvers = [];
-    try {
-      searchResolvers = loader?.getAlbumSearchResolvers
-        ? orderCatalogResolvers(
-            loader.getAlbumSearchResolvers().filter(r => activeIds.includes(r.id)),
-            { activeIds, order: resolverOrderRef.current || [] }
-          )
-        : [];
-    } catch (e) {
-      console.warn('Album edition resolvers failed:', e?.message || e);
-    }
-    searchResolvers.forEach((resolver) => {
-        pending += 1;
-        (async () => {
-          try {
-            const config = await getResolverConfig(resolver.id);
-            const albums = (await withCatalogTimeout(loader.searchAlbums(resolver.id, { artist: artistName, title: release.title }, config))) || [];
-            // Same album, edition aside (isCatalogAlbumEdition: "Queen II" is
-            // not a version of "Queen I"), best match first.
-            const editions = albums
-              .filter(a => isCatalogAlbumEdition({ artist: artistName, title: release.title }, a))
-              .sort((a, b) => albumMatchScore({ artist: artistName, title: release.title }, b) - albumMatchScore({ artist: artistName, title: release.title }, a));
-            if (editions.length > 0) {
-              setAlbumVersions(prev => (stillThisAlbum(prev)
-                ? { ...prev, catalogs: [...prev.catalogs, { resolverId: resolver.id, resolverName: resolver.name, albums: editions }] }
-                : prev));
-            }
-          } catch (e) {
-            console.warn(`Album editions from ${resolver.id} failed:`, e?.message || e);
-          } finally {
-            settled();
-          }
-        })();
-      });
+    // album-search services carry. Each section appears as it answers; a
+    // miss adds nothing (the section is simply absent — a service that
+    // doesn't have the album isn't news), but it is an ANSWER: only the
+    // services that didn't answer are asked again on a retry.
+    searchResolvers.filter(r => !askedBefore.has(r.id)).forEach((resolver) => {
+      pending += 1;
+      (async () => {
+        try {
+          const config = await getResolverConfig(resolver.id);
+          const result = await withCatalogTimeout(loader.searchAlbums(resolver.id, { artist: artistName, title: release.title }, config));
+          // A timeout answers null (withCatalogTimeout); a miss answers []
+          // from the loader (which rethrows a service error — caught here).
+          if (result == null) throw new Error('timed out');
+          const albums = result;
+          // Same album, edition aside (isCatalogAlbumEdition: "Queen II" is
+          // not a version of "Queen I"), best match first.
+          const editions = albums
+            .filter(a => isCatalogAlbumEdition({ artist: artistName, title: release.title }, a))
+            .sort((a, b) => albumMatchScore({ artist: artistName, title: release.title }, b) - albumMatchScore({ artist: artistName, title: release.title }, a));
+          setAlbumVersions(prev => (stillThisAlbum(prev)
+            ? {
+                ...prev,
+                asked: [...(prev.asked || []), resolver.id],
+                catalogs: editions.length > 0
+                  ? [...prev.catalogs, { resolverId: resolver.id, resolverName: resolver.name, albums: editions }]
+                  : prev.catalogs
+              }
+            : prev));
+        } catch (e) {
+          console.warn(`Album editions from ${resolver.id} failed:`, e?.message || e);
+          setAlbumVersions(prev => (stillThisAlbum(prev)
+            ? { ...prev, failures: [...(prev.failures || []), resolver.id] }
+            : prev));
+        } finally {
+          settled();
+        }
+      })();
+    });
 
     if (pending === 0) setAlbumVersions(prev => (stillThisAlbum(prev) ? { ...prev, loading: false } : prev));
   };
@@ -20807,6 +20845,7 @@ ${trackListXml}
           date: releaseData.date || release.date,
           releaseType: release.releaseType,
           tracks,
+          formats: releaseFormats(releaseData),
           albumArt: release.albumArt,
           barcode: releaseData.barcode,
           country: releaseData.country,
@@ -20855,7 +20894,10 @@ ${trackListXml}
         const newRelease = catalogAlbumToRelease(found.album, {
           resolverId: version.resolverId,
           resolverName: version.resolverName || found.resolverName,
-          requested: { id: release.id, title: release.title, artistName, albumArt: release.albumArt, date: release.date, releaseType: release.releaseType }
+          // No `date`: the picked edition's own release date wins, so the
+          // card's details line matches the row that was clicked (the page's
+          // pre-pick date can differ across editions).
+          requested: { id: release.id, title: release.title, artistName, albumArt: release.albumArt, releaseType: release.releaseType }
         });
         if (!newRelease.tracks.length) throw new Error('empty track list');
         newRelease.artist = release.artist;

@@ -48,13 +48,16 @@ describe('ReleasePage load error', () => {
     expect(html).not.toContain('Try Again');
   });
 
-  test('a catalog track list says where it came from', () => {
+  test('a catalog track list names its source on the source card', () => {
     const html = render({
       ...base,
       tracks: [{ position: 1, title: 'Still Coming Down', length: 200000, mediumIndex: 1 }],
       _catalogSource: { resolverId: 'bandcamp', name: 'Bandcamp' }
     });
-    expect(html).toContain('Track list from Bandcamp');
+    // the source card (#1238) names the catalog the list came from — the old
+    // "Track list from …" line is part of it now
+    expect(html).toContain('title="Bandcamp">Bandcamp</span>');
+    expect(html).not.toContain('Track list from');
     expect(render({ ...base, tracks: [] })).not.toContain('Track list from');
   });
 
