@@ -28281,8 +28281,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // the hidden-keys allowlist so removed friends never creep back in.
   //
   // Returns the number of new friends added (for toast UX on manual trigger).
+  // When the last friend-graph sync started (any trigger), so opening the
+  // Friends tab (or the startup sync) skips one that just ran.
+  const lastFriendSyncAtRef = useRef(0);
+  const FRIEND_TAB_SYNC_MIN_GAP_MS = 5 * 60 * 1000;
   const syncFriendsFromServices = async ({ silent = true } = {}) => {
     if (friendSyncInProgress) return 0;
+    lastFriendSyncAtRef.current = Date.now();
     setFriendSyncInProgress(true);
     try {
       const lastfmConfig = metaServiceConfigs.lastfm;
@@ -29046,13 +29051,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   activateListenAlongRef.current = activateListenAlong;
   deactivateListenAlongRef.current = deactivateListenAlong;
 
-  // Periodic friend-graph sync (every 15th activity tick = ~30 min when the
-  // normal 2-min cadence is in effect). Decouples friend-graph fetches from
-  // the 2-min recent-track fetches — friend graphs change orders of
-  // magnitude less often, so there's no value polling them every 2 min.
-  const friendSyncTickCounterRef = useRef(0);
-  const SYNC_TICK_INTERVAL = 15;
-
   // Poll friends for on-air status (pinned friends + saved friends for auto-pinning)
   const hasSavedFriends = friends.some(f => f.savedToCollection);
   useEffect(() => {
@@ -29071,12 +29069,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // parachord#770 part 2 — hosted-XSPF poll is yielded; this one is not.
       friendPollIntervalRef.current = setInterval(() => {
         refreshPinnedFriends();
-        // Periodic friend-graph sync gate
-        friendSyncTickCounterRef.current += 1;
-        if (friendSyncTickCounterRef.current >= SYNC_TICK_INTERVAL) {
-          friendSyncTickCounterRef.current = 0;
-          syncFriendsFromServices({ silent: true });
-        }
       }, pollInterval);
 
       return () => {
@@ -29091,6 +29083,11 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // and credentials are available. Fire-and-forget; activity poll fills
   // cachedRecentTrack for anyone newly synced in on the next 2-min tick.
   const friendStartupSyncDoneRef = useRef(false);
+  // Every deferred sync trigger (startup timeout, periodic timer, Friends tab)
+  // calls the LATEST syncFriendsFromServices through this ref: the function
+  // reads metaServiceConfigs from its render, and a timer outlives that render.
+  const syncFriendsFromServicesRef = useRef(null);
+  syncFriendsFromServicesRef.current = syncFriendsFromServices;
   useEffect(() => {
     if (!cacheLoaded) return;
     if (friendStartupSyncDoneRef.current) return;
@@ -29099,9 +29096,42 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const hasCreds = !!(lastfmConfig?.username || listenbrainzConfig?.username);
     if (!hasCreds) return;
     friendStartupSyncDoneRef.current = true;
-    // Small delay so we don't thrash the network during startup.
-    setTimeout(() => syncFriendsFromServices({ silent: true }), 5000);
+    // Small delay so we don't thrash the network during startup. A launch
+    // that restores onto the Friends tab has already synced by then.
+    setTimeout(() => {
+      if (Date.now() - lastFriendSyncAtRef.current < FRIEND_TAB_SYNC_MIN_GAP_MS) return;
+      syncFriendsFromServicesRef.current?.({ silent: true });
+    }, 5000);
   }, [cacheLoaded, metaServiceConfigs]);
+
+  // Periodic friend-graph sync: every 30 min while Last.fm or ListenBrainz
+  // is set up. It used to ride every 15th tick of the activity poll above,
+  // which only runs once a friend is saved or pinned, so with no friends yet
+  // someone followed mid-session never arrived until a restart. Friend graphs
+  // change far less often than recent tracks, so this keeps its own slower
+  // timer. It calls the latest syncFriendsFromServices through
+  // syncFriendsFromServicesRef (above the startup sync).
+  const FRIEND_GRAPH_SYNC_MS = 30 * 60 * 1000;
+  const hasFriendServiceAccount = !!(metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username);
+  useEffect(() => {
+    if (!cacheLoaded || !hasFriendServiceAccount) return;
+    const id = setInterval(() => {
+      syncFriendsFromServicesRef.current?.({ silent: true });
+    }, FRIEND_GRAPH_SYNC_MS);
+    return () => clearInterval(id);
+  }, [cacheLoaded, hasFriendServiceAccount]);
+
+  // Opening the Collection's Friends tab syncs too, like mobile's Friends
+  // screen (FriendsViewModel.init): it's where someone looks for a friend
+  // they just followed. Tab switches are cheap on desktop and the Last.fm
+  // friend list is paginated, so a sync that started in the last 5 minutes
+  // (any trigger) counts.
+  useEffect(() => {
+    if (!cacheLoaded || !hasFriendServiceAccount) return;
+    if (activeView !== 'library' || collectionTab !== 'friends') return;
+    if (Date.now() - lastFriendSyncAtRef.current < FRIEND_TAB_SYNC_MIN_GAP_MS) return;
+    syncFriendsFromServicesRef.current?.({ silent: true });
+  }, [activeView, collectionTab, cacheLoaded, hasFriendServiceAccount]);
 
   // Load friend's recent listening history
   const loadFriendRecentTracks = async (friend) => {
