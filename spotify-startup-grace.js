@@ -34,9 +34,28 @@ function startupPollVerdict({ status, data, expectedUri, elapsedMs, confirmed, g
   return 'evaluate';
 }
 
+// End check (parachord#1300). Tracks are started inside their album, so when
+// ours ends Spotify carries on into the album's next track instead of
+// stopping. The regular poll is 20s apart and would let that track play for
+// up to 20s, so when the end falls before the next regular poll, one extra
+// poll is timed to land END_CHECK_LEAD_MS before it, inside the poller's 2s
+// near-end window, which advances to the queue's next track.
+//
+// Returns the delay for that poll, or null when the regular poll comes first
+// (it schedules the check itself when its turn comes).
+const END_CHECK_LEAD_MS = 1500;
+
+function endCheckDelayMs(remainingMs, pollIntervalMs, leadMs = END_CHECK_LEAD_MS) {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
+  const delay = Math.max(0, remainingMs - leadMs);
+  return delay < pollIntervalMs ? delay : null;
+}
+
 module.exports = {
   STARTUP_GRACE_MS,
   STARTUP_POLL_INTERVAL_MS,
+  END_CHECK_LEAD_MS,
   matchesExpectedTrack,
   startupPollVerdict,
+  endCheckDelayMs,
 };

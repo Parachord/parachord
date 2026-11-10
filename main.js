@@ -130,7 +130,7 @@ const WebSocket = require('ws');
 const LocalFilesService = require('./local-files');
 const { getMusicKitBridge } = require('./musickit-bridge');
 const { startMcpServer, stopMcpServer, handleRendererResponse } = require('./services/mcp-server');
-const { STARTUP_POLL_INTERVAL_MS, STARTUP_GRACE_MS, matchesExpectedTrack, startupPollVerdict } = require('./spotify-startup-grace');
+const { STARTUP_POLL_INTERVAL_MS, STARTUP_GRACE_MS, matchesExpectedTrack, startupPollVerdict, endCheckDelayMs } = require('./spotify-startup-grace');
 
 // Auto-updater configuration
 if (autoUpdater) {
@@ -206,6 +206,9 @@ const spotifyPoller = {
   startedAt: 0,
   confirmedStarted: false,
   startupTimer: null,
+  // One extra poll timed for just before the track ends (parachord#1300):
+  // started inside its album, Spotify plays on into the album's next track.
+  endCheckTimer: null,
 
   POLL_INTERVAL: 20000, // 20 seconds - more reliable for background execution
   RECOVERY_INTERVAL: 30000, // 30 seconds for recovery
@@ -264,6 +267,7 @@ const spotifyPoller = {
       clearTimeout(this.startupTimer);
       this.startupTimer = null;
     }
+    this.clearEndCheck();
     if (this.recoveryInterval) {
       clearInterval(this.recoveryInterval);
       this.recoveryInterval = null;
@@ -288,6 +292,31 @@ const spotifyPoller = {
     this.lastProgressMs = 0;
     this.lastKnownDurationMs = 0;
     this.pendingTrackChange = null;
+    this.clearEndCheck();
+  },
+
+  clearEndCheck() {
+    if (this.endCheckTimer) {
+      clearTimeout(this.endCheckTimer);
+      this.endCheckTimer = null;
+    }
+  },
+
+  // Called on every poll that finds the expected track playing; replaces any
+  // earlier check, so a seek or a pause is picked up by the next poll.
+  scheduleEndCheck(remainingMs) {
+    this.clearEndCheck();
+    const delay = endCheckDelayMs(remainingMs, this.POLL_INTERVAL);
+    if (delay !== null) this.pollSoon(delay);
+  },
+
+  pollSoon(delay) {
+    this.clearEndCheck();
+    const uri = this.expectedTrackUri;
+    this.endCheckTimer = setTimeout(() => {
+      this.endCheckTimer = null;
+      if (this.token && this.expectedTrackUri === uri) this.poll();
+    }, delay);
   },
 
   async poll() {
@@ -295,6 +324,7 @@ const spotifyPoller = {
       console.log('🔄 [Main] Poll skipped - no token or track URI');
       return;
     }
+    const uriAtStart = this.expectedTrackUri;
 
     try {
       const response = await fetch('https://api.spotify.com/v1/me/player', {
@@ -311,6 +341,9 @@ const spotifyPoller = {
       }
 
       const data = response.status === 204 ? null : await response.json();
+      // A poll can overlap another (the end check, the startup ticks); one that
+      // answers after the poller stopped or moved on must not act twice.
+      if (!this.token || this.expectedTrackUri !== uriAtStart) return;
       this.errorCount = 0; // Reset on success
 
       // Startup grace (parachord#985): the play command was accepted, but the
@@ -404,6 +437,8 @@ const spotifyPoller = {
           this.lastProgressMs = progressMs;
           this.lastKnownDurationMs = durationMs;
           this.pendingTrackChange = null;
+          if (isPlaying) this.scheduleEndCheck(durationMs - progressMs);
+          else this.clearEndCheck();
           console.log(`▶️ [Main] Spotify: ${percentComplete.toFixed(1)}% (${Math.floor(progressMs / 1000)}s / ${Math.floor(durationMs / 1000)}s)`);
         }
       } else {
@@ -417,6 +452,9 @@ const spotifyPoller = {
           if (this.pendingTrackChange === null) {
             this.pendingTrackChange = currentUri;
             console.log('   ⏳ First mismatch, waiting for confirmation...');
+            // Confirm soon rather than at the next 20s poll: a short track
+            // ending here has Spotify playing the album's next one (#1300).
+            this.pollSoon(STARTUP_POLL_INTERVAL_MS);
           } else if (this.pendingTrackChange === currentUri) {
             console.log('   ✅ Track change confirmed');
             this.sendToRenderer('spotify-polling-advance', { reason: 'track-changed' });

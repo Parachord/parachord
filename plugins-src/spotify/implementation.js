@@ -457,14 +457,58 @@ module.exports = {
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
+      // Start the track inside its album (context_uri + offset), not as a bare
+      // `uris` list (parachord#1300): Spotify's Android app (9.2, Nov 2026)
+      // answers a bare-uris play with 204 and then plays nothing, while the
+      // album form plays at once there and everywhere else. The album id comes
+      // from the track (search and album/playlist lookups carry it), else one
+      // GET /v1/tracks/{id}, remembered per track. That lookup sends no market,
+      // so the offset is the track's own uri and the pollers' uri checks hold.
+      // A failed lookup, or a refused album play, plays the bare track.
+      const uri = track.spotifyUri;
+      const bareBody = { uris: [uri] };
+      const albumBody = async () => {
+        const m = /^spotify:track:([A-Za-z0-9]+)$/.exec(uri || '');
+        if (!m) return null;
+        let albumId = track.spotifyAlbumId || null;
+        if (!albumId) {
+          const g = typeof window !== 'undefined' ? window : globalThis;
+          if (!g._spotifyTrackAlbums) g._spotifyTrackAlbums = new Map();
+          const cache = g._spotifyTrackAlbums;
+          if (cache.has(m[1])) {
+            albumId = cache.get(m[1]);
+          } else {
+            try {
+              const r = await fetch(`https://api.spotify.com/v1/tracks/${m[1]}`, {
+                headers: { Authorization: `Bearer ${t}` },
+              });
+              if (!r.ok) return null;
+              const data = await r.json();
+              albumId = (data && data.album && data.album.id) || null;
+              cache.set(m[1], albumId);
+              while (cache.size > 500) cache.delete(cache.keys().next().value);
+            } catch (_e) {
+              return null;
+            }
+          }
+        }
+        return albumId ? { context_uri: `spotify:album:${albumId}`, offset: { uri } } : null;
+      };
+      let body = (await albumBody()) || bareBody;
       const sendPlay = () =>
         fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, {
           method: 'PUT',
           headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uris: [track.spotifyUri] }),
+          body: JSON.stringify(body),
         });
-      const playResponse = await sendPlay();
+      let playResponse = await sendPlay();
       if (playResponse.status === 401) return { needsRefresh: true };
+      if (!playResponse.ok && playResponse.status !== 204 && body !== bareBody) {
+        console.warn('Spotify refused the album play (' + playResponse.status + '), playing the bare track');
+        body = bareBody;
+        playResponse = await sendPlay();
+        if (playResponse.status === 401) return { needsRefresh: true };
+      }
       if (!playResponse.ok && playResponse.status !== 204) return { success: false };
       const matches = (item) =>
         !!item &&
