@@ -957,15 +957,22 @@ const HomePage = React.memo(function HomePage(props) {
                   showFriends && React.createElement('div', { className: 'flex flex-col' },
                     React.createElement('div', { className: 'flex items-center justify-between mb-4' },
                       React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Friend Activity'),
-                      onlineFriends.length > 0
-                        ? React.createElement('span', { className: 'flex items-center gap-1.5 text-sm text-green-600 font-medium' },
-                            React.createElement('span', { className: 'w-2 h-2 rounded-full bg-green-500 animate-pulse' }),
-                            `${onlineFriends.length} listening now`
-                          )
-                        : React.createElement('button', {
-                            onClick: () => navigateTo('friends'),
-                            className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
-                          }, 'See all')
+                      // The on-air count and "See all" sit side by side: the
+                      // count used to replace the link, so with anyone on air
+                      // Home had no way to the rest of the list. "See all" opens
+                      // the Collection's Friends tab (the old standalone
+                      // 'friends' view was a placeholder) and shows only when
+                      // that tab lists more friends than the 5 here.
+                      React.createElement('div', { className: 'flex items-center gap-4' },
+                        onlineFriends.length > 0 && React.createElement('span', { className: 'flex items-center gap-1.5 text-sm text-green-600 font-medium' },
+                          React.createElement('span', { className: 'w-2 h-2 rounded-full bg-green-500 animate-pulse' }),
+                          `${onlineFriends.length} listening now`
+                        ),
+                        friends.filter(f => f.savedToCollection !== false).length > friendsWithActivity.length && React.createElement('button', {
+                          onClick: () => { navigateTo('library'); setCollectionTab('friends'); },
+                          className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
+                        }, 'See all')
+                      )
                     ),
                     React.createElement('div', { className: 'space-y-2 flex-1' },
                       friendsWithActivity.map((friend, index) => {
