@@ -458,6 +458,26 @@ describe('AlbumVersionsMenu', () => {
     expect(loading).not.toContain('Some services');
   });
 
+  test('a failed MusicBrainz browse leaves the retry hint, not "No other versions found"', () => {
+    const html = render({
+      release,
+      versions: { key: albumVersionsKey(release), loading: false, mb: { releaseGroupId: RG, releases: [], failed: true }, catalogs: [], failures: [] },
+      resolvers: []
+    });
+    expect(html).toContain('Some services didn&#x27;t answer — reopen to retry');
+    expect(html).not.toContain('No other versions found');
+  });
+
+  test('a panel whose only answers are failures shows the hint alone', () => {
+    const html = render({
+      release,
+      versions: { key: albumVersionsKey(release), loading: false, mb: null, catalogs: [], failures: ['applemusic'], serviceCount: 1 },
+      resolvers: []
+    });
+    expect(html).toContain('Some services didn&#x27;t answer — reopen to retry');
+    expect(html).not.toContain('No other versions found');
+  });
+
   test('a long MusicBrainz list folds behind a "N more editions" row', () => {
     const many = {
       ...versions,
@@ -500,7 +520,8 @@ describe('AlbumVersionsMenu', () => {
     expect(html).toContain('✓');
     // and one filler edition stays hidden behind the fold row
     expect(html).not.toContain('edition 6');
-    expect(html).toContain('1 more editions');
+    // one hidden edition reads in the singular
+    expect(html).toContain('>1 more edition<');
   });
 
   test('rows identical line-for-line get the first track\'s title appended', () => {

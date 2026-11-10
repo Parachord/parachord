@@ -1101,8 +1101,11 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
   const catalogSections = versions?.catalogs || [];
   // Nothing to pick: the list settled and no source contributed a section (a
   // MusicBrainz part that is still pending, or an absent one, is not
-  // "nothing" — and a list that never loaded isn't either).
-  const nothingLoaded = !!versions && !versions.loading
+  // "nothing" — and a list that never loaded isn't either). A part that
+  // FAILED isn't an answer either: the panel can't say there are no other
+  // versions when it never heard back, so the retry hint below speaks instead.
+  const anyFailed = !!versions && (!!versions.mb?.failed || (versions.failures || []).length > 0);
+  const nothingLoaded = !!versions && !versions.loading && !anyFailed
     && (!versions.mb || (versions.mb.releases || []).length === 0)
     && catalogSections.length === 0;
 
@@ -1210,7 +1213,7 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
               onClick: (e) => { e.stopPropagation(); setShowAllMbEditions(true); },
               className: 'w-full px-3 py-1.5 text-left no-drag text-white hover:bg-white/10',
               style: { fontSize: '11px', border: 'none', backgroundColor: 'transparent', color: 'rgba(255, 255, 255, 0.55)' }
-            }, `${hiddenCount} more editions`)]
+            }, `${hiddenCount} more ${hiddenCount === 1 ? 'edition' : 'editions'}`)]
           : [])
       ];
     }
@@ -1232,10 +1235,11 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
       }, 'No other versions found')]
     : [];
 
-  // Searches that failed or timed out (versions.failures): shimmer covered
-  // them while loading; once settled, a quiet hint — reopening retries them
-  // (openAlbumVersions retries a failed part on the next open).
-  const failuresNote = versions && !versions.loading && (versions.failures || []).length > 0
+  // Searches that failed or timed out (versions.failures, or a failed
+  // MusicBrainz browse, mb.failed): shimmer covered them while loading; once
+  // settled, a quiet hint — reopening retries them (openAlbumVersions retries
+  // a failed part on the next open).
+  const failuresNote = versions && !versions.loading && anyFailed
     ? [React.createElement('div', {
         key: 'failures-hint',
         className: 'px-3 py-1.5',
