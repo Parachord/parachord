@@ -18302,6 +18302,13 @@ ${trackListXml}
               setCollectionTab(savedLastView.collectionTab);
             }
             console.log(`📦 Restoring last view: library [${savedLastView.collectionTab || 'tracks'}]`);
+          } else if (savedLastView.view === 'friends') {
+            // The old standalone 'friends' view was a placeholder (Home's
+            // "See all" led to it); the friends list is the Collection tab.
+            setActiveView('library');
+            setViewHistory(['library']);
+            setCollectionTab('friends');
+            console.log('📦 Restoring last view: library [friends]');
           } else if (savedLastView.view === 'recommendations') {
             // Restore recommendations view with tab
             setActiveView('recommendations');
@@ -36128,10 +36135,7 @@ useEffect(() => {
         // Shared header - only show for views without custom heroes
         !['home', 'library', 'discover', 'new-releases', 'critics-picks', 'recommendations', 'history', 'friendHistory', 'settings', 'playlists', 'playlist-view', 'concerts'].includes(activeView) &&
         React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-          React.createElement('h2', { className: 'text-2xl font-bold' },
-            activeView === 'friends' ? 'Friends' :
-            'Discover'
-          )
+          React.createElement('h2', { className: 'text-2xl font-bold' }, 'Discover')
         ),
 
         // HOME view - dynamic personalized landing page
@@ -36148,10 +36152,6 @@ useEffect(() => {
           activeResolvers: playbackResolvers, allResolvers, autoPinnedFriendIds, collectionData, collectionHeaderCollapsed, collectionLoading, collectionObserverRef, collectionScrollContainerRef, collectionSearch, collectionSearchOpen, collectionSongsSorted, collectionSort, collectionSortDropdownOpen, collectionTab, collectionTrackRowRefs, currentTrack, filterCollectionItems, formatTime, friendSyncInProgress, friends, handleCollectionScrollContainerRef, isPlaying, library, libraryLoading, metaServiceConfigs, pinnedFriendIds, playbackContext, resolverOrder, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionHeaderCollapsed, setCollectionSearch, setCollectionSearchOpen, setCollectionSort, setCollectionSortDropdownOpen, setCollectionTab, setDraggingTrackForPlaylist, setSyncMenuOpen, setSyncStatusModal, setTrackLoading, showToast, sortCollectionItems, syncMenuOpen, syncProviderConfig, syncStatus, trackSources,
           ...collectionPageHandlers
         }),
-
-        activeView === 'friends' && React.createElement('div', {
-          className: 'text-center py-12 text-gray-400'
-        }, '👥 Connect with friends to see what they\'re listening to'),
 
         // Charts view with collapsible hero header (matching Artist page pattern)
         activeView === 'discover' && React.createElement('div', {
