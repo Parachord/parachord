@@ -2087,7 +2087,9 @@ describe('recommendations', () => {
     const response = (sections, extra = {}) => ({
       user: { id: 'u', tier: 'UNLIMITED', __typename: 'User' },
       t1r: { id: 'musicTopOneRecommender', __typename: 'RecommendationCollection', recommendationConnection: { edges: [{ node: { id: 'uri:///recommendations/music-home/playMusic', __typename: 'Recommendation', parentContainer: { node: { __typename: 'Station', id: 'A1ESXGJW9GSMCX', name: 'My Soundtrack' }, __typename: 'ParentContainerEdge' }, recommendedContent: { edges: [{ node: trackNode('B002S3FW6Y', 'Geneva', [['Russian Circles']], ['Empros', 'B005S3FW6Y']) }], __typename: 'EntityConnection' } } }] } },
-      genres: [{ id: '1|G|GROUPING_GENRE', __typename: 'Recommendation', recommendedContent: { edges: [{ node: { __typename: 'Category', id: 'hZiJ3FwS', name: 'Rock', url: 'https://music.amazon.com/genres/hZiJ3FwS' } }] } }],
+      // A genre edge whose node WOULD map (an Album) if the parser ever
+      // pointed at data.genres — pins that genres never reach the sections.
+      genres: [{ id: '1|G|GROUPING_GENRE', __typename: 'Recommendation', recommendedContent: { edges: [{ node: albumNode('B00CXS55LG', 'Sunbather', ['Deafheaven']) }] } }],
       browse: { id: 'uri:///browse/home', __typename: 'RecommendationCollection', recommendationConnection: { edges: sections.map(s => ({ node: s, __typename: 'RecommendationEdge' })), __typename: 'RecommendationConnection' } },
       ...extra
     });

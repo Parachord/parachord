@@ -1091,7 +1091,7 @@ function recommendationsFromMusicHome(data) {
 
 // Find the page's own RecommenderSeeMorePage among captured bodies (the
 // see-more route's request). Matched on operationName, last match wins, same
-// reasoning as amazonBrowseHomeRequest.
+// reasoning as amazonMusicHomeRequest.
 function amazonSeeMoreRequest(bodies) {
   let found = null;
   for (const raw of (Array.isArray(bodies) ? bodies : [])) {
