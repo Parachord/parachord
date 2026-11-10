@@ -61,9 +61,9 @@ describe('pickTrackMatch', () => {
 
   describe('order of preference', () => {
     test('an exact match beats an earlier partial one', () => {
-      const partial = { artist: 'Radiohead', title: 'Creep - Remastered' };
-      const exact = { artist: 'Radiohead', title: 'Creep' };
-      expect(pickTrackMatch([partial, exact], 'Radiohead', 'Creep')).toBe(exact);
+      const partial = { artist: 'Queen', title: 'Bohemian Rhapsody - 2011 Mix' };
+      const exact = { artist: 'Queen', title: 'Bohemian Rhapsody' };
+      expect(pickTrackMatch([partial, exact], 'Queen', 'Bohemian Rhapsody')).toBe(exact);
     });
 
     test('the plain version beats an earlier cover or live cut', () => {
@@ -150,5 +150,51 @@ describe('the packaged app can load the matcher', () => {
   ])('%s requires nothing under src/', (file) => {
     const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
     expect(source).not.toMatch(/require\(['"][^'"]*\bsrc\//);
+  });
+
+  // Spotify labels remastered studio tracks ("- 2016 Remaster") while a live
+  // album or an outtakes set carries the bare title, so comparing raw titles,
+  // the exact tier picked those editions (#1304; Spotify results, Nov 2026).
+  describe('a remaster label does not make a title less exact', () => {
+    test('a remastered studio track is an exact match for the bare title', () => {
+      const studio = { artist: 'Ramones', title: 'Judy Is a Punk - 2016 Remaster' };
+      const live = { artist: 'Ramones', title: 'Judy Is a Punk' }; // "It's Alive"
+      expect(pickTrackMatch([studio, live], 'Ramones', 'Judy Is a Punk')).toBe(studio);
+    });
+
+    test('a remaster beats an outtake ranked above it', () => {
+      const outtakes = { artist: 'The Beatles', title: 'Her Majesty - Takes 1-3' };
+      const remaster = { artist: 'The Beatles', title: 'Her Majesty - Remastered 2009' };
+      expect(pickTrackMatch([outtakes, remaster], 'The Beatles', 'Her Majesty')).toBe(remaster);
+    });
+
+    test('a remaster label still counts as exact', () => {
+      const remaster = { artist: 'Queen', title: 'Bohemian Rhapsody - Remastered' };
+      const bare = { artist: 'Queen', title: 'Bohemian Rhapsody' };
+      expect(pickTrackMatch([remaster, bare], 'Queen', 'Bohemian Rhapsody')).toBe(remaster);
+    });
+
+    test.each([
+      'Creep - Remastered 2008', 'Creep - Remastered', 'Creep - 2016 Remaster', 'Creep (Remastered)',
+      'Creep (2011 Remaster)', 'Creep [Remastered 2009]', 'Creep - Remastered Version',
+      'Creep - 2003 Digital Remaster', 'Creep （Remastered）',
+    ])('%s', (title) => {
+      // The competitor carries no version word, so only the exact tier tells them apart.
+      const other = { artist: 'Radiohead', title: 'Creep - Session Takes' };
+      const labelled = { artist: 'Radiohead', title };
+      expect(pickTrackMatch([other, labelled], 'Radiohead', 'Creep')).toBe(labelled);
+    });
+
+    test('a requested remaster still matches itself', () => {
+      const bare = { artist: 'Radiohead', title: 'Creep' };
+      const remaster = { artist: 'Radiohead', title: 'Creep - Remastered 2008' };
+      expect(pickTrackMatch([bare, remaster], 'Radiohead', 'Creep - Remastered 2008')).toBe(remaster);
+    });
+
+    test('only a trailing remaster label is ignored', () => {
+      const inName = { artist: 'X', title: 'Remaster Me Baby' };
+      const exact = { artist: 'X', title: 'Remaster' };
+      expect(pickTrackMatch([inName, exact], 'X', 'Remaster')).toBe(exact);
+    });
   });
 });
