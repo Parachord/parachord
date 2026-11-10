@@ -1,7 +1,7 @@
 /**
  * Plugins that fall back to a top result instead of filtering.
  *
- * Bandcamp's and Apple Music's resolve() always hand the platform something when
+ * Bandcamp's, Apple Music's and SoundCloud's resolve() hand the platform something when
  * there are results, and the confidence gate decides. So they can't lose a correct
  * track by refusing it, as Subsonic and Amazon Music could, and the equivalence in
  * plugin-credit-match.test.js doesn't hold for them. They can lose it by choosing:
@@ -67,7 +67,7 @@ afterEach(() => {
 
 const BREEZY_REQUEST = ['Erykah Badu and The Alchemist', 'Breezy'];
 
-describe.each(['bandcamp', 'applemusic'])('%s resolve prefers what the gate accepts', (id) => {
+describe.each(['bandcamp', 'applemusic', 'soundcloud'])('%s resolve prefers what the gate accepts', (id) => {
   test('finds the credit behind a result with the wrong one', async () => {
     const hit = await instantiate(id, [
       row('Erykah Badu & Madlib', 'Breezy'),

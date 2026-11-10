@@ -51,9 +51,122 @@ module.exports = {
     }
   },
   resolve: async function (artist, track, album, config) {
-    const query = `${artist} ${track}`;
-    const results = await this.search(query, config);
-    return results[0] || null;
+    // Picks among the search's results the way pickTrackMatch
+    // (sync-providers/track-match.js) does, rather than taking the first: the
+    // top result for Ramones "Judy Is a Punk" was "Judy Is A Punk (1975 Demo)"
+    // (#1306). Order: the exact track, then a match the platform's gate would
+    // accept that is not another version, then any match the gate would
+    // accept, then the top result, and the confidence gate has the last word.
+    // The matching helpers are the Bandcamp plugin's (plugins-src/bandcamp,
+    // resolve), copied because plugin functions run isolated; keep them the
+    // same. This .axe also runs in the mobile JS runtime, so no property-escape
+    // literal, which would stop the whole function parsing on an engine
+    // without them.
+    var MARKS = /[̀-ͯ]/g;
+    var NON_ALNUM = /[^a-z0-9]/g;
+    try {
+      MARKS = new RegExp('\\p{M}', 'gu');
+      NON_ALNUM = new RegExp('[^\\p{L}\\p{N}]', 'gu');
+    } catch (e) {}
+    var fold = function (s) {
+      s = (s || '').toString().toLowerCase();
+      if (typeof s.normalize === 'function') s = s.normalize('NFKD');
+      return s.replace(MARKS, '');
+    };
+    var norm = function (s) {
+      return fold(s).replace(NON_ALNUM, '');
+    };
+    var contains = function (a, b) {
+      return !!a && !!b && (a.indexOf(b) !== -1 || b.indexOf(a) !== -1);
+    };
+    var ARTIST_JOIN = /,|&| (?:and|x) | [(\[]?(?:feat\.?|ft\.?|featuring) /i;
+    var TITLE_CREDIT = / *[(\[] *(?:feat|ft|featuring)[. ][^)\]]*[)\]] *$/i;
+    var creditedNames = function (credit) {
+      var parts = fold(credit).split(ARTIST_JOIN);
+      var names = [];
+      for (var p = 0; p < parts.length; p++) {
+        var name = norm(parts[p]);
+        if (name && names.indexOf(name) === -1) names.push(name);
+      }
+      return names;
+    };
+    var isSubset = function (a, b) {
+      if (a.length === 0) return false;
+      for (var n = 0; n < a.length; n++) {
+        if (b.indexOf(a[n]) === -1) return false;
+      }
+      return true;
+    };
+    var artistsMatch = function (a, b) {
+      if (contains(norm(a), norm(b))) return true;
+      var namesA = creditedNames(a);
+      var namesB = creditedNames(b);
+      return isSubset(namesA, namesB) || isSubset(namesB, namesA);
+    };
+    var titlesMatch = function (a, b) {
+      if (contains(norm(a), norm(b))) return true;
+      var bare = norm(fold(a).replace(TITLE_CREDIT, ''));
+      return !!bare && bare === norm(fold(b).replace(TITLE_CREDIT, ''));
+    };
+    var matches = function (r) {
+      return !!r && !!r.artist && !!r.title && artistsMatch(r.artist, artist) && titlesMatch(r.title, track);
+    };
+    var requestedNames = creditedNames(artist);
+    var sameCredit = function (credit) {
+      var names = creditedNames(credit);
+      return isSubset(names, requestedNames) && isSubset(requestedNames, names);
+    };
+    var stripFeat = function (s) {
+      return (s || '')
+        .toString()
+        .replace(/\s*[([]\s*(feat\.?|ft\.?|featuring)\s[^)\]]*[)\]]/gi, '')
+        .replace(/\s+(feat\.?|ft\.?|featuring)\s.*$/i, '');
+    };
+    var VARIANT =
+      /\b(live|medley|remix(es|ed)?|rmx|cover(s|ed)?|covering|tribute|karaoke|instrumental|acoustic|demo|unplugged|rework|bootleg|mashup|reprise|edit|jam track|sped up|slowed|in the style of)\b/gi;
+    var hasVariant = function (s, target) {
+      var words = (s || '').toString().match(VARIANT) || [];
+      var t = (target || '').toString().toLowerCase();
+      for (var w = 0; w < words.length; w++) {
+        if (t.indexOf(words[w].toLowerCase()) === -1) return true;
+      }
+      return false;
+    };
+    var joinsSongs = function (title) {
+      if ((track || '').toString().indexOf('/') !== -1) return false;
+      var s = (title || '').toString().toLowerCase();
+      var a = (artist || '').toString().toLowerCase();
+      if (a.indexOf('/') !== -1) s = s.split(a).join(' ');
+      s = s.replace(/\bw\/\s*/g, ' ');
+      return /[^\s\d]\s*\/\s*[^\s\d]/.test(s);
+    };
+    var isVariant = function (r) {
+      return hasVariant(r.title, track) || hasVariant(r.artist, artist) || joinsSongs(r.title);
+    };
+    var targetArtist = norm(stripFeat(artist));
+    var targetTitle = norm(stripFeat(track));
+    var results = await this.search(((artist || '') + ' ' + (track || '')).trim(), config);
+    if (!results || results.length === 0) return null;
+    var i;
+    if (targetArtist && targetTitle) {
+      for (i = 0; i < results.length; i++) {
+        var ra = norm(stripFeat(results[i].artist));
+        var rt = norm(stripFeat(results[i].title));
+        // Uploads are often titled "Artist - Title".
+        if (rt.indexOf(targetArtist) === 0 && rt !== targetArtist) rt = rt.slice(targetArtist.length);
+        if ((ra === targetArtist || sameCredit(results[i].artist)) && rt === targetTitle && !isVariant(results[i]))
+          return results[i];
+      }
+    }
+    for (i = 0; i < results.length; i++) {
+      if (!isVariant(results[i]) && matches(results[i])) return results[i];
+    }
+    // Another version still plays when it is all that matches (pickTrackMatch's
+    // last tier), and with no match at all the top result goes to the gate.
+    for (i = 0; i < results.length; i++) {
+      if (matches(results[i])) return results[i];
+    }
+    return results[0];
   },
   lookupUrl: async function (url, config) {
     // Without a sign-in the API can't be asked, but SoundCloud's public

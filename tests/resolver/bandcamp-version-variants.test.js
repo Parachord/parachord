@@ -64,6 +64,21 @@ describe('Bandcamp resolve', () => {
   test('no results is no match', async () => {
     expect(await resolveWith([], 'A', 'B')).toBeNull();
   });
+
+  // #1306: containment accepted a medley whose title lists the song.
+  test('a medley that lists the song is not the song', async () => {
+    const medley = r('The Beatles', 'You Never Give Me Your Money/Sun King/Mean Mr. Mustard/Polythene Pam/She Came in Through the Bathroom Window/Golden Slumbers/Carry That Weight/The End/Her Majesty');
+    expect(await resolveWith([medley], 'The Beatles', 'Her Majesty')).toBeNull();
+    expect((await resolveWith([medley, r('The Beatles', 'Her Majesty')], 'The Beatles', 'Her Majesty')).title).toBe('Her Majesty');
+    expect(await resolveWith([r('Erykah Badu', 'Breezy Medley')], 'Erykah Badu', 'Breezy')).toBeNull();
+  });
+
+  test('a slash that does not join songs still matches', async () => {
+    expect((await resolveWith([r('AC/DC', 'AC/DC - Back in Black')], 'AC/DC', 'Back in Black')).title).toBe('AC/DC - Back in Black');
+    expect((await resolveWith([r('Ty Dolla $ign', 'Paranoid (w/ B.o.B)')], 'Ty Dolla $ign', 'Paranoid')).title).toBe('Paranoid (w/ B.o.B)');
+    expect((await resolveWith([r('Ghostface Killah', '24/7')], 'Ghostface Killah', '24/7')).title).toBe('24/7');
+    expect((await resolveWith([r('Diana Ross', 'Upside Down / Medley')], 'Diana Ross', 'Upside Down / Medley')).title).toBe('Upside Down / Medley');
+  });
 });
 
 describe('isOtherVersion (renderer)', () => {
@@ -75,14 +90,26 @@ describe('isOtherVersion (renderer)', () => {
     [['Oasis', 'Live Forever'], ['Oasis', 'Live Forever'], false],
     [['Edith Piaf', 'La Vie en rose'], ['Edith Piaf', 'La Vie en rose'], false],
     [['Franz Ferdinand', 'Take Me Out (Live) [Remix]'], ['Franz Ferdinand', 'Take Me Out (Live)'], true],
+    [['The Beatles', 'You Never Give Me Your Money/Sun King/The End/Her Majesty'], ['The Beatles', 'Her Majesty'], true],
+    [['The Beatles', 'Abbey Road Medley'], ['The Beatles', 'Her Majesty'], true],
+    [['Bill Medley', 'Brown Eyed Woman'], ['Bill Medley', 'Brown Eyed Woman'], false],
+    [['AC/DC', 'AC/DC - Back in Black'], ['AC/DC', 'Back in Black'], false],
+    [['Ghostface Killah', '24/7'], ['Ghostface Killah', '24/7'], false],
+    [['Ty Dolla $ign', 'Paranoid (w/ B.o.B)'], ['Ty Dolla $ign', 'Paranoid'], false],
   ])('%j for %j → %s', ([artist, title], [targetArtist, targetTitle], expected) => {
     expect(isOtherVersion({ artist, title }, targetArtist, targetTitle)).toBe(expected);
   });
 
-  test('the plugin keeps the same word list (plugin functions cannot require renderer modules)', () => {
-    const src = fs.readFileSync(path.join(__dirname, '../../plugins-src/bandcamp/implementation.js'), 'utf8');
+  test.each(['bandcamp', 'soundcloud', 'amazonmusic'])('the %s plugin keeps the same word list and slash check (plugin functions cannot require renderer modules)', (id) => {
+    const src = fs.readFileSync(path.join(__dirname, `../../plugins-src/${id}/implementation.js`), 'utf8');
     const m = src.match(/var VARIANT =\s*\/(.*)\/gi;/);
     expect(m).not.toBeNull();
     expect(m[1]).toBe(VARIANT_WORDS.source);
+    const shared = fs.readFileSync(path.join(__dirname, '../../sync-providers/track-variants.js'), 'utf8');
+    for (const re of [/s\.replace\((\/\\bw.*?\/g), ' '\)/, /return (\/\[\^\\s\\d\].*?\/)\.test\(s\)/]) {
+      const want = shared.match(re);
+      expect(want).not.toBeNull();
+      expect(src).toContain(want[1]);
+    }
   });
 });
