@@ -181,7 +181,8 @@ Apple Music writes degrade to append-only when Apple rejects PUT; removals stay 
 ## Other ways a playlist is created
 
 - **Save the queue.** The queue panel SAVE button and File menu "Export Queue as Playlist..." open the save dialog (`handleSaveQueueAsPlaylist`), which saves the current track plus the queue as `queue-${Date.now()}` with creator "Queue".
-- **Weekly Jams / Weekly Exploration.** The SAVE button on a ListenBrainz weekly playlist (`PlaylistViewPage`) copies it into the library as `playlist-${Date.now()}` with `source: 'listenbrainz'`.
+- **Weekly Jams / Weekly Exploration.** The SAVE button on a ListenBrainz weekly playlist (`PlaylistViewPage`) copies it into the library as `playlist-${Date.now()}` with `source: 'listenbrainz'`, built by spreading the whole playlist (`buildPlaylistSavePayload`) — only the library-record specifics are overridden.
+- **Recommended playlists (ephemeral provider playlists).** A recommended playlist opened from the Recommendations page carries its provider `sourceUrl`; its SAVE button runs the Import path (`handleImportPlaylistFromUrl`) — the same record the card's Import hover button produces — so the two buttons can never disagree.
 - **Add-to-Playlist panel.** Opened from album, track, playlist and friend views and from the native context menu; its New Playlist row creates `<slug>-${Date.now()}`.
 - **Collection drops** (`handleCollectionDrop`) add to the collection, not to a playlist.
 

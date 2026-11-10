@@ -34479,7 +34479,7 @@ useEffect(() => {
   // PLAYLIST_VIEW_PAGE_HANDLERS in playlist-view-page.js).
   const playlistViewPageHandlers = useStableHandlers({
     addToQueue, copyParachordLink, deletePlaylistLocally, fetchArtistData,
-    getPlaylistMirrorTargets, handleExportPlaylist, handlePlay, handlePlaylistDragEnd,
+    getPlaylistMirrorTargets, handleExportPlaylist, handleImportPlaylistFromUrl, handlePlay, handlePlaylistDragEnd,
     markPlaylistAsLocallyModified, moveInEditedPlaylist, navigateTo,
     refreshHostedPlaylist, savePlaylistToStore, setQueueWithContext,
   });
@@ -39497,14 +39497,21 @@ useEffect(() => {
             // (loadPlaylist with an isEphemeral playlist): the view shows the
             // tracks with per-resolver play buttons, and the Import hover button
             // / the view's SAVE both keep the full-import paths.
-            const openRecommendationPlaylist = async (item) => {
+            // Open a recommended playlist in the playlist view (the same
+            // ephemeral external-playlist flow the Home page's Weekly Jams
+            // use). Provider-neutral: creator/source come from the item's
+            // resolver and the section's resolverName, and the track ids are
+            // trackSlug(artist, title) — the id every no-album track context
+            // keys session state on — so these tracks share resolution state
+            // with the rest of the app (renderer-patterns.md).
+            const openRecommendationPlaylist = async (item, section) => {
               if (!item.url) return;
               setTrackLoading(true);
               try {
                 const resolved = await loadPlaylistTracks(item);
                 const art = imageFor(item);
-                const tracks = resolved.tracks.map((t, i) => ({
-                  id: (t.amazonAsin ? `amazonmusic-${t.amazonAsin}` : `rec-playlist-${item.id}-${i}`),
+                const tracks = resolved.tracks.map((t) => ({
+                  id: trackSlug(t.artist || '', t.title || ''),
                   title: t.title,
                   artist: t.artist,
                   album: t.album || null,
@@ -39514,16 +39521,17 @@ useEffect(() => {
                   ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {})
                 }));
                 setTrackLoading(false);
+                const resolverName = (section && section.resolverName) || item.resolverId || 'the service';
                 loadPlaylist({
-                  id: `amazonmusic-rec-${item.id}`,
+                  id: `${item.resolverId}-rec-${item.id}`,
                   title: item.name,
-                  creator: 'Amazon Music',
-                  description: 'Recommended by Amazon Music',
+                  creator: resolverName,
+                  description: `Recommended by ${resolverName}`,
                   tracks,
                   tracksLoaded: true,
                   isExternal: true,
                   isEphemeral: true,
-                  source: 'amazonmusic',
+                  source: item.resolverId,
                   sourceUrl: item.url,
                   addedAt: Date.now(),
                   trackCount: tracks.length
@@ -39763,14 +39771,14 @@ useEffect(() => {
               );
             };
 
-            const playlistCard = (item, index) => {
+            const playlistCard = (item, index, section) => {
               const art = imageFor(item);
               const artLoaded = imageLoadedFor(item);
               return React.createElement('div', {
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                onClick: () => openRecommendationPlaylist(item),
+                onClick: () => openRecommendationPlaylist(item, section),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -39826,10 +39834,10 @@ useEffect(() => {
               );
             };
 
-            const cardFor = (item, index) => (
+            const cardFor = (item, index, section) => (
               item.type === 'artist' ? artistCard(item, index)
                 : item.type === 'album' ? albumCard(item, index)
-                : playlistCard(item, index)
+                : playlistCard(item, index, section)
             );
 
             // ── Song rows (resolve through the shared scheduler) ─────────
@@ -40038,7 +40046,7 @@ useEffect(() => {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...visibleCards.map((item, index) => cardFor(item, index))
+                  ...visibleCards.map((item, index) => cardFor(item, index, section))
                 ),
                 visibleSongs.length > 0 && React.createElement('div', { className: 'space-y-0' },
                   ...visibleSongs.map((item, index) => songRow(item, index, songItems, section))
@@ -40108,7 +40116,7 @@ useEffect(() => {
                       className: 'text-xl font-medium text-gray-900 mb-2'
                     }, 'Connect a music service'),
                     React.createElement('p', { className: 'text-gray-500 mb-6 max-w-md mx-auto' },
-                      'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, or enable an AI chat provider for Shuffleupagus suggestions.'
+                      'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, sign in to Amazon Music, or enable an AI chat provider for Shuffleupagus suggestions.'
                     ),
                     React.createElement('div', { className: 'flex gap-3 justify-center' },
                       React.createElement('button', {

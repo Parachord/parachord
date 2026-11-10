@@ -31,6 +31,7 @@ const PLAYLIST_VIEW_PAGE_HANDLERS = [
   'fetchArtistData',
   'getPlaylistMirrorTargets',
   'handleExportPlaylist',
+  'handleImportPlaylistFromUrl',
   'handlePlay',
   'handlePlaylistDragEnd',
   'markPlaylistAsLocallyModified',
@@ -79,6 +80,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     resolverLoaderRef,
     resolverOrder,
     savePlaylistToStore,
+    handleImportPlaylistFromUrl,
     selectedPlaylist,
     setAddToPlaylistPanel,
     setDraggedPlaylistTrack,
@@ -233,19 +235,31 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               // SAVE button for ephemeral playlists
               selectedPlaylist?.isEphemeral && !playlistEditMode && React.createElement('button', {
                 onClick: async () => {
-                  // Save ephemeral playlist to library (Weekly Jams from Home,
-                  // recommended playlists from the Recommendations page)
+                  // A provider playlist (a recommended playlist opened from the
+                  // Recommendations page): SAVE is the Import path — the same
+                  // canonical record the card's Import hover button produces
+                  // (hosted-<url-hash> id, the provider snapshot shape), so the
+                  // two buttons can never disagree.
+                  if (selectedPlaylist.sourceUrl) {
+                    await handleImportPlaylistFromUrl(selectedPlaylist.sourceUrl);
+                    return;
+                  }
+                  // Weekly Jams from Home: save to library. Built by spreading
+                  // the whole playlist (buildPlaylistSavePayload's rule — a
+                  // field left out of a hand-picked list is deleted when the
+                  // store replaces the record), with only the library-record
+                  // specifics overridden.
                   const newPlaylist = {
+                    ...selectedPlaylist,
                     id: `playlist-${Date.now()}`,
                     title: selectedPlaylist.weekLabel ? `Weekly Jam - ${selectedPlaylist.weekLabel}` : selectedPlaylist.title,
                     creator: selectedPlaylist.creator || 'ListenBrainz',
-                    description: selectedPlaylist.description,
                     tracks: playlistTracks,
                     addedAt: Date.now(),
                     lastModified: Date.now(),
-                    source: selectedPlaylist.source || 'listenbrainz',
-                    ...(selectedPlaylist.sourceUrl ? { sourceUrl: selectedPlaylist.sourceUrl } : {})
+                    source: selectedPlaylist.source || 'listenbrainz'
                   };
+                  delete newPlaylist.isEphemeral;
                   setPlaylists(prev => [...prev, newPlaylist]);
                   await savePlaylistToStore(newPlaylist);
                   showToast('Playlist saved to library', 'success');

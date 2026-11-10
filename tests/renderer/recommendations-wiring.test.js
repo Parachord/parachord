@@ -126,6 +126,24 @@ describe('recommendations wiring', () => {
     const seen = app.slice(app.indexOf('const markDiscoverySeen = useCallback'), app.indexOf('}, []);', app.indexOf('const markDiscoverySeen = useCallback')));
     expect(seen).toMatch(/if \(discoverySeenHashes\.current\[feature\] === hash\) return;/);
   });
+
+  test('opening a recommended playlist is provider-neutral (creator/source from the item and section, trackSlug ids)', () => {
+    const i = app.indexOf('const openRecommendationPlaylist = async');
+    expect(i).toBeGreaterThan(-1);
+    const fn = app.slice(i, app.indexOf('\n            };', i));
+    // The record's identity comes from the item's resolver and the section's
+    // resolverName — never a hard-coded service.
+    expect(fn).toContain('id: `${item.resolverId}-rec-${item.id}`');
+    expect(fn).toContain('const resolverName = (section && section.resolverName) || item.resolverId');
+    expect(fn).toContain('creator: resolverName');
+    expect(fn).toContain('source: item.resolverId');
+    expect(fn).not.toContain("'Amazon Music'");
+    // Track ids are trackSlug(artist, title) — the id every no-album track
+    // context keys session state on — never an asin or an index fallback.
+    expect(fn).toContain("id: trackSlug(t.artist || '', t.title || '')");
+    expect(fn).not.toContain('amazonmusic-${t.amazonAsin}');
+    expect(fn).not.toContain('rec-playlist-');
+  });
 });
 
 describe('the single Show-more control with background pagination', () => {
