@@ -125,8 +125,8 @@ Bandcamp plays through Bandcamp's own embedded player (`bandcamp.com/EmbeddedPla
 - **A track the embed won't start** is a failed source like any other. Never clear cookies or swap profiles to change how the embed behaves.
 
 ### Spotify Playback (Connect only)
-- **Spotify Connect is the only mode.** The resolver's `play` (`plugins-src/spotify/implementation.js`) and `playOnSpotifyConnect` (app.js ~L36591) drive an external Spotify client (desktop app, phone, speaker) through the REST API (`/v1/me/player` endpoints). There is no in-app Spotify player: the Web Playback SDK is not loaded anywhere. In-app playback via the SDK on the castlabs Widevine build is tracked in parachord#1077.
-- **A track starts inside its album (#1300).** The plugin's `play` sends `{ context_uri: "spotify:album:<id>", offset: { uri: <track> } }`, not a bare `{ uris: [<track>] }`: Spotify's Android app (9.2, Nov 2026) answers a bare-uris play with 204 and then plays nothing, with `/v1/me/player` showing its device active and `item: null`, while the album form plays at once there and on every other client. The album id is the source record's `spotifyAlbumId` (search, `lookupUrl`, album and playlist lookups all set it), else one `GET /v1/tracks/{id}`, remembered per track for the run (`window._spotifyTrackAlbums`, at most 500). That lookup sends no `market`, so no relinked id comes back: the offset is always the track's own uri, and the play confirmation and both pollers keep matching it (Spotify's own relinking still shows up under `item.linked_from`, as before). A failed lookup, a track with no album, a non-track uri, or an album play Spotify refuses goes out as the bare track. `playOnSpotifyConnect` in `src/renderer/app.js` still sends bare `uris`, but nothing calls it.
+- **Spotify Connect is the only mode.** The resolver's `play` (`plugins-src/spotify/implementation.js`) drives an external Spotify client (desktop app, phone, speaker) through the REST API (`/v1/me/player` endpoints). There is no in-app Spotify player: the Web Playback SDK is not loaded anywhere. In-app playback via the SDK on the castlabs Widevine build is tracked in parachord#1077.
+- **A track starts inside its album (#1300).** The plugin's `play` sends `{ context_uri: "spotify:album:<id>", offset: { uri: <track> } }`, not a bare `{ uris: [<track>] }`: Spotify's Android app (9.2, Nov 2026) answers a bare-uris play with 204 and then plays nothing, with `/v1/me/player` showing its device active and `item: null`, while the album form plays at once there and on every other client. The album id is the source record's `spotifyAlbumId` (search, `lookupUrl`, album and playlist lookups all set it), else one `GET /v1/tracks/{id}`, remembered per track for the run (`window._spotifyTrackAlbums`, at most 500). That lookup sends no `market`, so no relinked id comes back: the offset is always the track's own uri, and the play confirmation and both pollers keep matching it (Spotify's own relinking still shows up under `item.linked_from`, as before). A failed lookup, a track with no album, a non-track uri, or an album play Spotify refuses goes out as the bare track.
 - **The poller times a check for the track's end (#1300).** Started inside its album, Spotify carries on into the album's next track when ours ends, instead of stopping (or, with Spotify's autoplay on, starting a recommendation). The main-process poller polls every 20 s, so on its own it would let that track play for up to 20 s. When a poll finds our track playing and its end comes before the next regular poll, the poller sets one extra poll 1.5 s before the end (`endCheckDelayMs` in `spotify-startup-grace.js`), inside the 2 s near-end window, which advances to the queue's next track. Each poll replaces the check, so a pause clears it and a seek moves it at the next poll (a seek forward between polls can still let the album's next track start; the mismatch then advances). A first mismatch while `pollCount <= 2` is confirmed 2 s later rather than at the next regular poll. At the end of the queue, `handleNext` pauses Spotify before it finds the queue empty, so Spotify doesn't run on into the album. A poll that answers after the poller stopped or moved to another track does nothing, so overlapping polls don't advance twice.
 - `streamingPlaybackActiveRef.current = true` is not a Spotify mode. It is set whenever any resolver with `capabilities.stream` starts playback, so browser-extension playback events are ignored while a streaming resolver owns playback.
 
@@ -171,29 +171,15 @@ A caller picks the lane through the config it hands `resolver.search`: `laneRunO
 
 ## Spotify Device Handling
 
+All of this is the Spotify plugin's `play` (`plugins-src/spotify/implementation.js`); the renderer has no device code of its own.
+
 ### Device Discovery
-- `getSpotifyDevices()` (L32444): Fetches from `GET /v1/me/player/devices`
-- Filters out `is_restricted` devices (can't be remotely controlled)
+- `GET /v1/me/player/devices`. No devices: `play` returns `false` (logged as "No Spotify devices found"), and the engine treats it like any refused play.
+- Restricted devices (`is_restricted`, which can't be controlled remotely) are dropped, unless every device is restricted.
 
-### Device Selection Priority (in playOnSpotifyConnect)
-1. Active device (already playing)
-2. User's preferred device (`preferredSpotifyDeviceId`) if still available
-3. If multiple inactive devices: show device picker dialog for user to choose
-4. Single inactive device: auto-select (Computer > Smartphone > Speaker > other)
-
-### Device Picker Dialog
-- State: `devicePickerDialog` `{ show, devices[], onSelect(device|null) }`
-- Promise-based: `playOnSpotifyConnect` awaits user selection via `new Promise(resolve => setDevicePickerDialog({ onSelect: resolve }))`
-- Shows device type icons, names, and volume levels
-- Cancel returns `null`, aborting playback
-
-### Preferred Device Persistence
-- `preferredSpotifyDeviceId` state + `preferredSpotifyDeviceIdRef` for async access
-- Persisted via `electron.store` key `preferred_spotify_device_id`
-- Loaded during bulk cache restore, saved on change and on cleanup
-- Clearable from Spotify resolver settings section
+### Device Selection
+The first match wins, in this order: a `Computer`, a `Smartphone`, a `Speaker`, the active device whose name doesn't contain "web", any device whose name doesn't contain "web", the first device. So an inactive computer is picked over an active phone or speaker. There is no device picker and no remembered device: an older renderer-side path (`playOnSpotifyConnect`, with a picker dialog and a `preferred_spotify_device_id` setting) had no caller after January 2026 and was removed in November 2026.
 
 ### Device Wake-up
-- If selected device is inactive: `PUT /v1/me/player` with `{ device_ids, play: false }` to transfer playback
-- 1000ms wait for device readiness, then sends track URI via `PUT /v1/me/player/play?device_id=`
-- Volume adoption: if device's `volume_percent` < internal volume, adopts device volume to prevent loud surprise
+- An inactive device gets `PUT /v1/me/player` with `{ device_ids: [id], play: true }`, then a 1000 ms wait, before the play request goes to `PUT /v1/me/player/play?device_id=`.
+- The play is then confirmed by polling `/v1/me/player`; if the track hasn't started after 5 s, play is sent once more (parachord#985), and the main-process poller's startup grace covers a device that is slower still.
