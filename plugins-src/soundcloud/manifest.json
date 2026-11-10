@@ -2,7 +2,7 @@
   "manifest": {
     "id": "soundcloud",
     "name": "SoundCloud",
-    "version": "1.3.2",
+    "version": "1.3.3",
     "author": "Parachord Team",
     "description": "Search and stream music from SoundCloud. Requires OAuth login for full access.",
     "icon": "☁",
@@ -19,7 +19,8 @@
     "stream": true,
     "browse": false,
     "urlLookup": true,
-    "embedPlayer": true
+    "embedPlayer": true,
+    "resolvePicks": true
   },
   "embedPlayer": {
     "adapter": "soundcloud-widget"

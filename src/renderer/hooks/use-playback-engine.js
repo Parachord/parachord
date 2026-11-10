@@ -916,8 +916,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
             let bestMatch = null;
 
-            // Prefer search() to get all results and find best match
-            if (resolver.search && typeof resolver.search === 'function') {
+            // Prefer search() to get all results and find best match, unless the
+            // plugin picks in its own resolve (capabilities.resolvePicks): its
+            // rule knows the service, as SoundCloud's knows a fan's podcast
+            // whose name contains the artist's is not the artist (#1306).
+            if (resolver.search && typeof resolver.search === 'function' && !resolver.capabilities?.resolvePicks) {
               const query = `${trackOrSource.artist} ${trackOrSource.title}`;
               const results = await resolver.search(query, config);
               if (results && results.length > 0) {
