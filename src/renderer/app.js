@@ -7665,7 +7665,7 @@ const Parachord = () => {
     playlistCover: 30 * 24 * 60 * 60 * 1000, // 30 days
     // Per-recommendations-provider bound: providers are not on an interactive
     // path (the page shows the other sections meanwhile), so the bound is
-    // generous — Amazon's capture-and-replay home flow alone can take seconds.
+    // generous — a provider that replays a service's page flow can take seconds.
     recommendationProvider: 20 * 1000,
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
     charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
@@ -22737,7 +22737,7 @@ ${trackListXml}
   }, [pinnedFriendIds, updateSchedulerVisibility]);
 
   // Every song track on the page — the generic Songs bucket plus any titled
-  // section's songs (Amazon's mixed sections carry tracks) — for the resolution
+  // section's songs (a provider's titled sections can carry tracks) — for the
   // scheduler effects below.
   const recommendationSongs = useMemo(
     () => recommendations.sections.flatMap(s => s.items.filter(i => i.type === 'song').map(i => i.track)),
@@ -26757,7 +26757,7 @@ Return ONLY the JSON array, no other text.`;
 
   // `opts.metaServicesOnly` asks only the meta-service providers (Last.fm,
   // ListenBrainz): Home's For You preview loads with it, so a content
-  // resolver's recommendation fetches — Amazon's are hidden-webview page
+  // resolver's recommendation fetches — a resolver's can be service-page
   // loads on the same search chain track resolution uses — never queue ahead
   // of resolution on a Home visit, where resolution is busiest. The
   // Recommendations page asks every provider.
@@ -26774,7 +26774,7 @@ Return ONLY the JSON array, no other text.`;
     // A source is "configured" when it can produce recommendations: a
     // Last.fm/ListenBrainz username, an active recommendations-capable content
     // resolver, or an enabled chat provider with sharing on (Shuffleupagus).
-    // A signed-out resolver (Amazon before sign-in) is configured-but-not-ready:
+    // A signed-out resolver is configured-but-not-ready:
     // its section simply does not appear.
     const metaConfigs = metaServiceConfigsRef.current || {};
     const hasLastfm = !!metaConfigs.lastfm?.username;
@@ -26850,7 +26850,7 @@ Return ONLY the JSON array, no other text.`;
       try {
         const config = await getResolverConfig(provider.id);
         // Providers are not on an interactive path (the page shows the other
-        // sections meanwhile), so the bound is generous — Amazon's page flow
+        // sections meanwhile), so the bound is generous — a resolver's page flow
         // alone can take several seconds. The timer is cleared when the
         // provider wins, so it does not linger to the process end.
         let timer = null;
@@ -27719,7 +27719,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Load recommendations if a scrobbler can produce them and none loaded
       // yet (the For You card previews the first recommended artist). Only
       // the meta-services are asked — as on main — so a content resolver's
-      // recommendation fetches (Amazon's are hidden-webview page loads on
+      // recommendation fetches (a resolver's can be service-page loads on
       // the search chain track resolution uses) never queue ahead of
       // resolution on a Home visit; the Recommendations page asks them.
       const metaConfigsHome = metaServiceConfigsRef.current || {};
@@ -38952,7 +38952,7 @@ useEffect(() => {
 
         // Recommendations view with collapsible hero header — the sectioned
         // page: generic buckets (Artists / Songs / Albums / Playlists) first,
-        // then provider-titled sections (Amazon Music's rows), then the
+        // then the provider-titled sections, then the
         // Shuffleupagus (LLM) section. Every section shows a few items with a
         // Show-all button; providers that paginate (expandRecommendationSection)
         // get a Load more.
@@ -39057,7 +39057,7 @@ useEffect(() => {
               (!!item.imageUrl && !brokenArt.has(item.imageUrl)) || !!(recommendationImages[item.id] || {}).loaded;
 
             // Play a recommended playlist: resolve it through the provider
-            // playlist path (resolver-loader lookupPlaylist — Amazon included)
+            // playlist path (resolver-loader lookupPlaylist)
             // and play the tracks, without importing anything.
             const playRecommendationPlaylist = async (item) => {
               if (!item.url) return;
