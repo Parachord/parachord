@@ -273,9 +273,16 @@ function shouldRevealPlayerOnFailure() {
 // is order-sensitive in both directions (live-verified 2026-10 through the
 // app): Warning's "Stations" only surfaces as '"Stations" "Warning"' while
 // ХЛЕБ's "Яйца" only surfaces as '"ХЛЕБ" "Яйца"'. So the query ORs the two
-// orders in one page load: '"title" "artist" OR "artist" "title"'. Amazon
-// unions the clauses (the literal keyword OR adds a few noise rows — tracks
-// whose title contains "or" — which the resolver's artist+title filter and
+// orders in one page load. The union carries a THIRD clause since 2026-11,
+// the natural-language form '"title" by "artist"' FIRST: Backstabbed's
+// "Out Of Body Experience" is absent from the first 30 rows (the spec
+// search's firstLimit) of both bare orders — all 30 are tracks by an artist
+// literally named "Out of Body Experience" — while the by-form returns it
+// as row 1 (live-verified through the app). The by-clause is a supplement,
+// never a replacement: alone it returns ZERO rows for ХЛЕБ's "Яйца" and
+// misses Warning's "Stations", so the bare orders stay. Amazon unions the
+// clauses (the literal keywords add a few noise rows — tracks whose title
+// contains "or" or "by" — which the resolver's artist+title filter and
 // the confidence gate drop).
 // Returns { url, searchText } — the search runs over gql (the page's own
 // SpecSearchSeeMorePage request, captured and replayed), and searchText is the
@@ -290,7 +297,7 @@ function amazonSongSearchUrl({ title, artist, query } = {}) {
     const titlePart = title && String(title).trim() ? quote(title) : '';
     const artistPart = artist && String(artist).trim() ? quote(artist) : '';
     q = titlePart && artistPart
-      ? titlePart + ' ' + artistPart + ' OR ' + artistPart + ' ' + titlePart
+      ? titlePart + ' by ' + artistPart + ' OR ' + titlePart + ' ' + artistPart + ' OR ' + artistPart + ' ' + titlePart
       : titlePart || artistPart;
   } else {
     q = String(query || '').trim();
@@ -532,8 +539,9 @@ function createReplayGate() {
 // The albums-tab search page — /search/<q>/albums fires the album-spec
 // SpecSearchSeeMorePage (specType: 'album', same operation and query as the
 // songs tab's track spec — live-verified 2026-10). The query string is built
-// exactly like the songs one: quoted terms OR'd in both orders, since
-// Amazon's matching is order-sensitive in both directions.
+// exactly like the songs one (see amazonSongSearchUrl's comment): the by-form
+// plus both quoted phrase orders OR'd, since Amazon's matching is
+// order-sensitive in both directions.
 function amazonAlbumSearchUrl(input) {
   // Same input contract as the web player: a free-text string, or { title,
   // artist, query } (the album pages send { artist, title }).
