@@ -29046,13 +29046,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   activateListenAlongRef.current = activateListenAlong;
   deactivateListenAlongRef.current = deactivateListenAlong;
 
-  // Periodic friend-graph sync (every 15th activity tick = ~30 min when the
-  // normal 2-min cadence is in effect). Decouples friend-graph fetches from
-  // the 2-min recent-track fetches — friend graphs change orders of
-  // magnitude less often, so there's no value polling them every 2 min.
-  const friendSyncTickCounterRef = useRef(0);
-  const SYNC_TICK_INTERVAL = 15;
-
   // Poll friends for on-air status (pinned friends + saved friends for auto-pinning)
   const hasSavedFriends = friends.some(f => f.savedToCollection);
   useEffect(() => {
@@ -29071,12 +29064,6 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // parachord#770 part 2 — hosted-XSPF poll is yielded; this one is not.
       friendPollIntervalRef.current = setInterval(() => {
         refreshPinnedFriends();
-        // Periodic friend-graph sync gate
-        friendSyncTickCounterRef.current += 1;
-        if (friendSyncTickCounterRef.current >= SYNC_TICK_INTERVAL) {
-          friendSyncTickCounterRef.current = 0;
-          syncFriendsFromServices({ silent: true });
-        }
       }, pollInterval);
 
       return () => {
@@ -29102,6 +29089,26 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // Small delay so we don't thrash the network during startup.
     setTimeout(() => syncFriendsFromServices({ silent: true }), 5000);
   }, [cacheLoaded, metaServiceConfigs]);
+
+  // Periodic friend-graph sync: every 30 min while Last.fm or ListenBrainz
+  // is set up. It used to ride every 15th tick of the activity poll above,
+  // which only runs once a friend is saved or pinned, so with no friends yet
+  // someone followed mid-session never arrived until a restart. Friend graphs
+  // change far less often than recent tracks, so this keeps its own slower
+  // timer. The interval calls the LATEST syncFriendsFromServices through a
+  // ref: the function reads metaServiceConfigs from its render, and the
+  // timer outlives that render.
+  const FRIEND_GRAPH_SYNC_MS = 30 * 60 * 1000;
+  const syncFriendsFromServicesRef = useRef(null);
+  syncFriendsFromServicesRef.current = syncFriendsFromServices;
+  const hasFriendServiceAccount = !!(metaServiceConfigs.lastfm?.username || metaServiceConfigs.listenbrainz?.username);
+  useEffect(() => {
+    if (!cacheLoaded || !hasFriendServiceAccount) return;
+    const id = setInterval(() => {
+      syncFriendsFromServicesRef.current?.({ silent: true });
+    }, FRIEND_GRAPH_SYNC_MS);
+    return () => clearInterval(id);
+  }, [cacheLoaded, hasFriendServiceAccount]);
 
   // Load friend's recent listening history
   const loadFriendRecentTracks = async (friend) => {

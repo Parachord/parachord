@@ -31,7 +31,7 @@ Every friend carries (app.js friend shape):
 ### Sync Triggers
 
 1. **Startup:** single pull after `cacheLoaded` + 5s delay, only if Last.fm or ListenBrainz has a configured username. Guarded by `friendStartupSyncDoneRef` so it doesn't re-fire.
-2. **Periodic:** every 15th tick of the existing 2-min friend-activity poll (`refreshPinnedFriends`, app.js L29044+). Gated by `friendSyncTickCounterRef` so the graph sync runs every ~30 min while the activity poll continues every 2 min. Friend graphs change orders of magnitude less often than recent tracks — no value polling at the same cadence.
+2. **Periodic:** every 30 minutes (`FRIEND_GRAPH_SYNC_MS`) while Last.fm or ListenBrainz has a configured username, on its own timer next to the startup sync. Friend graphs change orders of magnitude less often than recent tracks, so it doesn't share the 2-minute friend-activity poll (`refreshPinnedFriends`). It used to run on every 15th tick of that poll, which only runs once a friend is saved or pinned: with no friends yet, someone followed mid-session never arrived until a restart. The timer calls the latest `syncFriendsFromServices` through a ref, because the function reads `metaServiceConfigs` from its render and the timer outlives it.
 3. **Inline on local action:** `addFriend` calls `followOnService` after local insert; `removeFriend` calls `unfollowOnService` before local delete. Fire-and-forget; local state is authoritative.
 
 ### Inbound Pull Algorithm
