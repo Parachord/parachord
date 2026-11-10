@@ -539,8 +539,9 @@ function createReplayGate() {
 // The albums-tab search page — /search/<q>/albums fires the album-spec
 // SpecSearchSeeMorePage (specType: 'album', same operation and query as the
 // songs tab's track spec — live-verified 2026-10). The query string is built
-// exactly like the songs one: quoted terms OR'd in both orders, since
-// Amazon's matching is order-sensitive in both directions.
+// exactly like the songs one (see amazonSongSearchUrl's comment): the by-form
+// plus both quoted phrase orders OR'd, since Amazon's matching is
+// order-sensitive in both directions.
 function amazonAlbumSearchUrl(input) {
   // Same input contract as the web player: a free-text string, or { title,
   // artist, query } (the album pages send { artist, title }).
