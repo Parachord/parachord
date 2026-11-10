@@ -61,7 +61,7 @@ describe('handlePlay on a row marked no match', () => {
 
   // Runs the real hook under renderToStaticMarkup (see use-playback-engine.test.js)
   // and hands back handlePlay with the resolver and dialog surface stubbed.
-  function engineWith(resolver, { spinoff = false } = {}) {
+  function engineWith(resolver, { spinoff = false, handleNext = () => {}, resolveTrack = async () => ({}) } = {}) {
     global.React = require('react');
     global.ReactDOM = require('react-dom');
     const ReactDOMServer = require('react-dom/server');
@@ -75,6 +75,7 @@ describe('handlePlay on a row marked no match', () => {
     const queueTrackSources = jest.fn();
     const setCurrentTrack = jest.fn();
     const trackNeedsExplicitStart = ref(false);
+    const showToast = jest.fn();
 
     const volume = { volumeRef: ref(1), isMutedRef: ref(false), resolverVolumeOffsets: {}, getEffectiveVolume: (x) => x, setSpotifyVolume: noop };
     const queue = { currentTrack: null, currentTrackRef: ref(), currentQueueRef: ref([]), setCurrentTrack, setCurrentQueue: noop, playbackContext: null, setPlaybackContext: noop, playHistoryRef: ref([]) };
@@ -86,11 +87,13 @@ describe('handlePlay on a row marked no match', () => {
         resolverBlocklistRef: ref([]),
         resolverConfigCache: ref({}),
         getResolverConfigRef: ref(async () => ({})),
-        resolveTrackRef: ref(async () => ({})),
+        resolveTrackRef: ref(resolveTrack),
         confidenceForSourceRef: ref((target, source) => scoring.calculateConfidence(target, source)),
         isHtml5StreamResolver: () => false,
         findLoadedResolver: (id) => (id === resolver.id ? resolver : undefined),
         usesSharedAudio: () => false,
+        isWidevineResolver: () => false,
+        embedPlayerKind: () => null,
         resolveTracksInBackground: noop,
         buildProtocolFetchHeaders: noop,
         lastfmFetch: noop,
@@ -111,7 +114,7 @@ describe('handlePlay on a row marked no match', () => {
         forgetMissingLocalFile: noop,
         showExternalTrackPromptUIRef: ref(noop),
       },
-      ui: { showToast: noop, showConfirmDialog, setActiveView: noop, setSettingsTab: noop, setProgress: noop },
+      ui: { showToastRef: ref(showToast), showConfirmDialog, setActiveView: noop, setSettingsTab: noop, setProgress: noop },
       scheduling: { updateSchedulerVisibility: noop, abortSchedulerContext: noop, registerPoolContext: noop, setSchedulerPlaybackIndex: noop },
     };
 
@@ -124,7 +127,7 @@ describe('handlePlay on a row marked no match', () => {
         spotifyToken: null, extensionConnected: null, audioContext: null,
         spinoffMode: false, setSpinoffMode: noop, spinoffSourceTrack: null, setSpinoffSourceTrack: noop, setSpinoffLoading: noop,
         spinoffModeRef: ref(spinoff), spinoffSourceTrackRef: ref(),
-        handleNextRef: ref(noop), handlePreviousRef: ref(noop), handlePlayPauseRef: ref(noop), handlePlayRef: ref(noop),
+        handleNextRef: ref(handleNext), handlePreviousRef: ref(noop), handlePlayPauseRef: ref(noop), handlePlayRef: ref(noop),
         startSpinoffRef: ref(), playbackPollerRef: ref(), pollingRecoveryRef: ref(), externalTrackTimeoutRef: ref(),
         externalTrackIntervalRef: ref(), waitingForBrowserPlaybackRef: ref(), pendingCloseTabIdRef: ref(),
         trackNeedsExplicitStart, spotifyProgressBaselineRef: ref(),
@@ -135,7 +138,7 @@ describe('handlePlay on a row marked no match', () => {
       return null;
     };
     ReactDOMServer.renderToStaticMarkup(global.React.createElement(Probe));
-    return { handlePlay, showConfirmDialog, queueTrackSources, setCurrentTrack, trackNeedsExplicitStart };
+    return { handlePlay, showConfirmDialog, showToast, queueTrackSources, setCurrentTrack, trackNeedsExplicitStart };
   }
 
   const titles = (dialog) => dialog.mock.calls.map(([d]) => d.title);
@@ -201,5 +204,83 @@ describe('handlePlay on a row marked no match', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  // #1297: offline, the next track fails the same way, so skipping only
+  // empties the queue. A failure while the device reports no network stops on
+  // its track for Play, advancing or not, and says to check the connection.
+  describe('offline (#1297)', () => {
+    const OFFLINE = "Couldn't start playing. Check your connection and try again.";
+    let savedNavigator;
+    const setOnline = (onLine) => {
+      Object.defineProperty(globalThis, 'navigator', { value: { onLine }, configurable: true, writable: true });
+    };
+    beforeEach(() => {
+      savedNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+      jest.useFakeTimers();
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+      if (savedNavigator) Object.defineProperty(globalThis, 'navigator', savedNavigator);
+      else delete globalThis.navigator;
+    });
+    const toasts = (showToast) => showToast.mock.calls.map(([m]) => m);
+    const playableTrack = () => track({ testres: { ...HIT, confidence: 1 } });
+    // stream: plays in the app (a non-stream resolver asks to open externally first).
+    const refusingResolver = () => ({ ...resolverFinding([HIT]), capabilities: { resolve: true, stream: true }, play: jest.fn(async () => false) });
+
+    test('an advancing queue stops on the track instead of skipping', async () => {
+      setOnline(false);
+      const handleNext = jest.fn();
+      const { handlePlay, showConfirmDialog, showToast, trackNeedsExplicitStart } = engineWith(resolverFinding([]), { spinoff: true, handleNext });
+      await handlePlay({ ...track({ __noMatchAll: true }), _playbackContext: { type: 'spinoff' } }).catch(() => {});
+      jest.runAllTimers();
+
+      expect(handleNext).not.toHaveBeenCalled();
+      expect(trackNeedsExplicitStart.current).toBe(true);
+      expect(toasts(showToast)).toContain(OFFLINE);
+      expect(titles(showConfirmDialog)).toEqual([]);
+    });
+
+    test('a tapped track says to check the connection, not that no source was found', async () => {
+      setOnline(false);
+      const { handlePlay, showConfirmDialog, showToast, trackNeedsExplicitStart } = engineWith(resolverFinding([]));
+      await handlePlay(track({ __noMatchAll: true })).catch(() => {});
+
+      expect(trackNeedsExplicitStart.current).toBe(true);
+      expect(toasts(showToast)).toContain(OFFLINE);
+      expect(titles(showConfirmDialog)).toEqual([]);
+    });
+
+    test('a refused play is not re-resolved offline (nothing answers, so it would only write no-match markers)', async () => {
+      setOnline(false);
+      const handleNext = jest.fn();
+      const resolveTrack = jest.fn(async () => ({}));
+      const resolver = refusingResolver();
+      const { handlePlay, showConfirmDialog, showToast, trackNeedsExplicitStart } = engineWith(resolver, { spinoff: true, handleNext, resolveTrack });
+      await handlePlay({ ...playableTrack(), _playbackContext: { type: 'spinoff' } }).catch(() => {});
+      jest.runAllTimers();
+
+      expect(resolver.play).toHaveBeenCalled();
+      expect(resolveTrack).not.toHaveBeenCalled();
+      expect(handleNext).not.toHaveBeenCalled();
+      expect(trackNeedsExplicitStart.current).toBe(true);
+      expect(toasts(showToast)).toContain(OFFLINE);
+      expect(titles(showConfirmDialog)).toEqual([]);
+    });
+
+    test('online, a refused play while advancing still re-resolves and skips on', async () => {
+      setOnline(true);
+      const handleNext = jest.fn();
+      const resolveTrack = jest.fn(async () => ({}));
+      const { handlePlay, showToast, trackNeedsExplicitStart } = engineWith(refusingResolver(), { spinoff: true, handleNext, resolveTrack });
+      await handlePlay({ ...playableTrack(), _playbackContext: { type: 'spinoff' } }).catch(() => {});
+      jest.runAllTimers();
+
+      expect(resolveTrack).toHaveBeenCalled();
+      expect(handleNext).toHaveBeenCalled();
+      expect(trackNeedsExplicitStart.current).toBe(false);
+      expect(toasts(showToast)).not.toContain(OFFLINE);
+    });
   });
 });

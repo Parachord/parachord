@@ -111,8 +111,22 @@ function trackToHoldAfterFailure(track) {
   return held;
 }
 
+// Offline, a failed play stops on its track instead of skipping (#1297): the
+// next track fails the same way, so skipping only runs the queue to its end.
+// The signal is the OS's "no network" (navigator.onLine === false). A failed
+// request is not: a single service being down rejects with the same "Failed to
+// fetch" (see musicbrainz-fetch.js), and the queue should still move past it.
+// navigator.onLine can say true behind a dead network, so this catches the
+// common case (Wi-Fi off, cable out, Airplane Mode), not every one.
+const OFFLINE_PLAY_MESSAGE = "Couldn't start playing. Check your connection and try again.";
+function isDeviceOffline(nav) {
+  return !!nav && nav.onLine === false;
+}
+
 module.exports = {
   trackToHoldAfterFailure,
+  OFFLINE_PLAY_MESSAGE,
+  isDeviceOffline,
   unsupportedAudioMessage,
   dropSubsonicSecrets,
   playbackDurationSeconds,
