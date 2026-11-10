@@ -8,6 +8,7 @@
 
 ## Amazon Music
 
+- **Amazon Music finds more tracks.** A song could be buried under tracks by an artist whose name matches its title, so Backstabbed's "Out Of Body Experience" never turned up behind an artist called Out of Body Experience. Parachord now also searches for "title by artist", which puts it first. Thanks to @theli-ua.
 - **A quality that won't play falls back instead of failing.** If Amazon Music refuses a quality for your account or this build can't play it, Parachord switches to the next best one mid-track and stops asking for it, rather than skipping through your queue.
 - **Adaptive at Max reaches lossless.** With Adaptive on, Amazon Music stayed on lossy opus at about 326 kbps at the Max tier. It now reaches FLAC on a good connection, and lower tiers stay inside their limit from the start of each track.
 - **Prefer Dolby Atmos mixes.** A new option in Settings, under Playback Quality, plays the 5.1 core of a track's Atmos mix on Amazon Music when one is available. This isn't full Atmos: it's mixed down on stereo output, and it replaces lossless FLAC at the Max tier, so it's off by default. Saver and Standard keep their data limits and play stereo when no Atmos version fits. Thanks to @theli-ua.
