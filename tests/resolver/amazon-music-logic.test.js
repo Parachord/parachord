@@ -345,15 +345,23 @@ describe('signInLanded', () => {
 });
 
 describe('amazonSongSearchUrl', () => {
-  test('quotes both terms and ORs the two phrase orders — Amazon matching is order-sensitive in both directions', () => {
+  test('quotes both terms and ORs the by-form with the two phrase orders — Amazon matching is order-sensitive in both directions', () => {
     expect(amazonSongSearchUrl({ title: 'stations', artist: 'Warning' })).toEqual({
-      url: 'https://music.amazon.com/search/%22stations%22%20%22Warning%22%20OR%20%22Warning%22%20%22stations%22/songs',
-      searchText: '"stations" "Warning" OR "Warning" "stations"'
+      url: 'https://music.amazon.com/search/' + encodeURIComponent('"stations" by "Warning" OR "stations" "Warning" OR "Warning" "stations"') + '/songs',
+      searchText: '"stations" by "Warning" OR "stations" "Warning" OR "Warning" "stations"'
     });
-    // The case that surfaced this: "Яйца" "ХЛЕБ" returns nothing on Amazon;
-    // ORing the reversed clauses is what surfaces ХЛЕБ — Яйца.
+    // The case that surfaced the two-order OR: "Яйца" "ХЛЕБ" returns nothing
+    // on Amazon; the reversed clause is what surfaces ХЛЕБ — Яйца.
     expect(amazonSongSearchUrl({ title: 'Яйца', artist: 'ХЛЕБ' }).searchText)
-      .toBe('"Яйца" "ХЛЕБ" OR "ХЛЕБ" "Яйца"');
+      .toBe('"Яйца" by "ХЛЕБ" OR "Яйца" "ХЛЕБ" OR "ХЛЕБ" "Яйца"');
+    // The case that surfaced the by-clause (live-verified 2026-11 through
+    // the app): both bare orders bury Backstabbed's "Out Of Body Experience"
+    // past the spec search's 30-row first page — every row is a track by an
+    // artist literally named "Out of Body Experience" — while the by-form
+    // returns it as row 1. The by-clause is a supplement, never a replacement:
+    // alone it returns zero rows for Яйца/ХЛЕБ and misses Stations/Warning.
+    expect(amazonSongSearchUrl({ title: 'out of body experience', artist: 'backstabbed' }).searchText)
+      .toBe('"out of body experience" by "backstabbed" OR "out of body experience" "backstabbed" OR "backstabbed" "out of body experience"');
   });
 
   test('still uses the songs tab when only one field is present', () => {
@@ -1192,8 +1200,8 @@ describe('amazon halt pause guard', () => {
 describe('amazonAlbumSearchUrl', () => {
   test('the albums tab carries the same quoted-or query as the songs search', () => {
     expect(amazonAlbumSearchUrl({ title: 'Dulling the Horns', artist: 'Wild Pink' })).toEqual({
-      url: 'https://music.amazon.com/search/' + encodeURIComponent('"Dulling the Horns" "Wild Pink" OR "Wild Pink" "Dulling the Horns"') + '/albums',
-      searchText: '"Dulling the Horns" "Wild Pink" OR "Wild Pink" "Dulling the Horns"'
+      url: 'https://music.amazon.com/search/' + encodeURIComponent('"Dulling the Horns" by "Wild Pink" OR "Dulling the Horns" "Wild Pink" OR "Wild Pink" "Dulling the Horns"') + '/albums',
+      searchText: '"Dulling the Horns" by "Wild Pink" OR "Dulling the Horns" "Wild Pink" OR "Wild Pink" "Dulling the Horns"'
     });
   });
 
