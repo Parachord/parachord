@@ -33,3 +33,15 @@ describe('periodic friend-graph sync', () => {
     expect(app).toMatch(/syncFriendsFromServicesRef\.current = syncFriendsFromServices;/);
   });
 });
+
+describe('Friends tab sync', () => {
+  test('opening the Collection Friends tab syncs, unless a sync started in the last 5 minutes', () => {
+    expect(app).toMatch(/const FRIEND_TAB_SYNC_MIN_GAP_MS = 5 \* 60 \* 1000;/);
+    expect(app).toMatch(/if \(activeView !== 'library' \|\| collectionTab !== 'friends'\) return;\s*if \(Date\.now\(\) - lastFriendSyncAtRef\.current < FRIEND_TAB_SYNC_MIN_GAP_MS\) return;\s*syncFriendsFromServicesRef\.current\?\.\(\{ silent: true \}\);\s*\}, \[activeView, collectionTab, cacheLoaded, hasFriendServiceAccount\]\);/);
+  });
+
+  test('every sync records when it started, and the startup sync skips one that just ran', () => {
+    expect(app).toMatch(/const syncFriendsFromServices = async \(\{ silent = true \} = \{\}\) => \{\s*if \(friendSyncInProgress\) return 0;\s*lastFriendSyncAtRef\.current = Date\.now\(\);/);
+    expect(app).toMatch(/setTimeout\(\(\) => \{\s*if \(Date\.now\(\) - lastFriendSyncAtRef\.current < FRIEND_TAB_SYNC_MIN_GAP_MS\) return;\s*syncFriendsFromServicesRef\.current\?\.\(\{ silent: true \}\);\s*\}, 5000\);/);
+  });
+});
