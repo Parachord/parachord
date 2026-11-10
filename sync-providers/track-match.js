@@ -13,6 +13,28 @@
 const { normalizeStr, validateResolvedTrack } = require('./confidence-scoring');
 const { isOtherVersion } = require('./track-variants');
 
+// A trailing remaster label on a title: "- 2016 Remaster", "- Remastered 2009",
+// "- 2003 Digital Remaster", "(Remastered)", "[2011 Remaster]", "- Remastered
+// Version". It labels an edition of the same studio recording. Only at the end,
+// after a dash or in brackets, so "Remaster Me" keeps its name. Same pattern as
+// mobile's REMASTER_LABEL (parachord-mobile#581); keep the two the same.
+const REMASTER_WORDS = '(?:\\d{4} )?(?:digital(?:ly)? )?remaster(?:ed)?(?: \\d{4})?(?: version| edition)?';
+const REMASTER_LABEL = new RegExp(` *(?:- *${REMASTER_WORDS}|[(\\[] *${REMASTER_WORDS} *[)\\]]) *$`);
+
+// Lowercased and NFKD-folded (so a full-width bracket is a plain one), the way
+// normalizeStr folds before it drops punctuation.
+function foldForLabel(title) {
+  return String(title || '').toLowerCase().normalize('NFKD');
+}
+
+function hasRemasterLabel(title) {
+  return REMASTER_LABEL.test(foldForLabel(title));
+}
+
+function withoutRemasterLabel(title) {
+  return foldForLabel(title).replace(REMASTER_LABEL, '');
+}
+
 function pickTrackMatch(results, targetArtist, targetTitle, { mbid, isrc } = {}) {
   if (!results || results.length === 0) return null;
   // Tier 1: exact MusicBrainz recording MBID — a definitive identity match
@@ -29,9 +51,16 @@ function pickTrackMatch(results, targetArtist, targetTitle, { mbid, isrc } = {})
   }
   const normTargetArtist = normalizeStr(targetArtist);
   const normTargetTitle = normalizeStr(targetTitle);
-  // Tier 3: exact normalized name (artist + title)
+  // Tier 3: exact normalized name (artist + title). A trailing remaster label
+  // on the result doesn't count against it unless the request names one too:
+  // Spotify labels remastered studio tracks while a live album or an outtakes
+  // set carries the bare title, so a raw comparison picked Ramones' live
+  // "Judy Is a Punk" over "Judy Is a Punk - 2016 Remaster" ranked above it
+  // (#1304).
+  const targetLabelled = hasRemasterLabel(targetTitle);
   for (const r of results) {
-    if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(r.title) === normTargetTitle) {
+    const title = targetLabelled ? r.title : withoutRemasterLabel(r.title);
+    if (normalizeStr(r.artist) === normTargetArtist && normalizeStr(title) === normTargetTitle) {
       return r;
     }
   }
