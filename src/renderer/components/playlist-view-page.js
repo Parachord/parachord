@@ -233,16 +233,18 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               // SAVE button for ephemeral playlists
               selectedPlaylist?.isEphemeral && !playlistEditMode && React.createElement('button', {
                 onClick: async () => {
-                  // Save ephemeral playlist to library
+                  // Save ephemeral playlist to library (Weekly Jams from Home,
+                  // recommended playlists from the Recommendations page)
                   const newPlaylist = {
                     id: `playlist-${Date.now()}`,
                     title: selectedPlaylist.weekLabel ? `Weekly Jam - ${selectedPlaylist.weekLabel}` : selectedPlaylist.title,
-                    creator: 'ListenBrainz',
+                    creator: selectedPlaylist.creator || 'ListenBrainz',
                     description: selectedPlaylist.description,
                     tracks: playlistTracks,
                     addedAt: Date.now(),
                     lastModified: Date.now(),
-                    source: 'listenbrainz'
+                    source: selectedPlaylist.source || 'listenbrainz',
+                    ...(selectedPlaylist.sourceUrl ? { sourceUrl: selectedPlaylist.sourceUrl } : {})
                   };
                   setPlaylists(prev => [...prev, newPlaylist]);
                   await savePlaylistToStore(newPlaylist);

@@ -11127,8 +11127,6 @@ const Parachord = () => {
   useEffect(() => {
     if (!window.electron?.onProtocolUrl) return;
 
-
-
     // Resolve any of the protocol play-input shapes into a normalized tracklist.
     // Used by parachord://play-album, play-playlist, play-radio.
     //
@@ -39454,17 +39452,61 @@ useEffect(() => {
             // Play a recommended playlist: resolve it through the provider
             // playlist path (resolver-loader lookupPlaylist)
             // and play the tracks, without importing anything.
+            const loadPlaylistTracks = async (item) => {
+              const resolved = await resolveProviderPlaylistUrl(item.url);
+              if (!resolved || !resolved.tracks || !resolved.tracks.length) {
+                throw new Error(`Could not load ${item.name} — is the service connected?`);
+              }
+              return resolved;
+            };
             const playRecommendationPlaylist = async (item) => {
               if (!item.url) return;
               setTrackLoading(true);
               try {
-                const resolved = await resolveProviderPlaylistUrl(item.url);
-                if (resolved && resolved.tracks && resolved.tracks.length > 0) {
-                  playTrackCollection(resolved.tracks, { type: 'playlist', name: item.name });
-                } else {
-                  setTrackLoading(false);
-                  showToast(`Could not load ${item.name} — is the service connected?`, 'error');
-                }
+                const resolved = await loadPlaylistTracks(item);
+                playTrackCollection(resolved.tracks, { type: 'playlist', name: item.name });
+              } catch (error) {
+                setTrackLoading(false);
+                showToast(error?.message || `Could not load ${item.name}`, 'error');
+              }
+            };
+
+            // Open a recommended playlist in the playlist view — the same
+            // ephemeral external-playlist flow the Home page's Weekly Jams use
+            // (loadPlaylist with an isEphemeral playlist): the view shows the
+            // tracks with per-resolver play buttons, and the Import hover button
+            // / the view's SAVE both keep the full-import paths.
+            const openRecommendationPlaylist = async (item) => {
+              if (!item.url) return;
+              setTrackLoading(true);
+              try {
+                const resolved = await loadPlaylistTracks(item);
+                const art = imageFor(item);
+                const tracks = resolved.tracks.map((t, i) => ({
+                  id: (t.amazonAsin ? `amazonmusic-${t.amazonAsin}` : `rec-playlist-${item.id}-${i}`),
+                  title: t.title,
+                  artist: t.artist,
+                  album: t.album || null,
+                  albumArt: resolved.albumArt || art || null,
+                  duration: t.duration || null,
+                  sources: {},
+                  ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {})
+                }));
+                setTrackLoading(false);
+                loadPlaylist({
+                  id: `amazonmusic-rec-${item.id}`,
+                  title: item.name,
+                  creator: 'Amazon Music',
+                  description: 'Recommended by Amazon Music',
+                  tracks,
+                  tracksLoaded: true,
+                  isExternal: true,
+                  isEphemeral: true,
+                  source: 'amazonmusic',
+                  sourceUrl: item.url,
+                  addedAt: Date.now(),
+                  trackCount: tracks.length
+                });
               } catch (error) {
                 setTrackLoading(false);
                 showToast(error?.message || `Could not load ${item.name}`, 'error');
@@ -39707,7 +39749,7 @@ useEffect(() => {
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                onClick: () => playRecommendationPlaylist(item),
+                onClick: () => openRecommendationPlaylist(item),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
