@@ -80,6 +80,12 @@ function normalizeRecommendationItem(raw, resolverId) {
   if (typeof raw.imageUrl === 'string' && raw.imageUrl.trim()) item.imageUrl = raw.imageUrl.trim();
   if (typeof raw.url === 'string' && raw.url.trim()) item.url = raw.url.trim();
   if (typeof raw.reason === 'string' && raw.reason.trim()) item.reason = raw.reason.trim();
+  // Optional stable ids a provider already knows — a song's recording MBID
+  // (ListenBrainz), an ISRC where a provider has one. Carried on the item and
+  // copied onto the track, so MBID enrichment doesn't re-ask the mapper and
+  // pickTrackMatch's exact-MBID tier can fire without a lookup.
+  if (typeof raw.mbid === 'string' && raw.mbid.trim()) item.mbid = raw.mbid.trim();
+  if (typeof raw.isrc === 'string' && raw.isrc.trim()) item.isrc = raw.isrc.trim();
   if (type === 'song') {
     if (raw.duration && Number.isFinite(Number(raw.duration))) item.duration = Number(raw.duration);
     // The track object every shared path (resolution scheduler, play, queue)
@@ -91,6 +97,8 @@ function normalizeRecommendationItem(raw, resolverId) {
       duration: item.duration || null,
       sources: {}
     };
+    if (item.mbid) item.track.mbid = item.mbid;
+    if (item.isrc) item.track.isrc = item.isrc;
   }
   return item;
 }

@@ -11,8 +11,9 @@ module.exports = {
   // to live in app.js (loadLastfmRecommendations); it moved here so the page
   // is provider-driven through the plugin capability.
   // Miss policy: no username or an empty station answers { sections: [] }
-  // (a miss, not an error); a failed request also answers [] rather than
-  // throwing, since the page shows the other providers' sections either way.
+  // (a miss, not an error); a failed request throws — the page keeps the other
+  // providers' sections and re-asks next visit, and an empty answer is never
+  // cached as if Last.fm had nothing (parachord#1021's rule).
   getRecommendations: async function (config) {
     const username = config && config.username;
     if (!username) return { sections: [] };
@@ -34,7 +35,10 @@ module.exports = {
       if (!title) continue;
       items.push({
         type: 'song',
-        id: (track && track.spelling_id) || `lastfm-rec-${title}`,
+        // spelling_id is Last.fm's stable id; without one there is no id at
+        // all — the model falls back to trackSlug(artist, title), so two songs
+        // sharing a title by different artists never share an id.
+        id: (track && track.spelling_id) || undefined,
         name: title,
         artist: artist.name || artist._name || 'Unknown Artist',
         duration: (track && track.duration) || null

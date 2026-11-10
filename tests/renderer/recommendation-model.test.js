@@ -30,6 +30,22 @@ describe('normalizeRecommendationItem', () => {
     expect(item.track.id).toBe(item.id);
   });
 
+  test("a song's mbid/isrc ride onto the item and the track (no re-asking the mapper, exact-MBID match tier)", () => {
+    const item = normalizeRecommendationItem({ type: 'song', id: 'lb-1', name: 'Dream House', artist: 'Deafheaven', mbid: '9d59b396-1f9d-4a70-8b17-6b1dd97d1c73', isrc: 'GB5EP1400001' }, 'listenbrainz');
+    expect(item.mbid).toBe('9d59b396-1f9d-4a70-8b17-6b1dd97d1c73');
+    expect(item.isrc).toBe('GB5EP1400001');
+    expect(item.track.mbid).toBe('9d59b396-1f9d-4a70-8b17-6b1dd97d1c73');
+    expect(item.track.isrc).toBe('GB5EP1400001');
+  });
+
+  test('a song without mbid/isrc keeps a lean track (no null fields)', () => {
+    const item = normalizeRecommendationItem({ type: 'song', name: 'Sunbather', artist: 'Deafheaven', mbid: '', isrc: '  ' }, 'lastfm');
+    expect(item.mbid).toBeUndefined();
+    expect(item.isrc).toBeUndefined();
+    expect(item.track.mbid).toBeUndefined();
+    expect(item.track.isrc).toBeUndefined();
+  });
+
   test('an artist item carries no artist field; artists do not need one', () => {
     const item = normalizeRecommendationItem({ type: 'artist', id: 'B004RUHJBC', name: 'Deafheaven' }, 'amazonmusic');
     expect(item).toMatchObject({ type: 'artist', id: 'B004RUHJBC', name: 'Deafheaven' });

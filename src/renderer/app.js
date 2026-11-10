@@ -3350,6 +3350,11 @@ const Parachord = () => {
   // Section collapse state: a section shows only its first few items until
   // expanded (the user's collapse choice survives re-merges by section key).
   const [recommendationsExpandedSections, setRecommendationsExpandedSections] = useState(() => new Set());
+  // Cover URLs that failed to load in this session (the Recs page's album
+  // cards report them through window.reportBrokenAlbumArt — the album-art
+  // rule — and skip them until a retry lands; cards.js keeps the same state
+  // per card with useState).
+  const recommendationBrokenArtRef = useRef(new Set());
   const recommendationsExpandedSectionsRef = useRef(new Set());
   // "load more" in-flight markers per section key
   const [recommendationsLoadingMore, setRecommendationsLoadingMore] = useState({});
@@ -3503,26 +3508,25 @@ const Parachord = () => {
     criticsPickPreview: [],         // Preview of critical darlings
     weeklyJams: null,               // ListenBrainz weekly jams playlist
     weeklyExploration: null,        // ListenBrainz weekly exploration playlist
-    surpriseMeSeeds: []             // Seeds for AI playlist generation
+    surpriseMeSeeds: [],            // Seeds for AI playlist generation
+    aiRecommendations: null         // AI-generated recommendations: { albums: [], artists: [], loading: false }
   });
-  // Shuffleupagus (LLM) suggestions, rendered as a titled section on the
-  // Recommendations page. Used to live on Home as
-  // homeData.aiRecommendations; same shape: { albums: [], artists: [],
-  // loading: false } or null.
-  const [aiRecommendations, setAiRecommendations] = useState(null);
-  const aiRecommendationsRef = useRef(null); // Ref for refreshMergedRecommendations
-  // Sync the ref, then re-merge the display model — this is the ONLY path the
-  // LLM's streamed updates reach the page through (the merged section is
-  // rebuilt from the provider results + this state; nothing else re-merges on
-  // an LLM update). refreshMergedRecommendations is declared further down the
-  // component body — the closure resolves it at effect-run time, which is
-  // always after both declarations exist.
+  // Ref for refreshMergedRecommendations: reads homeData.aiRecommendations
+  // without keying the merged model on every homeData write. Sync + re-merge
+  // is the ONLY path the LLM's streamed updates reach the Recommendations
+  // page through (the merged section is rebuilt from the provider results +
+  // this state; nothing else re-merges on an LLM update).
+  // refreshMergedRecommendations is declared further down the component body —
+  // the closure resolves it at effect-run time, which is always after both
+  // declarations exist. Home renders this state directly (as on main).
+  const aiRecommendationsRef = useRef(null);
   useEffect(() => {
-    aiRecommendationsRef.current = aiRecommendations;
+    aiRecommendationsRef.current = homeData.aiRecommendations;
     refreshMergedRecommendations();
-  }, [aiRecommendations]);
+  }, [homeData.aiRecommendations]);
   const previousAiSuggestions = useRef({ albums: [], artists: [] }); // Track previous suggestions for variety
   const aiSuggestionsRefreshing = useRef(false); // Guard against duplicate AI suggestion fetches
+  const [homeVisitCount, setHomeVisitCount] = useState(0); // Increments each time user navigates to Home
   const [recommendationsVisitCount, setRecommendationsVisitCount] = useState(0); // Increments each visit to the Recommendations view (suggestion refresh trigger)
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
@@ -11450,6 +11454,7 @@ const resolveProviderPlaylistUrl = async (rawUrl) => {
           // === Navigation Commands ===
           case 'home':
             setActiveView('home');
+            setHomeVisitCount(c => c + 1);
             break;
 
           case 'artist': {
@@ -14663,7 +14668,7 @@ ${trackListXml}
 
   // Persist AI suggestions when they finish loading (so they appear instantly on next session)
   useEffect(() => {
-    const aiRecs = aiRecommendations;
+    const aiRecs = homeData.aiRecommendations;
     if (cacheLoaded && window.electron?.store && aiRecs && !aiRecs.loading && (aiRecs.albums?.length > 0 || aiRecs.artists?.length > 0)) {
       window.electron.store.set('cache_ai_suggestions', {
         albums: aiRecs.albums,
@@ -14671,7 +14676,7 @@ ${trackListXml}
         timestamp: Date.now()
       });
     }
-  }, [aiRecommendations, cacheLoaded]);
+  }, [homeData.aiRecommendations, cacheLoaded]);
 
   // Persist playlists view mode preference (only after cache is loaded to avoid overwriting)
   useEffect(() => {
@@ -18233,17 +18238,70 @@ ${trackListXml}
       const aiSuggestionsData = d['cache_ai_suggestions'];
       const savedLastView = d['last_active_view'];
 
-      // Load AI suggestions cache (show previous session's suggestions instantly).
-      // Item images (art for albums missing it, artist photos) are filled in
-      // by the recommendationImages effect once the recommendations view
-      // renders the section — nothing to backfill here.
+      // Load AI suggestions cache (show previous session's suggestions instantly)
       if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
-        setAiRecommendations({
-          albums: aiSuggestionsData.albums || [],
-          artists: aiSuggestionsData.artists || [],
-          loading: false
-        });
+        setHomeData(prev => ({
+          ...prev,
+          aiRecommendations: {
+            albums: aiSuggestionsData.albums || [],
+            artists: aiSuggestionsData.artists || [],
+            loading: false
+          }
+        }));
         console.log(`📦 Loaded AI suggestions from cache (${aiSuggestionsData.albums?.length || 0} albums, ${aiSuggestionsData.artists?.length || 0} artists)`);
+
+        // Resolve album art for cached suggestions that are missing it.
+        // albumArtCache.current is already populated above, so cache hits are instant.
+        // Network lookups (cache misses) happen in the background without blocking.
+        const albumsMissingArt = (aiSuggestionsData.albums || []).filter(a => !a.art && a.artist && a.title);
+        if (albumsMissingArt.length > 0) {
+          console.log(`🎨 Resolving art for ${albumsMissingArt.length} cached AI suggestion(s)...`);
+          setTimeout(() => {
+            for (const album of albumsMissingArt) {
+              getAlbumArt(album.artist, album.title).then(artUrl => {
+                if (artUrl) {
+                  setHomeData(prev => {
+                    if (!prev.aiRecommendations) return prev;
+                    return {
+                      ...prev,
+                      aiRecommendations: {
+                        ...prev.aiRecommendations,
+                        albums: prev.aiRecommendations.albums.map(a =>
+                          a.title === album.title && a.artist === album.artist ? { ...a, art: artUrl } : a
+                        )
+                      }
+                    };
+                  });
+                }
+              }).catch(() => {});
+            }
+          }, 100);
+        }
+
+        // Resolve artist images for cached suggestions missing them
+        const artistsMissingImages = (aiSuggestionsData.artists || []).filter(a => !a.image && a.name);
+        if (artistsMissingImages.length > 0) {
+          setTimeout(() => {
+            for (const artist of artistsMissingImages) {
+              getArtistImage(artist.name).then(imgResult => {
+                if (imgResult?.url) {
+                  setHomeData(prev => {
+                    if (!prev.aiRecommendations) return prev;
+                    return {
+                      ...prev,
+                      aiRecommendations: {
+                        ...prev.aiRecommendations,
+                        artists: prev.aiRecommendations.artists.map(a =>
+                          a.name === artist.name ? { ...a, image: imgResult.url } : a
+                        )
+                      }
+                    };
+                  });
+                }
+              }).catch(() => {});
+            }
+          }, 100);
+        }
       }
 
       // *** EARLY VIEW RESTORATION ***
@@ -26616,7 +26674,8 @@ Return ONLY the JSON array, no other text.`;
   // answers getRecommendations with sections of typed items
   // (docs/architecture/plugins.md, "Recommendations"), and the Shuffleupagus
   // (LLM) suggestions render as one titled section built from
-  // aiRecommendations. loadRecommendations fetches each provider (a
+  // homeData.aiRecommendations (the same state Home renders its section
+  // from). loadRecommendations fetches each provider (a
   // per-provider session cache in recommendationsCache), and
   // refreshMergedRecommendations rebuilds the display model through
   // buildRecommendationSections — the LLM streams into its own state and
@@ -26696,8 +26755,19 @@ Return ONLY the JSON array, no other text.`;
     }
   };
 
-  const loadRecommendations = async (forceRefresh = false) => {
-    const providers = recommendationProviders();
+  // `opts.metaServicesOnly` asks only the meta-service providers (Last.fm,
+  // ListenBrainz): Home's For You preview loads with it, so a content
+  // resolver's recommendation fetches — Amazon's are hidden-webview page
+  // loads on the same search chain track resolution uses — never queue ahead
+  // of resolution on a Home visit, where resolution is busiest. The
+  // Recommendations page asks every provider.
+  const loadRecommendations = async (opts = {}) => {
+    const forceRefresh = opts === true || opts?.forceRefresh === true;
+    const metaOnly = opts !== true && !!opts?.metaServicesOnly;
+    const metaServiceIds = new Set((metaServicesRef.current || []).map(s => s.id));
+    const providers = metaOnly
+      ? recommendationProviders().filter(p => metaServiceIds.has(p.id))
+      : recommendationProviders();
     const chatServices = getChatServices();
     const llmPossible = chatServices.some(isServiceEnabled) && aiIncludeHistoryRef.current;
 
@@ -26709,8 +26779,7 @@ Return ONLY the JSON array, no other text.`;
     const metaConfigs = metaServiceConfigsRef.current || {};
     const hasLastfm = !!metaConfigs.lastfm?.username;
     const hasListenbrainz = !!metaConfigs.listenbrainz?.username;
-    const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
-    const hasActiveResolverProvider = providers.some(p => !metaIds.has(p.id));
+    const hasActiveResolverProvider = providers.some(p => !metaServiceIds.has(p.id));
     if (!hasLastfm && !hasListenbrainz && !hasActiveResolverProvider && !llmPossible) {
       console.log('⭐ No recommendation source configured, skipping recommendations load');
       setRecommendations({ sections: [], loading: false, error: 'not_configured' });
@@ -27465,12 +27534,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Fetch a fresh batch of Shuffleupagus suggestions (the LLM's albums and
-  // artists). Component scope: the auto-fetch effect below runs it per visit
-  // decision, and the Shuffleupagus section's Refresh button runs it directly.
-  // By default the suggestions on screen stay until the user presses Refresh;
-  // with "Refresh Shuffleupagus suggestions on every visit" on, each visit
-  // fetches a new batch, keeping cached/previous results visible until it
-  // arrives. Either way the view fetches when it has no albums to show.
+  // artists). Component scope (main inlined this in the effect below; the
+  // Recommendations page's Refresh button calls it too, so the one body serves
+  // both callers). By default the suggestions on screen stay until the user
+  // presses Refresh; with "Refresh Shuffleupagus suggestions on every visit"
+  // on, each visit to Home or the Recommendations page fetches a new batch,
+  // keeping cached/previous results visible until it arrives. Either way the
+  // view fetches when it has no albums to show.
   const fetchAiRecommendations = async () => {
     if (aiSuggestionsRefreshing.current) return; // Already fetching
     const chatServices = getChatServices();
@@ -27480,10 +27550,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     aiSuggestionsRefreshing.current = true;
 
     // Mark as loading but keep existing cached data visible on screen
-    setAiRecommendations(prev => ({
-      albums: prev?.albums || [],
-      artists: prev?.artists || [],
-      loading: true
+    setHomeData(prev => ({
+      ...prev,
+      aiRecommendations: {
+        albums: prev.aiRecommendations?.albums || [],
+        artists: prev.aiRecommendations?.artists || [],
+        loading: true
+      }
     }));
 
     // Accumulate fresh albums in a local array — swap all at once when done
@@ -27493,7 +27566,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const onUpdate = ({ artists, newAlbum }) => {
       if (artists) {
         // Artists arrived — replace cached artists with fresh ones
-        setAiRecommendations(prev => ({ ...(prev || { albums: [] }), artists }));
+        setHomeData(prev => ({
+          ...prev,
+          aiRecommendations: { ...(prev.aiRecommendations || { albums: [] }), artists }
+        }));
       }
       if (newAlbum) {
         // Accumulate — don't push to state yet (cached albums stay visible)
@@ -27505,36 +27581,42 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     aiSuggestionsRefreshing.current = false;
     if (result) {
       // Swap in the full fresh batch at once (with any art that loaded during validation)
-      setAiRecommendations(prev => ({
-        ...(prev || { albums: [], artists: [] }),
-        albums: freshAlbums.length > 0 ? freshAlbums : (prev?.albums || []),
-        loading: false
+      setHomeData(prev => ({
+        ...prev,
+        aiRecommendations: {
+          ...(prev.aiRecommendations || { albums: [], artists: [] }),
+          albums: freshAlbums.length > 0 ? freshAlbums : (prev.aiRecommendations?.albums || []),
+          loading: false
+        }
       }));
     } else {
       // LLM call failed — keep cached data visible if we have any, otherwise clear
-      setAiRecommendations(prev => {
-        if (prev?.albums?.length > 0 || prev?.artists?.length > 0) {
-          return { ...prev, loading: false };
+      setHomeData(prev => {
+        const existing = prev.aiRecommendations;
+        if (existing?.albums?.length > 0 || existing?.artists?.length > 0) {
+          return { ...prev, aiRecommendations: { ...existing, loading: false } };
         }
-        return null;
+        return { ...prev, aiRecommendations: null };
       });
     }
   };
 
-  // The auto-fetch trigger: on a Recommendations view visit, when the
-  // decision (lib/home-suggestions-refresh.js) says so. The suggestions render
-  // as the page's "Shuffleupagus" section; images arrive through the
-  // recommendationImages effect.
+  // Load AI suggestions when HOME or the RECOMMENDATIONS view is active and an
+  // AI plugin is enabled. By default the suggestions on screen stay until the
+  // user presses Refresh; with "Refresh Shuffleupagus suggestions on every
+  // visit" on, each visit fetches a new batch, keeping cached/previous results
+  // visible until it arrives. Either way the view fetches when it has no
+  // albums to show (no Refresh button).
   useEffect(() => {
-    if (activeView !== 'recommendations' || !cacheLoaded) return;
+    if ((activeView !== 'home' && activeView !== 'recommendations') || !cacheLoaded) return;
     if (!shouldAutoRefreshHomeSuggestions({
       autoRefresh: homeSuggestionsAutoRefreshRef.current,
-      suggestions: aiRecommendations
+      suggestions: homeData.aiRecommendations
     })) return;
     fetchAiRecommendations();
     // fetchAiRecommendations is recreated every render; the effect must not
     // key on it — its guards (refreshing, decision) make re-entry safe.
-  }, [activeView, cacheLoaded, metaServices, recommendationsVisitCount]);
+  }, [activeView, cacheLoaded, metaServices, homeVisitCount, recommendationsVisitCount]);
 
   // Load charts when navigating to discover page (Pop of the Tops), re-fetch if stale
   useEffect(() => {
@@ -27634,14 +27716,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Load discovery data (recommendations, charts, critics picks) for HOME view previews
   useEffect(() => {
     if (activeView === 'home' && cacheLoaded) {
-      // Load recommendations if any provider can produce them and none loaded
-      // yet (the For You card previews the first recommended artist).
+      // Load recommendations if a scrobbler can produce them and none loaded
+      // yet (the For You card previews the first recommended artist). Only
+      // the meta-services are asked — as on main — so a content resolver's
+      // recommendation fetches (Amazon's are hidden-webview page loads on
+      // the search chain track resolution uses) never queue ahead of
+      // resolution on a Home visit; the Recommendations page asks them.
       const metaConfigsHome = metaServiceConfigsRef.current || {};
       const hasScrobbler = metaConfigsHome.lastfm?.username || metaConfigsHome.listenbrainz?.username;
-      const homeMetaIds = new Set((metaServicesRef.current || []).map(s => s.id));
-      const hasResolverProvider = recommendationProviders().some(p => !homeMetaIds.has(p.id));
-      if (recommendations.sections.length === 0 && !recommendations.error && (hasScrobbler || hasResolverProvider)) {
-        loadRecommendations();
+      if (recommendations.sections.length === 0 && !recommendations.error && hasScrobbler) {
+        loadRecommendations({ metaServicesOnly: true });
       }
       // Load charts if not already loaded
       if (!chartsLoaded && !chartsLoading) {
@@ -31610,6 +31694,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
   // Navigation helpers
   const navigateTo = (view) => {
+    if (view === 'home') {
+      setHomeVisitCount(c => c + 1); // Trigger AI suggestions refresh
+    }
     if (view === 'recommendations') {
       setRecommendationsVisitCount(c => c + 1); // Trigger Shuffleupagus suggestions refresh
     }
@@ -33986,11 +34073,12 @@ useEffect(() => {
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
   const homePageHandlers = useStableHandlers({
-    activateListenAlong, copyParachordLink, deactivateListenAlong,
-    fetchArtistData, getArtistTopTracks, handleCollectionAlbumClick, handlePlay,
-    handlePlayPause, handleStartCollectionStation, isOnAir,
-    loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    loadWeeklyJamTracks, navigateTo, navigateToFriend,
+    activateListenAlong, addToQueue, copyParachordLink, deactivateListenAlong,
+    fetchAlbumTracksFromMusicBrainz, fetchArtistData, getAlbumArt, getArtistImage,
+    getArtistTopTracks, getChatServices, handleCollectionAlbumClick, handlePlay,
+    handlePlayPause, handleStartCollectionStation, isOnAir, isServiceEnabled,
+    loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
+    loadWeeklyJamTracks, navigateTo, navigateToFriend, openAiChat,
     openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
     setQueueWithContext,
   });
@@ -36177,7 +36265,10 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setWhatsNewOpen, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, weeklyJamCovers, whatsNewDismissedVersion,
+          allPlaylistCovers, allResolvers, appVersion, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, setWhatsNewOpen, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, weeklyJamCovers, whatsNewDismissedVersion,
+          // Not read by the page directly; read during its render through a
+          // stable handler, so it must invalidate the memo.
+          _metaServices: metaServices,
           ...homePageHandlers
         }),
 
@@ -38947,7 +39038,7 @@ useEffect(() => {
           (() => {
             const sections = recommendations.sections;
             const llmSectionPresent = sections.some(s => s.resolverId === 'shuffleupagus');
-            const llmLoading = !!aiRecommendations?.loading && !llmSectionPresent;
+            const llmLoading = !!homeData.aiRecommendations?.loading && !llmSectionPresent;
             const BUCKET_TITLES = { artist: 'Artists', song: 'Songs', album: 'Albums', playlist: 'Playlists' };
             // A collapsed section shows this many items (cards); songs show fewer rows.
             const SECTION_PREVIEW = 6;
@@ -38955,10 +39046,15 @@ useEffect(() => {
 
             // The image for a card: the provider's own URL first, then the
             // fetched recommendationImages entry ({ url, loaded }).
-            const imageFor = (item) => item.imageUrl
-              || ((recommendationImages[item.id] || {}).url)
-              || null;
-            const imageLoadedFor = (item) => !!item.imageUrl || !!(recommendationImages[item.id] || {}).loaded;
+            const brokenArt = recommendationBrokenArtRef.current;
+            const imageFor = (item) => {
+              // A provider imageUrl that failed to load is dead for the session:
+              // the fetched image (the art pipeline's retry result) wins over it.
+              if (item.imageUrl && !brokenArt.has(item.imageUrl)) return item.imageUrl;
+              return (recommendationImages[item.id] || {}).url || null;
+            };
+            const imageLoadedFor = (item) =>
+              (!!item.imageUrl && !brokenArt.has(item.imageUrl)) || !!(recommendationImages[item.id] || {}).loaded;
 
             // Play a recommended playlist: resolve it through the provider
             // playlist path (resolver-loader lookupPlaylist — Amazon included)
@@ -39121,7 +39217,21 @@ useEffect(() => {
                   art && React.createElement('img', {
                     src: art,
                     alt: item.name,
-                    className: 'absolute inset-0 w-full h-full object-cover'
+                    className: 'absolute inset-0 w-full h-full object-cover',
+                    // A dead cover URL (the album-art rule, album-art.md): the
+                    // placeholder shows now, and the art pipeline's retry — one
+                    // per album per session — swaps in whatever it finds through
+                    // the same coalesced writer the image effect uses.
+                    onError: () => {
+                      if (art) brokenArt.add(art);
+                      recommendationImagesWriterRef.current.queue(item.id, { url: null, loaded: true }, { merge: true });
+                      const report = globalThis.reportBrokenAlbumArt;
+                      if (report) {
+                        report(art, { artist: item.artist, album: item.name }).then((url) => {
+                          if (url) recommendationImagesWriterRef.current.queue(item.id, { url, loaded: true }, { merge: true });
+                        }).catch(() => {});
+                      }
+                    }
                   }),
                   React.createElement('div', {
                     className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
@@ -39427,13 +39537,13 @@ useEffect(() => {
                   React.createElement('div', { className: 'flex items-center gap-2 flex-shrink-0' },
                     isShuffleupagus && React.createElement('button', {
                       onClick: () => fetchAiRecommendations(),
-                      disabled: !!aiRecommendations?.loading,
+                      disabled: !!homeData.aiRecommendations?.loading,
                       className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
-                      style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)', opacity: aiRecommendations?.loading ? 0.6 : 1 },
-                      onMouseEnter: (e) => { if (!aiRecommendations?.loading) e.currentTarget.style.backgroundColor = 'var(--hover-bg)'; },
+                      style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)', opacity: homeData.aiRecommendations?.loading ? 0.6 : 1 },
+                      onMouseEnter: (e) => { if (!homeData.aiRecommendations?.loading) e.currentTarget.style.backgroundColor = 'var(--hover-bg)'; },
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
                       title: 'Ask Shuffleupagus for a new batch of suggestions'
-                    }, aiRecommendations?.loading ? 'Thinking…' : 'Refresh'),
+                    }, homeData.aiRecommendations?.loading ? 'Thinking…' : 'Refresh'),
                     hiddenCount > 0 && React.createElement('button', {
                       onClick: () => toggleRecommendationSection(section.key),
                       className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
@@ -39531,7 +39641,7 @@ useEffect(() => {
                       className: 'text-xl font-medium text-gray-900 mb-2'
                     }, 'Connect a music service'),
                     React.createElement('p', { className: 'text-gray-500 mb-6 max-w-md mx-auto' },
-                      'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, sign in to Amazon Music, or enable an AI chat provider for Shuffleupagus suggestions.'
+                      'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, or enable an AI chat provider for Shuffleupagus suggestions.'
                     ),
                     React.createElement('div', { className: 'flex gap-3 justify-center' },
                       React.createElement('button', {
@@ -39563,7 +39673,7 @@ useEffect(() => {
                   React.createElement('div', { className: 'text-center py-12' },
                     React.createElement('div', { className: 'text-gray-400 mb-4' }, recommendations.error),
                     React.createElement('button', {
-                      onClick: () => loadRecommendations(true),
+                      onClick: () => loadRecommendations({ forceRefresh: true }),
                       className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
                     }, 'Try Again')
                   )
@@ -43113,7 +43223,7 @@ useEffect(() => {
                         'Refresh Shuffleupagus suggestions on every visit'
                       ),
                       React.createElement('p', { className: 'text-xs text-gray-500 mt-0.5' },
-                        'Ask Shuffleupagus for new album and artist suggestions each time you open the Recommendations page. When off, they stay until you press Refresh'
+                        'Ask Shuffleupagus for new album and artist suggestions each time you open Home or the Recommendations page. When off, they stay until you press Refresh'
                       )
                     ),
                     React.createElement('button', {

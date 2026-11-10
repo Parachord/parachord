@@ -4,7 +4,8 @@
 // ListenBrainz builds its recommendation playlist from a few weeks of listens,
 // so a new account has none. The page used to fill that gap with the user's
 // own most-played tracks (parachord#1021); now it says so instead. Provider
-// sections beyond Last.fm/ListenBrainz (Amazon Music, Shuffleupagus) simply
+// sections beyond Last.fm/ListenBrainz (Shuffleupagus, and any other provider)
+// simply
 // do not appear when they have nothing — this message only names the
 // scrobblers because they are the ones whose absence is a waiting game.
 

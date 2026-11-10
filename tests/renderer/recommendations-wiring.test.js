@@ -22,9 +22,9 @@ const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), '
 
 describe('recommendations wiring', () => {
   test('an aiRecommendations change re-merges the display model', () => {
-    const i = app.indexOf('aiRecommendationsRef.current = aiRecommendations;');
+    const i = app.indexOf('aiRecommendationsRef.current = homeData.aiRecommendations;');
     expect(i).toBeGreaterThan(-1);
-    const effect = app.slice(i, app.indexOf('}, [aiRecommendations]);', i));
+    const effect = app.slice(i, app.indexOf('}, [homeData.aiRecommendations]);', i));
     expect(effect).toMatch(/refreshMergedRecommendations\(\);/);
   });
 
@@ -64,5 +64,26 @@ describe('recommendations wiring', () => {
     const i = app.indexOf('const loadRecommendations = async');
     const fn = app.slice(i, app.indexOf('\n  };', i));
     expect(fn).toMatch(/if \(forceRefresh\) \{\s*expandedSectionsRef\.current = \{\};/);
+  });
+
+  test("Home's For You preview asks only the meta-services (a resolver's page loads never queue ahead of Home resolution)", () => {
+    // The Home discovery effect's call is filtered…
+    const homeCall = app.indexOf('loadRecommendations({ metaServicesOnly: true });');
+    expect(homeCall).toBeGreaterThan(-1);
+    const homeEffect = app.slice(app.lastIndexOf('useEffect', homeCall), homeCall);
+    expect(homeEffect).toContain('hasScrobbler');
+    // …and loadRecommendations implements the filter (meta-service ids only).
+    const i = app.indexOf('const loadRecommendations = async');
+    const fn = app.slice(i, app.indexOf('\n  };', i));
+    expect(fn).toContain('const metaOnly = opts !== true && !!opts?.metaServicesOnly;');
+    expect(fn).toMatch(/providers = metaOnly[\s\S]*?recommendationProviders\(\)\.filter\(p => metaServiceIds\.has\(p\.id\)\)/);
+  });
+
+  test('a recommendation album cover that fails to load is reported, not only hidden (the album-art rule)', () => {
+    const i = app.indexOf('recommendationBrokenArtRef.current');
+    expect(i).toBeGreaterThan(-1);
+    const albumCardStart = app.indexOf('const albumCard = (item, index) => {');
+    const albumCard = app.slice(albumCardStart, app.indexOf('const playlistCard', albumCardStart));
+    expect(albumCard).toMatch(/report\(art, \{ artist: item\.artist, album: item\.name \}\)/);
   });
 });

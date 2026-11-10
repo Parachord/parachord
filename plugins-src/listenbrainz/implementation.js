@@ -11,9 +11,10 @@ module.exports = {
   // its generic Songs bucket. The fetch used to live in app.js
   // (loadListenbrainzRecommendations); it moved here so the page is
   // provider-driven through the plugin capability.
-  // Miss policy: no username, no recommendation playlist yet or a failed
-  // request answers { sections: [] } (a miss, not an error) — the page shows
-  // the other providers' sections either way.
+  // Miss policy: no username or no recommendation playlist yet answers
+  // { sections: [] } (a miss, not an error — parachord#1021); a failed
+  // request throws, so the page keeps the other providers' sections and
+  // re-asks next visit instead of caching the blip as an empty answer.
   getRecommendations: async function (config) {
     const username = config && config.username;
     if (!username) return { sections: [] };
@@ -74,10 +75,17 @@ module.exports = {
       const mbid = (track.identifier && track.identifier[0] || '').split('/').pop() || null;
       items.push({
         type: 'song',
-        id: mbid || `lb-rec-${title}`,
+        // A recording MBID is the stable id; without one there is no id at
+        // all — the model falls back to trackSlug(artist, title), so two
+        // songs sharing a title by different artists never share an id.
+        id: mbid || undefined,
         name: title,
         artist: (track && track.creator) || 'Unknown Artist',
-        duration: track && track.duration ? Math.floor(track.duration / 1000) : null
+        duration: track && track.duration ? Math.floor(track.duration / 1000) : null,
+        // The recording MBID rides on the item and the model's track, so
+        // MBID enrichment and pickTrackMatch's exact-MBID tier work without
+        // asking the mapper for the same recording again.
+        mbid
       });
     }
     return { sections: [{ items }] };
