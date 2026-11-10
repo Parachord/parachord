@@ -96,7 +96,23 @@ function sourcesChangedOnRecheck(cachedSources, freshSources) {
   return ids(cachedSources) !== ids(freshSources);
 }
 
+// The track a failed play leaves in the playbar for Play to load again
+// (#1295), without the markers of the attempt that failed: the engine it was
+// on, the element's owner tag, the fallback flags that strip a source for the
+// rest of one attempt, and the placeholder's status. The retry then picks its
+// source afresh. A single-source pick has none of these and stays as it was,
+// so a manual pick plays the same source again.
+function trackToHoldAfterFailure(track) {
+  if (!track || typeof track !== 'object') return null;
+  const {
+    _activeResolver, _streamOwner, _spotifyFallback, _appleMusicFallback, status,
+    ...held
+  } = track;
+  return held;
+}
+
 module.exports = {
+  trackToHoldAfterFailure,
   unsupportedAudioMessage,
   dropSubsonicSecrets,
   playbackDurationSeconds,

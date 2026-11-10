@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds } = require('../lib/playback-helpers');
+const { trackToHoldAfterFailure, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -294,6 +294,31 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   React.useEffect(() => { startSpinoffRef.current = startSpinoff; });
 
   // ---------------------------------------------------------------
+  // Load on Play (#1295). A play that fails and stops on its track (no
+  // auto-skip) leaves that track in the playbar, paused, and marked so Play
+  // starts it through handlePlay, the way a restored queue's first track waits
+  // (app.js sets the same mark on restore). Before this, the playbar kept the
+  // previous track (its engine already stopped by handlePlay's teardown) or
+  // the failed one with no engine, and Play fell through to a stale engine or
+  // to the no-resolver branch and did nothing. Mobile does the same
+  // (parachord-mobile#569).
+  // ---------------------------------------------------------------
+  const holdTrackForPlay = (track) => {
+    const held = trackToHoldAfterFailure(track);
+    if (!held) return;
+    setCurrentTrack(held);
+    setIsPlaying(false);
+    setProgress(0);
+    trackNeedsExplicitStart.current = true;
+  };
+  // Anything that starts playing clears the mark. Every handlePlay success
+  // clears it too; this catches a path that doesn't, which would otherwise
+  // make a later pause and resume restart the track.
+  React.useEffect(() => {
+    if (isPlaying) trackNeedsExplicitStart.current = false;
+  }, [isPlaying]);
+
+  // ---------------------------------------------------------------
   // Stream-quality facts (the root stream-quality.js contract): measured
   // facts from the shared players merge into the PLAYING track's own source
   // record — keyed by the resolver ACTUALLY playing, never a preferred one
@@ -364,6 +389,15 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       }
       setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
       return true;
+    };
+
+    // An error that stops on the track (the dialog below) leaves it for Play
+    // to load again (#1295): the element is dead, so resuming it would report
+    // playing over silence. The failing track is the one the element was
+    // loaded with; the playbar's own copy when it is that track.
+    const holdElementTrack = (failed) => {
+      const shown = currentTrackRef.current;
+      holdTrackForPlay(shown && failed && shown.id === failed.id ? shown : (failed || shown));
     };
 
     console.log('🎵 Creating shared HTML5 audio element');
@@ -544,6 +578,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           errorMessage = 'Error decoding the audio file. The file may be corrupted or use an unsupported format.';
         }
         if (skipIfAdvancing(`local file playback: ${errorMessage}`)) return;
+        holdElementTrack(localFilePlaybackTrackRef.current);
         showConfirmDialog({
           type: 'error',
           title: 'Playback Error',
@@ -564,6 +599,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
         if (skipIfAdvancing(`${label} playback: ${errorMessage}`)) return;
         setTrackLoading(false);
+        holdElementTrack(html5AudioTrackRef.current);
         showConfirmDialog({
           type: 'error',
           title: `${label} Playback Error`,
@@ -595,6 +631,15 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     playbackGenerationRef.current++;
     const thisGeneration = playbackGenerationRef.current;
 
+    // A failure that stops on this track leaves it in the playbar for Play to
+    // load again (holdTrackForPlay, #1295). trackOrSource is read when this
+    // runs, so it is the track as resolved so far. A superseded play holds
+    // nothing: the newer play owns the playbar.
+    const holdFailedTrack = () => {
+      if (playbackGenerationRef.current !== thisGeneration) return;
+      holdTrackForPlay(trackOrSource);
+    };
+
     // In auto-advance contexts (handleNext-driven progression OR spinoff/radio
     // mode) any playback failure should silently skip to the next track
     // instead of disrupting the user with a dialog. spinoffModeRef captures
@@ -602,9 +647,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // captures handleNext flight for queue/album/playlist auto-advance. Call
     // sites use this helper at every failure path: returns true when the
     // failure was handled silently (caller should `return` immediately),
-    // false when the caller should fall through to its dialog.
+    // false when the caller should fall through to its dialog. A failure
+    // that doesn't skip stops on this track, so it is held for Play first.
     const autoSkipIfAdvancing = (reason) => {
-      if (!(isAdvancingTrackRef.current || spinoffModeRef.current)) return false;
+      if (!(isAdvancingTrackRef.current || spinoffModeRef.current)) {
+        holdFailedTrack();
+        return false;
+      }
       console.log(`⏭️ Auto-skip "${trackOrSource?.title || 'track'}" — ${reason}`);
       setTrackLoading(false);
       if (trackOrSource?.id) {
@@ -1631,7 +1680,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
               return;
             }
           } else {
+            // Sign-in closed without signing in: Play asks again.
             setTrackLoading(false);
+            holdFailedTrack();
             return;
           }
         } else {
@@ -2113,6 +2164,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             setCurrentTrack(trackToSet);
             setIsPlaying(true);
             setProgress(0);
+            trackNeedsExplicitStart.current = false;
             // Reset baseline for smooth progress interpolation
             spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
 
@@ -2239,6 +2291,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             title: 'Track Re-resolved',
             message: `Playback via ${resolver.name} failed, so the track has been re-resolved with fresh sources. Try playing it again.\n\nIf it keeps failing, the developer console (View > Toggle Developer Tools) shows what ${resolver.name} reported.`
           });
+        } else {
+          // The last source of a fallback chain failed too: stop on the track.
+          holdFailedTrack();
         }
       }
     } catch (error) {
@@ -2266,6 +2321,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           title: 'Track Re-resolved',
           message: `Playback via ${resolver.name} hit an error (${error?.message || error}), so the track has been re-resolved with fresh sources. Try playing it again.`
         });
+      } else {
+        holdFailedTrack();
       }
     }
   };
@@ -2735,10 +2792,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       }
     }
 
-    // Check if this is a restored track that needs explicit start (not just resume)
-    // This handles tracks restored from saved queue on app reopen
-    if (!isPlaying && trackNeedsExplicitStart.current) {
-      console.log('🔄 Starting restored track via handlePlay:', currentTrack.title);
+    // A track with no engine behind it starts through handlePlay instead of
+    // resuming: the first track of a restored queue, or one a failed play left
+    // in the playbar (holdTrackForPlay, #1295). Not while another track is
+    // loading: that play owns the playbar, and this would cancel it.
+    if (!isPlaying && trackNeedsExplicitStart.current && !trackLoading) {
+      console.log('🔄 Loading the playbar track via handlePlay:', currentTrack.title);
       trackNeedsExplicitStart.current = false;
       handlePlay(currentTrack);
       return;
