@@ -143,6 +143,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     playbackContext,
     setPlaybackContext,
     playHistoryRef,
+    playRequestedRef,
     shuffleModeRef,
     originalQueueRef,
     repeatModeRef,
@@ -663,6 +664,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // QueueManager after parachord-mobile#630): Previous reaches it, repeat all
   // doesn't wrap it. Playing the same track again adds nothing.
   const handlePlay = async (trackOrSource, { historyHandled = false, fromQueue = false } = {}) => {
+    // Any play this run keeps the launch-time queue restore from replacing it (#1287).
+    if (playRequestedRef) playRequestedRef.current = true;
     if (!historyHandled) {
       const outgoing = currentTrackRef.current;
       playHistoryRef.current = fromQueue

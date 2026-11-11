@@ -652,7 +652,7 @@ const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
-const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode } = require('./lib/playback-helpers');
+const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -4775,6 +4775,19 @@ const Parachord = () => {
     const promise = new Promise(r => { resolve = r; });
     bigCachesHydrated.current = { promise, resolve };
   }
+  // Ready to play (#1287): resolved once the saved settings and the resolver
+  // plugins have loaded (the effect after the active-resolvers ref sync).
+  // waitForPlayReady is what a launch-time play awaits before it searches,
+  // capped so nothing can hang on it.
+  const playReadyRef = useRef(null);
+  if (!playReadyRef.current) {
+    let resolve;
+    const promise = new Promise(r => { resolve = r; });
+    playReadyRef.current = { promise, resolve, ready: false };
+  }
+  const waitForPlayReady = () => (playReadyRef.current.ready
+    ? Promise.resolve()
+    : Promise.race([playReadyRef.current.promise, new Promise(r => setTimeout(r, 15000))]));
   const waitForBigCaches = () => Promise.race([
     bigCachesHydrated.current.promise,
     new Promise(r => setTimeout(r, 10000)),
@@ -6134,7 +6147,7 @@ const Parachord = () => {
     shuffleMode, setShuffleMode,
     shuffleModeRef, originalQueueRef,
     currentQueueRef, currentTrackRef,
-    playHistoryRef,
+    playHistoryRef, playRequestedRef,
     repeatMode, setRepeatMode, repeatModeRef, startNewLap,
     queueAnimating, setQueueAnimating,
     removeFromQueue, moveInQueue, clearQueue,
@@ -10491,6 +10504,8 @@ const Parachord = () => {
       try {
         const context = {
           search: async (query, options = {}) => {
+            // At launch, wait for the resolvers (#1287): before them a search finds nothing.
+            await waitForPlayReady();
             const results = await searchResolvers(query, options);
             return results || [];
           },
@@ -11400,6 +11415,7 @@ const Parachord = () => {
         const params = Object.fromEntries(parsed.searchParams);
         console.log('🔗 Parsed protocol URL:', { command, segments, params });
 
+
         // Surface a quick acknowledgment toast for commands that involve
         // network fetches or multi-step resolution (otherwise the app can
         // appear unresponsive for several seconds while the protocol input
@@ -11458,6 +11474,13 @@ const Parachord = () => {
             setTrackLoading(true);
           }
         }
+
+        // Wait until the resolvers can search (#1287): a cold-start link used
+        // to search before any plugin had loaded and say "Could not find".
+        // After the acknowledgement toast, so it shows "Looking up…" at once;
+        // instant once the app is up. Ready comes after the queue restore, so
+        // the link's play replaces the restored queue like any link would.
+        await waitForPlayReady();
 
         // Execute the command
         switch (command) {
@@ -14691,6 +14714,19 @@ ${trackListXml}
     activeResolversRef.current = activeResolvers;
     resolverOrderRef.current = resolverOrder;
   }, [activeResolvers, resolverOrder]);
+
+  // Ready to play (#1287): the saved settings have loaded (the active resolvers)
+  // and the resolver plugins are in. A play that arrives at launch (a cold-start
+  // parachord:// link, the protocol endpoint, an MCP client) searches with
+  // searchResolvers, which reads loadedResolversRef and activeResolversRef;
+  // before this it found nothing and said "Could not find". Resolved in an
+  // effect declared after the ref syncs above, so those refs are current here.
+  // (playReadyRef and waitForPlayReady are declared beside waitForBigCaches.)
+  useEffect(() => {
+    if (playReadyRef.current.ready || !cacheLoaded || loadedResolvers.length === 0) return;
+    playReadyRef.current.ready = true;
+    playReadyRef.current.resolve();
+  }, [cacheLoaded, loadedResolvers]);
 
 
   // Keep selectedPlaylistRef in sync for callbacks
@@ -19010,8 +19046,24 @@ ${trackListXml}
       setScrobblerLovePushEnabled(lovePushEnabled);
       lovePushedKeysRef.current = lovePushedKeys;
 
-      // Restore saved queue if remember queue is enabled
-      if (savedRememberQueue) {
+      // Restore saved queue if remember queue is enabled, and only when nothing
+      // has started playing in this run (#1287, mobile's QueueRestorePolicy): a
+      // play that started before this store read returned used to be replaced
+      // by last session's track, paused. A protocol link's loading placeholder
+      // isn't a track (the link plays after the restore, see waitForPlayReady).
+      // Desktop skips only for a play that STARTED (playRequestedRef is set by
+      // handlePlay), not for one merely asked for: the queue saver writes the
+      // current queue once the cache has loaded, so skipping for a request that
+      // then fails (a link it can't match) would erase the saved queue.
+      const liveTrack = currentTrackRef.current;
+      const restoreQueueNow = savedRememberQueue && shouldRestoreQueue({
+        hasCurrentTrack: !!liveTrack && !liveTrack._protocolLoading,
+        playRequested: playRequestedRef.current
+      });
+      if (savedRememberQueue && !restoreQueueNow) {
+        console.log('📦 Saved queue not restored: something started playing first in this run');
+      }
+      if (restoreQueueNow) {
         if (savedQueue && Array.isArray(savedQueue) && savedQueue.length > 0) {
           // Move first track to playbar (paused), rest stays in queue
           const [firstTrack, ...remainingQueue] = savedQueue;

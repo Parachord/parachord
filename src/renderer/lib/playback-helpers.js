@@ -329,7 +329,18 @@ function historyForReplacedTrack(history, outgoing, next, max = PLAY_HISTORY_MAX
   return pushPlayHistory(history, markOffLap(outgoing), max);
 }
 
+// The saved queue is restored at launch only when nothing is playing and no
+// play has started in this run (#1287, mobile's QueueRestorePolicy.shouldApply
+// from parachord-mobile#557). The restore runs after the store read; a play
+// that started before that used to be replaced by last session's track,
+// paused. Desktop passes playRequested only for a play that started (see the
+// restore in app.js for why not a mere request).
+function shouldRestoreQueue({ hasCurrentTrack, playRequested }) {
+  return !hasCurrentTrack && !playRequested;
+}
+
 module.exports = {
+  shouldRestoreQueue,
   PLAY_HISTORY_MAX,
   isSameTrack,
   trimPlayHistory,
