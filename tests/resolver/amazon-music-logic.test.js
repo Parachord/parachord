@@ -48,6 +48,8 @@ const {
   recommendationItemFromGqlNode,
   amazonMusicHomeRequest,
   recommendationsFromMusicHome,
+  musicHomeBodyWithVars,
+  mergeMusicHomeSectionPages,
   seeMoreSectionIdFor,
   amazonSeeMoreRequest,
   recommendationStrategyId,
@@ -2090,8 +2092,8 @@ describe('recommendations', () => {
       // A genre edge whose node WOULD map (an Album) if the parser ever
       // pointed at data.genres — pins that genres never reach the sections.
       genres: [{ id: '1|G|GROUPING_GENRE', __typename: 'Recommendation', recommendedContent: { edges: [{ node: albumNode('B00CXS55LG', 'Sunbather', ['Deafheaven']) }] } }],
-      browse: { id: 'uri:///browse/home', __typename: 'RecommendationCollection', recommendationConnection: { edges: sections.map(s => ({ node: s, __typename: 'RecommendationEdge' })), __typename: 'RecommendationConnection' } },
-      ...extra
+      browse: { id: 'uri:///browse/home', __typename: 'RecommendationCollection', recommendationConnection: { edges: sections.map(s => ({ node: s, __typename: 'RecommendationEdge' })), pageInfo: (extra.pageInfo !== undefined ? extra.pageInfo : { hasNextPage: false, endCursor: null, token: null }), __typename: 'RecommendationConnection' } },
+      ...({ pageInfo: undefined, ...extra })
     });
 
     test('maps the home page sections to titled provider sections', () => {
@@ -2147,6 +2149,37 @@ describe('recommendations', () => {
     test('an absent data.browse is a structural miss (envelope false), not an empty page', () => {
       expect(recommendationsFromMusicHome({ user: { tier: 'UNLIMITED' }, t1r: {} }).envelope).toBe(false);
       expect(recommendationsFromMusicHome(null).envelope).toBe(false);
+    });
+
+    test('the home connection cursor rides on the parse (hasNextPage + token; the endCursor decoy ignored)', () => {
+      const data = response([sectionNode('uri:///recommendations/music-home/music-home_mp3PrimeAlbumsStrategy', 'Albums for You', [albumNode('B0G2TSTWXD', 'Tempelschlaf', ['The Ruins Of Beverast'])], 'ALBUM')], { pageInfo: { hasNextPage: true, endCursor: null, token: '20' } });
+      expect(recommendationsFromMusicHome(data).nextCursor).toBe('20');
+      // hasNextPage false, or no token: the walk ends.
+      expect(recommendationsFromMusicHome(response([], { pageInfo: { hasNextPage: false, endCursor: null, token: '20' } })).nextCursor).toBeNull();
+      expect(recommendationsFromMusicHome(response([], { pageInfo: { hasNextPage: true, endCursor: 'decoy', token: null } })).nextCursor).toBeNull();
+    });
+  });
+
+  describe('musicHomeBodyWithVars / mergeMusicHomeSectionPages', () => {
+    test('the body clone patches firstLimit and afterCursor; page 1 drops the afterCursor variable', () => {
+      const body = { operationName: 'MusicHomePage', variables: { firstLimit: 5, type: 'music-home', paginating: false }, extensions: { persistedQuery: { sha256Hash: 'h' } } };
+      const first = musicHomeBodyWithVars(body, { firstLimit: 20, afterCursor: null });
+      expect(first.variables.firstLimit).toBe(20);
+      expect(first.variables.afterCursor).toBeUndefined();
+      expect(first.variables.type).toBe('music-home');
+      expect(first.extensions.persistedQuery.sha256Hash).toBe('h');
+      const second = musicHomeBodyWithVars(body, { firstLimit: 20, afterCursor: '20' });
+      expect(second.variables.afterCursor).toBe('20');
+      // The original body is untouched.
+      expect(body.variables.firstLimit).toBe(5);
+      expect(body.variables.afterCursor).toBeUndefined();
+    });
+
+    test('the page merge dedupes by section id in first-appearance order (offset pages re-serve re-ranked sections)', () => {
+      const page = (ids) => ({ sections: ids.map(id => ({ id, title: id })) });
+      const merged = mergeMusicHomeSectionPages([page(['a', 'b']), page(['a', 'c']), page([])]);
+      expect(merged.map(s => s.id)).toEqual(['a', 'b', 'c']);
+      expect(mergeMusicHomeSectionPages(null)).toEqual([]);
     });
   });
 

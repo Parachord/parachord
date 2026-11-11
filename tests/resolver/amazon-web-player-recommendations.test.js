@@ -50,13 +50,15 @@ const albumNode = (id, title, artist) => ({
   contributingArtists: { edges: [{ role: 'PRIMARY', node: { name: artist } }] }
 });
 
-const musicHomeData = (sections) => ({
+// `pageInfo` carries the home connection's OFFSET cursor: hasNextPage + token
+// advance the walk (afterCursor), hasNextPage false ends it.
+const musicHomeData = (sections, pageInfo = { hasNextPage: false, endCursor: null, token: null }) => ({
   data: {
     user: { id: 'u', tier: 'UNLIMITED' },
     // The music home's top row is the user's station-mix — a Station
     // parentContainer with a playMusic track row — never mapped.
     t1r: { recommendationConnection: { edges: [{ node: { id: 'uri:///recommendations/music-home/playMusic', parentContainer: { node: { __typename: 'Station', id: 'A1ESXGJW9GSMCX', name: 'My Soundtrack' } }, recommendedContent: { edges: [] } } }] } },
-    browse: { recommendationConnection: { edges: sections.map(s => ({ node: s })) } },
+    browse: { recommendationConnection: { edges: sections.map(s => ({ node: s })), pageInfo } },
     genres: []
   }
 });
@@ -129,30 +131,49 @@ describe('amazonWebPlayer.getRecommendations', () => {
     expect(ensureWindow).not.toHaveBeenCalled();
   });
 
-  test('a fresh template answers with NO page flow: the body replayed verbatim, hash intact', async () => {
+  test('a fresh template answers with NO page flow: firstLimit bumped, walked to exhaustion, hash intact', async () => {
     amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
       url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
     });
-    replayGql.mockResolvedValue({ parsed: musicHomeData([{ id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } }]) });
+    // Page 1 carries a cursor (hasNextPage) — the walk continues to page 2,
+    // which re-serves page 1's section (the server re-ranks per request) and
+    // carries one more before running out.
+    replayGql
+      .mockResolvedValueOnce({ parsed: musicHomeData([{ id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } }], { hasNextPage: true, endCursor: null, token: '20' }) })
+      .mockResolvedValueOnce({ parsed: musicHomeData([
+        { id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } },
+        { id: 'uri:///recommendations/music-home/music-home_mp3YmlRecentPlaybackStrategy', name: 'Based on Your Recents', recommendedContent: { edges: [{ node: albumNode('B0DTRR4VWM', 'Lonely People With Power', 'Deafheaven') }] } }
+      ]) });
     expandParsed.mockResolvedValue({ section: { title: 'Playlists for You', items: [{ type: 'playlist', id: 'PP6417A00A9C99470BBC8834FF3BF6009A', name: 'My Discovery Mix' }] }, nextCursor: 'browse-home_playlistStrategy.20' });
     const sections = await amazonWebPlayer.getRecommendations();
-    expect(sections).toHaveLength(2);
+    expect(sections).toHaveLength(3);
     expect(sections[0]).toMatchObject({ id: SECTION_ID, title: 'Albums for You' });
-    // The home page carried no playlists: the playlists strategy was pulled as
+    // The re-served section deduped: one Albums for You, then the fresh one.
+    expect(sections[1]).toMatchObject({ title: 'Based on Your Recents' });
+    // The music home carried no playlists: the playlists strategy was pulled as
     // a titled section, with its first page's cursor riding on it.
-    expect(sections[1]).toMatchObject({ id: 'uri:///recommendations/browse-home/browse-home_playlistStrategy', title: 'Playlists for You', nextCursor: 'browse-home_playlistStrategy.20' });
-    expect(sections[1].items[0]).toMatchObject({ type: 'playlist', name: 'My Discovery Mix' });
-    expect(replayGql).toHaveBeenCalledTimes(1);
-    const [win, entry, body] = replayGql.mock.calls[0];
+    expect(sections[2]).toMatchObject({ id: 'uri:///recommendations/browse-home/browse-home_playlistStrategy', title: 'Playlists for You', nextCursor: 'browse-home_playlistStrategy.20' });
+    expect(sections[2].items[0]).toMatchObject({ type: 'playlist', name: 'My Discovery Mix' });
+    expect(replayGql).toHaveBeenCalledTimes(2);
+    const [win, entry, firstBody] = replayGql.mock.calls[0];
     expect(win).toBe(amazonWebPlayer.searchView);
     expect(entry.url).toBe('https://gql.music.amazon.com/');
-    // Verbatim: the template's variables, byte-identical (no patching on this flow).
-    expect(body).toEqual(MUSIC_HOME_BODY);
+    // Page 1: the page's own request with ONLY firstLimit patched (the walk
+    // bumps the page's 5 to 20) — the hash, type and feature flags intact,
+    // and no afterCursor variable.
+    expect(firstBody.variables.firstLimit).toBe(20);
+    expect(firstBody.variables.type).toBe('music-home');
+    expect(firstBody.variables).not.toHaveProperty('afterCursor');
+    expect(firstBody.extensions.persistedQuery.sha256Hash).toBe('browsehash');
+    // Page 2: the cursor page.
+    const [, , secondBody] = replayGql.mock.calls[1];
+    expect(secondBody.variables.afterCursor).toBe('20');
+    expect(secondBody.variables.firstLimit).toBe(20);
     expect(ensureWindow).not.toHaveBeenCalled();
     expect(attachGqlCapture).not.toHaveBeenCalled();
     // The synthesized result is cached: a second call re-fetches nothing.
     await amazonWebPlayer.getRecommendations();
-    expect(replayGql).toHaveBeenCalledTimes(1);
+    expect(replayGql).toHaveBeenCalledTimes(2);
     expect(expandParsed).toHaveBeenCalledTimes(1);
   });
 
@@ -203,7 +224,43 @@ describe('amazonWebPlayer.getRecommendations', () => {
     // The page's own request is replayed verbatim.
     const [, entry, body] = replayGql.mock.calls[1];
     expect(entry.headers['csrf-ts']).toBe('2000');
-    expect(body).toEqual(MUSIC_HOME_BODY);
+    // The page's own request with ONLY firstLimit patched — the walk bumps
+    // the captured 5 to 20; everything else stays the capture.
+    expect(body).toEqual({ ...MUSIC_HOME_BODY, variables: { ...MUSIC_HOME_BODY.variables, firstLimit: 20 } });
+  });
+
+  test('the walk stops when a page repeats the cursor it was sent (no advance), never looping', async () => {
+    amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
+      url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
+    });
+    // Page 1 advances (token 20); page 2 (afterCursor 20) answers the SAME
+    // token 20 — the walk must stop there instead of re-fetching the identical
+    // window forever.
+    replayGql
+      .mockResolvedValueOnce({ parsed: musicHomeData([{ id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } }], { hasNextPage: true, endCursor: null, token: '20' }) })
+      .mockResolvedValue({ parsed: musicHomeData([{ id: 'uri:///recommendations/music-home/music-home_mp3YmlRecentPlaybackStrategy', name: 'Based on Your Recents', recommendedContent: { edges: [{ node: albumNode('B0DTRR4VWM', 'Lonely People With Power', 'Deafheaven') }] } }], { hasNextPage: true, endCursor: null, token: '20' }) });
+    expandParsed.mockResolvedValue({ section: null, nextCursor: null });
+    const sections = await amazonWebPlayer.getRecommendations();
+    expect(sections.map(s => s.title)).toEqual(['Albums for You', 'Based on Your Recents']);
+    expect(replayGql).toHaveBeenCalledTimes(2);
+  });
+
+  test('the walk stops at the page cap even if every page keeps advancing', async () => {
+    amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
+      url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
+    });
+    // Every page advances the cursor by firstLimit (the offset arithmetic) —
+    // a pathological rotation that never runs out. The cap bounds the walk.
+    const section = (n) => ({ id: `uri:///recommendations/music-home/strategy-${n}`, name: `Section ${n}`, recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } });
+    let n = 0;
+    replayGql.mockImplementation(async () => {
+      n += 20;
+      return { parsed: musicHomeData([section(n)], { hasNextPage: true, endCursor: null, token: String(n) }) };
+    });
+    expandParsed.mockResolvedValue({ section: null, nextCursor: null });
+    const sections = await amazonWebPlayer.getRecommendations();
+    expect(replayGql).toHaveBeenCalledTimes(4);
+    expect(sections.map(s => s.id)).toEqual(['uri:///recommendations/music-home/strategy-20', 'uri:///recommendations/music-home/strategy-40', 'uri:///recommendations/music-home/strategy-60', 'uri:///recommendations/music-home/strategy-80']);
   });
 
   test('a page that never fires MusicHomePage is not-ready, and nothing is cached', async () => {

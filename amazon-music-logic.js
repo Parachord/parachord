@@ -1061,15 +1061,19 @@ function amazonMusicHomeRequest(bodies) {
 }
 
 // The MusicHomePage response -> the recommendations provider shape:
-// { sections: [{ id: strategy uri, title, description, items }], envelope }.
-// EVERY section propagates — a station-only one has no mappable items (a
-// Station node never maps), so it disappears on its own; mixed sections keep
-// their mappable items. An absent data.browse (hornet renamed the field) is
-// envelope false — structural, the caller must throw not-ready rather than
-// cache a miss. data.t1r is skipped on purpose (see the block comment).
+// { sections: [{ id: strategy uri, title, description, items }], nextCursor,
+// envelope }. nextCursor is the home connection's OFFSET cursor
+// (pageInfo.token: firstLimit-multiples — 5, 10, 20, 40 …, live-verified
+// 2026-11; hasNextPage gates it, the Relay-style endCursor is a null decoy) —
+// the page walk passes it back as the afterCursor variable. EVERY section
+// propagates — a station-only one has no mappable items (a Station node never
+// maps), so it disappears on its own; mixed sections keep their mappable items.
+// An absent data.browse (hornet renamed the field) is envelope false —
+// structural, the caller must throw not-ready rather than cache a miss.
+// data.t1r is skipped on purpose (see the block comment).
 function recommendationsFromMusicHome(data) {
   if (!data || typeof data !== 'object' || !('browse' in data)) {
-    return { sections: [], envelope: false };
+    return { sections: [], nextCursor: null, envelope: false };
   }
   const conn = data.browse && data.browse.recommendationConnection;
   const edges = (conn && Array.isArray(conn.edges)) ? conn.edges : [];
@@ -1086,7 +1090,43 @@ function recommendationsFromMusicHome(data) {
     if (typeof node.description === 'string' && node.description.trim()) section.description = node.description.trim().slice(0, 300);
     sections.push(section);
   }
-  return { sections, envelope: true };
+  const pageInfo = (conn && conn.pageInfo) || {};
+  const nextCursor = pageInfo && pageInfo.hasNextPage && typeof pageInfo.token === 'string' && pageInfo.token
+    ? pageInfo.token
+    : null;
+  return { sections, nextCursor, envelope: true };
+}
+
+// A deep clone of a MusicHomePage request body with the home-connection
+// pagination variables patched: firstLimit (the page's own is 5 — the walk
+// asks for 20, live-verified 2026-11: honored; 25/30/50/100 answer HTTP 294)
+// and afterCursor (the previous page's pageInfo.token; dropped for page 1).
+// Everything else — type: 'music-home', the feature flags, extensions with
+// the APQ hash — stays byte-identical to the capture.
+function musicHomeBodyWithVars(body, { firstLimit, afterCursor } = {}) {
+  const out = JSON.parse(JSON.stringify(body || {}));
+  if (!out.variables || typeof out.variables !== 'object') out.variables = {};
+  if (Number.isFinite(firstLimit)) out.variables.firstLimit = firstLimit;
+  if (afterCursor != null) out.variables.afterCursor = afterCursor;
+  else delete out.variables.afterCursor;
+  return out;
+}
+
+// Merge a home-connection page walk into one section list: first-appearance
+// order, deduped by section id — the server re-ranks sections per request, so
+// an offset page can re-serve a section an earlier page already carried
+// (live-observed 2026-11: page 2 of a firstLimit-20 walk re-served 3 of 5).
+function mergeMusicHomeSectionPages(pages) {
+  const seen = new Set();
+  const sections = [];
+  for (const page of (Array.isArray(pages) ? pages : [])) {
+    for (const section of ((page && page.sections) || [])) {
+      if (!section || !section.id || seen.has(section.id)) continue;
+      seen.add(section.id);
+      sections.push(section);
+    }
+  }
+  return sections;
 }
 
 // Find the page's own RecommenderSeeMorePage among captured bodies (the
@@ -1863,6 +1903,8 @@ module.exports = {
   recommendationItemFromGqlNode,
   amazonMusicHomeRequest,
   recommendationsFromMusicHome,
+  musicHomeBodyWithVars,
+  mergeMusicHomeSectionPages,
   seeMoreSectionIdFor,
   amazonSeeMoreRequest,
   recommendationStrategyId,

@@ -81,6 +81,8 @@ const {
   searchArtistImageFromGql,
   albumDetailFromGql,
   recommendationsFromMusicHome,
+  musicHomeBodyWithVars,
+  mergeMusicHomeSectionPages,
   recommendationsFromSeeMore,
   amazonMusicHomeRequest,
   seeMoreSectionIdFor,
@@ -189,6 +191,14 @@ const RECOMMENDATIONS_CACHE_TTL_MS = 30 * 60 * 1000;
 // Upper bound on cached see-more expansion pages (one entry per section+cursor
 // a user expanded; the map is cleared on signOut).
 const SEE_MORE_CACHE_MAX = 40;
+
+// The home-connection walk: the section pages are fetched with firstLimit
+// MUSIC_HOME_FIRST_LIMIT (live-verified 2026-11: the server honors it — the
+// page's own is 5, and 25/30/50/100 answer HTTP 294), and the walk stops at
+// MUSIC_HOME_MAX_PAGES no matter what the cursor says (a pathological
+// rotation could keep serving fresh offsets of re-ranked sections forever).
+const MUSIC_HOME_FIRST_LIMIT = 20;
+const MUSIC_HOME_MAX_PAGES = 4;
 
 // The home page's playlists strategy — the "Playlists for You" section
 // (the user's mixes: "My Discovery Mix", "My Recent Plays and More", plus
@@ -1479,28 +1489,15 @@ const amazonWebPlayer = {
     if (cached && (Date.now() - cached.fetchedAt) < RECOMMENDATIONS_CACHE_TTL_MS) {
       return cached.sections;
     }
-    const fast = await this.tryRecommendationReplay({
-      template: this.musicHomeTemplate,
-      drop: () => { this.musicHomeTemplate = null; },
-      bodyFor: (body) => body, // the page's own variables, verbatim
-      parse: recommendationsFromMusicHome,
-      noun: 'home recommendations'
-    });
+    const fast = await this.tryMusicHomeWalk();
     let sections = null;
     if (fast) {
-      console.log(`[Amazon] home recommendations replay returning ${fast.sections.length} sections`);
       sections = fast.sections;
     } else {
       sections = await this.enqueueSearch(async () => {
         // The page flow that ran while we queued may have refreshed the
         // template — one refresh heals every expansion queued behind it.
-        const warmed = await this.tryRecommendationReplay({
-          template: this.musicHomeTemplate,
-          drop: () => { this.musicHomeTemplate = null; },
-          bodyFor: (body) => body,
-          parse: recommendationsFromMusicHome,
-          noun: 'home recommendations'
-        });
+        const warmed = await this.tryMusicHomeWalk();
         if (warmed) return warmed.sections;
         return this.musicHomePageFlow();
       });
@@ -1539,6 +1536,85 @@ const amazonWebPlayer = {
       console.warn('[Amazon] playlists section unavailable:', error && (error.reason ? `${error.reason} ${error.message}` : (error.message || error)));
     }
     return sections;
+  },
+
+  // The full section walk over the home connection. The page's own request
+  // carries firstLimit 5 — the walk asks for MUSIC_HOME_FIRST_LIMIT per page
+  // and follows the connection's OFFSET cursor (pageInfo.token, passed back
+  // as the afterCursor variable) until it runs out (hasNextPage false / no
+  // token), a page repeats the cursor it was sent (no advance — the same rule
+  // the see-more pagination enforces), or the page cap is hit. Sections dedupe
+  // by id across pages: the server re-ranks per request, so an offset page can
+  // re-serve a section an earlier page already carried. Throws plain Errors
+  // for a replay failure and for a non-envelope response — the callers decide
+  // which of those is a drop-the-template miss and which is structural.
+  async walkMusicHomePages(win, template) {
+    const pages = [];
+    let cursor = null;
+    for (let i = 0; i < MUSIC_HOME_MAX_PAGES; i++) {
+      const body = musicHomeBodyWithVars(template.body, {
+        firstLimit: MUSIC_HOME_FIRST_LIMIT,
+        afterCursor: cursor
+      });
+      const outcome = await this.replayGql(win, template, body);
+      if (outcome.error) throw new Error(outcome.error);
+      const page = recommendationsFromMusicHome(outcome.parsed && outcome.parsed.data);
+      if (!page.envelope) throw new Error('music home response was not the expected envelope');
+      pages.push(page);
+      if (!page.nextCursor || page.nextCursor === cursor) break;
+      cursor = page.nextCursor;
+    }
+    return { sections: mergeMusicHomeSectionPages(pages), pages: pages.length };
+  },
+
+  // The replay-first fast path for getRecommendations: same gates as
+  // tryRecommendationReplay (replay readers, the park fuse, the wall check,
+  // the 12s bound) around the whole page walk. Returns the merged sections,
+  // or null for any template miss — the caller queues the page flow, which
+  // re-mints. A mid-walk failure drops the template and defers to the page
+  // flow (the #1152 rule: only a fresh capture can prove a hornet rename).
+  async tryMusicHomeWalk() {
+    const template = this.musicHomeTemplate;
+    if (!specTemplateIsFresh(template, Date.now())) return null;
+    if (!this.replayGate.tryEnterReplay()) return null;
+    this.searchViewBusy++;
+    this.replayActivity++;
+    try {
+      this.cancelSearchViewPark();
+      const win = this.searchView;
+      if (!this.alive(win)) return null;
+      let href = '';
+      try { href = win.webContents.getURL(); } catch { return null; }
+      // A replay needs an Amazon-origin page world (cookies, CORS): a parked
+      // or never-loaded view means the page flow runs instead.
+      if (!isAmazonMusicPage(href)) return null;
+      if (pageBlocksPlayback(href)) {
+        console.warn(`[Amazon] home recommendations replay blocked: ${href}`);
+        throw notReady('not-signed-in', 'Choose an Amazon Music profile');
+      }
+      let timer = null;
+      const walked = await Promise.race([
+        this.walkMusicHomePages(win, template),
+        new Promise(resolve => {
+          timer = setTimeout(() => resolve({ timeout: true }), REPLAY_TIMEOUT_MS);
+          if (typeof timer.unref === 'function') timer.unref();
+        })
+      ]);
+      if (walked && walked.timeout) {
+        console.warn(`[Amazon] home recommendations walk exceeded ${REPLAY_TIMEOUT_MS}ms; the page flow will re-capture`);
+        this.musicHomeTemplate = null;
+        return null;
+      }
+      console.log(`[Amazon] home recommendations walk returning ${walked.sections.length} sections over ${walked.pages} page(s)`);
+      return walked;
+    } catch (error) {
+      console.warn(`[Amazon] home recommendations walk failed (${(error && error.message) || error}); the page flow will re-capture`);
+      this.musicHomeTemplate = null;
+      return null;
+    } finally {
+      this.replayGate.exitReplay();
+      this.scheduleParkSearchView();
+    }
   },
 
   // The chained page flow behind getRecommendations: load the home page's
@@ -1595,15 +1671,17 @@ const amazonWebPlayer = {
       }
       const template = makeSpecSearchTemplate({ url: entry.url, headers: entry.headers, body: request, capturedAt: Date.now() });
       if (template) this.musicHomeTemplate = template;
-      const outcome = await this.replayGql(win, entry, request);
-      if (outcome.error) throw notReady('not-ready', outcome.error);
-      const parsed = recommendationsFromMusicHome(outcome.parsed && outcome.parsed.data);
-      if (!parsed.envelope) {
-        console.warn('[Amazon] home recommendations response was not the expected envelope');
+      if (!template) throw notReady('not-ready', 'Amazon home page capture could not build a template');
+      // The minted template carries the page's own firstLimit-5 variables —
+      // the walk replays it with the bumped firstLimit and the cursor pages.
+      try {
+        const walked = await this.walkMusicHomePages(win, template);
+        console.log(`[Amazon] home recommendations page flow returning ${walked.sections.length} sections over ${walked.pages} page(s)`);
+        return walked.sections;
+      } catch (error) {
+        console.warn('[Amazon] home recommendations walk failed after a fresh capture:', (error && error.message) || error);
         throw notReady('not-ready', 'Amazon home recommendations response was not the expected shape');
       }
-      console.log(`[Amazon] home recommendations page flow returning ${parsed.sections.length} sections`);
-      return parsed.sections;
     } finally {
       detach();
       this.scheduleParkSearchView();
