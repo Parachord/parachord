@@ -11218,10 +11218,13 @@ const resolveProviderPlaylistUrl = async (rawUrl) => {
           // overwrites currentTrack with the real track when it fires;
           // failure paths in the catch block at the bottom of the switch
           // clear the placeholder. Skip for `chat` (doesn't replace
-          // playback), `import` (writes to library, doesn't play) and a plain
+          // playback), `import` (writes to library, doesn't play), a plain
           // parachord://play, which searches first: a link it can't match
-          // must leave the current track playing (#1241).
-          if (command === 'listen-along' || ['album', 'playlist', 'radio'].includes(playKind)) {
+          // must leave the current track playing (#1241), and play/radio,
+          // which checks that something in its pool plays before it replaces
+          // anything (#1319): a refused radio must leave the current track
+          // where it was, not a "Loading radio…" placeholder in its place.
+          if (command === 'listen-along' || ['album', 'playlist'].includes(playKind)) {
             const placeholderTitle =
               command === 'listen-along' ? `Connecting to ${params.user || 'friend'}…` :
               playKind === 'album' ? (params.title || 'Loading album…') :
@@ -11357,10 +11360,18 @@ const resolveProviderPlaylistUrl = async (rawUrl) => {
                   // toast instead of silence.
                   const seed = await resolveSpinoffSeed({ artist: params.artist, title: params.title || null });
                   if (!seed) break;
-                  // Clear prior queue so its in-flight background resolution
-                  // doesn't compete with the new spinoff pool.
-                  clearQueue();
-                  await startSpinoffRef.current(seed);
+                  // Something in the similar pool must play before the link
+                  // replaces the queue (#1319): startSpinoff probes the first
+                  // tracks and runs clearQueue only once the spinoff will
+                  // start (clearing it stops the old queue's in-flight
+                  // background resolution competing with the new pool). A
+                  // refusal leaves the queue and current playback alone.
+                  const started = await startSpinoffRef.current(seed, { requirePlayable: true, beforeStart: clearQueue });
+                  // A radio link plays now: start the first similar track
+                  // (the in-app Spinoff button lets the current song finish
+                  // first). It used to stop at turning spinoff mode on, with
+                  // the loading placeholder left in the playbar.
+                  if (started) handleNextRef.current?.();
                   break;
                 }
                 // Mode C: inline tracks and/or URL-based refill.
@@ -11390,9 +11401,9 @@ const resolveProviderPlaylistUrl = async (rawUrl) => {
                   showToast('Invalid refill URL: must be public http/https');
                   break;
                 }
-                // Clear prior queue (same rationale as above).
-                clearQueue();
-                await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl });
+                // The pool path finds a playable first track before it clears
+                // the queue (same rationale as above).
+                await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl }, { beforeStart: clearQueue });
               } catch (err) {
                 console.error('play/radio failed:', err);
                 showToast(`Radio failed: ${err.message}`);

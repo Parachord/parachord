@@ -148,7 +148,24 @@ function shuffleAllowed({ spinoff, listenAlong }) {
   return !spinoff && !listenAlong;
 }
 
+// A radio link must have something that plays before it replaces what's
+// playing (parachord#1319, the mobile apps' shared rule): the artist-seed path
+// probes the first RADIO_SEED_PROBE_COUNT tracks of the similar pool, and with
+// none playable it refuses with mobile's wording
+// (PlaybackMessages.noPlayableSimilarTracks) and leaves the queue alone.
+const RADIO_SEED_PROBE_COUNT = 5;
+const noPlayableSimilarTracksMessage = (title) => `Couldn't find a playable track similar to "${title}"`;
+// A track the resolver pipeline found somewhere to play (a noMatch entry is a
+// lookup that came back empty, not a source).
+function hasPlayableSource(track) {
+  const sources = (track && track.sources) || {};
+  return Object.keys(sources).some(id => sources[id] && !sources[id].noMatch);
+}
+
 module.exports = {
+  RADIO_SEED_PROBE_COUNT,
+  noPlayableSimilarTracksMessage,
+  hasPlayableSource,
   shuffleAllowed,
   SHUFFLE_UNAVAILABLE_MESSAGE,
   previousAction,
