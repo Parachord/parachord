@@ -1,4 +1,4 @@
-// Source of truth for plugins/bandcamp.axe v1.1.0.
+// Source of truth for plugins/bandcamp.axe v1.4.4.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -399,6 +399,7 @@ module.exports = {
       let albumName = '';
       let artist = '';
       let tracks = [];
+      let releaseDate = null;
       const ldScripts = doc.querySelectorAll('script[type="application/ld+json"]');
       for (const ldEl of ldScripts) {
         try {
@@ -406,6 +407,11 @@ module.exports = {
           if (ld['@type'] === 'MusicAlbum' && ld.track) {
             albumName = ld.name || '';
             artist = ld.byArtist?.name || '';
+            // datePublished reads "19 Feb 2008 00:00:00 GMT": a UTC midnight,
+            // so the ISO date's first ten characters are the calendar day.
+            // The album page's edition picker shows it (#1312).
+            const published = Date.parse(ld.datePublished || '');
+            if (Number.isFinite(published)) releaseDate = new Date(published).toISOString().slice(0, 10);
             const items = ld.track.itemListElement || [];
             tracks = items.map((item, i) => {
               const t = item.item || item;
@@ -439,6 +445,7 @@ module.exports = {
         name: albumName,
         artist: artist,
         albumArt: albumArt,
+        releaseDate: releaseDate,
         trackCount: tracks.length,
         tracks: tracks,
         url: url,
