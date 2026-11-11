@@ -162,7 +162,7 @@ The Recommendations page itself uses:
 | Provider | Endpoint | Auth Required | Notes |
 |----------|----------|---------------|-------|
 | Last.fm | `last.fm/player/station/user/{username}/recommended` | None (website JSON, no API key) | Recommended tracks |
-| ListenBrainz | `api.listenbrainz.org/1/user/{username}/playlists/recommendations`, then `/1/playlist/{id}` | None | Falls back to `/1/stats/user/{username}/recordings?range=month` when no recommendation playlist exists |
+| ListenBrainz | `api.listenbrainz.org/1/user/{username}/playlists/recommendations`, then `/1/playlist/{id}` for one playlist picked by type (see docs/features/RECOMMENDATIONS.md) | None | No fallback: with no recommendation playlist the page says so (parachord#1021) |
 
 **Code Location:** `src/renderer/app.js` → `loadRecommendations()`
 

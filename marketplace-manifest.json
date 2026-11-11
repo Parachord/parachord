@@ -361,7 +361,7 @@
       "id": "listenbrainz",
       "name": "ListenBrainz",
       "type": "meta-service",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "author": "Parachord Team",
       "description": "Open-source music listening data and recommendations powered by your ListenBrainz history.",
       "icon": "🎵",

@@ -51,7 +51,7 @@ The page is provider-driven: every plugin with the `recommendations` capability 
 Providers: Last.fm (the recommended station — `plugins-src/lastfm/implementation.js`) and ListenBrainz (the recommendation playlist — `plugins-src/listenbrainz/implementation.js`). The fetches used to live in app.js; they moved into the plugins so the page is capability-driven and mobile can mirror the same contract. A provider that is not configured answers `[]` without a request; a readiness failure (signed out) is kept out of the cache so the next visit asks again.
 
 - **Last.fm**: one request to `https://www.last.fm/player/station/user/{username}/recommended`. This is the website's recommended-station JSON, not a documented API method, and it takes no API key. It returns a `playlist` of tracks.
-- **ListenBrainz**: `GET /1/user/{username}/playlists/recommendations`, then the first playlist's tracks from `GET /1/playlist/{id}`. If no recommendation playlist exists, the plugin answers nothing (no fallback to the user's own top recordings — parachord#1021). Requests retry 429 and 503 with 1.5s, 3s and 6s waits.
+- **ListenBrainz**: `GET /1/user/{username}/playlists/recommendations`, then one playlist's tracks from `GET /1/playlist/{id}`. The list is newest first and mixes Daily Jams, Weekly Jams, Weekly Exploration and the yearly "Top Discoveries of <year>" and "Top Missed Recordings of <year>" round-ups, so the plugin picks by type (the playlist's `source_patch`, or its title when that's missing): Weekly Exploration if it's under 14 days old, else the newest Daily Jams or Weekly Jams, else an older Weekly Exploration. It never uses the yearly round-ups, since "Top Discoveries" is the user's own listening. With none of those, the plugin answers nothing (no fallback to the user's own top recordings, parachord#1021). Requests retry 429 and 503 with 1.5s, 3s and 6s waits.
 - Not configured (no scrobbler username, no active recommendations resolver, no enabled chat provider with sharing on): a "Connect a music service" card with buttons for each service.
 - Cache: per provider, one hour, in memory only.
 
@@ -208,7 +208,6 @@ From the manifests in `plugins/*.axe`. The app reads `generate`, `chat`, `concer
 Found while writing this inventory; none are fixed by this document.
 
 1. The one-shot AI Playlist panel cannot be opened from the playbar button with bundled plugins, because chat takes priority whenever a chat-capable plugin is enabled. (parachord#1020)
-2. When ListenBrainz has no recommendation playlist for the user, the Recommendations page shows their own most-played tracks of the month under the ListenBrainz tag. (parachord#1021)
-3. There is no UI to view or clear the recommendation blocklist. (parachord#1022)
+2. There is no UI to view or clear the recommendation blocklist. (parachord#1022)
 
-Fixed since the first version: artist-only radio links now seed from the artist's top track (parachord#1005), the blocklist is applied and listed in the chat prompt (parachord#1006), in-app chat offers `block_recommendation` (parachord#1007), and the MCP playlist tools work (parachord#1008).
+Fixed since the first version: artist-only radio links now seed from the artist's top track (parachord#1005), the blocklist is applied and listed in the chat prompt (parachord#1006), in-app chat offers `block_recommendation` (parachord#1007), the MCP playlist tools work (parachord#1008), and with no ListenBrainz recommendation playlist the page says so instead of showing the user's own most-played tracks (parachord#1021).

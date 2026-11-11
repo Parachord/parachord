@@ -212,7 +212,7 @@ A resolver or a meta-service that can recommend music declares `capabilities.rec
 
 **Who uses it.** The Recommendations page (`loadRecommendations` in src/renderer/app.js; the pure model is `src/renderer/lib/recommendation-model.js`); Home's "For You" preview asks only the meta-service providers. Providers run in parallel, each bounded at 20s and cached per provider for an hour (`CACHE_TTL.recommendations`); content resolvers are asked only when ACTIVE (a disabled resolver is not a recommendations source) in the user's priority order, meta-services after them. The Shuffleupagus (LLM) suggestions render as a titled section fed by `loadAiRecommendations`, not a plugin — the same state Home's AI Suggestions section renders. Songs resolve through the shared resolution scheduler like every other track list; albums open through `handleCollectionAlbumClick`; playlists play through the generic `lookupPlaylist` path (`resolveProviderPlaylistUrl`) and import through `handleImportPlaylistFromUrl`. The recommendation blocklist applies to every item at merge time, so a block made since a cache was filled takes effect at once.
 
-Implemented by Last.fm (the recommended station) and ListenBrainz (the recommendation playlist; no fallback to the user's own top recordings, parachord#1021).
+Implemented by Last.fm (the recommended station) and ListenBrainz (one recommendation playlist picked by type: a current Weekly Exploration, else the newest Daily or Weekly Jams, never the yearly round-ups; no fallback to the user's own top recordings, parachord#1021).
 
 ### Settings
 
