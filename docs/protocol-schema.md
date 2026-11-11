@@ -133,7 +133,7 @@ parachord://queue/clear
 
 ### Shuffle
 
-Toggle shuffle mode on or off.
+Turn shuffle on or off. Turning it on shuffles the upcoming queue; turning it off restores the queue's order. Refused during a spinoff or Listen Along, which play their own tracks: the app shows "Shuffle isn't available during a spinoff or Listen Along" and shuffle stays as it was.
 
 ```
 parachord://shuffle/{on|off}
