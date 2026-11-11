@@ -25,7 +25,7 @@ describe('elapsed-time progress timer', () => {
   test('is the effect that auto-advances on elapsed time', () => {
     expect(start).toBeGreaterThan(0);
     expect(effect).toContain('if (elapsed >= currentTrack.duration)');
-    expect(effect).toContain('handleNextRef.current()');
+    expect(effect).toContain("handleNextRef.current(false, { trigger: 'ended' })");
   });
 
   test('does not start while a track is loading', () => {

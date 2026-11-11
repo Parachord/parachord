@@ -209,7 +209,97 @@ function resumeStartPosition({ position, duration }) {
   return at;
 }
 
+// Repeat off / all / one (parachord#1319 item 1), the mobile apps' shared
+// rule (parachord-mobile QueueAdvancePolicy and QueueManager.wrapToStart).
+// The button cycles off, all, one, off.
+const REPEAT_MODES = ['off', 'all', 'one'];
+const REPEAT_UNAVAILABLE_MESSAGE = "Repeat isn't available during a spinoff or Listen Along";
+const normalizeRepeatMode = (mode) => (REPEAT_MODES.includes(mode) ? mode : 'off');
+function nextRepeatMode(mode) {
+  const current = normalizeRepeatMode(mode);
+  return REPEAT_MODES[(REPEAT_MODES.indexOf(current) + 1) % REPEAT_MODES.length];
+}
+// MPRIS LoopStatus, as mpris-player.js passes it: 'none' | 'track' | 'playlist'.
+const repeatModeFromLoop = (loop) => (loop === 'track' ? 'one' : loop === 'playlist' ? 'all' : 'off');
+const loopFromRepeatMode = (mode) => (mode === 'one' ? 'track' : mode === 'all' ? 'playlist' : 'none');
+
+// What the queue does when it moves. trigger: 'ended' (the track finished),
+// 'next' (Next, from anywhere) or 'unplayable' (a track that couldn't play
+// was skipped). Returns:
+//   'replay' — repeat one and the track ended (Next still moves on, and a
+//              track that fails is never replayed);
+//   'next'   — play the queue's next playable track;
+//   'wrap'   — repeat all at the end of the queue: start the lap again. An
+//              unplayable skip wraps only when something played since the
+//              queue was set or last wrapped (playedSinceWrap), so a queue
+//              where nothing plays can't loop forever;
+//   'stop'   — the end of the queue: stop and clear the track.
+// The spinoff pool and Listen Along are handled before this is asked.
+function advanceAction({ trigger, repeatMode, hasNext, hasCurrent, playedSinceWrap }) {
+  if (trigger === 'ended' && repeatMode === 'one' && hasCurrent) return 'replay';
+  if (hasNext) return 'next';
+  if (repeatMode === 'all' && (trigger !== 'unplayable' || playedSinceWrap)) return 'wrap';
+  return 'stop';
+}
+// Leaving a spinoff or Listen Along goes back to the queue: the track that
+// ended was the spinoff's or the friend's, so repeat one doesn't replay it.
+const leaveSessionTrigger = (trigger) => (trigger === 'ended' ? 'next' : trigger);
+
+// The lap repeat all wraps is this queue's tracks. A track out of it carries
+// _offLap: history from before the queue was replaced, spinoff pool tracks
+// and Listen Along tracks. The mark rides with the track between the history,
+// the playbar and the queue (Previous moves it there), and comes off when the
+// track joins a new queue.
+const markOffLap = (track) => (track && !track._offLap ? { ...track, _offLap: true } : track);
+function withoutLapMark(track) {
+  if (!track || !track._offLap) return track;
+  const { _offLap, ...rest } = track;
+  return rest;
+}
+// The wrap: history, the current track and the queue, in that order, minus
+// the tracks out of the lap; a track that failed before gets another try.
+// With shuffle on the set is shuffled and originalOrder is the rest in played
+// order (what turning shuffle off restores). null when there's nothing to wrap.
+function repeatLap({ history, current, queue, shuffle, random = Math.random }) {
+  const inLap = (t) => t && !t._offLap;
+  const fresh = (t) => {
+    if (t.status !== 'error') return t;
+    const { status, ...rest } = t;
+    return rest;
+  };
+  const all = [
+    ...(history || []).filter(inLap),
+    ...(inLap(current) ? [current] : []),
+    ...(queue || []).filter(inLap),
+  ].map(fresh);
+  if (all.length === 0) return null;
+  const ordered = [...all];
+  if (shuffle) {
+    for (let i = ordered.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+    }
+  }
+  const [first, ...rest] = ordered;
+  return {
+    first,
+    rest,
+    originalOrder: shuffle && rest.length > 1 ? all.filter(t => t !== first) : null,
+  };
+}
+
 module.exports = {
+  REPEAT_MODES,
+  REPEAT_UNAVAILABLE_MESSAGE,
+  normalizeRepeatMode,
+  nextRepeatMode,
+  repeatModeFromLoop,
+  loopFromRepeatMode,
+  advanceAction,
+  leaveSessionTrigger,
+  markOffLap,
+  withoutLapMark,
+  repeatLap,
   LISTEN_ALONG_FAILED_POLLS_LIMIT,
   friendTrackKey,
   listenAlongWaitDecision,

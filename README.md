@@ -55,7 +55,7 @@ A modern multi-source music player inspired by [Tomahawk](https://github.com/tom
 - **File Import** - Load local .xspf playlist files
 - **Export** - Save any playlist, or the current queue, as an .xspf file
 - **Queue Management** - Add tracks, reorder, and manage your listening queue
-- **Shuffle & Spinoff** - Shuffle your queue, or "spinoff" from any track into a radio station of similar music
+- **Shuffle, Repeat & Spinoff** - Shuffle your queue, repeat it or one song, or "spinoff" from any track into a radio station of similar music
 - **Mixed-Source Queues** - Seamlessly play tracks from different services
 - **Resolver Blocklist** - Report and block bad source matches without disabling an entire resolver
 

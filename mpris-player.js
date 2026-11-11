@@ -143,8 +143,9 @@ function createMprisPlayer({ onControl } = {}) {
   // capability flag, so widgets infer support from whether the
   // properties have been written. Without these writes, KDE Plasma
   // greys out the shuffle and repeat controls (parachord#848 follow-
-  // up). Parachord has no app-level loop mode today, so loopStatus
-  // stays 'None'; updateLoop() is a no-op until that ships.
+  // up). loopStatus starts at 'None'; the renderer pushes its repeat
+  // mode (off/all/one → None/Playlist/Track) through updateLoop() once
+  // it has loaded (parachord#1319).
   player.shuffle = false;
   player.loopStatus = 'None';
 

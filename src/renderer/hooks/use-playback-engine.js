@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource } = require('../lib/playback-helpers');
+const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -143,6 +143,10 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     playbackContext,
     setPlaybackContext,
     playHistoryRef,
+    shuffleModeRef,
+    originalQueueRef,
+    repeatModeRef,
+    playedSinceWrapRef,
   } = queue;
 
   // Confidence module side-load (dual-load in index.html / require in sync
@@ -418,7 +422,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       if (playing?.id) {
         setCurrentQueue(prev => prev.map(t => t.id === playing.id ? { ...t, status: 'error' } : t));
       }
-      setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
+      setTimeout(() => { if (handleNextRef.current) handleNextRef.current(false, { trigger: 'unplayable' }); }, 600);
       return true;
     };
 
@@ -510,7 +514,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       const OWNER_LABELS = { localfiles: 'Local file', soundcloud: 'SoundCloud', subsonic: 'Subsonic' };
       const label = OWNER_LABELS[owner] || `Stream (${owner})`;
       console.log(`🎵 ${label} playback ended`);
-      handleNextRef.current?.();
+      handleNextRef.current?.(false, { trigger: 'ended' });
     });
     audio.addEventListener('playing', () => {
       // Reset the network-retry budget only after local-file playback has
@@ -736,7 +740,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       if (trackOrSource?.id) {
         setCurrentQueue(prev => prev.map(t => t.id === trackOrSource.id ? { ...t, status: 'error' } : t));
       }
-      setTimeout(() => { if (handleNextRef.current) handleNextRef.current(); }, 600);
+      setTimeout(() => { if (handleNextRef.current) handleNextRef.current(false, { trigger: 'unplayable' }); }, 600);
       return true;
     };
 
@@ -1356,6 +1360,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         setIsExternalPlayback(false);
         // Clear explicit start flag since we're playing a new track
         trackNeedsExplicitStart.current = false;
+        playedSinceWrapRef.current = true; // a track played: repeat all may wrap (#1319)
 
         console.log('✅ Local file playing');
 
@@ -1557,7 +1562,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           onFinish: () => {
             if (!isCurrentPlay()) return;
             console.log(`🎵 ${serviceName} playback ended`);
-            handleNextRef.current?.();
+            handleNextRef.current?.(false, { trigger: 'ended' });
           }
         }, sourceToPlay);
         if (!isCurrentPlay()) return;
@@ -1583,6 +1588,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         setBrowserPlaybackActive(false);
         setIsExternalPlayback(false);
         trackNeedsExplicitStart.current = false;
+        playedSinceWrapRef.current = true; // a track played: repeat all may wrap (#1319)
         console.log(`✅ ${serviceName} playing via its embedded player (${effectiveVolume.toFixed(1)}% volume)`);
 
         if (window.scrobbleManager) {
@@ -1816,6 +1822,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       setBrowserPlaybackActive(false);
       setIsExternalPlayback(false);
       trackNeedsExplicitStart.current = false;
+      playedSinceWrapRef.current = true; // a track played: repeat all may wrap (#1319)
 
       console.log(`✅ ${streamLabel} playing via Widevine (shared element)`);
 
@@ -1976,6 +1983,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         setBrowserPlaybackActive(false);
         setIsExternalPlayback(false);
         trackNeedsExplicitStart.current = false;
+        playedSinceWrapRef.current = true; // a track played: repeat all may wrap (#1319)
 
         console.log(`✅ ${streamLabel} playing via HTML5 Audio`);
 
@@ -2166,6 +2174,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         setTrackLoading(false); // Clear loading state on success
         // Clear explicit start flag since we're playing a new track
         trackNeedsExplicitStart.current = false;
+        playedSinceWrapRef.current = true; // a track played: repeat all may wrap (#1319)
         // Reset baseline for smooth progress interpolation
         spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
         // Reset Amazon Music interpolation baseline as well (resolverId !== 'spotify'
@@ -2251,6 +2260,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             setIsPlaying(true);
             setProgress(0);
             trackNeedsExplicitStart.current = false;
+            playedSinceWrapRef.current = true; // a track played: repeat all may wrap (#1319)
             // Reset baseline for smooth progress interpolation
             spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
 
@@ -2414,7 +2424,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     }
   };
 
-  const handleNext = async (userInitiated = false) => {
+  // What moved the queue (#1319, for repeat): userInitiated is the playbar's
+  // Next; trigger is 'ended' from the engines' end-of-track events,
+  // 'unplayable' from the auto-skips, and 'next' (the default) from every
+  // other caller: media keys, MPRIS, the DJ and MCP, links, the embed.
+  const handleNext = async (userInitiated = false, { trigger = 'next' } = {}) => {
     // BROWSER PLAYBACK GUARD: Block handleNext while waiting for browser to connect
     // This prevents race conditions when opening external tracks (YouTube, Bandcamp, etc.)
     if (waitingForBrowserPlaybackRef.current) {
@@ -2428,6 +2442,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       console.log('⚠️ handleNext() already in progress, skipping duplicate call');
       return;
     }
+
+    let advanceTrigger = userInitiated ? 'next' : trigger;
 
     // If user manually clicked next while listening along, end the session
     let listenAlongEnded = false;
@@ -2550,6 +2566,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         listenAlongEndAfterSongRef.current = null;
         setPlaybackContext(null);
         showToast(`${listenAlongEndingFriend} stopped listening`);
+        advanceTrigger = leaveSessionTrigger(advanceTrigger);
         // Fall through to play from queue below
       }
 
@@ -2591,6 +2608,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           listenAlongLastTrackRef.current = null;
           listenAlongPendingTrackRef.current = null;
           setPlaybackContext(null);
+          advanceTrigger = leaveSessionTrigger(advanceTrigger);
           // Fall through to play from queue below
         } else {
           // We don't know where the friend is: wait for the next poll, which
@@ -2642,6 +2660,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         };
         handlePlay({
           ...nextSimilar,
+          _offLap: true, // pool tracks aren't the queue's: repeat all never wraps them (#1319)
           sources: nextSimilar.sources || {}, // Ensure sources object exists for on-demand resolution
           _playbackContext: inheritedContext,
         });
@@ -2652,6 +2671,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       if (spinoffModeRef.current && spinoffTracksRef.current.length === 0) {
         console.log('🔀 Spinoff pool exhausted, returning to queue');
         exitSpinoff();
+        advanceTrigger = leaveSessionTrigger(advanceTrigger);
       }
 
       // End of the queue (parachord#1319, the mobile apps' shared rule):
@@ -2673,19 +2693,43 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         currentTrackRef.current = null;
       };
 
-      if (queue.length === 0) {
-        endOfQueue('End of the queue');
-        return;
-      }
-
       console.log(`🔍 Queue navigation: currentTrack.id="${track?.id}", queueLength=${queue.length}`);
 
       // Queue represents upcoming tracks - current track is NOT in the queue
       // Find the first playable track in the queue
       const nextTrackIndex = queue.findIndex(t => t.status !== 'error');
 
-      if (nextTrackIndex === -1) {
-        endOfQueue('No playable tracks left in the queue');
+      // Repeat and the end of the queue (#1319, the mobile apps' shared
+      // rule, advanceAction in lib/playback-helpers.js).
+      const action = advanceAction({
+        trigger: advanceTrigger,
+        repeatMode: repeatModeRef.current,
+        hasNext: nextTrackIndex !== -1,
+        hasCurrent: !!track,
+        playedSinceWrap: playedSinceWrapRef.current
+      });
+      if (action === 'replay') {
+        console.log(`🔂 Repeat one: playing "${track.title}" again`);
+        handlePlay(track);
+        return;
+      }
+      if (action === 'wrap') {
+        const lap = repeatLap({ history: playHistoryRef.current, current: track, queue, shuffle: shuffleModeRef.current });
+        if (!lap) {
+          endOfQueue('Nothing in this queue to repeat');
+          return;
+        }
+        console.log(`🔁 Repeat all: back to the start of the queue with "${lap.first.title}" (${lap.rest.length} more)`);
+        playHistoryRef.current = [];
+        playedSinceWrapRef.current = false;
+        originalQueueRef.current = lap.originalOrder;
+        setCurrentQueue(lap.rest);
+        setPlaybackContext(lap.first._playbackContext || null);
+        handlePlay(lap.first);
+        return;
+      }
+      if (action === 'stop') {
+        endOfQueue(queue.length === 0 ? 'End of the queue' : 'No playable tracks left in the queue');
         return;
       }
 
@@ -3244,7 +3288,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       if (!state || !state.activeResolverId) return;
       console.error(`[Widevine] ${resolverId || 'player'} fatal:`, message);
       showToast(`${(window.resolverLabelById || ((id) => id || 'Stream'))(resolverId)} playback failed`, 'error');
-      handleNextRef.current?.();
+      handleNextRef.current?.(false, { trigger: 'unplayable' });
     };
     window.__parachordWidevineSetVariantListener = (cb) => __widevinePlayer.setVariantListener(cb);
   }
