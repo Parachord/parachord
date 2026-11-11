@@ -651,6 +651,7 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
+const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
 const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
@@ -7988,6 +7989,45 @@ const Parachord = () => {
   // API polling happens every 5 seconds, but we want smooth 1-second visual updates
   // The baseline is ONLY set by API polls (in getCurrentPlaybackState), not by this effect
   const spotifyProgressBaselineRef = useRef({ progress: 0, timestamp: 0, isPlaying: false });
+  // Spotify seek: when the last one was asked for or accepted (a renderer
+  // poll sent before then reports the old position), and the playbar drag's
+  // trailing debounce.
+  const spotifyLastSeekAtRef = useRef(0);
+  const spotifySeekTimerRef = useRef(null);
+  // Seek the Spotify Connect device to positionSec (lib/spotify-seek.js), then
+  // re-anchor the bar's interpolation there and tell the main-process poller,
+  // which retimes its end-of-track check (#1300). Shared by the playbar's
+  // handleSeek (and so a restored queue's resume) and the MCP/DJ seek tool.
+  // Returns { ok, status?, error? }.
+  const seekSpotifyTo = async (positionSec) => {
+    const trackId = currentTrackRef.current?.id;
+    spotifyLastSeekAtRef.current = Date.now();
+    const result = await seekSpotify({
+      positionSec,
+      token: spotifyTokenRef.current,
+      refreshToken: () => (refreshSpotifyTokenRef.current ? refreshSpotifyTokenRef.current() : null),
+    });
+    const track = currentTrackRef.current;
+    if (!track || track.id !== trackId) return result; // moved on meanwhile
+    if (!result.ok) {
+      // Let the next poll put the bar back where Spotify really is.
+      spotifyLastSeekAtRef.current = 0;
+      console.warn(`[Seek] Spotify seek failed (${result.status || result.error})`);
+      return result;
+    }
+    const playing = !!isPlayingRef.current;
+    spotifyLastSeekAtRef.current = Date.now();
+    spotifyProgressBaselineRef.current = { progress: positionSec, timestamp: Date.now(), isPlaying: playing };
+    const seeked = window.electron?.spotify?.polling?.seeked;
+    if (seeked) {
+      Promise.resolve(seeked({
+        positionMs: Math.round(positionSec * 1000),
+        durationMs: Math.round((track.duration || 0) * 1000),
+        isPlaying: playing,
+      })).catch(() => {});
+    }
+    return result;
+  };
   const {
     handlePlay,
     handleNext,
@@ -8086,8 +8126,8 @@ const Parachord = () => {
 
   // Start a track where it should (#1319): once the track a pending position
   // belongs to is playing, seek there (after a moment, so the engine has the
-  // stream). A different track drops it. Engines handleSeek can't seek
-  // (Spotify) start from the beginning, as a seek does today.
+  // stream). A different track drops it. Spotify seeks through the Web API
+  // like the seek bar (seekSpotifyTo).
   useEffect(() => {
     const pending = pendingStartPositionRef.current;
     if (!pending) return;
@@ -10396,15 +10436,23 @@ const Parachord = () => {
           getBlocklist: () => recommendationBlocklistRef.current,
           // Seek the active playback engine to a position (ms within the track).
           // Mirrors the playbar slider's onChange — only the same engines that
-          // support seek there support it here. Spotify (Web SDK + Connect) is
-          // not currently seekable; returns {supported:false} to let callers
-          // (e.g. external sync clients) degrade gracefully.
+          // support seek there support it here. Spotify Connect seeks through
+          // the Web API (seekSpotifyTo): Spotify has no read-back, so a seek
+          // it accepted reports the requested offset. Engines that can't seek
+          // return {supported:false} to let callers (e.g. external sync
+          // clients) degrade gracefully.
           handleSeek: async (offsetMs) => {
             const track = currentTrackRef.current;
             if (!track) return { success: false, supported: false, error: 'no track' };
             const activeResolver = track._activeResolver || determineResolverIdFromTrack(track);
             if (activeResolver === 'spotify') {
-              return { success: false, supported: false, error: 'spotify seek not supported' };
+              const spotifySec = Math.max(0, Number(offsetMs) / 1000) || 0;
+              const seeked = await seekSpotifyTo(spotifySec);
+              if (!seeked.ok) {
+                return { success: false, supported: true, error: `spotify seek failed (${seeked.status || seeked.error})` };
+              }
+              if (currentTrackRef.current?.id === track.id) setProgress(spotifySec);
+              return { success: true, supported: true, position_ms: Math.round(spotifySec * 1000) };
             }
             const positionSec = Math.max(0, Number(offsetMs) / 1000);
             let confirmedMs = null;
@@ -10473,12 +10521,24 @@ const Parachord = () => {
             return { success: true, supported: true, position_ms: confirmedMs };
           },
           // Read current playback offset + duration in ms. Tries HTML5 audio
-          // first; falls back to the Apple Music interpolated baseline; finally
-          // the track's reported duration. Returns supported:false for
-          // playback paths that don't expose a position (Spotify Connect).
+          // first; Spotify Connect and Apple Music from their interpolated
+          // poll baselines; finally the track's reported duration. Returns
+          // supported:false for playback paths that don't expose a position.
           getCurrentPosition: () => {
             const track = currentTrackRef.current;
             const activeResolver = track?._activeResolver || (track ? determineResolverIdFromTrack(track) : null);
+            if (activeResolver === 'spotify') {
+              const sb = spotifyProgressBaselineRef.current;
+              if (sb && sb.timestamp) {
+                const sec = sb.isPlaying ? sb.progress + (Date.now() - sb.timestamp) / 1000 : sb.progress;
+                const durSec = track?.duration || 0;
+                return {
+                  position_ms: Math.round(Math.max(0, durSec > 0 ? Math.min(sec, durSec) : sec) * 1000),
+                  duration_ms: Math.round(durSec * 1000),
+                  supported: true
+                };
+              }
+            }
             // The widget's facade for SoundCloud, else the shared element.
             const audio = (activeResolver && mediaElementFor(activeResolver)) || audioRef.current;
             const audioOwnsPlayback = activeResolver && activeResolver !== 'applemusic' && activeResolver !== 'spotify';
@@ -34111,6 +34171,7 @@ const getCurrentPlaybackState = async () => {
   }
 
   try {
+    const requestedAt = Date.now();
     const response = await fetch('https://api.spotify.com/v1/me/player', {
       headers: {
         'Authorization': `Bearer ${spotifyToken}`
@@ -34131,14 +34192,20 @@ const getCurrentPlaybackState = async () => {
 
         // Update progress baseline for smooth interpolation
         // The interpolation effect will smoothly update between API polls
-        // Include isPlaying so interpolation only runs when Spotify is actually playing
-        spotifyProgressBaselineRef.current = {
-          progress: newProgress,
-          timestamp: Date.now(),
-          isPlaying: newIsPlaying
-        };
-        if (!seekingRef.current) {
-          setProgress(newProgress);
+        // Include isPlaying so interpolation only runs when Spotify is actually playing.
+        // A poll sent before a seek landed still reports the old position:
+        // keep the seek's baseline instead (lib/spotify-seek.js).
+        if (spotifyPollPredatesSeek({ requestedAt, lastSeekAt: spotifyLastSeekAtRef.current })) {
+          spotifyProgressBaselineRef.current = { ...spotifyProgressBaselineRef.current, isPlaying: newIsPlaying };
+        } else {
+          spotifyProgressBaselineRef.current = {
+            progress: newProgress,
+            timestamp: Date.now(),
+            isPlaying: newIsPlaying
+          };
+          if (!seekingRef.current) {
+            setProgress(newProgress);
+          }
         }
 
         // Check if Spotify is playing a different track than what we initiated
@@ -34257,9 +34324,21 @@ useEffect(() => {
       return;
     }
     const activeResolver = currentTrack?._activeResolver || determineResolverIdFromTrack(currentTrack);
-    if (activeResolver === 'spotify') return; // seeking not supported for Spotify
     seekingRef.current = true;
     setProgress(newPosition);
+    // Spotify Connect: one Web API seek for the settled position (the range
+    // input fires on every drag movement). The bar holds the dragged position
+    // meanwhile: interpolation restarts from it, and a poll sent before the
+    // seek landed is ignored (seekSpotifyTo / spotifyPollPredatesSeek).
+    if (activeResolver === 'spotify') {
+      spotifyLastSeekAtRef.current = Date.now();
+      spotifyProgressBaselineRef.current = { progress: newPosition, timestamp: Date.now(), isPlaying: !!isPlayingRef.current };
+      if (spotifySeekTimerRef.current) clearTimeout(spotifySeekTimerRef.current);
+      spotifySeekTimerRef.current = setTimeout(() => {
+        spotifySeekTimerRef.current = null;
+        seekSpotifyTo(newPosition);
+      }, SPOTIFY_SEEK_DEBOUNCE_MS);
+    }
     // HTML5 audio engines. Key off the resolver actually playing, not
     // track.sources — a Subsonic source can be attached while local files
     // are what's playing.
@@ -44795,12 +44874,8 @@ useEffect(() => {
           // The resolver-derived props below change at most on track/playback-method
           // change, never on a tick.
           (() => {
-            const activeResolver = currentTrack?._activeResolver || determineResolverIdFromTrack(currentTrack);
-            const isSpotifyActive = activeResolver === 'spotify';
-            const isSeekDisabled = !currentTrack || browserPlaybackActive || isSpotifyActive;
-            const seekTooltip = isSeekDisabled
-              ? (isSpotifyActive ? 'Seeking not available for Spotify tracks' : undefined)
-              : undefined;
+            const isSeekDisabled = !currentTrack || browserPlaybackActive;
+            const seekTooltip = undefined;
             return React.createElement(PlaybackProgress, {
               subscribe: subscribeProgress,
               initialProgress: progressRef.current,

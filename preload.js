@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('electron', {
       stop: () => ipcRenderer.invoke('spotify-polling-stop'),
       updateToken: (token) => ipcRenderer.invoke('spotify-polling-update-token', token),
       updateTrack: (params) => ipcRenderer.invoke('spotify-polling-update-track', params),
+      seeked: (params) => ipcRenderer.invoke('spotify-polling-seeked', params),
       getStatus: () => ipcRenderer.invoke('spotify-polling-status'),
 
       // Listen for polling events from main process
