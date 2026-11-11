@@ -43849,11 +43849,15 @@ useEffect(() => {
         // LEFT: Transport controls + Queue button
         React.createElement('div', { className: 'flex items-center gap-2' },
           React.createElement(Tooltip, { content: 'Previous', position: 'top', variant: 'dark' },
+            // Enabled with no current track too while there is history: the
+            // end of the queue clears the track, and Previous brings it back
+            // (#1319). The ref read is current here: handleNext pushes to the
+            // history before the setCurrentTrack(null) that re-renders this.
             React.createElement('button', {
               onClick: handlePrevious,
-              disabled: !currentTrack,
+              disabled: !currentTrack && playHistoryRef.current.length === 0,
               className: 'p-2 rounded hover:bg-white/10 transition-colors',
-              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: !currentTrack ? '#4b5563' : '#ffffff', cursor: !currentTrack ? 'not-allowed' : 'pointer' }
+              style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: (!currentTrack && playHistoryRef.current.length === 0) ? '#4b5563' : '#ffffff', cursor: (!currentTrack && playHistoryRef.current.length === 0) ? 'not-allowed' : 'pointer' }
             }, React.createElement(SkipBack, { size: 18 }))
           ),
           React.createElement(Tooltip, { content: isPlaying ? 'Pause' : 'Play', position: 'top', variant: 'dark' },

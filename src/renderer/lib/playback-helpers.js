@@ -123,7 +123,24 @@ function isDeviceOffline(nav) {
   return !!nav && nav.onLine === false;
 }
 
+// What Previous does (parachord#1319, the mobile apps' shared rule):
+//   'restart'  — start the current track over: more than
+//                PREVIOUS_RESTART_AFTER_SECONDS in, or nothing played before it;
+//   'previous' — go back to the last track in the play history (also when no
+//                track is current: the end of the queue cleared it, and it
+//                went to history first, so Previous brings it back);
+//   'none'     — nothing to go back to or restart.
+const PREVIOUS_RESTART_AFTER_SECONDS = 3;
+function previousAction({ hasCurrentTrack, positionSeconds, historyLength }) {
+  const hasHistory = historyLength > 0;
+  if (!hasCurrentTrack) return hasHistory ? 'previous' : 'none';
+  if (!hasHistory) return 'restart';
+  return (Number(positionSeconds) || 0) > PREVIOUS_RESTART_AFTER_SECONDS ? 'restart' : 'previous';
+}
+
 module.exports = {
+  previousAction,
+  PREVIOUS_RESTART_AFTER_SECONDS,
   trackToHoldAfterFailure,
   OFFLINE_PLAY_MESSAGE,
   isDeviceOffline,
