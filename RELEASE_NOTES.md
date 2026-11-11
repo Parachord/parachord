@@ -36,6 +36,7 @@
 ## Recommendations
 
 - **The Recommendations page is grouped into sections.** Instead of separate Artists and Songs tabs with a source filter, the page shows Artists, Songs, Albums and Playlists, a few of each with Show all. Shuffleupagus's album and artist suggestions appear there too, with their own Refresh, and stay on Home as before. Thanks to @theli-ua.
+- **ListenBrainz recommendations are new music.** The page showed whichever playlist ListenBrainz made most recently: usually Daily Jams, built from artists you already play, and after ListenBrainz's yearly round-up, your own top discoveries of last year. It now shows Weekly Exploration, ListenBrainz's new-music playlist, falling back to your jams playlists when there isn't a recent one.
 
 ## Playback
 
