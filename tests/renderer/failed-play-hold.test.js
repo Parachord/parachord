@@ -138,7 +138,7 @@ describe('every failure path stops on the track when offline (#1297)', () => {
     const helper = bodyOf('const autoSkipIfAdvancing = (reason, { needsNetwork = true } = {}) => {', '\n    };');
     const offline = helper.indexOf('if (stopIfOffline({ needsNetwork })) return true;');
     expect(offline).toBeGreaterThan(-1);
-    expect(offline).toBeLessThan(helper.indexOf('handleNextRef.current()'));
+    expect(offline).toBeLessThan(helper.indexOf("handleNextRef.current(false, { trigger: 'unplayable' })"));
   });
 
   test('the stop is generation-checked and holds the track for Play', () => {

@@ -64,7 +64,7 @@ describe('7: failed polls', () => {
 });
 
 describe('8: our song ended and the friend\'s position isn\'t known', () => {
-  const next = between(engine, 'const handleNext = async (userInitiated = false) => {', 'const handlePrevious = async () => {');
+  const next = between(engine, "const handleNext = async (userInitiated = false, { trigger = 'next' } = {}) => {", 'const handlePrevious = async () => {');
   const poll = between(app, 'const refreshPinnedFriends = async () => {', 'const fetchTransientFriendNowPlaying');
 
   test('handleNext reads the last poll, not the snapshot from when the session began', () => {

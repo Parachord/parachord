@@ -652,7 +652,7 @@ const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
-const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey } = require('./lib/playback-helpers');
+const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -6102,6 +6102,7 @@ const Parachord = () => {
     shuffleModeRef, originalQueueRef,
     currentQueueRef, currentTrackRef,
     playHistoryRef,
+    repeatMode, setRepeatMode, repeatModeRef, startNewLap,
     queueAnimating, setQueueAnimating,
     removeFromQueue, moveInQueue, clearQueue,
     toggleShuffle, restoreOriginalOrder,
@@ -6128,6 +6129,26 @@ const Parachord = () => {
   };
   const requestShuffleRef = useRef(null);
   requestShuffleRef.current = requestShuffle;
+
+  // The one door for repeat (#1319): the playbar button and MPRIS. Like
+  // shuffle, it can't be changed during a spinoff or Listen Along (the mobile
+  // apps' rule). `want` is 'off', 'all', 'one' or 'cycle' (off, all, one,
+  // off). The mode is a player setting, saved whether or not the queue is
+  // remembered. Returns whether the mode is now as asked.
+  const requestRepeat = (want, { toast = true } = {}) => {
+    if (!shuffleAllowed({ spinoff: spinoffModeRef.current, listenAlong: !!listenAlongFriendRef.current })) {
+      if (toast) showToast(REPEAT_UNAVAILABLE_MESSAGE);
+      return false;
+    }
+    const mode = want === 'cycle' ? nextRepeatMode(repeatModeRef.current) : normalizeRepeatMode(want);
+    setRepeatMode(mode);
+    if (window.electron?.store) {
+      Promise.resolve(window.electron.store.set('repeat_mode', mode)).catch(() => {});
+    }
+    return true;
+  };
+  const requestRepeatRef = useRef(null);
+  requestRepeatRef.current = requestRepeat;
 
   const holdPlaybarArt = holdPreviousPlaybarArt(currentTrack, playbarArtMissKey);
 
@@ -10043,7 +10064,7 @@ const Parachord = () => {
             pendingCloseTabIdRef.current = message.tabId;
             setBrowserPlaybackActive(false);
             // Auto-advance to next track (use ref to avoid stale closure)
-            if (handleNextRef.current) handleNextRef.current();
+            if (handleNextRef.current) handleNextRef.current(false, { trigger: 'ended' });
             break;
 
           case 'tabClosed':
@@ -10180,6 +10201,7 @@ const Parachord = () => {
           // Album/playlist: set queue with remaining tracks, then play first
           const context = { type: 'smartlink', name: track.album || track.title };
           const taggedTracks = queue.map(t => ({ ...t, _playbackContext: context }));
+          startNewLap();
           setCurrentQueue(taggedTracks);
           setPlaybackContext(context);
         }
@@ -10775,7 +10797,11 @@ const Parachord = () => {
           }
           break;
         case 'set-loop':
-          // Parachord has no loop mode today; ignore
+          // Refused during a spinoff or Listen Along: tell the desktop widget
+          // the real mode, as for shuffle.
+          if (requestRepeatRef.current?.(repeatModeFromLoop(event.value)) === false) {
+            window.electron.mpris.updateLoop?.(loopFromRepeatMode(repeatModeRef.current))?.catch?.(() => {});
+          }
           break;
         default:
           break;
@@ -10837,6 +10863,12 @@ const Parachord = () => {
     if (!window.electron?.mpris?.updateShuffle) return;
     window.electron.mpris.updateShuffle(shuffleMode).catch(() => {});
   }, [shuffleMode]);
+
+  // MPRIS: push the repeat mode (#1319) as LoopStatus
+  useEffect(() => {
+    if (!window.electron?.mpris?.updateLoop) return;
+    window.electron.mpris.updateLoop(loopFromRepeatMode(repeatMode)).catch(() => {});
+  }, [repeatMode]);
 
   // Discord Rich Presence: read the stored toggle + connection status from
   // main (it owns the store key, so there is one source of truth), then mirror
@@ -12140,7 +12172,7 @@ ${trackListXml}
       window.electron.spotify.polling.onAdvance((data) => {
         console.log('🎵 [Main→Renderer] Advance signal received:', data.reason);
         if (handleNextRef.current) {
-          handleNextRef.current();
+          handleNextRef.current(false, { trigger: 'ended' });
         }
       });
 
@@ -12169,7 +12201,7 @@ ${trackListXml}
       window.electron.musicKit.polling.onAdvance((data) => {
         console.log('🎵 [Main→Renderer] Apple Music advance signal received:', data.reason);
         if (handleNextRef.current) {
-          handleNextRef.current();
+          handleNextRef.current(false, { trigger: 'ended' });
         }
       });
 
@@ -12226,7 +12258,7 @@ ${trackListXml}
       const track = currentTrackRef.current;
       if (track?._activeResolver === 'applemusic') {
         console.log('[MusicKit] Track ended, advancing to next');
-        if (handleNextRef.current) handleNextRef.current();
+        if (handleNextRef.current) handleNextRef.current(false, { trigger: 'ended' });
       }
     };
 
@@ -12234,7 +12266,7 @@ ${trackListXml}
       const track = currentTrackRef.current;
       if (track?._activeResolver === 'applemusic') {
         console.log('[AppleMusic] Preview ended, advancing to next');
-        if (handleNextRef.current) handleNextRef.current();
+        if (handleNextRef.current) handleNextRef.current(false, { trigger: 'ended' });
       }
     };
 
@@ -12845,7 +12877,7 @@ ${trackListXml}
         const elapsed = (audioContext.currentTime - startTime);
         if (elapsed >= currentTrack.duration) {
           // Use ref to avoid stale closure in interval callback
-          if (handleNextRef.current) handleNextRef.current();
+          if (handleNextRef.current) handleNextRef.current(false, { trigger: 'ended' });
         } else if (!seekingRef.current) {
           setProgress(elapsed);
           // Notify scrobble manager of progress for scrobble threshold checking
@@ -15254,7 +15286,7 @@ ${trackListXml}
       setPendingExternalTrack(null);
       setPendingExternalResolverId(null);
       setShowExternalPrompt(false);
-      handleNext();
+      handleNext(false, { trigger: 'unplayable' });
       return;
     }
 
@@ -15265,7 +15297,7 @@ ${trackListXml}
       setPendingExternalTrack(null);
       setPendingExternalResolverId(null);
       setShowExternalPrompt(false);
-      handleNext();
+      handleNext(false, { trigger: 'unplayable' });
       return;
     }
 
@@ -15326,7 +15358,7 @@ ${trackListXml}
       setPendingExternalTrack(null);
       setPendingExternalResolverId(null);
       setShowExternalPrompt(false);
-      handleNext();
+      handleNext(false, { trigger: 'unplayable' });
     }
   };
 
@@ -18131,7 +18163,7 @@ ${trackListXml}
         // Concerts location
         'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
         // Queue & tutorial
-        'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state',
+        'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state', 'repeat_mode',
         'tutorial_completed', 'whats_new_dismissed_version',
         // Loved-tracks push to LB/LFM (opt-in per service)
         'scrobbler_love_push_enabled', 'love_pushed_keys',
@@ -18887,6 +18919,8 @@ ${trackListXml}
       const savedShuffleState = savedRememberQueue ? d['saved_shuffle_state'] : null;
       const tutorialCompleted = d['tutorial_completed'];
       const dismissedVersion = d['whats_new_dismissed_version'];
+      // Repeat (#1319) is a player setting, restored whether or not the queue is.
+      setRepeatMode(d['repeat_mode']);
 
       // Loved-tracks push to LB/LFM (opt-in per service)
       const lovePushEnabled = d['scrobbler_love_push_enabled'] || {};
@@ -29072,6 +29106,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       album: recentTrack.album,
       albumArt: recentTrack.albumArt,
       sources: cachedSources,
+      _offLap: true, // a friend's track isn't the queue's: repeat all never wraps it (#1319)
       _playbackContext: {
         type: 'listenAlong',
         name: friend.displayName,
@@ -29292,6 +29327,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
                   album: recentTrack.album,
                   albumArt: recentTrack.albumArt,
                   sources: cachedSources,
+                  _offLap: true, // a friend's track isn't the queue's: repeat all never wraps it (#1319)
                   _playbackContext: {
                     type: 'listenAlong',
                     name: friend.displayName,
@@ -29415,6 +29451,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       album: friend.cachedRecentTrack.album,
       albumArt: friend.cachedRecentTrack.albumArt,
       sources: cachedSources,
+      _offLap: true, // a friend's track isn't the queue's: repeat all never wraps it (#1319)
       _playbackContext: {
         type: 'listenAlong',
         name: friend.displayName,
@@ -44914,16 +44951,40 @@ useEffect(() => {
               )
             );
           })(),
-          // Repeat button (placeholder) - disabled for now
-          // React.createElement('button', {
-          //   disabled: true,
-          //   className: 'p-2 rounded text-gray-600 cursor-not-allowed',
-          //   title: 'Repeat (coming soon)'
-          // },
-          //   React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 16 16', fill: 'currentColor' },
-          //     React.createElement('path', { d: 'M8,16c-1.3,0-2.7-0.3-3.8-1c-0.8-0.4-1.4-0.9-2-1.6c-0.5-0.5-0.9-1.1-1.3-1.8C0.3,10.5,0,9.3,0,8c0-4.4,3.6-8,8-8c1.1,0,2.1,0.2,3,0.6l-0.4,0.9C9.8,1.2,8.9,1,8,1C4.1,1,1,4.1,1,8c0,1.1,0.3,2.2,0.8,3.2c0.3,0.6,0.7,1.1,1.1,1.6c0.5,0.5,1.1,1,1.8,1.4C5.7,14.7,6.8,15,8,15c3.9,0,7-3.1,7-7c0-1-0.2-2-0.6-2.9l0.9-0.4C15.8,5.7,16,6.8,16,8C16,12.4,12.4,16,8,16z' })
-          //   )
-          // ),
+          // Repeat button (#1319): off, all, one. Disabled during a spinoff or
+          // Listen Along, like shuffle (requestRepeat refuses it there too).
+          (() => {
+            const repeatDisabled = spinoffMode || listenAlongFriend;
+            const tooltipContent = repeatDisabled
+              ? (spinoffMode ? 'Repeat unavailable in Spinoff mode' : 'Repeat unavailable while listening along')
+              : repeatMode === 'all' ? 'Repeating the queue (click to repeat this song)'
+              : repeatMode === 'one' ? 'Repeating this song (click to turn off)'
+              : 'Repeat the queue';
+            return React.createElement(Tooltip, {
+              content: tooltipContent,
+              position: 'top',
+              variant: 'dark'
+            },
+              React.createElement('button', {
+                onClick: repeatDisabled ? undefined : () => requestRepeat('cycle'),
+                disabled: repeatDisabled,
+                'aria-label': repeatMode === 'off' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one',
+                className: 'p-2 rounded transition-colors',
+                style: {
+                  color: repeatDisabled ? '#4b5563' : repeatMode !== 'off' ? '#c084fc' : '#9ca3af',
+                  cursor: repeatDisabled ? 'not-allowed' : 'pointer'
+                }
+              },
+                React.createElement('svg', { className: 'w-4 h-4', viewBox: '0 0 24 24', fill: 'currentColor' },
+                  React.createElement('path', {
+                    d: repeatMode === 'one'
+                      ? 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4zm-4-2V9h-1l-2 1v1h1.5v4H13z'
+                      : 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z'
+                  })
+                )
+              )
+            );
+          })(),
           // Volume - only enabled for local files and Spotify on Computer devices
           (() => {
             const currentResolverId = determineResolverIdFromTrack(currentTrack);

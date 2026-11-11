@@ -27,6 +27,8 @@
 // read during render the same way it was at its old position; moving it
 // earlier changes NOTHING about what it keys on.
 
+const { markOffLap, withoutLapMark, normalizeRepeatMode } = require('../lib/playback-helpers');
+
 function usePlaybackQueue({
   cacheLoaded,
   rememberQueue,
@@ -45,6 +47,25 @@ function usePlaybackQueue({
   const currentQueueRef = React.useRef([]);
   const currentTrackRef = React.useRef(null);
   const playHistoryRef = React.useRef([]); // Stack of previously played tracks for "previous" navigation
+  // Repeat (parachord#1319): 'off' | 'all' | 'one'. The ref is what
+  // handleNext reads; set both through setRepeatMode.
+  const [repeatMode, setRepeatModeState] = React.useState('off');
+  const repeatModeRef = React.useRef('off');
+  const setRepeatMode = (mode) => {
+    const next = normalizeRepeatMode(mode);
+    repeatModeRef.current = next;
+    setRepeatModeState(next);
+  };
+  // Whether a track started playing since this queue was set or last wrapped:
+  // repeat all wraps after an unplayable last track only when one did, so a
+  // queue where nothing plays can't loop (mobile's playedSinceWrap).
+  const playedSinceWrapRef = React.useRef(false);
+  // A new queue is a new lap (#1319): the history from before it stays for
+  // Previous but is no longer this queue's, so repeat all won't wrap into it.
+  const startNewLap = () => {
+    playHistoryRef.current = playHistoryRef.current.map(markOffLap);
+    playedSinceWrapRef.current = false;
+  };
   const [queueAnimating, setQueueAnimating] = React.useState(false);
 
   // Keep refs in sync with state
@@ -110,6 +131,7 @@ function usePlaybackQueue({
 
   const clearQueue = () => {
     setCurrentQueue([]);
+    startNewLap();
     // Reset shuffle state when queue is cleared
     setShuffleMode(false);
     originalQueueRef.current = null;
@@ -168,8 +190,9 @@ function usePlaybackQueue({
   // respectShuffle: if true and shuffle is ON, shuffle the new queue (for "Play All" actions)
   //                 if false (default) and shuffle is ON, turn off shuffle (for clicking specific tracks)
   const setQueueWithContext = (tracks, context, respectShuffle = false) => {
+    startNewLap();
     const taggedTracks = tracks.map(track => ({
-      ...track,
+      ...withoutLapMark(track),
       _playbackContext: context
     }));
     console.log(`🏷️ Tagged ${taggedTracks.length} tracks with context:`, context.type);
@@ -201,7 +224,7 @@ function usePlaybackQueue({
   // Helper to add tracks to existing queue with context
   const addToQueueWithContext = (tracks, context) => {
     const taggedTracks = tracks.map(track => ({
-      ...track,
+      ...withoutLapMark(track),
       _playbackContext: context
     }));
     setCurrentQueue(prev => [...prev, ...taggedTracks]);
@@ -211,8 +234,9 @@ function usePlaybackQueue({
   // If shuffle is on, picks a random first track and shuffles the rest
   const playTrackCollection = (tracks, context = null) => {
     if (!tracks || tracks.length === 0) return;
+    startNewLap();
 
-    let tracksToPlay = [...tracks];
+    let tracksToPlay = tracks.map(track => withoutLapMark(track));
 
     // Tag tracks with context if provided
     if (context) {
@@ -263,8 +287,8 @@ function usePlaybackQueue({
 
     // Tag tracks with context if provided
     const taggedTracks = context
-      ? tracksArray.map(track => ({ ...track, _playbackContext: context }))
-      : tracksArray;
+      ? tracksArray.map(track => ({ ...withoutLapMark(track), _playbackContext: context }))
+      : tracksArray.map(track => withoutLapMark(track));
 
     // Check if nothing is currently playing BEFORE updating queue
     const nothingPlaying = !currentTrackRef.current;
@@ -343,6 +367,11 @@ function usePlaybackQueue({
     currentQueueRef,
     currentTrackRef,
     playHistoryRef,
+    repeatMode,
+    setRepeatMode,
+    repeatModeRef,
+    playedSinceWrapRef,
+    startNewLap,
     queueAnimating,
     setQueueAnimating,
     removeFromQueue,

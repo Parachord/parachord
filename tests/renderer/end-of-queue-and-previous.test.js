@@ -47,7 +47,7 @@ describe('previousAction', () => {
 describe('the engine wiring', () => {
   const engine = fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
   const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
-  const nextStart = engine.indexOf('const handleNext = async (userInitiated = false) => {');
+  const nextStart = engine.indexOf("const handleNext = async (userInitiated = false, { trigger = 'next' } = {}) => {");
   const prevStart = engine.indexOf('const handlePrevious = async () => {');
   const handleNext = engine.slice(nextStart, prevStart);
   const handlePrevious = engine.slice(prevStart, engine.indexOf('const handlePlayPause = async () => {', prevStart));
@@ -59,8 +59,9 @@ describe('the engine wiring', () => {
   });
 
   test('both ways the queue runs out end it: empty, and nothing playable left', () => {
-    expect(handleNext).toMatch(/if \(queue\.length === 0\) \{\s*endOfQueue\('End of the queue'\);\s*return;/);
-    expect(handleNext).toMatch(/if \(nextTrackIndex === -1\) \{\s*endOfQueue\('No playable tracks left in the queue'\);\s*return;/);
+    // advanceAction says 'stop' when nothing playable is left and repeat
+    // doesn't wrap (#1319 repeat, repeat-modes.test.js).
+    expect(handleNext).toMatch(/if \(action === 'stop'\) \{\s*endOfQueue\(queue\.length === 0 \? 'End of the queue' : 'No playable tracks left in the queue'\);\s*return;/);
   });
 
   test('a Listen Along session waiting for the friend keeps its track (it returns before the end of the queue)', () => {
