@@ -105,7 +105,7 @@ When tagging a new version, three places must agree on the version string. Missi
 
 Then commit (`X.Y.Z` is conventional for the commit subject), push, and `git tag vX.Y.Z` + `git push origin vX.Y.Z`. The CI build picks up from the tag.
 
-PRs don't build Mac for now, because hosted Mac runners are short; `main` builds it once, on Apple Silicon, and the Intel build runs only on tags and manual runs (`build.yml`). A Mac-only break shows up on `main`, not on the PR. A job that never gets a runner during a Mac shortage is retried up to 3 times by `rerun-unacquired.yml`, which also covers tags.
+PRs and `main` build Mac on Apple Silicon; the Intel build runs only on tags and manual runs (`build.yml`). PRs skipped Mac from 2026-11-04 to 2026-11-11 while hosted Mac runners were short (#1252, #1251). A job that never gets a runner during a Mac shortage is retried up to 3 times by `rerun-unacquired.yml`, on PRs, `main` and tags.
 
 Two release-only failure modes to know about:
 

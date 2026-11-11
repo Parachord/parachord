@@ -1,12 +1,13 @@
-// macos-latest runners get scarce, and the Intel build needs one too: it
-// cross-compiles on the same arm64 machine. So PRs don't build Mac, main builds it
-// once, and only releases build Intel. A release needs both, because the release
-// job merges the two Mac manifests for the auto-updater.
+// Every run builds Mac on Apple Silicon, pull requests included (PRs skipped it
+// from 2026-11-04 to 2026-11-11 while macOS runners were short, #1252 / #1251).
+// The Intel build cross-compiles on the same arm64 machine, so only releases and
+// manual runs build it. A release needs both, because the release job merges the
+// two Mac manifests for the auto-updater.
 const fs = require('fs');
 const path = require('path');
 
 const yml = fs.readFileSync(path.join(__dirname, '../../.github/workflows/build.yml'), 'utf8');
-const expr = yml.match(/include: >-\s*\n\s*\$\{\{ fromJSON\(format\('\[\{0\}\{1\}\{2\}\]',\s*\n\s*(.+?) && '(\{.+?\}),?' \|\| '',\s*\n\s*(.+?) && '(\{.+?\}),?' \|\| '',\s*\n\s*'(.+?)'\)\) \}\}/);
+const expr = yml.match(/include: >-\s*\n\s*\$\{\{ fromJSON\(format\('\[\{0\}\{1\}\{2\}\]',\s*\n\s*(.+?) && '(\{.+?\}),?' \|\| '',\s*\n\s*'(\{.+?\}),?',\s*\n\s*'(.+?)'\)\) \}\}/);
 
 const name = (j) => `build (${j.os}, ${j.platform}, ${j.arch}${j.arch_label ? `, ${j.arch_label}` : ''})`;
 
@@ -15,8 +16,8 @@ describe('the build matrix', () => {
     expect(expr).not.toBeNull();
   });
   const intel = JSON.parse(expr[2].replace(/,$/, ''));
-  const mac = JSON.parse(expr[4].replace(/,$/, ''));
-  const always = JSON.parse(`[${expr[5]}]`);
+  const mac = JSON.parse(expr[3].replace(/,$/, ''));
+  const always = JSON.parse(`[${expr[4]}]`);
 
   test('only tags and manual runs build Intel', () => {
     expect(expr[1]).toContain("startsWith(github.ref, 'refs/tags/')");
@@ -24,8 +25,9 @@ describe('the build matrix', () => {
     expect(name(intel)).toBe('build (macos-latest, mac, x64, Intel)');
   });
 
-  test('pull requests skip Mac, and everything else builds Apple Silicon', () => {
-    expect(expr[3]).toBe("github.event_name != 'pull_request'");
+  test('every run builds Apple Silicon, pull requests included', () => {
+    // unconditional: no event check in front of the entry
+    expect(yml).not.toMatch(/github\.event_name != 'pull_request' && '\{"os":"macos-latest"/);
     expect(name(mac)).toBe('build (macos-latest, mac, arm64, Apple-Silicon)');
   });
 
