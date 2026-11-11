@@ -47,6 +47,10 @@ function usePlaybackQueue({
   const currentQueueRef = React.useRef([]);
   const currentTrackRef = React.useRef(null);
   const playHistoryRef = React.useRef([]); // Stack of previously played tracks for "previous" navigation
+  // True once a play has started in this run (set by handlePlay): the
+  // launch-time queue restore then stays out of its way (#1287,
+  // shouldRestoreQueue).
+  const playRequestedRef = React.useRef(false);
   // Repeat (parachord#1319): 'off' | 'all' | 'one'. The ref is what
   // handleNext reads; set both through setRepeatMode.
   const [repeatMode, setRepeatModeState] = React.useState('off');
@@ -367,6 +371,7 @@ function usePlaybackQueue({
     currentQueueRef,
     currentTrackRef,
     playHistoryRef,
+    playRequestedRef,
     repeatMode,
     setRepeatMode,
     repeatModeRef,
