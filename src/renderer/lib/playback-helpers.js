@@ -184,10 +184,39 @@ function listenAlongWaitDecision({ waiting, playedTrack, polledTrack }) {
   return waiting === 'song-ended' ? 'not-moved-on' : 'keep-waiting';
 }
 
+// Where a restored queue's first track starts (parachord#1319, the mobile
+// apps' rule): the position saved beside the queue, unless it's in the first
+// RESUME_MIN_SECONDS (barely started) or the last RESUME_END_MARGIN_SECONDS
+// (as good as finished), when it starts over. duration is in seconds, and an
+// unknown duration only applies the first rule.
+const RESUME_MIN_SECONDS = 5;
+const RESUME_END_MARGIN_SECONDS = 10;
+// The key a saved position belongs to: the track's id, or for a track
+// without one (a friend's track from Listen Along, some link plays) its
+// artist, title and album. null when there's nothing to key on, so an id-less
+// position never matches some other id-less track.
+function trackPositionKey(track) {
+  if (!track) return null;
+  if (track.id) return String(track.id);
+  if (!track.artist || !track.title) return null;
+  return `${String(track.artist).toLowerCase()}|${String(track.title).toLowerCase()}|${String(track.album || '').toLowerCase()}`;
+}
+function resumeStartPosition({ position, duration }) {
+  const at = Number(position);
+  if (!Number.isFinite(at) || at < RESUME_MIN_SECONDS) return 0;
+  const length = Number(duration);
+  if (Number.isFinite(length) && length > 0 && at > length - RESUME_END_MARGIN_SECONDS) return 0;
+  return at;
+}
+
 module.exports = {
   LISTEN_ALONG_FAILED_POLLS_LIMIT,
   friendTrackKey,
   listenAlongWaitDecision,
+  RESUME_MIN_SECONDS,
+  RESUME_END_MARGIN_SECONDS,
+  resumeStartPosition,
+  trackPositionKey,
   RADIO_SEED_PROBE_COUNT,
   noPlayableSimilarTracksMessage,
   hasPlayableSource,

@@ -120,6 +120,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   listenAlongEndAfterSongRef,
   listenAlongWaitingRef,
   listenAlongLastPollTrackRef,
+  pendingStartPositionRef,
 }) {
   // ---------------------------------------------------------------
   // Input-destructure — the only "wiring". Names below are the exact
@@ -2731,6 +2732,13 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       historyLength: playHistoryRef.current.length
     });
     if (action === 'none') return;
+    // A track that isn't loaded yet (#1319, as on mobile): restarting it moves
+    // where Play will start back to the beginning, without starting it.
+    if (action === 'restart' && trackNeedsExplicitStart.current && !isPlayingRef.current) {
+      pendingStartPositionRef.current = null;
+      setProgress(0);
+      return;
+    }
 
     // If user clicked previous while listening along, end the session
     const listenAlongFriendNow = listenAlongFriendRef.current;
