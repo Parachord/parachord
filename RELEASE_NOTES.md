@@ -32,6 +32,7 @@
 - **A track with no album shows no album.** A track opened from a link used to get "Single" or its service's name as its album, which could open an unrelated release from the album art and ended up in your scrobbles. Tracks saved that way keep showing as saved, and saving one again doesn't add a duplicate.
 - **"See all" on Home's Friend Activity opens your friends.** It led to a blank page, and it disappeared whenever a friend was listening. It now opens the Friends tab in your Collection and shows next to the "listening now" count.
 - **New friends show up without a restart.** Someone you followed on Last.fm or ListenBrainz while Parachord was open didn't appear until you restarted if you had no friends yet. Parachord now checks for new friends every 30 minutes and when you open the Friends tab.
+- **Songs found in a short session stay found.** Where each song plays from was saved only every five minutes, so after a shorter session Parachord searched every service again for the songs you'd just seen. It now saves within a minute of finding them.
 
 ## Recommendations
 
