@@ -8,9 +8,9 @@ Related: [METADATA_SOURCES.md](../architecture/METADATA_SOURCES.md) (artist imag
 
 | Surface | Where in the UI | Algorithm / source | Seeded by | Produces | Needs |
 |---|---|---|---|---|---|
-| Recommendations | Sidebar "Recommendations"; Home "For You" | Last.fm recommended station; ListenBrainz recommendation playlist | Server-side, from the user's scrobbles on that service | Tracks (artists derived from them) | Last.fm or ListenBrainz username |
+| Recommendations | Sidebar "Recommendations"; Home "For You" | Plugins with the `recommendations` capability (Last.fm station, ListenBrainz playlist); Shuffleupagus section | Server-side, from the user's listening history + AI | Sections: generic Artists/Songs/Albums/Playlists buckets + provider-titled rows | Last.fm or ListenBrainz username, an active recommendations resolver, or an enabled AI chat provider |
 | Weekly Jams / Weekly Exploration | Home | ListenBrainz `createdfor` playlists | ListenBrainz's own weekly generation | Track playlists | ListenBrainz username |
-| Shuffleupagus suggestions | Home "Album Suggestions" / "Artist Suggestions" | AI chat plugin, one prompt per Home visit | Listening history, collection, prior suggestions | Albums and artists | AI chat plugin + "Share my data" |
+| Shuffleupagus suggestions | Home "AI Suggestions" section (Shuffleupagus badge); Recommendations page "Shuffleupagus" section | AI chat plugin, one prompt per visit (either page) | Listening history, collection, prior suggestions | Albums and artists (with reasons) | AI chat plugin + "Share my data" |
 | Shuffleupagus chat | Playbar AI button; Home; `parachord://chat` | AI chat plugin with tools | Listening history, collection, queue, playlists, friends | Anything the model plays, queues or saves | AI chat plugin |
 | AI Playlist (one shot) | Prompt panel | AI `generate` plugin | Listening history when sharing is on | Track list | AI generate plugin |
 | Related Artists | Artist page tab | Last.fm `artist.getsimilar` merged with ListenBrainz labs `similar-artists` | The artist | Artists | Nothing |
@@ -33,22 +33,27 @@ Nothing in the app calls ListenBrainz `cf/recommendation`, `similar-users` or la
 
 **Unread dots.** `generateDiscoveryHash` joins the first ten item IDs of a surface. `checkDiscoveryUnread` compares that against the persisted `discovery_seen_{recommendations|criticsPicks|charts|newReleases|concerts}` keys. The first load is never marked unread. Dots can be hidden with the `showDiscoveryBadges` setting.
 
-**Cache lifetimes** (`CACHE_TTL` in src/renderer/app.js): recommendations 1 hour (memory only), charts 24 hours, Fresh Drops 6 hours, concerts 24 hours. Critical Darlings are refetched after 4 hours (checked in `loadCriticsPicks`, not a `CACHE_TTL` entry).
+**Cache lifetimes** (`CACHE_TTL` in src/renderer/app.js): recommendations are cached PER PROVIDER for 1 hour (memory only, `recommendationsCache`), plus a 20s bound per provider fetch (`recommendationProvider`); charts 24 hours, Fresh Drops 6 hours, concerts 24 hours. Critical Darlings are refetched after 4 hours (checked in `loadCriticsPicks`, not a `CACHE_TTL` entry).
 
-**Recommendation blocklist.** `addToRecommendationBlocklist` stores `{ artists, albums, tracks }` under the store key `recommendation_blocklist`, written by the `block_recommendation` tool from in-app chat or MCP. `recommendation-blocklist.js` (root, loaded by index.html as `window.recommendationBlocklist`) decides what "blocked" means: a blocked artist blocks everything by them, a blocked album blocks that album and tracks on it, a blocked track blocks that track only, all case-insensitive and exact. It is applied by the Recommendations page (cached and fresh paths), Fresh Drops, the Home Shuffleupagus suggestions (filtered in code and listed in the prompt), and the chat system prompt (a BLOCKLIST section after the "do not recommend" list). Charts, Critical Darlings and Spinoff are not personalized and do not consult it. There is no UI to view or clear the list yet.
+**Recommendation blocklist.** `addToRecommendationBlocklist` stores `{ artists, albums, tracks }` under the store key `recommendation_blocklist`, written by the `block_recommendation` tool from in-app chat or MCP. `recommendation-blocklist.js` (root, loaded by index.html as `window.recommendationBlocklist`) decides what "blocked" means: a blocked artist blocks everything by them, a blocked album blocks that album and tracks on it, a blocked track blocks that track only, all case-insensitive and exact. It is applied by the Recommendations page (at MERGE time, so a block made since a provider cache was filled takes effect immediately — the item pick is `blockedItemPick` in `src/renderer/lib/recommendation-model.js`), Fresh Drops, the Shuffleupagus suggestions (filtered in code and listed in the prompt), and the chat system prompt (a BLOCKLIST section after the "do not recommend" list). Charts, Critical Darlings and Spinoff are not personalized and do not consult it. There is no UI to view or clear the list yet.
 
 ## Recommendations page
 
-Code: `loadRecommendations`, `loadLastfmRecommendations`, `loadListenbrainzRecommendations`. Loaded on navigation to the page and on the Home view.
+Code: `loadRecommendations`, `loadMoreRecommendationSection`, `refreshMergedRecommendations` in src/renderer/app.js; the pure model is `src/renderer/lib/recommendation-model.js`. Loaded on navigation to the page and for the Home "For You" card (Home asks only the scrobbler meta-services — a content resolver's recommendation fetches are the page's own to ask for, so a Home visit never queues them ahead of track resolution).
+
+The page is provider-driven: every plugin with the `recommendations` capability answers `getRecommendations` with sections of typed items (artist / album / song / playlist, each with an optional image URL, reason, and stable ids the service already knows — an MBID or ISRC rides onto a song's track so MBID enrichment and the exact-MBID match tier need no extra lookup; see "Recommendations" in [../architecture/plugins.md](../architecture/plugins.md)). The Shuffleupagus (LLM) suggestions render as a titled "Shuffleupagus" section — the same batch Home renders its AI Suggestions section from (one fetch serves both surfaces; the every-visit setting covers both). The layout:
+
+- **Generic buckets first** — Artists, Songs, Albums, Playlists — fed by every provider's UNTITLED sections, one item type per bucket, deduplicated per type so two providers recommending the same thing show it once. The Artists bucket is also fed by artists derived from the generic songs (the page's pre-sectioning Artists tab).
+- **Then the provider-titled sections**, in provider order (active content resolvers in the user's priority order, then meta-services).
+- Each section shows its first few items with a **Show all** button; providers that implement `expandRecommendationSection` get a **Load more** that fetches the next page through the provider's own continuation.
+- Songs resolve through the shared resolution scheduler (source badges, per-resolver play) like every other track list. Albums open through `handleCollectionAlbumClick` and offer Play / Add to Queue / Add to Playlist on hover. Playlists play through the generic `lookupPlaylist` path (`resolveProviderPlaylistUrl`) and import through `handleImportPlaylistFromUrl`.
+
+Providers: Last.fm (the recommended station — `plugins-src/lastfm/implementation.js`) and ListenBrainz (the recommendation playlist — `plugins-src/listenbrainz/implementation.js`). The fetches used to live in app.js; they moved into the plugins so the page is capability-driven and mobile can mirror the same contract. A provider that is not configured answers `[]` without a request; a readiness failure (signed out) is kept out of the cache so the next visit asks again.
 
 - **Last.fm**: one request to `https://www.last.fm/player/station/user/{username}/recommended`. This is the website's recommended-station JSON, not a documented API method, and it takes no API key. It returns a `playlist` of tracks.
-- **ListenBrainz**: `GET /1/user/{username}/playlists/recommendations`, then the first playlist's tracks from `GET /1/playlist/{id}`. If no recommendation playlist exists, it falls back to `GET /1/stats/user/{username}/recordings?range=month&count=50`, which is the user's own most-played tracks for the month rather than new music. Requests go through `fetchListenBrainz`, which retries 429 and 503 with 1.5s, 3s and 6s waits.
-- Both run in parallel. ListenBrainz tracks go first, deduplicated by lowercase `artist|title`, each tagged `source: 'listenbrainz' | 'lastfm'`.
-- The page shows two tabs, Artists and Songs. The Artists tab is the set of unique artists found in the recommended tracks. There is no artist-level recommendation call. When both services are configured, All / ListenBrainz / Last.fm filter pills appear.
-- Not configured: a "Connect a music service" card with buttons for each service.
-- Cache: one hour, in memory only.
-
-The `recommendations: true` capability declared by `plugins/lastfm.axe` and `plugins/listenbrainz.axe` is not read by any code. Both plugins have empty implementations; the fetches above live in app.js.
+- **ListenBrainz**: `GET /1/user/{username}/playlists/recommendations`, then the first playlist's tracks from `GET /1/playlist/{id}`. If no recommendation playlist exists, the plugin answers nothing (no fallback to the user's own top recordings — parachord#1021). Requests retry 429 and 503 with 1.5s, 3s and 6s waits.
+- Not configured (no scrobbler username, no active recommendations resolver, no enabled chat provider with sharing on): a "Connect a music service" card with buttons for each service.
+- Cache: per provider, one hour, in memory only.
 
 ## Weekly Jams and Weekly Exploration (Home)
 
@@ -56,11 +61,11 @@ Code: `loadWeeklyPlaylists`, `loadWeeklyJamTracks`.
 
 `GET /1/user/{username}/playlists/createdfor?count=100`. Playlists whose title contains "weekly jams" or "weekly exploration" are shown in two columns, up to four weeks each (This Week, Last Week, 2 Weeks Ago, 3 Weeks Ago). Tracks come from `GET /1/playlist/{id}`; cover art from the Cover Art Archive via the playlist's `caa_release_mbid`. Needs a ListenBrainz username; the section is hidden otherwise. Fetched once per Home visit, no persistent cache.
 
-## Shuffleupagus suggestions (Home)
+## Shuffleupagus suggestions (Recommendations page)
 
-Code: `loadAiRecommendations` (src/renderer/app.js); rendered by `HomePage` in `src/renderer/components/home-page.js`.
+Code: `loadAiRecommendations` + the `fetchAiRecommendations` effect (src/renderer/app.js); rendered as the page's titled "Shuffleupagus" section. They used to be Home's "Album Suggestions" / "Artist Suggestions" rows; the sectioned Recommendations page is their only home now (Home keeps the "For You" card that links there).
 
-Runs only when the view is Home, at least one AI plugin with the `chat` capability is enabled, and "Share my data" (`ai_include_history`) is on. By default the suggestions stay until the user presses Refresh (the button on the Album Suggestions row); Home fetches on its own only when it has no albums to show. Settings › General › Discover › "Refresh Home suggestions on every visit" (`home_suggestions_auto_refresh`, off by default) fetches a new batch on each Home visit instead. The decision is `shouldAutoRefreshHomeSuggestions` in `src/renderer/lib/home-suggestions-refresh.js`. It calls the selected chat provider (or the first enabled one) with no tools and asks for 12 albums and 20 artists as JSON.
+Runs only when the Recommendations view is active, at least one AI plugin with the `chat` capability is enabled, and "Share my data" (`ai_include_history`) is on. By default the suggestions stay until the user presses Refresh (the section's Refresh button); the page fetches on its own only when it has no albums to show. Settings › General › Discover › "Refresh Shuffleupagus suggestions on every visit" (`home_suggestions_auto_refresh`, off by default) fetches a new batch on each page visit instead. The decision is `shouldAutoRefreshHomeSuggestions` in `src/renderer/lib/home-suggestions-refresh.js`. It calls the selected chat provider (or the first enabled one) with no tools and asks for 12 albums and 20 artists as JSON.
 
 Prompt context:
 - `fetchListeningContext()` output: recently played (15), top artists (25), top tracks (20), top albums (15).
@@ -68,7 +73,7 @@ Prompt context:
 - A random "variety theme".
 - An exclusion list of earlier suggestions (last 20 albums, last 50 artists) so refreshes do not repeat.
 
-Each suggested album is checked against a MusicBrainz release-group search (`primarytype:album`, excluding live, compilation, remix, soundtrack and similar) at one request per 1.1s, stopping at five valid albums. The card shows five artists and up to five albums. Results persist in the store as `cache_ai_suggestions`. Without an AI plugin or with sharing off, the card becomes "Surprise Me" with a link to chat or to set up a plugin.
+Each suggested album is checked against a MusicBrainz release-group search (`primarytype:album`, excluding live, compilation, remix, soundtrack and similar) at one request per 1.1s, stopping at five valid albums. The section shows the reasons as tooltips and the album art / artist photos arrive through the page's shared image pipeline (`recommendationImages`). Results persist in the store as `cache_ai_suggestions`. While the LLM thinks with nothing cached, the section skeleton-shimmers.
 
 ## Shuffleupagus chat
 
@@ -178,7 +183,7 @@ Pinned and saved friends are polled every two minutes (15 seconds during listen-
 
 ## Meta-service plugin capabilities
 
-From the manifests in `plugins/*.axe`. The app only reads `generate`, `chat`, `concerts` and `playbackTelemetry`; `recommendations`, `metadata` and `listeningHistory` are declared but not consulted.
+From the manifests in `plugins/*.axe`. The app reads `generate`, `chat`, `concerts`, `playbackTelemetry` and `recommendations`; `metadata` and `listeningHistory` are declared but not consulted.
 
 | Plugin | Capabilities | Auth |
 |---|---|---|

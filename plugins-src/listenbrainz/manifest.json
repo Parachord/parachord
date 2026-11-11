@@ -3,10 +3,10 @@
     "id": "listenbrainz",
     "name": "ListenBrainz",
     "type": "meta-service",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "author": "Parachord Team",
     "description": "Open-source music listening data and recommendations powered by your ListenBrainz history",
-    "icon": "🎵",
+    "icon": "\ud83c\udfb5",
     "color": "#353070",
     "homepage": "https://listenbrainz.org"
   },

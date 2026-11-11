@@ -132,11 +132,15 @@ describe('the pages use the mitigations', () => {
     expect((app.match(/window\.headerCollapseDecision\(\{ scrollTop, scrollHeight, clientHeight, collapsed: (newReleases|recommendations)HeaderCollapsed \}\)/g) || []).length).toBe(2);
   });
 
-  test('recommendation artist images are written through the coalescer', () => {
-    const start = app.indexOf('const resolveRecommendationArtistImages = async (artists) => {');
-    const body = app.slice(start, app.indexOf('\n  };', start));
-    expect(body).toMatch(/recArtistImageWriterRef\.current\.queue\(artist\.id/);
+  test('recommendation item images are written through the coalescer', () => {
+    // The per-item image fetch effect (recommendationImagesWriterRef): the
+    // old per-artist loop (resolveRecommendationArtistImages) wrote one
+    // setRecommendations per image.
+    const start = app.indexOf('const recommendationImageFetchesRef = useRef(new Set());');
+    const body = app.slice(start, app.indexOf('\n  }, [activeView, recommendations.sections, recommendationImages]));', start));
+    expect(body).toMatch(/recommendationImagesWriterRef\.current\.queue\(item\.id/);
     expect(body).not.toMatch(/setRecommendations\(/);
+    expect(body).not.toMatch(/setRecommendationImages\(/);
   });
 });
 
