@@ -39075,16 +39075,23 @@ useEffect(() => {
                 },
                 onContextMenu: copyParachordLink
               }, 'RECOMMENDATIONS'),
-              React.createElement('p', {
-                className: 'mt-6 text-white/85 text-sm font-medium uppercase tracking-wider',
+              // The hero's two lines, as Fresh Drops and Critical Darlings set
+              // them: an uppercase white line (text-shadowed) and a softer
+              // description under it.
+              React.createElement('div', {
+                className: 'flex items-center gap-1 mt-6',
                 style: { textShadow: '0 1px 10px rgba(0,0,0,0.5)' }
-              }, metaServiceConfigs.listenbrainz?.username
-                ? `Personalized picks for ${metaServiceConfigs.listenbrainz.username}`
-                : metaServiceConfigs.lastfm?.username
-                  ? `Personalized picks for ${metaServiceConfigs.lastfm.username}`
-                  : 'Personalized picks from your services'),
+              },
+                React.createElement('span', {
+                  className: 'px-2 py-1 text-sm font-medium uppercase tracking-wider text-white'
+                }, metaServiceConfigs.listenbrainz?.username
+                  ? `Personalized picks for ${metaServiceConfigs.listenbrainz.username}`
+                  : metaServiceConfigs.lastfm?.username
+                    ? `Personalized picks for ${metaServiceConfigs.lastfm.username}`
+                    : 'Personalized picks from your services')
+              ),
               React.createElement('p', {
-                className: 'mt-2 text-white/70 text-sm'
+                className: 'mt-2 text-white/80 text-sm'
               }, 'From your connected services and Shuffleupagus')
             ),
             // COLLAPSED STATE - Inline layout matching artist page
