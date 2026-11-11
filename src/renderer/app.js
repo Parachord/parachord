@@ -651,7 +651,7 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
-const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision } = require('./lib/playback-helpers');
+const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -3235,6 +3235,11 @@ const Parachord = () => {
   const [playbarSourceDropdownOpen, setPlaybarSourceDropdownOpen] = useState(false); // Source selector dropdown
   // Track if currentTrack was restored from saved queue and needs explicit playback start
   const trackNeedsExplicitStart = useRef(false);
+  // Where the next start of a track should begin (#1319): { trackKey, position }
+  // in seconds. Set when a restored queue resumes mid-track, and by a seek on
+  // a track that isn't loaded yet; applied once that track is playing.
+  const pendingStartPositionRef = useRef(null);
+  const handleSeekRef = useRef(null); // the latest handleSeek, for the effect that applies the position
   // Playback progress is a HIGH-FREQUENCY value (updated every 100–250ms during
   // playback). Keeping it in top-level useState re-rendered the entire Parachord
   // tree on every tick (parachord#768). Instead it lives in a ref + a subscriber
@@ -8056,10 +8061,44 @@ const Parachord = () => {
     listenAlongEndAfterSongRef,
     listenAlongWaitingRef,
     listenAlongLastPollTrackRef,
+    pendingStartPositionRef,
   });
   // For the friend poll, which runs from an interval (#1319).
   const holdNextQueueTrackRef = useRef(null);
   holdNextQueueTrackRef.current = holdNextQueueTrack;
+
+  // A restored queue resumes where it was (#1319, the mobile apps' rule). The
+  // playing position is saved beside the queue every 5 s while playing and
+  // on pause, keyed by the track, so a restart within 5 s of a track change
+  // finds the old track's id and starts the new one over.
+  useEffect(() => {
+    if (!cacheLoaded || !rememberQueue || !window.electron?.store) return undefined;
+    const save = () => {
+      const track = currentTrackRef.current;
+      const trackKey = trackPositionKey(track);
+      if (!trackKey || track._protocolLoading) return;
+      Promise.resolve(window.electron.store.set('saved_queue_position', { trackKey, position: progressRef.current })).catch(() => {});
+    };
+    if (!isPlaying) { save(); return undefined; }
+    const timer = setInterval(save, 5000);
+    return () => clearInterval(timer);
+  }, [isPlaying, currentTrack?.id, cacheLoaded, rememberQueue]);
+
+  // Start a track where it should (#1319): once the track a pending position
+  // belongs to is playing, seek there (after a moment, so the engine has the
+  // stream). A different track drops it. Engines handleSeek can't seek
+  // (Spotify) start from the beginning, as a seek does today.
+  useEffect(() => {
+    const pending = pendingStartPositionRef.current;
+    if (!pending) return;
+    if (trackPositionKey(currentTrack) !== pending.trackKey) {
+      pendingStartPositionRef.current = null;
+      return;
+    }
+    if (!isPlaying) return;
+    pendingStartPositionRef.current = null;
+    if (pending.position > 0) setTimeout(() => handleSeekRef.current?.(pending.position), 500);
+  }, [isPlaying, currentTrack?.id]);
 
   // Library-scale artwork for local tracks with no embedded or folder art
   // (#784). One representative track per album is looked up (MBID mapper,
@@ -18032,7 +18071,7 @@ ${trackListXml}
         // Concerts location
         'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
         // Queue & tutorial
-        'saved_queue', 'saved_playback_context', 'saved_shuffle_state',
+        'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state',
         'tutorial_completed', 'whats_new_dismissed_version',
         // Loved-tracks push to LB/LFM (opt-in per service)
         'scrobbler_love_push_enabled', 'love_pushed_keys',
@@ -18783,6 +18822,7 @@ ${trackListXml}
 
       // Queue, playback context, shuffle state, tutorial, version — already in batch
       const savedQueue = savedRememberQueue ? d['saved_queue'] : null;
+      const savedQueuePosition = savedRememberQueue ? d['saved_queue_position'] : null;
       const savedPlaybackContext = savedRememberQueue ? d['saved_playback_context'] : null;
       const savedShuffleState = savedRememberQueue ? d['saved_shuffle_state'] : null;
       const tutorialCompleted = d['tutorial_completed'];
@@ -18804,6 +18844,18 @@ ${trackListXml}
           setIsPlaying(false); // Ensure it starts paused
           // Mark that this track needs explicit start (not just resume) when played
           trackNeedsExplicitStart.current = true;
+          // Resume where it was (#1319, mobile's rule): the position saved
+          // beside the queue, for this track only, and not in its first 5 s
+          // or last 10 s. The bar shows it now; Play starts there.
+          const firstTrackKey = trackPositionKey(firstTrack);
+          if (firstTrackKey && savedQueuePosition && savedQueuePosition.trackKey === firstTrackKey) {
+            const startAt = resumeStartPosition({ position: savedQueuePosition.position, duration: firstTrack.duration });
+            if (startAt > 0) {
+              pendingStartPositionRef.current = { trackKey: firstTrackKey, position: startAt };
+              setProgress(startAt);
+              console.log(`📦 Restored position: ${Math.round(startAt)}s into "${firstTrack.title}"`);
+            }
+          }
           console.log(`📦 Restored queue: "${firstTrack.title}" ready in playbar, ${remainingQueue.length} tracks in queue`);
         }
         // Restore playback context
@@ -34196,6 +34248,14 @@ useEffect(() => {
   // re-allow updates 1s after the last drag movement.
   const handleSeek = useCallback(async (newPosition) => {
     if (browserPlaybackActive || !currentTrack) return;
+    // A track that isn't loaded yet (a restored queue's first track, or one a
+    // failed play left in the playbar) has no engine to seek: the seek moves
+    // where Play will start (#1319, as on mobile).
+    if (trackNeedsExplicitStart.current && !isPlayingRef.current) {
+      pendingStartPositionRef.current = { trackKey: trackPositionKey(currentTrack), position: newPosition };
+      setProgress(newPosition);
+      return;
+    }
     const activeResolver = currentTrack?._activeResolver || determineResolverIdFromTrack(currentTrack);
     if (activeResolver === 'spotify') return; // seeking not supported for Spotify
     seekingRef.current = true;
@@ -34249,6 +34309,7 @@ useEffect(() => {
       }
     }, 1000);
   }, [currentTrack, browserPlaybackActive, discordPresenceEnabled]);
+  handleSeekRef.current = handleSeek;
 
   const formatTimeAgo = (timestamp) => {
     if (!timestamp) return '';
