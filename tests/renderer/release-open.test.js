@@ -105,7 +105,7 @@ describe('app.js wiring', () => {
   test('a known release-group id skips the release-id probe unless its release is cached', () => {
     // loadRelease (src/renderer/lib/release-lookup.js) skips the probe;
     // page-load-budget.test.js counts it (1 request for a flagged group)
-    expect(releaseLookup).toMatch(/const skipProbe = !!isReleaseGroup && !\(getCache\(\)\[id\] && getCache\(\)\[id\]\.alias\);/);
+    expect(releaseLookup).toMatch(/const skipProbe = !!isReleaseGroup && !hasCurrentAlias\(getCache\(\)\[id\]\);/);
     expect(releaseLookup).toMatch(/let response = skipProbe \? null : await fetchReleaseDetails\(id, fetchImpl\);/);
     // with no session edition pick (#1238) the call is exactly the flagged
     // group open; a pick redirects the group to the picked release

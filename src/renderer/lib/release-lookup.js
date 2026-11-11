@@ -22,7 +22,13 @@
 // getCache: () => the cache object (app.js replaces releaseDetailsCache.current
 // wholesale when the saved caches load, so it is read on every call).
 
-const { pickRelease, releaseTrackCount } = require('./release-pick');
+const { pickRelease, releaseTrackCount, PICK_RULE } = require('./release-pick');
+
+// Whether a release group's cached alias still stands: it exists and was made
+// under the current pickRelease rule (PICK_RULE). An alias from an older rule
+// is ignored, so the group is browsed and picked again once (#1312: aliases
+// made before the Worldwide/US preference kept pointing at Bahrain).
+const hasCurrentAlias = (entry) => !!(entry && entry.alias && entry.pick === PICK_RULE);
 
 const MB_HEADERS = { 'User-Agent': 'Parachord/1.0.0 (https://github.com/harmonix)' };
 
@@ -67,7 +73,7 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
     const t = now();
     let releaseId = requestedId;
     const aliasEntry = cache[requestedId];
-    if (aliasEntry && aliasEntry.alias && (t - aliasEntry.timestamp) < ttlMs) {
+    if (hasCurrentAlias(aliasEntry) && (t - aliasEntry.timestamp) < ttlMs) {
       releaseId = aliasEntry.alias;
     }
     const cached = cache[releaseId];
@@ -96,7 +102,7 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
 
   const rememberReleaseGroupAlias = (releaseGroupId, releaseId) => {
     if (releaseGroupId && releaseId && releaseGroupId !== releaseId) {
-      getCache()[releaseGroupId] = { ...getCache()[releaseGroupId], alias: releaseId, timestamp: now() };
+      getCache()[releaseGroupId] = { ...getCache()[releaseGroupId], alias: releaseId, pick: PICK_RULE, timestamp: now() };
     }
   };
 
@@ -171,7 +177,7 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
   // cached album 0 requests, a known group 1, a release id 1, an unflagged
   // group 2 (the probe, then the browse).
   const loadRelease = async ({ id, isReleaseGroup }, fetchImpl = defaultFetch) => {
-    const skipProbe = !!isReleaseGroup && !(getCache()[id] && getCache()[id].alias);
+    const skipProbe = !!isReleaseGroup && !hasCurrentAlias(getCache()[id]);
     let response = skipProbe ? null : await fetchReleaseDetails(id, fetchImpl);
     if (!response || (!response.ok && response.status === 404)) {
       response = await fetchReleaseGroupDetails(id, fetchImpl);
@@ -182,4 +188,4 @@ function createReleaseLookup({ getCache, fetch: defaultFetch, ttlMs, now = () =>
   return { cachedReleaseDetails, fetchReleaseDetails, rememberReleaseGroupAlias, fetchReleaseGroupDetails, fetchReleaseGroupReleases, loadRelease };
 }
 
-module.exports = { createReleaseLookup, releaseFormats };
+module.exports = { createReleaseLookup, releaseFormats, hasCurrentAlias };

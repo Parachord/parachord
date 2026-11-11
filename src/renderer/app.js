@@ -644,7 +644,7 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
-const { createReleaseLookup, releaseFormats } = require('./lib/release-lookup');
+const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
@@ -25186,7 +25186,7 @@ ${tracks}
       // alias cache maps it to the release, whose details (title, date,
       // artist credit) are in the release-details cache.
       const aliasEntry = album.releaseGroupId && releaseDetailsCache.current[album.releaseGroupId];
-      const aliasedRelease = aliasEntry?.alias && releaseDetailsCache.current[aliasEntry.alias]?.data;
+      const aliasedRelease = hasCurrentAlias(aliasEntry) && releaseDetailsCache.current[aliasEntry.alias]?.data;
       if (aliasedRelease && (Date.now() - aliasEntry.timestamp) < CACHE_TTL.releaseDetails) {
         release = aliasedRelease;
       }
@@ -27549,7 +27549,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
       // A group already opened answers from the cache; otherwise one request
       // (the browse carries the track list).
-      const details = releaseDetailsCache.current[rgId]?.alias
+      const details = hasCurrentAlias(releaseDetailsCache.current[rgId])
         ? await fetchReleaseDetails(rgId)
         : await fetchReleaseGroupDetails(rgId);
       if (!details.ok) return null;

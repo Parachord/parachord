@@ -72,6 +72,44 @@ describe('pickRelease', () => {
     expect(pickRelease([null, undefined])).toBeNull();
   });
 
+  // #1312: MusicBrainz lists one digital release per storefront, same day,
+  // and the first one listed put Bahrain on Bon Iver's "For Emma, Forever Ago".
+  const at = (r, country) => ({ ...r, country });
+
+  test('among same-day digital releases, Worldwide beats the first one listed', () => {
+    const picked = pickRelease([
+      at(rel('bh', [['Digital Media', 9]], '2008-02-19'), 'BH'),
+      at(rel('ad', [['Digital Media', 9]], '2008-02-19'), 'AD'),
+      at(rel('xw', [['Digital Media', 9]], '2008-02-19'), 'XW'),
+      at(rel('us', [['Digital Media', 9]], '2008-02-19'), 'US'),
+    ]);
+    expect(picked.id).toBe('xw');
+  });
+
+  test('with no Worldwide release, the US one', () => {
+    const picked = pickRelease([
+      at(rel('bh', [['Digital Media', 9]], '2008-02-19'), 'BH'),
+      at(rel('us', [['Digital Media', 9]], '2008-02-19'), 'US'),
+    ]);
+    expect(picked.id).toBe('us');
+  });
+
+  test('the country preference wins over an earlier date in another country', () => {
+    const picked = pickRelease([
+      at(rel('gb', [['Digital Media', 9]], '2008-02-01'), 'GB'),
+      at(rel('xw', [['Digital Media', 9]], '2008-03-10'), 'XW'),
+    ]);
+    expect(picked.id).toBe('xw');
+  });
+
+  test('but never over the format and track-count rules', () => {
+    const picked = pickRelease([
+      at(rel('xw-cd', [['CD', 9]], '2008-02-19'), 'XW'),
+      at(rel('bh-digital', [['Digital Media', 9]], '2008-02-19'), 'BH'),
+    ]);
+    expect(picked.id).toBe('bh-digital');
+  });
+
   test('releases with no media information keep MusicBrainz order', () => {
     expect(pickRelease([{ id: 'a' }, { id: 'b' }]).id).toBe('a');
   });

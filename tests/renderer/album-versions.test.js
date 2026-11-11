@@ -25,7 +25,8 @@ global.ReactDOM = require('react-dom');
 global.ReactVirtual = require('@tanstack/react-virtual');
 
 const { renderToStaticMarkup } = require('react-dom/server');
-const { createReleaseLookup } = require('../../src/renderer/lib/release-lookup');
+const { createReleaseLookup, hasCurrentAlias } = require('../../src/renderer/lib/release-lookup');
+const { PICK_RULE } = require('../../src/renderer/lib/release-pick');
 const { isCatalogAlbumEdition, albumVersionsGroup, albumVersionsKey } = require('../../src/renderer/lib/album-catalog');
 const { AlbumVersionsMenu } = require('../../src/renderer/components/cards');
 
@@ -111,12 +112,29 @@ describe('release-lookup: the group\'s editions for the source dropdown', () => 
     // and the alias redirects a group open to the picked edition, from cache
     const { fetch: f2, calls: calls2 } = recordingFetch(groupBrowse([fullRelease(REL_A, 'CD', 6)]));
     const l2 = lookup(f2);
-    l2.cache[RG] = { alias: REL_B, releases: [fullRelease(REL_A, 'CD', 6)], timestamp: Date.now() };
+    l2.cache[RG] = { alias: REL_B, pick: PICK_RULE, releases: [fullRelease(REL_A, 'CD', 6)], timestamp: Date.now() };
     l2.cache[REL_B] = { data: fullRelease(REL_B, 'Digital Media', 8, { media: [{ format: 'Digital Media', 'track-count': 8, position: 1, tracks: [{ position: 1, title: 'Track', recording: { id: 'r' } }] }] }), timestamp: Date.now() };
     const open = await l2.loadRelease({ id: RG, isReleaseGroup: true });
     expect(calls2).toHaveLength(0);
     expect(open.releaseId).toBe(REL_B);
     expect(open.fromCache).toBe(true);
+  });
+
+  test('an alias made under an older pick rule is picked again (#1312)', async () => {
+    // Aliases persist 30 days; one written before the Worldwide/US
+    // preference (no `pick` stamp) kept the Bahrain release on screen.
+    const { fetch, calls } = recordingFetch(groupBrowse([fullRelease(REL_A, 'CD', 6)]));
+    const l = lookup(fetch);
+    l.cache[RG] = { alias: REL_B, timestamp: Date.now() };
+    l.cache[REL_B] = { data: fullRelease(REL_B, 'Digital Media', 8), timestamp: Date.now() };
+    const open = await l.loadRelease({ id: RG, isReleaseGroup: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('release?release-group=');
+    expect(open.fromCache).toBe(false);
+    // and the new alias carries the current rule
+    expect(l.cache[RG].pick).toBe(PICK_RULE);
+    expect(hasCurrentAlias(l.cache[RG])).toBe(true);
+    expect(hasCurrentAlias({ alias: REL_B })).toBe(false);
   });
 
   test('formats count per-medium and name unlabeled mediums by position', async () => {
