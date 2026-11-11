@@ -3383,8 +3383,14 @@ const Parachord = () => {
   // "load more" in-flight markers per section key
   const [recommendationsLoadingMore, setRecommendationsLoadingMore] = useState({});
   // Providers being asked that have nothing on screen yet ({ id, name }), so a
-  // page already showing other sections still shows where theirs will land.
+  // page already showing other sections still shows that more is coming.
   const [recommendationsPending, setRecommendationsPending] = useState([]);
+  // Providers whose last answer this session had no sections (empty, or not
+  // ready: an active resolver the account can't use, e.g. Amazon Music without
+  // a subscription). They are still asked every load, but get no skeleton,
+  // which would promise sections that never come; an answer with sections
+  // clears the mark.
+  const recommendationsQuietRef = useRef(new Set());
   // Pagination state - how many items to show per column
   const [displayLimits, setDisplayLimits] = useState({
     artists: 5,
@@ -27044,6 +27050,11 @@ Return ONLY the JSON array, no other text.`;
   // loads on the same search chain track resolution uses — never queue ahead
   // of resolution on a Home visit, where resolution is busiest. The
   // Recommendations page asks every provider.
+  // Which providers the last full load asked, as recommendationProviderKey.
+  // A load that ran before the plugins finished loading (the app reopening on
+  // this page) asked none; the effect below loads again once the set changes.
+  const recommendationProviderIdsRef = useRef(null);
+  const recommendationProviderKey = (providers) => providers.map(p => p.id).join('|');
   const loadRecommendations = async (opts = {}) => {
     const forceRefresh = opts === true || opts?.forceRefresh === true;
     const metaOnly = opts !== true && !!opts?.metaServicesOnly;
@@ -27051,6 +27062,8 @@ Return ONLY the JSON array, no other text.`;
     const providers = metaOnly
       ? recommendationProviders().filter(p => metaServiceIds.has(p.id))
       : recommendationProviders();
+    // The provider set a full load asked (see the effect that reloads when it changes).
+    if (!metaOnly) recommendationProviderIdsRef.current = recommendationProviderKey(providers);
     const chatServices = getChatServices();
     const llmPossible = chatServices.some(isServiceEnabled) && aiIncludeHistoryRef.current;
 
@@ -27133,6 +27146,7 @@ Return ONLY the JSON array, no other text.`;
     // rest get a section skeleton until the results apply (all at once, below).
     setRecommendationsPending(toFetch
       .filter(p => !((providerSectionsRef.current[p.id] || {}).sections || []).length)
+      .filter(p => !recommendationsQuietRef.current.has(p.id))
       .map(p => ({ id: p.id, name: p.name || p.id })));
 
     const loader = resolverLoaderRef.current;
@@ -27158,9 +27172,14 @@ Return ONLY the JSON array, no other text.`;
           ...normalizeRecommendationSections(raw, { resolverId: provider.id, resolverName: provider.name }),
           fetchedAt: Date.now()
         };
+        if (fresh[provider.id].sections.length > 0) recommendationsQuietRef.current.delete(provider.id);
+        else recommendationsQuietRef.current.add(provider.id);
       } catch (error) {
         console.warn(`⭐ Recommendations from ${provider.name || provider.id} failed:`, error?.message || error);
         failed++;
+        // Not ready is an answer (this account can't get its sections now); a
+        // transient failure (timeout, network) says nothing, so no mark.
+        if (error?.notReady) recommendationsQuietRef.current.add(provider.id);
         // Keep the cached result (even an expired one) so a TRANSIENT failure
         // does not blank a section that was on screen. A readiness failure
         // (signed out, offline — the plugin's deliberate notReady throws) is
@@ -28049,6 +28068,19 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       loadRecommendations();
     }
   }, [activeView, cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
+
+  // The provider set changed while the page is open: the plugins finished
+  // loading after the app reopened on Recommendations (the load above ran with
+  // none, so the page showed only Shuffleupagus, or "Connect a music service",
+  // until you left and came back), the saved active resolvers were restored
+  // over the defaults, or a resolver was turned on or off. Declared after the
+  // load-on-navigation effect so that one records its set first and a plain
+  // navigation doesn't load twice.
+  useEffect(() => {
+    if (activeView !== 'recommendations' || !cacheLoaded) return;
+    if (recommendationProviderKey(recommendationProviders()) === recommendationProviderIdsRef.current) return;
+    loadRecommendations();
+  }, [activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices]);
 
   // Load discovery data (recommendations, charts, critics picks) for HOME view previews
   useEffect(() => {
@@ -40226,16 +40258,17 @@ useEffect(() => {
                 // Sections
                 : React.createElement('div', null,
                     ...sections.filter(s => s.resolverId !== 'shuffleupagus').map(renderSection),
-                    // A provider still being asked that has nothing on screen
-                    // yet: a section skeleton under its name, where its
-                    // sections will land (the providers' sections all come
-                    // before the Shuffleupagus one in the merge, so a cached
-                    // Shuffleupagus batch doesn't push these below the fold).
-                    ...recommendationsPending.map(p =>
-                      React.createElement(RecommendationSectionSkeleton, {
-                        key: `rec-pending-${p.id}`,
-                        badge: p.name
-                      })),
+                    // Providers still being asked that have nothing on screen
+                    // yet: one unlabeled section skeleton where their sections
+                    // will land (the providers' sections all come before the
+                    // Shuffleupagus one in the merge, so a cached Shuffleupagus
+                    // batch doesn't push it below the fold). Unlabeled because
+                    // a provider can answer "not ready" (an active resolver the
+                    // account can't use): naming it would promise sections
+                    // that never come.
+                    recommendationsPending.length > 0 && React.createElement(RecommendationSectionSkeleton, {
+                      key: 'rec-pending'
+                    }),
                     ...sections.filter(s => s.resolverId === 'shuffleupagus').map(renderSection),
                     // Shuffleupagus skeleton while the LLM thinks (cached
                     // suggestions render as a real section meanwhile)

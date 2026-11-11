@@ -66,14 +66,18 @@ describe('Recommendations skeletons match the sectioned page', () => {
   });
 
   test('providers still loading and Shuffleupagus thinking get section skeletons', () => {
-    expect(view).toMatch(/\.\.\.recommendationsPending\.map\(p =>\s*React\.createElement\(RecommendationSectionSkeleton, \{/);
+    // One unlabeled skeleton: a provider can answer "not ready" (Amazon Music
+    // active without a subscription), so naming one promised sections that
+    // never came (#1328 review).
+    expect(view).toMatch(/recommendationsPending\.length > 0 && React\.createElement\(RecommendationSectionSkeleton, \{\s*key: 'rec-pending'\s*\}\)/);
+    expect(view).not.toMatch(/badge: p\.name/);
     // Where the providers' sections land: after the ones on screen, before
     // Shuffleupagus (always last in the merge), so a cached Shuffleupagus
     // batch doesn't push the skeletons below the fold.
     const list = view.slice(view.indexOf("...sections.filter(s => s.resolverId !== 'shuffleupagus').map(renderSection)"));
-    expect(list.indexOf('...recommendationsPending.map(')).toBeGreaterThan(0);
+    expect(list.indexOf('recommendationsPending.length > 0 &&')).toBeGreaterThan(0);
     expect(list.indexOf("...sections.filter(s => s.resolverId === 'shuffleupagus').map(renderSection)"))
-      .toBeGreaterThan(list.indexOf('...recommendationsPending.map('));
+      .toBeGreaterThan(list.indexOf('recommendationsPending.length > 0 &&'));
     expect(view).toMatch(/llmLoading && React\.createElement\(RecommendationSectionSkeleton, \{/);
   });
 
@@ -93,6 +97,14 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(load.slice(apply, apply + 80)).toContain('setRecommendationsPending([]);');
     // Only providers with nothing on screen get one (a refresh updates in place).
     expect(load).toMatch(/\.filter\(p => !\(\(providerSectionsRef\.current\[p\.id\] \|\| \{\}\)\.sections \|\| \[\]\)\.length\)/);
+    // ...and not a provider whose last answer had nothing (empty or not ready).
+    expect(load).toMatch(/\.filter\(p => !recommendationsQuietRef\.current\.has\(p\.id\)\)/);
+  });
+
+  test('a provider is marked quiet by an empty or not-ready answer, and cleared by one with sections', () => {
+    const load = app.slice(app.indexOf('const providers = metaOnly'), app.indexOf('// "Load more" for a titled section'));
+    expect(load).toMatch(/if \(fresh\[provider\.id\]\.sections\.length > 0\) recommendationsQuietRef\.current\.delete\(provider\.id\);\s*else recommendationsQuietRef\.current\.add\(provider\.id\);/);
+    expect(load).toMatch(/if \(error\?\.notReady\) recommendationsQuietRef\.current\.add\(provider\.id\);/);
   });
 });
 
