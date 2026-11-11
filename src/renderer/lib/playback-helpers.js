@@ -162,7 +162,32 @@ function hasPlayableSource(track) {
   return Object.keys(sources).some(id => sources[id] && !sources[id].noMatch);
 }
 
+// Listen Along (parachord#1319), the mobile apps' shared rules
+// (parachord-mobile ListenAlongSession):
+//   - a poll that fails (offline, rate limit, bad response) is not "the
+//     friend stopped": LISTEN_ALONG_FAILED_POLLS_LIMIT failed polls in a row
+//     (about a minute at 15 s) count as stopped;
+//   - when our song ends and nothing is held, the session waits for the next
+//     poll, which decides (listenAlongWaitDecision).
+const LISTEN_ALONG_FAILED_POLLS_LIMIT = 4;
+const friendTrackKey = (t) => (t ? `${String(t.name || t.title || '').toLowerCase()}|${String(t.artist || '').toLowerCase()}` : null);
+// What a poll that finds the friend listening does while the session waits.
+// waiting: 'song-ended' (our song finished and the friend's position wasn't
+// known) or 'unplayable' (the friend's track couldn't play here).
+//   'play'          — the friend is on another track: play it;
+//   'not-moved-on'  — our song ended and they're still on it: end the session
+//                     ("X hasn't moved on - resuming your queue");
+//   'keep-waiting'  — still the track that couldn't play: wait for a change.
+function listenAlongWaitDecision({ waiting, playedTrack, polledTrack }) {
+  const same = friendTrackKey(playedTrack) === friendTrackKey(polledTrack);
+  if (!same) return 'play';
+  return waiting === 'song-ended' ? 'not-moved-on' : 'keep-waiting';
+}
+
 module.exports = {
+  LISTEN_ALONG_FAILED_POLLS_LIMIT,
+  friendTrackKey,
+  listenAlongWaitDecision,
   RADIO_SEED_PROBE_COUNT,
   noPlayableSimilarTracksMessage,
   hasPlayableSource,

@@ -651,7 +651,7 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
-const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE } = require('./lib/playback-helpers');
+const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -4667,6 +4667,10 @@ const Parachord = () => {
   const listenAlongPendingTrackRef = useRef(null); // Track queued to play when current song ends (friend is ahead)
   const listenAlongUserPausedRef = useRef(false); // True when user explicitly paused during listen-along
   const listenAlongEndAfterSongRef = useRef(null); // Friend display name when listen-along should end after current song finishes
+  // #1319 (mobile's ListenAlongSession rules):
+  const listenAlongWaitingRef = useRef(null); // 'song-ended' | 'unplayable' | null: waiting for the next poll to decide; Play does nothing meanwhile
+  const listenAlongLastPollTrackRef = useRef(null); // the friend's track as the last poll since our song started reported it (null: no poll since, or it failed)
+  const listenAlongFailedPollsRef = useRef(0); // failed polls in a row; LISTEN_ALONG_FAILED_POLLS_LIMIT of them count as the friend stopping
 
   // Playlists page state
   const [playlistsHeaderCollapsed, setPlaylistsHeaderCollapsed] = useState(false);
@@ -6002,6 +6006,14 @@ const Parachord = () => {
 
   useEffect(() => { playlistsRef.current = playlists; }, [playlists]);
   useEffect(() => { listenAlongFriendRef.current = listenAlongFriend; }, [listenAlongFriend]);
+  // A session that ended (any way: the friend stopped, the user took over,
+  // a spinoff started) forgets its poll and wait state (#1319).
+  useEffect(() => {
+    if (listenAlongFriend) return;
+    listenAlongWaitingRef.current = null;
+    listenAlongLastPollTrackRef.current = null;
+    listenAlongFailedPollsRef.current = 0;
+  }, [listenAlongFriend]);
   useEffect(() => { friendsRef.current = friends; }, [friends]);
   useEffect(() => { metaServiceConfigsRef.current = metaServiceConfigs; }, [metaServiceConfigs]);
   useEffect(() => { scrobblerConfigsRef.current = scrobblerConfigs; }, [scrobblerConfigs]);
@@ -8001,6 +8013,7 @@ const Parachord = () => {
     insertedTrackId,
     setInsertedTrackId,
     resolveSpinoffSeed,
+    holdNextQueueTrack,
   } = usePlaybackEngine({
     volume: volumeDomain,
     queue: queueDomain,
@@ -8041,7 +8054,12 @@ const Parachord = () => {
     listenAlongPendingTrackRef,
     listenAlongUserPausedRef,
     listenAlongEndAfterSongRef,
+    listenAlongWaitingRef,
+    listenAlongLastPollTrackRef,
   });
+  // For the friend poll, which runs from an interval (#1319).
+  const holdNextQueueTrackRef = useRef(null);
+  holdNextQueueTrackRef.current = holdNextQueueTrack;
 
   // Library-scale artwork for local tracks with no embedded or folder art
   // (#784). One representative track per album is looked up (MBID mapper,
@@ -28930,6 +28948,76 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Refresh recent tracks for friends (for polling)
   // Polls: all pinned friends + all saved friends (to check if they become active)
   // Uses refs instead of closure variables to avoid stale state in setInterval callbacks
+  // The friend's track as a playable track, tagged with the Listen Along
+  // context (sources from the cache when it has them; the rest resolve when
+  // it plays).
+  const listenAlongTrackFor = (friend, recentTrack) => {
+    const cacheKey = `${recentTrack.artist.toLowerCase()}|${recentTrack.name.toLowerCase()}`;
+    const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
+    return {
+      title: recentTrack.name,
+      artist: recentTrack.artist,
+      album: recentTrack.album,
+      albumArt: recentTrack.albumArt,
+      sources: cachedSources,
+      _playbackContext: {
+        type: 'listenAlong',
+        name: friend.displayName,
+        friendId: friend.id
+      }
+    };
+  };
+  // Play the friend's track now: it becomes the track we're on, and the
+  // session stops waiting.
+  const playListenAlongTrack = (friend, recentTrack) => {
+    listenAlongLastTrackRef.current = { name: recentTrack.name, artist: recentTrack.artist };
+    listenAlongLastPollTrackRef.current = null;
+    listenAlongWaitingRef.current = null;
+    handlePlay(listenAlongTrackFor(friend, recentTrack));
+  };
+  // End the session and give the user's queue back (#1319). The ref is
+  // cleared at once, not by its effect after the next render: handleNext
+  // reads it, and would otherwise run its Listen Along branch again.
+  // startPlayback false (a friend who stopped while the user had paused):
+  // the queue comes back paused, its first track on screen for Play.
+  const endListenAlongToQueue = (message, { startPlayback = true } = {}) => {
+    abortSchedulerContext('listen-along');
+    listenAlongFriendRef.current = null;
+    setListenAlongFriend(null);
+    listenAlongLastTrackRef.current = null;
+    listenAlongPendingTrackRef.current = null;
+    listenAlongUserPausedRef.current = false;
+    listenAlongWaitingRef.current = null;
+    listenAlongLastPollTrackRef.current = null;
+    setPlaybackContext(null);
+    showToast(message);
+    if (currentQueueRef.current.length > 0) {
+      if (startPlayback) handleNextRef.current?.();
+      else holdNextQueueTrackRef.current?.();
+    }
+  };
+  // The friend stopped listening (off air, a hidden profile, or a run of
+  // failed polls). A song of theirs that's playing finishes first; otherwise
+  // the session ends now, and a user who had paused gets their queue back
+  // paused instead of starting by itself (#1319).
+  const listenAlongFriendWentQuiet = (friend) => {
+    console.log(`🎧 Listen-along: ${friend.displayName} is no longer active`);
+    if (isPlayingRef.current) {
+      console.log(`🎧 Listen-along: Deferring end until current song finishes`);
+      abortSchedulerContext('listen-along');
+      listenAlongLastTrackRef.current = null;
+      listenAlongPendingTrackRef.current = null;
+      listenAlongUserPausedRef.current = false;
+      listenAlongWaitingRef.current = null;
+      listenAlongEndAfterSongRef.current = friend.displayName;
+      setListenAlongFriend(null);
+      // Keep playbackContext so UI still shows "Listening along with..." until song ends
+      return;
+    }
+    const userPaused = listenAlongUserPausedRef.current;
+    endListenAlongToQueue(`${friend.displayName} stopped listening`, { startPlayback: !userPaused });
+  };
+
   const refreshPinnedFriends = async () => {
     const listenAlongFriendNow = listenAlongFriendRef.current;
     const currentFriends = friendsRef.current;
@@ -28946,6 +29034,22 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       if (friendPollBackoffRef.current.shouldSkip(friend.id)) continue;
       const { track: recentTrack, hidesListening } = await fetchFriendRecentTrack(friend);
       updateFriendHidesListening(friend, hidesListening);
+      // The friend we're listening along with (#1319): a failed poll isn't
+      // "they stopped", only LISTEN_ALONG_FAILED_POLLS_LIMIT in a row are; a
+      // hidden profile can't be followed, so it counts as stopped at once.
+      const isListenAlongFriend = listenAlongFriendRef.current?.id === friend.id;
+      if (isListenAlongFriend && !recentTrack) {
+        listenAlongLastPollTrackRef.current = null;
+        if (hidesListening) {
+          listenAlongFriendWentQuiet(friend);
+          continue;
+        }
+        listenAlongFailedPollsRef.current += 1;
+        console.log(`🎧 Listen-along: poll for ${friend.displayName} failed (${listenAlongFailedPollsRef.current} in a row)`);
+        if (listenAlongFailedPollsRef.current >= LISTEN_ALONG_FAILED_POLLS_LIMIT) listenAlongFriendWentQuiet(friend);
+        continue;
+      }
+      if (isListenAlongFriend) listenAlongFailedPollsRef.current = 0;
       if (recentTrack) {
         // Check if track changed before updating
         const previousTrack = friend.cachedRecentTrack;
@@ -29024,30 +29128,32 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Check if the friend we're listening along to went inactive
         if (listenAlongFriendNow?.id === friend.id && !isOnAirNow) {
-          console.log(`🎧 Listen-along: ${friend.displayName} is no longer active`);
-          // Abort and cleanup pool context
-          abortSchedulerContext('listen-along');
-          listenAlongLastTrackRef.current = null;
-          listenAlongPendingTrackRef.current = null;
-          listenAlongUserPausedRef.current = false;
+          listenAlongLastPollTrackRef.current = null;
+          listenAlongFriendWentQuiet(friend);
+          continue; // Skip further processing for this friend
+        }
 
-          // If a song is currently playing, let it finish before ending the session
-          if (isPlayingRef.current) {
-            console.log(`🎧 Listen-along: Deferring end until current song finishes`);
-            listenAlongEndAfterSongRef.current = friend.displayName;
-            setListenAlongFriend(null);
-            // Keep playbackContext so UI still shows "Listening along with..." until song ends
-          } else {
-            // Not playing - end immediately
-            showToast(`${friend.displayName} stopped listening`);
-            setListenAlongFriend(null);
-            setPlaybackContext(null);
-            // Resume playback from queue if there are tracks
-            if (currentQueueRef.current.length > 0) {
-              handleNextRef.current?.();
+        // While the session waits (#1319: our song ended with the friend's
+        // position unknown, or their track couldn't play here), this poll
+        // decides, whether or not the cached track changed: another track
+        // plays; after our song ended, the same one ends the session.
+        if (listenAlongFriendNow?.id === friend.id && isOnAirNow) {
+          listenAlongLastPollTrackRef.current = { name: recentTrack.name, artist: recentTrack.artist };
+          const waiting = listenAlongWaitingRef.current;
+          if (waiting && !isPlayingRef.current) {
+            const decision = listenAlongWaitDecision({ waiting, playedTrack: listenAlongLastTrackRef.current, polledTrack: recentTrack });
+            if (decision === 'not-moved-on') {
+              console.log(`🎧 Listen-along: ${friend.displayName} hasn't moved on - ending listen-along`);
+              endListenAlongToQueue(`${friend.displayName} hasn't moved on - resuming your queue`);
+              continue;
+            }
+            if (decision === 'play') {
+              console.log(`🎧 Listen-along: ${friend.displayName} is on "${recentTrack.name}" now; playing it`);
+              if (trackChanged) resolveFriendTrack(recentTrack);
+              playListenAlongTrack(friend, recentTrack);
+              continue;
             }
           }
-          continue; // Skip further processing for this friend
         }
 
         // Resolve the track in background if it's new/changed and friend is on-air
@@ -29111,6 +29217,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
                     name: recentTrack.name,
                     artist: recentTrack.artist
                   };
+                  listenAlongLastPollTrackRef.current = null;
+                  listenAlongWaitingRef.current = null;
                   handlePlay(track);
                 }
               }, 1000); // Wait 1 second for sources to resolve
@@ -29175,6 +29283,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       artist: friend.cachedRecentTrack.artist
     };
     listenAlongUserPausedRef.current = false;
+    listenAlongWaitingRef.current = null;
+    listenAlongLastPollTrackRef.current = null;
+    listenAlongFailedPollsRef.current = 0;
 
     // Set playback context to listen-along
     setPlaybackContext({

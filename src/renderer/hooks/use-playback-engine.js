@@ -118,6 +118,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   listenAlongPendingTrackRef,
   listenAlongUserPausedRef,
   listenAlongEndAfterSongRef,
+  listenAlongWaitingRef,
+  listenAlongLastPollTrackRef,
 }) {
   // ---------------------------------------------------------------
   // Input-destructure — the only "wiring". Names below are the exact
@@ -310,6 +312,22 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     setIsPlaying(false);
     setProgress(0);
     trackNeedsExplicitStart.current = true;
+  };
+  // Give the queue back paused (#1319, Listen Along's rule for a friend who
+  // stops while the user has paused): the queue's first playable track goes
+  // on screen, held for Play, instead of starting by itself. The track that
+  // was current goes to the play history. Returns whether there was one.
+  const holdNextQueueTrack = () => {
+    const queue = currentQueueRef.current;
+    const index = queue.findIndex(t => t.status !== 'error');
+    if (index === -1) return false;
+    const next = queue[index];
+    const track = currentTrackRef.current;
+    if (track) playHistoryRef.current = [...playHistoryRef.current, track];
+    setCurrentQueue(queue.filter((_, i) => i !== index));
+    setPlaybackContext(next._playbackContext || null);
+    holdTrackForPlay(next);
+    return true;
   };
   // Anything that starts playing clears the mark. Every handlePlay success
   // clears it too; this catches a path that doesn't, which would otherwise
@@ -686,6 +704,28 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // that doesn't skip stops on this track, so it is held for Play first.
     const autoSkipIfAdvancing = (reason, { needsNetwork = true } = {}) => {
       if (stopIfOffline({ needsNetwork })) return true;
+      // A friend's track that can't play here (#1319, mobile's
+      // onTrackUnplayable): play the track they've moved on to if one is
+      // held, else wait for the next poll with this one on screen (Play
+      // does nothing meanwhile). Never skip into the queue: that ended the
+      // session with "hasn't moved on" when they simply hadn't.
+      if (listenAlongFriendRef.current && trackOrSource?._playbackContext?.type === 'listenAlong') {
+        setTrackLoading(false);
+        const held = listenAlongPendingTrackRef.current;
+        if (held && playbackGenerationRef.current === thisGeneration) {
+          console.log(`🎧 Listen-along: "${trackOrSource?.title}" can't play here; playing the friend's next track`);
+          listenAlongPendingTrackRef.current = null;
+          listenAlongLastTrackRef.current = { name: held.title, artist: held.artist };
+          listenAlongLastPollTrackRef.current = null;
+          listenAlongWaitingRef.current = null;
+          setTimeout(() => handlePlayRef.current?.(held), 0);
+          return true;
+        }
+        console.log(`🎧 Listen-along: "${trackOrSource?.title}" can't play here; waiting for the friend's next track`);
+        listenAlongWaitingRef.current = 'unplayable';
+        holdFailedTrack();
+        return isAdvancingTrackRef.current || spinoffModeRef.current;
+      }
       if (!(isAdvancingTrackRef.current || spinoffModeRef.current)) {
         holdFailedTrack();
         return false;
@@ -2524,13 +2564,18 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             name: pendingTrack.title,
             artist: pendingTrack.artist
           };
+          listenAlongLastPollTrackRef.current = null;
+          listenAlongWaitingRef.current = null;
           handlePlay(pendingTrack);
           return;
         }
 
         // Check if friend's current track is the same as what we just finished
-        // If so, they haven't moved on yet - end listen-along and go to queue
-        const friendTrack = listenAlongFriendNow.cachedRecentTrack;
+        // If so, they haven't moved on yet - end listen-along and go to queue.
+        // "Current" is the last poll since our song started (#1319): the
+        // friend object's cachedRecentTrack is the snapshot taken when the
+        // session began, which never moves on.
+        const friendTrack = listenAlongLastPollTrackRef.current;
         const lastTrack = listenAlongLastTrackRef.current;
         const friendStillOnSameTrack = friendTrack && lastTrack &&
           friendTrack.name === lastTrack.name &&
@@ -2547,9 +2592,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           setPlaybackContext(null);
           // Fall through to play from queue below
         } else {
-          // Friend has a different track, but we don't have it queued yet
-          // Wait for polling to detect the change
+          // We don't know where the friend is: wait for the next poll, which
+          // decides (#1319, refreshPinnedFriends): another track plays, the
+          // same one ends the session. Play does nothing meanwhile.
           console.log(`🎧 Listen-along active with ${listenAlongFriendNow.displayName} - waiting for their next track`);
+          listenAlongWaitingRef.current = 'song-ended';
           setIsPlaying(false);
           return;
         }
@@ -2839,6 +2886,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
     // Track explicit user pause/resume during listen-along
     if (listenAlongFriendRef.current) {
+      // Waiting for the next poll after our song ended or the friend's track
+      // couldn't play (#1319): Play does nothing until the poll decides.
+      if (!isPlaying && listenAlongWaitingRef.current) {
+        console.log('🎧 Listen-along: waiting for the friend\'s next track; Play does nothing yet');
+        return;
+      }
       if (isPlaying) {
         // User is pausing
         listenAlongUserPausedRef.current = true;
@@ -2854,6 +2907,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             name: pendingTrack.title,
             artist: pendingTrack.artist
           };
+          listenAlongLastPollTrackRef.current = null;
           handlePlay(pendingTrack);
           return;
         }
@@ -3584,6 +3638,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     handlePlayPause,
     startSpinoff,
     exitSpinoff,
+    holdNextQueueTrack,
     // handler refs (protocol handler + embed + tool contexts)
     // engine state back under the old names
     isPlaying,
