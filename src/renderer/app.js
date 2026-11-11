@@ -651,7 +651,7 @@ const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-ref
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
-const { savedPluginConfig, sourcesChangedOnRecheck } = require('./lib/playback-helpers');
+const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -2366,7 +2366,11 @@ const executeDjTool = async (name, args, context) => {
         return { success: false, error: 'Invalid type. Use artist, album, or track.' };
       }
       case 'shuffle': {
-        context.setShuffle(args.enabled);
+        // Refused during a spinoff or Listen Along (#1319): say so instead
+        // of reporting a shuffle that didn't happen.
+        if (context.setShuffle(args.enabled) === false) {
+          return { success: false, error: SHUFFLE_UNAVAILABLE_MESSAGE };
+        }
         return { success: true, shuffle: args.enabled };
       }
       case 'collection_radio': {
@@ -6086,6 +6090,26 @@ const Parachord = () => {
     setQueueWithContext, addToQueueWithContext,
     playTrackCollection, addToQueue,
   } = queueDomain;
+
+  // The one door for turning shuffle on or off on the current queue (#1319):
+  // the playbar button, the app menu, MPRIS, parachord://control/shuffle and
+  // the DJ tool (chat and MCP) all come through here. During a spinoff or
+  // Listen Along it is refused (shuffleAllowed), not only greyed out on the
+  // button. A change goes through toggleShuffle, which shuffles the queue or
+  // restores its order; the menu, MPRIS and the link used to flip the flag
+  // alone and leave the queue in its old order. `want` is true, false or
+  // 'toggle'. Returns whether shuffle is now as asked.
+  const requestShuffle = (want, { toast = true } = {}) => {
+    if (!shuffleAllowed({ spinoff: spinoffModeRef.current, listenAlong: !!listenAlongFriendRef.current })) {
+      if (toast) showToast(SHUFFLE_UNAVAILABLE_MESSAGE);
+      return false;
+    }
+    const enabled = want === 'toggle' ? !shuffleModeRef.current : !!want;
+    if (enabled !== shuffleModeRef.current) toggleShuffle();
+    return true;
+  };
+  const requestShuffleRef = useRef(null);
+  requestShuffleRef.current = requestShuffle;
 
   const holdPlaybarArt = holdPreviousPlaybarArt(currentTrack, playbarArtMissKey);
 
@@ -10302,7 +10326,7 @@ const Parachord = () => {
           handleResume: () => handlePlayPauseRef.current(),
           handleNext: () => handleNextRef.current(),
           handlePrevious: () => handlePreviousRef.current(),
-          setShuffle: (enabled) => setShuffleMode(enabled),
+          setShuffle: (enabled) => requestShuffleRef.current(enabled, { toast: false }),
           createPlaylist: async (name, tracks) => await createPlaylistFromChat(name, tracks),
           // get/find/add/remove/move/rename/delete playlist (parachord#1008).
           // No isDataSharingEnabled gate here: that setting belongs to the
@@ -10511,7 +10535,7 @@ const Parachord = () => {
           if (handleNextRef.current) handleNextRef.current();
           break;
         case 'toggle-shuffle':
-          setShuffleMode(prev => !prev);
+          requestShuffleRef.current?.('toggle');
           break;
         case 'check-for-updates':
           showToast('Checking for updates...');
@@ -10626,7 +10650,12 @@ const Parachord = () => {
           // would wire a handleSeekRef like handlePlayPauseRef etc.
           break;
         case 'set-shuffle':
-          setShuffleMode(!!event.value);
+          // A refusal leaves shuffleMode as it was, so the effect that
+          // publishes it never fires: tell the desktop widget the real state,
+          // or its toggle stays flipped.
+          if (requestShuffleRef.current?.(!!event.value) === false) {
+            window.electron.mpris.updateShuffle?.(shuffleModeRef.current)?.catch?.(() => {});
+          }
           break;
         case 'set-loop':
           // Parachord has no loop mode today; ignore
@@ -11438,8 +11467,7 @@ const resolveProviderPlaylistUrl = async (rawUrl) => {
 
           case 'shuffle': {
             const enabled = segments[0] === 'on';
-            setShuffleMode(enabled);
-            showToast(`Shuffle ${enabled ? 'on' : 'off'}`);
+            if (requestShuffleRef.current?.(enabled)) showToast(`Shuffle ${enabled ? 'on' : 'off'}`);
             break;
           }
 
@@ -44614,7 +44642,7 @@ useEffect(() => {
               variant: 'dark'
             },
               React.createElement('button', {
-                onClick: shuffleDisabled ? undefined : toggleShuffle,
+                onClick: shuffleDisabled ? undefined : () => requestShuffle('toggle'),
                 disabled: shuffleDisabled,
                 className: 'p-2 rounded transition-colors',
                 style: {

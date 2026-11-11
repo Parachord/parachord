@@ -138,7 +138,19 @@ function previousAction({ hasCurrentTrack, positionSeconds, historyLength }) {
   return (Number(positionSeconds) || 0) > PREVIOUS_RESTART_AFTER_SECONDS ? 'restart' : 'previous';
 }
 
+// Shuffle during a spinoff or Listen Along (parachord#1319, the mobile apps'
+// shared rule): refused everywhere, not only on the playbar button. A spinoff
+// plays its own pool in order and a Listen Along session plays the friend's
+// tracks, so there is no queue of ours to shuffle. The wording is mobile's
+// (PlaybackMessages.SHUFFLE_UNAVAILABLE).
+const SHUFFLE_UNAVAILABLE_MESSAGE = "Shuffle isn't available during a spinoff or Listen Along";
+function shuffleAllowed({ spinoff, listenAlong }) {
+  return !spinoff && !listenAlong;
+}
+
 module.exports = {
+  shuffleAllowed,
+  SHUFFLE_UNAVAILABLE_MESSAGE,
   previousAction,
   PREVIOUS_RESTART_AFTER_SECONDS,
   trackToHoldAfterFailure,
