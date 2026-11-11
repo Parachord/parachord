@@ -40,6 +40,7 @@
 
 ## Playback
 
+- **Previous restarts the song, and the end of the queue clears it.** Previous more than 3 seconds into a song now starts it over, and goes back a song only in the first 3 seconds, as on Android and iOS. When your queue runs out, playback stops and the playbar clears instead of leaving the last song on screen; Previous brings it back.
 - **Play tries again after a track fails.** When a track couldn't play and Parachord showed an error, pressing Play did nothing, or resumed the song before it. The track that failed now stays in the playbar, and Play starts it again from scratch, choosing its source afresh.
 - **Offline, the queue stops instead of emptying itself.** With no network, a track that couldn't play was skipped, then the next, until the queue ran out without playing anything. Parachord now stops on the first track and says to check your connection, and Play starts it once you're back online. Local files still play offline.
 - **Spotify plays on Android phones again.** When Parachord sent a track to Spotify on an Android phone, Spotify's app stopped what it was playing and then played nothing. Parachord now starts each Spotify track inside its album, which plays everywhere, and moves to your next track as the song ends instead of letting Spotify carry on through the album.
