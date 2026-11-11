@@ -987,8 +987,8 @@ const ReleaseCard = ({ release, currentArtist, fetchReleaseData, onContextMenu, 
 // ── The album page's source picker (#1238) ──
 // Which edition of the album the page shows, and the picker for another one.
 // Two pieces, both built from the helpers just below: ReleasePage renders the
-// CLOSED card (the source's badge and name on the first line, the edition's
-// details — date · region · song count — on the second, chevron right), and
+// CLOSED card (the source's badge and name on the first line, chevron right,
+// then one line per detail: MusicBrainz edition, date, region, song count), and
 // AlbumVersionsMenu is the OPEN panel under it ("Your services" editions,
 // then "MusicBrainz editions").
 
@@ -1000,6 +1000,16 @@ const songCount = (n) => `${n} ${n === 1 ? 'song' : 'songs'}`;
 const joinDetails = (parts) => parts.filter(Boolean).map((part, i) => React.createElement(
   React.Fragment, { key: `detail-${i}` }, i > 0 ? ' · ' : '', part
 ));
+
+// A short shimmer bar standing in for one detail ("Nov 6, 2026", "12 songs")
+// while it is looked up; sized to the text it replaces, on the dark panel.
+const detailShimmer = (kind) => React.createElement('span', {
+  key: `shimmer-${kind}`,
+  className: 'inline-block rounded shimmer-light animate-shimmer align-middle',
+  role: 'status',
+  'aria-label': kind === 'date' ? 'Loading release date' : 'Loading song count',
+  style: { width: kind === 'date' ? '4.5em' : '3.5em', height: '0.8em', backgroundSize: '200% 100%', opacity: 0.6 }
+});
 
 // A service's badge, row size: the resolver's colour with its white icon
 // (the track-list badge kit, ui-atoms' ResolverIcon).
@@ -1068,13 +1078,16 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     }
   },
     badge,
-    React.createElement('span', { className: 'min-w-0', style: { flex: '1 1 0' } },
+    // The text wraps rather than truncating: the panel is only as wide as
+    // the card (#1312), and a cut-off edition name or region hides exactly
+    // what tells two editions apart.
+    React.createElement('span', { className: 'min-w-0', style: { flex: '1 1 0', overflowWrap: 'anywhere' } },
       React.createElement('span', {
-        className: 'block truncate',
+        className: 'block',
         style: { fontWeight: 500, color: current ? 'var(--accent-soft)' : '#ffffff' }
       }, main),
       secondary && React.createElement('span', {
-        className: 'block truncate',
+        className: 'block',
         style: { fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.55)', marginTop: '1px' }
       }, secondary)
     ),
@@ -1119,11 +1132,16 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     section.albums.forEach((album, i) => {
       const isCurrent = release._catalogSource?.resolverId === section.resolverId
         && release._catalogSource?.url && release._catalogSource.url === album.url;
-      const secondary = [
-        // Apple answers full timestamps — the date is the first ten chars.
-        formatCalendarDate(album.releaseDate?.slice(0, 10), 'short', ''),
-        album.trackCount ? songCount(album.trackCount) : null
-      ].filter(Boolean).join(' · ');
+      // Every row shows its date and song count (#1312). A service whose
+      // album search carries neither gets them from a lookup the app runs
+      // when the menu opens (detailsPending): a shimmer stands in meanwhile.
+      // Apple answers full timestamps — the date is the first ten chars.
+      const date = formatCalendarDate(album.releaseDate?.slice(0, 10), 'short', '');
+      const secondaryParts = [
+        date || (album.detailsPending ? detailShimmer('date') : null),
+        album.trackCount ? songCount(album.trackCount) : (album.detailsPending ? detailShimmer('count') : null)
+      ];
+      const secondary = secondaryParts.some(Boolean) ? joinDetails(secondaryParts) : '';
       servicesRows.push(versionRow({
         current: isCurrent,
         badge: editionServiceBadge(section.resolverId, color),
@@ -1252,8 +1270,11 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     style: {
       backgroundColor: 'var(--tooltip-bg)',
       boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-      minWidth: '280px', maxWidth: '340px', maxHeight: '320px',
-      overflowY: 'auto'
+      // The card's own width (#1312): the album column hides anything wider
+      // (overflow-x: hidden), so a 280px panel under a 160-192px card had
+      // its right side cut off. Rows wrap instead (versionRow).
+      width: '100%', maxHeight: '320px',
+      overflowY: 'auto', overflowX: 'hidden'
     },
     onClick: (e) => e.stopPropagation()
   },
@@ -1360,22 +1381,22 @@ const ReleasePage = ({
     setShareDropdownOpen(false);
     if (next && onOpenAlbumVersions) onOpenAlbumVersions();
   };
-  // ── The closed source card's content (#1238) ──
-  // First line: a catalog edition just names its service; a MusicBrainz
-  // release names its formats too ("MusicBrainz · Digital Media").
-  // Second line (editionDetails): date · region (MusicBrainz releases have
-  // one, catalog ones don't) · the song count — a shimmer bar while the
-  // track list is still on its way, left out when its load failed. The date
-  // goes through formatCalendarDate: it's a calendar date, and
-  // new Date("2026-11-06") is still November 5 in the Americas (#1288).
+  // ── The closed source card's content (#1238, #1312) ──
+  // The top line is only the source: its badge and name. Each of the
+  // edition's details is its own line under it, so nothing is cut off at the
+  // card's width: the MusicBrainz edition (its formats, "Digital Media"),
+  // the date, the region (MusicBrainz releases have one, catalog ones
+  // don't) and the song count, a shimmer bar while the track list is still
+  // on its way and left out when its load failed. The date goes through
+  // formatCalendarDate: it's a calendar date, and new Date("2026-11-06") is
+  // still November 5 in the Americas (#1288).
   const catalogSource = release._catalogSource || null;
-  const sourceLine = catalogSource
-    ? catalogSource.name
-    : 'MusicBrainz' + (release.formats && release.formats.length ? ` · ${release.formats.join(' + ')}` : '');
+  const sourceLine = catalogSource ? catalogSource.name : 'MusicBrainz';
   const sourceBadge = catalogSource
     ? editionServiceBadge(catalogSource.resolverId, resolvers.find(r => r.id === catalogSource.resolverId)?.color)
     : editionMusicBrainzBadge();
-  const editionDetails = joinDetails([
+  const editionLines = [
+    !catalogSource && release.formats && release.formats.length ? release.formats.join(' + ') : null,
     formatCalendarDate(release.date, 'short', ''),
     regionName(release.country),
     release.tracks
@@ -1386,7 +1407,7 @@ const ReleasePage = ({
           'aria-label': 'Loading track count',
           style: { width: '4rem', height: '0.8em', backgroundSize: '200% 100%' }
         }))
-  ]);
+  ].filter(Boolean);
 
   // Responsive sizes based on container width
   const isCompact = containerWidth < 700;
@@ -1642,14 +1663,16 @@ const ReleasePage = ({
                   style: { fontSize: '9px', color: 'var(--text-tertiary)', flexShrink: 0 }
                 }, sourceOpen ? '▲' : '▼')
               ),
-              // Second line: the edition's details, aligned under the name
-              React.createElement('span', {
+              // Then one line per detail, aligned under the name
+              ...editionLines.map((line, i) => React.createElement('span', {
+                key: `edition-line-${i}`,
+                className: 'block truncate',
                 style: {
-                  display: 'block', marginTop: '3px', marginLeft: '25px',
-                  fontSize: '12px', color: 'var(--text-secondary)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                }
-              }, editionDetails)
+                  marginTop: i === 0 ? '3px' : '1px', marginLeft: '25px',
+                  fontSize: '12px', lineHeight: '17px', color: 'var(--text-secondary)'
+                },
+                title: typeof line === 'string' ? line : undefined
+              }, line))
             ),
             sourceOpen && React.createElement(AlbumVersionsMenu, {
               release,

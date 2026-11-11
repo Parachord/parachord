@@ -25,7 +25,8 @@ global.ReactDOM = require('react-dom');
 global.ReactVirtual = require('@tanstack/react-virtual');
 
 const { renderToStaticMarkup } = require('react-dom/server');
-const { createReleaseLookup } = require('../../src/renderer/lib/release-lookup');
+const { createReleaseLookup, hasCurrentAlias } = require('../../src/renderer/lib/release-lookup');
+const { PICK_RULE } = require('../../src/renderer/lib/release-pick');
 const { isCatalogAlbumEdition, albumVersionsGroup, albumVersionsKey } = require('../../src/renderer/lib/album-catalog');
 const { AlbumVersionsMenu } = require('../../src/renderer/components/cards');
 
@@ -111,12 +112,29 @@ describe('release-lookup: the group\'s editions for the source dropdown', () => 
     // and the alias redirects a group open to the picked edition, from cache
     const { fetch: f2, calls: calls2 } = recordingFetch(groupBrowse([fullRelease(REL_A, 'CD', 6)]));
     const l2 = lookup(f2);
-    l2.cache[RG] = { alias: REL_B, releases: [fullRelease(REL_A, 'CD', 6)], timestamp: Date.now() };
+    l2.cache[RG] = { alias: REL_B, pick: PICK_RULE, releases: [fullRelease(REL_A, 'CD', 6)], timestamp: Date.now() };
     l2.cache[REL_B] = { data: fullRelease(REL_B, 'Digital Media', 8, { media: [{ format: 'Digital Media', 'track-count': 8, position: 1, tracks: [{ position: 1, title: 'Track', recording: { id: 'r' } }] }] }), timestamp: Date.now() };
     const open = await l2.loadRelease({ id: RG, isReleaseGroup: true });
     expect(calls2).toHaveLength(0);
     expect(open.releaseId).toBe(REL_B);
     expect(open.fromCache).toBe(true);
+  });
+
+  test('an alias made under an older pick rule is picked again (#1312)', async () => {
+    // Aliases persist 30 days; one written before the Worldwide/US
+    // preference (no `pick` stamp) kept the Bahrain release on screen.
+    const { fetch, calls } = recordingFetch(groupBrowse([fullRelease(REL_A, 'CD', 6)]));
+    const l = lookup(fetch);
+    l.cache[RG] = { alias: REL_B, timestamp: Date.now() };
+    l.cache[REL_B] = { data: fullRelease(REL_B, 'Digital Media', 8), timestamp: Date.now() };
+    const open = await l.loadRelease({ id: RG, isReleaseGroup: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('release?release-group=');
+    expect(open.fromCache).toBe(false);
+    // and the new alias carries the current rule
+    expect(l.cache[RG].pick).toBe(PICK_RULE);
+    expect(hasCurrentAlias(l.cache[RG])).toBe(true);
+    expect(hasCurrentAlias({ alias: REL_B })).toBe(false);
   });
 
   test('formats count per-medium and name unlabeled mediums by position', async () => {
@@ -282,6 +300,10 @@ describe('ReleasePage: the source card', () => {
     ...extra,
   }));
 
+  // The card's detail lines (#1312): every line under the source name, in
+  // order (the lines are the spans indented under the badge).
+  const detailLines = (html) => [...html.matchAll(/<span class="block truncate" style="[^"]*margin-left:25px[^"]*"(?: title="[^"]*")?>([^<]*)<\/span>/g)].map(m => m[1]);
+
   test('sits where the metadata lines were, above Share, and carries the edition\'s details', () => {
     const html = render(release);
     const sourceAt = html.indexOf('title="MusicBrainz">MusicBrainz</span>');
@@ -289,8 +311,8 @@ describe('ReleasePage: the source card', () => {
     expect(sourceAt).toBeGreaterThan(-1);
     expect(shareAt).toBeGreaterThan(-1);
     expect(sourceAt).toBeLessThan(shareAt);
-    // the card's second line: date · song count (a single track is "1 song")
-    expect(html).toContain('Oct 4, 2024 · 1 song');
+    // one line per detail: the date, then the song count ("1 song")
+    expect(detailLines(html)).toEqual(['Oct 4, 2024', '1 song']);
     // the chevron for the picker
     expect(html).toContain('>▼</span>');
     // the old lines it replaced are gone: standalone year, "NN Songs"
@@ -298,22 +320,24 @@ describe('ReleasePage: the source card', () => {
     expect(html).not.toContain(' Songs');
   });
 
-  test('a MusicBrainz edition names its formats', () => {
+  test('the top line is only the source; a MusicBrainz edition\'s formats are a line of their own (#1312)', () => {
     const html = render({ ...release, formats: ['2×CD', 'Digital Media'] });
-    expect(html).toContain('title="MusicBrainz · 2×CD + Digital Media">MusicBrainz · 2×CD + Digital Media</span>');
+    expect(html).toContain('title="MusicBrainz">MusicBrainz</span>');
+    expect(html).not.toContain('MusicBrainz · ');
+    expect(detailLines(html)).toEqual(['2×CD + Digital Media', 'Oct 4, 2024', '1 song']);
   });
 
-  test('names the edition\'s region as a readable name', () => {
+  test('names the edition\'s region as a readable name, on its own line', () => {
     const html = render({ ...release, country: 'XE' });
-    expect(html).toContain('Oct 4, 2024 · Europe · 1 song');
+    expect(detailLines(html)).toEqual(['Oct 4, 2024', 'Europe', '1 song']);
   });
 
   test('a catalog-sourced page just names the service', () => {
-    const html = render({ ...release, _catalogSource: { resolverId: 'spotify', name: 'Spotify', url: 'u' } });
+    const html = render({ ...release, formats: ['Digital Media'], _catalogSource: { resolverId: 'spotify', name: 'Spotify', url: 'u' } });
     expect(html).toContain('title="Spotify">Spotify</span>');
-    expect(html).not.toContain('MusicBrainz · ');
-    // catalog editions carry no region
-    expect(html).toContain('Oct 4, 2024 · 1 song');
+    expect(html).not.toContain('title="MusicBrainz"');
+    // catalog editions carry no region and no MusicBrainz formats
+    expect(detailLines(html)).toEqual(['Oct 4, 2024', '1 song']);
   });
 
   test('while the track list still loads the count is a shimmer bar', () => {

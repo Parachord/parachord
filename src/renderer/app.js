@@ -644,7 +644,7 @@ const {
 const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require('./lib/release-open');
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
-const { createReleaseLookup, releaseFormats } = require('./lib/release-lookup');
+const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
 const { artistLookupPlan, loadArtistReleaseGroups } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
@@ -20681,6 +20681,45 @@ ${trackListXml}
     return pick || null;
   };
 
+  // A service edition's release date and song count for the picker (#1312).
+  // Some services' album search answers without them (Bandcamp's and Amazon's
+  // search carry neither), and the picker shows both on every row, so a row
+  // missing either is looked up through the same session cache a pick uses
+  // (lookupAlbumEditionCached): one lookup per edition per session, and a
+  // later pick of it loads instantly. The row shows a shimmer meanwhile
+  // (detailsPending); a failed lookup leaves the row without them, and the
+  // next open asks again (the cache never keeps a miss). Patches apply by
+  // the list's key, not its epoch: a partial retry carries these rows over.
+  const albumEditionDetailsInFlightRef = useRef(new Set());
+  const fillAlbumEditionDetails = (key, sections) => {
+    for (const section of sections || []) {
+      for (const album of section.albums || []) {
+        if (!album?.url || (album.releaseDate && album.trackCount)) continue;
+        const lookupKey = `${section.resolverId}\u0000${album.url}`;
+        if (albumEditionDetailsInFlightRef.current.has(lookupKey)) continue;
+        albumEditionDetailsInFlightRef.current.add(lookupKey);
+        const patch = (fields) => setAlbumVersions(prev => (prev && prev.key === key
+          ? {
+              ...prev,
+              catalogs: (prev.catalogs || []).map(s => (s.resolverId !== section.resolverId ? s : {
+                ...s,
+                albums: s.albums.map(a => (a.url === album.url ? { ...a, ...fields } : a))
+              }))
+            }
+          : prev));
+        patch({ detailsPending: true });
+        lookupAlbumEditionCached(section.resolverId, album.url).then((found) => {
+          const full = found?.album;
+          const fields = { detailsPending: false };
+          if (full && !album.releaseDate && typeof full.releaseDate === 'string' && full.releaseDate) fields.releaseDate = full.releaseDate;
+          const count = full && (full.trackCount || (Array.isArray(full.tracks) ? full.tracks.length : 0));
+          if (!album.trackCount && count) fields.trackCount = count;
+          patch(fields);
+        }).finally(() => albumEditionDetailsInFlightRef.current.delete(lookupKey));
+      }
+    }
+  };
+
   const openAlbumVersions = () => {
     const release = currentReleaseRef.current;
     const key = albumVersionsKey(release);
@@ -20713,6 +20752,9 @@ ${trackListXml}
     // panel and re-ask every other service on every open.
     const currentEntry = albumVersionsRef.current;
     const previous = currentEntry?.key === key ? currentEntry : null;
+    // Service rows still missing their date or song count (a lookup that
+    // failed last time) are asked again on every open.
+    if (previous) fillAlbumEditionDetails(key, previous.catalogs);
     if (previous && previous.loading) return;
     const askedBefore = new Set((previous?.asked) || []);
     const mbAnswered = previous?.mb && !previous.mb.failed && previous.mb.releases ? previous.mb : null;
@@ -20801,6 +20843,10 @@ ${trackListXml}
                   : prev.catalogs
               }
             : prev));
+          // Queued after the section lands, so its patches find the rows.
+          if (editions.length > 0 && albumVersionsRef.current?.epoch === epoch) {
+            fillAlbumEditionDetails(key, [{ resolverId: resolver.id, albums: editions }]);
+          }
         } catch (e) {
           console.warn(`Album editions from ${resolver.id} failed:`, e?.message || e);
           setAlbumVersions(prev => (stillThisAlbum(prev)
@@ -25140,7 +25186,7 @@ ${tracks}
       // alias cache maps it to the release, whose details (title, date,
       // artist credit) are in the release-details cache.
       const aliasEntry = album.releaseGroupId && releaseDetailsCache.current[album.releaseGroupId];
-      const aliasedRelease = aliasEntry?.alias && releaseDetailsCache.current[aliasEntry.alias]?.data;
+      const aliasedRelease = hasCurrentAlias(aliasEntry) && releaseDetailsCache.current[aliasEntry.alias]?.data;
       if (aliasedRelease && (Date.now() - aliasEntry.timestamp) < CACHE_TTL.releaseDetails) {
         release = aliasedRelease;
       }
@@ -27503,7 +27549,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
       // A group already opened answers from the cache; otherwise one request
       // (the browse carries the track list).
-      const details = releaseDetailsCache.current[rgId]?.alias
+      const details = hasCurrentAlias(releaseDetailsCache.current[rgId])
         ? await fetchReleaseDetails(rgId)
         : await fetchReleaseGroupDetails(rgId);
       if (!details.ok) return null;
