@@ -117,7 +117,9 @@ describe('recommendations wiring', () => {
   test('a readiness failure drops the provider\'s stale cached sections (a transient failure keeps them)', () => {
     const i = app.indexOf('const loadRecommendations = async');
     const fn = app.slice(i, app.indexOf('\n  };', i));
-    expect(fn).toMatch(/if \(!error\?\.notReady && cache\.providers\[provider\.id\]\)/);
+    // notReady drops the cached sections; anything else (timeout, network)
+    // keeps the cached answer, even an expired one.
+    expect(fn).toMatch(/if \(error\?\.notReady\) \{[\s\S]{0,600}?delete recommendationsCache\.current\.providers\[provider\.id\];\s*\} else if \(cachedFor\(provider\)\) \{[\s\S]{0,300}?fresh\[provider\.id\] = cachedFor\(provider\);/);
   });
 
   test('the LLM stream does not churn: observer keyed on the song-id digest, seen-hash writes skipped when unchanged', () => {
@@ -142,9 +144,12 @@ describe('recommendations wiring', () => {
     expect(fn).not.toContain("'Amazon Music'");
     // Track ids are trackSlug(artist, title) — the id every no-album track
     // context keys session state on — never an asin or an index fallback.
-    expect(fn).toContain("id: trackSlug(t.artist || '', t.title || '')");
-    expect(fn).not.toContain('amazonmusic-${t.amazonAsin}');
-    expect(fn).not.toContain('rec-playlist-');
+    // (mapped by recommendationPlaylistTracks, shared by every playlist action)
+    expect(fn).toContain('await recommendationPlaylistTracks(item)');
+    const mapper = app.slice(app.indexOf('const recommendationPlaylistTracks = async'), app.indexOf('const playRecommendationPlaylist = async'));
+    expect(mapper).toContain("id: trackSlug(t.artist || '', t.title || '')");
+    expect(mapper).not.toContain('amazonmusic-${t.amazonAsin}');
+    expect(mapper).not.toContain('rec-playlist-');
   });
 });
 

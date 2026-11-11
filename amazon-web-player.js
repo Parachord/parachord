@@ -200,6 +200,19 @@ const SEE_MORE_CACHE_MAX = 40;
 const MUSIC_HOME_FIRST_LIMIT = 20;
 const MUSIC_HOME_MAX_PAGES = 4;
 
+// The home pages the recommendations flow reads, in order. The music tab is
+// the first choice (no stations or audiobooks mixed in, #1310). A Prime
+// account's music tab is refused: its MusicHomePage answers HTTP 294 to the
+// page itself as well as to a replay, while the same account's full home
+// answers BrowseHomePage with 200, in the same envelope, and walks the same
+// way (firstLimit 5/10/20 and the offset cursor; live-verified 2026-11-11,
+// #1328). So a 294 on the music tab switches the session to the full home.
+const AMAZON_HOMES = {
+  music: { url: 'https://music.amazon.com/music', operationName: 'MusicHomePage' },
+  browse: { url: 'https://music.amazon.com/', operationName: 'BrowseHomePage' }
+};
+const HOME_REFUSED_STATUS = 294;
+
 // The home page's playlists strategy — the "Playlists for You" section
 // (the user's mixes: "My Discovery Mix", "My Recent Plays and More", plus
 // curated playlists). A stable strategy URI (Amazon's own ids, the same
@@ -885,7 +898,7 @@ const amazonWebPlayer = {
     const raw = JSON.stringify(body);
     const replay = await this.evalOn(win, GQL_FETCH_SCRIPT(replayUrl, headers, raw));
     if (!replay || replay.error) return { error: (replay && replay.error) || 'Amazon gql query failed' };
-    if (replay.status !== 200) return { error: `Amazon gql query failed (${replay.status})` };
+    if (replay.status !== 200) return { error: `Amazon gql query failed (${replay.status})`, status: replay.status };
     let parsed = null;
     try { parsed = JSON.parse(replay.text); } catch (e) { /* leave null */ }
     if (!parsed) return { error: 'Amazon gql response was not JSON' };
@@ -1557,7 +1570,11 @@ const amazonWebPlayer = {
         afterCursor: cursor
       });
       const outcome = await this.replayGql(win, template, body);
-      if (outcome.error) throw new Error(outcome.error);
+      if (outcome.error) {
+        const err = new Error(outcome.error);
+        err.status = outcome.status;
+        throw err;
+      }
       const page = recommendationsFromMusicHome(outcome.parsed && outcome.parsed.data);
       if (!page.envelope) throw new Error('music home response was not the expected envelope');
       pages.push(page);
@@ -1633,17 +1650,35 @@ const amazonWebPlayer = {
   // changes, so an echo is byte-identical to a fresh request — unlike the
   // spec search, where variables.searchText distinguishes them), and its
   // session-aged headers must not be re-certified as fresh.
+  // The page flow over the session's home (AMAZON_HOMES): the music tab, or
+  // the full home once the music tab was refused this session. A refusal
+  // (HTTP 294) switches and runs the flow once more on the full home.
   async musicHomePageFlow() {
+    try {
+      return await this.homePageFlow();
+    } catch (error) {
+      if (error && error.homeRefused && this.musicHomeVariant !== 'browse') {
+        console.log(`[Amazon] music home refused (HTTP ${HOME_REFUSED_STATUS}); reading the full home for this session`);
+        this.musicHomeVariant = 'browse';
+        this.musicHomeTemplate = null;
+        return this.homePageFlow();
+      }
+      throw error;
+    }
+  },
+
+  async homePageFlow() {
+    const home = AMAZON_HOMES[this.musicHomeVariant === 'browse' ? 'browse' : 'music'];
     // A fuse armed by an earlier flow must not blank the view mid-load.
     this.cancelSearchViewPark();
     const win = await this.ensureWindow('search');
     await this.layoutSearch(this.searchView);
-    console.log('[Amazon] home recommendations: loading the music home');
+    console.log(`[Amazon] home recommendations: loading ${home.url}`);
     const { captured, detach } = this.attachGqlCapture();
     try {
       await this.replayGate.beginNavigation();
       try {
-        await loadURLBudgeted(win, 'https://music.amazon.com/music');
+        await loadURLBudgeted(win, home.url);
       } finally {
         this.replayGate.endNavigation();
       }
@@ -1662,7 +1697,7 @@ const amazonWebPlayer = {
           throw notReady('not-signed-in', 'Choose an Amazon Music profile');
         }
         for (const r of captured.filter(r => r.headers)) {
-          const req = amazonMusicHomeRequest([r.body]);
+          const req = amazonMusicHomeRequest([r.body], home.operationName);
           if (!req) continue;
           const ts = Number(r.headers['csrf-ts'] || r.headers['Csrf-ts']) || 0;
           if (ts >= bestTs) { bestTs = ts; entry = r; request = req; }
@@ -1672,7 +1707,7 @@ const amazonWebPlayer = {
         // The page loaded but never ran its recommendations query: a hornet
         // rename (or an SPA failure). Log what it did fire so a rename reads
         // as a rename instead of a silent run of failed loads.
-        console.warn(`[Amazon] music home never fired MusicHomePage; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
+        console.warn(`[Amazon] ${home.url} never fired ${home.operationName}; gql operations seen: ${capturedOperationNames(captured.map(c => c.body)).join(', ') || 'none'}`);
         throw notReady('not-ready', 'Amazon home page never issued its recommendations query');
       }
       const template = makeSpecSearchTemplate({ url: entry.url, headers: entry.headers, body: request, capturedAt: Date.now() });
@@ -1686,7 +1721,9 @@ const amazonWebPlayer = {
         return walked.sections;
       } catch (error) {
         console.warn('[Amazon] home recommendations walk failed after a fresh capture:', (error && error.message) || error);
-        throw notReady('not-ready', 'Amazon home recommendations response was not the expected shape');
+        const err = notReady('not-ready', 'Amazon home recommendations response was not the expected shape');
+        if (error && error.status === HOME_REFUSED_STATUS) err.homeRefused = true;
+        throw err;
       }
     } finally {
       detach();
@@ -2106,6 +2143,8 @@ const amazonWebPlayer = {
     this.musicHomeTemplate = null;
     this.seeMoreTemplate = null;
     this.recommendationsCache = null;
+    // The next account may read the music tab (only some plans are refused).
+    this.musicHomeVariant = null;
     this.seeMorePages.clear();
     this.cancelSearchViewPark();
     try {
