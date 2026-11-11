@@ -1078,13 +1078,16 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     }
   },
     badge,
-    React.createElement('span', { className: 'min-w-0', style: { flex: '1 1 0' } },
+    // The text wraps rather than truncating: the panel is only as wide as
+    // the card (#1312), and a cut-off edition name or region hides exactly
+    // what tells two editions apart.
+    React.createElement('span', { className: 'min-w-0', style: { flex: '1 1 0', overflowWrap: 'anywhere' } },
       React.createElement('span', {
-        className: 'block truncate',
+        className: 'block',
         style: { fontWeight: 500, color: current ? 'var(--accent-soft)' : '#ffffff' }
       }, main),
       secondary && React.createElement('span', {
-        className: 'block truncate',
+        className: 'block',
         style: { fontSize: '10.5px', color: 'rgba(255, 255, 255, 0.55)', marginTop: '1px' }
       }, secondary)
     ),
@@ -1267,8 +1270,11 @@ const AlbumVersionsMenu = ({ release, versions, resolvers = [], onSelect, onClos
     style: {
       backgroundColor: 'var(--tooltip-bg)',
       boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-      minWidth: '280px', maxWidth: '340px', maxHeight: '320px',
-      overflowY: 'auto'
+      // The card's own width (#1312): the album column hides anything wider
+      // (overflow-x: hidden), so a 280px panel under a 160-192px card had
+      // its right side cut off. Rows wrap instead (versionRow).
+      width: '100%', maxHeight: '320px',
+      overflowY: 'auto', overflowX: 'hidden'
     },
     onClick: (e) => e.stopPropagation()
   },
