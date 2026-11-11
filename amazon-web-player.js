@@ -1600,6 +1600,7 @@ const amazonWebPlayer = {
           if (typeof timer.unref === 'function') timer.unref();
         })
       ]);
+      clearTimeout(timer);
       if (walked && walked.timeout) {
         console.warn(`[Amazon] home recommendations walk exceeded ${REPLAY_TIMEOUT_MS}ms; the page flow will re-capture`);
         this.musicHomeTemplate = null;
@@ -1608,10 +1609,15 @@ const amazonWebPlayer = {
       console.log(`[Amazon] home recommendations walk returning ${walked.sections.length} sections over ${walked.pages} page(s)`);
       return walked;
     } catch (error) {
+      // A signed-out wall is not a template miss: re-throw it exactly like
+      // the page flow would, instead of dropping the template and paying a
+      // page load to rediscover the wall.
+      if (error && error.reason === 'not-signed-in') throw error;
       console.warn(`[Amazon] home recommendations walk failed (${(error && error.message) || error}); the page flow will re-capture`);
       this.musicHomeTemplate = null;
       return null;
     } finally {
+      this.searchViewBusy--;
       this.replayGate.exitReplay();
       this.scheduleParkSearchView();
     }

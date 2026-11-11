@@ -131,6 +131,20 @@ describe('amazonWebPlayer.getRecommendations', () => {
     expect(ensureWindow).not.toHaveBeenCalled();
   });
 
+  test('a fresh template on a signed-out wall URL: notReady thrown straight from the walk — no template drop, no page flow', async () => {
+    amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
+      url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
+    });
+    amazonWebPlayer.searchView = fakeWin('https://music.amazon.com/ap/signin');
+    await expect(amazonWebPlayer.getRecommendations()).rejects.toMatchObject({ reason: 'not-signed-in' });
+    expect(replayGql).not.toHaveBeenCalled();
+    expect(ensureWindow).not.toHaveBeenCalled();
+    expect(attachGqlCapture).not.toHaveBeenCalled();
+    // The wall is not a template miss: the template survives for a later
+    // signed-in walk.
+    expect(amazonWebPlayer.musicHomeTemplate).not.toBeNull();
+  });
+
   test('a fresh template answers with NO page flow: firstLimit bumped, walked to exhaustion, hash intact', async () => {
     amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
       url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
@@ -159,12 +173,9 @@ describe('amazonWebPlayer.getRecommendations', () => {
     expect(win).toBe(amazonWebPlayer.searchView);
     expect(entry.url).toBe('https://gql.music.amazon.com/');
     // Page 1: the page's own request with ONLY firstLimit patched (the walk
-    // bumps the page's 5 to 20) — the hash, type and feature flags intact,
-    // and no afterCursor variable.
-    expect(firstBody.variables.firstLimit).toBe(20);
-    expect(firstBody.variables.type).toBe('music-home');
-    expect(firstBody.variables).not.toHaveProperty('afterCursor');
-    expect(firstBody.extensions.persistedQuery.sha256Hash).toBe('browsehash');
+    // bumps the page's 5 to 20) — full-body equality pins that everything
+    // else (type, feature flags, the hash) stays the capture's.
+    expect(firstBody).toEqual({ ...MUSIC_HOME_BODY, variables: { ...MUSIC_HOME_BODY.variables, firstLimit: 20 } });
     // Page 2: the cursor page.
     const [, , secondBody] = replayGql.mock.calls[1];
     expect(secondBody.variables.afterCursor).toBe('20');

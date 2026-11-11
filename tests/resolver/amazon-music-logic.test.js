@@ -2170,6 +2170,13 @@ describe('recommendations', () => {
       expect(first.extensions.persistedQuery.sha256Hash).toBe('h');
       const second = musicHomeBodyWithVars(body, { firstLimit: 20, afterCursor: '20' });
       expect(second.variables.afterCursor).toBe('20');
+      // Everything the patch does not touch survives the clone.
+      expect(second.variables.audiobooksEnabled).toBeUndefined(); // (the fixture carries none here)
+      const rich = { ...body, variables: { ...body.variables, audiobooksEnabled: true, paginating: false } };
+      const patched = musicHomeBodyWithVars(rich, { firstLimit: 20, afterCursor: '20' });
+      expect(patched.variables.audiobooksEnabled).toBe(true);
+      expect(patched.variables.paginating).toBe(false);
+      expect(patched.variables.firstLimit).toBe(20);
       // The original body is untouched.
       expect(body.variables.firstLimit).toBe(5);
       expect(body.variables.afterCursor).toBeUndefined();
