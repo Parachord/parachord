@@ -33,6 +33,10 @@
 - **"See all" on Home's Friend Activity opens your friends.** It led to a blank page, and it disappeared whenever a friend was listening. It now opens the Friends tab in your Collection and shows next to the "listening now" count.
 - **New friends show up without a restart.** Someone you followed on Last.fm or ListenBrainz while Parachord was open didn't appear until you restarted if you had no friends yet. Parachord now checks for new friends every 30 minutes and when you open the Friends tab.
 
+## Recommendations
+
+- **The Recommendations page is grouped into sections.** Instead of separate Artists and Songs tabs with a source filter, the page shows Artists, Songs, Albums and Playlists, a few of each with Show all. Shuffleupagus's album and artist suggestions appear there too, with their own Refresh, and stay on Home as before. Thanks to @theli-ua.
+
 ## Playback
 
 - **Play tries again after a track fails.** When a track couldn't play and Parachord showed an error, pressing Play did nothing, or resumed the song before it. The track that failed now stays in the playbar, and Play starts it again from scratch, choosing its source afresh.
