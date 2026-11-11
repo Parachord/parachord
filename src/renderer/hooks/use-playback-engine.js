@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction } = require('../lib/playback-helpers');
+const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -3202,21 +3202,17 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     return { artist: seed.artist, title: top[0].title };
   };
 
-  const activateSpinoffFromPool = async (initialPool, { displayName, refillUrl }) => {
+  // A radio from a track pool (parachord://play-radio with tracks or a URL).
+  // Finds a playable first track BEFORE anything changes (#1319): only then
+  // does beforeStart run (the protocol handler passes clearQueue) and spinoff
+  // mode begin. A pool with nothing playable, or a refill that brings nothing,
+  // leaves the queue and current playback alone. Returns whether it started.
+  const activateSpinoffFromPool = async (initialPool, { displayName, refillUrl, beforeStart } = {}) => {
     if (!initialPool.length && !refillUrl) {
       showToast(`No tracks for radio: ${displayName || 'Untitled'}`);
-      return;
+      return false;
     }
 
-    // Save previous context to restore on exit (mirrors seed path)
-    if (playbackContext?.type !== 'listenAlong') {
-      spinoffPreviousContextRef.current = playbackContext;
-    } else {
-      spinoffPreviousContextRef.current = null;
-    }
-
-    setSpinoffMode(true);
-    setSpinoffSourceTrack({ title: displayName || 'Radio', artist: '' });
     // Build the playback context first so we can tag every track with it.
     // handlePlay reads track._playbackContext to decide whether to call
     // exitSpinoff() — without the tag, the very first handlePlay call
@@ -3233,6 +3229,16 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       refillUrl: refillUrl || null,
     };
     const baseId = `protocol-radio-${Date.now()}`;
+    // The pool and refill refs are filled before spinoff mode starts (the
+    // refill reads them); handleNext only reads the pool in spinoff mode, so
+    // nothing plays from it until the mode is on. A spinoff already running
+    // gets its refs back if this radio doesn't start.
+    const previousRefs = {
+      pool: spinoffTracksRef.current,
+      refillUrl: spinoffRefillUrlRef.current,
+      emptyCount: spinoffRefillEmptyCountRef.current,
+      lastFetchAt: spinoffRefillLastFetchAtRef.current,
+    };
     spinoffTracksRef.current = initialPool.map((t, i) => ({
       ...t,
       id: t.id || `${baseId}-${i}`,
@@ -3242,26 +3248,21 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     spinoffRefillUrlRef.current = refillUrl || null;
     spinoffRefillEmptyCountRef.current = 0;
     spinoffRefillLastFetchAtRef.current = 0;
-
-    registerPoolContext('spinoff', 5);
-    const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t) => ({
-      key: t.id || `${t.artist}-${t.title}`,
-      data: { track: t, artistName: t.artist || 'Unknown Artist' }
-    }));
-    updateSchedulerVisibility('spinoff', poolTracks);
-
-    setPlaybackContext(radioContext);
-
-    showToast(`Playing radio: ${displayName || 'Untitled'}`);
+    const abandon = (message) => {
+      spinoffTracksRef.current = previousRefs.pool;
+      spinoffRefillUrlRef.current = previousRefs.refillUrl;
+      spinoffRefillEmptyCountRef.current = previousRefs.emptyCount;
+      spinoffRefillLastFetchAtRef.current = previousRefs.lastFetchAt;
+      showToast(message);
+      return false;
+    };
 
     // If pool was empty but refillUrl is set, fetch immediately for first batch.
     if (initialPool.length === 0 && refillUrl) {
       await refillSpinoffPool();
       if (spinoffTracksRef.current.length === 0) {
-        console.log('🔁 Initial refill returned no tracks, exiting radio');
-        exitSpinoff();
-        showToast(`Radio source returned no tracks: ${displayName || 'Untitled'}`);
-        return;
+        console.log('🔁 Initial refill returned no tracks, not starting the radio');
+        return abandon(`Radio source returned no tracks: ${displayName || 'Untitled'}`);
       }
     }
 
@@ -3280,9 +3281,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       } catch (err) {
         console.warn(`🔁 Resolution threw for "${candidate.title}" by ${candidate.artist}:`, err?.message || err);
       }
-      const sourceKeys = candidate.sources ? Object.keys(candidate.sources).filter(id => !candidate.sources[id]?.noMatch) : [];
-      if (sourceKeys.length > 0) {
-        console.log(`🔁 Found playable: "${candidate.title}" by ${candidate.artist} (sources: ${sourceKeys.join(', ')})`);
+      if (hasPlayableSource(candidate)) {
+        console.log(`🔁 Found playable: "${candidate.title}" by ${candidate.artist}`);
         first = candidate;
         break;
       }
@@ -3291,11 +3291,34 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     }
 
     if (!first) {
-      console.log(`🔁 Radio: no playable tracks found after ${skipped} attempts (${spinoffTracksRef.current.length} remaining in pool), exiting`);
-      exitSpinoff();
-      showToast(`No playable tracks for radio: ${displayName || 'Untitled'}`);
-      return;
+      console.log(`🔁 Radio: no playable tracks found after ${skipped} attempts, not starting it`);
+      return abandon(`No playable tracks for radio: ${displayName || 'Untitled'}`);
     }
+
+    // Something plays: now replace what was there.
+    if (beforeStart) beforeStart();
+
+    // Save previous context to restore on exit (mirrors seed path)
+    if (playbackContext?.type !== 'listenAlong') {
+      spinoffPreviousContextRef.current = playbackContext;
+    } else {
+      spinoffPreviousContextRef.current = null;
+    }
+
+    spinoffModeRef.current = true;
+    setSpinoffMode(true);
+    setSpinoffSourceTrack({ title: displayName || 'Radio', artist: '' });
+
+    registerPoolContext('spinoff', 5);
+    const poolTracks = spinoffTracksRef.current.slice(0, 5).map((t) => ({
+      key: t.id || `${t.artist}-${t.title}`,
+      data: { track: t, artistName: t.artist || 'Unknown Artist' }
+    }));
+    updateSchedulerVisibility('spinoff', poolTracks);
+
+    setPlaybackContext(radioContext);
+
+    showToast(`Playing radio: ${displayName || 'Untitled'}`);
 
     // Pre-resolve the next 2 lookahead tracks BEFORE handing the first track
     // to handlePlay. Without this, on heavy-CPU systems track 2's resolution
@@ -3326,6 +3349,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // React state via setPlaybackContext(radioContext) earlier in this
     // function. Don't pass extra args — they'd be silently dropped.
     handlePlay(first);
+    return true;
   };
 
   const refillSpinoffPool = async () => {
@@ -3397,12 +3421,22 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     }
   };
 
-  const startSpinoff = async (track) => {
+  // Start a spinoff from a seed track, or a radio from a track pool.
+  // Options (the radio link passes both, #1319):
+  //   requirePlayable — probe the first RADIO_SEED_PROBE_COUNT similar tracks
+  //     and refuse, leaving everything as it was, when none of them plays.
+  //     The in-app Spinoff button doesn't: Last.fm answering is enough there,
+  //     as on mobile (an unplayable pool track is skipped when it comes up).
+  //   beforeStart — run once the spinoff will start, before it does; the
+  //     radio link passes clearQueue, so a refusal never empties the queue.
+  // Returns whether the spinoff started.
+  const startSpinoff = async (track, { requirePlayable = false, beforeStart = null } = {}) => {
     // New path: pre-resolved pool (used by parachord://play-radio)
     if (track && Array.isArray(track.pool)) {
       return activateSpinoffFromPool(track.pool, {
         displayName: track.displayName,
         refillUrl: track.refillUrl || null,
+        beforeStart,
       });
     }
 
@@ -3412,23 +3446,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     }
     if (!track || !track.artist || !track.title) {
       console.log('🔀 Cannot start spinoff: missing track info');
-      return;
+      return false;
     }
 
     setSpinoffLoading(true);
     console.log(`🔀 Starting spinoff from "${track.title}" by ${track.artist}`);
-
-    // If we're in listen-along mode, exit it first (we're leaving to explore similar music)
-    if (listenAlongFriend) {
-      console.log(`🔀 Exiting listen-along with ${listenAlongFriend.displayName} to start spinoff`);
-      abortSchedulerContext('listen-along');
-      setListenAlongFriend(null);
-      listenAlongLastTrackRef.current = null;
-      // Don't show the "stopped listening along" toast since we'll show the spinoff toast
-    }
-
-    // Clear deferred listen-along ending
-    listenAlongEndAfterSongRef.current = null;
 
     try {
       // Similar tracks, topped up from the seed artist's similar artists when
@@ -3441,16 +3463,49 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       });
       if (pool.failed) {
         showToast('Failed to fetch similar tracks');
-        return;
+        return false;
       }
       const similarTracks = pool.tracks;
       if (similarTracks.length === 0) {
         showToast(`No similar tracks found for "${track.title}"`);
-        return;
+        return false;
       }
       if (pool.usedFallback) {
         console.log(`🔀 Few similar tracks for "${track.title}": topped up from similar artists`);
       }
+
+      // The radio link's check (#1319): something in the first few must play
+      // before the link replaces the user's queue. The probe's resolutions
+      // stay on the pool tracks, so they don't resolve again.
+      if (requirePlayable) {
+        const probe = similarTracks.slice(0, RADIO_SEED_PROBE_COUNT).map(t => {
+          if (!t.sources) t.sources = {};
+          return t;
+        });
+        try {
+          await resolveTracksInBackground(probe);
+        } catch (err) {
+          console.warn('🔀 Spinoff probe resolution error:', err?.message || err);
+        }
+        if (!probe.some(hasPlayableSource)) {
+          console.log(`🔀 None of the first ${probe.length} similar tracks for "${track.title}" plays: not starting`);
+          showToast(noPlayableSimilarTracksMessage(track.title));
+          return false;
+        }
+      }
+
+      // It will start: replace what was there, and leave Listen Along (we're
+      // off to explore similar music).
+      if (beforeStart) beforeStart();
+      if (listenAlongFriend) {
+        console.log(`🔀 Exiting listen-along with ${listenAlongFriend.displayName} to start spinoff`);
+        abortSchedulerContext('listen-along');
+        setListenAlongFriend(null);
+        listenAlongLastTrackRef.current = null;
+        // Don't show the "stopped listening along" toast since we'll show the spinoff toast
+      }
+      // Clear deferred listen-along ending
+      listenAlongEndAfterSongRef.current = null;
 
       // Save current playback context to restore when spinoff ends
       // (but not if it was a listenAlong context - that session is over)
@@ -3460,7 +3515,10 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         spinoffPreviousContextRef.current = null;
       }
 
-      // Enter spinoff mode
+      // Enter spinoff mode. The ref is set here too, not only by its sync
+      // effect after the next render: the radio link calls handleNext right
+      // after this returns (#1319), and handleNext reads the ref.
+      spinoffModeRef.current = true;
       setSpinoffMode(true);
       setSpinoffSourceTrack({ title: track.title, artist: track.artist });
       spinoffTracksRef.current = similarTracks;
@@ -3484,9 +3542,11 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       showToast(`Spinning off of ${track.title} - ${track.artist}`);
       console.log(`🔀 Spinoff mode activated with ${similarTracks.length} tracks`);
+      return true;
     } catch (error) {
       console.error('Failed to start spinoff:', error);
       showToast('Failed to fetch similar tracks');
+      return false;
     } finally {
       setSpinoffLoading(false);
     }

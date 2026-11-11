@@ -22,9 +22,11 @@ function modeBSource() {
 
 describe('play/radio Mode B (artist-only seed)', () => {
   test('resolves the seed before clearing the queue, and bails without clearing when there is no seed', () => {
+    // The queue is cleared by startSpinoff's beforeStart, once the spinoff
+    // will start (#1319); the seed still comes first.
     const src = modeBSource();
     const seedAt = src.indexOf('await resolveSpinoffSeed(');
-    const clearAt = src.indexOf('clearQueue();');
+    const clearAt = src.indexOf('beforeStart: clearQueue');
     expect(seedAt).toBeGreaterThan(-1);
     expect(clearAt).toBeGreaterThan(seedAt);
     expect(src.slice(seedAt, clearAt)).toMatch(/if \(!seed\) break;/);
@@ -40,9 +42,9 @@ describe('play/radio Mode B (artist-only seed)', () => {
   });
 
   test('startSpinoff itself accepts an artist-only seed (other callers than the protocol)', () => {
-    const start = app.indexOf('const startSpinoff = async (track) => {');
+    const start = app.indexOf('const startSpinoff = async (track, { requirePlayable = false, beforeStart = null } = {}) => {');
     expect(start).toBeGreaterThan(-1);
-    const src = app.slice(start, start + 1200);
+    const src = app.slice(start, start + 1600);
     expect(src).toMatch(/if \(track && track\.artist && !track\.title\) \{\s*\n\s*\/\/[^\n]*\n\s*track = await resolveSpinoffSeed\(track\);/);
   });
 });

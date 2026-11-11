@@ -127,7 +127,9 @@ describe('no play path falls back to the first result', () => {
     expect(end).toBeGreaterThan(start);
     const guard = app.slice(app.lastIndexOf('if (', app.indexOf('const placeholderTitle', start)), end);
     expect(guard).not.toMatch(/if \(command === 'play'/);
-    expect(app.slice(start, end)).toMatch(/\['album', 'playlist', 'radio'\]\.includes\(playKind\)/);
+    // album and playlist links still show the placeholder; radio checks its
+    // pool plays before replacing anything, so it skips it too (#1319)
+    expect(app.slice(start, end)).toMatch(/\['album', 'playlist'\]\.includes\(playKind\)/);
   });
 
   test('a chat link that finds nothing says so', () => {
