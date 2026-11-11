@@ -3218,6 +3218,14 @@ const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) =>
 // duration of 0 must not wipe that length.
 
 
+// The background pagination's per-section page budget: the self-advancing
+// effect only stops at the provider's word (no cursor / no-advance), so a
+// provider cycling between cursors or endlessly minting new ones would
+// page an open section forever — each page an append + a full-app render.
+// Ten pages ≈ 200 items at Amazon's 20-per-page (they top out around 50),
+// so this is a guard, not a live limit.
+const EXPANSION_PAGE_CAP = 10;
+
 const Parachord = () => {
   // Spinoff mode - radio-like playback of similar tracks
   const [spinoffMode, setSpinoffMode] = useState(false);
@@ -27159,17 +27167,25 @@ Return ONLY the JSON array, no other text.`;
         // re-served the same window. A cursor like that would make the
         // self-advancing Show-more effect fetch the identical page forever
         // (the provider's page cache answers instantly, so each loop is an
-        // append + full-app render) — treat it as exhausted instead.
+        // append + full-app render) — treat it as exhausted instead. The page
+        // counter carries the same budget to a provider that cycles between
+        // cursors or keeps minting new ones: at EXPANSION_PAGE_CAP fetched
+        // pages the section is exhausted no matter what the cursor says.
         const noAdvance = result.nextCursor != null && result.nextCursor === section.nextCursor;
         const nextCursor = noAdvance ? null : (result.nextCursor || null);
-        setExpandedSections(prev => ({
-          ...prev,
-          [key]: {
-            items: [...((prev[key] || { items: [] }).items || []), ...result.items],
-            nextCursor,
-            exhausted: !nextCursor
-          }
-        }));
+        setExpandedSections(prev => {
+          const prior = prev[key] || { items: [] };
+          const pages = (prior.pages || 0) + 1;
+          return {
+            ...prev,
+            [key]: {
+              items: [...(prior.items || []), ...result.items],
+              nextCursor,
+              exhausted: !nextCursor || pages >= EXPANSION_PAGE_CAP,
+              pages
+            }
+          };
+        });
       }
     } catch (error) {
       console.warn(`⭐ Failed to expand recommendation section ${section.title || key}:`, error?.message || error);

@@ -100,6 +100,7 @@ describe('recommendations wiring', () => {
     expect(row).toMatch(/isNowPlaying \? 'bg-purple-50'/);
     expect(row).toMatch(/isNowPlaying \? '▶' : String\(index \+ 1\)\.padStart\(2, '0'\)/);
     expect(row).toMatch(/color: isNowPlaying \? 'var\(--accent-primary\)'/);
+  });
 
   test('"load more" is guarded by a ref and appends from the functional update (review round 2)', () => {
     const i = app.indexOf('const loadMoreRecommendationSection = async');
@@ -107,8 +108,9 @@ describe('recommendations wiring', () => {
     // The ref guard (the state read is stale in the click closure).
     expect(fn).toMatch(/recommendationsLoadingMoreRef\.current\[section\.key\]\) return;/);
     expect(fn).toMatch(/delete recommendationsLoadingMoreRef\.current\[section\.key\];/);
-    // The append reads `prev`, not the post-commit-synced ref.
-    expect(fn).toMatch(/items: \[\.\.\.\(\(prev\[key\] \|\| \{ items: \[\] \}\)\.items \|\| \[\]\), \.\.\.result\.items\]/);
+    // The append reads `prev` (via prior), not the post-commit-synced ref.
+    expect(fn).toMatch(/const prior = prev\[key\] \|\| \{ items: \[\] \};/);
+    expect(fn).toMatch(/items: \[\.\.\.\(prior\.items \|\| \[\]\), \.\.\.result\.items\]/);
     expect(fn).not.toMatch(/expandedSectionsRef\.current\[key\]/);
   });
 
@@ -161,6 +163,21 @@ describe('the single Show-more control with background pagination', () => {
     expect(view).toMatch(/'Show more'/);
     expect(view).toMatch(/'Show less'/);
     expect(view).not.toMatch(/'Load more'/);
+  });
+
+  test('the background pagination is page-capped per section (a provider minting endless cursors cannot page forever)', () => {
+    expect(app.indexOf('const EXPANSION_PAGE_CAP = 10;')).toBeGreaterThan(-1);;
+    const i = app.indexOf('const loadMoreRecommendationSection = async');
+    const fn = app.slice(i, app.indexOf('\n  };', i));
+    expect(i).toBeGreaterThan(-1);
+    // The budget counts pages in the expansion record and exhausts the section
+    // when it is spent, whatever the cursor says.
+    expect(fn).toContain('const pages = (prior.pages || 0) + 1;');
+    expect(fn).toContain('exhausted: !nextCursor || pages >= EXPANSION_PAGE_CAP');
+    // And the merged model turns exhausted into canLoadMore false, which is
+    // what stops the self-advancing effect.
+    expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/lib/recommendation-model.js'), 'utf8'))
+      .toMatch(/canLoadMore: !!section\.id && expandable\.has\(provider\.resolverId\) && !\(expansion && expansion\.exhausted\)/);
   });
 
   test('a page answering the cursor it was sent is exhausted, not fetched again (no-advance)', () => {
