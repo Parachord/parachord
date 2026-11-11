@@ -199,6 +199,25 @@ describe('buildRecommendationSections', () => {
     expect(albums.nextCursor).toBe('albumsStrategy.20');
   });
 
+  test('a section that carries its own first-page cursor (Amazon synthesized playlists) starts its background pagination from it', () => {
+    const withCursor = [{
+      resolverId: 'amazonmusic', resolverName: 'Amazon Music', sections: [
+        { id: 'uri:///rec/playlists', title: 'Playlists for You', nextCursor: 'playlistsStrategy.20', items: [
+          { type: 'playlist', id: 'pp1', name: 'My Discovery Mix', url: 'https://music.amazon.com/playlists/PP1' }
+        ] }
+      ]
+    }];
+    const provider = normalizeRecommendationSections({
+      sections: [{ id: 'uri:///rec/playlists', title: 'Playlists for You', nextCursor: 'playlistsStrategy.20', items: [
+        { type: 'playlist', id: 'pp1', name: 'My Discovery Mix', url: 'https://music.amazon.com/playlists/PP1' }
+      ] }]
+    }, { resolverId: 'amazonmusic', resolverName: 'Amazon Music' });
+    const sections = buildRecommendationSections({ providers: [provider], expandableResolverIds: ['amazonmusic'] });
+    const playlists = sections.find(s => s.key === 'amazonmusic:uri:///rec/playlists');
+    expect(playlists.canLoadMore).toBe(true);
+    expect(playlists.nextCursor).toBe('playlistsStrategy.20');
+  });
+
   test('the shuffleupagus section renders last, after titled sections', () => {
     const shuffle = shuffleupagusSection({
       albums: [{ title: 'Sunbather', artist: 'Deafheaven', reason: 'because' }],

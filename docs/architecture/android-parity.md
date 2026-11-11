@@ -194,6 +194,16 @@ The corollary: **don't make the JS-fallback or auth-failed kill-switch session-p
 
 `scoreConfidence` and `selectBestMatch` must apply the same artist and title rules as desktop's `validateResolvedTrack`, described under "Match Confidence + Selection Floor" in [playback.md](playback.md). Every row of `ARTIST_CREDIT_VECTORS` in `tests/helpers/artist-credit-vectors.js` must return the same score, in both directions. If mobile drifts, one client plays a source the other refuses for the same track, and the sync hydration paths mint an id on one client that the other won't.
 
+### Android Parity Requirements (recommendations provider capability)
+
+Desktop's Recommendations page is provider-driven (parachord#1309-era rework): every plugin with `capabilities.recommendations` answers `getRecommendations(config)` with sections of typed items, and may implement `expandRecommendationSection(sectionId, afterCursor, config)` for pagination. The contract is documented under "Recommendations" in [plugins.md](plugins.md); the pure merge model (generic buckets by type, titled sections after them, per-type dedupe, blocklist application) is desktop's `src/renderer/lib/recommendation-model.js`. If the Android client builds a recommendations surface over the same plugins, the shapes must agree:
+
+- `getRecommendations(config)` → `{ sections: [{ id?: string, title?: string, description?: string, nextCursor?: string (a section whose first page was pre-fetched — the page's load-more starts from that cursor), items: [{ type: 'artist'|'album'|'song'|'playlist', id?: string, name: string, artist?: string, duration?: number (seconds), imageUrl?: string, url?: string, reason?: string, mbid?: string, isrc?: string (copied onto a song item's track) }] }] }`. A miss is `{ sections: [] }`, never a throw; a readiness failure (signed out, offline) THROWS so a miss is never cached as one.
+- `expandRecommendationSection(sectionId, afterCursor, config)` → `{ items: [...], nextCursor: string | null }`; absent means the provider does not paginate.
+- An untitled section feeds generic per-type buckets; a titled section is its own grouping. `Last.fm` and `ListenBrainz` implement the capability (their fetches moved out of desktop's app.js into the plugins — a mobile client that still hardcodes those fetches duplicates provider logic the plugin now owns).
+
+What breaks if a client drifts: a mobile-built recommendations surface that invents its own item fields silently drops plugin items (an unknown `type` or a nameless item is discarded by desktop's normalizer), and a provider that answers a different miss policy gets its misses cached as permanent emptiness.
+
 ### Android Parity Requirements (protocol play handlers)
 
 This section is for the Android client. Every rule was learned from a real bug; skipping any one breaks the corresponding command. The desktop equivalent is in `app.js`'s protocol switch and the `activateSpinoffFromPool` / `parseProtocolTracklist` / `resolveProtocolPlayInput` helpers — cross-reference if anything below is unclear.

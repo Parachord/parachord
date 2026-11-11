@@ -45,6 +45,17 @@ const {
   amazonNormalizeArtistName,
   artistFromGqlSearchNode,
   searchArtistImageFromGql,
+  recommendationItemFromGqlNode,
+  amazonMusicHomeRequest,
+  recommendationsFromMusicHome,
+  musicHomeBodyWithVars,
+  mergeMusicHomeSectionPages,
+  seeMoreSectionIdFor,
+  amazonSeeMoreRequest,
+  recommendationStrategyId,
+  amazonSeeMorePageUrl,
+  seeMoreBodyWithVars,
+  recommendationsFromSeeMore,
   albumTrackFromGqlEdge,
   assignDiscNumbers,
   albumDetailFromGql,
@@ -1990,5 +2001,296 @@ describe('licenseDenialSummary', () => {
     expect(licenseDenialSummary(null)).toBeNull();
     expect(licenseDenialSummary(undefined)).toBeNull();
     expect(licenseDenialSummary('   ')).toBeNull();
+  });
+});
+
+// --- Recommendations (capabilities.recommendations in the plugin) ---------
+// Fixtures from the 2026-11 live capture of the signed-in home page's MUSIC
+// tab (MusicHomePage) and the see-more route (RecommenderSeeMorePage).
+
+describe('recommendations', () => {
+  const image = (id, w, h, type = 'PRIMARY') => ({ id, url: `https://m.media-amazon.com/images/I/${id}.jpg`, width: w, height: h, imageType: type, __typename: 'Image' });
+  const artistConn = (names) => ({
+    edges: names.map(([name, role]) => ({ role: role || 'PRIMARY', node: { name, __typename: 'Artist', id: 'B' + name.slice(0, 8).toUpperCase() }, __typename: 'ArtistEdge' })),
+    __typename: 'ArtistConnection'
+  });
+  const trackNode = (id, title, artists, album) => ({
+    __typename: 'Track', id,
+    uri: `mrn:1.0:catalog:track:asin:${id}?territory=US`,
+    title, shortTitle: title,
+    images: [image(id + 'A', 1448, 1448)],
+    playParams: { id: `mrn:1.0:catalog:track:asin:${id}?territory=US`, selections: ['PLAY', 'SHUFFLE'], __typename: 'PlayParams' },
+    playbackInformation: { videoId: null, __typename: 'PlaybackInformation' },
+    mediaType: 'AUDIO',
+    parentalSettings: { hasExplicitLanguage: false, __typename: 'ParentalSettings' },
+    url: `https://music.amazon.com/tracks/${id}/?ref=dm_wtyd_direct_uni`,
+    contributingArtists: artistConn(artists),
+    duration: 394,
+    album: { id: album[1], __typename: 'Album', uri: `mrn:1.0:catalog:album:asin:${album[1]}?territory=US`, shortTitle: album[0], url: `https://music.amazon.com/albums/${album[1]}?ref=dm_wtyd` }
+  });
+  const albumNode = (id, title, artists) => ({
+    __typename: 'Album', id,
+    uri: `mrn:1.0:catalog:album:asin:${id}?territory=US`,
+    title, shortTitle: title,
+    images: [image(id + 'A', 2560, 2560)],
+    playParams: { id: `mrn:1.0:catalog:album:asin:${id}?territory=US`, selections: ['PLAY'], __typename: 'PlayParams' },
+    parentalSettings: { hasExplicitLanguage: false, __typename: 'ParentalSettings' },
+    url: `https://music.amazon.com/albums/${id}?ref=dm_wtyd`,
+    contributingArtists: artistConn(artists),
+    likesContext: { state: 'NEUTRAL', __typename: 'LikesContext' }
+  });
+  const audiobookNode = (id, title) => ({
+    __typename: 'Audiobook', id, title,
+    images: [image(id + 'A', 500, 500)],
+    uri: `mrn:1.0:audible:audiobook:asin:${id}?marketplaceid=AF2M0KC94RCEA`,
+    url: `https://music.amazon.com/audiobooks/${id}?ref=dm_wtyd`
+  });
+  const sectionNode = (id, name, items, itemType = 'MIXED') => ({
+    id,
+    __typename: 'Recommendation',
+    name,
+    description: null,
+    itemType,
+    tags: ['TEMPLATE:VISUAL_SHOVELER', 'spere-recommender'],
+    recommendedContent: {
+      edges: items.map(node => ({ __typename: 'EntityEdge', node })),
+      pageInfo: { hasNextPage: false, endCursor: null, token: '[redacted]', __typename: 'PageInfo' },
+      __typename: 'EntityConnection'
+    }
+  });
+
+  describe('amazonMusicHomeRequest', () => {
+    const req = (opName, vars) => JSON.stringify({ operationName: opName, variables: vars, extensions: { clientLibrary: { name: '@apollo/client' }, persistedQuery: { version: 1, sha256Hash: 'a'.repeat(64) } } });
+
+    test('matches the page own MusicHomePage request among everything the page fires', () => {
+      const bodies = [
+        JSON.stringify({ operationName: 'IdentityStoreSeed', variables: {} }),
+        req('MusicHomePage', { firstLimit: 5, recommenderItemLimit: 15, type: 'music-home', topRecommenderId: 'musicTopOneRecommender', isAuthenticated: true, audiobooksEnabled: true, merchEnabled: true, categoryInEntityUnionEnabled: false, paginating: false }),
+        JSON.stringify({ operationName: 'Transport', variables: {} })
+      ];
+      expect(amazonMusicHomeRequest(bodies).operationName).toBe('MusicHomePage');
+      expect(amazonMusicHomeRequest(bodies).variables.recommenderItemLimit).toBe(15);
+    });
+
+    test('the LAST match wins (a re-render fires it again with fresher headers)', () => {
+      const bodies = [req('MusicHomePage', { firstLimit: 1 }), req('MusicHomePage', { firstLimit: 5 })];
+      expect(amazonMusicHomeRequest(bodies).variables.firstLimit).toBe(5);
+    });
+
+    test('no MusicHomePage → null (a structural miss for the page flow)', () => {
+      expect(amazonMusicHomeRequest([JSON.stringify({ operationName: 'BrowseHomePage', variables: {} })])).toBeNull();
+      expect(amazonMusicHomeRequest([JSON.stringify({ operationName: 'Transport', variables: {} })])).toBeNull();
+      expect(amazonMusicHomeRequest([])).toBeNull();
+      expect(amazonMusicHomeRequest(['not json'])).toBeNull();
+    });
+  });
+
+  describe('recommendationsFromMusicHome', () => {
+    const response = (sections, extra = {}) => ({
+      user: { id: 'u', tier: 'UNLIMITED', __typename: 'User' },
+      t1r: { id: 'musicTopOneRecommender', __typename: 'RecommendationCollection', recommendationConnection: { edges: [{ node: { id: 'uri:///recommendations/music-home/playMusic', __typename: 'Recommendation', parentContainer: { node: { __typename: 'Station', id: 'A1ESXGJW9GSMCX', name: 'My Soundtrack' }, __typename: 'ParentContainerEdge' }, recommendedContent: { edges: [{ node: trackNode('B002S3FW6Y', 'Geneva', [['Russian Circles']], ['Empros', 'B005S3FW6Y']) }], __typename: 'EntityConnection' } } }] } },
+      // A genre edge whose node WOULD map (an Album) if the parser ever
+      // pointed at data.genres — pins that genres never reach the sections.
+      genres: [{ id: '1|G|GROUPING_GENRE', __typename: 'Recommendation', recommendedContent: { edges: [{ node: albumNode('B00CXS55LG', 'Sunbather', ['Deafheaven']) }] } }],
+      browse: { id: 'uri:///browse/home', __typename: 'RecommendationCollection', recommendationConnection: { edges: sections.map(s => ({ node: s, __typename: 'RecommendationEdge' })), pageInfo: (extra.pageInfo !== undefined ? extra.pageInfo : { hasNextPage: false, endCursor: null, token: null }), __typename: 'RecommendationConnection' } },
+      ...({ pageInfo: undefined, ...extra })
+    });
+
+    test('maps the home page sections to titled provider sections', () => {
+      const data = response([
+        sectionNode('uri:///recommendations/music-home/music-home_mp3PrimeAlbumsStrategy', 'Albums for You', [
+          albumNode('B0G2TSTWXD', 'Tempelschlaf', [['The Ruins Of Beverast']]),
+          albumNode('B0G64M7J2C', 'The Crawl [Explicit]', [['Temple of Void']])
+        ], 'ALBUM')
+      ]);
+      const out = recommendationsFromMusicHome(data);
+      expect(out.envelope).toBe(true);
+      expect(out.sections).toHaveLength(1);
+      expect(out.sections[0]).toMatchObject({
+        id: 'uri:///recommendations/music-home/music-home_mp3PrimeAlbumsStrategy',
+        title: 'Albums for You'
+      });
+      expect(out.sections[0].items[0]).toMatchObject({
+        type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast',
+        imageUrl: 'https://m.media-amazon.com/images/I/B0G2TSTWXDA.jpg',
+        url: 'https://music.amazon.com/albums/B0G2TSTWXD'
+      });
+      expect(out.sections[0].items[1]).toMatchObject({ type: 'album', name: 'The Crawl', artist: 'Temple of Void' });
+    });
+
+    test('a mixed section carries songs, albums and artists; the explicit marker is stripped from titles', () => {
+      const data = response([
+        sectionNode('uri:///recommendations/music-home/music-home_mp3YourHeaviestListeningStrategy', 'Your Frequent Plays', [
+          trackNode('B0DTRL3P23', 'Doberman [Explicit]', [['Deafheaven']], ['Lonely People With Power', 'B0DTRR4VWM']),
+          albumNode('B00CXS55LG', 'Sunbather', [['Deafheaven']]),
+          { __typename: 'Artist', id: 'B004RUHJBC', name: 'Deafheaven', images: [image('81z2TKR2HlL', 2560, 1920, 'BACKGROUND'), image('31mOw69votL', 500, 500, 'PROFILE')], url: 'https://music.amazon.com/artists/B004RUHJBC?ref=dm_wtyd' }
+        ], 'MIXED')
+      ]);
+      const out = recommendationsFromMusicHome(data);
+      const items = out.sections[0].items;
+      expect(items.map(i => i.type)).toEqual(['song', 'album', 'artist']);
+      expect(items[0]).toMatchObject({ type: 'song', name: 'Doberman', artist: 'Deafheaven', duration: 394, url: 'https://music.amazon.com/tracks/B0DTRL3P23/' });
+      expect(items[2]).toMatchObject({ type: 'artist', name: 'Deafheaven', imageUrl: 'https://m.media-amazon.com/images/I/31mOw69votL.jpg', url: 'https://music.amazon.com/artists/B004RUHJBC' });
+    });
+
+    test('sections with only non-music nodes disappear; data.t1r is never mapped', () => {
+      const data = response([
+        sectionNode('uri:///recommendations/music-home/audiobooksForYouLapsedT2', 'Audiobooks for You', [
+          audiobookNode('B0F154ZCSN', 'Harry Potter'), audiobookNode('B01N4S7VVP', 'Fantastic Beasts')
+        ], 'AUDIOBOOK'),
+        sectionNode('uri:///recommendations/music-home/music-home_newReleasesForYouStrategy', 'New Releases for You', [
+          albumNode('B0H3LTPPRH', 'Empty on the Inside', [['Entheos']])
+        ], 'ALBUM')
+      ]);
+      const out = recommendationsFromMusicHome(data);
+      expect(out.sections.map(s => s.title)).toEqual(['New Releases for You']);
+    });
+
+    test('an absent data.browse is a structural miss (envelope false), not an empty page', () => {
+      expect(recommendationsFromMusicHome({ user: { tier: 'UNLIMITED' }, t1r: {} }).envelope).toBe(false);
+      expect(recommendationsFromMusicHome(null).envelope).toBe(false);
+    });
+
+    test('the home connection cursor rides on the parse (hasNextPage + token; the endCursor decoy ignored)', () => {
+      const data = response([sectionNode('uri:///recommendations/music-home/music-home_mp3PrimeAlbumsStrategy', 'Albums for You', [albumNode('B0G2TSTWXD', 'Tempelschlaf', ['The Ruins Of Beverast'])], 'ALBUM')], { pageInfo: { hasNextPage: true, endCursor: null, token: '20' } });
+      expect(recommendationsFromMusicHome(data).nextCursor).toBe('20');
+      // hasNextPage false, or no token: the walk ends.
+      expect(recommendationsFromMusicHome(response([], { pageInfo: { hasNextPage: false, endCursor: null, token: '20' } })).nextCursor).toBeNull();
+      expect(recommendationsFromMusicHome(response([], { pageInfo: { hasNextPage: true, endCursor: 'decoy', token: null } })).nextCursor).toBeNull();
+    });
+  });
+
+  describe('musicHomeBodyWithVars / mergeMusicHomeSectionPages', () => {
+    test('the body clone patches firstLimit and afterCursor; page 1 drops the afterCursor variable', () => {
+      const body = { operationName: 'MusicHomePage', variables: { firstLimit: 5, type: 'music-home', paginating: false }, extensions: { persistedQuery: { sha256Hash: 'h' } } };
+      const first = musicHomeBodyWithVars(body, { firstLimit: 20, afterCursor: null });
+      expect(first.variables.firstLimit).toBe(20);
+      expect(first.variables.afterCursor).toBeUndefined();
+      expect(first.variables.type).toBe('music-home');
+      expect(first.extensions.persistedQuery.sha256Hash).toBe('h');
+      const second = musicHomeBodyWithVars(body, { firstLimit: 20, afterCursor: '20' });
+      expect(second.variables.afterCursor).toBe('20');
+      // Everything the patch does not touch survives the clone.
+      expect(second.variables.audiobooksEnabled).toBeUndefined(); // (the fixture carries none here)
+      const rich = { ...body, variables: { ...body.variables, audiobooksEnabled: true, paginating: false } };
+      const patched = musicHomeBodyWithVars(rich, { firstLimit: 20, afterCursor: '20' });
+      expect(patched.variables.audiobooksEnabled).toBe(true);
+      expect(patched.variables.paginating).toBe(false);
+      expect(patched.variables.firstLimit).toBe(20);
+      // The original body is untouched.
+      expect(body.variables.firstLimit).toBe(5);
+      expect(body.variables.afterCursor).toBeUndefined();
+    });
+
+    test('the page merge dedupes by section id in first-appearance order (offset pages re-serve re-ranked sections)', () => {
+      const page = (ids) => ({ sections: ids.map(id => ({ id, title: id })) });
+      const merged = mergeMusicHomeSectionPages([page(['a', 'b']), page(['a', 'c']), page([])]);
+      expect(merged.map(s => s.id)).toEqual(['a', 'b', 'c']);
+      expect(mergeMusicHomeSectionPages(null)).toEqual([]);
+    });
+  });
+
+  describe('see-more route + request', () => {
+    test('the strategy id is the last uri segment; the see-more URL is the SPA route', () => {
+      expect(recommendationStrategyId('uri:///recommendations/browse-home/browse-home_playlistStrategy')).toBe('browse-home_playlistStrategy');
+      expect(recommendationStrategyId('browse-home_playlistStrategy')).toBe('browse-home_playlistStrategy');
+      expect(recommendationStrategyId('')).toBeNull();
+      expect(amazonSeeMorePageUrl('uri:///recommendations/browse-home/browse-home_newReleasesForYouStrategy'))
+        .toBe('https://music.amazon.com/browse/music-items/home/recommendation/browse-home_newReleasesForYouStrategy');
+      expect(amazonSeeMorePageUrl('')).toBeNull();
+    });
+
+    test('seeMoreSectionIdFor: the see-more REQUEST always carries the browse-home prefix — even for a music-home strategy', () => {
+      // Live-verified 2026-11: a music-home section's own id is
+      // uri:///recommendations/music-home/<strategy>, but its see-more request
+      // asks for uri:///recommendations/browse-home/<strategy> — the echo guard
+      // and the replay's id patch key on the mapped id.
+      expect(seeMoreSectionIdFor('uri:///recommendations/music-home/music-home_mp3PrimeAlbumsStrategy'))
+        .toBe('uri:///recommendations/browse-home/music-home_mp3PrimeAlbumsStrategy');
+      expect(seeMoreSectionIdFor('music-home_newReleasesForYouStrategy'))
+        .toBe('uri:///recommendations/browse-home/music-home_newReleasesForYouStrategy');
+      // Browse-home ids (the playlists strategy) are already in this form.
+      expect(seeMoreSectionIdFor('uri:///recommendations/browse-home/browse-home_playlistStrategy'))
+        .toBe('uri:///recommendations/browse-home/browse-home_playlistStrategy');
+      expect(seeMoreSectionIdFor('')).toBeNull();
+      // The route URL keys on the strategy suffix, so a music-home section's
+      // route works from its own id.
+      expect(amazonSeeMorePageUrl('uri:///recommendations/music-home/music-home_mp3PrimeAlbumsStrategy'))
+        .toBe('https://music.amazon.com/browse/music-items/home/recommendation/music-home_mp3PrimeAlbumsStrategy');
+    });
+
+    test('amazonSeeMoreRequest matches the route page own request, last match wins', () => {
+      const req = (opName, vars) => JSON.stringify({ operationName: opName, variables: vars, extensions: { persistedQuery: { version: 1, sha256Hash: 'b'.repeat(64) } } });
+      const bodies = [
+        JSON.stringify({ operationName: 'AppChromeHeaderLeft', variables: {} }),
+        req('RecommenderSeeMorePage', { id: 'uri:///recommendations/browse-home/browse-home_playlistStrategy', firstLimit: 20, isAuthenticated: true, audiobooksEnabled: true, merchEnabled: true, categoryInEntityUnionEnabled: false }),
+        JSON.stringify({ operationName: 'KidsMode', variables: {} })
+      ];
+      expect(amazonSeeMoreRequest(bodies).operationName).toBe('RecommenderSeeMorePage');
+      expect(amazonSeeMoreRequest(bodies).variables.id).toBe('uri:///recommendations/browse-home/browse-home_playlistStrategy');
+      expect(amazonSeeMoreRequest([req('KidsMode', {})])).toBeNull();
+    });
+
+    test('seeMoreBodyWithVars patches id/afterCursor and nothing else', () => {
+      const body = {
+        operationName: 'RecommenderSeeMorePage',
+        variables: { id: 'uri:///recommendations/browse-home/browse-home_playlistStrategy', firstLimit: 20, isAuthenticated: true, audiobooksEnabled: true, merchEnabled: true, categoryInEntityUnionEnabled: false, afterCursor: 'browse-home_playlistStrategy.15' },
+        extensions: { clientLibrary: { name: '@apollo/client', version: '4.1.6' }, persistedQuery: { version: 1, sha256Hash: 'c'.repeat(64) } }
+      };
+      const patched = seeMoreBodyWithVars(body, { sectionId: 'uri:///recommendations/browse-home/otherStrategy', afterCursor: 'otherStrategy.20' });
+      expect(patched.variables.id).toBe('uri:///recommendations/browse-home/otherStrategy');
+      expect(patched.variables.afterCursor).toBe('otherStrategy.20');
+      expect(patched.variables.firstLimit).toBe(20);
+      expect(patched.variables.isAuthenticated).toBe(true);
+      expect(patched.extensions.persistedQuery.sha256Hash).toBe('c'.repeat(64));
+      // The input body is not mutated
+      expect(body.variables.id).toBe('uri:///recommendations/browse-home/browse-home_playlistStrategy');
+      // No afterCursor → the variable is dropped (the first page of a section)
+      const first = seeMoreBodyWithVars(body, { sectionId: 'uri:///recommendations/browse-home/otherStrategy' });
+      expect(first.variables).not.toHaveProperty('afterCursor');
+    });
+  });
+
+  describe('recommendationsFromSeeMore', () => {
+    const seeMoreResponse = (edges, pageInfo) => ({
+      recommender: {
+        edges: [{
+          node: {
+            id: 'uri:///recommendations/music-home/music-home_mp3PrimeAlbumsStrategy',
+            name: 'Albums for You',
+            __typename: 'Recommendation',
+            recommendedContent: { edges: edges.map(node => ({ __typename: 'EntityEdge', node })), pageInfo, __typename: 'EntityConnection' }
+          },
+          __typename: 'RecommendationEdge'
+        }],
+        __typename: 'RecommendationConnection'
+      }
+    });
+
+    test('maps the section with the offset cursor when there is a next page', () => {
+      const data = seeMoreResponse(
+        [albumNode('B07QYGJGVC', 'Sons of Northern Darkness', [['Immortal']])],
+        { hasNextPage: true, endCursor: null, token: 'browse-home_mp3PrimeAlbumsStrategy.20', __typename: 'PageInfo' }
+      );
+      const out = recommendationsFromSeeMore(data);
+      expect(out.envelope).toBe(true);
+      expect(out.section.title).toBe('Albums for You');
+      expect(out.section.items[0]).toMatchObject({ type: 'album', name: 'Sons of Northern Darkness', artist: 'Immortal' });
+      expect(out.nextCursor).toBe('browse-home_mp3PrimeAlbumsStrategy.20');
+    });
+
+    test('no next page → null cursor (the endCursor decoy is never used)', () => {
+      const data = seeMoreResponse([albumNode('B0G2TSTWXD', 'Tempelschlaf', [['The Ruins Of Beverast']])],
+        { hasNextPage: false, endCursor: '99:dfeab136', token: '[redacted]', __typename: 'PageInfo' });
+      const out = recommendationsFromSeeMore(data);
+      expect(out.nextCursor).toBeNull();
+      expect(out.section.items).toHaveLength(1);
+    });
+
+    test('an absent data.recommender is structural; an empty connection is a real nothing-more', () => {
+      expect(recommendationsFromSeeMore({}).envelope).toBe(false);
+      expect(recommendationsFromSeeMore(null).envelope).toBe(false);
+      expect(recommendationsFromSeeMore({ recommender: { edges: [] } })).toMatchObject({ envelope: true, section: null, nextCursor: null });
+    });
   });
 });

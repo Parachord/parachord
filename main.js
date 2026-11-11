@@ -3896,6 +3896,33 @@ ipcMain.handle('amazonmusic-lookup-album', async (event, { url } = {}) => {
   }
 });
 
+// The Recommendations page's Amazon provider: the home page sections
+// (getRecommendations) and a titled section's next page
+// (expandRecommendationSection — the see-more route). NOT plan-gated, like
+// the album catalog and artist images: the plan gate stops playback, not
+// discovery (docs/architecture/amazon-music.md, "Recommendations").
+ipcMain.handle('amazonmusic-get-recommendations', async (event) => {
+  try {
+    const sections = await amazonWebPlayer.getRecommendations();
+    console.log(`[Amazon] IPC recommendations -> ${sections.length} sections`);
+    return { success: true, engine: 'web', sections };
+  } catch (error) {
+    console.warn(`[Amazon] IPC recommendations failed: ${error && error.reason} ${error && error.message}`);
+    return { success: false, reason: error.reason, error: error.message };
+  }
+});
+
+ipcMain.handle('amazonmusic-expand-recommendations', async (event, { sectionId, afterCursor } = {}) => {
+  try {
+    const page = await amazonWebPlayer.expandRecommendationSection(sectionId, afterCursor);
+    console.log(`[Amazon] IPC recommendations see-more ${sectionId} -> ${page.items.length} items`);
+    return { success: true, engine: 'web', items: page.items, nextCursor: page.nextCursor };
+  } catch (error) {
+    console.warn(`[Amazon] IPC recommendations see-more failed: ${error && error.reason} ${error && error.message}`);
+    return { success: false, reason: error.reason, error: error.message };
+  }
+});
+
 // Diagnostic, no UI: record the gql an Amazon Music album or search page
 // fires (amazonWebPlayer.debugCaptureGql) into a JSON file in userData, for
 // building the plugin's album search. Run from DevTools:

@@ -3218,6 +3218,14 @@ const createChatServiceFromPlugin = (plugin, config, toolContext, getContext) =>
 // duration of 0 must not wipe that length.
 
 
+// The background pagination's per-section page budget: the self-advancing
+// effect only stops at the provider's word (no cursor / no-advance), so a
+// provider cycling between cursors or endlessly minting new ones would
+// page an open section forever — each page an append + a full-app render.
+// Ten pages ≈ 200 items at Amazon's 20-per-page (they top out around 50),
+// so this is a guard, not a live limit.
+const EXPANSION_PAGE_CAP = 10;
+
 const Parachord = () => {
   // Spinoff mode - radio-like playback of similar tracks
   const [spinoffMode, setSpinoffMode] = useState(false);
@@ -4808,6 +4816,10 @@ const Parachord = () => {
   // Mark a discovery feature as seen (user has viewed it)
   const markDiscoverySeen = useCallback(async (feature, hash) => {
     if (!hash || !window.electron?.store) return;
+    // Skip unchanged hashes: the LLM's streaming updates re-merge the
+    // recommendations sections once per streamed item, and a store write per
+    // item is churn the flat page never had.
+    if (discoverySeenHashes.current[feature] === hash) return;
     discoverySeenHashes.current[feature] = hash;
     setDiscoveryUnread(prev => ({ ...prev, [feature]: false }));
     await window.electron.store.set(`discovery_seen_${feature}`, hash);
@@ -11042,7 +11054,7 @@ const Parachord = () => {
   // are web pages, not tracklist documents, so they must go through the
   // resolver lookupPlaylist path (the same one handleImportPlaylistFromUrl
   // uses).
-const resolveProviderPlaylistUrl = async (rawUrl) => {
+  const resolveProviderPlaylistUrl = async (rawUrl) => {
     const classified = window.classifyPlaylistUrl(rawUrl);
 
     // Achordion → its public XSPF endpoint, then the standard tracklist parser.
@@ -11122,8 +11134,6 @@ const resolveProviderPlaylistUrl = async (rawUrl) => {
   // Protocol URL handler (parachord:// deep links)
   useEffect(() => {
     if (!window.electron?.onProtocolUrl) return;
-
-
 
     // Resolve any of the protocol play-input shapes into a normalized tracklist.
     // Used by parachord://play-album, play-playlist, play-radio.
@@ -22960,10 +22970,18 @@ ${trackListXml}
 
   // Every song track on the page — the generic Songs bucket plus any titled
   // section's songs (a provider's titled sections can carry tracks) — for the
-  // scheduler effects below.
+  // scheduler effects below. The OBSERVER effect keys on a digest of the ids
+  // (recommendationSongsKey), not the array identity: the LLM's streaming
+  // updates re-merge the sections once per streamed item, and a new array
+  // identity per item would disconnect/recreate the observer each time over
+  // the SAME songs.
   const recommendationSongs = useMemo(
     () => recommendations.sections.flatMap(s => s.items.filter(i => i.type === 'song').map(i => i.track)),
     [recommendations.sections]
+  );
+  const recommendationSongsKey = useMemo(
+    () => recommendationSongs.map(t => t && t.id).join('|'),
+    [recommendationSongs]
   );
   const recommendationSongsRef = useRef([]);
   useEffect(() => { recommendationSongsRef.current = recommendationSongs; }, [recommendationSongs]);
@@ -23094,7 +23112,7 @@ ${trackListXml}
     }, 50);
 
     return () => recommendationsObserverRef.current?.disconnect();
-  }, [activeView, recommendationSongs, updateSchedulerVisibility, recommendationsScrollContainerReady]);
+  }, [activeView, recommendationSongsKey, updateSchedulerVisibility, recommendationsScrollContainerReady]);
 
   // Register page context for songs charts tracks resolution (Apple Music or Last.fm)
   useEffect(() => {
@@ -27010,9 +27028,10 @@ Return ONLY the JSON array, no other text.`;
 
     // Per-provider session cache: a provider that answered recently is not
     // asked again within the TTL (CACHE_TTL.recommendations, 1h). An EMPTY
-    // answer is never cached — the flat page's rule ("Not cached, so the next
-    // visit asks again"): a genuine miss re-asks next visit, and a transient
-    // network failure never blanks a provider for the whole hour.
+    // answer is never SERVED from the cache — the flat page's rule ("Not
+    // cached, so the next visit asks again"): a genuine miss re-asks next
+    // visit, and a transient network failure never blanks a provider for the
+    // whole hour.
     const cache = recommendationsCache.current;
     const now = Date.now();
     const fresh = {};
@@ -27092,9 +27111,12 @@ Return ONLY the JSON array, no other text.`;
       } catch (error) {
         console.warn(`⭐ Recommendations from ${provider.name || provider.id} failed:`, error?.message || error);
         failed++;
-        // Keep the cached result (even an expired one) so a transient failure
-        // does not blank a section that was on screen.
-        if (cache.providers[provider.id]) fresh[provider.id] = cache.providers[provider.id];
+        // Keep the cached result (even an expired one) so a TRANSIENT failure
+        // does not blank a section that was on screen. A readiness failure
+        // (signed out, offline — the plugin's deliberate notReady throws) is
+        // different: the cached sections belong to a session that cannot
+        // refresh them, so they are dropped instead of resurrected forever.
+        if (!error?.notReady && cache.providers[provider.id]) fresh[provider.id] = cache.providers[provider.id];
       }
     }));
 
@@ -27119,11 +27141,17 @@ Return ONLY the JSON array, no other text.`;
   // "Load more" for a titled section whose provider can paginate
   // (expandRecommendationSection): fetch the next page and merge it into the
   // section. The fetched items live in expandedSections so a re-merge (the LLM
-  // streaming an update) keeps them.
+  // streaming an update) keeps them. The in-flight guard is a REF (the state
+  // read is stale in the click closure until a re-render commits, so two quick
+  // clicks both passed it), and the append builds from the functional
+  // update's `prev` (the ref is only synced post-commit, so a second expansion
+  // landing before the re-render would otherwise overwrite the first page).
+  const recommendationsLoadingMoreRef = useRef({});
   const loadMoreRecommendationSection = async (section) => {
     const loader = resolverLoaderRef.current;
     if (!section?.resolverId || !section?.sectionId || !loader) return;
-    if (recommendationsLoadingMore[section.key]) return;
+    if (recommendationsLoadingMoreRef.current[section.key]) return;
+    recommendationsLoadingMoreRef.current[section.key] = true;
     setRecommendationsLoadingMore(prev => ({ ...prev, [section.key]: true }));
     const key = `${section.resolverId}|${section.sectionId}`;
     try {
@@ -27132,23 +27160,38 @@ Return ONLY the JSON array, no other text.`;
       if (!result || !Array.isArray(result.items) || result.items.length === 0) {
         // Nothing more from the provider: remember the exhaustion so the
         // button goes away (a force-refresh resets it).
-        const prevExpansion = expandedSectionsRef.current[key] || { items: [] };
-        setExpandedSections(prev => ({ ...prev, [key]: { ...prevExpansion, exhausted: true } }));
+        setExpandedSections(prev => ({ ...prev, [key]: { ...(prev[key] || { items: [] }), exhausted: true } }));
       } else {
-        const prevItems = (expandedSectionsRef.current[key] || { items: [] }).items || [];
-        setExpandedSections(prev => ({
-          ...prev,
-          [key]: {
-            items: [...prevItems, ...result.items],
-            nextCursor: result.nextCursor || null,
-            exhausted: !result.nextCursor
-          }
-        }));
+        // No-advance guard (the same rule paginatePlaylistTracks enforces for
+        // playlist pages): a provider answering the very cursor that was sent
+        // re-served the same window. A cursor like that would make the
+        // self-advancing Show-more effect fetch the identical page forever
+        // (the provider's page cache answers instantly, so each loop is an
+        // append + full-app render) — treat it as exhausted instead. The page
+        // counter carries the same budget to a provider that cycles between
+        // cursors or keeps minting new ones: at EXPANSION_PAGE_CAP fetched
+        // pages the section is exhausted no matter what the cursor says.
+        const noAdvance = result.nextCursor != null && result.nextCursor === section.nextCursor;
+        const nextCursor = noAdvance ? null : (result.nextCursor || null);
+        setExpandedSections(prev => {
+          const prior = prev[key] || { items: [] };
+          const pages = (prior.pages || 0) + 1;
+          return {
+            ...prev,
+            [key]: {
+              items: [...(prior.items || []), ...result.items],
+              nextCursor,
+              exhausted: !nextCursor || pages >= EXPANSION_PAGE_CAP,
+              pages
+            }
+          };
+        });
       }
     } catch (error) {
       console.warn(`⭐ Failed to expand recommendation section ${section.title || key}:`, error?.message || error);
       showToast(`Couldn't load more from ${section.resolverName || 'the service'}`, 'error');
     } finally {
+      delete recommendationsLoadingMoreRef.current[section.key];
       setRecommendationsLoadingMore(prev => ({ ...prev, [section.key]: false }));
     }
   };
@@ -27172,6 +27215,27 @@ Return ONLY the JSON array, no other text.`;
       return next;
     });
   };
+
+  // "Show more" is the only section control: expanding a paginated section
+  // also drives its page fetches. The effect self-advances — every fetched page
+  // re-merges the display model, which re-runs this effect, which fetches the
+  // next page while the section stays expanded and the provider still has more
+  // (canLoadMore turns false at exhaustion) — so the whole section fills in the
+  // background while it is open. A section with no cursor yet is fetching its
+  // FIRST page (the see-more route starts at page 1, which overlaps the section
+  // base items — the merge dedupes). Collapsing stops the chain (the expanded
+  // check), a failed page breaks it (the section state does not change on
+  // failure, so the effect does not re-fire), and the ref guard inside
+  // loadMoreRecommendationSection keeps one page in flight per section.
+  useEffect(() => {
+    if (activeView !== 'recommendations') return;
+    for (const section of recommendations.sections) {
+      if (!recommendationsExpandedSections.has(section.key)) continue;
+      if (!section.canLoadMore) continue;
+      if (recommendationsLoadingMoreRef.current[section.key]) continue;
+      loadMoreRecommendationSection(section);
+    }
+  }, [activeView, recommendations.sections, recommendationsExpandedSections]);
 
   // Last.fm and ListenBrainz recommendations now come from their plugins'
   // getRecommendations (plugins-src/{lastfm,listenbrainz}/implementation.js)
@@ -30928,13 +30992,14 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   const recommendationImageFetchesRef = useRef(new Set());
   useEffect(() => {
     if (activeView !== 'recommendations' && activeView !== 'home') return;
-    // On Home only the For You card needs one image — fetch just the first
-    // missing artist item there; the full page fetches everything.
+    // On Home only the For You card needs one photo — the first ARTIST item
+    // (the preview derives its image from it); the full page fetches everything.
     let budget = activeView === 'recommendations' ? Infinity : 1;
     for (const section of recommendations.sections) {
       for (const item of section.items) {
         if (budget <= 0) break;
         if (item.type !== 'artist' && item.type !== 'album') continue;
+        if (activeView === 'home' && item.type !== 'artist') continue;
         if (item.imageUrl || recommendationImages[item.id] || recommendationImageFetchesRef.current.has(item.id)) continue;
         recommendationImageFetchesRef.current.add(item.id);
         budget--;
@@ -34438,7 +34503,7 @@ useEffect(() => {
   // PLAYLIST_VIEW_PAGE_HANDLERS in playlist-view-page.js).
   const playlistViewPageHandlers = useStableHandlers({
     addToQueue, copyParachordLink, deletePlaylistLocally, fetchArtistData,
-    getPlaylistMirrorTargets, handleExportPlaylist, handlePlay, handlePlaylistDragEnd,
+    getPlaylistMirrorTargets, handleExportPlaylist, handleImportPlaylistFromUrl, handlePlay, handlePlaylistDragEnd,
     markPlaylistAsLocallyModified, moveInEditedPlaylist, navigateTo,
     refreshHostedPlaylist, savePlaylistToStore, setQueueWithContext,
   });
@@ -39432,17 +39497,69 @@ useEffect(() => {
             // Play a recommended playlist: resolve it through the provider
             // playlist path (resolver-loader lookupPlaylist)
             // and play the tracks, without importing anything.
+            const loadPlaylistTracks = async (item) => {
+              const resolved = await resolveProviderPlaylistUrl(item.url);
+              if (!resolved || !resolved.tracks || !resolved.tracks.length) {
+                throw new Error(`Could not load ${item.name} — is the service connected?`);
+              }
+              return resolved;
+            };
             const playRecommendationPlaylist = async (item) => {
               if (!item.url) return;
               setTrackLoading(true);
               try {
-                const resolved = await resolveProviderPlaylistUrl(item.url);
-                if (resolved && resolved.tracks && resolved.tracks.length > 0) {
-                  playTrackCollection(resolved.tracks, { type: 'playlist', name: item.name });
-                } else {
-                  setTrackLoading(false);
-                  showToast(`Could not load ${item.name} — is the service connected?`, 'error');
-                }
+                const resolved = await loadPlaylistTracks(item);
+                playTrackCollection(resolved.tracks, { type: 'playlist', name: item.name });
+              } catch (error) {
+                setTrackLoading(false);
+                showToast(error?.message || `Could not load ${item.name}`, 'error');
+              }
+            };
+
+            // Open a recommended playlist in the playlist view — the same
+            // ephemeral external-playlist flow the Home page's Weekly Jams use
+            // (loadPlaylist with an isEphemeral playlist): the view shows the
+            // tracks with per-resolver play buttons, and the Import hover button
+            // / the view's SAVE both keep the full-import paths.
+            // Open a recommended playlist in the playlist view (the same
+            // ephemeral external-playlist flow the Home page's Weekly Jams
+            // use). Provider-neutral: creator/source come from the item's
+            // resolver and the section's resolverName, and the track ids are
+            // trackSlug(artist, title) — the id every no-album track context
+            // keys session state on — so these tracks share resolution state
+            // with the rest of the app (renderer-patterns.md).
+            const openRecommendationPlaylist = async (item, section) => {
+              if (!item.url) return;
+              setTrackLoading(true);
+              try {
+                const resolved = await loadPlaylistTracks(item);
+                const art = imageFor(item);
+                const tracks = resolved.tracks.map((t) => ({
+                  id: trackSlug(t.artist || '', t.title || ''),
+                  title: t.title,
+                  artist: t.artist,
+                  album: t.album || null,
+                  albumArt: resolved.albumArt || art || null,
+                  duration: t.duration || null,
+                  sources: {},
+                  ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {})
+                }));
+                setTrackLoading(false);
+                const resolverName = (section && section.resolverName) || item.resolverId || 'the service';
+                loadPlaylist({
+                  id: `${item.resolverId}-rec-${item.id}`,
+                  title: item.name,
+                  creator: resolverName,
+                  description: `Recommended by ${resolverName}`,
+                  tracks,
+                  tracksLoaded: true,
+                  isExternal: true,
+                  isEphemeral: true,
+                  source: item.resolverId,
+                  sourceUrl: item.url,
+                  addedAt: Date.now(),
+                  trackCount: tracks.length
+                });
               } catch (error) {
                 setTrackLoading(false);
                 showToast(error?.message || `Could not load ${item.name}`, 'error');
@@ -39678,14 +39795,14 @@ useEffect(() => {
               );
             };
 
-            const playlistCard = (item, index) => {
+            const playlistCard = (item, index, section) => {
               const art = imageFor(item);
               const artLoaded = imageLoadedFor(item);
               return React.createElement('div', {
                 key: item.id,
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
-                onClick: () => playRecommendationPlaylist(item),
+                onClick: () => openRecommendationPlaylist(item, section),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -39741,17 +39858,17 @@ useEffect(() => {
               );
             };
 
-            const cardFor = (item, index) => (
+            const cardFor = (item, index, section) => (
               item.type === 'artist' ? artistCard(item, index)
                 : item.type === 'album' ? albumCard(item, index)
-                : playlistCard(item, index)
+                : playlistCard(item, index, section)
             );
 
             // ── Song rows (resolve through the shared scheduler) ─────────
             // allSongs is the section's FULL song list (the collapsed view
             // shows a slice of it): the queue context after a clicked row is
             // the whole remainder, like the flat page, not just the visible tail.
-            const songRow = (item, index, sectionSongs, allSongs, section) => {
+            const songRow = (item, index, allSongs, section) => {
               const track = item.track;
               const resolvedSources = trackSources[track.id] || track.sources || {};
               const hasResolved = Object.keys(resolvedSources).length > 0;
@@ -39804,7 +39921,7 @@ useEffect(() => {
                       type: 'track',
                       track,
                       sourceType: 'recommendations',
-                      sourceName: 'Recommendations'
+                      sourceName: section.title || 'Recommendations'
                     });
                   }
                 }
@@ -39910,7 +40027,12 @@ useEffect(() => {
                         className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded',
                         style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' }
                       }, section.resolverName),
-                      React.createElement('span', { className: 'text-xs font-normal text-gray-400' }, `${section.items.length}`)
+                      React.createElement('span', { className: 'text-xs font-normal text-gray-400' },
+                        loadingMore ? `${section.items.length}…` : `${section.items.length}`),
+                      loadingMore && React.createElement('span', {
+                        className: 'w-3 h-3 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin',
+                        title: `Loading more from ${section.resolverName || 'the service'}`
+                      })
                     ),
                     section.description && React.createElement('p', { className: 'text-sm text-gray-500 mt-0.5 truncate' }, section.description)
                   ),
@@ -39924,37 +40046,34 @@ useEffect(() => {
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
                       title: 'Ask Shuffleupagus for a new batch of suggestions'
                     }, homeData.aiRecommendations?.loading ? 'Thinking…' : 'Refresh'),
-                    hiddenCount > 0 && React.createElement('button', {
+                    // One toggle per section. Expanding a paginated section also
+                    // kicks off the background page fetches (the auto-fetch effect
+                    // below) — the header just shows a quiet "loading more…" while
+                    // they land, so there is no separate Load-more button.
+                    !expanded && (expandable || hiddenCount > 0) && React.createElement('button', {
                       onClick: () => toggleRecommendationSection(section.key),
                       className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
                       style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' },
                       onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)'
-                    }, `Show all ${section.items.length}`),
-                    hiddenCount === 0 && expanded && expandable && React.createElement('button', {
+                    }, 'Show more'),
+                    expanded && expandable && React.createElement('button', {
                       onClick: () => toggleRecommendationSection(section.key),
                       className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
                       style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' },
                       onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg)',
                       onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)'
-                    }, 'Show less'),
-                    section.canLoadMore && React.createElement('button', {
-                      onClick: () => loadMoreRecommendationSection(section),
-                      disabled: loadingMore,
-                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
-                      style: { backgroundColor: 'var(--accent-primary)', color: '#ffffff', opacity: loadingMore ? 0.6 : 1 },
-                      title: `More from ${section.resolverName || 'the service'}`
-                    }, loadingMore ? 'Loading…' : 'Load more')
+                    }, 'Show less')
                   )
                 ),
                 visibleCards.length > 0 && React.createElement('div', {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...visibleCards.map((item, index) => cardFor(item, index))
+                  ...visibleCards.map((item, index) => cardFor(item, index, section))
                 ),
                 visibleSongs.length > 0 && React.createElement('div', { className: 'space-y-0' },
-                  ...visibleSongs.map((item, index) => songRow(item, index, visibleSongs, songItems, section))
+                  ...visibleSongs.map((item, index) => songRow(item, index, songItems, section))
                 )
               );
             };
@@ -40021,7 +40140,7 @@ useEffect(() => {
                       className: 'text-xl font-medium text-gray-900 mb-2'
                     }, 'Connect a music service'),
                     React.createElement('p', { className: 'text-gray-500 mb-6 max-w-md mx-auto' },
-                      'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, or enable an AI chat provider for Shuffleupagus suggestions.'
+                      'Get personalized recommendations based on your listening history. Connect Last.fm or ListenBrainz, sign in to Amazon Music, or enable an AI chat provider for Shuffleupagus suggestions.'
                     ),
                     React.createElement('div', { className: 'flex gap-3 justify-center' },
                       React.createElement('button', {

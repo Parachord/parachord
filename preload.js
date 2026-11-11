@@ -624,6 +624,12 @@ contextBridge.exposeInMainWorld('electron', {
       query && typeof query === 'object' ? query : { query }),
     lookupAlbum: (url) => ipcRenderer.invoke('amazonmusic-lookup-album', { url }),
     searchArtistImage: (artistName) => ipcRenderer.invoke('amazonmusic-search-artist-image', { artistName }),
+    // The Recommendations provider: the home page's sections, and a titled
+    // section's next page (see-more route). Not plan-gated, like the album
+    // catalog and artist images.
+    getRecommendations: () => ipcRenderer.invoke('amazonmusic-get-recommendations'),
+    expandRecommendationSection: (sectionId, afterCursor) =>
+      ipcRenderer.invoke('amazonmusic-expand-recommendations', { sectionId, afterCursor: afterCursor || null }),
     // The account's plan changed ('unlimited' / 'prime' / 'unknown'; #1220).
     onPlanChanged: (callback) => {
       const handler = (event, data) => callback(data);
