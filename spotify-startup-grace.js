@@ -51,11 +51,38 @@ function endCheckDelayMs(remainingMs, pollIntervalMs, leadMs = END_CHECK_LEAD_MS
   return delay < pollIntervalMs ? delay : null;
 }
 
+// After a seek. The end check was timed from the last poll's position, so a
+// seek forward would let the album's next track start before it fires, and a
+// seek back would poll for nothing. The renderer reports the seek once
+// Spotify has accepted it, and the check is retimed from the new position:
+//   { action: 'none' }            — startup isn't confirmed; its 2s ticks poll
+//                                   and time the check from what they read
+//   { action: 'clear' }           — paused, or the end is past the next regular
+//                                   poll (which times the check itself)
+//   { action: 'poll', delayMs }   — the end comes first: poll just before it
+// Without a known duration it polls once the seek has settled. The poll is
+// never sooner than SEEK_MIN_RECHECK_MS, so it reads the new position.
+const SEEK_SETTLE_POLL_MS = 1000;
+const SEEK_MIN_RECHECK_MS = 500;
+
+function seekRecheckPlan({ positionMs, durationMs, isPlaying, confirmed, pollIntervalMs }) {
+  if (!confirmed) return { action: 'none' };
+  if (!isPlaying) return { action: 'clear' };
+  if (!(durationMs > 0)) return { action: 'poll', delayMs: SEEK_SETTLE_POLL_MS };
+  const remainingMs = durationMs - (Number(positionMs) || 0);
+  const delay = remainingMs <= 0 ? 0 : endCheckDelayMs(remainingMs, pollIntervalMs);
+  if (delay === null) return { action: 'clear' };
+  return { action: 'poll', delayMs: Math.max(delay, SEEK_MIN_RECHECK_MS) };
+}
+
 module.exports = {
   STARTUP_GRACE_MS,
   STARTUP_POLL_INTERVAL_MS,
   END_CHECK_LEAD_MS,
+  SEEK_SETTLE_POLL_MS,
+  SEEK_MIN_RECHECK_MS,
   matchesExpectedTrack,
   startupPollVerdict,
   endCheckDelayMs,
+  seekRecheckPlan,
 };

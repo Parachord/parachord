@@ -130,7 +130,7 @@ const WebSocket = require('ws');
 const LocalFilesService = require('./local-files');
 const { getMusicKitBridge } = require('./musickit-bridge');
 const { startMcpServer, stopMcpServer, handleRendererResponse } = require('./services/mcp-server');
-const { STARTUP_POLL_INTERVAL_MS, STARTUP_GRACE_MS, matchesExpectedTrack, startupPollVerdict, endCheckDelayMs } = require('./spotify-startup-grace');
+const { STARTUP_POLL_INTERVAL_MS, STARTUP_GRACE_MS, matchesExpectedTrack, startupPollVerdict, endCheckDelayMs, seekRecheckPlan } = require('./spotify-startup-grace');
 
 // Auto-updater configuration
 if (autoUpdater) {
@@ -311,11 +311,32 @@ const spotifyPoller = {
   },
 
   // Called on every poll that finds the expected track playing; replaces any
-  // earlier check, so a seek or a pause is picked up by the next poll.
+  // earlier check, so a pause is picked up by the next poll. A seek from
+  // Parachord retimes it at once (seeked, below).
   scheduleEndCheck(remainingMs) {
     this.clearEndCheck();
     const delay = endCheckDelayMs(remainingMs, this.POLL_INTERVAL);
     if (delay !== null) this.pollSoon(delay);
+  },
+
+  // The renderer seeked the expected track and Spotify accepted it. Retime
+  // the end check from the new position (seekRecheckPlan); the position also
+  // replaces lastProgressMs, which the reset-after-end check reads.
+  seeked({ positionMs, durationMs, isPlaying } = {}) {
+    if (!this.token || !this.expectedTrackUri) return;
+    const pos = Math.max(0, Math.round(Number(positionMs) || 0));
+    this.lastProgressMs = pos;
+    this.stuckAtZeroCount = 0;
+    const plan = seekRecheckPlan({
+      positionMs: pos,
+      durationMs: this.lastKnownDurationMs > 0 ? this.lastKnownDurationMs : (Number(durationMs) || 0),
+      isPlaying: isPlaying !== false,
+      confirmed: this.confirmedStarted,
+      pollIntervalMs: this.POLL_INTERVAL,
+    });
+    console.log(`⏩ [Main] Spotify seeked to ${Math.floor(pos / 1000)}s: ${plan.action}${plan.delayMs != null ? ` in ${plan.delayMs}ms` : ''}`);
+    if (plan.action === 'poll') this.pollSoon(plan.delayMs);
+    else if (plan.action === 'clear') this.clearEndCheck();
   },
 
   pollSoon(delay) {
@@ -3681,6 +3702,11 @@ ipcMain.handle('spotify-polling-update-token', async (event, token) => {
 ipcMain.handle('spotify-polling-update-track', async (event, { trackUri, trackTitle, trackArtist }) => {
   console.log('=== Update Spotify Polling Track (IPC) ===');
   spotifyPoller.updateTrack(trackUri, trackTitle, trackArtist);
+  return { success: true };
+});
+
+ipcMain.handle('spotify-polling-seeked', async (event, params) => {
+  spotifyPoller.seeked(params || {});
   return { success: true };
 });
 

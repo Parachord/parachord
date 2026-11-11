@@ -161,16 +161,17 @@ const controlTool = {
  * Supported playback paths (mirrors the playbar slider in app.js):
  *   - Local files, SoundCloud, YouTube, Bandcamp (HTML5 audio)
  *   - Apple Music (native MusicKit and MusicKit JS)
+ *   - Spotify Connect (Web API seek; Spotify has no read-back, so the
+ *     result's position_ms is the requested offset once Spotify accepts it)
  *
- * Not supported: Spotify (Web Playback SDK and Spotify Connect both lack
- * seek in the current playback wiring). Callers receive `supported: false`
- * with no error so they can degrade gracefully.
+ * A path that can't seek returns `supported: false` so callers can degrade
+ * gracefully.
  *
  * @type {Tool}
  */
 const seekTool = {
   name: 'seek',
-  description: 'Seek the currently playing track to a specific position. Returns {success, supported}. Not all playback paths support seek (notably Spotify); callers should handle supported=false.',
+  description: 'Seek the currently playing track to a specific position. Returns {success, supported, position_ms}. Not every playback path supports seek; callers should handle supported=false.',
   parameters: {
     type: 'object',
     properties: {

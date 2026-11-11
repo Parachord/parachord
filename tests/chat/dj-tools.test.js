@@ -691,12 +691,12 @@ describe('seek tool', () => {
     expect(result.supported).toBe(false);
   });
 
-  test('passes through supported:false from the engine (e.g. spotify)', async () => {
-    const handleSeek = jest.fn().mockResolvedValue({ success: false, supported: false, error: 'spotify seek not supported' });
+  test('passes through supported:false from an engine that cannot seek', async () => {
+    const handleSeek = jest.fn().mockResolvedValue({ success: false, supported: false, error: 'no seekable engine for active resolver' });
     const tool = getTool('seek');
     const result = await tool.execute({ offset_ms: 1000 }, { handleSeek });
     expect(result.supported).toBe(false);
-    expect(result.error).toBe('spotify seek not supported');
+    expect(result.error).toBe('no seekable engine for active resolver');
   });
 });
 
