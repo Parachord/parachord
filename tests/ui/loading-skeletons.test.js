@@ -67,6 +67,13 @@ describe('Recommendations skeletons match the sectioned page', () => {
 
   test('providers still loading and Shuffleupagus thinking get section skeletons', () => {
     expect(view).toMatch(/\.\.\.recommendationsPending\.map\(p =>\s*React\.createElement\(RecommendationSectionSkeleton, \{/);
+    // Where the providers' sections land: after the ones on screen, before
+    // Shuffleupagus (always last in the merge), so a cached Shuffleupagus
+    // batch doesn't push the skeletons below the fold.
+    const list = view.slice(view.indexOf("...sections.filter(s => s.resolverId !== 'shuffleupagus').map(renderSection)"));
+    expect(list.indexOf('...recommendationsPending.map(')).toBeGreaterThan(0);
+    expect(list.indexOf("...sections.filter(s => s.resolverId === 'shuffleupagus').map(renderSection)"))
+      .toBeGreaterThan(list.indexOf('...recommendationsPending.map('));
     expect(view).toMatch(/llmLoading && React\.createElement\(RecommendationSectionSkeleton, \{/);
   });
 

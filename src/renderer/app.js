@@ -40225,15 +40225,18 @@ useEffect(() => {
                   )
                 // Sections
                 : React.createElement('div', null,
-                    ...sections.map(renderSection),
+                    ...sections.filter(s => s.resolverId !== 'shuffleupagus').map(renderSection),
                     // A provider still being asked that has nothing on screen
                     // yet: a section skeleton under its name, where its
-                    // sections will land.
+                    // sections will land (the providers' sections all come
+                    // before the Shuffleupagus one in the merge, so a cached
+                    // Shuffleupagus batch doesn't push these below the fold).
                     ...recommendationsPending.map(p =>
                       React.createElement(RecommendationSectionSkeleton, {
                         key: `rec-pending-${p.id}`,
                         badge: p.name
                       })),
+                    ...sections.filter(s => s.resolverId === 'shuffleupagus').map(renderSection),
                     // Shuffleupagus skeleton while the LLM thinks (cached
                     // suggestions render as a real section meanwhile)
                     llmLoading && React.createElement(RecommendationSectionSkeleton, {
