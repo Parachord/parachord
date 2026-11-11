@@ -1194,6 +1194,12 @@ const { normalizeForId, generateTrackId, generateAlbumId, generateArtistId, isPl
 // Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
 // that collapsed every non-Latin track to the same id (lib/track-slug.js).
 const { trackSlug, slug } = require('./lib/track-slug');
+const { createDebouncedSaver } = require('./lib/debounced-saver');
+// The track-sources cache is saved this long after the last resolution, and
+// no later than the max after the first unsaved one (debounced-saver.js;
+// state-persistence.md, "Save Triggers").
+const TRACK_SOURCES_SAVE_DELAY_MS = 15 * 1000;
+const TRACK_SOURCES_SAVE_MAX_WAIT_MS = 60 * 1000;
 // Stale local-file sources (parachord#1002): a localfiles source whose file
 // is no longer in the local library.
 const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require('./lib/library-changes');
@@ -7531,6 +7537,26 @@ const Parachord = () => {
   // Cache for track sources (trackKey -> { sources, timestamp })
   // trackKey format: "artist|title|album"
   const trackSourcesCache = useRef({});
+  // True once cache_track_sources has loaded from disk (or there was none).
+  // Until then a save would overwrite the file with the few entries resolved
+  // so far, so neither save path writes it.
+  const trackSourcesLoadedRef = useRef(false);
+  // Saves the cache soon after resolutions instead of only on the 5-minute
+  // timer, which lost every track resolved in a shorter session (they were
+  // resolved again on every launch). Every write to the cache calls
+  // markTrackSourcesDirty(); a save clones ~10 MB over IPC, so it waits for a
+  // burst to end (debounced-saver.js).
+  const trackSourcesSaverRef = useRef(null);
+  if (!trackSourcesSaverRef.current) {
+    trackSourcesSaverRef.current = createDebouncedSaver({
+      save: () => window.electron.store.set('cache_track_sources', trackSourcesCache.current),
+      canSave: () => trackSourcesLoadedRef.current && !!window.electron?.store,
+      delayMs: TRACK_SOURCES_SAVE_DELAY_MS,
+      maxWaitMs: TRACK_SOURCES_SAVE_MAX_WAIT_MS,
+      onError: (e) => console.warn('💾 Track sources save failed (will retry):', e?.message || e)
+    });
+  }
+  const markTrackSourcesDirty = () => trackSourcesSaverRef.current.markDirty();
 
   // Stale local-file sources (#1002). After every successful local-library
   // load (startup, and each change the watcher or the background poll
@@ -7548,6 +7574,7 @@ const Parachord = () => {
     let cached = 0;
     for (const entry of Object.values(trackSourcesCache.current)) {
       if (entry?.sources && isStaleLocalSource(entry.sources.localfiles, paths)) {
+        markTrackSourcesDirty();
         entry.sources = withoutStaleLocalSource(entry.sources, paths);
         entry.resolverHash = null;
         cached++;
@@ -7602,7 +7629,9 @@ const Parachord = () => {
       entry.timestamp = 0;
     }
     try { resolutionSchedulerRef.current?.clearResolved(); } catch (e) {}
-    try { window.electron?.store?.set('cache_track_sources', trackSourcesCache.current); } catch (e) {}
+    if (trackSourcesLoadedRef.current) {
+      try { window.electron?.store?.set('cache_track_sources', trackSourcesCache.current); } catch (e) {}
+    }
     flushTrackSources(); // apply queued per-track writes before the bulk rewrite
     setTrackSources(prev => {
       let changed = false;
@@ -12428,10 +12457,12 @@ ${trackListXml}
           const cacheKey = `${artist}|${title}`;
           if (trackSourcesCache.current[cacheKey]?.sources?.[data.resolverId]) {
             const { [data.resolverId]: removed, ...rest } = trackSourcesCache.current[cacheKey].sources;
+            markTrackSourcesDirty();
             trackSourcesCache.current[cacheKey].sources = rest;
           }
           // Also invalidate the resolver hash so the cache entry is re-resolved
           if (trackSourcesCache.current[cacheKey]) {
+            markTrackSourcesDirty();
             trackSourcesCache.current[cacheKey].resolverHash = null;
           }
 
@@ -18269,9 +18300,14 @@ ${trackListXml}
         const validEntries = Object.entries(trackSourcesData).filter(
           ([_, entry]) => now - entry.timestamp < CACHE_TTL.trackSources
         );
-        trackSourcesCache.current = Object.fromEntries(validEntries);
-        console.log(`📦 Loaded ${validEntries.length} track source entries from cache`);
+        // Entries resolved before the file loaded (a restored page resolves
+        // at once) are newer than the file's: they win instead of being lost.
+        const resolvedMeanwhile = Object.keys(trackSourcesCache.current).length;
+        trackSourcesCache.current = { ...Object.fromEntries(validEntries), ...trackSourcesCache.current };
+        console.log(`📦 Loaded ${validEntries.length} track source entries from cache${resolvedMeanwhile ? ` (+${resolvedMeanwhile} resolved meanwhile)` : ''}`);
       }
+      // Loaded (or there was no file): saving can no longer clobber it.
+      trackSourcesLoadedRef.current = true;
 
       // Load artist image cache
       if (artistImageData) {
@@ -19051,8 +19087,12 @@ ${trackListXml}
       // Save artist data cache (already has timestamps)
       await window.electron.store.set('cache_artist_data', artistDataCache.current);
 
-      // Save track sources cache (already has timestamps)
-      await window.electron.store.set('cache_track_sources', trackSourcesCache.current);
+      // Save track sources cache (already has timestamps). Not before it
+      // has loaded from disk: a failed big-cache read leaves it empty, and
+      // saving that would wipe the file.
+      if (trackSourcesLoadedRef.current) {
+        await window.electron.store.set('cache_track_sources', trackSourcesCache.current);
+      }
 
       // Save artist image cache (already has timestamps)
       await window.electron.store.set('cache_artist_images', artistImageCache.current);
@@ -21714,6 +21754,7 @@ ${trackListXml}
 
       // Update cache with fresh data
       if (Object.keys(freshSources).length > 0) {
+        markTrackSourcesDirty();
         trackSourcesCache.current[cacheKey] = {
           sources: freshSources,
           timestamp: Date.now(),
@@ -21727,12 +21768,14 @@ ${trackListXml}
         console.log(`✅ Cache updated with ${Object.keys(freshSources).length} fresh source(s)`);
       } else {
         // No sources found - invalidate cache
+        markTrackSourcesDirty();
         delete trackSourcesCache.current[cacheKey];
         console.log(`❌ No sources found - cache invalidated`);
       }
     } else {
       console.log(`✅ Sources still valid, refreshing timestamp`);
       // Sources unchanged, just refresh timestamp and resolver hash
+      markTrackSourcesDirty();
       trackSourcesCache.current[cacheKey].timestamp = Date.now();
       trackSourcesCache.current[cacheKey].resolverHash = getResolverSettingsHash();
     }
@@ -21770,6 +21813,7 @@ ${trackListXml}
     // invalidate the entry, so the missing resolvers are asked again rather
     // than the cache answering with a file that is gone.
     if (cachedData?.sources && isStaleLocalSource(cachedData.sources.localfiles, libraryFilePathsRef.current)) {
+      markTrackSourcesDirty();
       cachedData.sources = withoutStaleLocalSource(cachedData.sources, libraryFilePathsRef.current);
       cachedData.resolverHash = null;
     }
@@ -21903,6 +21947,7 @@ ${trackListXml}
       if (isPoisoned) {
         console.log(`🔄 Cache for "${track.title}" is all-noMatch with no version (poisoned by prior bug) — re-resolving`);
         // Fall through to the active-resolver fan-out below by NOT returning early.
+        markTrackSourcesDirty();
         delete trackSourcesCache.current[cacheKey];
       } else {
       if (DEBUG_RESOLUTION) console.log(`📦 Using cached sources for: ${track.title} (age: ${cacheAge}h, sources: ${Object.keys(cachedData.sources).join(', ')})`);
@@ -21975,6 +22020,7 @@ ${trackListXml}
     if (!cacheValid && hasValidPersistedSources && !hasRealPersistedSources && missingResolvers.length === 0) {
       if (DEBUG_RESOLUTION) console.log(`📦 All persisted sources are noMatch for: ${track.title} — skipping re-resolve`);
       // Cache the all-noMatch state in memory so we don't re-check persisted sources next time
+      markTrackSourcesDirty();
       trackSourcesCache.current[cacheKey] = {
         sources: persistedSources,
         timestamp: now,
@@ -22000,6 +22046,7 @@ ${trackListXml}
       // Use persisted sources and cache them in memory (filter noMatch for UI)
       queueTrackSources(trackKey, rescoredPersisted);
 
+      markTrackSourcesDirty();
       trackSourcesCache.current[cacheKey] = {
         sources: persistedSources,
         timestamp: now,
@@ -22083,6 +22130,7 @@ ${trackListXml}
       // Filter noMatch sentinels for UI state, keep them in cache/persistence
       queueTrackSources(trackKey, filterNoMatchForDisplay(sources));
 
+      markTrackSourcesDirty();
       trackSourcesCache.current[cacheKey] = {
         sources: sources,
         timestamp: now,
@@ -22183,6 +22231,7 @@ ${trackListXml}
       queueTrackSources(trackKey, filterNoMatchForDisplay(sources));
 
       // Update cache with new sources
+      markTrackSourcesDirty();
       trackSourcesCache.current[cacheKey] = {
         sources: sources,
         timestamp: Date.now(),
@@ -22382,6 +22431,7 @@ ${trackListXml}
     const realSourceCount = Object.keys(displaySources).length;
 
     // Always cache (including noMatch sentinels) so resolvers aren't re-queried
+    markTrackSourcesDirty();
     trackSourcesCache.current[cacheKey] = {
       sources: sources,
       timestamp: Date.now(),
@@ -24062,6 +24112,7 @@ ${trackListXml}
       for (const [cacheKey, cacheEntry] of Object.entries(trackSourcesCache.current)) {
         if (cacheEntry.sources && cacheEntry.sources[resolverId]) {
           const { [resolverId]: removed, ...remainingSources } = cacheEntry.sources;
+          markTrackSourcesDirty();
           trackSourcesCache.current[cacheKey] = {
             ...cacheEntry,
             sources: remainingSources
@@ -29145,6 +29196,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
     // Cache the results
     if (Object.keys(sources).length > 0) {
+      markTrackSourcesDirty();
       trackSourcesCache.current[cacheKey] = {
         sources,
         timestamp: Date.now(),
