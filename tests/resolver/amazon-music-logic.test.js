@@ -2079,6 +2079,9 @@ describe('recommendations', () => {
 
     test('no MusicHomePage → null (a structural miss for the page flow)', () => {
       expect(amazonMusicHomeRequest([JSON.stringify({ operationName: 'BrowseHomePage', variables: {} })])).toBeNull();
+      // The full home's op, asked for by name (the refused-music-tab fallback, #1328).
+      expect(amazonMusicHomeRequest([JSON.stringify({ operationName: 'BrowseHomePage', variables: { firstLimit: 5 } })], 'BrowseHomePage').variables.firstLimit).toBe(5);
+      expect(amazonMusicHomeRequest([JSON.stringify({ operationName: 'MusicHomePage', variables: {} })], 'BrowseHomePage')).toBeNull();
       expect(amazonMusicHomeRequest([JSON.stringify({ operationName: 'Transport', variables: {} })])).toBeNull();
       expect(amazonMusicHomeRequest([])).toBeNull();
       expect(amazonMusicHomeRequest(['not json'])).toBeNull();

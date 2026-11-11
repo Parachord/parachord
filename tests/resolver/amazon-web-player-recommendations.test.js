@@ -88,6 +88,7 @@ describe('amazonWebPlayer.getRecommendations', () => {
       seeMoreTemplate: amazonWebPlayer.seeMoreTemplate,
       recommendationsCache: amazonWebPlayer.recommendationsCache,
       seeMorePages: amazonWebPlayer.seeMorePages,
+      musicHomeVariant: amazonWebPlayer.musicHomeVariant,
       searchView: amazonWebPlayer.searchView,
       searchViewParkTimer: amazonWebPlayer.searchViewParkTimer
     };
@@ -97,6 +98,7 @@ describe('amazonWebPlayer.getRecommendations', () => {
     amazonWebPlayer.seeMoreTemplate = null;
     amazonWebPlayer.recommendationsCache = null;
     amazonWebPlayer.seeMorePages = new Map();
+    amazonWebPlayer.musicHomeVariant = null;
     isSignedIn = jest.spyOn(amazonWebPlayer, 'isSignedIn').mockResolvedValue(true);
     replayGql = jest.spyOn(amazonWebPlayer, 'replayGql');
     // The playlists-strategy synthesis: answered with nothing by default (the
@@ -240,6 +242,56 @@ describe('amazonWebPlayer.getRecommendations', () => {
     expect(body).toEqual({ ...MUSIC_HOME_BODY, variables: { ...MUSIC_HOME_BODY.variables, firstLimit: 20 } });
   });
 
+  // A Prime account's music tab is refused: MusicHomePage answers HTTP 294
+  // to the page itself and to any replay, while the full home's
+  // BrowseHomePage answers 200 in the same envelope (live-verified
+  // 2026-11-11, #1328). The flow switches to the full home for the session.
+  const BROWSE_HOME_BODY = {
+    operationName: 'BrowseHomePage',
+    variables: { firstLimit: 5, recommenderItemLimit: 15, topRecommenderId: 'musicTopOneRecommender', isAuthenticated: true, audiobooksEnabled: true, merchEnabled: true, categoryInEntityUnionEnabled: false, paginating: false },
+    extensions: { clientLibrary: { name: '@apollo/client', version: '4.1.6' }, persistedQuery: { version: 1, sha256Hash: 'fullhomehash' } }
+  };
+
+  test('the music tab refused (HTTP 294): the full home is read instead, and stays the session\'s home', async () => {
+    const win = fakeWin();
+    ensureWindow.mockResolvedValue(win);
+    layoutSearch.mockResolvedValue('desktop');
+    const captured = [
+      { id: 1, body: JSON.stringify(MUSIC_HOME_BODY), url: 'https://gql.music.amazon.com/', headers: { ...CAPTURED_HEADERS, 'csrf-ts': '2000' } },
+      { id: 2, body: JSON.stringify(BROWSE_HOME_BODY), url: 'https://gql.music.amazon.com/', headers: { ...CAPTURED_HEADERS, 'csrf-ts': '3000' } }
+    ];
+    attachGqlCapture.mockReturnValue({ captured, detach: jest.fn() });
+    replayGql
+      .mockResolvedValueOnce({ error: 'Amazon gql query failed (294)', status: 294 })
+      .mockResolvedValueOnce({ parsed: musicHomeData([{ id: 'uri:///recommendations/browse-home/browse-home_mp3YmlRecentPlaybackStrategy', name: 'Based on Your Recents', recommendedContent: { edges: [{ node: albumNode('B0DTRR4VWM', 'Lonely People With Power', 'Deafheaven') }] } }]) });
+    const sections = await amazonWebPlayer.getRecommendations();
+    expect(sections.map(sec => sec.title)).toEqual(['Based on Your Recents']);
+    expect(win.loadURL.mock.calls.map(c => c[0])).toEqual(['https://music.amazon.com/music', 'https://music.amazon.com/']);
+    // The music tab's walk, then the full home's: each replays its own page's request.
+    expect(replayGql.mock.calls[0][2].operationName).toBe('MusicHomePage');
+    expect(replayGql.mock.calls[1][2]).toEqual({ ...BROWSE_HOME_BODY, variables: { ...BROWSE_HOME_BODY.variables, firstLimit: 20 } });
+    expect(amazonWebPlayer.musicHomeVariant).toBe('browse');
+    expect(amazonWebPlayer.musicHomeTemplate.body.operationName).toBe('BrowseHomePage');
+    // The next page flow goes straight to the full home: no refused load first.
+    amazonWebPlayer.recommendationsCache = null;
+    amazonWebPlayer.musicHomeTemplate = null;
+    win.loadURL.mockClear();
+    replayGql.mockResolvedValueOnce({ parsed: musicHomeData([{ id: SECTION_ID, name: 'Albums for You', recommendedContent: { edges: [{ node: albumNode('B0G2TSTWXD', 'Tempelschlaf', 'The Ruins Of Beverast') }] } }]) });
+    await amazonWebPlayer.getRecommendations();
+    expect(win.loadURL.mock.calls.map(c => c[0])).toEqual(['https://music.amazon.com/']);
+  });
+
+  test('a music-tab failure that is not a 294 does not switch homes', async () => {
+    const win = fakeWin();
+    ensureWindow.mockResolvedValue(win);
+    layoutSearch.mockResolvedValue('desktop');
+    attachGqlCapture.mockReturnValue({ captured: [{ id: 1, body: JSON.stringify(MUSIC_HOME_BODY), url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS }], detach: jest.fn() });
+    replayGql.mockResolvedValueOnce({ error: 'Amazon gql query failed (500)', status: 500 });
+    await expect(amazonWebPlayer.getRecommendations()).rejects.toMatchObject({ reason: 'not-ready' });
+    expect(win.loadURL).toHaveBeenCalledTimes(1);
+    expect(amazonWebPlayer.musicHomeVariant).toBeNull();
+  });
+
   test('the walk stops when a page repeats the cursor it was sent (no advance), never looping', async () => {
     amazonWebPlayer.musicHomeTemplate = makeSpecSearchTemplate({
       url: 'https://gql.music.amazon.com/', headers: CAPTURED_HEADERS, body: MUSIC_HOME_BODY, capturedAt: Date.now()
@@ -320,6 +372,7 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
       seeMoreTemplate: amazonWebPlayer.seeMoreTemplate,
       recommendationsCache: amazonWebPlayer.recommendationsCache,
       seeMorePages: amazonWebPlayer.seeMorePages,
+      musicHomeVariant: amazonWebPlayer.musicHomeVariant,
       searchView: amazonWebPlayer.searchView,
       searchViewParkTimer: amazonWebPlayer.searchViewParkTimer
     };
@@ -329,6 +382,7 @@ describe('amazonWebPlayer.expandRecommendationSection', () => {
     amazonWebPlayer.seeMoreTemplate = null;
     amazonWebPlayer.recommendationsCache = null;
     amazonWebPlayer.seeMorePages = new Map();
+    amazonWebPlayer.musicHomeVariant = null;
     isSignedIn = jest.spyOn(amazonWebPlayer, 'isSignedIn').mockResolvedValue(true);
     replayGql = jest.spyOn(amazonWebPlayer, 'replayGql');
     ensureWindow = jest.spyOn(amazonWebPlayer, 'ensureWindow');
@@ -463,6 +517,7 @@ describe('amazonWebPlayer.withPlaylistsSection (the synthesized "Playlists for Y
     saved = { recommendationsCache: amazonWebPlayer.recommendationsCache, seeMorePages: amazonWebPlayer.seeMorePages, searchChain: amazonWebPlayer.searchChain };
     amazonWebPlayer.recommendationsCache = null;
     amazonWebPlayer.seeMorePages = new Map();
+    amazonWebPlayer.musicHomeVariant = null;
     isSignedIn = jest.spyOn(amazonWebPlayer, 'isSignedIn').mockResolvedValue(true);
     expandParsed = jest.spyOn(amazonWebPlayer, 'expandRecommendationSectionParsed');
   });
@@ -524,6 +579,8 @@ describe('signOut recommendations hygiene', () => {
       expect(amazonWebPlayer.seeMoreTemplate).toBeNull();
       expect(amazonWebPlayer.recommendationsCache).toBeNull();
       expect(amazonWebPlayer.seeMorePages.size).toBe(0);
+      // The next account may read the music tab: the switch is forgotten.
+      expect(amazonWebPlayer.musicHomeVariant).toBeNull();
     } finally {
       destroyView.mockRestore();
       cancelSearchViewPark.mockRestore();

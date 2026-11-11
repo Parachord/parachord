@@ -1047,14 +1047,17 @@ function recommendationItemFromGqlNode(node) {
 // on variables.searchText instead). The LAST match wins: a re-render fires it
 // again, and the freshest headers ride the last one. Returns the request or
 // null.
-function amazonMusicHomeRequest(bodies) {
+// operationName picks the home: 'MusicHomePage' (the music tab, the default)
+// or 'BrowseHomePage' (the full home, the fallback for an account whose music
+// tab is refused, #1328).
+function amazonMusicHomeRequest(bodies, operationName = 'MusicHomePage') {
   let found = null;
   for (const raw of (Array.isArray(bodies) ? bodies : [])) {
     let parsed;
     try { parsed = JSON.parse(raw); } catch (e) { continue; }
     const batch = Array.isArray(parsed) ? parsed : [parsed];
     for (const req of batch) {
-      if (req && req.operationName === 'MusicHomePage' && req.variables && typeof req.variables === 'object') found = req;
+      if (req && req.operationName === operationName && req.variables && typeof req.variables === 'object') found = req;
     }
   }
   return found;
