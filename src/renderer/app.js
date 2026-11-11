@@ -7758,6 +7758,10 @@ const Parachord = () => {
     // generous — a provider that replays a service's page flow can take seconds.
     recommendationProvider: 20 * 1000,
     recommendations: 60 * 60 * 1000,        // 1 hour (recommendations change based on listening)
+    // How old a saved provider answer may be and still show while its provider
+    // refreshes (the page then shows last time's sections at once instead of a
+    // skeleton); older ones are dropped.
+    recommendationsStale: 7 * 24 * 60 * 60 * 1000, // 7 days
     charts: 24 * 60 * 60 * 1000,            // 24 hours (charts update daily)
     newReleases: 6 * 60 * 60 * 1000,        // 6 hours (new releases don't change that often)
     concerts: 24 * 60 * 60 * 1000,             // 24 hours (concert listings don't change that often)
@@ -8260,7 +8264,10 @@ const Parachord = () => {
   };
 
   // Cache for recommendations data (tracks from API)
-  const recommendationsCache = useRef({ providers: {}, timestamp: 0 }); // { [resolverId]: { sections, fetchedAt } }, session-only
+  // { [resolverId]: { resolverId, resolverName, sections, fetchedAt, account } };
+  // saved as cache_recommendations after every fetch round and read back at
+  // launch (loadCacheFromStore), so the page opens on last time's sections.
+  const recommendationsCache = useRef({ providers: {}, timestamp: 0 });
 
   // Cache for charts data (keyed by source-country, e.g., 'apple-us', 'lastfm-us')
   const chartsCache = useRef({});
@@ -18174,6 +18181,10 @@ ${trackListXml}
       const criticalKeys = [
         'last_active_view',
         'cache_ai_suggestions',
+        // Provider answers for the Recommendations page: it is a common
+        // restored view, so they are read before first paint (a few hundred
+        // items, like cache_ai_suggestions).
+        'cache_recommendations',
         'cache_critics_picks',
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'meta_service_configs',
@@ -18450,6 +18461,16 @@ ${trackListXml}
 
       const aiSuggestionsData = d['cache_ai_suggestions'];
       const savedLastView = d['last_active_view'];
+
+      // Last session's Recommendations provider answers: shown at once on the
+      // page, then refreshed (loadRecommendations' stale rule). Only into an
+      // empty cache: a load that already ran this session wins.
+      const recsData = d['cache_recommendations'];
+      if (recsData && recsData.providers && typeof recsData.providers === 'object'
+          && Object.keys(recommendationsCache.current.providers).length === 0) {
+        recommendationsCache.current = { providers: { ...recsData.providers }, timestamp: recsData.savedAt || 0 };
+        console.log(`📦 Loaded saved recommendations for ${Object.keys(recsData.providers).length} provider(s)`);
+      }
 
       // Load AI suggestions cache (show previous session's suggestions instantly)
       if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
@@ -24356,6 +24377,7 @@ ${trackListXml}
         if (resolverId === 'lastfm' || resolverId === 'listenbrainz') {
           setRecommendations({ sections: [], loading: false, error: 'not_configured' });
           recommendationsCache.current = { providers: {}, timestamp: 0 };
+          saveRecommendationsCache();
         }
         if (resolverId === 'listenbrainz') {
           setHomeData(prev => ({ ...prev, weeklyJams: null, weeklyExploration: null }));
@@ -26964,8 +26986,8 @@ Return ONLY the JSON array, no other text.`;
   // (docs/architecture/plugins.md, "Recommendations"), and the Shuffleupagus
   // (LLM) suggestions render as one titled section built from
   // homeData.aiRecommendations (the same state Home renders its section
-  // from). loadRecommendations fetches each provider (a
-  // per-provider session cache in recommendationsCache), and
+  // from). loadRecommendations fetches each provider (a per-provider
+  // cache in recommendationsCache, saved as cache_recommendations), and
   // refreshMergedRecommendations rebuilds the display model through
   // buildRecommendationSections — the LLM streams into its own state and
   // re-merges without refetching anyone, and the blocklist re-applies on
@@ -27054,6 +27076,21 @@ Return ONLY the JSON array, no other text.`;
   // A load that ran before the plugins finished loading (the app reopening on
   // this page) asked none; the effect below loads again once the set changes.
   const recommendationProviderIdsRef = useRef(null);
+  // Bumped by every load that fetches; only the latest one puts sections on screen.
+  const recommendationsLoadGenRef = useRef(0);
+  // Saves the provider answers that have sections and are young enough to show
+  // again (CACHE_TTL.recommendationsStale), so the next launch opens on them.
+  const saveRecommendationsCache = () => {
+    if (!window.electron?.store) return;
+    const now = Date.now();
+    const providers = {};
+    for (const [id, entry] of Object.entries(recommendationsCache.current.providers || {})) {
+      if (entry && entry.sections && entry.sections.length > 0 && (now - entry.fetchedAt) < CACHE_TTL.recommendationsStale) providers[id] = entry;
+    }
+    try {
+      window.electron.store.set('cache_recommendations', { providers, savedAt: now });
+    } catch (e) { /* best-effort: the page refetches next launch */ }
+  };
   const recommendationProviderKey = (providers) => providers.map(p => p.id).join('|');
   const loadRecommendations = async (opts = {}) => {
     const forceRefresh = opts === true || opts?.forceRefresh === true;
@@ -27091,14 +27128,28 @@ Return ONLY the JSON array, no other text.`;
     // whole hour.
     const cache = recommendationsCache.current;
     const now = Date.now();
+    // The account an answer belongs to: a meta-service's username (a changed
+    // Last.fm/ListenBrainz user must never see the old one's sections); ''
+    // for a provider whose account the page can't see.
+    const accountFor = (provider) => (metaServiceConfigsRef.current?.[provider.id]?.username) || '';
+    const cachedFor = (provider) => {
+      const entry = cache.providers[provider.id];
+      return entry && (entry.account || '') === accountFor(provider) ? entry : null;
+    };
     const fresh = {};
+    // Saved answers past the TTL that still show while their provider
+    // refreshes (CACHE_TTL.recommendationsStale), so a launch opens on last
+    // time's sections instead of a skeleton.
+    const stale = {};
     const toFetch = [];
     for (const provider of providers) {
-      const cached = !forceRefresh && cache.providers[provider.id];
-      if (cached && cached.sections.length > 0 && (now - cached.fetchedAt) < CACHE_TTL.recommendations) {
+      const cached = cachedFor(provider);
+      const hasSections = !!(cached && cached.sections.length > 0);
+      if (!forceRefresh && hasSections && (now - cached.fetchedAt) < CACHE_TTL.recommendations) {
         fresh[provider.id] = cached;
         continue;
       }
+      if (hasSections && (now - cached.fetchedAt) < CACHE_TTL.recommendationsStale) stale[provider.id] = cached;
       toFetch.push(provider);
     }
 
@@ -27109,11 +27160,19 @@ Return ONLY the JSON array, no other text.`;
       setExpandedSections({});
     }
 
+    // A newer load (navigation, the provider-set effect, Home's meta-only
+    // load) supersedes this one: its answers still land in the cache, but only
+    // the latest load puts sections on screen.
+    const generation = ++recommendationsLoadGenRef.current;
+    const isLatest = () => recommendationsLoadGenRef.current === generation;
+
     const applyFresh = () => {
+      if (!isLatest()) return;
       // Insertion order = display order (the fetch completion order is not).
       const ordered = {};
       for (const provider of providers) {
-        if (fresh[provider.id]) ordered[provider.id] = fresh[provider.id];
+        const entry = fresh[provider.id] || stale[provider.id];
+        if (entry) ordered[provider.id] = entry;
       }
       providerSectionsRef.current = ordered;
       expandableResolverIdsRef.current = providers
@@ -27139,11 +27198,14 @@ Return ONLY the JSON array, no other text.`;
       return;
     }
 
+    // Last time's sections first (fresh and stale), then the skeleton only
+    // covers what has nothing to show.
+    applyFresh();
     // A provider that already produced sections keeps them visible while a
     // partial refresh runs; the skeleton only covers a truly empty page.
     setRecommendations(prev => ({ ...prev, loading: prev.sections.length === 0, error: null }));
-    // A provider whose sections are already on screen refreshes in place; the
-    // rest get a section skeleton until the results apply (all at once, below).
+    // A provider whose sections are on screen (this session's or saved ones)
+    // refreshes in place; the rest share one skeleton until each answers.
     setRecommendationsPending(toFetch
       .filter(p => !((providerSectionsRef.current[p.id] || {}).sections || []).length)
       .filter(p => !recommendationsQuietRef.current.has(p.id))
@@ -27159,41 +27221,77 @@ Return ONLY the JSON array, no other text.`;
         // alone can take several seconds. The timer is cleared when the
         // provider wins, so it does not linger to the process end.
         let timer = null;
+        const request = loader.getRecommendations(provider.id, config);
+        const TIMED_OUT = Symbol('timed out');
         const raw = await Promise.race([
-          loader.getRecommendations(provider.id, config),
+          request,
           new Promise(resolve => {
-            timer = setTimeout(() => resolve(null), CACHE_TTL.recommendationProvider);
+            timer = setTimeout(() => resolve(TIMED_OUT), CACHE_TTL.recommendationProvider);
             if (typeof timer.unref === 'function') timer.unref();
           })
         ]);
         clearTimeout(timer);
-        if (raw == null) throw new Error('timed out');
-        fresh[provider.id] = {
-          ...normalizeRecommendationSections(raw, { resolverId: provider.id, resolverName: provider.name }),
-          fetchedAt: Date.now()
+        const accept = (answer) => {
+          fresh[provider.id] = {
+            ...normalizeRecommendationSections(answer, { resolverId: provider.id, resolverName: provider.name }),
+            fetchedAt: Date.now(),
+            account: accountFor(provider)
+          };
+          // Stored even when empty (an empty answer is never SERVED: the
+          // sections check above), so it replaces an older answer.
+          recommendationsCache.current.providers[provider.id] = fresh[provider.id];
+          if (fresh[provider.id].sections.length > 0) recommendationsQuietRef.current.delete(provider.id);
+          else recommendationsQuietRef.current.add(provider.id);
         };
-        if (fresh[provider.id].sections.length > 0) recommendationsQuietRef.current.delete(provider.id);
-        else recommendationsQuietRef.current.add(provider.id);
+        if (raw === TIMED_OUT) {
+          // The bound only ends this provider's skeleton; its answer is still
+          // worth having. A late one goes on screen (if this load is still the
+          // latest) and into the cache, instead of being dropped (an Amazon
+          // account whose music tab is refused can take 20s+: two home loads).
+          request.then((late) => {
+            if (late == null) return;
+            accept(late);
+            applyFresh();
+            saveRecommendationsCache();
+            // The round may already have shown the empty message: sections win.
+            if (isLatest() && fresh[provider.id].sections.length > 0) {
+              setRecommendations(prev => ({ ...prev, loading: false, error: null }));
+            }
+          }).catch(() => { /* the provider's own failure: nothing to apply */ });
+          throw new Error('timed out');
+        }
+        if (raw == null) throw new Error('no answer');
+        accept(raw);
       } catch (error) {
         console.warn(`⭐ Recommendations from ${provider.name || provider.id} failed:`, error?.message || error);
         failed++;
-        // Not ready is an answer (this account can't get its sections now); a
-        // transient failure (timeout, network) says nothing, so no mark.
-        if (error?.notReady) recommendationsQuietRef.current.add(provider.id);
-        // Keep the cached result (even an expired one) so a TRANSIENT failure
-        // does not blank a section that was on screen. A readiness failure
-        // (signed out, offline — the plugin's deliberate notReady throws) is
-        // different: the cached sections belong to a session that cannot
-        // refresh them, so they are dropped instead of resurrected forever.
-        if (!error?.notReady && cache.providers[provider.id]) fresh[provider.id] = cache.providers[provider.id];
+        if (error?.notReady) {
+          // Not ready is an answer (this account can't get its sections now):
+          // the cached sections belong to a session that cannot refresh them,
+          // so they are dropped instead of resurrected forever, on screen and
+          // on disk.
+          recommendationsQuietRef.current.add(provider.id);
+          delete stale[provider.id];
+          delete recommendationsCache.current.providers[provider.id];
+        } else if (cachedFor(provider)) {
+          // A transient failure (timeout, network) says nothing: keep the
+          // cached result, even an expired one, so it does not blank a section
+          // that was on screen.
+          fresh[provider.id] = cachedFor(provider);
+        }
       }
+      // Each answer goes on screen as it lands: a slow provider no longer
+      // holds back the others.
+      applyFresh();
+      if (isLatest()) setRecommendationsPending(prev => prev.filter(p => p.id !== provider.id));
     }));
 
-    recommendationsCache.current = { providers: { ...fresh }, timestamp: Date.now() };
-    applyFresh();
+    recommendationsCache.current.timestamp = Date.now();
+    saveRecommendationsCache();
+    if (!isLatest()) return;
     setRecommendationsPending([]);
 
-    const anySections = Object.values(fresh).some(p => p.sections.length > 0);
+    const anySections = Object.values(providerSectionsRef.current).some(p => p.sections.length > 0);
     const llm = aiRecommendationsRef.current;
     const llmHas = !!(llm && ((llm.albums || []).length > 0 || (llm.artists || []).length > 0));
     if (!anySections && !llmHas) {
@@ -39590,23 +39688,60 @@ useEffect(() => {
               }
               return resolved;
             };
+            // A recommended playlist's tracks in the app's shape: track ids are
+            // trackSlug(artist, title), the id every no-album track context keys
+            // session state on, so they share resolution state with the rest of
+            // the app (renderer-patterns.md). Used by every playlist action.
+            const recommendationPlaylistTracks = async (item) => {
+              const resolved = await loadPlaylistTracks(item);
+              const art = imageFor(item);
+              return resolved.tracks.map((t) => ({
+                id: trackSlug(t.artist || '', t.title || ''),
+                title: t.title,
+                artist: t.artist,
+                album: t.album || null,
+                albumArt: resolved.albumArt || art || null,
+                duration: t.duration || null,
+                sources: {},
+                ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {})
+              }));
+            };
+
             const playRecommendationPlaylist = async (item) => {
               if (!item.url) return;
               setTrackLoading(true);
               try {
-                const resolved = await loadPlaylistTracks(item);
-                playTrackCollection(resolved.tracks, { type: 'playlist', name: item.name });
+                const tracks = await recommendationPlaylistTracks(item);
+                playTrackCollection(tracks, { type: 'playlist', name: item.name });
               } catch (error) {
                 setTrackLoading(false);
                 showToast(error?.message || `Could not load ${item.name}`, 'error');
               }
             };
 
-            // Open a recommended playlist in the playlist view — the same
-            // ephemeral external-playlist flow the Home page's Weekly Jams use
-            // (loadPlaylist with an isEphemeral playlist): the view shows the
-            // tracks with per-resolver play buttons, and the Import hover button
-            // / the view's SAVE both keep the full-import paths.
+            // The playlist card's other two standard hover actions (the same
+            // set as the Playlists page's cards: Add to Playlist, Play, Add to
+            // Queue).
+            const addRecommendationPlaylistToPlaylist = async (item) => {
+              if (!item.url) return;
+              try {
+                const tracks = await recommendationPlaylistTracks(item);
+                setAddToPlaylistPanel({ open: true, tracks, sourceName: item.name, sourceType: 'playlist' });
+              } catch (error) {
+                showToast(error?.message || `Could not load ${item.name}`, 'error');
+              }
+            };
+            const queueRecommendationPlaylist = async (item) => {
+              if (!item.url) return;
+              try {
+                const tracks = await recommendationPlaylistTracks(item);
+                addToQueue(tracks, { type: 'playlist', name: item.name });
+                showToast(`Added ${tracks.length} tracks from ${item.name}`, 'success');
+              } catch (error) {
+                showToast(error?.message || `Could not load ${item.name}`, 'error');
+              }
+            };
+
             // Open a recommended playlist in the playlist view (the same
             // ephemeral external-playlist flow the Home page's Weekly Jams
             // use). Provider-neutral: creator/source come from the item's
@@ -39618,18 +39753,7 @@ useEffect(() => {
               if (!item.url) return;
               setTrackLoading(true);
               try {
-                const resolved = await loadPlaylistTracks(item);
-                const art = imageFor(item);
-                const tracks = resolved.tracks.map((t) => ({
-                  id: trackSlug(t.artist || '', t.title || ''),
-                  title: t.title,
-                  artist: t.artist,
-                  album: t.album || null,
-                  albumArt: resolved.albumArt || art || null,
-                  duration: t.duration || null,
-                  sources: {},
-                  ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {})
-                }));
+                const tracks = await recommendationPlaylistTracks(item);
                 setTrackLoading(false);
                 const resolverName = (section && section.resolverName) || item.resolverId || 'the service';
                 loadPlaylist({
@@ -39914,6 +40038,22 @@ useEffect(() => {
                     className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center gap-3',
                     style: { borderRadius: '6px', zIndex: 20 }
                   },
+                    // The standard playlist hover set (the Playlists page's
+                    // cards): Add to Playlist, Play, Add to Queue. Import is the
+                    // opened playlist's SAVE (the same handleImportPlaylistFromUrl).
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        addRecommendationPlaylistToPlaylist(item);
+                      },
+                      className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
+                      style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
+                      title: 'Add to Playlist'
+                    },
+                      React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M12 4v16m8-8H4' })
+                      )
+                    ),
                     React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
@@ -39921,19 +40061,19 @@ useEffect(() => {
                       },
                       className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
                       style: { border: 'none', cursor: 'pointer' },
-                      title: 'Play playlist'
+                      title: 'Play'
                     }, React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' })),
-                    item.url && React.createElement('button', {
+                    React.createElement('button', {
                       onClick: (e) => {
                         e.stopPropagation();
-                        handleImportPlaylistFromUrl(item.url);
+                        queueRecommendationPlaylist(item);
                       },
                       className: 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110',
                       style: { backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'none', cursor: 'pointer' },
-                      title: 'Import playlist'
+                      title: 'Add to Queue'
                     },
                       React.createElement('svg', { className: 'w-5 h-5', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' })
+                        React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M4 6h16M4 12h16M4 18h7' })
                       )
                     )
                   )

@@ -91,10 +91,11 @@ describe('Recommendations skeletons match the sectioned page', () => {
     const load = app.slice(app.indexOf('const providers = metaOnly'), app.indexOf('// "Load more" for a titled section'));
     const set = load.indexOf('setRecommendationsPending(toFetch');
     const fetch = load.indexOf('await Promise.all(toFetch.map(');
-    const apply = load.lastIndexOf('applyFresh();');
     expect(set).toBeGreaterThan(-1);
     expect(set).toBeLessThan(fetch);
-    expect(load.slice(apply, apply + 80)).toContain('setRecommendationsPending([]);');
+    // Each provider leaves the list as its answer lands; the round's end clears it.
+    expect(load).toMatch(/applyFresh\(\);\s*if \(isLatest\(\)\) setRecommendationsPending\(prev => prev\.filter\(p => p\.id !== provider\.id\)\);/);
+    expect(load.slice(load.indexOf('saveRecommendationsCache();'))).toMatch(/if \(!isLatest\(\)\) return;\s*setRecommendationsPending\(\[\]\);/);
     // Only providers with nothing on screen get one (a refresh updates in place).
     expect(load).toMatch(/\.filter\(p => !\(\(providerSectionsRef\.current\[p\.id\] \|\| \{\}\)\.sections \|\| \[\]\)\.length\)/);
     // ...and not a provider whose last answer had nothing (empty or not ready).
@@ -104,7 +105,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
   test('a provider is marked quiet by an empty or not-ready answer, and cleared by one with sections', () => {
     const load = app.slice(app.indexOf('const providers = metaOnly'), app.indexOf('// "Load more" for a titled section'));
     expect(load).toMatch(/if \(fresh\[provider\.id\]\.sections\.length > 0\) recommendationsQuietRef\.current\.delete\(provider\.id\);\s*else recommendationsQuietRef\.current\.add\(provider\.id\);/);
-    expect(load).toMatch(/if \(error\?\.notReady\) recommendationsQuietRef\.current\.add\(provider\.id\);/);
+    expect(load).toMatch(/if \(error\?\.notReady\) \{[\s\S]{0,400}?recommendationsQuietRef\.current\.add\(provider\.id\);/);
   });
 });
 

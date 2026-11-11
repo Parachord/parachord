@@ -48,7 +48,7 @@ const ALLOWED_STORE_KEYS = new Set([
   // sees the failure). cache_critics_picks / hosted_playlists /
   // sync_engine_mode / discovery_seen_* had never persisted (the two
   // discovery_seen_* keys now sit in the alphabetical block above, via #994).
-  'cache_critics_picks', 'cache_release_details',
+  'cache_critics_picks', 'cache_release_details', 'cache_recommendations',
   'hosted_playlists', 'sync_engine_mode', 'sync_playlist_channels',
 ]);
 
