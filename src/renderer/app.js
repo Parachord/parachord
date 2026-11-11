@@ -1969,6 +1969,12 @@ const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
 const { SearchPage } = require('./components/search-page');
+const {
+  RecommendationCardSkeleton,
+  RecommendationSongRowSkeleton,
+  RecommendationSectionSkeleton,
+  RecommendationsPageSkeleton
+} = require('./components/recommendation-skeletons');
 const { useStableHandlers } = require('./lib/stable-handlers');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
@@ -3376,6 +3382,9 @@ const Parachord = () => {
   const recommendationsExpandedSectionsRef = useRef(new Set());
   // "load more" in-flight markers per section key
   const [recommendationsLoadingMore, setRecommendationsLoadingMore] = useState({});
+  // Providers being asked that have nothing on screen yet ({ id, name }), so a
+  // page already showing other sections still shows where theirs will land.
+  const [recommendationsPending, setRecommendationsPending] = useState([]);
   // Pagination state - how many items to show per column
   const [displayLimits, setDisplayLimits] = useState({
     artists: 5,
@@ -27056,6 +27065,7 @@ Return ONLY the JSON array, no other text.`;
     const hasActiveResolverProvider = providers.some(p => !metaServiceIds.has(p.id));
     if (!hasLastfm && !hasListenbrainz && !hasActiveResolverProvider && !llmPossible) {
       console.log('⭐ No recommendation source configured, skipping recommendations load');
+      setRecommendationsPending([]);
       setRecommendations({ sections: [], loading: false, error: 'not_configured' });
       return;
     }
@@ -27100,6 +27110,7 @@ Return ONLY the JSON array, no other text.`;
     };
 
     if (toFetch.length === 0) {
+      setRecommendationsPending([]);
       applyFresh();
       // Everything came from cache (or no provider exists): the same empty
       // check the post-fetch path runs, so a return visit to an all-empty
@@ -27118,6 +27129,11 @@ Return ONLY the JSON array, no other text.`;
     // A provider that already produced sections keeps them visible while a
     // partial refresh runs; the skeleton only covers a truly empty page.
     setRecommendations(prev => ({ ...prev, loading: prev.sections.length === 0, error: null }));
+    // A provider whose sections are already on screen refreshes in place; the
+    // rest get a section skeleton until the results apply (all at once, below).
+    setRecommendationsPending(toFetch
+      .filter(p => !((providerSectionsRef.current[p.id] || {}).sections || []).length)
+      .map(p => ({ id: p.id, name: p.name || p.id })));
 
     const loader = resolverLoaderRef.current;
     let failed = 0;
@@ -27156,6 +27172,7 @@ Return ONLY the JSON array, no other text.`;
 
     recommendationsCache.current = { providers: { ...fresh }, timestamp: Date.now() };
     applyFresh();
+    setRecommendationsPending([]);
 
     const anySections = Object.values(fresh).some(p => p.sections.length > 0);
     const llm = aiRecommendationsRef.current;
@@ -40048,6 +40065,10 @@ useEffect(() => {
               const visibleSongs = expanded ? songItems : songItems.slice(0, SONG_PREVIEW);
               const hiddenCount = section.items.length - visibleCards.length - visibleSongs.length;
               const loadingMore = !!recommendationsLoadingMore[section.key];
+              // Only an expanded section shows the incoming page; a collapsed
+              // one has more than it shows already. A section with songs gets
+              // the tail on its song list (its last block on screen).
+              const showLoadingTail = loadingMore && expanded;
               // Collapse is offered once a section was expandable: more than
               // the preview of EITHER kind (a 6-song, no-cards section expands
               // past SONG_PREVIEW and must be able to fold back).
@@ -40107,10 +40128,26 @@ useEffect(() => {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...visibleCards.map((item, index) => cardFor(item, index, section))
+                  ...visibleCards.map((item, index) => cardFor(item, index, section)),
+                  // An expanded section fetching its next page: placeholders
+                  // where the new cards will land (the header spinner alone
+                  // is easy to miss at the bottom of a long grid).
+                  ...(showLoadingTail && songItems.length === 0
+                    ? Array.from({ length: SECTION_PREVIEW }, (_, i) => React.createElement(RecommendationCardSkeleton, {
+                        key: `rec-more-${i}`,
+                        index: i,
+                        lines: cardItems[0] && cardItems[0].type === 'album' ? 2 : 1
+                      }))
+                    : [])
                 ),
                 visibleSongs.length > 0 && React.createElement('div', { className: 'space-y-0' },
-                  ...visibleSongs.map((item, index) => songRow(item, index, songItems, section))
+                  ...visibleSongs.map((item, index) => songRow(item, index, songItems, section)),
+                  ...(showLoadingTail
+                    ? Array.from({ length: SONG_PREVIEW }, (_, i) => React.createElement(RecommendationSongRowSkeleton, {
+                        key: `rec-more-${i}`,
+                        index: i
+                      }))
+                    : [])
                 )
               );
             };
@@ -40135,34 +40172,7 @@ useEffect(() => {
               React.createElement('div', { className: 'p-6' },
                 // Loading state - section-shaped skeletons while nothing is loaded
                 recommendations.loading && sections.length === 0 ?
-                  React.createElement('div', null,
-                    React.createElement('div', { className: 'mb-4' }, React.createElement('div', { className: 'h-6 w-40 rounded shimmer-light animate-shimmer' })),
-                    React.createElement('div', {
-                      className: 'grid gap-4',
-                      style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                    },
-                      ...Array(10).fill(null).map((_, i) =>
-                        React.createElement('div', {
-                          key: `rec-skeleton-${i}`,
-                          className: 'rounded-lg overflow-hidden',
-                          style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' }
-                        },
-                          React.createElement('div', {
-                            className: 'aspect-square shimmer-strong animate-shimmer',
-                            style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(i * 30, 300)}ms` }
-                          }),
-                          React.createElement('div', { className: 'p-3' },
-                            React.createElement('div', { style: { height: '20px', display: 'flex', alignItems: 'center' } },
-                              React.createElement('div', {
-                                className: 'h-3.5 w-3/4 rounded shimmer-light animate-shimmer',
-                                style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(i * 30, 300) + 50}ms` }
-                              })
-                            )
-                          )
-                        )
-                      )
-                    )
-                  )
+                  React.createElement(RecommendationsPageSkeleton)
                 // Not configured state
                 : recommendations.error === 'not_configured' ?
                   React.createElement('div', { className: 'text-center py-16' },
@@ -40216,31 +40226,23 @@ useEffect(() => {
                 // Sections
                 : React.createElement('div', null,
                     ...sections.map(renderSection),
+                    // A provider still being asked that has nothing on screen
+                    // yet: a section skeleton under its name, where its
+                    // sections will land.
+                    ...recommendationsPending.map(p =>
+                      React.createElement(RecommendationSectionSkeleton, {
+                        key: `rec-pending-${p.id}`,
+                        badge: p.name
+                      })),
                     // Shuffleupagus skeleton while the LLM thinks (cached
                     // suggestions render as a real section meanwhile)
-                    llmLoading && React.createElement('div', { className: 'mb-8' },
-                      React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                        React.createElement('span', { className: 'text-lg font-semibold text-gray-400' }, 'Shuffleupagus'),
-                        React.createElement('span', { className: 'text-xs text-gray-400' }, 'thinking…')
-                      ),
-                      React.createElement('div', {
-                        className: 'grid gap-4',
-                        style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
-                      },
-                        ...Array(5).fill(null).map((_, i) =>
-                          React.createElement('div', {
-                            key: `rec-llm-skeleton-${i}`,
-                            className: 'rounded-lg overflow-hidden',
-                            style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' }
-                          },
-                            React.createElement('div', {
-                              className: 'aspect-square shimmer-strong animate-shimmer',
-                              style: { backgroundSize: '200% 100%', animationDelay: `${i * 60}ms` }
-                            })
-                          )
-                        )
-                      )
-                    )
+                    llmLoading && React.createElement(RecommendationSectionSkeleton, {
+                      key: 'rec-llm-skeleton',
+                      title: 'Shuffleupagus',
+                      note: 'thinking…',
+                      count: 5,
+                      lines: 2
+                    })
                   )
               )
             );

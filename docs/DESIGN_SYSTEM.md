@@ -415,6 +415,8 @@ Three shimmer variants for skeleton loading states:
 | `.shimmer-strong` | Higher contrast shimmer |
 | `.shimmer-on-dark` / `.shimmer-dark` | Always-dark surfaces (player bar, queue) |
 
+A skeleton has the same box as the content it stands in for (grid, card size and padding, row columns, item count), so nothing moves when the content lands; a layout change updates its skeleton in the same PR. See "A layout change ships with its loading skeleton" in [architecture/renderer-patterns.md](architecture/renderer-patterns.md).
+
 ---
 
 ## Layout & Navigation
