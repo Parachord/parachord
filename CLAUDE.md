@@ -85,6 +85,7 @@ Summary; the full text, with the incidents behind each rule, is in [renderer-pat
 - **Use refs in async callbacks** (`volumeRef`, `isPlayingRef`, `currentTrackRef`, ...) to avoid stale closures.
 - **`showToast(message, type, action, options)`**: `options.persistent`, `options.duration` (ms), and `action: { label, onClick }`.
 - **Colors come from CSS variables** (`var(--accent-primary)`, `var(--card-bg)`, ...) so both themes work.
+- **After adding a Tailwind class, run `npm run build:css` and commit `vendor/tailwind.css`.** `npm start` loads the committed file as is (only release builds regenerate it), and `tests/ci/tailwind-css-fresh.test.js` fails when it's stale.
 - **A `useEffect` / `useMemo` dependency array is evaluated during render**, so everything it names must be declared above it in the component (the TDZ trap).
 
 ## Dialog Patterns
