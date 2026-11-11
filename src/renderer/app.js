@@ -39413,9 +39413,16 @@ useEffect(() => {
               const resolvedSources = trackSources[track.id] || track.sources || {};
               const hasResolved = Object.keys(resolvedSources).length > 0;
               const isResolving = Object.keys(resolvedSources).length === 0;
+              // The row playing now: this track, played from THIS section (the
+              // context a row click sets), the playlist view's rule with the
+              // section name standing in for the playlist id, so the same song
+              // in two sections lights only the one it was played from.
+              const contextName = section.title || 'Recommendations';
+              const isNowPlaying = isPlaying && currentTrack?.id === track.id
+                && playbackContext?.type === 'recommendations' && playbackContext?.name === contextName;
               const queueTail = (playResolverId) => {
                 const tracksAfter = allSongs.slice(index + 1).map(i => i.track);
-                const context = { type: 'recommendations', name: section.title || 'Recommendations' };
+                const context = { type: 'recommendations', name: contextName };
                 setQueueWithContext(tracksAfter, context);
                 handlePlay(playResolverId ? { ...track, preferredResolver: playResolverId } : track);
               };
@@ -39443,8 +39450,8 @@ useEffect(() => {
                 },
                 onDragEnd: () => handlePlaylistDragEnd(),
                 className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group no-drag ${
-                  isResolving ? 'opacity-60' : 'hover:bg-gray-50/80'
-                }`,
+                  isResolving ? 'opacity-60' : ''
+                } ${isNowPlaying ? 'bg-purple-50' : (isResolving ? '' : 'hover:bg-gray-50/80')}`,
                 style: { borderRadius: '8px', marginBottom: '2px' },
                 onClick: () => queueTail(),
                 onContextMenu: (e) => {
@@ -39461,11 +39468,11 @@ useEffect(() => {
               },
                 React.createElement('span', {
                   className: 'flex-shrink-0 text-right',
-                  style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' }
-                }, String(index + 1).padStart(2, '0')),
+                  style: { pointerEvents: 'none', width: '32px', fontSize: '12px', fontWeight: '500', color: isNowPlaying ? 'var(--accent-secondary)' : 'var(--text-tertiary)' }
+                }, isNowPlaying ? '▶' : String(index + 1).padStart(2, '0')),
                 React.createElement('span', {
                   className: 'truncate transition-colors',
-                  style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
+                  style: { pointerEvents: 'none', flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: isNowPlaying ? '500' : '400', color: isNowPlaying ? 'var(--accent-primary)' : hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' }
                 }, track.title),
                 React.createElement('span', {
                   className: 'truncate hover:text-purple-600 hover:underline cursor-pointer transition-colors',
