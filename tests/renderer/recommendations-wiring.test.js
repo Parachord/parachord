@@ -86,4 +86,19 @@ describe('recommendations wiring', () => {
     const albumCard = app.slice(albumCardStart, app.indexOf('const playlistCard', albumCardStart));
     expect(albumCard).toMatch(/report\(art, \{ artist: item\.artist, album: item\.name \}\)/);
   });
+
+  test('the song playing from a section shows the now-playing row, like a playlist\'s', () => {
+    // The row had no now-playing state at all; it uses the playlist view's
+    // rule (this track, played from this list, while playing), keyed on the
+    // section name the row click puts in the playback context.
+    const start = app.indexOf('const songRow = (');
+    const row = app.slice(start, app.indexOf('const renderSection', start));
+    expect(row).toMatch(/const contextName = section\.title \|\| 'Recommendations';/);
+    expect(row).toMatch(/const isNowPlaying = isPlaying && currentTrack\?\.id === track\.id\s*&& playbackContext\?\.type === 'recommendations' && playbackContext\?\.name === contextName;/);
+    expect(row).toMatch(/const context = \{ type: 'recommendations', name: contextName \};/);
+    // the playlist view's marks: tinted row, a play glyph for the number, accent title
+    expect(row).toMatch(/isNowPlaying \? 'bg-purple-50'/);
+    expect(row).toMatch(/isNowPlaying \? '▶' : String\(index \+ 1\)\.padStart\(2, '0'\)/);
+    expect(row).toMatch(/color: isNowPlaying \? 'var\(--accent-primary\)'/);
+  });
 });
