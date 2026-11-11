@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds } = require('../lib/playback-helpers');
+const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -2606,11 +2606,27 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         exitSpinoff();
       }
 
-      if (queue.length === 0) {
-        console.log('No queue set, cannot go to next track');
-        // Reset play button when queue is exhausted
+      // End of the queue (parachord#1319, the mobile apps' shared rule):
+      // nothing left to play, so playback stops and the current track is
+      // cleared. It goes to the play history first, so Previous brings it
+      // back. (A Listen Along session waiting for the friend's next track
+      // returned above and keeps its track: that isn't the end of the queue.)
+      const endOfQueue = (why) => {
+        console.log(`⏹️ ${why}: stopping and clearing the current track`);
+        if (track) {
+          playHistoryRef.current = [...playHistoryRef.current, track];
+          console.log(`📚 Added "${track.title}" to play history (${playHistoryRef.current.length} tracks)`);
+        }
         setIsPlaying(false);
         isPlayingRef.current = false;
+        setProgress(0);
+        setPlaybackContext(null);
+        setCurrentTrack(null);
+        currentTrackRef.current = null;
+      };
+
+      if (queue.length === 0) {
+        endOfQueue('End of the queue');
         return;
       }
 
@@ -2621,10 +2637,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       const nextTrackIndex = queue.findIndex(t => t.status !== 'error');
 
       if (nextTrackIndex === -1) {
-        console.log('⚠️ No playable tracks in queue');
-        // Reset play button when no playable tracks remain
-        setIsPlaying(false);
-        isPlayingRef.current = false;
+        endOfQueue('No playable tracks left in the queue');
         return;
       }
 
@@ -2662,7 +2675,15 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // Use refs to get current values (avoids stale closure when called from event handlers)
     const track = currentTrackRef.current;
 
-    if (!track) return;
+    // Restart, go back, or nothing (previousAction: more than 3 s in restarts;
+    // with no current track — the end of the queue cleared it — Previous
+    // brings back the last track played).
+    const action = previousAction({
+      hasCurrentTrack: !!track,
+      positionSeconds: progressRef.current,
+      historyLength: playHistoryRef.current.length
+    });
+    if (action === 'none') return;
 
     // If user clicked previous while listening along, end the session
     const listenAlongFriendNow = listenAlongFriendRef.current;
@@ -2683,8 +2704,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       setPlaybackContext(null);
     }
 
-    // Notify scrobble manager that current track is ending
-    if (window.scrobbleManager) {
+    // Notify scrobble manager that current track is ending (none is, when the
+    // end of the queue cleared it)
+    if (track && window.scrobbleManager) {
       window.scrobbleManager.onTrackEnd();
     }
 
@@ -2778,7 +2800,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
     // Check if we have history to go back to
     const history = playHistoryRef.current;
-    if (history.length > 0) {
+    if (action === 'previous') {
       // Pop the previous track from history
       const previousTrack = history[history.length - 1];
       playHistoryRef.current = history.slice(0, -1);
@@ -2806,8 +2828,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       console.log(`⬅️ Going back to previous track: "${previousTrack.title}" (${playHistoryRef.current.length} tracks remaining in history)`);
       handlePlay(previousTrack);
     } else {
-      // No history - restart current track
-      console.log(`⬅️ No history, restarting current track: "${track.title}"`);
+      // Restart the current track: more than 3 s in, or nothing before it.
+      console.log(`⬅️ Restarting the current track: "${track.title}"`);
       handlePlay(track);
     }
   };

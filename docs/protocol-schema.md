@@ -94,7 +94,7 @@ parachord://control/{action}
 | `play` | Resume playback (alias for resume) |
 | `skip` | Skip to next track |
 | `next` | Skip to next track (alias) |
-| `previous` | Go to previous track |
+| `previous` | Go to the previous track, or restart the current one when it's more than 3 seconds in (or nothing played before it) |
 
 **Examples:**
 ```
