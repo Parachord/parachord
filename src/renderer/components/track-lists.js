@@ -324,9 +324,10 @@ const VirtualizedQueueList = React.memo(({
         if (spinoffMode) exitSpinoff();
         setDroppingFromIndex(index);
         setTimeout(() => {
-          // Clicked track plays, remove it and tracks before it, keep tracks after
+          // Clicked track plays, remove it and tracks before it, keep tracks after.
+          // A jump within the queue: the outgoing track stays in the lap (#1329).
           setCurrentQueue(prev => prev.slice(index + 1));
-          handlePlay(track);
+          handlePlay(track, { fromQueue: true });
           setDroppingFromIndex(null);
         }, 300);
       },

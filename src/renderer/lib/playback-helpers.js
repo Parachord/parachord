@@ -288,7 +288,53 @@ function repeatLap({ history, current, queue, shuffle, random = Math.random }) {
   };
 }
 
+// Play history (#1329, mobile's QueueManager after parachord-mobile#630).
+// History is capped at this many entries: it now outlives each queue, so the
+// oldest entries from earlier queues are dropped first, and the current lap
+// (what repeat all wraps) is never trimmed.
+const PLAY_HISTORY_MAX = 200;
+
+// Two tracks are the same play when their ids match; tracks without ids
+// compare by title and artist.
+function isSameTrack(a, b) {
+  if (!a || !b) return false;
+  if (a.id || b.id) return a.id === b.id;
+  return String(a.title || '').toLowerCase() === String(b.title || '').toLowerCase()
+    && String(a.artist || '').toLowerCase() === String(b.artist || '').toLowerCase();
+}
+
+// Drop the oldest out-of-lap entries until the history fits; lap entries stay.
+function trimPlayHistory(history, max = PLAY_HISTORY_MAX) {
+  let excess = (history || []).length - max;
+  if (excess <= 0) return history;
+  return history.filter((t) => {
+    if (excess > 0 && t && t._offLap) { excess--; return false; }
+    return true;
+  });
+}
+
+// The queue moves on: the outgoing track goes on top of history as it is
+// (it keeps its lap mark), within the cap.
+function pushPlayHistory(history, track, max = PLAY_HISTORY_MAX) {
+  if (!track) return history;
+  return trimPlayHistory([...(history || []), track], max);
+}
+
+// A play from outside the queue's order replaces outgoing with next (a track
+// row, a link, the DJ, a new queue): outgoing goes on top of history, out of
+// the lap, so Previous reaches it but repeat all doesn't wrap it. Nothing when
+// it is the same track played again (a restart, repeat one, a source fallback).
+function historyForReplacedTrack(history, outgoing, next, max = PLAY_HISTORY_MAX) {
+  if (!outgoing || isSameTrack(outgoing, next)) return history;
+  return pushPlayHistory(history, markOffLap(outgoing), max);
+}
+
 module.exports = {
+  PLAY_HISTORY_MAX,
+  isSameTrack,
+  trimPlayHistory,
+  pushPlayHistory,
+  historyForReplacedTrack,
   REPEAT_MODES,
   REPEAT_UNAVAILABLE_MESSAGE,
   normalizeRepeatMode,

@@ -54,7 +54,8 @@ describe('the engine wiring', () => {
 
   test('the end of the queue stops, sends the track to history, and clears it', () => {
     const end = handleNext.slice(handleNext.indexOf('const endOfQueue = (why) => {'));
-    expect(end).toMatch(/if \(track\) \{\s*playHistoryRef\.current = \[\.\.\.playHistoryRef\.current, track\];/);
+    // (pushPlayHistory: on top, keeping its lap mark, within the cap, #1329)
+    expect(end).toMatch(/if \(track\) \{\s*playHistoryRef\.current = pushPlayHistory\(playHistoryRef\.current, track\);/);
     expect(end).toMatch(/setIsPlaying\(false\);\s*isPlayingRef\.current = false;\s*setProgress\(0\);\s*setPlaybackContext\(null\);\s*setCurrentTrack\(null\);\s*currentTrackRef\.current = null;/);
   });
 

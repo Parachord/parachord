@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap } = require('../lib/playback-helpers');
+const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -328,7 +328,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     if (index === -1) return false;
     const next = queue[index];
     const track = currentTrackRef.current;
-    if (track) playHistoryRef.current = [...playHistoryRef.current, track];
+    if (track) playHistoryRef.current = pushPlayHistory(playHistoryRef.current, track);
     setCurrentQueue(queue.filter((_, i) => i !== index));
     setPlaybackContext(next._playbackContext || null);
     holdTrackForPlay(next);
@@ -653,7 +653,22 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     return audio;
   };
 
-  const handlePlay = async (trackOrSource) => {
+  // historyHandled: the caller has already put the outgoing track where it
+  // belongs (Next pushes it in the lap, Previous puts it back on the queue, the
+  // repeat-all wrap starts a fresh history). fromQueue: a jump to a track in
+  // the queue (the queue panel), so the outgoing track goes to history as
+  // it is, keeping its lap mark, like Next (mobile's skipToIndex). Every other
+  // play replaces the current track from outside the queue's order, so the
+  // outgoing track goes to history out of the lap (#1329, mobile's
+  // QueueManager after parachord-mobile#630): Previous reaches it, repeat all
+  // doesn't wrap it. Playing the same track again adds nothing.
+  const handlePlay = async (trackOrSource, { historyHandled = false, fromQueue = false } = {}) => {
+    if (!historyHandled) {
+      const outgoing = currentTrackRef.current;
+      playHistoryRef.current = fromQueue
+        ? (outgoing && !isSameTrack(outgoing, trackOrSource) ? pushPlayHistory(playHistoryRef.current, outgoing) : playHistoryRef.current)
+        : historyForReplacedTrack(playHistoryRef.current, outgoing, trackOrSource);
+    }
     // If user manually plays something while listening along, end the listen-along session
     // Listen-along tracks are tagged with _playbackContext.type === 'listenAlong'
     const listenAlongFriendNow = listenAlongFriendRef.current;
@@ -2682,7 +2697,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       const endOfQueue = (why) => {
         console.log(`⏹️ ${why}: stopping and clearing the current track`);
         if (track) {
-          playHistoryRef.current = [...playHistoryRef.current, track];
+          playHistoryRef.current = pushPlayHistory(playHistoryRef.current, track);
           console.log(`📚 Added "${track.title}" to play history (${playHistoryRef.current.length} tracks)`);
         }
         setIsPlaying(false);
@@ -2725,7 +2740,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         originalQueueRef.current = lap.originalOrder;
         setCurrentQueue(lap.rest);
         setPlaybackContext(lap.first._playbackContext || null);
-        handlePlay(lap.first);
+        handlePlay(lap.first, { historyHandled: true });
         return;
       }
       if (action === 'stop') {
@@ -2737,7 +2752,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       // Push current track to history before moving to next (for "previous" navigation)
       if (track) {
-        playHistoryRef.current = [...playHistoryRef.current, track];
+        playHistoryRef.current = pushPlayHistory(playHistoryRef.current, track);
         console.log(`📚 Added "${track.title}" to play history (${playHistoryRef.current.length} tracks)`);
       }
 
@@ -2753,7 +2768,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       }
 
       console.log(`➡️ Playing next track: "${nextTrack.title}", remaining queue: ${newQueue.length}`);
-      handlePlay(nextTrack);
+      handlePlay(nextTrack, { historyHandled: true });
     } finally {
       // Reset re-entrancy guard after a delay to allow state updates and async operations to complete
       // This prevents re-entry from race conditions (e.g., in-flight Spotify polls, browser events)
@@ -2925,7 +2940,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       }
 
       console.log(`⬅️ Going back to previous track: "${previousTrack.title}" (${playHistoryRef.current.length} tracks remaining in history)`);
-      handlePlay(previousTrack);
+      handlePlay(previousTrack, { historyHandled: true });
     } else {
       // Restart the current track: more than 3 s in, or nothing before it.
       console.log(`⬅️ Restarting the current track: "${track.title}"`);
