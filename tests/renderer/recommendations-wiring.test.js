@@ -224,7 +224,42 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
   test("_fetchResolverConfig gives lastfm the effective key from getLastfmApiKey()", () => {
     const i = app.indexOf('const _fetchResolverConfig = async (resolverId) => {');
     const fn = app.slice(i, app.indexOf('\n  };', i));
-    expect(fn).toMatch(/if \(resolverId === 'lastfm'\) return \{ \.\.\.saved, apiKey: saved\.apiKey \|\| getLastfmApiKey\(\) \};/);
+    expect(fn).toMatch(/if \(resolverId === 'lastfm'\) \{\s*const apiKey = saved\.apiKey \|\| getLastfmApiKey\(\);\s*return apiKey \? \{ \.\.\.saved, apiKey \} : \{ \.\.\.saved, credentialsPending: true \};/);
+  });
+
+  test('a similar-users config whose credential is not ready is "not ready": not asked, not stored, retried next load', () => {
+    const fn = loadFn();
+    const fetchBlock = fn.slice(fn.indexOf('const fetchSimilarUsers = async (provider) => {'), fn.indexOf('await Promise.all(['));
+    // Checked generically (a config flag), before the plugin is asked…
+    const check = fetchBlock.indexOf('if (config?.credentialsPending) {');
+    const call = fetchBlock.indexOf('loader.getSimilarUsers(');
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(call);
+    expect(fetchBlock).toMatch(/if \(config\?\.credentialsPending\) \{\s*const notReady = new Error\('credentials not ready'\);\s*notReady\.notReady = true;\s*throw notReady;/);
+    // …and the throw lands in the catch, which keeps the cached answer and
+    // stores nothing (accept, the only cache write, never runs).
+    const catchBlock = fetchBlock.slice(fetchBlock.indexOf('} catch (error) {'));
+    expect(catchBlock).toMatch(/if \(similarCachedFor\(provider\)\) similarFresh\[provider\.id\] = similarCachedFor\(provider\);/);
+    expect(catchBlock).not.toMatch(/recommendationsCache\.current\.similarUsers\[/);
+    expect(fetchBlock.indexOf('recommendationsCache.current.similarUsers[provider.id] =')).toBeGreaterThan(call);
+  });
+
+  test('a similar-users lookup in flight is awaited by a later load, never started twice', () => {
+    expect(app).toContain('const similarUsersInFlightRef = useRef({});');
+    const fn = loadFn();
+    const fetchBlock = fn.slice(fn.indexOf('const fetchSimilarUsers = async (provider) => {'), fn.indexOf('await Promise.all(['));
+    // Reused when one is running for the same account; a new run otherwise.
+    expect(fetchBlock).toMatch(/let inFlight = similarUsersInFlightRef\.current\[provider\.id\];\s*if \(!inFlight \|\| inFlight\.account !== account\) \{/);
+    expect(fetchBlock).toMatch(/inFlight = \{ account, request: run \};\s*similarUsersInFlightRef\.current\[provider\.id\] = inFlight;/);
+    // The plugin is asked only inside the shared run.
+    const run = fetchBlock.slice(fetchBlock.indexOf('const run = (async () => {'), fetchBlock.indexOf('})();'));
+    expect(run).toContain('loader.getSimilarUsers(');
+    expect((fetchBlock.match(/loader\.getSimilarUsers\(/g) || []).length).toBe(1);
+    // Cleared once settled (either way), and only if it is still the current run.
+    expect(fetchBlock).toMatch(/if \(similarUsersInFlightRef\.current\[provider\.id\] === settled\) delete similarUsersInFlightRef\.current\[provider\.id\];/);
+    expect(fetchBlock).toContain('run.then(clear, clear);');
+    // Each load races the shared request under its own bound and generation.
+    expect(fetchBlock).toMatch(/const request = inFlight\.request;[\s\S]*Promise\.race\(\[\s*request,/);
   });
 
   test('loadRecommendations checks getSimilarUsersResolvers before calling, never names a service, and passes excludeUsernames', () => {

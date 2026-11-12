@@ -79,8 +79,10 @@ describe('saved similar users (the Friends row)', () => {
     expect(save).toMatch(/entry && Array\.isArray\(entry\.users\) && entry\.users\.length > 0 && \(now - entry\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) similarUsers\[id\] = entry;/);
   });
 
-  test('similar users follow the providers\' freshness rule (a fresh one is not asked again)', () => {
-    expect(load).toMatch(/if \(!forceRefresh && hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendations\) \{\s*similarFresh\[provider\.id\] = cached;\s*continue;\s*\}/);
+  test('similar users are asked again only once their answer is stale (7 days), or on a forced refresh', () => {
+    expect(load).toMatch(/if \(!forceRefresh && hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) \{\s*similarFresh\[provider\.id\] = cached;\s*continue;\s*\}/);
+    expect(load).not.toMatch(/hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendations\)/);
+    // A forced refresh still shows the cached answer while it asks again.
     expect(load).toMatch(/if \(hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) similarStale\[provider\.id\] = cached;/);
   });
 });

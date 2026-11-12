@@ -3362,6 +3362,12 @@ const Parachord = () => {
   // beside the sections for the same reason; the follow/removal exclusions
   // apply at every merge, not here.
   const similarUsersRef = useRef({}); // { [resolverId]: { resolverId, resolverName, users } }
+  // The similar-users lookup in flight per provider ({ account, request }), so
+  // a load that starts while another's lookup is still running (leave the
+  // page and come back within Last.fm's ~13s) awaits that run instead of
+  // starting a second one: two paced runs together exceed the rate limit,
+  // a 429 throws, and nothing gets cached.
+  const similarUsersInFlightRef = useRef({});
   // Which resolvers implement expandRecommendationSection (titled sections
   // get a "load more" only when their provider can paginate).
   const expandableResolverIdsRef = useRef([]);
@@ -12718,8 +12724,15 @@ ${trackListXml}
     );
     // Last.fm's API calls (its getSimilarUsers) need a key, and its saved
     // config only carries one when the user set their own in Settings: give it
-    // the effective key (the user's, else the app's). Never logged.
-    if (resolverId === 'lastfm') return { ...saved, apiKey: saved.apiKey || getLastfmApiKey() };
+    // the effective key (the user's, else the app's). Never logged. Before the
+    // app's key has loaded (IPC at launch) there is none yet: the config says
+    // so (credentialsPending), and a caller whose call needs the key treats
+    // that as "not ready" instead of taking the plugin's keyless [] as an
+    // answer.
+    if (resolverId === 'lastfm') {
+      const apiKey = saved.apiKey || getLastfmApiKey();
+      return apiKey ? { ...saved, apiKey } : { ...saved, credentialsPending: true };
+    }
     return saved;
   };
 
@@ -27351,10 +27364,12 @@ Return ONLY the JSON array, no other text.`;
       toFetch.push(provider);
     }
 
-    // Similar users (the Friends row): the providers' freshness rule, under
-    // the same account check, and an empty answer is never served. Fetched
-    // only on a full load: Home's meta-only load shows what's cached and asks
-    // no one (one provider's lookup can be ~50 paced requests).
+    // Similar users (the Friends row): under the providers' account check, an
+    // empty answer is never served, but a cached answer stays fresh until it
+    // is stale (CACHE_TTL.recommendationsStale, 7 days), not the providers'
+    // hour: who listens like you changes slowly, and one provider's lookup
+    // can be ~50 paced requests. A forced refresh asks again. Fetched only on
+    // a full load: Home's meta-only load shows what's cached and asks no one.
     const similarProviders = similarUsersProviders();
     const similarCachedFor = (provider) => {
       const entry = (recommendationsCache.current.similarUsers || {})[provider.id];
@@ -27366,7 +27381,7 @@ Return ONLY the JSON array, no other text.`;
     for (const provider of similarProviders) {
       const cached = similarCachedFor(provider);
       const hasUsers = !!(cached && cached.users.length > 0);
-      if (!forceRefresh && hasUsers && (now - cached.fetchedAt) < CACHE_TTL.recommendations) {
+      if (!forceRefresh && hasUsers && (now - cached.fetchedAt) < CACHE_TTL.recommendationsStale) {
         similarFresh[provider.id] = cached;
         continue;
       }
@@ -27461,11 +27476,36 @@ Return ONLY the JSON array, no other text.`;
     // One similar-users provider, under the providers' bound and generation
     // guard. A failure keeps the cached answer (even a stale one) and caches
     // nothing; a late answer is applied and saved, as for the providers.
+    // A lookup already in flight for this account (an earlier load's) is
+    // awaited, not repeated; this load still applies its answer under its own
+    // generation. A config whose credential isn't ready yet is "not ready":
+    // the plugin would answer a keyless [] that must not replace a good
+    // cached answer, so nothing is asked, stored or saved, and the next load
+    // tries again.
     const fetchSimilarUsers = async (provider) => {
       try {
-        const config = await getResolverConfig(provider.id);
+        const account = accountFor(provider);
+        let inFlight = similarUsersInFlightRef.current[provider.id];
+        if (!inFlight || inFlight.account !== account) {
+          const run = (async () => {
+            const config = await getResolverConfig(provider.id);
+            if (config?.credentialsPending) {
+              const notReady = new Error('credentials not ready');
+              notReady.notReady = true;
+              throw notReady;
+            }
+            return loader.getSimilarUsers(provider.id, { ...config, excludeUsernames: excludeUsernamesFor(provider.id) });
+          })();
+          inFlight = { account, request: run };
+          similarUsersInFlightRef.current[provider.id] = inFlight;
+          const settled = inFlight;
+          const clear = () => {
+            if (similarUsersInFlightRef.current[provider.id] === settled) delete similarUsersInFlightRef.current[provider.id];
+          };
+          run.then(clear, clear);
+        }
+        const request = inFlight.request;
         let timer = null;
-        const request = loader.getSimilarUsers(provider.id, { ...config, excludeUsernames: excludeUsernamesFor(provider.id) });
         const TIMED_OUT = Symbol('timed out');
         const raw = await Promise.race([
           request,
@@ -27476,7 +27516,7 @@ Return ONLY the JSON array, no other text.`;
         ]);
         clearTimeout(timer);
         const accept = (users) => {
-          similarFresh[provider.id] = { users: Array.isArray(users) ? users : [], fetchedAt: Date.now(), account: accountFor(provider) };
+          similarFresh[provider.id] = { users: Array.isArray(users) ? users : [], fetchedAt: Date.now(), account };
           // Stored even when empty so it replaces an older answer; an empty
           // one is never served or saved.
           if (!recommendationsCache.current.similarUsers) recommendationsCache.current.similarUsers = {};
