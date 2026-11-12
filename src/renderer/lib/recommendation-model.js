@@ -374,7 +374,7 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
   return page;
 }
 
-// Friends: one blended "Listen like you" row. Same name on two services stays
+// Friends: one blended row, most similar first. Same name on two services stays
 // two entries (not known to be the same person); followed, removed and self
 // accounts are dropped by key.
 // The services a friend can be followed on (addFriendCore looks a username up
@@ -418,7 +418,14 @@ function friendsRow(similarUsers, exclude) {
     names[service] = provider.resolverName || service;
     lists.push(list);
   }
-  const items = interleave(lists);
+  // Most similar first, across services (the number each card shows as
+  // "NN% similar"); a tie, or a person with no score, keeps the round-robin
+  // order, and no score sorts last.
+  const score = (item) => (Number.isFinite(item.similarity) ? item.similarity : -Infinity);
+  const items = interleave(lists)
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => (score(b.item) - score(a.item)) || (a.i - b.i))
+    .map(x => x.item);
   if (!items.length) return null;
   const sources = sourcesFor(items, order, names);
   return subsection({

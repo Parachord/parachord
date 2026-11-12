@@ -309,15 +309,24 @@ describe('buildRecommendationPage', () => {
       ] }
     ];
 
-    test('drops followed, removed and self, and blends providers round-robin', () => {
+    test('drops followed, removed and self, and sorts everyone most similar first', () => {
       const exclude = { friendKeys: new Set(['lastfm:bob']), selfKeys: new Set(['listenbrainz:me']) };
       const friends = buildRecommendationPage({ similarUsers, exclude }).find(s => s.type === 'friend');
       expect(friends.subsections).toHaveLength(1);
       const row = friends.subsections[0];
-      expect(row.items.map(i => i.id)).toEqual(['similar:lastfm:Cy', 'similar:listenbrainz:Ed', 'similar:lastfm:Di']);
+      expect(row.items.map(i => i.id)).toEqual(['similar:lastfm:Cy', 'similar:lastfm:Di', 'similar:listenbrainz:Ed']);
       expect(row.items[0]).toMatchObject({ type: 'friend', name: 'Cy', service: 'lastfm', resolverId: 'lastfm', similarity: 0.8, avatarUrl: 'https://a/cy.png', sourceIds: ['lastfm'] });
       expect(row).toMatchObject({ blended: true, title: 'Friends', key: 'friends:similar' });
       expect(row.sources).toEqual([{ id: 'lastfm', name: 'Last.fm' }, { id: 'listenbrainz', name: 'ListenBrainz' }]);
+    });
+
+    test('a higher score from a later service comes first; ties keep round-robin order and no score sorts last', () => {
+      const su = [
+        { resolverId: 'lastfm', resolverName: 'Last.fm', users: [{ username: 'A', similarity: 0.1 }, { username: 'B' }, { username: 'C', similarity: 0.5 }] },
+        { resolverId: 'listenbrainz', resolverName: 'ListenBrainz', users: [{ username: 'D', similarity: 0.9 }, { username: 'E', similarity: 0.5 }] }
+      ];
+      const row = buildRecommendationPage({ similarUsers: su }).find(s => s.type === 'friend').subsections[0];
+      expect(row.items.map(i => i.name)).toEqual(['D', 'E', 'C', 'A', 'B']);
     });
 
     test('with one provider is a single-source row', () => {
