@@ -30188,7 +30188,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             // Not a failure: the profile hides its recent listening, and the
             // Recent tab says so (the other tabs still load).
             updateFriendHidesListening(friend, true);
-            setFriendHistoryData(prev => ({ ...prev, recent: [], recentHidden: true }));
+            setFriendHistoryData(prev => ({ ...prev, recent: [], recentHidden: true, errors: { ...(prev.errors || {}), recent: false } }));
             return;
           }
           throw new Error(`Failed to fetch recent tracks: ${response.status}`);
@@ -30229,10 +30229,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
 
       // Resolution handled by scheduler via IntersectionObserver
-      setFriendHistoryData(prev => ({ ...prev, recent: tracks, recentHidden: false }));
+      setFriendHistoryData(prev => ({ ...prev, recent: tracks, recentHidden: false, errors: { ...(prev.errors || {}), recent: false } }));
     } catch (error) {
       console.error('Failed to load friend recent tracks:', error);
-      showToast('Failed to load listening history', 'error');
+      // Shown in the tab, with Try again, instead of an empty list that
+      // reads as "they have none" (renderer: friendTabError).
+      setFriendHistoryData(prev => ({ ...prev, recent: [], errors: { ...(prev.errors || {}), recent: true } }));
     } finally {
       setFriendHistoryLoading(false);
     }
@@ -30268,10 +30270,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }));
 
       // Resolution handled by scheduler via IntersectionObserver
-      setFriendHistoryData(prev => ({ ...prev, topTracks: tracks }));
+      setFriendHistoryData(prev => ({ ...prev, topTracks: tracks, errors: { ...(prev.errors || {}), topTracks: false } }));
     } catch (error) {
       console.error('Failed to load friend top tracks:', error);
-      showToast('Failed to load top tracks', 'error');
+      // Shown in the tab, with Try again, instead of an empty list that
+      // reads as "they have none" (renderer: friendTabError).
+      setFriendHistoryData(prev => ({ ...prev, topTracks: [], errors: { ...(prev.errors || {}), topTracks: true } }));
     } finally {
       setFriendHistoryLoading(false);
     }
@@ -30289,7 +30293,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       // Handle 204 No Content (no stats available for this period)
       if (response.status === 204) {
-        setFriendHistoryData(prev => ({ ...prev, topTracks: [] }));
+        setFriendHistoryData(prev => ({ ...prev, topTracks: [], errors: { ...(prev.errors || {}), topTracks: false } }));
         setFriendHistoryLoading(false);
         return;
       }
@@ -30308,10 +30312,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }));
 
       // Resolution handled by scheduler via IntersectionObserver
-      setFriendHistoryData(prev => ({ ...prev, topTracks: tracks }));
+      setFriendHistoryData(prev => ({ ...prev, topTracks: tracks, errors: { ...(prev.errors || {}), topTracks: false } }));
     } catch (error) {
       console.error('Failed to load friend top tracks:', error);
-      showToast('Failed to load top tracks', 'error');
+      // Shown in the tab, with Try again, instead of an empty list that
+      // reads as "they have none" (renderer: friendTabError).
+      setFriendHistoryData(prev => ({ ...prev, topTracks: [], errors: { ...(prev.errors || {}), topTracks: true } }));
     } finally {
       setFriendHistoryLoading(false);
     }
@@ -30350,7 +30356,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Handle 204 No Content (no stats available for this period)
         if (response.status === 204) {
-          setFriendHistoryData(prev => ({ ...prev, topArtists: [] }));
+          setFriendHistoryData(prev => ({ ...prev, topArtists: [], errors: { ...(prev.errors || {}), topArtists: false } }));
           setFriendHistoryLoading(false);
           return;
         }
@@ -30367,7 +30373,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }));
       }
 
-      setFriendHistoryData(prev => ({ ...prev, topArtists: artists }));
+      setFriendHistoryData(prev => ({ ...prev, topArtists: artists, errors: { ...(prev.errors || {}), topArtists: false } }));
 
       // Fetch artist images in background
       if (artists.length > 0) {
@@ -30375,7 +30381,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     } catch (error) {
       console.error('Failed to load friend top artists:', error);
-      showToast('Failed to load top artists', 'error');
+      // Shown in the tab, with Try again, instead of an empty list that
+      // reads as "they have none" (renderer: friendTabError).
+      setFriendHistoryData(prev => ({ ...prev, topArtists: [], errors: { ...(prev.errors || {}), topArtists: true } }));
     } finally {
       setFriendHistoryLoading(false);
     }
@@ -30439,7 +30447,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Handle 204 No Content (no stats available for this period)
         if (response.status === 204) {
-          setFriendHistoryData(prev => ({ ...prev, topAlbums: [] }));
+          setFriendHistoryData(prev => ({ ...prev, topAlbums: [], errors: { ...(prev.errors || {}), topAlbums: false } }));
           setFriendHistoryLoading(false);
           return;
         }
@@ -30459,7 +30467,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
       setFriendHistoryData(prev => ({
         ...prev,
-        topAlbums: albums.map(a => (a.image ? { ...a, imageLoaded: true } : a))
+        topAlbums: albums.map(a => (a.image ? { ...a, imageLoaded: true } : a)),
+        errors: { ...(prev.errors || {}), topAlbums: false }
       }));
 
       // Covers for the albums that came without one, in the background
@@ -30468,7 +30477,9 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     } catch (error) {
       console.error('Failed to load friend top albums:', error);
-      showToast('Failed to load top albums', 'error');
+      // Shown in the tab, with Try again, instead of an empty list that
+      // reads as "they have none" (renderer: friendTabError).
+      setFriendHistoryData(prev => ({ ...prev, topAlbums: [], errors: { ...(prev.errors || {}), topAlbums: true } }));
     } finally {
       setFriendHistoryLoading(false);
     }
@@ -42435,8 +42446,29 @@ useEffect(() => {
                 friendHistoryLoading && React.createElement('div', { className: 'flex items-center justify-center py-12' },
                   React.createElement('div', { className: 'w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin' })
                 ),
+                // A tab whose load failed (the service unreachable): say so,
+                // with Try again, rather than an empty list that reads as
+                // "they have none". The service's name comes from its plugin.
+                !friendHistoryLoading && friendHistoryData.errors?.[friendHistoryTab] && (() => {
+                  const serviceName = ((resolverLoaderRef.current?.getAllResolvers?.() || []).find(r => r.id === currentFriend?.service) || {}).name
+                    || currentFriend?.service || 'the service';
+                  const retry = () => {
+                    if (friendHistoryTab === 'recent') loadFriendRecentTracks(currentFriend);
+                    else if (friendHistoryTab === 'topTracks') loadFriendTopTracks(currentFriend);
+                    else if (friendHistoryTab === 'topAlbums') loadFriendTopAlbums(currentFriend);
+                    else loadFriendTopArtists(currentFriend);
+                  };
+                  return React.createElement('div', { className: 'text-center py-12', 'data-friend-tab-error': friendHistoryTab },
+                    React.createElement('p', { className: 'mb-4', style: { color: 'var(--text-secondary)' } }, `Couldn't reach ${serviceName}. Check your connection and try again.`),
+                    React.createElement('button', {
+                      type: 'button',
+                      onClick: retry,
+                      className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors no-drag'
+                    }, 'Try again')
+                  );
+                })(),
                 // Recent tab content - matching History page layout
-                !friendHistoryLoading && friendHistoryTab === 'recent' && (() => {
+                !friendHistoryLoading && !friendHistoryData.errors?.recent && friendHistoryTab === 'recent' && (() => {
                   const sorted = sortFriendHistory(friendHistoryData.recent);
                   if (sorted.length === 0 && friendHistoryData.recentHidden) {
                     return React.createElement('p', { className: 'text-center text-gray-400 py-8' },
@@ -42547,7 +42579,7 @@ useEffect(() => {
                   );
                 })(),
                 // Top tracks tab content - matching History page layout
-                !friendHistoryLoading && friendHistoryTab === 'topTracks' && React.createElement('div', { className: 'space-y-0' },
+                !friendHistoryLoading && !friendHistoryData.errors?.topTracks && friendHistoryTab === 'topTracks' && React.createElement('div', { className: 'space-y-0' },
                   friendHistoryData.topTracks.length === 0
                     ? React.createElement('p', { className: 'text-center text-gray-400 py-8' }, 'No top tracks data')
                     : friendHistoryData.topTracks.map((track, index) => {
@@ -42649,7 +42681,7 @@ useEffect(() => {
                       })
                 ),
                 // Top albums tab content
-                !friendHistoryLoading && friendHistoryTab === 'topAlbums' && React.createElement('div', {
+                !friendHistoryLoading && !friendHistoryData.errors?.topAlbums && friendHistoryTab === 'topAlbums' && React.createElement('div', {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
                 },
                   friendHistoryData.topAlbums.length === 0
@@ -42819,7 +42851,7 @@ useEffect(() => {
                       })
                 ),
                 // Top artists tab content
-                !friendHistoryLoading && friendHistoryTab === 'topArtists' && React.createElement('div', {
+                !friendHistoryLoading && !friendHistoryData.errors?.topArtists && friendHistoryTab === 'topArtists' && React.createElement('div', {
                   className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
                 },
                   friendHistoryData.topArtists.length === 0
