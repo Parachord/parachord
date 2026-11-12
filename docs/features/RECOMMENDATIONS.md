@@ -18,10 +18,10 @@ Related: [METADATA_SOURCES.md](../architecture/METADATA_SOURCES.md) (artist imag
 | Critical Darlings | Sidebar; Home "Acclaimed by critics" | Achordion critics feed | Not personalized | Albums | Nothing |
 | Pop of the Tops | Sidebar | Apple Music RSS charts; Last.fm charts | Not personalized | Albums, tracks | Nothing |
 | Spinoff | Playbar button | Last.fm `track.getsimilar`, topped up from `artist.getsimilar` + `artist.gettoptracks` | The playing track | Tracks | Nothing |
-| Collection Radio | Home; Collection page; menu; `parachord://collection-radio` | Shuffle of the user's own tracks | Collection + local library | Tracks | Nothing |
+| Collection Radio | Home "Play Collection Radio"; Collection page; menu; `parachord://collection-radio` | Shuffle of the user's own tracks | Collection + local library | Tracks | Nothing |
 | Protocol radio | `parachord://play/radio` | External pool (JSPF / XSPF / JSON), e.g. ListenBrainz lb-radio | Publisher-supplied | Tracks | ListenBrainz token for lb-radio URLs |
 | Concerts | Sidebar "Concerts"; artist page "On Tour" | Bandsintown, Songkick, SeatGeek, Ticketmaster plugins | Collection, listening history | Events | At least one concert plugin with a key |
-| Friend activity | Sidebar friends; Home "Friend Activity"; friend page | Last.fm / ListenBrainz recent tracks and stats | Friends' listening | Tracks, artists, albums | Last.fm or ListenBrainz username |
+| Friend activity | Sidebar friends; friend page | Last.fm / ListenBrainz recent tracks and stats | Friends' listening | Tracks, artists, albums | Last.fm or ListenBrainz username |
 
 Nothing in the app calls ListenBrainz `cf/recommendation` or labs `similar-recordings`, Spotify `/v1/recommendations`, or any Achordion recommendation endpoint. There is no "because you listened to" or daily-mix style surface. ListenBrainz `similar-users` is called, by the Friends section (below).
 
@@ -157,7 +157,7 @@ The playbar Spinoff button seeds from the playing track with Last.fm `track.gets
 
 Code: `handleStartCollectionStation`, context name "Collection Station".
 
-Shuffles the local library plus collection tracks, deduplicated. Buttons on Home and the Collection page, a menu entry, `parachord://collection-radio`, and the chat tool `collection_radio`. There is no recommendation step; it only plays what the user already has.
+Shuffles the local library plus collection tracks, deduplicated. Play Collection Radio in the Home header, a button on the Collection page, a menu entry, `parachord://collection-radio`, and the chat tool `collection_radio`. There is no recommendation step; it only plays what the user already has.
 
 ## Protocol radio (`parachord://play/radio`)
 
