@@ -44,6 +44,12 @@ describe('play history helpers', () => {
     expect(historyForReplacedTrack(history, t('c'), t('c', { preferredResolver: 'spotify' }))).toBe(history);
   });
 
+  test('a link\'s loading placeholder never goes on history', () => {
+    const history = [t('a')];
+    const placeholder = { id: '__protocol-loading-1', title: 'Loading album…', artist: '', status: 'resolving', _protocolLoading: true };
+    expect(historyForReplacedTrack(history, placeholder, t('x'))).toBe(history);
+  });
+
   test('nothing playing: nothing to record', () => {
     const history = [t('a')];
     expect(historyForReplacedTrack(history, null, t('x'))).toBe(history);

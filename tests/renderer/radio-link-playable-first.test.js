@@ -79,7 +79,7 @@ describe('the radio link checks before it clears the queue', () => {
   });
 
   test('a radio link no longer puts a loading placeholder in the playbar, so a refusal leaves the current track', () => {
-    expect(app).toMatch(/if \(command === 'listen-along' \|\| \['album', 'playlist'\]\.includes\(playKind\)\) \{/);
+    expect(app).toMatch(/if \(\['album', 'playlist'\]\.includes\(playKind\)\) \{/);
     expect(app).not.toMatch(/\['album', 'playlist', 'radio'\]\.includes\(playKind\)/);
   });
 

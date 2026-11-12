@@ -11508,19 +11508,16 @@ const Parachord = () => {
           // which checks that something in its pool plays before it replaces
           // anything (#1319): a refused radio must leave the current track
           // where it was, not a "Loading radio…" placeholder in its place.
-          if (command === 'listen-along' || ['album', 'playlist'].includes(playKind)) {
-            const placeholderTitle =
-              command === 'listen-along' ? `Connecting to ${params.user || 'friend'}…` :
-              playKind === 'album' ? (params.title || 'Loading album…') :
-              playKind === 'playlist' ? (params.title || 'Loading playlist…') :
-              (params.name || params.title || 'Loading radio…');
-            const placeholderArtist =
-              playKind === 'album' || playKind === 'playlist' || playKind === 'radio' ? '' :
-              (params.artist || '');
+          // Nor listen-along (#1343), which first checks that the friend is
+          // listening: one who isn't left "Connecting to …" in the playbar
+          // for good, since that refusal isn't an error the catch clears.
+          // Its acknowledgement toast already says "Connecting to …".
+          if (['album', 'playlist'].includes(playKind)) {
+            const placeholderTitle = params.title || (playKind === 'album' ? 'Loading album…' : 'Loading playlist…');
             setCurrentTrack({
               id: `__protocol-loading-${Date.now()}`,
               title: placeholderTitle,
-              artist: placeholderArtist,
+              artist: '',
               status: 'resolving',
               _protocolLoading: true,
             });
@@ -12071,15 +12068,17 @@ const Parachord = () => {
                 friend = { ...existingFriend, cachedRecentTrack: cached };
               }
               if (activateListenAlongRef.current) {
-                // Match play/*: tear down spinoff + clear queue first so
-                // activateListenAlong's setPlaybackContext isn't overridden
-                // by handlePlay's internal spinoff cleanup running after.
-                // (Don't tear down a current listen-along — switching from
-                // friend A to friend B should just swap the friend ref.)
+                // End a spinoff first so activateListenAlong's
+                // setPlaybackContext isn't overridden by handlePlay's internal
+                // spinoff cleanup running after. (Don't tear down a current
+                // listen-along: switching from friend A to friend B should
+                // just swap the friend ref.) The queue stays, as when Listen
+                // Along starts in the app (#1343): the friend's tracks play
+                // out of the lap and the queue plays on when the session ends
+                // (#1319). Mobile keeps it too (parachord-mobile#652).
                 if (spinoffModeRef.current && exitSpinoffRef.current) {
                   exitSpinoffRef.current();
                 }
-                clearQueue();
                 activateListenAlongRef.current(friend);
               } else {
                 showToast('listen-along not yet ready');

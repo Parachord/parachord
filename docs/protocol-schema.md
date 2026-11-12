@@ -323,7 +323,7 @@ parachord://listen-along?service={listenbrainz|lastfm}&user={username}
 | `service` | Yes | `listenbrainz` or `lastfm` |
 | `user` | Yes | Username on that service |
 
-If the target user isn't currently listening, a toast surfaces "<user> is not currently listening on <service>." Otherwise listen-along activates immediately.
+If the target user isn't currently listening, a toast surfaces "<user> is not currently listening on <service>." and playback is left alone. Otherwise listen-along activates immediately. A running spinoff ends first. Your queue stays, as when Listen Along starts in the app: when the session ends, the queue plays on.
 
 **Example:**
 ```

@@ -326,6 +326,9 @@ function pushPlayHistory(history, track, max = PLAY_HISTORY_MAX) {
 // it is the same track played again (a restart, repeat one, a source fallback).
 function historyForReplacedTrack(history, outgoing, next, max = PLAY_HISTORY_MAX) {
   if (!outgoing || isSameTrack(outgoing, next)) return history;
+  // A link's loading placeholder ("Loading album…") was never a track: on
+  // history, Previous tried to play it.
+  if (outgoing._protocolLoading) return history;
   return pushPlayHistory(history, markOffLap(outgoing), max);
 }
 
