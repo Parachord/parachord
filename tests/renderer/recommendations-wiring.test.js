@@ -346,7 +346,7 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
   test('every merge applies the friend exclusions (a follow since the fetch drops out at once)', () => {
     const i = app.indexOf('const refreshMergedRecommendations = () => {');
     const fn = app.slice(i, app.indexOf('\n  };', i));
-    expect(fn).toMatch(/buildRecommendationPage\(\{[\s\S]*similarUsers: Object\.values\(similarUsersRef\.current\),[\s\S]*exclude: recommendationExclusions\(\)/);
+    expect(fn).toMatch(/buildRecommendation(?:Page|Views)\(\{[\s\S]*similarUsers: Object\.values\(similarUsersRef\.current\),[\s\S]*exclude: recommendationExclusions\(\)/);
     const ex = app.slice(app.indexOf('const recommendationExclusions = () => {'), app.indexOf('const refreshMergedRecommendations'));
     expect(ex).toMatch(/friendsRef\.current/);
     expect(ex).toMatch(/hiddenFriendKeysRef\.current/);
@@ -387,10 +387,11 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
   test('loadWeeklyPlaylists no longer exists, and no playlists/createdfor URL is left in app.js', () => {
     expect(app).not.toContain('loadWeeklyPlaylists');
     expect(app).not.toContain('playlists/createdfor');
-    // The weekly fields are filled from the merged page's weekly items.
+    // The weekly fields are filled from the merged page's weekly items,
+    // before the history-mix exclusion (buildRecommendationViews).
     const i = app.indexOf('const refreshMergedRecommendations = () => {');
     const fn = app.slice(i, app.indexOf('\n  };', i));
-    expect(fn).toMatch(/const weekly = weeklyHomeEntries\(sections, prev\);/);
+    expect(fn).toMatch(/const weekly = weeklyHomeEntries\(weeklySections, prev\);/);
     expect(fn).toMatch(/if \(weekly\.weeklyJams === prev\.weeklyJams && weekly\.weeklyExploration === prev\.weeklyExploration\) return prev;/);
   });
 });

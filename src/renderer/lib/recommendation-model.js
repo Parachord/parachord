@@ -401,6 +401,26 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
   return page;
 }
 
+// The page, plus the sections Home's weekly mirror reads (weeklyHomeEntries).
+// The mirror is built before the history-mix exclusion: once a plugin
+// returns Weekly Jams from getHistoryMixes too, the page leaves them out, but
+// a restored playlist view of them and the queue drawer's "Go to source"
+// still look them up in the mirror. Only the providers carry weekly
+// playlists, so the second build skips Shuffleupagus and the Listeners row,
+// and it runs only when something is excluded.
+function buildRecommendationViews(args = {}) {
+  const sections = buildRecommendationPage(args);
+  const ids = args.excludePlaylistIds;
+  const weeklySections = ids && ids.size > 0
+    ? buildRecommendationPage({
+      providers: args.providers,
+      expandedSections: args.expandedSections,
+      expandableResolverIds: args.expandableResolverIds
+    })
+    : sections;
+  return { sections, weeklySections };
+}
+
 // Friends: one blended row, each service most similar first and the services
 // alternating. Same name on two services stays
 // two entries (not known to be the same person); followed, removed and self
@@ -614,6 +634,7 @@ module.exports = {
   recommendationItemKey,
   dedupeItems,
   buildRecommendationPage,
+  buildRecommendationViews,
   filterRowBySource,
   pageSources,
   flattenRecommendationItems,

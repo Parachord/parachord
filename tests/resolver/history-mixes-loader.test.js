@@ -173,12 +173,9 @@ describe('wiring', () => {
     expect(second.slice(0, second.indexOf(');'))).toContain('(axe.capabilities?.historyMixes && axe.implementation?.getHistoryMixes)');
   });
 
-  test('cache_history_mixes is allowlisted, read with the critical keys and saved', () => {
+  test('cache_history_mixes is allowlisted and saved', () => {
     expect(read('main-process', 'ipc', 'store.js')).toContain("'cache_history_mixes'");
-    const critical = app.slice(app.indexOf('const criticalKeys = ['), app.indexOf('];', app.indexOf('const criticalKeys = [')));
-    expect(critical).toContain("'cache_history_mixes'");
     expect(app).toContain("window.electron.store.set('cache_history_mixes', { providers, savedAt: now });");
-    expect(app).toContain("const historyMixesData = d['cache_history_mixes'];");
   });
 
   test('loadHistoryMixes asks the registry per provider, under the recommendations bounds', () => {
@@ -221,5 +218,91 @@ describe('wiring', () => {
     expect(play.slice(0, 500)).toContain('await recommendationPlaylistTracks(item)');
     const queue = app.slice(app.indexOf('const queueServicePlaylist = async (item, context) => {'));
     expect(queue.slice(0, 500)).toContain('await recommendationPlaylistTracks(item)');
+  });
+});
+
+describe('fix round 1', () => {
+  const { historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries } = require('../../src/renderer/lib/home-model');
+  const { buildRecommendationViews, weeklyHomeEntries } = require('../../src/renderer/lib/recommendation-model');
+  const app = read('src', 'renderer', 'app.js');
+
+  test('the weekly mirror keeps Jams the history exclusion takes off the page', () => {
+    const providers = [normalizeRecommendationSections({ sections: [{ title: 'Weekly Jams', id: 'weekly-jams', items: [
+      { type: 'playlist', id: 'jams-now', name: 'Weekly Jams', url: 'u1', weekly: { id: 'jams-now', contextType: 'weekly-jam', label: 'Weekly Jams', weekLabel: 'This week', date: '2026-11-09' } },
+      { type: 'playlist', id: 'explore', name: 'Weekly Exploration', url: 'u2', weekly: { id: 'explore', contextType: 'weekly-exploration', label: 'Weekly Exploration', weekLabel: 'This week', date: '2026-11-09' } },
+    ] }] }, { resolverId: 'listenbrainz', resolverName: 'ListenBrainz' })];
+    const views = buildRecommendationViews({ providers, excludePlaylistIds: new Set(['jams-now']) });
+    // The page leaves the Jams out...
+    const pagePlaylists = views.sections.find(s => s.type === 'playlist').subsections[0].items.map(i => i.id);
+    expect(pagePlaylists).toEqual(['explore']);
+    // ...and the weekly mirror (the restored view, Go to source) still has them.
+    const weekly = weeklyHomeEntries(views.weeklySections, {});
+    expect(weekly.weeklyJams.map(j => j.id)).toEqual(['jams-now']);
+    expect(weekly.weeklyExploration.map(j => j.id)).toEqual(['explore']);
+    // No exclusion: one build, the same sections.
+    const plain = buildRecommendationViews({ providers });
+    expect(plain.weeklySections).toBe(plain.sections);
+    // The app mirrors from weeklySections.
+    const merge = app.slice(app.indexOf('const refreshMergedRecommendations = () => {'));
+    const body = merge.slice(0, merge.indexOf('\n  };\n'));
+    expect(body).toContain('buildRecommendationViews({');
+    expect(body).toMatch(/const weekly = weeklyHomeEntries\(weeklySections, prev\);/);
+  });
+
+  test('sameHistoryMixEntries: same providers and item references is no change', () => {
+    const a1 = { id: 'a1' };
+    const a = [{ resolverId: 'applemusic', resolverName: 'Apple Music', items: [a1] }];
+    expect(sameHistoryMixEntries(a, [{ resolverId: 'applemusic', resolverName: 'Apple Music', items: [a1] }])).toBe(true);
+    // A refetch builds new item objects (a new cover, a new line): a change.
+    expect(sameHistoryMixEntries(a, [{ resolverId: 'applemusic', resolverName: 'Apple Music', items: [{ id: 'a1' }] }])).toBe(false);
+    expect(sameHistoryMixEntries(a, [])).toBe(false);
+    expect(sameHistoryMixEntries([], [])).toBe(true);
+    expect(sameHistoryMixEntries(a, [{ resolverId: 'listenbrainz', resolverName: 'Apple Music', items: [a1] }])).toBe(false);
+    // apply() keeps the previous array when nothing changed.
+    expect(app).toMatch(/setHistoryMixEntries\(prev => \(sameHistoryMixEntries\(prev, entries\) \? prev : entries\)\);/);
+  });
+
+  test('a cached entry counts only for the same account; entries follow provider priority', () => {
+    const entry = { items: [{ id: 'x' }], account: 'me', fetchedAt: 1 };
+    expect(historyMixCacheEntry(entry, 'me')).toBe(entry);
+    expect(historyMixCacheEntry(entry, 'someone-else')).toBeNull();
+    expect(historyMixCacheEntry({ items: [], fetchedAt: 1 }, '')).toEqual({ items: [], fetchedAt: 1 });
+    expect(historyMixCacheEntry({ items: 'x' }, '')).toBeNull();
+    expect(historyMixCacheEntry(null, '')).toBeNull();
+
+    const byId = {
+      listenbrainz: { items: [{ id: 'l1' }] },
+      applemusic: { items: [{ id: 'a1' }] },
+      amazonmusic: { items: [] },
+    };
+    const providers = [{ id: 'applemusic', name: 'Apple Music' }, { id: 'amazonmusic', name: 'Amazon Music' }, { id: 'listenbrainz' }];
+    expect(historyMixEntriesFor(providers, (p) => byId[p.id])).toEqual([
+      { resolverId: 'applemusic', resolverName: 'Apple Music', items: [{ id: 'a1' }] },
+      { resolverId: 'listenbrainz', resolverName: 'listenbrainz', items: [{ id: 'l1' }] },
+    ]);
+  });
+
+  test('cache_history_mixes arrives with the big caches, and the load waits for them', () => {
+    const big = app.slice(app.indexOf('const BIG_CACHE_KEYS = ['), app.indexOf('];', app.indexOf('const BIG_CACHE_KEYS = [')));
+    expect(big).toContain("'cache_history_mixes'");
+    const critical = app.slice(app.indexOf('const criticalKeys = ['), app.indexOf('];', app.indexOf('const criticalKeys = [')));
+    expect(critical).not.toContain("'cache_history_mixes'");
+    expect(app).toContain("const historyMixesData = dCaches['cache_history_mixes'];");
+    // Hydration fills the cache only; the first load orders it by provider
+    // priority and checks the account (apply), so nothing is shown twice.
+    const hydrate = app.slice(app.indexOf("const historyMixesData = dCaches['cache_history_mixes'];"));
+    expect(hydrate.slice(0, hydrate.indexOf('\n\n'))).not.toContain('setHistoryMixEntries');
+    const load = app.slice(app.indexOf('const loadHistoryMixes = async (opts = {}) => {'));
+    const body = load.slice(0, load.indexOf('\n  };\n'));
+    expect(body.indexOf('await waitForBigCaches();')).toBeGreaterThan(-1);
+    expect(body.indexOf('await waitForBigCaches();')).toBeLessThan(body.indexOf('historyMixesCache.current.providers[provider.id]'));
+    expect(body).toContain('historyMixCacheEntry(historyMixesCache.current.providers[provider.id], historyMixAccountFor(provider))');
+    expect(body).toContain('historyMixEntriesFor(providers,');
+  });
+
+  test('the init wait clears its timer', () => {
+    const load = app.slice(app.indexOf('const loadHistoryMixes = async (opts = {}) => {'));
+    const body = load.slice(0, load.indexOf('\n  };\n'));
+    expect(body).toMatch(/let initTimer = null;[\s\S]{0,400}initTimer = setTimeout\(resolve, 15000\)[\s\S]{0,200}clearTimeout\(initTimer\);/);
   });
 });

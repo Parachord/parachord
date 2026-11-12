@@ -560,7 +560,10 @@ const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
-const { shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, normalizeHistoryMixes, flattenHistoryMixes } = require('./lib/home-model');
+const {
+  shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, normalizeHistoryMixes, flattenHistoryMixes,
+  historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries
+} = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
@@ -1192,7 +1195,7 @@ const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_
 const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
-  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, flattenRecommendationItems,
+  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems,
   filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES
 } = require('./lib/recommendation-model');
 const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
@@ -18502,6 +18505,9 @@ ${trackListXml}
         'cache_artist_images', 'cache_mbid_mapper', 'cache_album_release_ids', 'cache_release_details',
         'cache_playlist_covers', 'cache_charts', 'cache_new_releases',
         'cache_concerts',
+        // The history mixes on Home: small, but nothing new may hold up
+        // the first paint of Home, and the row can show a moment later.
+        'cache_history_mixes',
       ];
       // cache_ai_suggestions stays in critical keys: it's typically tiny
       // (single-digit albums + artists) and the AI recommendations panel
@@ -18514,8 +18520,6 @@ ${trackListXml}
         // restored view, so they are read before first paint (a few hundred
         // items, like cache_ai_suggestions).
         'cache_recommendations',
-        // The history mixes on Home: a few playlist cards per provider.
-        'cache_history_mixes',
         'cache_critics_picks',
         // Resolver settings & user preferences
         'active_resolvers', 'resolver_order', 'meta_service_configs',
@@ -18757,6 +18761,24 @@ ${trackListXml}
         }
       }
 
+      // Last session's history mixes (Home's "Made from your listening", and
+      // the ids the Recommendations page leaves out). Into the cache only,
+      // and only into an empty one: loadHistoryMixes waits for this
+      // hydration (waitForBigCaches), then shows them in provider priority
+      // order and only for the account they belong to (its apply), the same
+      // path a fresh answer takes.
+      const historyMixesData = dCaches['cache_history_mixes'];
+      if (historyMixesData && historyMixesData.providers && typeof historyMixesData.providers === 'object'
+          && !Array.isArray(historyMixesData.providers)
+          && Object.keys(historyMixesCache.current.providers).length === 0) {
+        const saved = {};
+        for (const [id, entry] of Object.entries(historyMixesData.providers)) {
+          if (entry && Array.isArray(entry.items) && typeof entry.fetchedAt === 'number'
+              && (Date.now() - entry.fetchedAt) < CACHE_TTL.recommendationsStale) saved[id] = entry;
+        }
+        historyMixesCache.current = { providers: saved };
+      }
+
       // Critical Darlings restored from cache (above) keep whatever art they were
       // saved with, and the art pass only runs from loadCriticsPicks, which a
       // cache under 4 hours old skips. Picks saved without a cover (an older
@@ -18813,24 +18835,6 @@ ${trackListXml}
           timestamp: recsData.savedAt || 0
         };
         console.log(`📦 Loaded saved recommendations for ${Object.keys(recsData.providers).length} provider(s)`);
-      }
-      // Last session's history mixes (Home's "Made from your listening", and
-      // the ids the Recommendations page leaves out): shown at once, then
-      // refreshed by loadHistoryMixes. Only into an empty cache, like the
-      // recommendations above.
-      const historyMixesData = d['cache_history_mixes'];
-      if (historyMixesData && historyMixesData.providers && typeof historyMixesData.providers === 'object'
-          && !Array.isArray(historyMixesData.providers)
-          && Object.keys(historyMixesCache.current.providers).length === 0) {
-        const saved = {};
-        for (const [id, entry] of Object.entries(historyMixesData.providers)) {
-          if (entry && Array.isArray(entry.items) && typeof entry.fetchedAt === 'number'
-              && (Date.now() - entry.fetchedAt) < CACHE_TTL.recommendationsStale) saved[id] = entry;
-        }
-        historyMixesCache.current = { providers: saved };
-        setHistoryMixEntries(Object.entries(saved)
-          .filter(([, entry]) => entry.items.length > 0)
-          .map(([id, entry]) => ({ resolverId: id, resolverName: entry.resolverName || id, items: entry.items })));
       }
       // Saved album release dates (the "Coming <date>" badge), still fresh.
       if (recsData && recsData.releaseDates && typeof recsData.releaseDates === 'object'
@@ -27526,7 +27530,9 @@ Return ONLY the JSON array, no other text.`;
             .filter(s => s.items.length > 0)
         }
       : rawShuffle;
-    const sections = buildRecommendationPage({
+    // weeklySections is the page before the history-mix exclusion, for the
+    // weekly mirror below (buildRecommendationViews).
+    const { sections, weeklySections } = buildRecommendationViews({
       providers,
       shuffleupagus: shuffle,
       expandedSections,
@@ -27543,9 +27549,11 @@ Return ONLY the JSON array, no other text.`;
     // pendingPlaylistLoad lookup and the weekly covers effect read them; they
     // used to be fetched by name for Home). The functional update keeps
     // tracks a card already loaded, and an unchanged week returns `prev`, so
-    // the LLM's streamed re-merges cost no render here.
+    // the LLM's streamed re-merges cost no render here. Built from the page
+    // before the history-mix exclusion: Weekly Jams that are also a history
+    // mix leave the page but must stay findable here.
     setHomeData(prev => {
-      const weekly = weeklyHomeEntries(sections, prev);
+      const weekly = weeklyHomeEntries(weeklySections, prev);
       if (weekly.weeklyJams === prev.weeklyJams && weekly.weeklyExploration === prev.weeklyExploration) return prev;
       return { ...prev, ...weekly };
     });
@@ -28052,11 +28060,19 @@ Return ONLY the JSON array, no other text.`;
     const isLatest = () => historyMixesLoadGenRef.current === generation;
     historyMixesLoadingRef.current = true;
     try {
+      // The saved mixes arrive with the big caches, after first paint; a
+      // load before them would find the cache empty and refetch everything.
+      await waitForBigCaches();
       // The provider list is complete only once the plugins have loaded. A
       // launch onto Home runs this before then, and an empty list there would
       // wipe last session's mixes.
       if (resolversInitRef.current) {
-        await Promise.race([resolversInitRef.current, new Promise(resolve => setTimeout(resolve, 15000))]);
+        let initTimer = null;
+        await Promise.race([
+          resolversInitRef.current,
+          new Promise(resolve => { initTimer = setTimeout(resolve, 15000); })
+        ]);
+        clearTimeout(initTimer);
       }
       const loader = resolverLoaderRef.current;
       if (!loader) return;
@@ -28064,10 +28080,7 @@ Return ONLY the JSON array, no other text.`;
       historyMixProviderKeyRef.current = historyMixProviderKey(providers);
 
       const now = Date.now();
-      const cachedFor = (provider) => {
-        const entry = historyMixesCache.current.providers[provider.id];
-        return entry && Array.isArray(entry.items) && (entry.account || '') === historyMixAccountFor(provider) ? entry : null;
-      };
+      const cachedFor = (provider) => historyMixCacheEntry(historyMixesCache.current.providers[provider.id], historyMixAccountFor(provider));
       // An EMPTY answer is never served from the cache (the recommendations
       // rule): a genuine miss is asked again next time.
       const fresh = {};
@@ -28084,16 +28097,14 @@ Return ONLY the JSON array, no other text.`;
         toFetch.push(provider);
       }
 
+      // In provider priority order. An apply that changes nothing (every
+      // answer served from the cache, the usual return visit) keeps the
+      // previous array, so it costs no Recommendations re-merge and no Home
+      // render.
       const apply = () => {
         if (!isLatest()) return;
-        const entries = [];
-        for (const provider of providers) {
-          const entry = fresh[provider.id] || stale[provider.id];
-          if (entry && entry.items.length > 0) {
-            entries.push({ resolverId: provider.id, resolverName: provider.name || provider.id, items: entry.items });
-          }
-        }
-        setHistoryMixEntries(entries);
+        const entries = historyMixEntriesFor(providers, (p) => fresh[p.id] || stale[p.id]);
+        setHistoryMixEntries(prev => (sameHistoryMixEntries(prev, entries) ? prev : entries));
       };
       const mixCount = () => providers.reduce((n, p) => {
         const entry = fresh[p.id] || stale[p.id];

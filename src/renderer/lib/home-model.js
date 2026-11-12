@@ -224,6 +224,40 @@ function flattenHistoryMixes(entries) {
   return out;
 }
 
+// A provider's cached history mixes, or null when there are none to use:
+// not a list, or saved for another account (a meta-service's username; a
+// changed ListenBrainz user must never see the old one's mixes).
+function historyMixCacheEntry(entry, account) {
+  if (!entry || !Array.isArray(entry.items)) return null;
+  return (entry.account || '') === (account || '') ? entry : null;
+}
+
+// The entries Home shows, in provider priority order: one per provider that
+// has mixes. `entryFor(provider)` is that provider's answer (fresh or stale),
+// or nothing.
+function historyMixEntriesFor(providers, entryFor) {
+  const out = [];
+  for (const provider of providers || []) {
+    const entry = provider && entryFor(provider);
+    if (!entry || !Array.isArray(entry.items) || entry.items.length === 0) continue;
+    out.push({ resolverId: provider.id, resolverName: provider.name || provider.id, items: entry.items });
+  }
+  return out;
+}
+
+// Whether two entry lists show the same thing: the same providers in the
+// same order, holding the same item objects. A cached answer keeps its item
+// objects, and a fetched one makes new ones, so a refetch always counts.
+function sameHistoryMixEntries(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((entry, i) => {
+    const other = b[i];
+    return !!other && entry.resolverId === other.resolverId && entry.resolverName === other.resolverName
+      && entry.items.length === other.items.length
+      && entry.items.every((item, j) => item === other.items[j]);
+  });
+}
+
 // The import card is for a new user only: no collection and no playlists.
 // Empty tiles alone (a collection with no loves, say) don't show it.
 function homeSections({
@@ -365,7 +399,7 @@ function shouldStampHomeRecommendationsLoad({ fetched, failed, sectionCount }) {
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
-  normalizeHistoryMixes, flattenHistoryMixes,
+  normalizeHistoryMixes, flattenHistoryMixes, historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries,
   exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists, albumsNeedingArt,
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
 };
