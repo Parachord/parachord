@@ -21,17 +21,21 @@ const img = (n) => [
 const friendsBody = (names) => ({ friends: { user: names.map((n) => ({ name: n, image: img(n) })) } });
 const artistsBody = (names) => ({ topartists: { artist: names.map((n, i) => ({ name: n, '@attr': { rank: String(i + 1) } })) } });
 
-// friends: { user: [names] }, artists: { user: [artist names] }; unknown users answer error 6.
+// friends: { user: [names] }, artists: { user: [artist names] } (the 6-month
+// list, and the 1-month one unless `recent` has the user); unknown users
+// answer error 6. `recentStatus` fails a user's 1-month request.
 let calls;
-const mock = ({ friends = {}, artists = {}, status = {} } = {}) => {
+const mock = ({ friends = {}, artists = {}, recent = {}, status = {}, recentStatus = {} } = {}) => {
   calls = [];
   global.fetch = async (url) => {
     const u = new URL(url);
     const method = u.searchParams.get('method');
     const user = u.searchParams.get('user');
-    calls.push({ method, user, t: Date.now(), url });
+    const period = u.searchParams.get('period');
+    calls.push({ method, user, period, t: Date.now(), url });
     if (status[user]) return { ok: false, status: status[user], json: async () => ({ error: 29, message: 'rate' }) };
-    const table = method === 'user.getfriends' ? friends : artists;
+    if (period === '1month' && recentStatus[user]) return { ok: false, status: recentStatus[user], json: async () => ({ error: 8, message: 'down' }) };
+    const table = method === 'user.getfriends' ? friends : (period === '1month' && user in recent ? recent : artists);
     if (!(user in table)) return { ok: true, status: 200, json: async () => ({ error: 6, message: 'User not found' }) };
     const body = method === 'user.getfriends' ? friendsBody(table[user]) : artistsBody(table[user]);
     return { ok: true, status: 200, json: async () => body };
@@ -70,7 +74,7 @@ test('candidates are friends of friends ranked by mutual count, top 40 scored', 
   friends.f3 = ['c0'];
   mock({ friends, artists });
   const out = await runPaced(cfg());
-  const scoredUsers = calls.filter((c) => c.method === 'user.gettopartists' && c.user !== 'me').map((c) => c.user);
+  const scoredUsers = calls.filter((c) => c.method === 'user.gettopartists' && c.period === '6month' && c.user !== 'me').map((c) => c.user);
   expect(scoredUsers).toHaveLength(40);
   expect(scoredUsers.slice(0, 2)).toEqual(['c0', 'c1']);
   expect(out).toHaveLength(40);
@@ -197,4 +201,32 @@ test('the API key never reaches console output or an error', async () => {
   try { await runPaced(cfg()); } catch (e) { message = e.message; }
   expect(message).not.toContain(KEY);
   for (const s of spies) expect(JSON.stringify(s.mock.calls)).not.toContain(KEY);
+});
+
+test('each kept person carries their last month\'s top 3 artists, else their 6-month top 3', async () => {
+  mock({
+    friends: { me: ['f1'], f1: ['monthly', 'quiet', 'flaky', 'dropped'] },
+    artists: {
+      me: ['A', 'B', 'C', 'D'],
+      monthly: ['A', 'B', 'C', 'D'],
+      quiet: ['A', 'B', 'X', 'Y'],
+      flaky: ['A', 'Z', 'W', 'V'],
+      dropped: ['Q']
+    },
+    recent: { monthly: ['New 1', 'New 2', 'New 3', 'New 4'], quiet: [] },
+    recentStatus: { flaky: 500 }
+  });
+  const out = await runPaced(cfg());
+  const by = Object.fromEntries(out.map((u) => [u.username, u.topArtists]));
+  expect(by.monthly).toEqual(['New 1', 'New 2', 'New 3']);
+  // An empty month, or a failed 1-month request, falls back to the 6-month
+  // top 3, display case kept; the failure costs only the line.
+  expect(by.quiet).toEqual(['A', 'B', 'X']);
+  expect(by.flaky).toEqual(['A', 'Z', 'W']);
+  expect(out.map((u) => u.username)).not.toContain('dropped');
+  // One 1-month request per person kept, none for anyone dropped.
+  const monthly = calls.filter((c) => c.period === '1month').map((c) => c.user).sort();
+  expect(monthly).toEqual(['flaky', 'monthly', 'quiet']);
+  expect(calls.find((c) => c.period === '1month').url).toContain('&limit=3');
+  for (const u of out) expect(u).not.toHaveProperty('sixMonth');
 });

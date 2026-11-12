@@ -85,12 +85,20 @@ describe('saved similar users (the Friends row)', () => {
   test('similar users are asked again only once their answer is stale (7 days), or on a forced refresh', () => {
     // Any young answer is fresh, an empty one too: an empty answer re-asked
     // on every visit re-ran Last.fm's paced lookup and flashed the skeleton.
-    expect(load).toMatch(/const young = !!\(cached && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendationsStale\);/);
+    expect(load).toMatch(/const withinStale = !!\(cached && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendationsStale\);/);
     expect(load).toMatch(/if \(!forceRefresh && young\) \{\s*similarFresh\[provider\.id\] = cached;\s*continue;\s*\}/);
     expect(load).not.toMatch(/hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendations\)/);
-    // A forced refresh still shows a cached answer with people while it asks again.
-    expect(load).toMatch(/const hasUsers = young && cached\.users\.length > 0;/);
+    // A forced refresh, or an answer saved in an older shape, still shows
+    // its people while it asks again.
+    expect(load).toMatch(/const hasUsers = withinStale && cached\.users\.length > 0;/);
     expect(load).toMatch(/if \(hasUsers\) similarStale\[provider\.id\] = cached;/);
+  });
+
+  test('an answer saved before the cards listed top artists is asked again once (shape 2)', () => {
+    expect(load).toContain('const SIMILAR_USERS_SHAPE = 2;');
+    expect(load).toMatch(/const young = withinStale && cached\.shape === SIMILAR_USERS_SHAPE;/);
+    const fetchBlock = load.slice(load.indexOf('const fetchSimilarUsers = async (provider) => {'), load.indexOf('await Promise.all(['));
+    expect(fetchBlock).toMatch(/similarFresh\[provider\.id\] = \{ users: Array\.isArray\(users\) \? users : \[\], fetchedAt: Date\.now\(\), account, shape: SIMILAR_USERS_SHAPE \};/);
   });
 
   test('a provider whose last answer was empty stays out of the Friends skeleton (quiet, like providers)', () => {

@@ -27,7 +27,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
   const loading = view.slice(view.indexOf('recommendations.loading && allSections.length === 0 ?'), view.indexOf(": recommendations.error === 'not_configured' ?"));
   const renderSubsection = view.slice(view.indexOf('const renderSubsection = (sub) => {'));
   const songRow = view.slice(view.indexOf('const songRow = (item, index, allSongs, section) => {'), view.indexOf('// ── Friends'));
-  const friendCard = view.slice(view.indexOf('const friendCard = (item, index) => {'), view.indexOf("// ── One section's row"));
+  const friendCard = view.slice(view.indexOf('const friendCard = (item, index, row) => {'), view.indexOf("// ── One section's row"));
   const artistCard = view.slice(view.indexOf('const artistCard = (item, index) => {'), view.indexOf('const albumCard = (item, index) => {'));
 
   test('the empty page renders the page skeleton', () => {
@@ -44,7 +44,11 @@ describe('Recommendations skeletons match the sectioned page', () => {
     const grid = "gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))'";
     expect(renderSubsection).toContain(grid);
     expect(skel).toContain(grid);
-    for (const part of ["padding: '14px 12px'", "borderRadius: '10px'", "width: '100px', height: '100px'"]) {
+    // The text block: name (20px after a 10px gap), source (16px), artists (two 16px lines).
+    expect(friendCard).toContain("style: { marginTop: '2px', height: '16px', color: 'var(--text-secondary)' }");
+    expect(friendCard).toContain("marginTop: '2px', height: '32px', lineHeight: '16px'");
+    expect(skel).toContain("height: '32px'");
+    for (const part of ["padding: '14px 12px'", "borderRadius: '10px'", "width: '100px', height: '100px'", "marginTop: '10px', height: '20px'"]) {
       expect(friendCard).toContain(part);
       expect(skel).toContain(part);
     }
@@ -75,10 +79,10 @@ describe('Recommendations skeletons match the sectioned page', () => {
     }
   });
 
-  test('a collapsed section shows one full row, measured, and a skeleton section the same', () => {
+  test('a collapsed section shows two full rows of cards (one of people), measured, and a skeleton section the same', () => {
     // The page measures how many cards fit across (the grids' minimums and
-    // 16px gap inside the p-6 box) and a collapsed section shows that many,
-    // so See all only adds rows; 6 until measured, as the skeleton's default.
+    // 16px gap inside the p-6 box); a collapsed card section shows two full
+    // rows and Listeners one, so See all only adds rows.
     const effect = app.slice(app.indexOf('// Measure the Recommendations grids\' column count'), app.indexOf('}, [activeView, recommendationsScrollContainerReady]);'));
     expect(effect).toContain('const width = Math.max(0, el.clientWidth - 48);');
     expect(effect).toContain('const fit = (min) => Math.max(1, Math.floor((width + 16) / (min + 16)));');
@@ -86,7 +90,8 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // Only a changed count is a state write (every setState is a full-app render).
     expect(effect).toContain('prev.cards === next.cards && prev.friends === next.friends ? prev : next');
     expect(effect).toContain('observer.disconnect()');
-    expect(view).toContain('const SECTION_PREVIEW = recommendationsGridColumns.cards || 6;');
+    expect(view).toContain('const CARD_ROWS = 2;');
+    expect(view).toContain('const SECTION_PREVIEW = (recommendationsGridColumns.cards || 6) * CARD_ROWS;');
     expect(view).toContain('const FRIEND_PREVIEW = recommendationsGridColumns.friends || 6;');
     expect(renderSubsection).toContain("const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : SECTION_PREVIEW;");
     expect(skel).toContain('const CARD_PREVIEW = 6;');
@@ -134,7 +139,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(view).toMatch(/const friendsPending = !filteringOne && recommendationsPending\.some\(p => p\.friends\);/);
     // Under the Friends heading the real section brings, so the page does
     // not reflow a heading in when the answer lands.
-    expect(view).toMatch(/!friendsSection && friendsPending && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:friend-pending', kind: 'friends', title: 'Friends', count: FRIEND_PREVIEW \}\)/);
+    expect(view).toMatch(/!friendsSection && friendsPending && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:friend-pending', kind: 'friends', title: 'Listeners', count: FRIEND_PREVIEW \}\)/);
     // The pending entry is added only for a lookup with nothing cached to
     // show (and not for a provider whose last answer was empty: quiet), and
     // leaves the list when that lookup settles.
@@ -222,7 +227,7 @@ describe('Recommendations skeleton components render', () => {
     const cards = render(RecommendationSectionSkeleton, { kind: 'cards', lines: 2, title: 'Albums' });
     expect(count(cards, 'aspect-square')).toBe(6);
     expect(cards).toMatch(/<h2[^>]*>Albums<\/h2>/);
-    const friends = render(RecommendationSectionSkeleton, { kind: 'friends', title: 'Friends' });
+    const friends = render(RecommendationSectionSkeleton, { kind: 'friends', title: 'Listeners' });
     expect(count(friends, 'data-skeleton="friend"')).toBe(6);
   });
 

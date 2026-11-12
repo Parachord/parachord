@@ -27412,13 +27412,18 @@ Return ONLY the JSON array, no other text.`;
       const entry = (recommendationsCache.current.similarUsers || {})[provider.id];
       return entry && Array.isArray(entry.users) && (entry.account || '') === accountFor(provider) ? entry : null;
     };
+    // An answer saved before the cards listed top artists (shape 2) is shown
+    // while a new one is fetched, so the line appears without a 7-day wait.
+    const SIMILAR_USERS_SHAPE = 2;
     const similarFresh = {};
     const similarStale = {};
     const similarToFetch = [];
     for (const provider of similarProviders) {
       const cached = similarCachedFor(provider);
-      const young = !!(cached && (now - cached.fetchedAt) < CACHE_TTL.recommendationsStale);
-      const hasUsers = young && cached.users.length > 0;
+      const withinStale = !!(cached && (now - cached.fetchedAt) < CACHE_TTL.recommendationsStale);
+      const young = withinStale && cached.shape === SIMILAR_USERS_SHAPE;
+      // Old-shape people stay on screen (stale) while the new answer loads.
+      const hasUsers = withinStale && cached.users.length > 0;
       if (young && cached.users.length === 0) recommendationsQuietRef.current.add(`friends:${provider.id}`);
       if (!forceRefresh && young) {
         similarFresh[provider.id] = cached;
@@ -27564,7 +27569,7 @@ Return ONLY the JSON array, no other text.`;
         ]);
         clearTimeout(timer);
         const accept = (users) => {
-          similarFresh[provider.id] = { users: Array.isArray(users) ? users : [], fetchedAt: Date.now(), account };
+          similarFresh[provider.id] = { users: Array.isArray(users) ? users : [], fetchedAt: Date.now(), account, shape: SIMILAR_USERS_SHAPE };
           // Stored and saved even when empty: a successful empty answer is a
           // real answer, fresh for the stale bound like any other.
           if (!recommendationsCache.current.similarUsers) recommendationsCache.current.similarUsers = {};
@@ -40038,20 +40043,29 @@ useEffect(() => {
               }, 'Personalized picks from your services and Shuffleupagus')
             )
           ),
-          // Filter bar (outside scrollable area), as on the other tabs: one
-          // pill per source on the page, with how many picks it sent, and
-          // All. One pick filters every section (filterRowBySource).
+          // Filter bar (outside scrollable area), as on the other tabs (Fresh
+          // Drops, the artist page): All, then one pill per source on the
+          // page, no counts. Like theirs, each pill has its own active colour:
+          // All the tabs' purple, a source its plugin's brand colour (manifest
+          // `color`), Shuffleupagus the accent its badge uses. One pick filters
+          // every section (filterRowBySource).
           recommendations.error !== 'not_configured' && (() => {
             const sources = pageSources(recommendations.sections);
             const active = sources.some(src => src.id === recommendationSourceFilter) ? recommendationSourceFilter : 'all';
-            const total = recommendations.sections.reduce((n, sec) => n + sec.subsections.reduce((m, sub) => m + sub.items.length, 0), 0);
-            const pills = [{ id: 'all', name: 'All', count: total }, ...sources];
+            const pills = [{ id: 'all', name: 'All' }, ...sources];
+            const resolvers = resolverLoaderRef.current?.getAllResolvers?.() || [];
+            const activeColorFor = (id) => {
+              if (id === 'shuffleupagus') return 'var(--accent-primary)';
+              const resolver = id === 'all' ? null : resolvers.find(r => r.id === id);
+              // The loader's default for a manifest without a colour is grey.
+              return resolver && resolver.color && resolver.color !== '#888888' ? resolver.color : '#7c3aed';
+            };
             return React.createElement('div', {
               className: 'flex items-center px-6 py-3',
               style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
               React.createElement('div', { className: 'flex gap-2 flex-wrap' },
-                ...pills.map(({ id, name, count }) => {
+                ...pills.map(({ id, name }) => {
                   const isActive = active === id;
                   return React.createElement('button', {
                     key: id,
@@ -40061,8 +40075,8 @@ useEffect(() => {
                     className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
                       isActive ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`,
-                    style: isActive ? { backgroundColor: '#7c3aed' } : undefined
-                  }, count > 0 ? `${name} (${count})` : name);
+                    style: isActive ? { backgroundColor: activeColorFor(id) } : undefined
+                  }, name);
                 })
               )
             );
@@ -40091,9 +40105,11 @@ useEffect(() => {
             const LLM_TAIL_ROWS = new Set(['type:album', 'type:artist']);
             const LLM_TAIL = 3;
             const llmPlaceholder = llmLoading && !filteringOne && !allSubsections.some(s => LLM_TAIL_ROWS.has(s.key));
-            // A collapsed section shows one full row of cards (as many as fit
-            // across, measured; 6 until measured) and 5 song rows.
-            const SECTION_PREVIEW = recommendationsGridColumns.cards || 6;
+            // A collapsed card section (Albums, Artists, Playlists) shows two
+            // full rows (as many as fit across, measured; 6 a row until
+            // measured), Friends one row, Songs 5 rows.
+            const CARD_ROWS = 2;
+            const SECTION_PREVIEW = (recommendationsGridColumns.cards || 6) * CARD_ROWS;
             const FRIEND_PREVIEW = recommendationsGridColumns.friends || 6;
             const SONG_PREVIEW = 5;
 
@@ -40516,7 +40532,9 @@ useEffect(() => {
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
-                  React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name)
+                  React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.name),
+                  // Every playlist card names its source (the row is blended).
+                  React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, itemSourceName(item, section) || '')
                 )
               );
             };
@@ -40629,12 +40647,11 @@ useEffect(() => {
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
-                  // The playlist's full name ("Weekly Exploration"), then which
-                  // week (and, once loaded, how many tracks): Exploration's and
-                  // Jams' weeks share labels, so the week alone can't name one.
+                  // The playlist's full name ("Weekly Exploration"), then its
+                  // source, like every playlist card (only the newest week is
+                  // on the page, so the week needs no label).
                   React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.weekly.label),
-                  React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' },
-                    record.tracksLoaded && record.tracks.length > 0 ? `${item.weekly.weekLabel} · ${record.tracks.length} tracks` : item.weekly.weekLabel)
+                  React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, creator || '')
                 )
               );
             };
@@ -40795,7 +40812,7 @@ useEffect(() => {
             // goes to their profile through a friend-shaped object that isn't
             // in `friends` (the friend loaders work from service and username
             // alone); nobody is followed or saved from here.
-            const friendCard = (item, index) => {
+            const friendCard = (item, index, row) => {
               const HEXAGON = 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)';
               const pct = Number.isFinite(item.similarity)
                 ? Math.round(Math.min(1, Math.max(0, item.similarity)) * 100)
@@ -40852,7 +40869,27 @@ useEffect(() => {
                         style: { fontSize: '28px', fontWeight: '500', color: 'var(--text-tertiary)' }
                       }, (item.name || '?').charAt(0).toUpperCase())
                     )
-                  )
+                  ),
+                  // The similarity score, a badge over the hexagon's foot.
+                  pct != null && React.createElement('span', {
+                    'data-similarity-badge': 'true',
+                    title: `${pct}% similar`,
+                    style: {
+                      position: 'absolute',
+                      bottom: '0px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      padding: '1px 7px',
+                      borderRadius: '9999px',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      lineHeight: '16px',
+                      whiteSpace: 'nowrap',
+                      backgroundColor: 'var(--accent-primary)',
+                      color: '#fff',
+                      boxShadow: 'var(--card-shadow)'
+                    }
+                  }, `${pct}%`)
                 ),
                 React.createElement('div', {
                   style: { marginTop: '10px', height: '20px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
@@ -40862,10 +40899,22 @@ useEffect(() => {
                     style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
                   }, item.name)
                 ),
+                // Where they were found (the row blends services).
                 React.createElement('div', {
-                  className: 'text-xs',
+                  className: 'text-xs truncate',
                   style: { marginTop: '2px', height: '16px', color: 'var(--text-secondary)' }
-                }, pct != null ? `${pct}% similar` : '')
+                }, itemSourceName(item, row) || ''),
+                // Their top few recent artists, up to two lines. The block is
+                // always there (empty when the service had none), so every card
+                // is the same height.
+                React.createElement('div', {
+                  className: 'text-xs text-center',
+                  style: {
+                    marginTop: '2px', height: '32px', lineHeight: '16px', width: '100%', color: 'var(--text-tertiary)',
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+                  },
+                  title: (item.topArtists || []).length ? `Recently: ${item.topArtists.join(', ')}` : undefined
+                }, (item.topArtists || []).join(', '))
               );
             };
 
@@ -40914,8 +40963,9 @@ useEffect(() => {
                 const expansion = expandedSections[p.pagingKey];
                 return !expansion || !Array.isArray(expansion.lastPageTypes) || expansion.lastPageTypes.includes(sub.type);
               });
-              // Albums and weekly playlists have two text lines.
-              const cardLines = sub.type === 'album' || (sub.items[0] && sub.items[0].weekly) ? 2 : 1;
+              // Albums (title, artist) and playlists (name, source) have two
+              // text lines.
+              const cardLines = sub.type === 'album' || sub.type === 'playlist' ? 2 : 1;
               const header = subsectionHeader(sub, { expanded, showToggle });
 
               let body;
@@ -40932,7 +40982,7 @@ useEffect(() => {
                 body = React.createElement('div', {
                   className: 'grid gap-x-4 gap-y-5',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }
-                }, ...visible.map(friendCard));
+                }, ...visible.map((item, index) => friendCard(item, index, sub)));
               } else {
                 body = React.createElement('div', {
                   className: 'grid gap-4',
@@ -41062,7 +41112,7 @@ useEffect(() => {
                     friendsSection && renderTypeSection(friendsSection),
                     // The similar-users lookups still out with nothing cached:
                     // hexagon placeholders where the Friends row will land.
-                    !friendsSection && friendsPending && React.createElement(RecommendationSectionSkeleton, { key: 'type:friend-pending', kind: 'friends', title: 'Friends', count: FRIEND_PREVIEW })
+                    !friendsSection && friendsPending && React.createElement(RecommendationSectionSkeleton, { key: 'type:friend-pending', kind: 'friends', title: 'Listeners', count: FRIEND_PREVIEW })
                   )
               )
             );

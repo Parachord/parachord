@@ -59,6 +59,8 @@ module.exports = {
   // candidates all under 0.05 (an artist shared far down both lists counted
   // for almost nothing), so the row came back empty; the binary score and the
   // 40-candidate check are the maintainer's call (2026-11-12).
+  // Each kept person carries `topArtists`, their last month's top 3 (else
+  // their 6-month top 3) for the card.
   // A failed request or error body throws (the page keeps what it has and
   // caches nothing empty); only "you have no friends" is a miss ([]).
   // Isolated (new Function): the pacer, fetch wrapper and cosine live inside.
@@ -116,17 +118,21 @@ module.exports = {
       });
     };
 
-    const topArtists = async (user) => {
-      const res = await call('user.gettopartists', user, '&period=6month&limit=50');
-      if (res.missing) return new Set();
+    // A user's top artists for a period, as display names in rank order.
+    const artistNames = async (user, period, limit) => {
+      const res = await call('user.gettopartists', user, '&period=' + period + '&limit=' + limit);
+      if (res.missing) return [];
       let list = res.data && res.data.topartists && res.data.topartists.artist;
-      if (!list) return new Set();
+      if (!list) return [];
       if (!Array.isArray(list)) list = [list];
-      const names = new Set();
-      for (const a of list) {
-        const key = a && a.name && String(a.name).toLowerCase();
-        if (key) names.add(key);
-      }
+      return list.map((a) => a && a.name && String(a.name)).filter(Boolean);
+    };
+    // The 6-month top 50, lowercased, for the score; `ranked` keeps the
+    // display names for the card's fallback line.
+    const topArtists = async (user) => {
+      const ranked = await artistNames(user, '6month', 50);
+      const names = new Set(ranked.map((n) => n.toLowerCase()));
+      names.ranked = ranked;
       return names;
     };
 
@@ -168,9 +174,23 @@ module.exports = {
     if (!mineArtists.size) return [];
     const scored = [];
     for (const c of top) {
-      const similarity = cosine(mineArtists, await topArtists(c.name));
-      if (similarity >= 0.06) scored.push({ username: c.name, similarity, avatarUrl: c.avatarUrl });
+      const theirs = await topArtists(c.name);
+      const similarity = cosine(mineArtists, theirs);
+      if (similarity >= 0.06) scored.push({ username: c.name, similarity, avatarUrl: c.avatarUrl, sixMonth: theirs.ranked });
     }
-    return scored.sort((a, b) => b.similarity - a.similarity);
+    scored.sort((a, b) => b.similarity - a.similarity);
+
+    // 4. Each card lists the person's top few recent artists: the last
+    // month's top 3 (one more request per person kept, usually a handful),
+    // or their 6-month top 3 when the month is empty or the request fails
+    // (the line is extra; it never costs the answer).
+    for (const user of scored) {
+      let recent = [];
+      try { recent = await artistNames(user.username, '1month', 3); } catch (e) { recent = []; }
+      const names = (recent.length ? recent : user.sixMonth || []).slice(0, 3);
+      delete user.sixMonth;
+      if (names.length) user.topArtists = names;
+    }
+    return scored;
   }
 };

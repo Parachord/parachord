@@ -14,7 +14,7 @@
 //     item records every provider that sent it in `sourceIds` so the page can
 //     filter by source. A provider's section titles are not shown;
 //   - weekly playlists (items carrying `weekly`) lead Playlists, Exploration
-//     before Jams;
+//     before Jams, newest week of each only;
 //   - Friends is one blended row built from the providers' similar users.
 //
 // Filtering is NOT done here: filterRowBySource is applied at render so
@@ -184,7 +184,7 @@ const TYPE_SECTIONS = [
   { type: 'album', title: 'Albums' },
   { type: 'artist', title: 'Artists' },
   { type: 'playlist', title: 'Playlists' },
-  { type: 'friend', title: 'Friends' }
+  { type: 'friend', title: 'Listeners' }
 ];
 
 const WEEKLY_RANK = { 'weekly-exploration': 0, 'weekly-jam': 1 };
@@ -352,6 +352,17 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
       const owned = mergeOwned([...base.map(p => p.byType[type]), ...extra.map(p => p.byType[type])]);
       let items = [...interleave(owned.slice(0, base.length)), ...owned.slice(base.length).flat()];
       if (type === 'playlist') {
+        // Only the newest week of each weekly playlist (latest `date`, else
+        // the provider's first, which is This Week): older weeks are history,
+        // not a recommendation.
+        const newest = new Map();
+        for (const item of items) {
+          if (!item.weekly) continue;
+          const kept = newest.get(item.weekly.contextType);
+          if (!kept || (item.weekly.date && kept.weekly.date && item.weekly.date > kept.weekly.date)) newest.set(item.weekly.contextType, item);
+        }
+        const keep = new Set(newest.values());
+        items = items.filter(item => !item.weekly || keep.has(item));
         // Weekly playlists lead Playlists (recognized by the field their items
         // carry, not by provider), Exploration before Jams; the rest keep
         // their blended order.
@@ -374,7 +385,8 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
   return page;
 }
 
-// Friends: one blended row, most similar first. Same name on two services stays
+// Friends: one blended row, each service most similar first and the services
+// alternating. Same name on two services stays
 // two entries (not known to be the same person); followed, removed and self
 // accounts are dropped by key.
 // The services a friend can be followed on (addFriendCore looks a username up
@@ -409,6 +421,10 @@ function friendsRow(similarUsers, exclude) {
         service,
         similarity: user.similarity,
         avatarUrl: user.avatarUrl || null,
+        // Their top few recent artists, for the card (strings only, at most 3).
+        topArtists: Array.isArray(user.topArtists)
+          ? user.topArtists.filter(n => typeof n === 'string' && n.trim()).slice(0, 3)
+          : [],
         resolverId: service,
         sourceIds: [service]
       });
@@ -418,18 +434,21 @@ function friendsRow(similarUsers, exclude) {
     names[service] = provider.resolverName || service;
     lists.push(list);
   }
-  // Most similar first, across services (the number each card shows as
-  // "NN% similar"); a tie, or a person with no score, keeps the round-robin
+  // Each service's people most similar first, then the services alternate:
+  // the two services score on different scales (ListenBrainz's own number vs
+  // Parachord's shared-artist count for Last.fm), so one sort across both
+  // would always put one service's people first. A tie keeps the service's
   // order, and no score sorts last.
   const score = (item) => (Number.isFinite(item.similarity) ? item.similarity : -Infinity);
-  const items = interleave(lists)
+  const bySimilarity = (list) => list
     .map((item, i) => ({ item, i }))
     .sort((a, b) => (score(b.item) - score(a.item)) || (a.i - b.i))
     .map(x => x.item);
+  const items = interleave(lists.map(bySimilarity));
   if (!items.length) return null;
   const sources = sourcesFor(items, order, names);
   return subsection({
-    key: 'friends:similar', type: 'friend', title: 'Friends', blended: sources.length > 1, sources, items
+    key: 'friends:similar', type: 'friend', title: 'Listeners', blended: sources.length > 1, sources, items
   });
 }
 

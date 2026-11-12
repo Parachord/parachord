@@ -190,24 +190,62 @@ describe('ListenBrainz weekly sections', () => {
 });
 
 describe('ListenBrainz getSimilarUsers', () => {
-  test('getSimilarUsers maps and sorts the similar-users answer', async () => {
+  // The similar-users list, then each person's artist stats: `stats` maps
+  // `user|range` to artist names, a missing entry answers 204 (no stats).
+  const mockSimilar = (payload, stats = {}, failStats = false) => {
     requested = [];
     global.fetch = async (url) => {
       requested.push(url);
-      return { ok: true, status: 200, json: async () => ({ payload: [
-        { user_name: 'low', similarity: 0.2 },
-        { user_name: 'high', similarity: 0.9 },
-        { similarity: 0.5 },
-        { user_name: 'mid', similarity: 0.5 }
-      ] }) };
+      const m = url.match(/\/stats\/user\/([^/]+)\/artists\?range=([a-z_]+)&count=3$/);
+      if (m) {
+        if (failStats) throw new Error('network');
+        const names = stats[`${decodeURIComponent(m[1])}|${m[2]}`];
+        if (!names) return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+        return { ok: true, status: 200, json: async () => ({ payload: { artists: names.map(n => ({ artist_name: n, listen_count: 1 })) } }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ payload }) };
     };
+  };
+
+  test('getSimilarUsers maps and sorts the similar-users answer', async () => {
+    mockSimilar([
+      { user_name: 'low', similarity: 0.2 },
+      { user_name: 'high', similarity: 0.9 },
+      { similarity: 0.5 },
+      { user_name: 'mid', similarity: 0.5 }
+    ]);
     const users = await getSimilarUsers({ username: 'some one' });
-    expect(requested).toEqual(['https://api.listenbrainz.org/1/user/some%20one/similar-users']);
+    expect(requested[0]).toBe('https://api.listenbrainz.org/1/user/some%20one/similar-users');
     expect(users).toEqual([
       { username: 'high', similarity: 0.9 },
       { username: 'mid', similarity: 0.5 },
       { username: 'low', similarity: 0.2 }
     ]);
+  });
+
+  test('each person carries this month\'s top 3 artists, else last month\'s, for the 20 most similar', async () => {
+    const payload = Array.from({ length: 22 }, (_, i) => ({ user_name: `u${i}`, similarity: 1 - i / 100 }));
+    mockSimilar(payload, {
+      'u0|this_month': ['A', 'B', 'C'],
+      'u1|month': ['D', 'E']
+    });
+    const users = await getSimilarUsers({ username: 'me' });
+    expect(users[0].topArtists).toEqual(['A', 'B', 'C']);
+    // This month has no stats yet (204): last month's.
+    expect(users[1].topArtists).toEqual(['D', 'E']);
+    expect(users[2]).not.toHaveProperty('topArtists');
+    // Only the 20 most similar are asked about.
+    const asked = new Set(requested.filter(u => u.includes('/stats/')).map(u => u.match(/user\/([^/]+)\//)[1]));
+    expect(asked.size).toBe(20);
+    expect(asked.has('u20')).toBe(false);
+    expect(requested).toContain('https://api.listenbrainz.org/1/stats/user/u0/artists?range=this_month&count=3');
+    // u0 had this month, so last month was never asked.
+    expect(requested).not.toContain('https://api.listenbrainz.org/1/stats/user/u0/artists?range=month&count=3');
+  });
+
+  test('a failed stats request costs only that card\'s line', async () => {
+    mockSimilar([{ user_name: 'a', similarity: 0.5 }], {}, true);
+    expect(await getSimilarUsers({ username: 'me' })).toEqual([{ username: 'a', similarity: 0.5 }]);
   });
 
   test('getSimilarUsers without a username makes no request', async () => {

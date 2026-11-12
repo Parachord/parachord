@@ -205,9 +205,36 @@ module.exports = {
     const data = await response.json();
     // The API wraps the list in { payload }; accept a bare array too.
     const rows = Array.isArray(data) ? data : ((data && data.payload) || []);
-    return rows
+    const users = rows
       .filter(r => r && r.user_name)
       .map(r => ({ username: r.user_name, similarity: Number(r.similarity) || 0 }))
       .sort((a, b) => b.similarity - a.similarity);
+    // Each card lists the person's top few recent artists: this month's top
+    // 3, or last month's when this month has no stats yet (a 204). One or two
+    // requests each, for the 20 most similar only, one at a time, each asked
+    // once with no retry (a backoff per person would stall the row). A failed
+    // or rate-limited stats request costs that card its line, never the answer.
+    const topArtistsFor = async (user) => {
+      for (const range of ['this_month', 'month']) {
+        try {
+          const res = await fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(user)}/artists?range=${range}&count=3`);
+          if (res.status === 204 || !res.ok) continue;
+          const body = await res.json();
+          const names = ((body && body.payload && body.payload.artists) || [])
+            .map(a => a && a.artist_name)
+            .filter(n => typeof n === 'string' && n.trim())
+            .slice(0, 3);
+          if (names.length) return names;
+        } catch (e) {
+          return [];
+        }
+      }
+      return [];
+    };
+    for (const user of users.slice(0, 20)) {
+      const names = await topArtistsFor(user.username);
+      if (names.length) user.topArtists = names;
+    }
+    return users;
   }
 };

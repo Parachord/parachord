@@ -151,7 +151,7 @@ describe('buildRecommendationPage', () => {
     expect(TYPE_SECTIONS).toEqual([
       { type: 'song', title: 'Songs' }, { type: 'album', title: 'Albums' },
       { type: 'artist', title: 'Artists' }, { type: 'playlist', title: 'Playlists' },
-      { type: 'friend', title: 'Friends' }
+      { type: 'friend', title: 'Listeners' }
     ]);
   });
 
@@ -284,6 +284,23 @@ describe('buildRecommendationPage', () => {
     expect(row.items.map(i => i.weekly.id)).toEqual(['e1', 'j1']);
   });
 
+  test('only the newest week of each weekly playlist is kept (by date, else the provider\'s first)', () => {
+    const w = (id, contextType, date) => ({ id, contextType, label: id, weekLabel: id, date });
+    const providers = [norm('listenbrainz', 'ListenBrainz', [
+      { id: 'weekly-exploration', title: 'Weekly Exploration', items: [
+        { type: 'playlist', name: 'Last', weekly: w('e-last', 'weekly-exploration', '2026-11-02') },
+        { type: 'playlist', name: 'This', weekly: w('e-this', 'weekly-exploration', '2026-11-09') }
+      ] },
+      { id: 'weekly-jams', title: 'Weekly Jams', items: [
+        { type: 'playlist', name: 'J this', weekly: { id: 'j-this', contextType: 'weekly-jam', label: 'x', weekLabel: 'This Week' } },
+        { type: 'playlist', name: 'J last', weekly: { id: 'j-last', contextType: 'weekly-jam', label: 'x', weekLabel: 'Last Week' } }
+      ] },
+      { items: [{ type: 'playlist', name: 'Mix', url: 'https://x/mix' }] }
+    ])];
+    const row = sub(buildRecommendationPage({ providers }), 'type:playlist');
+    expect(row.items.map(i => (i.weekly ? i.weekly.id : i.name))).toEqual(['e-this', 'j-this', 'Mix']);
+  });
+
   test('weekly playlists lead Playlists, Exploration before Jams, the rest blended', () => {
     const w = (id, contextType) => ({ id: `lb-${id}`, contextType, label: id, weekLabel: 'Week of x' });
     const providers = [
@@ -309,24 +326,27 @@ describe('buildRecommendationPage', () => {
       ] }
     ];
 
-    test('drops followed, removed and self, and sorts everyone most similar first', () => {
+    test('drops followed, removed and self; each service most similar first, the services alternating', () => {
       const exclude = { friendKeys: new Set(['lastfm:bob']), selfKeys: new Set(['listenbrainz:me']) };
       const friends = buildRecommendationPage({ similarUsers, exclude }).find(s => s.type === 'friend');
       expect(friends.subsections).toHaveLength(1);
       const row = friends.subsections[0];
-      expect(row.items.map(i => i.id)).toEqual(['similar:lastfm:Cy', 'similar:lastfm:Di', 'similar:listenbrainz:Ed']);
+      expect(row.items.map(i => i.id)).toEqual(['similar:lastfm:Cy', 'similar:listenbrainz:Ed', 'similar:lastfm:Di']);
       expect(row.items[0]).toMatchObject({ type: 'friend', name: 'Cy', service: 'lastfm', resolverId: 'lastfm', similarity: 0.8, avatarUrl: 'https://a/cy.png', sourceIds: ['lastfm'] });
-      expect(row).toMatchObject({ blended: true, title: 'Friends', key: 'friends:similar' });
+      expect(row).toMatchObject({ blended: true, title: 'Listeners', key: 'friends:similar' });
       expect(row.sources).toEqual([{ id: 'lastfm', name: 'Last.fm' }, { id: 'listenbrainz', name: 'ListenBrainz' }]);
     });
 
-    test('a higher score from a later service comes first; ties keep round-robin order and no score sorts last', () => {
+    test('each service sorts by its own score before they alternate; no score sorts last; topArtists carried', () => {
       const su = [
-        { resolverId: 'lastfm', resolverName: 'Last.fm', users: [{ username: 'A', similarity: 0.1 }, { username: 'B' }, { username: 'C', similarity: 0.5 }] },
-        { resolverId: 'listenbrainz', resolverName: 'ListenBrainz', users: [{ username: 'D', similarity: 0.9 }, { username: 'E', similarity: 0.5 }] }
+        { resolverId: 'lastfm', resolverName: 'Last.fm', users: [{ username: 'A', similarity: 0.1 }, { username: 'B' }, { username: 'C', similarity: 0.5, topArtists: ['X', 'Y', 'Z', 'W'] }] },
+        { resolverId: 'listenbrainz', resolverName: 'ListenBrainz', users: [{ username: 'E', similarity: 0.5 }, { username: 'D', similarity: 0.9, topArtists: 'nope' }] }
       ];
       const row = buildRecommendationPage({ similarUsers: su }).find(s => s.type === 'friend').subsections[0];
-      expect(row.items.map(i => i.name)).toEqual(['D', 'E', 'C', 'A', 'B']);
+      // Last.fm: C, A, B; ListenBrainz: D, E; alternated.
+      expect(row.items.map(i => i.name)).toEqual(['C', 'D', 'A', 'E', 'B']);
+      expect(row.items[0].topArtists).toEqual(['X', 'Y', 'Z']);
+      expect(row.items[1].topArtists).toEqual([]);
     });
 
     test('with one provider is a single-source row', () => {
@@ -419,7 +439,8 @@ describe('weeklyHomeEntries', () => {
 
   test('builds Home\'s entry shape from items carrying weekly, by context type', () => {
     const out = weeklyHomeEntries(page(), {});
-    expect(out.weeklyExploration.map(e => e.id)).toEqual(['e1', 'e2']);
+    // Only the newest week of each is on the page, so only it is here.
+    expect(out.weeklyExploration.map(e => e.id)).toEqual(['e1']);
     expect(out.weeklyJams).toEqual([{
       id: 'j1', title: 'Weekly Jams', weekLabel: 'This Week', date: '2026-11-09',
       description: 'Your favorite tracks from the past week, curated by Brainz',
@@ -444,11 +465,13 @@ describe('weeklyHomeEntries', () => {
 
   test('a changed week makes a new list but keeps loaded tracks for the ids that stayed', () => {
     const first = weeklyHomeEntries(page(), {});
-    const prev = { weeklyJams: null, weeklyExploration: [{ ...first.weeklyExploration[0], tracks: [{ id: 't' }], tracksLoaded: true }] };
+    // Last time the list also had an older week; it is gone now.
+    const prev = { weeklyJams: null, weeklyExploration: [{ ...first.weeklyExploration[0], tracks: [{ id: 't' }], tracksLoaded: true }, { id: 'old', title: 'Weekly Exploration', weekLabel: 'Last Week', tracks: [], tracksLoaded: false }] };
     const out = weeklyHomeEntries(page(), prev);
     expect(out.weeklyExploration).not.toBe(prev.weeklyExploration);
+    expect(out.weeklyExploration).toHaveLength(1);
     expect(out.weeklyExploration[0]).toBe(prev.weeklyExploration[0]);
-    expect(out.weeklyExploration[1].tracksLoaded).toBe(false);
+    expect(out.weeklyJams[0].tracksLoaded).toBe(false);
   });
 });
 

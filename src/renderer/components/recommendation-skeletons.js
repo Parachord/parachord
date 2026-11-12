@@ -14,8 +14,8 @@
 // The row grid the real cards use (app.js renderSubsection).
 const GRID_STYLE = { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' };
 // What a collapsed row shows (SECTION_PREVIEW / SONG_PREVIEW in app.js): the
-// page passes the measured cards-per-row as `count` / `cardCount`; 6 is the
-// count before it is measured.
+// page passes its measured count (two rows of cards, one of people) as
+// `count` / `cardCount`; 6 is the default when none is passed.
 const CARD_PREVIEW = 6;
 const SONG_PREVIEW = 5;
 // Varied bar widths, so a skeleton list doesn't read as one repeated row.
@@ -81,7 +81,7 @@ function RecommendationSongRowSkeleton({ index = 0 } = {}) {
 const HEXAGON = 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)';
 const FRIEND_GRID_STYLE = { gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' };
 
-/** A recommended person: hexagon avatar, then the name and "NN% similar" lines. */
+/** A recommended person: hexagon avatar (its similarity badge arrives with the answer), then the name, the source and two top-artists lines. */
 function RecommendationFriendSkeleton({ index = 0 } = {}) {
   return React.createElement('div', {
     className: 'flex flex-col items-center',
@@ -96,8 +96,13 @@ function RecommendationFriendSkeleton({ index = 0 } = {}) {
     // The real name line (13px text in a 20px box) and similarity line (text-xs, 16px).
     React.createElement('div', { style: { marginTop: '10px', height: '20px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
       bar('h-3', { width: TITLE_WIDTHS[index % TITLE_WIDTHS.length], animationDelay: stagger(index, 50) })),
+    // The source line (text-xs, 16px).
     React.createElement('div', { style: { marginTop: '2px', height: '16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
-      bar('h-3', { width: '45%', animationDelay: stagger(index, 100) }))
+      bar('h-3', { width: '45%', animationDelay: stagger(index, 75) })),
+    // The top-artists block: two text-xs lines (32px).
+    React.createElement('div', { style: { marginTop: '2px', height: '32px', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-around' } },
+      bar('h-3', { width: '80%', animationDelay: stagger(index, 100) }),
+      bar('h-3', { width: '55%', animationDelay: stagger(index, 150) }))
   );
 }
 

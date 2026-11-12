@@ -390,13 +390,20 @@ describe('the five-section page render', () => {
     expect(view).not.toContain('Thinking…');
   });
 
-  test('the filter bar sits under the hero, as on the other tabs: All plus one pill per source, with counts', () => {
+  test('the filter bar sits under the hero, as on the other tabs: All plus one pill per source, no counts, each in its own colour', () => {
     const bar = between('// Filter bar (outside scrollable area), as on the other tabs', '// Scrollable content area: the grouped page');
     expect(bar.length).toBeGreaterThan(0);
     // After the hero, before the scroll area, so it stays put while the page scrolls.
     expect(view.indexOf("'RECOMMENDATIONS'")).toBeLessThan(view.indexOf('// Filter bar (outside scrollable area)'));
     expect(bar).toContain('const sources = pageSources(recommendations.sections);');
-    expect(bar).toContain("const pills = [{ id: 'all', name: 'All', count: total }, ...sources];");
+    expect(bar).toContain("const pills = [{ id: 'all', name: 'All' }, ...sources];");
+    expect(bar).toContain('}, name);');
+    expect(bar).not.toMatch(/\$\{name\} \(/);
+    // Each pill's own active colour, as the other tabs' pills have: All the
+    // tabs' purple, a source its manifest colour, Shuffleupagus the accent.
+    expect(bar).toContain('style: isActive ? { backgroundColor: activeColorFor(id) } : undefined');
+    expect(bar).toContain("if (id === 'shuffleupagus') return 'var(--accent-primary)';");
+    expect(bar).toContain("return resolver && resolver.color && resolver.color !== '#888888' ? resolver.color : '#7c3aed';");
     // Fresh Drops' bar and pills, verbatim.
     expect(bar).toContain("className: 'flex items-center px-6 py-3'");
     expect(bar).toContain("style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }");
@@ -428,18 +435,29 @@ describe('the five-section page render', () => {
     const play = view.slice(view.indexOf('const playWeeklyPlaylist = async (item) => {'));
     expect(play.slice(0, 1400)).toMatch(/tracks = await loadWeeklyJamTracks\(item\.weekly\.id\);/);
     expect(play.slice(0, 1400)).toMatch(/playTrackCollection\(tracks, \{ type: item\.weekly\.contextType, name/);
-    // Titled with the playlist's full name, the week (and track count) under it.
+    // Titled with the playlist's full name, its source under it, as on every
+    // playlist card (only the newest week is on the page).
     expect(card).toContain("React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.weekly.label)");
-    expect(card).toContain('`${item.weekly.weekLabel} · ${record.tracks.length} tracks` : item.weekly.weekLabel');
+    expect(card).toContain("React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, creator || '')");
+    const plain = between('const playlistCard = (item, index, section) => {', '// ── Weekly playlists');
+    expect(plain).toContain("React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' }, itemSourceName(item, section) || '')");
+    expect(view).toContain("const cardLines = sub.type === 'album' || sub.type === 'playlist' ? 2 : 1;");
     // Routed by the item's field, never by provider name.
     expect(view).toMatch(/item\.weekly \? weeklyCard\(item, index, sub\)/);
     expect(card).not.toMatch(/'listenbrainz'|'ListenBrainz'/);
   });
 
   test('a friend card opens the profile with a friend-shaped object that is not in friends', () => {
-    const card = between('const friendCard = (item, index) => {', "// ── One section's row");
+    const card = between('const friendCard = (item, index, row) => {', "// ── One section's row");
     expect(card).toMatch(/navigateToFriend\(\{\s*id: `similar:\$\{item\.service\}:\$\{item\.name\}`,\s*username: item\.name,\s*service: item\.service,\s*displayName: item\.name,\s*avatarUrl: item\.avatarUrl \|\| null\s*\}\)/);
-    expect(card).toMatch(/% similar/);
+    // The score is a badge over the hexagon; the card names the source and
+    // lists up to two lines of the person's recent artists.
+    expect(card).toContain("'data-similarity-badge': 'true',");
+    expect(card).toContain('title: `${pct}% similar`,');
+    expect(card).toContain("}, itemSourceName(item, row) || ''),");
+    expect(card).toContain("display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'");
+    expect(card).toContain("}, (item.topArtists || []).join(', '))");
+    expect(card).not.toContain('% similar` : \'\'');
     // No per-item source badge (sources live in the row's tags).
     expect(card).not.toContain('release-badge');
   });

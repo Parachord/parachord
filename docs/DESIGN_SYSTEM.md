@@ -285,7 +285,7 @@ ReleaseCard({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFe
 
 ### Recommendation rows
 
-The Recommendations page reuses Home's and the other tabs' pieces. Each section is one row under its heading (`text-lg font-semibold`); **"See all" / "Show less"** is Home's purple link (accent colour text, no button chrome, right-aligned on the heading's line); sections carry no item counts. Sources are filtered for the whole page in a **filter bar** under the hero, Fresh Drops' bar and pills exactly: All, then one pill per source with its count, one pick at a time. Items carry no source badges.
+The Recommendations page reuses Home's and the other tabs' pieces. Each section is one row under its heading (`text-lg font-semibold`); **"See all" / "Show less"** is Home's purple link (accent colour text, no button chrome, right-aligned on the heading's line); sections carry no item counts. Sources are filtered for the whole page in a **filter bar** under the hero, Fresh Drops' bar and pills: All, then one pill per source, no counts, one pick at a time, each pill with its own active colour as on the other tabs (All `#7c3aed`, a source its plugin's brand colour, Shuffleupagus `var(--accent-primary)`). Collapsed, a card section shows two full rows. Items carry no source badges.
 
 ### Artist Cards
 
@@ -449,7 +449,7 @@ Navigation is state-driven via `activeView`. Available views:
 | `playlists` | Playlist list and management |
 | `playlist-view` | Individual playlist detail |
 | `settings` | App settings (resolvers, scrobblers, AI, plugins) |
-| `recommendations` | A source filter bar, then five sections (Songs, Albums, Artists, Playlists, Friends), each one row blending every provider's picks, weekly playlists first in Playlists |
+| `recommendations` | A source filter bar, then five sections (Songs, Albums, Artists, Playlists, Listeners), each one row blending every provider's picks, weekly playlists first in Playlists |
 | `discover` | Charts (Pop of the Tops) |
 | `critics-picks` | Curated editor/critic selections |
 | `new-releases` | Latest releases |
