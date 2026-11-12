@@ -14,7 +14,7 @@ const {
   dedupeItems,
   TYPE_SECTIONS,
   buildRecommendationPage,
-  filterSubsectionItems,
+  filterRowBySource, pageSources,
   flattenRecommendationItems,
   weeklyHomeEntries,
   shuffleupagusSection,
@@ -178,10 +178,10 @@ describe('buildRecommendationPage', () => {
       albums: [{ title: 's1', artist: 'A', reason: 'r1' }, { title: 's2', artist: 'A', reason: 'r2' }]
     });
     const page = buildRecommendationPage({ providers, shuffleupagus: shuffle });
-    expect(names(sub(page, 'foryou:song')).filter(n => n.length === 1)).toEqual(['a', 'd', 'b', 'e', 'c']);
-    expect(names(sub(page, 'foryou:album'))).toEqual(['x', 's1', 'y', 's2']);
-    expect(sub(page, 'foryou:album').sources.map(s => s.id)).toEqual(['listenbrainz', 'shuffleupagus']);
-    expect(sub(page, 'foryou:album')).toMatchObject({ title: 'For you', blended: true, pagingKey: null, resolverId: null });
+    expect(names(sub(page, 'type:song')).filter(n => n.length === 1)).toEqual(['a', 'd', 'b', 'e', 'c']);
+    expect(names(sub(page, 'type:album'))).toEqual(['x', 's1', 'y', 's2']);
+    expect(sub(page, 'type:album').sources.map(s => s.id)).toEqual(['listenbrainz', 'shuffleupagus']);
+    expect(sub(page, 'type:album')).toMatchObject({ title: 'Albums', blended: true, pagingKey: null, resolverId: null, canLoadMore: false, pageable: [] });
   });
 
   test('a duplicate keeps the first provider and records every source', () => {
@@ -189,7 +189,7 @@ describe('buildRecommendationPage', () => {
       norm('lastfm', 'Last.fm', [{ items: [{ type: 'song', id: 'l1', name: 'Doberman', artist: 'Deafheaven' }] }]),
       norm('listenbrainz', 'ListenBrainz', [{ items: [{ type: 'song', id: 'b1', name: 'doberman', artist: 'deafheaven' }] }])
     ];
-    const row = sub(buildRecommendationPage({ providers }), 'foryou:song');
+    const row = sub(buildRecommendationPage({ providers }), 'type:song');
     expect(row.items).toHaveLength(1);
     expect(row.items[0]).toMatchObject({ id: 'l1', resolverId: 'lastfm', sourceIds: ['lastfm', 'listenbrainz'] });
     expect(row.sources.map(s => s.id)).toEqual(['lastfm', 'listenbrainz']);
@@ -198,72 +198,93 @@ describe('buildRecommendationPage', () => {
   test('a Shuffleupagus duplicate keeps its reason on the merged item', () => {
     const providers = [norm('lastfm', 'Last.fm', [{ items: [{ type: 'album', name: 'Sunbather', artist: 'Deafheaven' }] }])];
     const shuffle = shuffleupagusSection({ albums: [{ title: 'Sunbather', artist: 'Deafheaven', reason: 'peak' }] });
-    const row = sub(buildRecommendationPage({ providers, shuffleupagus: shuffle }), 'foryou:album');
+    const row = sub(buildRecommendationPage({ providers, shuffleupagus: shuffle }), 'type:album');
     expect(row.items).toHaveLength(1);
     expect(row.items[0]).toMatchObject({ resolverId: 'lastfm', reason: 'peak', sourceIds: ['lastfm', 'shuffleupagus'] });
   });
 
   test('derived artists join Artists For you with the song provider as source', () => {
     const providers = [norm('lastfm', 'Last.fm', [{ items: [song('a', 'Deafheaven')] }])];
-    const row = sub(buildRecommendationPage({ providers }), 'foryou:artist');
+    const row = sub(buildRecommendationPage({ providers }), 'type:artist');
     expect(row.items).toHaveLength(1);
     expect(row.items[0]).toMatchObject({ name: 'Deafheaven', derived: true, sourceIds: ['lastfm'] });
     expect(row.sources).toEqual([{ id: 'lastfm', name: 'Last.fm' }]);
     expect(row.blended).toBe(false);
   });
 
-  test('a mixed titled section splits by type and every split shares one pagingKey', () => {
+  test('every type section is one row; titled sections blend in with untitled items', () => {
     const providers = [
-      norm('lastfm', 'Last.fm', [{ items: [song('a')] }]),
-      norm('amazonmusic', 'Amazon Music', [{ id: 's1', title: 'Hot', description: 'd', items: [
-        { type: 'playlist', name: 'P', url: 'https://x/p' }, { type: 'album', name: 'Alb', artist: 'X' }
-      ] }])
+      norm('lastfm', 'Last.fm', [{ items: [{ type: 'album', name: 'L1', artist: 'A' }, { type: 'album', name: 'L2', artist: 'A' }] }]),
+      norm('amazonmusic', 'Amazon Music', [
+        { id: 's1', title: 'Albums for You', items: [{ type: 'album', name: 'M1', artist: 'B' }, { type: 'playlist', name: 'P', url: 'https://x/p' }] },
+        { id: 's2', title: 'Based on Your Recents', items: [{ type: 'album', name: 'M2', artist: 'B' }, { type: 'album', name: 'M3', artist: 'B' }] }
+      ])
     ];
-    const page = buildRecommendationPage({ providers, expandableResolverIds: ['amazonmusic'] });
-    const pl = sub(page, 'amazonmusic:s1:playlist');
-    const al = sub(page, 'amazonmusic:s1:album');
-    expect(pl).toMatchObject({ type: 'playlist', title: 'Hot', description: 'd', pagingKey: 'amazonmusic|s1', canLoadMore: true, resolverId: 'amazonmusic', sectionId: 's1', blended: false });
-    expect(al.pagingKey).toBe('amazonmusic|s1');
-    expect(pl.items[0].sourceIds).toEqual(['amazonmusic']);
-    const albums = page.find(s => s.type === 'album');
-    expect(albums.subsections.map(s => s.key)).toEqual(['amazonmusic:s1:album']); // no For you here
-    const songs = page.find(s => s.type === 'song');
-    expect(songs.subsections[0].key).toBe('foryou:song');
+    const page = buildRecommendationPage({ providers });
+    for (const section of page) expect(section.subsections).toHaveLength(1);
+    const albums = page.find(s => s.type === 'album').subsections[0];
+    expect(albums.key).toBe('type:album');
+    expect(names(albums)).toEqual(['L1', 'M1', 'L2', 'M2', 'M3']);
+    expect(albums.sources.map(s => s.id)).toEqual(['lastfm', 'amazonmusic']);
+    expect(names(page.find(s => s.type === 'playlist').subsections[0])).toEqual(['P']);
   });
 
-  test('a mixed titled section keeps an album and its same-named title track', () => {
+  test('a section keeps an album and its same-named title track', () => {
     // Album "Blue" and its title track "Blue" share artist+title; the dedupe
-    // key carries the type, so each survives in its own split.
+    // key carries the type, so each survives in its own section.
     const providers = [norm('amazonmusic', 'Amazon Music', [{ id: 's1', title: 'Hot', items: [
       { type: 'album', name: 'Blue', artist: 'X' }, { type: 'song', name: 'Blue', artist: 'X' }
     ] }])];
     const page = buildRecommendationPage({ providers });
-    expect(names(sub(page, 'amazonmusic:s1:album'))).toEqual(['Blue']);
-    expect(names(sub(page, 'amazonmusic:s1:song'))).toEqual(['Blue']);
+    expect(names(sub(page, 'type:album'))).toEqual(['Blue']);
+    expect(names(sub(page, 'type:song'))).toEqual(['Blue']);
   });
 
-  test('titled rows come after For you in their section', () => {
+  test('a row lists the provider sections that can page its type, sharing one pagingKey across types', () => {
+    const providers = [norm('amazonmusic', 'Amazon Music', [
+      { id: 's1', title: 'Hot', nextCursor: 'c0', items: [{ type: 'playlist', name: 'P', url: 'https://x/p' }, { type: 'album', name: 'Alb', artist: 'X' }] },
+      { title: 'No id', items: [{ type: 'album', name: 'Alb2', artist: 'X' }] }
+    ])];
+    const page = buildRecommendationPage({ providers, expandableResolverIds: ['amazonmusic'] });
+    const pl = sub(page, 'type:playlist');
+    const al = sub(page, 'type:album');
+    const entry = { resolverId: 'amazonmusic', resolverName: 'Amazon Music', sectionId: 's1', title: 'Hot', pagingKey: 'amazonmusic|s1', nextCursor: 'c0' };
+    expect(pl.pageable).toEqual([entry]);
+    expect(al.pageable).toEqual([entry]);
+    expect(pl.canLoadMore).toBe(true);
+    // A resolver that can't page, or an exhausted section, lists nothing.
+    expect(sub(buildRecommendationPage({ providers }), 'type:album').canLoadMore).toBe(false);
+    const done = buildRecommendationPage({ providers, expandableResolverIds: ['amazonmusic'], expandedSections: { 'amazonmusic|s1': { items: [], exhausted: true } } });
+    expect(sub(done, 'type:album').pageable).toEqual([]);
+  });
+
+  test('paged items append after the blended first pages, in their type, and carry the cursor', () => {
     const providers = [
-      norm('amazonmusic', 'Amazon Music', [{ id: 's1', title: 'Hot', items: [song('t1')] }]),
-      norm('lastfm', 'Last.fm', [{ items: [song('a')] }])
+      norm('lastfm', 'Last.fm', [{ items: [{ type: 'album', name: 'L1', artist: 'A' }, { type: 'album', name: 'L2', artist: 'A' }] }]),
+      norm('amazonmusic', 'Amazon Music', [{ id: 's1', title: 'Hot', nextCursor: 'c0', items: [
+        { type: 'playlist', name: 'P', url: 'https://x/p' }, { type: 'album', name: 'M1', artist: 'X' }
+      ] }])
     ];
-    const songs = buildRecommendationPage({ providers }).find(s => s.type === 'song');
-    expect(songs.subsections.map(s => s.key)).toEqual(['foryou:song', 'amazonmusic:s1:song']);
-  });
-
-  test('expanded items land only in the split of their type', () => {
-    const providers = [norm('amazonmusic', 'Amazon Music', [{ id: 's1', title: 'Hot', nextCursor: 'c0', items: [
-      { type: 'playlist', name: 'P', url: 'https://x/p' }, { type: 'album', name: 'Alb', artist: 'X' }
-    ] }])];
-    const expandedSections = { 'amazonmusic|s1': { nextCursor: 'c1', items: [{ type: 'playlist', name: 'P2', url: 'https://x/p2' }] } };
+    const expandedSections = { 'amazonmusic|s1': { nextCursor: 'c1', items: [
+      { type: 'album', name: 'M2', artist: 'X' }, { type: 'album', name: 'M1', artist: 'X' }, { type: 'playlist', name: 'P2', url: 'https://x/p2' }
+    ] } };
     const page = buildRecommendationPage({ providers, expandedSections, expandableResolverIds: ['amazonmusic'] });
-    expect(names(sub(page, 'amazonmusic:s1:playlist'))).toEqual(['P', 'P2']);
-    expect(names(sub(page, 'amazonmusic:s1:album'))).toEqual(['Alb']);
-    expect(sub(page, 'amazonmusic:s1:playlist').nextCursor).toBe('c1');
-    expect(sub(page, 'amazonmusic:s1:album').nextCursor).toBe('c1');
+    expect(names(sub(page, 'type:album'))).toEqual(['L1', 'M1', 'L2', 'M2']);
+    expect(names(sub(page, 'type:playlist'))).toEqual(['P', 'P2']);
+    expect(sub(page, 'type:album').pageable[0].nextCursor).toBe('c1');
   });
 
-  test('weekly sections come first among Playlists titled rows, Exploration before Jams', () => {
+  test('weekly playlists with the same name stay separate (keyed by their own id)', () => {
+    const w = (id, contextType) => ({ id, contextType, label: id, weekLabel: 'This Week' });
+    const providers = [norm('listenbrainz', 'ListenBrainz', [
+      { id: 'weekly-exploration', title: 'Weekly Exploration', items: [{ type: 'playlist', name: 'This Week', weekly: w('e1', 'weekly-exploration') }] },
+      { id: 'weekly-jams', title: 'Weekly Jams', items: [{ type: 'playlist', name: 'This Week', weekly: w('j1', 'weekly-jam') }] }
+    ])];
+    const row = sub(buildRecommendationPage({ providers }), 'type:playlist');
+    expect(row.items.map(i => i.weekly.id)).toEqual(['e1', 'j1']);
+  });
+
+  test('weekly playlists lead Playlists, Exploration before Jams, the rest blended', () => {
     const w = (id, contextType) => ({ id: `lb-${id}`, contextType, label: id, weekLabel: 'Week of x' });
     const providers = [
       norm('amazonmusic', 'Amazon Music', [{ id: 'am', title: 'Amazon Picks', items: [{ type: 'playlist', name: 'AP', url: 'https://x/ap' }] }]),
@@ -274,12 +295,8 @@ describe('buildRecommendationPage', () => {
       ])
     ];
     const playlists = buildRecommendationPage({ providers }).find(s => s.type === 'playlist');
-    expect(playlists.subsections.map(s => s.key)).toEqual([
-      'foryou:playlist',
-      'listenbrainz:weekly-exploration:playlist',
-      'listenbrainz:weekly-jams:playlist',
-      'amazonmusic:am:playlist'
-    ]);
+    expect(playlists.subsections.map(s => s.key)).toEqual(['type:playlist']);
+    expect(names(playlists.subsections[0])).toEqual(['E1', 'J1', 'AP', 'Mix']);
   });
 
   describe('Friends', () => {
@@ -299,7 +316,7 @@ describe('buildRecommendationPage', () => {
       const row = friends.subsections[0];
       expect(row.items.map(i => i.id)).toEqual(['similar:lastfm:Cy', 'similar:listenbrainz:Ed', 'similar:lastfm:Di']);
       expect(row.items[0]).toMatchObject({ type: 'friend', name: 'Cy', service: 'lastfm', resolverId: 'lastfm', similarity: 0.8, avatarUrl: 'https://a/cy.png', sourceIds: ['lastfm'] });
-      expect(row).toMatchObject({ blended: true, title: 'Listen like you' });
+      expect(row).toMatchObject({ blended: true, title: 'Friends', key: 'friends:similar' });
       expect(row.sources).toEqual([{ id: 'lastfm', name: 'Last.fm' }, { id: 'listenbrainz', name: 'ListenBrainz' }]);
     });
 
@@ -342,23 +359,25 @@ describe('buildRecommendationPage', () => {
       norm('listenbrainz', 'ListenBrainz', [{ items: [song('d'), song('both')] }])
     ];
     const page = buildRecommendationPage({ providers });
-    const row = sub(page, 'foryou:song');
+    const row = sub(page, 'type:song');
 
-    test('filterSubsectionItems hides an item only when every source is off', () => {
+    test('filterRowBySource keeps the items one source sent, shared ones included', () => {
       expect(names(row)).toEqual(['a', 'd', 'both']);
-      const out = (off) => filterSubsectionItems(row, new Set(off)).map(i => i.name);
-      expect(out(['lastfm'])).toEqual(['d', 'both']);
-      expect(out(['lastfm', 'listenbrainz'])).toEqual([]);
-      expect(out([])).toEqual(['a', 'd', 'both']);
+      expect(filterRowBySource(row, 'lastfm').map(i => i.name)).toEqual(['a', 'both']);
+      expect(filterRowBySource(row, 'listenbrainz').map(i => i.name)).toEqual(['d', 'both']);
+      expect(filterRowBySource(row, 'amazonmusic')).toEqual([]);
+      expect(filterRowBySource(row, 'all')).toBe(row.items);
+      expect(filterRowBySource(row, null)).toBe(row.items);
+      expect(row.items).toHaveLength(3);
     });
 
-    test('filterSubsectionItems on one row never touches another', () => {
-      const other = { ...row, key: 'x', items: row.items.map(i => ({ ...i })) };
-      const before = JSON.stringify(other);
-      const kept = filterSubsectionItems(row, new Set(['lastfm', 'listenbrainz']));
-      expect(kept).toEqual([]);
-      expect(JSON.stringify(other)).toBe(before);
-      expect(row.items).toHaveLength(3);
+    test('pageSources lists every source on the page in order, with its item count', () => {
+      // a, d, both (songs) plus the derived artist "Art", which both sent.
+      expect(pageSources(page)).toEqual([
+        { id: 'lastfm', name: 'Last.fm', count: 3 },
+        { id: 'listenbrainz', name: 'ListenBrainz', count: 3 }
+      ]);
+      expect(pageSources(undefined)).toEqual([]);
     });
 
     test('flattenRecommendationItems returns every item in page order', () => {

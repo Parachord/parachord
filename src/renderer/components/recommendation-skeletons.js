@@ -2,8 +2,8 @@
  * Loading skeletons for the Recommendations page.
  *
  * Each one has the same box as the element it stands in for (the album / artist /
- * playlist card, the song row, a recommended person, a subsection with its
- * header, the page's section headings), so content
+ * playlist card, the song row, a recommended person, a section with its
+ * heading), so content
  * replaces it without the page jumping. A layout change to those elements in
  * src/renderer/app.js changes the matching skeleton here in the same PR
  * (renderer-patterns.md, "Loading skeletons match the layout").
@@ -99,29 +99,28 @@ function RecommendationFriendSkeleton({ index = 0 } = {}) {
   );
 }
 
-// A subsection header's stand-ins: the title, then one source tag (the
-// header row is 24px tall, like the real one).
-const subsectionHeader = () => React.createElement('div', {
-  className: 'flex items-center gap-2 mb-3', style: { minHeight: '24px' }
+// A section's header: the heading (text-lg, a 28px line, mb-4 like the real
+// one), as a bar or, when the section is known, its real title.
+const sectionHeader = (title) => React.createElement('div', {
+  className: 'flex items-center justify-between gap-4 mb-4', style: { minHeight: '28px' }, 'data-skeleton': 'section-heading'
 },
-  bar('h-4', { width: '120px' }),
-  React.createElement('div', {
-    className: 'rounded shimmer-light animate-shimmer',
-    'data-skeleton': 'tag',
-    style: { width: '64px', height: '16px', backgroundSize: '200% 100%', animationDelay: '50ms' }
-  })
+  title
+    ? React.createElement('h2', { className: 'text-lg font-semibold truncate', style: { color: 'var(--text-primary)' } }, title)
+    : bar('h-5', { width: '100px' })
 );
 
 /**
- * One subsection: its header (title and a tag), then a collapsed row's worth
- * of song rows ('songs'), cards ('cards'; `lines` 2 for albums) or people
- * ('friends'). Unlabeled on purpose: a provider still loading may answer "not
- * ready", so naming it would promise a row that never comes (#1328).
+ * One section: its heading, then a collapsed row's worth of song rows
+ * ('songs'), cards ('cards'; `lines` 2 for albums) or people ('friends').
+ * `title` names a section the page knows is coming (Albums for Shuffleupagus,
+ * Friends); otherwise the heading is a bar, because a provider still loading
+ * may answer "not ready" and naming it would promise a section that never
+ * comes (#1328).
  */
-function RecommendationSubsectionSkeleton({ kind = 'cards', lines = 1, count } = {}) {
+function RecommendationSectionSkeleton({ kind = 'cards', lines = 1, count, title } = {}) {
   const n = count || (kind === 'songs' ? SONG_PREVIEW : CARD_PREVIEW);
-  return React.createElement('div', { className: 'mb-8', 'aria-hidden': 'true' },
-    subsectionHeader(),
+  return React.createElement('div', { className: 'mb-10', 'aria-hidden': 'true' },
+    sectionHeader(title),
     kind === 'songs'
       ? React.createElement('div', { className: 'space-y-0' },
           ...Array.from({ length: n }, (_, i) =>
@@ -136,20 +135,11 @@ function RecommendationSubsectionSkeleton({ kind = 'cards', lines = 1, count } =
   );
 }
 
-// A type section's heading (text-lg, 28px line, mb-4 like the real h2).
-const sectionHeading = () => React.createElement('div', {
-  className: 'flex items-center mb-4', style: { minHeight: '28px' }, 'data-skeleton': 'section-heading'
-}, bar('h-5', { width: '100px' }));
-
 /** The empty page while nothing has loaded: the Songs and Albums sections the page opens with. */
 function RecommendationsPageSkeleton() {
   return React.createElement('div', { 'aria-hidden': 'true' },
-    React.createElement('div', { className: 'mb-4' },
-      sectionHeading(),
-      React.createElement(RecommendationSubsectionSkeleton, { kind: 'songs' })),
-    React.createElement('div', { className: 'mb-4' },
-      sectionHeading(),
-      React.createElement(RecommendationSubsectionSkeleton, { kind: 'cards', lines: 2 }))
+    React.createElement(RecommendationSectionSkeleton, { kind: 'songs' }),
+    React.createElement(RecommendationSectionSkeleton, { kind: 'cards', lines: 2 })
   );
 }
 
@@ -157,6 +147,6 @@ module.exports = {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
   RecommendationFriendSkeleton,
-  RecommendationSubsectionSkeleton,
+  RecommendationSectionSkeleton,
   RecommendationsPageSkeleton
 };

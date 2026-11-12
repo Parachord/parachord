@@ -285,7 +285,7 @@ ReleaseCard({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFe
 
 ### Recommendation rows
 
-The Recommendations page's rows reuse Home's pieces. **"See all" / "Show less"** is Home's purple link (accent colour text, no button chrome, right-aligned in the row's header); rows carry no item counts. A row title can end in **source tags**, one per source: in a blended row each is a small pill toggle (on: accent-tinted, off: outlined and struck through) that filters the row for the session, in a single-source row it is the same pill as a plain, non-interactive label. Colours come from the CSS variables, never literals.
+The Recommendations page reuses Home's and the other tabs' pieces. Each section is one row under its heading (`text-lg font-semibold`); **"See all" / "Show less"** is Home's purple link (accent colour text, no button chrome, right-aligned on the heading's line); sections carry no item counts. Sources are filtered for the whole page in a **filter bar** under the hero, Fresh Drops' bar and pills exactly: All, then one pill per source with its count, one pick at a time. Items carry no source badges.
 
 ### Artist Cards
 
@@ -449,7 +449,7 @@ Navigation is state-driven via `activeView`. Available views:
 | `playlists` | Playlist list and management |
 | `playlist-view` | Individual playlist detail |
 | `settings` | App settings (resolvers, scrobblers, AI, plugins) |
-| `recommendations` | Five sections (Songs, Albums, Artists, Playlists, Friends), each but Friends with a blended "For you" row, plus the weekly playlists and providers' titled rows |
+| `recommendations` | A source filter bar, then five sections (Songs, Albums, Artists, Playlists, Friends), each one row blending every provider's picks, weekly playlists first in Playlists |
 | `discover` | Charts (Pop of the Tops) |
 | `critics-picks` | Curated editor/critic selections |
 | `new-releases` | Latest releases |

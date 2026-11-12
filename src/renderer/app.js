@@ -1215,7 +1215,7 @@ const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-sh
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, flattenRecommendationItems,
-  filterSubsectionItems, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES
+  filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES
 } = require('./lib/recommendation-model');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
@@ -1979,7 +1979,7 @@ const { SearchPage } = require('./components/search-page');
 const {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
-  RecommendationSubsectionSkeleton,
+  RecommendationSectionSkeleton,
   RecommendationsPageSkeleton
 } = require('./components/recommendation-skeletons');
 const { useStableHandlers } = require('./lib/stable-handlers');
@@ -3408,10 +3408,11 @@ const Parachord = () => {
   // { id: 'friends:<providerId>', name, friends: true } (the Friends row's
   // hexagon skeleton), so one set of load-round clears covers both.
   const [recommendationsPending, setRecommendationsPending] = useState([]);
-  // Source filters per row ({ [subsection.key]: Set of source ids turned
-  // OFF}). Session-only on purpose (spec "Filters"): a restart turns every
-  // source back on, so this is never written to the store.
-  const [recommendationSourceFilters, setRecommendationSourceFilters] = useState({});
+  // The page's source filter: 'all' or one source id, picked in the filter
+  // bar under the hero and applied to every section. Session-only on purpose
+  // (spec "Filters"): a restart shows every source again, so this is never
+  // written to the store.
+  const [recommendationSourceFilter, setRecommendationSourceFilter] = useState('all');
   // Whether the last merge put a Friends row on the page: the empty-page
   // checks run in async load code (refs, not render state) and must count it.
   const recommendationsFriendsShownRef = useRef(false);
@@ -27773,16 +27774,6 @@ Return ONLY the JSON array, no other text.`;
       return next;
     });
   };
-  // A blended row's source tag: turn that source off or back on for THIS row
-  // only (the render applies it through filterSubsectionItems; nothing is
-  // refetched or re-merged).
-  const toggleRecommendationSourceFilter = (subKey, sourceId) => {
-    setRecommendationSourceFilters(prev => {
-      const next = new Set(prev[subKey] || []);
-      if (next.has(sourceId)) next.delete(sourceId); else next.add(sourceId);
-      return { ...prev, [subKey]: next };
-    });
-  };
 
   // "Show more" is the only section control: expanding a paginated section
   // also drives its page fetches. The effect self-advances — every fetched page
@@ -27795,15 +27786,18 @@ Return ONLY the JSON array, no other text.`;
   // check), a failed page breaks it (the section state does not change on
   // failure, so the effect does not re-fire), and the ref guard inside
   // loadMoreRecommendationSection keeps one page in flight per provider
-  // section. It walks the rows: open state is per row (subsection.key), the
-  // in-flight guard per provider section (subsection.pagingKey).
+  // section. It walks the rows: open state is per row (subsection.key); a
+  // blended row pages every provider section it lists in `pageable`, and the
+  // in-flight guard is per provider section (pagingKey), which the rows of
+  // two types can share.
   useEffect(() => {
     if (activeView !== 'recommendations') return;
-    for (const section of recommendations.sections.flatMap(s => s.subsections)) {
-      if (!recommendationsExpandedSections.has(section.key)) continue;
-      if (!section.canLoadMore) continue;
-      if (recommendationsLoadingMoreRef.current[section.pagingKey]) continue;
-      loadMoreRecommendationSection(section);
+    for (const row of recommendations.sections.flatMap(s => s.subsections)) {
+      if (!recommendationsExpandedSections.has(row.key)) continue;
+      for (const section of row.pageable || []) {
+        if (recommendationsLoadingMoreRef.current[section.pagingKey]) continue;
+        loadMoreRecommendationSection(section);
+      }
     }
   }, [activeView, recommendations.sections, recommendationsExpandedSections]);
 
@@ -39928,12 +39922,12 @@ useEffect(() => {
 
         // Recommendations view with collapsible hero header. The grouped page
         // (docs/superpowers/specs/2026-11-11-recommendations-redesign-design.md
-        // "Rendering"): five type sections in the model's order (Songs,
-        // Albums, Artists, Playlists, Friends), each a heading and its rows
-        // (subsections). A row's header carries its title, its source tags
-        // (filters in a blended row) and See all. Every row shows a preview
-        // until opened; providers that paginate (expandRecommendationSection)
-        // fill an open row in the background.
+        // "Rendering"): a filter bar under the hero (All, then one pill per
+        // source; the pick filters every section), then five type sections in
+        // the model's order (Songs, Albums, Artists, Playlists, Friends), each
+        // ONE row blending every provider's picks under a heading with See
+        // all. A row shows a preview until opened; providers that paginate
+        // (expandRecommendationSection) fill an open row in the background.
         activeView === 'recommendations' && React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
           style: { overflow: 'hidden', minHeight: 0 }
@@ -40019,10 +40013,46 @@ useEffect(() => {
               }, 'Personalized picks from your services and Shuffleupagus')
             )
           ),
+          // Filter bar (outside scrollable area), as on the other tabs: one
+          // pill per source on the page, with how many picks it sent, and
+          // All. One pick filters every section (filterRowBySource).
+          recommendations.error !== 'not_configured' && (() => {
+            const sources = pageSources(recommendations.sections);
+            const active = sources.some(src => src.id === recommendationSourceFilter) ? recommendationSourceFilter : 'all';
+            const total = recommendations.sections.reduce((n, sec) => n + sec.subsections.reduce((m, sub) => m + sub.items.length, 0), 0);
+            const pills = [{ id: 'all', name: 'All', count: total }, ...sources];
+            return React.createElement('div', {
+              className: 'flex items-center px-6 py-3',
+              style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
+            },
+              React.createElement('div', { className: 'flex gap-2 flex-wrap' },
+                ...pills.map(({ id, name, count }) => {
+                  const isActive = active === id;
+                  return React.createElement('button', {
+                    key: id,
+                    type: 'button',
+                    onClick: () => setRecommendationSourceFilter(id),
+                    'aria-pressed': isActive ? 'true' : 'false',
+                    className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
+                      isActive ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`,
+                    style: isActive ? { backgroundColor: '#7c3aed' } : undefined
+                  }, count > 0 ? `${name} (${count})` : name);
+                })
+              )
+            );
+          })(),
           // Scrollable content area: the grouped page
           (() => {
-            const sections = recommendations.sections;
-            const allSubsections = sections.flatMap(s => s.subsections || []);
+            const allSections = recommendations.sections;
+            // The filter bar's pick, or All when that source left the page.
+            const activeSourceFilter = pageSources(allSections).some(src => src.id === recommendationSourceFilter) ? recommendationSourceFilter : 'all';
+            const filteringOne = activeSourceFilter !== 'all';
+            // A section the pick leaves empty is left out.
+            const sections = filteringOne
+              ? allSections.filter(sec => sec.subsections.some(sub => filterRowBySource(sub, activeSourceFilter).length > 0))
+              : allSections;
+            const allSubsections = allSections.flatMap(s => s.subsections || []);
             // Shuffleupagus has no section of its own: its picks blend into the
             // Albums and Artists For you rows, so a batch still loading shows
             // as a card tail on those rows (or, when neither row exists yet,
@@ -40033,9 +40063,9 @@ useEffect(() => {
             const ai = homeData.aiRecommendations;
             const llmHasPicks = !!(ai && ((ai.albums || []).length > 0 || (ai.artists || []).length > 0));
             const llmLoading = !!ai?.loading && !llmHasPicks;
-            const LLM_TAIL_ROWS = new Set(['foryou:album', 'foryou:artist']);
+            const LLM_TAIL_ROWS = new Set(['type:album', 'type:artist']);
             const LLM_TAIL = 3;
-            const llmPlaceholder = llmLoading && !allSubsections.some(s => LLM_TAIL_ROWS.has(s.key));
+            const llmPlaceholder = llmLoading && !filteringOne && !allSubsections.some(s => LLM_TAIL_ROWS.has(s.key));
             // A collapsed row shows this many items (cards); songs show fewer rows.
             const SECTION_PREVIEW = 6;
             const SONG_PREVIEW = 5;
@@ -40123,13 +40153,19 @@ useEffect(() => {
             // trackSlug(artist, title) — the id every no-album track context
             // keys session state on — so these tracks share resolution state
             // with the rest of the app (renderer-patterns.md).
+            // The service an item came from, by name: its row's source entry
+            // (rows are blended, so the row itself names no single provider).
+            const itemSourceName = (item, row) => {
+              const src = ((row && row.sources) || []).find(x => x.id === item.resolverId);
+              return (src && src.name) || (row && row.resolverName) || item.resolverId || null;
+            };
             const openRecommendationPlaylist = async (item, section) => {
               if (!item.url) return;
               setTrackLoading(true);
               try {
                 const tracks = await recommendationPlaylistTracks(item);
                 setTrackLoading(false);
-                const resolverName = (section && section.resolverName) || item.resolverId || 'the service';
+                const resolverName = itemSourceName(item, section) || 'the service';
                 loadPlaylist({
                   id: `${item.resolverId}-rec-${item.id}`,
                   title: item.name,
@@ -40490,7 +40526,7 @@ useEffect(() => {
             const weeklyCard = (item, index, sub) => {
               const { entry } = weeklyEntryFor(item);
               const covers = weeklyJamCovers[item.weekly.id];
-              const creator = sub.resolverName || item.resolverId;
+              const creator = itemSourceName(item, sub);
               const record = {
                 id: `${item.resolverId}-${item.weekly.id}`,
                 listenbrainzId: item.weekly.id,
@@ -40566,9 +40602,12 @@ useEffect(() => {
                   )
                 ),
                 React.createElement('div', { className: 'p-3' },
-                  React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.weekly.weekLabel),
+                  // The playlist's full name ("Weekly Exploration"), then which
+                  // week (and, once loaded, how many tracks): Exploration's and
+                  // Jams' weeks share labels, so the week alone can't name one.
+                  React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.weekly.label),
                   React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' },
-                    record.tracksLoaded && record.tracks.length > 0 ? `${record.tracks.length} tracks` : item.weekly.label)
+                    record.tracksLoaded && record.tracks.length > 0 ? `${item.weekly.weekLabel} · ${record.tracks.length} tracks` : item.weekly.weekLabel)
                 )
               );
             };
@@ -40803,80 +40842,35 @@ useEffect(() => {
               );
             };
 
-            // ── Source tags and the row header ────────────────────────────
-            // Sources are tags in the row's title, never badges on items. In a
-            // blended row each tag is that row's on/off filter (a real button
-            // with aria-pressed); in a single-source row it is a plain label.
-            const sourceTags = (sub) => {
-              const sources = sub.sources || [];
-              if (!sub.blended) {
-                return sources.map(src => React.createElement('span', {
-                  key: src.id,
-                  className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded',
-                  style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' }
-                }, src.name));
-              }
-              const off = recommendationSourceFilters[sub.key];
-              return sources.map(src => {
-                const on = !(off && off.has(src.id));
-                return React.createElement('button', {
-                  key: src.id,
-                  type: 'button',
-                  className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded transition-colors no-drag',
-                  'aria-pressed': on ? 'true' : 'false',
-                  title: on ? `Hide ${src.name}'s picks in this row` : `Show ${src.name}'s picks in this row`,
-                  onClick: () => toggleRecommendationSourceFilter(sub.key, src.id),
-                  style: {
-                    // On: accent-tinted. Off: outlined and struck through. Both
-                    // keep a 1px border, so toggling never shifts the header.
-                    backgroundColor: on ? 'var(--accent-surface)' : 'transparent',
-                    color: on ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-                    border: on ? '1px solid transparent' : '1px solid var(--border-default)',
-                    textDecoration: on ? 'none' : 'line-through',
-                    cursor: 'pointer'
-                  }
-                }, src.name);
-              });
-            };
-
-            // The title (a step below the section heading), the tags, and See
-            // all / Show less in Home's link style on the right.
+            // ── The section header ───────────────────────────────────────
+            // The heading (Home's section size, no count) and See all / Show
+            // less in Home's link style on the right. Sources are filtered for
+            // the whole page in the filter bar under the hero.
             const subsectionHeader = (sub, { expanded, showToggle }) => React.createElement('div', {
-              className: 'flex items-start justify-between gap-4 mb-3'
+              className: 'flex items-center justify-between gap-4 mb-4',
+              style: { minHeight: '28px' }
             },
-              React.createElement('div', { className: 'min-w-0' },
-                React.createElement('div', { className: 'flex items-center gap-2 flex-wrap', style: { minHeight: '24px' } },
-                  React.createElement('h3', { className: 'text-base font-medium', style: { color: 'var(--text-primary)' } }, sub.title || 'Recommendations'),
-                  ...sourceTags(sub)
-                ),
-                sub.description && React.createElement('p', {
-                  className: 'text-sm mt-0.5 truncate',
-                  style: { color: 'var(--text-secondary)' }
-                }, sub.description)
-              ),
+              React.createElement('h2', { className: 'text-lg font-semibold truncate', style: { color: 'var(--text-primary)' } }, sub.title),
               // Opening a row that can load more also starts its background
               // page fetches (the auto-paging effect), so there is no separate
               // load-more control.
               showToggle && React.createElement('button', {
                 type: 'button',
                 onClick: () => toggleRecommendationSection(sub.key),
-                className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors flex-shrink-0 no-drag',
-                style: { lineHeight: '24px' }
+                className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors flex-shrink-0 no-drag'
               }, expanded ? 'Show less' : 'See all')
             );
 
-            // ── One subsection ────────────────────────────────────────────
-            // A row: its header, then its items under this row's source
-            // filters (filterSubsectionItems: an item hides only when every
-            // source that sent it is off). Open state is per row (sub.key); the
-            // page fetches are per provider section (sub.pagingKey), which its
-            // splits share.
+            // ── One section's row ─────────────────────────────────────────
+            // The header, then the items the page's source filter keeps
+            // (filterRowBySource). Open state is per row (sub.key); the page
+            // fetches are per provider section (sub.pageable[].pagingKey).
             const renderSubsection = (sub) => {
               const expanded = recommendationsExpandedSections.has(sub.key);
-              const items = filterSubsectionItems(sub, recommendationSourceFilters[sub.key]);
+              const items = filterRowBySource(sub, activeSourceFilter);
               const isSongs = sub.type === 'song';
               const preview = isSongs ? SONG_PREVIEW : SECTION_PREVIEW;
-              const llmTail = llmLoading && LLM_TAIL_ROWS.has(sub.key) ? LLM_TAIL : 0;
+              const llmTail = llmLoading && LLM_TAIL_ROWS.has(sub.key) && (!filteringOne || activeSourceFilter === 'shuffleupagus') ? LLM_TAIL : 0;
               // The row's real preview always shows in full; the Shuffleupagus
               // tail (a fixed LLM_TAIL placeholders) trails after it, so a
               // skeleton never covers picks that are already here (#1328) and
@@ -40888,23 +40882,17 @@ useEffect(() => {
               // only on an open split that its pages are still filling: a page
               // that brought this split nothing of its type (the section paging
               // on for its other splits) ends this split's tail.
-              const loadingMore = !!recommendationsLoadingMore[sub.pagingKey];
-              const expansion = expandedSections[sub.pagingKey];
-              const lastPageHadMine = !expansion || !Array.isArray(expansion.lastPageTypes) || expansion.lastPageTypes.includes(sub.type);
-              const showLoadingTail = loadingMore && expanded && lastPageHadMine;
+              const showLoadingTail = expanded && (sub.pageable || []).some(p => {
+                if (!recommendationsLoadingMore[p.pagingKey]) return false;
+                const expansion = expandedSections[p.pagingKey];
+                return !expansion || !Array.isArray(expansion.lastPageTypes) || expansion.lastPageTypes.includes(sub.type);
+              });
               // Albums and weekly playlists have two text lines.
               const cardLines = sub.type === 'album' || (sub.items[0] && sub.items[0].weekly) ? 2 : 1;
               const header = subsectionHeader(sub, { expanded, showToggle });
 
               let body;
-              if (items.length === 0 && sub.items.length > 0) {
-                // Every source is off: the row stays, with its tags, so a
-                // source can be turned back on.
-                body = React.createElement('p', {
-                  className: 'text-sm py-4',
-                  style: { color: 'var(--text-tertiary)' }
-                }, 'Every source is turned off for this row. Turn one back on to see its picks.');
-              } else if (isSongs) {
+              if (isSongs) {
                 // `items` is the row's FULL filtered list (the collapsed view
                 // shows a slice): the queue after a clicked row is the rest.
                 body = React.createElement('div', { className: 'space-y-0' },
@@ -40935,39 +40923,31 @@ useEffect(() => {
                   }))
                 );
               }
-              return React.createElement('div', { key: sub.key, className: 'mb-8' }, header, body);
+              return React.createElement('div', { key: sub.key }, header, body);
             };
 
             // ── Types ─────────────────────────────────────────────────────
-            // A type section: its heading at Home's section size (no count),
-            // then its rows. With Shuffleupagus thinking and neither For you
-            // row it would tail on the page, one subsection skeleton stands in
-            // the Albums slot: atop the Albums section, or alone after Songs
-            // under an Albums heading (pendingTypeSection).
-            const llmSlot = llmPlaceholder && React.createElement(RecommendationSubsectionSkeleton, { key: 'rec-llm', kind: 'cards', lines: 2 });
-            const renderTypeSection = (section) => React.createElement('div', { key: `type:${section.type}`, className: 'mb-4' },
-              React.createElement('h2', { className: 'text-lg font-semibold mb-4', style: { color: 'var(--text-primary)' } }, section.title),
-              section.type === 'album' && llmSlot,
+            // A type section is its one row: the heading with its source tags,
+            // then the items. With Shuffleupagus thinking and neither the
+            // Albums nor the Artists row on the page for it to tail, one
+            // section skeleton under an Albums heading stands in the Albums
+            // slot (after Songs).
+            const llmSlot = llmPlaceholder && React.createElement(RecommendationSectionSkeleton, { key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums' });
+            const renderTypeSection = (section) => React.createElement('div', { key: `type:${section.type}`, className: 'mb-10' },
               ...section.subsections.map(renderSubsection)
-            );
-            // A skeleton standing in for a section that has not arrived yet,
-            // under the heading the real section will bring.
-            const pendingTypeSection = (key, title, skeleton) => React.createElement('div', { key, className: 'mb-4' },
-              React.createElement('h2', { className: 'text-lg font-semibold mb-4', style: { color: 'var(--text-primary)' } }, title),
-              skeleton
             );
 
             // ── The page ──────────────────────────────────────────────────
             const contentSections = sections.filter(s => s.type !== 'friend');
             const friendsSection = sections.find(s => s.type === 'friend') || null;
-            const friendsPending = recommendationsPending.some(p => p.friends);
+            const friendsPending = !filteringOne && recommendationsPending.some(p => p.friends);
             const contentBlocks = [];
             let llmSlotPlaced = !llmSlot || contentSections.some(s => s.type === 'album');
             for (const section of contentSections) {
-              if (!llmSlotPlaced && section.type !== 'song') { contentBlocks.push(pendingTypeSection('type:album-pending', 'Albums', llmSlot)); llmSlotPlaced = true; }
+              if (!llmSlotPlaced && section.type !== 'song') { contentBlocks.push(llmSlot); llmSlotPlaced = true; }
               contentBlocks.push(renderTypeSection(section));
             }
-            if (!llmSlotPlaced) contentBlocks.push(pendingTypeSection('type:album-pending', 'Albums', llmSlot));
+            if (!llmSlotPlaced) contentBlocks.push(llmSlot);
 
             return React.createElement('div', {
               ref: (el) => {
@@ -40988,7 +40968,7 @@ useEffect(() => {
             },
               React.createElement('div', { className: 'p-6' },
                 // Loading state - section-shaped skeletons while nothing is loaded
-                recommendations.loading && sections.length === 0 ?
+                recommendations.loading && allSections.length === 0 ?
                   React.createElement(RecommendationsPageSkeleton)
                 // Not configured state
                 : recommendations.error === 'not_configured' ?
@@ -41049,13 +41029,13 @@ useEffect(() => {
                     // above. Unlabeled because a provider can answer "not
                     // ready" (an active resolver the account can't use):
                     // naming it would promise rows that never come.
-                    recommendationsPending.some(p => !p.friends) && React.createElement(RecommendationSubsectionSkeleton, {
+                    !filteringOne && recommendationsPending.some(p => !p.friends) && React.createElement(RecommendationSectionSkeleton, {
                       key: 'rec-pending'
                     }),
                     friendsSection && renderTypeSection(friendsSection),
                     // The similar-users lookups still out with nothing cached:
                     // hexagon placeholders where the Friends row will land.
-                    !friendsSection && friendsPending && pendingTypeSection('type:friend-pending', 'Friends', React.createElement(RecommendationSubsectionSkeleton, { key: 'rec-friends-pending', kind: 'friends' }))
+                    !friendsSection && friendsPending && React.createElement(RecommendationSectionSkeleton, { key: 'type:friend-pending', kind: 'friends', title: 'Friends' })
                   )
               )
             );

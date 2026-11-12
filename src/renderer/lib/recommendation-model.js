@@ -4,21 +4,21 @@
 // Plugins with the `recommendations` capability answer getRecommendations with
 // sections of typed items (docs/architecture/plugins.md, "Recommendations").
 // This module normalizes those answers into one display model: five sections
-// by item type (Songs, Albums, Artists, Playlists, Friends), each holding
-// subsections (rows):
+// by item type (Songs, Albums, Artists, Playlists, Friends), each ONE row
+// (a subsection, kept as a one-element list so every reader walks the same
+// shape):
 //
-//   - "For you" (key foryou:<type>) blends every provider's untitled items of
-//     that type, interleaved round-robin by provider with Shuffleupagus last,
-//     deduplicated per type; each merged item records every provider that sent
-//     it in `sourceIds` so the page can filter by source;
-//   - a provider's titled section becomes one subsection per item type it
-//     holds, all sharing one `pagingKey` so "load more" stays per section;
-//   - weekly playlist rows (items carrying `weekly`) lead Playlists' titled
-//     rows, Exploration before Jams;
+//   - a type's row (key type:<type>) blends every provider's items of that
+//     type, untitled and titled sections alike, interleaved round-robin by
+//     provider with Shuffleupagus last and deduplicated per type; each merged
+//     item records every provider that sent it in `sourceIds` so the page can
+//     filter by source. A provider's section titles are not shown;
+//   - weekly playlists (items carrying `weekly`) lead Playlists, Exploration
+//     before Jams;
 //   - Friends is one blended row built from the providers' similar users.
 //
-// Filtering is NOT done here: filterSubsectionItems is applied at render so
-// toggling a source never re-merges or refetches.
+// Filtering is NOT done here: filterRowBySource is applied at render so
+// picking a source never re-merges or refetches.
 //
 // Pure on purpose: loadable under plain Node (globalThis, not window) and
 // unit-tested (tests/renderer/recommendation-model.test.js). The renderer
@@ -46,7 +46,13 @@ function recommendationItemKey(item) {
   if (!item) return '';
   const norm = (s) => (typeof s === 'string' ? s.trim().toLowerCase() : '');
   if (item.type === 'song' || item.type === 'album') return `${norm(item.artist)}|${norm(item.name)}`;
-  if (item.type === 'playlist') return item.url ? `url:${norm(item.url)}` : `name:${norm(item.name)}`;
+  if (item.type === 'playlist') {
+    if (item.url) return `url:${norm(item.url)}`;
+    // Weekly playlists have no URL and their names repeat ("This Week" is
+    // both Exploration's and Jams' current week): their own id is the key.
+    if (item.weekly && item.weekly.id) return `weekly:${item.weekly.id}`;
+    return `name:${norm(item.name)}`;
+  }
   return norm(item.name); // artist
 }
 
@@ -234,6 +240,7 @@ function subsection(fields) {
     pagingKey: fields.pagingKey || null,
     canLoadMore: !!fields.canLoadMore,
     nextCursor: fields.nextCursor || null,
+    pageable: fields.pageable || [],
     items: fields.items
   };
 }
@@ -245,20 +252,26 @@ function sourcesFor(items, order, names) {
   return order.filter(id => present.has(id)).map(id => ({ id, name: names[id] || id }));
 }
 
-// The grouped page: sections by type, each with For you first, then the
-// providers' titled rows, per the header comment.
+// The page: five sections by type, each ONE blended row (key type:<type>)
+// of every provider's items of that type, per the header comment.
 //
 //   providers              normalizeRecommendationSections results, in the
 //                          order the page should show them
 //   shuffleupagus          the shuffleupagusSection result, or null
 //   expandedSections       { [pagingKey]: { items, nextCursor, exhausted } } —
-//                          items a "load more" already fetched for a titled
+//                          items a "load more" already fetched for a provider
 //                          section, so a re-merge keeps them and the cursor
 //   expandableResolverIds  resolvers that implement expandRecommendationSection;
-//                          only their titled sections get canLoadMore
+//                          only their titled sections with an id page on
 //   similarUsers is
 //   [{ resolverId, resolverName, users: [{ username, similarity, avatarUrl? }] }];
 //   exclude is { friendKeys, selfKeys }, Sets of `service:username-lowercased`.
+//
+// A row's `pageable` lists the provider sections that can still page items
+// of its type ({ resolverId, resolverName, sectionId, title, pagingKey,
+// nextCursor }); opening the row pages each of them. Paged items append
+// AFTER the blended first pages, in provider order, so a page landing never
+// moves a card already on screen.
 function buildRecommendationPage({ providers, shuffleupagus, expandedSections, expandableResolverIds, similarUsers, exclude } = {}) {
   const names = {};
   const order = [];
@@ -267,93 +280,96 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
     order.push(id);
     names[id] = name || id;
   };
+  const emptyByType = () => ({ artist: [], song: [], album: [], playlist: [] });
 
-  // Per provider (in order), the untitled items by type; derived artists come
-  // from THAT provider's untitled songs and keep it as their source.
-  const forYou = []; // [{ id, byType }]
-  const titledRows = { song: [], album: [], artist: [], playlist: [] };
+  // Per provider (in order): its items by type, untitled first and then its
+  // titled sections in order; the items its sections' extra pages brought;
+  // and the sections that can page on. Derived artists come from THAT
+  // provider's untitled songs and keep it as their source.
+  const base = []; // [{ id, byType }]
+  const extra = []; // [{ id, byType }]
+  const pageable = emptyByType();
   const expandable = new Set(expandableResolverIds || []);
 
   for (const provider of providers || []) {
     if (!provider) continue;
     addProvider(provider.resolverId, provider.resolverName);
-    const byType = { artist: [], song: [], album: [], playlist: [] };
+    const byType = emptyByType();
+    const extraByType = emptyByType();
+    const untitledSongs = [];
     for (const section of provider.sections || []) {
       const items = section.items || [];
+      for (const item of items) if (byType[item.type]) byType[item.type].push(item);
       if (!section.title) {
-        for (const item of items) if (byType[item.type]) byType[item.type].push(item);
+        for (const item of items) if (item.type === 'song') untitledSongs.push(item);
         continue;
       }
       const pagingId = section.id || section.title;
-      const expansion = (expandedSections || {})[`${provider.resolverId}|${pagingId}`] || null;
+      const pagingKey = `${provider.resolverId}|${pagingId}`;
+      const expansion = (expandedSections || {})[pagingKey] || null;
       // Items a "load more" fetched arrive raw; normalize them with the
       // section's provider identity.
-      const extra = (expansion && Array.isArray(expansion.items) ? expansion.items : [])
+      const fetched = (expansion && Array.isArray(expansion.items) ? expansion.items : [])
         .map(raw => normalizeRecommendationItem(raw, provider.resolverId))
         .filter(Boolean);
-      const merged = mergeOwned([[...items, ...extra]])[0];
-      const types = [];
-      for (const item of merged) if (!types.includes(item.type)) types.push(item.type);
+      for (const item of fetched) if (extraByType[item.type]) extraByType[item.type].push(item);
+      if (!section.id || !expandable.has(provider.resolverId) || (expansion && expansion.exhausted)) continue;
+      const types = new Set([...items, ...fetched].map(i => i.type));
       for (const type of types) {
-        if (!titledRows[type]) continue;
-        titledRows[type].push(subsection({
-          key: `${provider.resolverId}:${pagingId}:${type}`,
-          type,
-          title: section.title,
-          description: section.description,
-          sources: [{ id: provider.resolverId, name: provider.resolverName || provider.resolverId }],
+        if (!pageable[type]) continue;
+        pageable[type].push({
           resolverId: provider.resolverId,
-          resolverName: provider.resolverName,
-          sectionId: section.id || null,
-          pagingKey: `${provider.resolverId}|${pagingId}`,
-          canLoadMore: !!section.id && expandable.has(provider.resolverId) && !(expansion && expansion.exhausted),
-          nextCursor: (expansion && expansion.nextCursor) || section.nextCursor || null,
-          items: merged.filter(item => item.type === type)
-        }));
+          resolverName: provider.resolverName || provider.resolverId,
+          sectionId: section.id,
+          title: section.title,
+          pagingKey,
+          nextCursor: (expansion && expansion.nextCursor) || section.nextCursor || null
+        });
       }
     }
-    byType.artist.push(...deriveArtistsFromSongs(byType.song));
-    forYou.push({ id: provider.resolverId, byType });
+    byType.artist.push(...deriveArtistsFromSongs(untitledSongs));
+    base.push({ id: provider.resolverId, byType });
+    extra.push({ id: provider.resolverId, byType: extraByType });
   }
 
   if (shuffleupagus && Array.isArray(shuffleupagus.sections)) {
     addProvider(shuffleupagus.resolverId, shuffleupagus.resolverName);
-    const byType = { artist: [], song: [], album: [], playlist: [] };
+    const byType = emptyByType();
     for (const section of shuffleupagus.sections) {
       for (const item of section.items || []) if (byType[item.type]) byType[item.type].push(item);
     }
-    forYou.push({ id: shuffleupagus.resolverId, byType });
+    base.push({ id: shuffleupagus.resolverId, byType });
   }
 
   const page = [];
   for (const { type, title } of TYPE_SECTIONS) {
-    const subsections = [];
+    let row = null;
     if (type === 'friend') {
-      const row = friendsRow(similarUsers, exclude);
-      if (row) subsections.push(row);
+      row = friendsRow(similarUsers, exclude);
     } else {
-      const items = interleave(mergeOwned(forYou.map(p => p.byType[type])));
+      // One dedupe across the first pages and the extra pages, so a paged
+      // item a first page already showed stays where it is.
+      const owned = mergeOwned([...base.map(p => p.byType[type]), ...extra.map(p => p.byType[type])]);
+      let items = [...interleave(owned.slice(0, base.length)), ...owned.slice(base.length).flat()];
+      if (type === 'playlist') {
+        // Weekly playlists lead Playlists (recognized by the field their items
+        // carry, not by provider), Exploration before Jams; the rest keep
+        // their blended order.
+        const rank = (item) => (item.weekly ? (WEEKLY_RANK[item.weekly.contextType] ?? 2) : 3);
+        items = items.map((item, i) => ({ item, i }))
+          .sort((a, b) => (rank(a.item) - rank(b.item)) || (a.i - b.i))
+          .map(x => x.item);
+      }
       if (items.length) {
         const sources = sourcesFor(items, order, names);
-        subsections.push(subsection({
-          key: `foryou:${type}`, type, title: 'For you', blended: sources.length > 1, sources, items
-        }));
+        row = subsection({
+          key: `type:${type}`, type, title, blended: sources.length > 1, sources, items
+        });
+        row.pageable = pageable[type];
+        row.canLoadMore = row.pageable.length > 0;
       }
-      let rows = titledRows[type];
-      if (type === 'playlist') {
-        // Weekly rows lead the titled playlists (recognized by the field their
-        // items carry, not by provider), Exploration before Jams; the rest
-        // keep provider order.
-        const weeklyRank = (row) => {
-          const w = row.items.find(i => i.weekly);
-          return w ? (WEEKLY_RANK[w.weekly.contextType] ?? 2) : -1;
-        };
-        const weekly = rows.filter(r => weeklyRank(r) >= 0).sort((a, b) => weeklyRank(a) - weeklyRank(b));
-        rows = [...weekly, ...rows.filter(r => weeklyRank(r) < 0)];
-      }
-      subsections.push(...rows);
     }
-    if (subsections.length) page.push({ type, title, subsections });
+    if (row) page.push({ type, title, subsections: [row] });
   }
   return page;
 }
@@ -406,20 +422,37 @@ function friendsRow(similarUsers, exclude) {
   if (!items.length) return null;
   const sources = sourcesFor(items, order, names);
   return subsection({
-    key: 'friends:similar', type: 'friend', title: 'Listen like you', blended: sources.length > 1, sources, items
+    key: 'friends:similar', type: 'friend', title: 'Friends', blended: sources.length > 1, sources, items
   });
 }
 
-// The items a row shows under the page's source filters. An item is hidden
-// only when EVERY provider that sent it is off, so turning ListenBrainz off
-// keeps an artist Shuffleupagus also picked. Pure: never touches the row.
-function filterSubsectionItems(sub, offIds) {
+// The page's source filter (the filter bar under the hero, one pick for the
+// whole page, like the other tabs' pills). `sourceId` null / 'all' keeps
+// everything; otherwise a row keeps the items that source sent, so an artist
+// Shuffleupagus and ListenBrainz both picked shows under either. Pure: never
+// touches the row.
+function filterRowBySource(sub, sourceId) {
   const items = (sub && sub.items) || [];
-  if (!offIds || !offIds.size) return items;
-  return items.filter(item => {
-    const ids = item.sourceIds || [];
-    return !ids.length || !ids.every(id => offIds.has(id));
-  });
+  if (!sourceId || sourceId === 'all') return items;
+  return items.filter(item => (item.sourceIds || []).includes(sourceId));
+}
+
+// The filter bar's pills: every source on the page, in page order (a
+// source's first appearance), with how many items it sent across the page.
+function pageSources(sections) {
+  const out = [];
+  const byId = new Map();
+  for (const section of sections || []) {
+    for (const sub of section.subsections || []) {
+      for (const src of sub.sources || []) {
+        if (!byId.has(src.id)) { const entry = { id: src.id, name: src.name, count: 0 }; byId.set(src.id, entry); out.push(entry); }
+      }
+      for (const item of sub.items || []) {
+        for (const id of item.sourceIds || []) if (byId.has(id)) byId.get(id).count++;
+      }
+    }
+  }
+  return out;
 }
 
 // Every subsection's items, in page order (what the resolution scheduler,
@@ -456,7 +489,10 @@ function weeklyHomeEntries(sections, previous) {
         const field = w && WEEKLY_FIELDS[w.contextType];
         if (!field || seen.has(w.id)) continue;
         seen.add(w.id);
-        const description = `${WEEKLY_DESCRIPTIONS[w.contextType]}, curated by ${sub.resolverName || sub.resolverId || 'your service'}`;
+        // The row is blended: the curator is the item's own source.
+        const source = (sub.sources || []).find(src => src.id === item.resolverId);
+        const curator = (source && source.name) || item.resolverId || 'your service';
+        const description = `${WEEKLY_DESCRIPTIONS[w.contextType]}, curated by ${curator}`;
         const old = prior.get(w.id);
         if (old && old.title === w.label && old.weekLabel === w.weekLabel
           && (old.date || null) === (w.date || null) && old.description === description) {
@@ -536,7 +572,8 @@ module.exports = {
   recommendationItemKey,
   dedupeItems,
   buildRecommendationPage,
-  filterSubsectionItems,
+  filterRowBySource,
+  pageSources,
   flattenRecommendationItems,
   weeklyHomeEntries,
   shuffleupagusSection,

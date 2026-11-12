@@ -140,10 +140,12 @@ describe('recommendations wiring', () => {
     const i = app.indexOf('const openRecommendationPlaylist = async');
     expect(i).toBeGreaterThan(-1);
     const fn = app.slice(i, app.indexOf('\n            };', i));
-    // The record's identity comes from the item's resolver and the section's
-    // resolverName — never a hard-coded service.
+    // The record's identity comes from the item's resolver and that source's
+    // name on the row (rows are blended) — never a hard-coded service.
     expect(fn).toContain('id: `${item.resolverId}-rec-${item.id}`');
-    expect(fn).toContain('const resolverName = (section && section.resolverName) || item.resolverId');
+    expect(fn).toContain("const resolverName = itemSourceName(item, section) || 'the service';");
+    const name = app.slice(app.indexOf('const itemSourceName = (item, row) => {'), app.indexOf('const openRecommendationPlaylist = async'));
+    expect(name).toContain('const src = ((row && row.sources) || []).find(x => x.id === item.resolverId);');
     expect(fn).toContain('creator: resolverName');
     expect(fn).toContain('source: item.resolverId');
     expect(fn).not.toContain("'Amazon Music'");
@@ -165,11 +167,11 @@ describe('the single Show-more control with background pagination', () => {
     // The auto-fetch effect: expanded + canLoadMore + not in flight → fetch.
     const i = app.indexOf('// "Show more" is the only section control');
     const effect = app.slice(i, app.indexOf('}, [activeView, recommendations.sections, recommendationsExpandedSections]);', i));
-    // It walks the subsections (rows); open state is per row, the in-flight
-    // guard per provider section.
-    expect(effect).toMatch(/for \(const section of recommendations\.sections\.flatMap\(s => s\.subsections\)\)/);
-    expect(effect).toMatch(/recommendationsExpandedSections\.has\(section\.key\)\) continue;/);
-    expect(effect).toMatch(/if \(!section\.canLoadMore\) continue;/);
+    // It walks the rows; open state is per row, and an open row pages every
+    // provider section it lists, with the in-flight guard per provider section.
+    expect(effect).toMatch(/for \(const row of recommendations\.sections\.flatMap\(s => s\.subsections\)\)/);
+    expect(effect).toMatch(/if \(!recommendationsExpandedSections\.has\(row\.key\)\) continue;/);
+    expect(effect).toMatch(/for \(const section of row\.pageable \|\| \[\]\)/);
     expect(effect).toMatch(/recommendationsLoadingMoreRef\.current\[section\.pagingKey\]\) continue;/);
     expect(effect).toMatch(/loadMoreRecommendationSection\(section\);/);
     // One toggle: See all / Show less, never a Load-more button.
@@ -189,10 +191,10 @@ describe('the single Show-more control with background pagination', () => {
     // when it is spent, whatever the cursor says.
     expect(fn).toContain('const pages = (prior.pages || 0) + 1;');
     expect(fn).toContain('exhausted: !nextCursor || pages >= EXPANSION_PAGE_CAP');
-    // And the merged model turns exhausted into canLoadMore false, which is
-    // what stops the self-advancing effect.
+    // And the merged model drops an exhausted section from its rows'
+    // pageable list, which is what stops the self-advancing effect.
     expect(require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/lib/recommendation-model.js'), 'utf8'))
-      .toMatch(/canLoadMore: !!section\.id && expandable\.has\(provider\.resolverId\) && !\(expansion && expansion\.exhausted\)/);
+      .toMatch(/if \(!section\.id \|\| !expandable\.has\(provider\.resolverId\) \|\| \(expansion && expansion\.exhausted\)\) continue;/);
   });
 
   test('a page answering the cursor it was sent is exhausted, not fetched again (no-advance)', () => {
@@ -358,18 +360,22 @@ describe('the five-section page render', () => {
     expect(view).not.toMatch(/sub\.sources\.some/);
   });
 
-  test('sections render in the model order, Friends last, each heading at Home\'s section size with no count', () => {
+  test('sections render in the model order, Friends last, each one row under a heading at Home\'s section size with no count', () => {
     expect(view).toMatch(/const contentSections = sections\.filter\(s => s\.type !== 'friend'\);/);
     expect(view).toMatch(/const friendsSection = sections\.find\(s => s\.type === 'friend'\) \|\| null;/);
     const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
-    expect(typeSection).toMatch(/React\.createElement\('h2', \{ className: 'text-lg font-semibold mb-4', style: \{ color: 'var\(--text-primary\)' \} \}, section\.title\)/);
     expect(typeSection).toMatch(/section\.subsections\.map\(renderSubsection\)/);
+    const header = between('const subsectionHeader = (sub, ', 'const renderSubsection = (sub) => {');
+    expect(header).toMatch(/React\.createElement\('h2', \{ className: 'text-lg font-semibold truncate', style: \{ color: 'var\(--text-primary\)' \} \}, sub\.title\)/);
+    // No provider row titles or per-row source tags any more.
+    expect(view).not.toContain('const sourceTags = ');
+    expect(header).not.toMatch(/React\.createElement\('h3'/);
     // No item counts beside titles (the old header printed items.length).
     expect(view).not.toMatch(/`\$\{section\.items\.length\}`|`\$\{sub\.items\.length\}`/);
   });
 
   test('"See all" / "Show less" carry Home\'s link classes exactly', () => {
-    const header = between('const subsectionHeader = (sub, ', '// ── One subsection');
+    const header = between('const subsectionHeader = (sub, ', "// ── One section's row");
     expect(header).toMatch(/className: 'text-sm text-purple-600 hover:text-purple-700 font-medium( [^']*)?'/);
     expect(header).toMatch(/expanded \? 'Show less' : 'See all'/);
     // Only for a row with more than its preview, or more to load.
@@ -384,37 +390,35 @@ describe('the five-section page render', () => {
     expect(view).not.toContain('Thinking…');
   });
 
-  test('a blended row\'s source tags are buttons with aria-pressed; a single-source row\'s tag is a plain label', () => {
-    const tags = between('const sourceTags = (sub) => {', 'const subsectionHeader = (sub, ');
-    expect(tags).toMatch(/if \(!sub\.blended\) \{/);
-    expect(tags).toMatch(/className: 'text-\[10px\] font-semibold uppercase tracking-wider px-1\.5 py-0\.5 rounded'/);
-    expect(tags).toMatch(/style: \{ backgroundColor: 'var\(--placeholder-bg\)', color: 'var\(--text-secondary\)' \}/);
-    expect(tags).toMatch(/React\.createElement\('button', \{[\s\S]{0,300}'aria-pressed': on \? 'true' : 'false'/);
-    expect(tags).toMatch(/onClick: \(\) => toggleRecommendationSourceFilter\(sub\.key, src\.id\)/);
-    // On is accent-tinted; off is outlined and struck through; CSS variables only.
-    expect(tags).toMatch(/textDecoration: on \? 'none' : 'line-through'/);
-    expect(tags).not.toMatch(/#[0-9a-fA-F]{3,6}\b|rgba?\(/);
+  test('the filter bar sits under the hero, as on the other tabs: All plus one pill per source, with counts', () => {
+    const bar = between('// Filter bar (outside scrollable area), as on the other tabs', '// Scrollable content area: the grouped page');
+    expect(bar.length).toBeGreaterThan(0);
+    // After the hero, before the scroll area, so it stays put while the page scrolls.
+    expect(view.indexOf("'RECOMMENDATIONS'")).toBeLessThan(view.indexOf('// Filter bar (outside scrollable area)'));
+    expect(bar).toContain('const sources = pageSources(recommendations.sections);');
+    expect(bar).toContain("const pills = [{ id: 'all', name: 'All', count: total }, ...sources];");
+    // Fresh Drops' bar and pills, verbatim.
+    expect(bar).toContain("className: 'flex items-center px-6 py-3'");
+    expect(bar).toContain("style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }");
+    expect(bar).toMatch(/className: `px-3 py-1\.5 rounded-full text-sm transition-all no-drag \$\{\s*isActive \? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'\s*\}`/);
+    expect(bar).toContain("onClick: () => setRecommendationSourceFilter(id),");
+    expect(bar).toContain("'aria-pressed': isActive ? 'true' : 'false',");
+    // Never a service by name.
+    expect(bar).not.toMatch(/'lastfm'|'listenbrainz'|'amazonmusic'/);
   });
 
-  test('filters are session state applied at render, one row at a time, never persisted', () => {
-    expect(app).toContain('const [recommendationSourceFilters, setRecommendationSourceFilters] = useState({});');
+  test('the source pick is session state applied to every section, never persisted', () => {
+    expect(app).toContain("const [recommendationSourceFilter, setRecommendationSourceFilter] = useState('all');");
+    expect(view).toMatch(/const activeSourceFilter = pageSources\(allSections\)\.some\(src => src\.id === recommendationSourceFilter\) \? recommendationSourceFilter : 'all';/);
+    // A section the pick leaves empty is left out.
+    expect(view).toMatch(/allSections\.filter\(sec => sec\.subsections\.some\(sub => filterRowBySource\(sub, activeSourceFilter\)\.length > 0\)\)/);
     const row = between('const renderSubsection = (sub) => {', '// ── Types');
-    expect(row).toMatch(/const items = filterSubsectionItems\(sub, recommendationSourceFilters\[sub\.key\]\);/);
-    const toggle = app.slice(app.indexOf('const toggleRecommendationSourceFilter = '), app.indexOf('\n  };', app.indexOf('const toggleRecommendationSourceFilter = ')));
-    expect(toggle).toMatch(/return \{ \.\.\.prev, \[subKey\]: next \};/);
-    // Never written to the store.
-    for (const line of app.split('\n').filter(l => l.includes('recommendationSourceFilters') || l.includes('RecommendationSourceFilter'))) {
+    expect(row).toMatch(/const items = filterRowBySource\(sub, activeSourceFilter\);/);
+    for (const line of app.split('\n').filter(l => l.includes('recommendationSourceFilter') || l.includes('RecommendationSourceFilter'))) {
       expect(line).not.toMatch(/store|localStorage/);
     }
-    expect(app).not.toMatch(/recommendation_source_filters/);
-  });
-
-  test('a row with every source off shows the empty note and keeps its tags', () => {
-    const row = between('const renderSubsection = (sub) => {', '// ── Types');
-    expect(row).toMatch(/items\.length === 0 && sub\.items\.length > 0/);
-    expect(row).toContain('Every source is turned off for this row. Turn one back on to see its picks.');
-    // The header (with the tags) renders before the empty-note branch.
-    expect(row.indexOf('subsectionHeader(sub, ')).toBeLessThan(row.indexOf('Every source is turned off'));
+    expect(app).not.toMatch(/recommendation_source_filter/);
+    expect(app).not.toContain('toggleRecommendationSourceFilter');
   });
 
   test('weekly cards keep Home\'s mosaic, open as ephemeral playlists and play in their weekly context', () => {
@@ -424,13 +428,16 @@ describe('the five-section page render', () => {
     const play = view.slice(view.indexOf('const playWeeklyPlaylist = async (item) => {'));
     expect(play.slice(0, 1400)).toMatch(/tracks = await loadWeeklyJamTracks\(item\.weekly\.id\);/);
     expect(play.slice(0, 1400)).toMatch(/playTrackCollection\(tracks, \{ type: item\.weekly\.contextType, name/);
+    // Titled with the playlist's full name, the week (and track count) under it.
+    expect(card).toContain("React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.weekly.label)");
+    expect(card).toContain('`${item.weekly.weekLabel} · ${record.tracks.length} tracks` : item.weekly.weekLabel');
     // Routed by the item's field, never by provider name.
     expect(view).toMatch(/item\.weekly \? weeklyCard\(item, index, sub\)/);
     expect(card).not.toMatch(/'listenbrainz'|'ListenBrainz'/);
   });
 
   test('a friend card opens the profile with a friend-shaped object that is not in friends', () => {
-    const card = between('const friendCard = (item, index) => {', '// ── One subsection');
+    const card = between('const friendCard = (item, index) => {', "// ── One section's row");
     expect(card).toMatch(/navigateToFriend\(\{\s*id: `similar:\$\{item\.service\}:\$\{item\.name\}`,\s*username: item\.name,\s*service: item\.service,\s*displayName: item\.name,\s*avatarUrl: item\.avatarUrl \|\| null\s*\}\)/);
     expect(card).toMatch(/% similar/);
     // No per-item source badge (sources live in the row's tags).
