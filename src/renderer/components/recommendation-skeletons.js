@@ -13,7 +13,9 @@
 
 // The row grid the real cards use (app.js renderSubsection).
 const GRID_STYLE = { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' };
-// What a collapsed row shows (SECTION_PREVIEW / SONG_PREVIEW in app.js).
+// What a collapsed row shows (SECTION_PREVIEW / SONG_PREVIEW in app.js): the
+// page passes the measured cards-per-row as `count` / `cardCount`; 6 is the
+// count before it is measured.
 const CARD_PREVIEW = 6;
 const SONG_PREVIEW = 5;
 // Varied bar widths, so a skeleton list doesn't read as one repeated row.
@@ -135,11 +137,11 @@ function RecommendationSectionSkeleton({ kind = 'cards', lines = 1, count, title
   );
 }
 
-/** The empty page while nothing has loaded: the Songs and Albums sections the page opens with. */
-function RecommendationsPageSkeleton() {
+/** The empty page while nothing has loaded: the Songs and Albums sections the page opens with (`cardCount`: cards per row). */
+function RecommendationsPageSkeleton({ cardCount } = {}) {
   return React.createElement('div', { 'aria-hidden': 'true' },
     React.createElement(RecommendationSectionSkeleton, { kind: 'songs' }),
-    React.createElement(RecommendationSectionSkeleton, { kind: 'cards', lines: 2 })
+    React.createElement(RecommendationSectionSkeleton, { kind: 'cards', lines: 2, count: cardCount })
   );
 }
 

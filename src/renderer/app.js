@@ -5909,6 +5909,11 @@ const Parachord = () => {
   const recommendationsTracksRef = useRef([]); // Ref to access current tracks in observer callback
   const recommendationsScrollContainerRef = useRef(null); // Ref to scroll container for IntersectionObserver root
   const [recommendationsScrollContainerReady, setRecommendationsScrollContainerReady] = useState(false);
+  // How many cards fit across a Recommendations row ({ cards, friends }), so a
+  // collapsed section shows exactly one full row at any window width. Set by
+  // the ResizeObserver effect only when a count changes (every setState is a
+  // full-app render, so never per resized pixel). 0 until measured.
+  const [recommendationsGridColumns, setRecommendationsGridColumns] = useState({ cards: 0, friends: 0 });
 
   // Refs for Last.fm charts tracks visibility tracking
   const lastfmChartsRowRefs = useRef(new Map());
@@ -27801,6 +27806,26 @@ Return ONLY the JSON array, no other text.`;
     }
   }, [activeView, recommendations.sections, recommendationsExpandedSections]);
 
+  // Measure the Recommendations grids' column count (the card grid is
+  // auto-fill minmax(160px, 1fr) and the people grid minmax(150px, 1fr), both
+  // with a 16px gap, inside the p-6 content box), so a collapsed section
+  // fills exactly one row and See all only adds rows.
+  useEffect(() => {
+    if (activeView !== 'recommendations') return;
+    const el = recommendationsScrollContainerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const width = Math.max(0, el.clientWidth - 48);
+      const fit = (min) => Math.max(1, Math.floor((width + 16) / (min + 16)));
+      const next = { cards: fit(160), friends: fit(150) };
+      setRecommendationsGridColumns(prev => (prev.cards === next.cards && prev.friends === next.friends ? prev : next));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeView, recommendationsScrollContainerReady]);
+
   // Last.fm and ListenBrainz recommendations now come from their plugins'
   // getRecommendations (plugins-src/{lastfm,listenbrainz}/implementation.js)
   // through the loader capability above — the fetches used to live here.
@@ -40066,8 +40091,10 @@ useEffect(() => {
             const LLM_TAIL_ROWS = new Set(['type:album', 'type:artist']);
             const LLM_TAIL = 3;
             const llmPlaceholder = llmLoading && !filteringOne && !allSubsections.some(s => LLM_TAIL_ROWS.has(s.key));
-            // A collapsed row shows this many items (cards); songs show fewer rows.
-            const SECTION_PREVIEW = 6;
+            // A collapsed section shows one full row of cards (as many as fit
+            // across, measured; 6 until measured) and 5 song rows.
+            const SECTION_PREVIEW = recommendationsGridColumns.cards || 6;
+            const FRIEND_PREVIEW = recommendationsGridColumns.friends || 6;
             const SONG_PREVIEW = 5;
 
             // The image for a card: the provider's own URL first, then the
@@ -40869,7 +40896,7 @@ useEffect(() => {
               const expanded = recommendationsExpandedSections.has(sub.key);
               const items = filterRowBySource(sub, activeSourceFilter);
               const isSongs = sub.type === 'song';
-              const preview = isSongs ? SONG_PREVIEW : SECTION_PREVIEW;
+              const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : SECTION_PREVIEW;
               const llmTail = llmLoading && LLM_TAIL_ROWS.has(sub.key) && (!filteringOne || activeSourceFilter === 'shuffleupagus') ? LLM_TAIL : 0;
               // The row's real preview always shows in full; the Shuffleupagus
               // tail (a fixed LLM_TAIL placeholders) trails after it, so a
@@ -40932,7 +40959,7 @@ useEffect(() => {
             // Albums nor the Artists row on the page for it to tail, one
             // section skeleton under an Albums heading stands in the Albums
             // slot (after Songs).
-            const llmSlot = llmPlaceholder && React.createElement(RecommendationSectionSkeleton, { key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums' });
+            const llmSlot = llmPlaceholder && React.createElement(RecommendationSectionSkeleton, { key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW });
             const renderTypeSection = (section) => React.createElement('div', { key: `type:${section.type}`, className: 'mb-10' },
               ...section.subsections.map(renderSubsection)
             );
@@ -40969,7 +40996,7 @@ useEffect(() => {
               React.createElement('div', { className: 'p-6' },
                 // Loading state - section-shaped skeletons while nothing is loaded
                 recommendations.loading && allSections.length === 0 ?
-                  React.createElement(RecommendationsPageSkeleton)
+                  React.createElement(RecommendationsPageSkeleton, { cardCount: SECTION_PREVIEW })
                 // Not configured state
                 : recommendations.error === 'not_configured' ?
                   React.createElement('div', { className: 'text-center py-16' },
@@ -41030,12 +41057,12 @@ useEffect(() => {
                     // ready" (an active resolver the account can't use):
                     // naming it would promise rows that never come.
                     !filteringOne && recommendationsPending.some(p => !p.friends) && React.createElement(RecommendationSectionSkeleton, {
-                      key: 'rec-pending'
+                      key: 'rec-pending', count: SECTION_PREVIEW
                     }),
                     friendsSection && renderTypeSection(friendsSection),
                     // The similar-users lookups still out with nothing cached:
                     // hexagon placeholders where the Friends row will land.
-                    !friendsSection && friendsPending && React.createElement(RecommendationSectionSkeleton, { key: 'type:friend-pending', kind: 'friends', title: 'Friends' })
+                    !friendsSection && friendsPending && React.createElement(RecommendationSectionSkeleton, { key: 'type:friend-pending', kind: 'friends', title: 'Friends', count: FRIEND_PREVIEW })
                   )
               )
             );

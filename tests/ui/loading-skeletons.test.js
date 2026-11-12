@@ -31,7 +31,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
   const artistCard = view.slice(view.indexOf('const artistCard = (item, index) => {'), view.indexOf('const albumCard = (item, index) => {'));
 
   test('the empty page renders the page skeleton', () => {
-    expect(loading).toMatch(/React\.createElement\(RecommendationsPageSkeleton\)/);
+    expect(loading).toMatch(/React\.createElement\(RecommendationsPageSkeleton, \{ cardCount: SECTION_PREVIEW \}\)/);
   });
 
   test('same grid as the section cards', () => {
@@ -75,10 +75,22 @@ describe('Recommendations skeletons match the sectioned page', () => {
     }
   });
 
-  test('a skeleton section holds what a collapsed section shows', () => {
-    const preview = view.match(/const SECTION_PREVIEW = (\d+);/)[1];
+  test('a collapsed section shows one full row, measured, and a skeleton section the same', () => {
+    // The page measures how many cards fit across (the grids' minimums and
+    // 16px gap inside the p-6 box) and a collapsed section shows that many,
+    // so See all only adds rows; 6 until measured, as the skeleton's default.
+    const effect = app.slice(app.indexOf('// Measure the Recommendations grids\' column count'), app.indexOf('}, [activeView, recommendationsScrollContainerReady]);'));
+    expect(effect).toContain('const width = Math.max(0, el.clientWidth - 48);');
+    expect(effect).toContain('const fit = (min) => Math.max(1, Math.floor((width + 16) / (min + 16)));');
+    expect(effect).toContain('const next = { cards: fit(160), friends: fit(150) };');
+    // Only a changed count is a state write (every setState is a full-app render).
+    expect(effect).toContain('prev.cards === next.cards && prev.friends === next.friends ? prev : next');
+    expect(effect).toContain('observer.disconnect()');
+    expect(view).toContain('const SECTION_PREVIEW = recommendationsGridColumns.cards || 6;');
+    expect(view).toContain('const FRIEND_PREVIEW = recommendationsGridColumns.friends || 6;');
+    expect(renderSubsection).toContain("const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : SECTION_PREVIEW;");
+    expect(skel).toContain('const CARD_PREVIEW = 6;');
     const songs = view.match(/const SONG_PREVIEW = (\d+);/)[1];
-    expect(skel).toContain(`const CARD_PREVIEW = ${preview};`);
     expect(skel).toContain(`const SONG_PREVIEW = ${songs};`);
   });
 
@@ -87,7 +99,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // active without a subscription), so naming one promised sections that
     // never came (#1328 review). Only on All: a source pick shows what that
     // source sent.
-    expect(view).toMatch(/!filteringOne && recommendationsPending\.some\(p => !p\.friends\) && React\.createElement\(RecommendationSectionSkeleton, \{\s*key: 'rec-pending'\s*\}/);
+    expect(view).toMatch(/!filteringOne && recommendationsPending\.some\(p => !p\.friends\) && React\.createElement\(RecommendationSectionSkeleton, \{\s*key: 'rec-pending', count: SECTION_PREVIEW\s*\}/);
     expect(view).not.toMatch(/badge: p\.name/);
     // Friends is last, so a pending provider never pushes content down from above.
     const list = view.slice(view.indexOf('...contentBlocks,'));
@@ -114,7 +126,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(view).toMatch(/const llmPlaceholder = llmLoading && !filteringOne && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
     // The slot is a whole section under the Albums heading its picks will
     // bring, placed after Songs.
-    expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums' \}\)/);
+    expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW \}\)/);
     expect(view.match(/contentBlocks\.push\(llmSlot\)/g) || []).toHaveLength(2);
   });
 
@@ -122,7 +134,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(view).toMatch(/const friendsPending = !filteringOne && recommendationsPending\.some\(p => p\.friends\);/);
     // Under the Friends heading the real section brings, so the page does
     // not reflow a heading in when the answer lands.
-    expect(view).toMatch(/!friendsSection && friendsPending && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:friend-pending', kind: 'friends', title: 'Friends' \}\)/);
+    expect(view).toMatch(/!friendsSection && friendsPending && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:friend-pending', kind: 'friends', title: 'Friends', count: FRIEND_PREVIEW \}\)/);
     // The pending entry is added only for a lookup with nothing cached to
     // show (and not for a provider whose last answer was empty: quiet), and
     // leaves the list when that lookup settles.
@@ -197,6 +209,8 @@ describe('Recommendations skeleton components render', () => {
     expect(count(html, 'flex items-center gap-4 py-3 px-4')).toBe(5);
     expect(count(html, 'data-skeleton="section-heading"')).toBe(2);
     expect(count(html, 'data-skeleton="tag"')).toBe(0);
+    // The page passes its measured cards-per-row.
+    expect(count(render(RecommendationsPageSkeleton, { cardCount: 4 }), 'aspect-square')).toBe(4);
     // Songs first, as on the page.
     expect(html.indexOf('flex items-center gap-4 py-3 px-4')).toBeLessThan(html.indexOf('aspect-square'));
   });
