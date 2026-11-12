@@ -68,7 +68,7 @@ Today's banner moves from the main content area (`activeAnnouncements` in `src/r
 
 ### 3. Jump back in
 
-One row of four tiles. Each tile has art, a title, a subtitle and a play button on hover. There's one tile of each kind, in this order:
+One row of four tiles (two by two when the page is narrow). Each tile has art, a title, a subtitle and its own Play button; clicking the rest of the tile opens the item (see "Decisions after the first build"). There's one tile of each kind, in this order:
 
 1. **Freshest playlist.** The playlist with the most recent `lastModified` (see Your playlists for what counts as a change). The subtitle says what changed ("Playlist · 12 new today").
 2. **Recent loves.** Your last 50 loved tracks: collection tracks, newest `addedAt` first, played as a queue.
@@ -127,7 +127,7 @@ Six album cards from every source that recommends albums:
 - the plugins' `getRecommendations` album picks (Apple Music, Amazon Music, ListenBrainz, Last.fm);
 - Shuffleupagus's album suggestions.
 
-Each card names its source and why it was picked ("Last.fm · like Hovvdy").
+Each card names its source and why it was picked ("Last.fm · like Hovvdy"). Shuffleupagus's reason is a badge with a tooltip instead (see "Decisions after the first build").
 
 - **Source filters**: All, then one chip per source with at least one album. A chip filters only this row.
 - **See all** opens Recommendations.
@@ -144,8 +144,8 @@ This replaces the Discover, Album Suggestions and Artist Suggestions sections.
 Two rows side by side, each with three album cards, a short description and a **See all** link to its own page.
 
 - **Fresh Drops**: new releases from artists in your collection, from the Fresh Drops data (`newReleases`). Each card is tagged with its release date ("Out Friday", "This week").
-- **Critical Darlings**: from `criticsPicks`, with its score or source as the tag.
-- Each half hides on its own when it's empty.
+- **Critical Darlings**: from `criticsPicks`, with its score or source as the tag. A pick with a critics' summary carries it in a lower-right badge with a tooltip.
+- Each half hides on its own when it's empty, and a half that is alone stays half width.
 - Home starts neither fetch on its critical path. When the data isn't loaded yet, it loads in the background lane, after the sections above have their data.
 
 ### 8. Concerts near you
@@ -155,7 +155,7 @@ Four concert cards from the Concerts page's data (`concerts`, filtered by `conce
 - a date block;
 - the artist;
 - the venue and city;
-- a Tickets link.
+- a Tickets link, the card's only action (see "Decisions after the first build").
 
 **See all** opens Concerts. The section is **hidden** when no location is set or no shows are coming up. Same background-loading rule as section 7.
 
@@ -203,11 +203,11 @@ Every card on Home matches what the same kind of thing does elsewhere in the app
   - **On hover:** shows play.
   - **Clicking** plays the loves as a queue.
   - **Right-click** offers Add to Queue and "Open in Collection" (Collection's songs, newest loved first).
-- **Jump back in tiles in general:** the whole tile is the play button, so one click plays. That's the row's whole point. Opening the item and adding it to the queue are in the right-click menu for its type.
+- **Jump back in tiles in general:** clicking the tile opens the item (the playlist, the album page, Collection's songs for recent loves, the remote-playlist view for a mix), and a separate Play button on the tile plays it. Adding to the queue is in the right-click menu for its type. (This replaces "the whole tile is the play button"; see "Decisions after the first build".)
 - **Concert:**
-  - **On hover:** the card highlights and its Tickets link underlines.
-  - **Clicking** opens the same ticket flyout the Concerts page uses.
-  - **Tickets** goes straight to the seller.
+  - **The card has no click action.** Tickets is its only action.
+  - **One seller:** Tickets is a direct link to that seller.
+  - **Several sellers:** Tickets is a disclosure button that shows a list of links, one per seller. It closes on an outside click, on Escape (focus returns to Tickets) and when focus leaves it.
 
 Every action button has an `aria-label` naming the item. Actions appear on `:focus-within` as well as hover, so a keyboard user can reach them.
 
@@ -318,7 +318,26 @@ A fresh reviewer read this spec as its builder and raised the points below. Each
 8. **What Play does.**
    - Every play action on Home, tiles and Play Collection Radio included, does what Play does everywhere else in the app: it replaces the queue through `handlePlay` with the item's context, under the same spinoff and listen-along rules.
    - Add to Queue is the non-destructive path.
-9. **Shuffleupagus's reason.** Its album suggestions already carry `reason` (today's Home shows it in a tooltip). The card's second line is "Shuffleupagus · " plus that reason.
+9. **Shuffleupagus's reason.** Its album suggestions already carry `reason` (today's Home shows it in a tooltip). Superseded by the user's later call: the reason is a lower-right badge with a tooltip, not a text line (see "Decisions after the first build").
+
+## Decisions after the first build
+
+The user's calls after reviewing the built page (2026-11-12). They override anything above that says otherwise, and PRs 3 and 4 and the Android ticket should follow them.
+
+1. **Jump back in tiles open the item, with a separate Play button.** Clicking a tile opens what it shows; its own Play button plays it. The row is four tiles across, and two by two below about 920px of row width.
+2. **Concert cards have no card click.** Tickets is the only action: a direct link for one seller, a disclosure list of links for several. Only http(s) ticket URLs are linked.
+3. **The Shuffleupagus reason and the critics' summary are badges.** Each is a round badge in the art's lower-right corner with a tooltip (Shuffleupagus's icon, or a trophy for Critical Darlings), not a text line. The text is also the badge button's accessible description, so a screen reader gets it without the tooltip. A Critical Darlings pick with no summary has no badge. Escape dismisses the tooltip.
+4. **Source filter pills are colour-coded.** Each source's pill takes its plugin's `resolver.color` (Shuffleupagus uses the fill accent): a dot in that colour when idle, the colour as the fill when selected. The selected pill's text colour is picked by `readableTextOn` (`src/renderer/lib/readable-text.js`) by strict WCAG contrast against the fill. "All" stays neutral.
+5. **Rows use a 24px gap** between cards (`HOME_ROW_GAP`), shared with the skeletons.
+6. **Playlist subtitles are two lines**: the refresh age, then "Since 2023".
+
+Also settled while fixing the first build's review (my calls):
+
+- **Fresh Drops and Critical Darlings** each sit at a fixed half-width basis. A half still loading draws its skeleton in its own place while the other half shows cards, so nothing moves when data lands.
+- **The import card** shows only for a new user: no collection and no playlists. A collection with nothing in Jump back in hides the row instead.
+- **A playlist with no covers yet** shows the Playlists page's playlist glyph. Covers the cache holds go on screen at once, and missing ones are fetched freshest first, Home's order.
+- **Home's recommendations load** is skipped when a full recommendations load finished in the last 10 minutes.
+- **The Ask example** strips control and bidi characters from artist names and caps each at 40 characters.
 
 ## Left to the builder
 
