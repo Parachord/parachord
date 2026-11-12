@@ -162,7 +162,7 @@ The Recommendations page itself uses:
 | Provider | Endpoint | Auth Required | Notes |
 |----------|----------|---------------|-------|
 | Last.fm | `last.fm/player/station/user/{username}/recommended` | None (website JSON, no API key) | Recommended tracks |
-| Last.fm (similar users) | `user.getfriends`, `user.gettopartists` (API key, the user's or the app's) | API key | Friends row: friends of friends scored by artist overlap, about 50 requests, cached 7 days |
+| Last.fm (similar users) | `user.getfriends`, `user.gettopartists` (API key, the user's or the app's) | API key | Friends row: friends of friends scored by shared top artists, about 60 requests, cached 7 days |
 | ListenBrainz (similar users) | `api.listenbrainz.org/1/user/{username}/similar-users` | None | Friends row |
 | ListenBrainz | `api.listenbrainz.org/1/user/{username}/playlists/recommendations`, then `/1/playlist/{id}` for one playlist picked by type (see docs/features/RECOMMENDATIONS.md) | None | No fallback: with no recommendation playlist the page says so (parachord#1021) |
 

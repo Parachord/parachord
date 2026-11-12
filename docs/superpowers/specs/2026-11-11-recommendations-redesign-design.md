@@ -63,7 +63,7 @@ Each subsection keeps today's display-section fields: `key`, `title`, `descripti
    - **Its items:** every provider's untitled items of that type (today's generic buckets), plus Shuffleupagus's items of that type.
    - **Derived artists still count.** Today's generic Artists bucket also gets artists taken from the generic songs, and they keep the `resolverId` of the song they came from.
    - **The order is interleaved round-robin by provider**, in provider order, with Shuffleupagus last. A row's first few items then show every source instead of one provider's whole list. *My call: the order isn't in the mock.*
-   - **Duplicates:** an item is deduplicated per type as today. The first provider in priority order keeps the item's position and fields, but the merged item records **every** provider that sent it in `sourceIds`. If one of them is Shuffleupagus, its `reason` stays on the merged item. *My call.*
+   - **Duplicates:** an item is deduplicated per type as today (the key carries the type, in titled sections too: a mixed section can hold album "Blue" and its title track "Blue", and both stay). The first provider in priority order keeps the item's position and fields, but the merged item records **every** provider that sent it in `sourceIds`. If one of them is Shuffleupagus, its `reason` stays on the merged item. *My call.*
    - **Its sources:** the row's `sources` lists every provider in any item's `sourceIds`, so a provider whose picks were all duplicates still gets a tag and can be filtered.
 2. **Titled sections**, one subsection per provider section **per item type**.
    - A section that holds a single type becomes one subsection of that type's section.
@@ -146,13 +146,13 @@ Both plugins implement `getSimilarUsers(config)` and declare the `similarUsers` 
 
 Last.fm has no lookup for this: on 2026-11-11, `user.getNeighbours`, `user.getSimilar`, `artist.getTopFans` and `tasteometer.compare` all return "Invalid Method". So the Last.fm plugin (`plugins-src/lastfm/`) works it out from two calls that still exist:
 
-1. **Candidates are friends of your Last.fm friends.** `user.getFriends` for your own account (one page, up to 50), then `user.getFriends` for up to 20 of those friends (one page each). People you follow already, people you removed and yourself are dropped (the same rules as below), and so are your own Last.fm friends: you know them already. The rest are ranked by how many of your friends know them, and the top 30 go on to step 2.
-2. **Similarity is shared taste.** `user.getTopArtists` (period `6month`, limit 50) for you and for each candidate. The score is the cosine similarity of the two artist lists, with each artist weighted by its rank (`1 / (1 + rank)`), giving a number from 0 to 1. Candidates under 0.05 are dropped. *My call: a simple, explainable score. The builder may tune the weights and the cutoff against a real account, and must say what they chose.*
+1. **Candidates are friends of your Last.fm friends.** `user.getFriends` for your own account (one page, up to 50), then `user.getFriends` for up to 20 of those friends (one page each). People you follow already, people you removed and yourself are dropped (the same rules as below), and so are your own Last.fm friends: you know them already. The rest are ranked by how many of your friends know them, and the top 40 go on to step 2.
+2. **Similarity is shared taste.** `user.getTopArtists` (period `6month`, limit 50) for you and for each candidate. The score is shared top artists: a binary cosine over the two artist-name sets (names lowercased), `shared / sqrt(|a| * |b|)`, giving a number from 0 to 1. Candidates under 0.06 (3 shared of 50 each) are dropped. *Tuned on the maintainer's real account (2026-11-12): the first cut, a cosine weighted by rank (`1 / (1 + rank)`) with a 0.05 cutoff over the top 30, returned nobody. That account had 517 friends-of-friends, almost all known by one friend, so the alphabetical top 30 were close to random; the best rank-weighted score was about 0.076 and those 30 all scored under 0.05, because an artist shared far down both lists counted for almost nothing. The maintainer chose to score by shared top artists and check 40 people.*
 3. **Avatars** come from `user.getFriends`'s image list (the largest size).
 
 **The API key.** Today the Last.fm plugin's only call is the website's recommended-station JSON, which needs no key. These are API calls, so the plugin needs one. The config passed to `getSimilarUsers` must carry the effective key from `getLastfmApiKey()`: the user's own key from Settings if set, otherwise the app's. Check whether `getResolverConfig('lastfm')` already includes it, and add it if not. The key never goes in a log line.
 
-**Cost and pacing.** About 50 requests a run. The plugin's `fetch` doesn't go through the app's `lastfmFetch` (its 429 toast), so the plugin paces itself (no more than 4 requests a second) and treats a 429 or any failed request as a failure that throws. The page then keeps what it has, and nothing empty gets cached. It runs only from the Recommendations page's load, never from Home, and its answer is cached with the rest of the page (below), so it reruns only when the page's cache is stale (7 days).
+**Cost and pacing.** About 60 requests a run. The plugin's `fetch` doesn't go through the app's `lastfmFetch` (its 429 toast), so the plugin paces itself (no more than 4 requests a second) and treats a 429 or any failed request as a failure that throws. The page then keeps what it has, and a failure caches nothing. It runs only from the Recommendations page's load, never from Home, and its answer is cached with the rest of the page (below), so it reruns only when the page's cache is stale (7 days). A successful empty answer counts as an answer too: it is cached and saved for the same 7 days, and while it stands that provider gets no Friends skeleton (it is quiet, like a provider whose last answer had no sections). Re-asking it on every visit re-ran the paced lookup behind a skeleton each time. A config whose key isn't ready yet still stores and saves nothing.
 
 **When it finds no one.** With no Last.fm friends there are no candidates, and the plugin returns `[]`. Last.fm offers no other way to find strangers with similar taste, so Friends then shows only ListenBrainz's people, or nothing.
 
@@ -167,11 +167,12 @@ Last.fm has no lookup for this: on 2026-11-11, `user.getNeighbours`, `user.getSi
   - the user themself.
 - **The cache:** the result is cached with the rest of the page's provider answers, in the `cache_recommendations` entry, under the provider's id. It goes through the same fetch, timeout and generation guard, so the saved cache and the stale display cover it. If it would be simpler, a separate key also works. A new key would have to be added to `ALLOWED_STORE_KEYS`.
 - **Opening a profile:** `navigateToFriend` with a friend-shaped object that isn't in `friends`: `{ id: 'similar:<service>:<username>', username, service, displayName: username, avatarUrl }`, where `service` is `'listenbrainz'` or `'lastfm'`.
+  - A provider's id is the friend `service` it speaks for, so only providers whose id is a friend service (`FRIEND_SERVICES` in the model: `lastfm`, `listenbrainz`) are asked or feed the row. A third `similarUsers` plugin must not make Follow look the same name up somewhere else; this list is the one deliberate service-name check, mirroring `addFriendCore`, which throws on any other service.
   - The friend loaders already work from `service` and `username` alone. The builder has to confirm that nothing on that path assumes the friend is in `friends`, the sidebar selection for one.
 - **Follow on the profile:**
   - When the friend on screen isn't in `friends`, the friend page's header shows **Follow**.
   - It must not call `addFriend` with a bare username: `parseFriendInput` has no `listenbrainz:<username>` form, and a plain username tries Last.fm first, which could add a different person. Split `addFriend`'s core (look up the ListenBrainz user, build the friend, add it) out of its modal handling (closing the modal, clearing the input, the toast) and have it return the new friend. Follow calls the core with the person's `service` set explicitly.
-  - Follow does what Add Friend does today: it pins the person to the sidebar and calls `followOnService`, which follows them on your ListenBrainz account (a no-op for Last.fm, which has no follow API). *My call, pending your answer: the question was asked and not yet answered.*
+  - Follow does what Add Friend does today: it pins the person to the sidebar and calls `followOnService`, which follows a ListenBrainz person on your ListenBrainz account (a no-op for Last.fm people, since Last.fm has no follow API). *My call, pending your answer: the question was asked and not yet answered.*
   - Once followed, the page switches to the real friend object, and the person drops out of the Friends section on the next merge.
   - No follow happens anywhere else.
 
@@ -182,7 +183,9 @@ Last.fm has no lookup for this: on 2026-11-11, `user.getNeighbours`, `user.getSi
   - Renaming those fields is optional cleanup; if they're renamed, every reader has to change.
 - **Places that send you back to Home** have to send you to Recommendations instead:
   - the queue drawer's "go to source" for `weekly-jam` / `weekly-exploration` contexts, which today calls `navigateTo('home')` (app.js, around L54190);
-  - the `pendingPlaylistLoad` timeout fallback for ephemeral ListenBrainz playlists (around L19414-19425), "fall back to home (where Weekly Jams are displayed)". The view's real back button follows view history and needs no change.
+  - the `pendingPlaylistLoad` timeout fallback for ephemeral ListenBrainz playlists (around L19414-19425), "fall back to home (where Weekly Jams are displayed)". The view's real back button follows view history and needs no change;
+  - the playlist view's breadcrumb and Close button for an ephemeral playlist (`components/playlist-view-page.js`), which said "HOME" and went Home: every ephemeral playlist now opens from Recommendations (weekly cards, provider playlists, the restore path), so they say "Recommendations" and go there.
+- **The weekly covers** (the tracks and 2x2 mosaic each weekly card loads) load only while Recommendations is open. Home's meta-only load fills `homeData.weekly*` too, but Home shows no weekly cards; the playlist view's restore path reads `homeData`, not the covers.
 - **One overlap is accepted (the user's call):** since #1315, the ListenBrainz picks in Songs' For you come from this week's Weekly Exploration. The same songs also appear in that week's playlist under Playlists.
 
 ## Loading skeletons
@@ -193,8 +196,8 @@ CLAUDE.md requires a layout change to ship with its matching skeleton.
 - **`recommendationsPending`** (the providers still being asked) keeps one unlabeled pending skeleton.
   - It sits after the last rendered section and before Friends. Friends is last, so a pending provider never pushes content down from above.
   - It stays unlabeled, for #1328's reason: a provider may answer "not ready".
-- **Shuffleupagus:** while it thinks, a card-skeleton tail sits at the end of the Albums and Artists For you rows when those rows exist. When they don't, a one-subsection skeleton sits in the section's place.
-- **A Friends skeleton:** a row of hexagon placeholders, used while the similar-users answer is pending and nothing is cached.
+- **Shuffleupagus:** while it thinks, a card-skeleton tail sits at the end of the Albums and Artists For you rows when those rows exist. When they don't, a one-subsection skeleton sits in the section's place: atop the Albums section, or, with no Albums section, under an Albums heading of its own.
+- **A Friends skeleton:** a row of hexagon placeholders under the Friends heading, used while the similar-users answer is pending and nothing is cached (and not for a provider whose last answer was empty).
 - **Tests:** `tests/ui/loading-skeletons.test.js` must cover the new components, and the render smoke test must render each one.
 
 ## Testing
@@ -216,7 +219,7 @@ CLAUDE.md requires a layout change to ship with its matching skeleton.
   - Home no longer rendering the weekly section;
   - the back navigation pointing to Recommendations;
   - the similar-users capability being checked before it's called.
-- **Plugin tests:** each `getSimilarUsers`, with a mocked fetch, a missing username, and sorting. For Last.fm also: candidate ranking by mutual friends, the 20-friend and 30-candidate caps, dropping followed, removed, your own friends and self, the cosine score on fixed artist lists, the pacing, and a 429 throwing.
+- **Plugin tests:** each `getSimilarUsers`, with a mocked fetch, a missing username, and sorting. For Last.fm also: candidate ranking by mutual friends, the 20-friend and 40-candidate caps, dropping followed, removed, your own friends and self, the cosine score on fixed artist lists, the pacing, and a 429 throwing.
 - **Live run on the user's profile before calling it done** (lesson from #1328):
   - cold start;
   - stale start;
