@@ -34327,40 +34327,58 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Fetch and store user token for sync (native MusicKit doesn't
         // return it from authorize(), so we need a separate fetch)
-        let nativeUserToken = null;
-        if (window.electron.musicKit.fetchUserToken) {
-          try {
-            let tokenResult = await window.electron.musicKit.fetchUserToken();
-            // The native cache can hold a token Apple has stopped accepting
-            // (2026-11). Ask Apple; if it refuses, mint a fresh one.
-            if (tokenResult.success && tokenResult.userToken && developerToken) {
-              const { probeUserToken } = AppleMusicUserToken.makeAppleProbes(window.fetch.bind(window), developerToken);
-              const status = await probeUserToken(tokenResult.userToken);
-              if (AppleMusicUserToken.classifyStatus(status) === 'rejected') {
-                console.warn(`🍎 Native MusicKit's cached user token is refused (HTTP ${status}); fetching a fresh one`);
-                tokenResult = await window.electron.musicKit.fetchUserToken({ ignoreCache: true });
+        // The account token (library, sync, recommendations) must be one
+        // Apple's REST API accepts. Measured 2026-11-12: tokens the native
+        // helper mints, cached or fresh, were refused with 403 code 40300
+        // ("Invalid authentication") while the web sign-in's token worked
+        // with the same developer token; the helper carries no MusicKit
+        // provisioning profile. So: keep a stored token Apple accepts, else
+        // try the native one, and store nothing Apple refuses.
+        let accountTokenOk = false;
+        if (developerToken) {
+          const stored = await checkAppleMusicUserToken(developerToken);
+          accountTokenOk = stored.verdict === 'ok';
+        }
+        if (!accountTokenOk && window.electron.musicKit.fetchUserToken) {
+          const { probeUserToken } = AppleMusicUserToken.makeAppleProbes(window.fetch.bind(window), developerToken);
+          for (const opts of [undefined, { ignoreCache: true }]) {
+            try {
+              const tokenResult = await window.electron.musicKit.fetchUserToken(opts);
+              if (!tokenResult.success || !tokenResult.userToken) {
+                console.warn('🍎 Native MusicKit authorized but could not fetch user token:', tokenResult.error);
+                break;
               }
-            }
-            if (tokenResult.success && tokenResult.userToken) {
-              nativeUserToken = tokenResult.userToken;
+              const status = developerToken ? await probeUserToken(tokenResult.userToken) : null;
+              if (AppleMusicUserToken.classifyStatus(status) === 'rejected') {
+                console.warn(`🍎 Apple refuses the native MusicKit user token${opts ? ' (fresh)' : ''} (HTTP ${status})`);
+                continue;
+              }
               localStorage.setItem('musickit_user_token', tokenResult.userToken);
               if (window.electron?.store) {
                 await window.electron.store.set('applemusic_user_token', tokenResult.userToken);
               }
+              accountTokenOk = true;
               console.log('🍎 Native MusicKit user token stored');
-            } else {
-              console.warn('🍎 Native MusicKit authorized but could not fetch user token:', tokenResult.error);
+              break;
+            } catch (e) {
+              console.warn('🍎 Failed to fetch user token after native auth:', e.message);
+              break;
             }
-          } catch (e) {
-            console.warn('🍎 Failed to fetch user token after native auth:', e.message);
           }
         }
 
-        if (!nativeUserToken) {
+        if (!accountTokenOk) {
+          // Playback works natively; the library, sync and recommendations
+          // need the web sign-in's token.
           showConfirmDialog({
-            type: 'error',
+            type: 'info',
             title: 'Apple Music',
-            message: 'Apple Music authorized but could not obtain a sync token. Library sync will not be available.\n\nThis usually means the MusicKit developer token is missing from this build.'
+            message: developerToken
+              ? 'Apple Music playback is connected.\n\nYour library, playlist sync and recommendations need one more sign-in, on Apple\'s site. Sign in now?'
+              : 'Apple Music authorized but could not obtain a sync token. Library sync will not be available.\n\nThis usually means the MusicKit developer token is missing from this build.',
+            ...(developerToken && window.electron?.musicKit?.openAuthWindow
+              ? { confirmLabel: 'Sign in', onConfirm: () => { tryAuthWindowFlow(); } }
+              : {})
           });
         }
 
