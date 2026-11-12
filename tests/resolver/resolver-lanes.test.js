@@ -76,8 +76,10 @@ describe('who uses which lane', () => {
   });
 
   test('the iTunes limiter serves foreground (and priority) before background', () => {
-    const s = app.indexOf('window.iTunesRateLimiter = (() => {');
-    const body = app.slice(s, app.indexOf('})();', s));
+    // The limiter lives in its own module (the lanes are also exercised in
+    // tests/resolver/itunes-rate-limiter.test.js).
+    expect(app).toContain("window.iTunesRateLimiter = require('./lib/itunes-rate-limiter').createITunesRateLimiter();");
+    const body = require('fs').readFileSync(require('path').join(__dirname, '../../src/renderer/lib/itunes-rate-limiter.js'), 'utf8');
     expect(body).toMatch(/pendingQueue\.length > 0 \? pendingQueue\.shift\(\) : pendingBackground\.shift\(\)/);
     expect(body).toMatch(/if \(opts && opts\.background\) pendingBackground\.push\(job\);\s*else if \(opts && opts\.priority\) pendingQueue\.unshift\(job\);\s*else pendingQueue\.push\(job\);/);
   });

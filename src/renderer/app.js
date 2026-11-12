@@ -91,98 +91,10 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
 // native title bar with a visible menu bar.
 const isMac = window.electron?.platform === 'darwin';
 
-// Global rate limiter for iTunes API to prevent 403/429 errors
-// iTunes API has strict rate limits (~20 req/min)
-window.iTunesRateLimiter = (() => {
-  const MIN_INTERVAL_MS = 1200; // Minimum 1.2s between requests (~50 req/min max)
-  const MAX_RETRIES = 3;
-  const BACKOFF_BASE_MS = 2000; // Start with 2s backoff on 429
-  let lastRequestTime = 0;
-  // Two lanes, like createLimiter's: covers (the art pipeline's catalog step)
-  // wait in the background lane, behind Apple Music resolution, which goes
-  // through iTunes whenever MusicKit can't answer; opts.priority (a play
-  // click) goes to the front. One queue had covers holding up resolution
-  // 1.2s apiece (2026-11-01).
-  let pendingQueue = [];
-  let pendingBackground = [];
-  let isProcessing = false;
-  let consecutiveErrors = 0;
-
-  const processQueue = async () => {
-    if (isProcessing || (pendingQueue.length === 0 && pendingBackground.length === 0)) return;
-    isProcessing = true;
-
-    while (pendingQueue.length > 0 || pendingBackground.length > 0) {
-      const { url, resolve, reject } = pendingQueue.length > 0 ? pendingQueue.shift() : pendingBackground.shift();
-      const now = Date.now();
-      const timeSinceLastRequest = now - lastRequestTime;
-
-      // Add extra delay if we've had consecutive errors
-      const dynamicInterval = MIN_INTERVAL_MS + (consecutiveErrors * 500);
-
-      if (timeSinceLastRequest < dynamicInterval) {
-        await new Promise(r => setTimeout(r, dynamicInterval - timeSinceLastRequest));
-      }
-
-      lastRequestTime = Date.now();
-
-      // Try with retries on 429
-      let response = null;
-      let lastError = null;
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          response = await fetch(url);
-
-          if (response.status === 429 || response.status === 403) {
-            consecutiveErrors++;
-            const backoffMs = BACKOFF_BASE_MS * Math.pow(2, attempt);
-            console.log(`[iTunesRateLimiter] Rate limited (${response.status}), waiting ${backoffMs}ms before retry ${attempt + 1}/${MAX_RETRIES}`);
-            await new Promise(r => setTimeout(r, backoffMs));
-            lastRequestTime = Date.now();
-            continue;
-          }
-
-          // Success - reset error counter
-          consecutiveErrors = Math.max(0, consecutiveErrors - 1);
-          break;
-        } catch (error) {
-          lastError = error;
-          consecutiveErrors++;
-          if (attempt < MAX_RETRIES) {
-            const backoffMs = BACKOFF_BASE_MS * Math.pow(2, attempt);
-            await new Promise(r => setTimeout(r, backoffMs));
-          }
-        }
-      }
-
-      if (response && response.status !== 429 && response.status !== 403) {
-        resolve(response);
-      } else if (response) {
-        // Still rate limited after retries - return the 429 response
-        console.warn(`[iTunesRateLimiter] Still rate limited after ${MAX_RETRIES} retries`);
-        resolve(response);
-      } else {
-        reject(lastError || new Error('iTunes API request failed'));
-      }
-    }
-    isProcessing = false;
-  };
-
-  return {
-    fetch: (url, opts) => {
-      return new Promise((resolve, reject) => {
-        const job = { url, resolve, reject };
-        if (opts && opts.background) pendingBackground.push(job);
-        else if (opts && opts.priority) pendingQueue.unshift(job);
-        else pendingQueue.push(job);
-        processQueue();
-      });
-    },
-    getQueueLength: () => pendingQueue.length + pendingBackground.length,
-    getBackgroundQueueLength: () => pendingBackground.length,
-    getErrorCount: () => consecutiveErrors
-  };
-})();
+// The one queue every iTunes request goes through (~20 req/min/IP): spacing,
+// lanes, and a circuit that answers at once while iTunes is refusing instead
+// of grinding through retries (src/renderer/lib/itunes-rate-limiter.js).
+window.iTunesRateLimiter = require('./lib/itunes-rate-limiter').createITunesRateLimiter();
 
 // SSRF guard (isPublicHttpUrl), hosted-playlist fetch limits, playlist-URL
 // classification (classifyPlaylistUrl / isProviderPlaylistUrl /
@@ -867,8 +779,14 @@ window.appleMusicSearchWithMusicKit = async (query, storefront = 'us', limit = 2
     '&media=music&entity=song&limit=' + limit + '&country=' + storefront, laneRun);
 
   if (!response.ok) {
-    console.error('[AppleMusicSearch] iTunes search failed:', response.status);
-    return [];
+    // Throw, never "no results": an empty answer is cached as Apple Music
+    // having no match for the track, and a refusal (403/429, or the limiter's
+    // open circuit) says nothing about the catalog. resolveTrack caches
+    // nothing for a resolver that threw, so it is asked again later.
+    const err = new Error(`iTunes search failed: ${response.status}`);
+    err.name = 'AppleMusicSearchUnavailable';
+    err.status = response.status;
+    throw err;
   }
 
   const data = await response.json();

@@ -28,7 +28,10 @@ module.exports = {
       );
       if (!response.ok) {
         console.error('iTunes search failed:', response.status);
-        return [];
+        var unavailable = new Error('iTunes search failed: ' + response.status);
+        unavailable.name = 'AppleMusicSearchUnavailable';
+        unavailable.status = response.status;
+        throw unavailable;
       }
       const data = await response.json();
       if (!data.results || data.results.length === 0) {
@@ -58,8 +61,12 @@ module.exports = {
       console.log('Found ' + results.length + ' Apple Music results');
       return results;
     } catch (error) {
+      // An error is not "no results": an empty answer is cached as Apple
+      // Music having no match for the track, so a refusal or an outage would
+      // be remembered as a miss. Rethrown, every caller already catches it
+      // (resolveTrack caches nothing for a resolver that threw).
       console.error('Apple Music search error:', error);
-      return [];
+      throw error;
     }
   },
   resolve: async function (artist, track, album, config) {
@@ -172,9 +179,15 @@ module.exports = {
           var self = this;
           var searchPromise = self.search(artist + ' ' + album, config);
           window._amAlbumPending[albumKey] = searchPromise;
-          var albumResults = await searchPromise;
+          // A search that fails (iTunes refusing, a timeout) must leave the
+          // pending map too: left there, every later track on the album would
+          // await the same rejected search for the rest of the session.
+          try {
+            var albumResults = await searchPromise;
+          } finally {
+            delete window._amAlbumPending[albumKey];
+          }
           window._amAlbumCache[albumKey] = albumResults;
-          delete window._amAlbumPending[albumKey];
           setTimeout(function () {
             delete window._amAlbumCache[albumKey];
           }, 60000);
