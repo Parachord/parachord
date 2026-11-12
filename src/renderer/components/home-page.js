@@ -461,6 +461,16 @@ const HomePage = React.memo(function HomePage(props) {
 
   // -------------------------------------------------------------- sections
 
+  // Source chips take each plugin's colour from the registry.
+  const sourceColors = React.useMemo(() => {
+    const map = {};
+    for (const r of allResolvers || []) {
+      const c = r && (r.color || (r.manifest && r.manifest.color));
+      if (r && r.id && c) map[r.id] = c;
+    }
+    return map;
+  }, [allResolvers]);
+
   const show = homeSections({
     bannerItems, tiles, mixes, playlists: homePlaylists, albums, fresh, critical, concerts, concertsLocation,
   });
@@ -536,7 +546,7 @@ const HomePage = React.memo(function HomePage(props) {
             onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
           }),
 
-        show.mixes && React.createElement(MixesRow, { mixes, ...mixActions }),
+        show.mixes && React.createElement(MixesRow, { mixes, sourceColors, ...mixActions }),
 
         show.playlists
           ? React.createElement(PlaylistsRow, { playlists: homePlaylists, navigateTo, ...playlistActions })
@@ -544,7 +554,7 @@ const HomePage = React.memo(function HomePage(props) {
 
         show.albums
           ? React.createElement(AlbumsRow, {
-            albums, navigateTo, ...albumActions, onOpen: openAlbum,
+            albums, sourceColors, navigateTo, ...albumActions, onOpen: openAlbum,
             onRefresh: chatAvailable ? refreshSuggestions : undefined, refreshing: aiLoading,
           })
           : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton)),

@@ -76,6 +76,24 @@ describe('SourceFilter', () => {
   });
 });
 
+describe('SourceFilter colours', () => {
+  const sources = [{ id: 'All', label: 'All' }, { id: 'amazonmusic', label: 'Amazon Music', color: '#25D1DA' }, { id: 'x', label: 'X' }];
+  test('an idle chip shows a dot in the service colour', () => {
+    const html = h(S.SourceFilter, { sources, value: 'All' });
+    expect(html).toMatch(/data-chip-dot[^>]*background-color:#25D1DA/);
+    expect(html).toContain('background-color:var(--text-secondary)');
+  });
+  test('the selected chip fills with the colour and reads on it', () => {
+    const html = h(S.SourceFilter, { sources, value: 'amazonmusic' });
+    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#25D1DA;color:#111827/);
+    expect(html).not.toMatch(/data-chip-dot[^>]*#25D1DA/);
+  });
+  test('All stays neutral and has no dot', () => {
+    const html = h(S.SourceFilter, { sources, value: 'All' });
+    expect(html).toMatch(/aria-pressed="true"[^>]*background-color:#7c3aed/);
+  });
+});
+
 describe('JumpBackIn', () => {
   test('a tile opens, and a separate always-visible Play button plays', () => {
     const tiles = [{ kind: 'loves', item: [], subtitle: 'Your recent loves' }];

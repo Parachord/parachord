@@ -11,6 +11,7 @@
 // home-skeletons.js; change one, change the other.
 
 const { filterBySource } = require('../lib/home-model');
+const { readableTextOn } = require('../lib/readable-text');
 const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
@@ -328,26 +329,34 @@ function SourceFilter({ sources, value, onChange, label }) {
   return e('div', { role: 'group', 'aria-label': label || 'Filter by source', style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
     list.map((s) => {
       const on = s.id === value;
+      // "All" stays neutral. A source takes its service's colour: a dot when
+      // idle, the fill when selected (text picked for contrast on that fill).
+      const brand = s.id === 'All' ? null : (s.color || 'var(--text-secondary)');
       return e('button', {
         key: s.id, type: 'button', 'aria-pressed': on, onClick: () => onChange && onChange(s.id),
         style: {
           font: 'inherit', fontSize: '12px', fontWeight: 600, border: 'none', borderRadius: '999px', cursor: 'pointer',
-          padding: '8px 12px', minHeight: '36px',
-          backgroundColor: on ? PLAY_FILL : 'var(--bg-secondary)',
-          color: on ? ON_FILL : 'var(--text-primary)',
+          padding: '8px 12px', minHeight: '36px', display: 'inline-flex', alignItems: 'center', gap: '8px',
+          backgroundColor: on ? (brand || PLAY_FILL) : 'var(--bg-secondary)',
+          color: on ? (brand ? readableTextOn(brand) : ON_FILL) : 'var(--text-primary)',
         },
-      }, s.label);
+      },
+      brand && !on && e('span', { 'aria-hidden': 'true', 'data-chip-dot': '', style: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, backgroundColor: brand } }),
+      s.label);
     }));
 }
 
 // Chips: All, then one per source that has at least one item.
-function sourceChips(items, labelOf) {
+// `colors` maps a source id to its plugin colour (see HomePage); Shuffleupagus
+// is not a plugin and uses the app accent.
+function sourceChips(items, labelOf, colors) {
   const seen = new Map();
   for (const it of items || []) {
     const ids = [it.resolverId].concat(Array.isArray(it.sourceIds) ? it.sourceIds : []).filter(Boolean);
     for (const id of ids) if (!seen.has(id)) seen.set(id, labelOf(it, id));
   }
-  return [{ id: 'All', label: 'All' }].concat(Array.from(seen, ([id, label]) => ({ id, label })));
+  const colorOf = (id) => (id === 'shuffleupagus' ? 'var(--accent-primary)' : (colors && colors[id]) || null);
+  return [{ id: 'All', label: 'All' }].concat(Array.from(seen, ([id, label]) => ({ id, label, color: colorOf(id) })));
 }
 
 function SectionHeader({ id, title, sub, page, view, navigateTo, extra }) {
@@ -368,11 +377,11 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 // ------------------------------------------------------------------------ Rows
 
 // Mixes are playlist cards with the service named on the art.
-function MixesRow({ mixes, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
+function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
   const [source, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
   if (all.length === 0) return null;
-  const chips = sourceChips(all, (m, id) => m.serviceLabel || id);
+  const chips = sourceChips(all, (m, id) => m.serviceLabel || id, sourceColors);
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
@@ -412,7 +421,7 @@ function AlbumsRow(props) {
   const [source, setSource] = React.useState('All');
   const all = Array.isArray(albums) ? albums : [];
   if (all.length === 0) return null;
-  const chips = sourceChips(all, (a, id) => a.sourceLabel || id);
+  const chips = sourceChips(all, (a, id) => a.sourceLabel || id, props.sourceColors);
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
   const refresh = onRefresh && e('button', {
     type: 'button', 'aria-label': 'Refresh suggestions', disabled: !!refreshing, onClick: () => onRefresh(),
