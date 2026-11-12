@@ -27,7 +27,7 @@
 // read during render the same way it was at its old position; moving it
 // earlier changes NOTHING about what it keys on.
 
-const { markOffLap, withoutLapMark, normalizeRepeatMode } = require('../lib/playback-helpers');
+const { markOffLap, withoutLapMark, normalizeRepeatMode, trackBehindPlaceholder } = require('../lib/playback-helpers');
 
 function usePlaybackQueue({
   cacheLoaded,
@@ -95,7 +95,9 @@ function usePlaybackQueue({
         // by in-place updates (Amazon's measured stream quality, duration repair,
         // art backfill), and each one re-saved the whole queue. The ref still
         // saves the latest version of it.
-        const currentTrack = currentTrackRef.current;
+        // A link's loading placeholder is saved as the track behind it: a quit
+        // mid-lookup restored "Loading album…" as the current track.
+        const currentTrack = trackBehindPlaceholder(currentTrackRef.current);
         const fullQueue = currentTrack ? [currentTrack, ...currentQueue] : currentQueue;
         await window.electron.store.set('saved_queue', fullQueue);
         // Also save playback context

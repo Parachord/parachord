@@ -564,7 +564,7 @@ const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
-const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue } = require('./lib/playback-helpers');
+const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue, trackBehindPlaceholder } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -11447,6 +11447,18 @@ const Parachord = () => {
       throw new Error('No resolvable input parameters');
     };
 
+    // A link that fails before it plays takes its loading placeholder down
+    // and puts back the track it stood in front of, playing if it was: the
+    // engine never stopped (#1343). It used to clear the playbar, and
+    // "Nothing to play" left the placeholder up. A newer play has already
+    // replaced the placeholder, so this leaves that alone.
+    const restoreProtocolPlaceholder = () => {
+      const shown = currentTrackRef.current;
+      setCurrentTrack(prev => (prev?._protocolLoading ? trackBehindPlaceholder(prev) : prev));
+      if (shown?._protocolLoading && shown._replacedWasPlaying && trackBehindPlaceholder(shown)) setIsPlaying(true);
+      setTrackLoading(false);
+    };
+
     const cleanup = window.electron.onProtocolUrl(async (url) => {
       console.log('🔗 Protocol URL received:', url);
 
@@ -11508,21 +11520,23 @@ const Parachord = () => {
           // which checks that something in its pool plays before it replaces
           // anything (#1319): a refused radio must leave the current track
           // where it was, not a "Loading radio…" placeholder in its place.
-          if (command === 'listen-along' || ['album', 'playlist'].includes(playKind)) {
-            const placeholderTitle =
-              command === 'listen-along' ? `Connecting to ${params.user || 'friend'}…` :
-              playKind === 'album' ? (params.title || 'Loading album…') :
-              playKind === 'playlist' ? (params.title || 'Loading playlist…') :
-              (params.name || params.title || 'Loading radio…');
-            const placeholderArtist =
-              playKind === 'album' || playKind === 'playlist' || playKind === 'radio' ? '' :
-              (params.artist || '');
+          // Nor listen-along (#1343), which first checks that the friend is
+          // listening: one who isn't left "Connecting to …" in the playbar
+          // for good, since that refusal isn't an error the catch clears.
+          // Its acknowledgement toast already says "Connecting to …".
+          if (['album', 'playlist'].includes(playKind)) {
+            const placeholderTitle = params.title || (playKind === 'album' ? 'Loading album…' : 'Loading playlist…');
+            // The track on screen rides on the placeholder (trackBehindPlaceholder):
+            // the play records it on the history, and a failure puts it back.
+            const shown = currentTrackRef.current;
             setCurrentTrack({
               id: `__protocol-loading-${Date.now()}`,
               title: placeholderTitle,
-              artist: placeholderArtist,
+              artist: '',
               status: 'resolving',
               _protocolLoading: true,
+              _replaces: trackBehindPlaceholder(shown),
+              _replacedWasPlaying: shown?._protocolLoading ? !!shown._replacedWasPlaying : !!isPlayingRef.current,
             });
             setIsPlaying(false);
             // Drives the playbar's existing shimmer/loading UI (used by
@@ -11564,6 +11578,7 @@ const Parachord = () => {
                 });
                 if (!tracks || tracks.length === 0) {
                   showToast(`Nothing to play: ${displayName || 'Untitled'}`);
+                  restoreProtocolPlaceholder();
                   break;
                 }
                 // Fisher-Yates shuffle when ?shuffle=1
@@ -11637,6 +11652,7 @@ const Parachord = () => {
               } catch (err) {
                 console.error(`play/${playKind} failed:`, err);
                 showToast(`Play failed: ${err.message}`);
+                restoreProtocolPlaceholder();
               }
               break;
             }
@@ -12071,15 +12087,17 @@ const Parachord = () => {
                 friend = { ...existingFriend, cachedRecentTrack: cached };
               }
               if (activateListenAlongRef.current) {
-                // Match play/*: tear down spinoff + clear queue first so
-                // activateListenAlong's setPlaybackContext isn't overridden
-                // by handlePlay's internal spinoff cleanup running after.
-                // (Don't tear down a current listen-along — switching from
-                // friend A to friend B should just swap the friend ref.)
+                // End a spinoff first so activateListenAlong's
+                // setPlaybackContext isn't overridden by handlePlay's internal
+                // spinoff cleanup running after. (Don't tear down a current
+                // listen-along: switching from friend A to friend B should
+                // just swap the friend ref.) The queue stays, as when Listen
+                // Along starts in the app (#1343): the friend's tracks play
+                // out of the lap and the queue plays on when the session ends
+                // (#1319). Mobile keeps it too (parachord-mobile#652).
                 if (spinoffModeRef.current && exitSpinoffRef.current) {
                   exitSpinoffRef.current();
                 }
-                clearQueue();
                 activateListenAlongRef.current(friend);
               } else {
                 showToast('listen-along not yet ready');
@@ -12223,11 +12241,10 @@ ${trackListXml}
       } catch (error) {
         console.error('🔗 Protocol URL error:', error);
         showToast(`Protocol error: ${error.message}`);
-        // Clear the loading placeholder if one was set; the toast surfaces
-        // the failure but the playbar shouldn't keep showing "Loading…"
-        // forever.
-        setCurrentTrack(prev => prev?._protocolLoading ? null : prev);
-        setTrackLoading(false);
+        // Take the loading placeholder down if one was set; the toast
+        // surfaces the failure but the playbar shouldn't keep showing
+        // "Loading…" forever.
+        restoreProtocolPlaceholder();
       }
     });
 

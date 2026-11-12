@@ -23,6 +23,7 @@ const {
   trimPlayHistory,
   pushPlayHistory,
   historyForReplacedTrack,
+  trackBehindPlaceholder,
   repeatLap
 } = require('../../src/renderer/lib/playback-helpers');
 
@@ -42,6 +43,27 @@ describe('play history helpers', () => {
   test('the same track played again adds nothing (restart, repeat one, a source fallback)', () => {
     const history = [t('a')];
     expect(historyForReplacedTrack(history, t('c'), t('c', { preferredResolver: 'spotify' }))).toBe(history);
+  });
+
+  test('a link\'s loading placeholder never goes on history: the track behind it does', () => {
+    const history = [t('a')];
+    const placeholder = { id: '__protocol-loading-1', title: 'Loading album…', artist: '', status: 'resolving', _protocolLoading: true, _replaces: t('b') };
+    const next = historyForReplacedTrack(history, placeholder, t('x'));
+    expect(next.map(e => e.id)).toEqual(['a', 'b']);
+    expect(next[1]._offLap).toBe(true);
+    // Nothing behind it (the playbar was empty): nothing to record.
+    expect(historyForReplacedTrack(history, { ...placeholder, _replaces: null }, t('x'))).toBe(history);
+    // The link plays the track that was behind it: nothing to record either.
+    expect(historyForReplacedTrack(history, placeholder, t('b'))).toBe(history);
+  });
+
+  test('trackBehindPlaceholder sees through stacked placeholders', () => {
+    const inner = { id: '__protocol-loading-1', _protocolLoading: true, _replaces: t('b') };
+    const outer = { id: '__protocol-loading-2', _protocolLoading: true, _replaces: inner };
+    expect(trackBehindPlaceholder(outer).id).toBe('b');
+    expect(trackBehindPlaceholder(t('c')).id).toBe('c');
+    expect(trackBehindPlaceholder(null)).toBeNull();
+    expect(trackBehindPlaceholder({ _protocolLoading: true })).toBeNull();
   });
 
   test('nothing playing: nothing to record', () => {

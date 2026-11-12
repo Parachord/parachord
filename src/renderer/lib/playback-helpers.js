@@ -325,8 +325,23 @@ function pushPlayHistory(history, track, max = PLAY_HISTORY_MAX) {
 // the lap, so Previous reaches it but repeat all doesn't wrap it. Nothing when
 // it is the same track played again (a restart, repeat one, a source fallback).
 function historyForReplacedTrack(history, outgoing, next, max = PLAY_HISTORY_MAX) {
-  if (!outgoing || isSameTrack(outgoing, next)) return history;
-  return pushPlayHistory(history, markOffLap(outgoing), max);
+  // A link's loading placeholder ("Loading album…") was never a track: the
+  // play replaces the one it stands in front of (#1343). On history, Previous
+  // tried to play the placeholder.
+  const replaced = trackBehindPlaceholder(outgoing);
+  if (!replaced || isSameTrack(replaced, next)) return history;
+  return pushPlayHistory(history, markOffLap(replaced), max);
+}
+
+// An album or playlist link shows a loading placeholder in the playbar while
+// it looks the release up; the track that was there rides on it (_replaces),
+// still playing underneath, since nothing stops the engine until handlePlay
+// runs. The play records that track, and a link that fails puts it back.
+// A second link during the first's lookup stacks a placeholder on one.
+function trackBehindPlaceholder(track) {
+  let t = track;
+  while (t && t._protocolLoading) t = t._replaces || null;
+  return t || null;
 }
 
 // The saved queue is restored at launch only when nothing is playing and no
@@ -346,6 +361,7 @@ module.exports = {
   trimPlayHistory,
   pushPlayHistory,
   historyForReplacedTrack,
+  trackBehindPlaceholder,
   REPEAT_MODES,
   REPEAT_UNAVAILABLE_MESSAGE,
   normalizeRepeatMode,

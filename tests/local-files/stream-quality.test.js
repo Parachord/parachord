@@ -217,7 +217,8 @@ describe('Amazon quality updates and the queue save do not churn on every poll',
     const hook = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-queue.js'), 'utf8');
     expect(hook).toMatch(/\}, \[currentTrack\?\.id, currentQueue, rememberQueue, playbackContext, shuffleMode\]\);/);
     const at = hook.indexOf("await window.electron.store.set('saved_queue', fullQueue);");
-    expect(hook.slice(at - 700, at)).toMatch(/const currentTrack = currentTrackRef\.current;/);
+    // The latest track from the ref (the one behind a link's loading placeholder, #1343).
+    expect(hook.slice(at - 700, at)).toMatch(/const currentTrack = trackBehindPlaceholder\(currentTrackRef\.current\);/);
     expect(appJs).toContain('usePlaybackQueue({');
   });
 });

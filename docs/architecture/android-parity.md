@@ -244,7 +244,7 @@ If you skip step 1, `handlePlay`'s internal exitSpinoff/listen-along cleanup run
 - `parachord://play/album`
 - `parachord://play/playlist`
 - `parachord://play/radio` (both Mode B and Mode C)
-- `parachord://listen-along` (tear down spinoff + clearQueue, but DON'T tear down listen-along — switching from friend A to friend B should swap, not terminate)
+- `parachord://listen-along` is the exception: it ends a spinoff but keeps the queue, like an in-app start (#1343; mobile since parachord-mobile#652). The friend's tracks play out of the repeat-all lap and the queue plays on when the session ends (#1319). It doesn't tear down a current listen-along either: switching from friend A to friend B swaps, not terminates. It puts no loading placeholder in the playbar, since it checks first that the friend is listening.
 
 Commands that do NOT clear the queue (intentionally): `queue/add` (additive), `control/*` (just transport), `shuffle/*`, `volume/*`, navigation cases (`artist/`, `album/`, `library`, etc. — these only navigate, they don't auto-play), `import` (writes to library, doesn't change current playback), `chat` (sends to AI). `collection-radio` delegates to the in-app starter, which is responsible for its own state hygiene — match the in-app behavior, don't add a separate clearQueue at the protocol layer.
 
