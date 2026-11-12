@@ -193,6 +193,25 @@ Every card on Home matches what the same kind of thing does elsewhere in the app
 
 Every action button has an `aria-label` naming the item. Actions appear on `:focus-within` as well as hover, so a keyboard user can reach them.
 
+## Dark mode
+
+Home works in both themes. The mock has a dark board, "A · dark mode", drawn from the app's dark tokens in `index.html`.
+
+**Colours.**
+- Every surface, border and text colour comes from the theme variables (`var(--bg-primary)`, `var(--bg-secondary)`, `var(--card-bg)`, `var(--border-default)`, `var(--text-primary)`, `var(--text-secondary)`, `var(--accent-surface)` and so on). No hard-coded neutral colours, per the CLAUDE.md rule.
+
+**Contrast in dark mode.**
+- Secondary and label text use `--text-secondary` (#9ca3af), never `--text-tertiary` (#6b7280). That one fails 4.5:1 on #161616.
+- Filled play buttons keep white text and icons, so their fill must pass 4.5:1 against white in dark mode too. Dark mode's `--accent-primary` (#a78bfa) doesn't, so filled buttons use the light accent (#7c3aed) in both themes. Text links and outlines use `--accent-primary` / `--accent-soft`.
+
+**Things that stay the same in both themes.**
+- Badges and buttons drawn over album art keep a light chip with dark text, since they sit on artwork, not on the page.
+- The announcement banner's severity colours are identical in both themes. They already pass with white text.
+
+**Pinning it.**
+- Skeletons use the existing shimmer variables, so they follow the theme.
+- A test pins that the new Home modules contain no hex neutrals outside album-art placeholders.
+
 ## The setup checklist
 
 Today's "Enhance Your Experience" cards (`home-page.js`, around L232) become the **Finish setting up · N of M** button in the header. It opens a short list.
