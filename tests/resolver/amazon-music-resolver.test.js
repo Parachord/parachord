@@ -42,7 +42,7 @@ function instantiate(axeContent) {
 describe('amazonmusic .axe structure', () => {
   test('manifest identifies the resolver', () => {
     expect(axe.manifest.id).toBe('amazonmusic');
-    expect(axe.manifest.version).toBe('1.9.0');
+    expect(axe.manifest.version).toBe('1.10.0');
   });
 
   test('declares streaming capabilities without auth', () => {
@@ -874,6 +874,38 @@ describe('amazonmusic recommendations (the recommendations capability)', () => {
     expect(out.sections).toHaveLength(1);
     expect(out.sections[0]).toMatchObject({ id: 'uri:///recommendations/browse-home/browse-home_mp3PrimeAlbumsStrategy', title: 'Albums for You' });
     expect(out.sections[0].items[0]).toMatchObject({ type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast' });
+  });
+
+  test('keeps only the personal strategy sections, never Amazon\'s editorial shelves', async () => {
+    // Live 2026-11-12, a Prime account's BrowseHomePage: the personal sections
+    // are named strategies; editorial shelves carry UUID ids, the onboarding
+    // shelf is GET_STARTED, and the genre shelf ("Soundtracks") is a strategy
+    // but a promo.
+    const item = { type: 'album', id: 'B0G2TSTWXD', name: 'Tempelschlaf', artist: 'The Ruins Of Beverast' };
+    const pl = { type: 'playlist', id: 'PP1', name: 'A Mix' };
+    const base = 'uri:///recommendations/browse-home/';
+    const sec = (id, title, items) => ({ id: base + id, title, items: items || [item] });
+    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({ success: true, sections: [
+      sec('GET_STARTED', "Let's Get Started", [pl]),
+      sec('mp3YmlRecentPlaybackStrategy', 'Based on Your Recents'),
+      sec('browse-home_mp3PrimeAlbumsStrategy', 'Albums for You'),
+      sec('f5c621d6-7ba8-4d44-9e72-433921bb5203', 'Recently Played'),
+      sec('browse-home_mp3ByArtistStrategy', 'FIDLAR'),
+      sec('browse-home_playlistStrategy', 'Playlists for You', [pl]),
+      sec('browse-home_mp3CommunityPlaylistsStrategy', 'Community Playlists', [pl]),
+      sec('6a0d8250-d85c-42c0-868a-01dc91991473', 'Top Playlists', [pl]),
+      sec('3cdd6257-e173-4d3b-bd27-e5e7b400492e', 'Featured This Week', [pl]),
+      sec('23e18714-c11c-4576-bbc2-1dece54b3b16', 'On-Demand Albums This Week'),
+      sec('browse-home_mp3GenreForYouStrategy', 'Soundtracks', [pl, item]),
+      sec('fab9f6f8-60d6-49f1-a0ff-9b26256c5e90', 'A Whole Mood', [pl]),
+      sec('457820b0-616c-4fb0-baf4-6114cf1cc230', 'Amazon Music Live'),
+      { id: 'uri:///recommendations/music-home/music-home_newReleasesForYouStrategy', title: 'New Releases for You', items: [item] }
+    ] }) } } };
+    const resolver = instantiate(axe);
+    const out = await resolver.getRecommendations({});
+    expect(out.sections.map(s => s.title)).toEqual([
+      'Based on Your Recents', 'Albums for You', 'FIDLAR', 'Playlists for You', 'Community Playlists', 'New Releases for You'
+    ]);
   });
 
   test('a section with its own first-page cursor (the synthesized playlists section) carries it through', async () => {
