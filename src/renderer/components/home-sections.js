@@ -211,7 +211,7 @@ const shuffleupagusIcon = () => (SERVICE_LOGOS && SERVICE_LOGOS.shuffleupagus
   ? React.cloneElement(SERVICE_LOGOS.shuffleupagus, { className: undefined, width: 18, height: 18, 'aria-hidden': 'true' })
   : null);
 
-// The round badge in the art's top-left corner: Shuffleupagus's reason, or a
+// The round badge in the art's lower right corner: Shuffleupagus's reason, or a
 // Critical Darlings pick's review summary. A critics pick with no summary
 // (the feed item had no description) gets no badge.
 function artBadge(album) {
@@ -261,7 +261,7 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
         e(ActionButton, { label: `Add ${title} to a playlist`, size: SIDE_BTN, onClick: () => onAddToPlaylist && onAddToPlaylist(album) }, AddGlyph()),
         e(ActionButton, { label: `Play ${title}`, primary: true, size: MAIN_BTN, onClick: () => onPlay && onPlay(album) }, PlayGlyph(18)),
         e(ActionButton, { label: `Add ${title} to the queue`, size: SIDE_BTN, onClick: () => onQueue && onQueue(album) }, QueueGlyph())),
-      badge && e('span', { style: { position: 'absolute', top: '8px', left: '8px', zIndex: 2 } },
+      badge && e('span', { style: { position: 'absolute', bottom: '8px', right: '8px', zIndex: 2 } },
         e(FixedTooltip, { content: badge.text },
           e('button', {
             type: 'button', 'aria-label': badge.label,

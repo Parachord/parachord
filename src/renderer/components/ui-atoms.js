@@ -29,6 +29,21 @@ const FixedTooltip = ({ children, content }) => {
   const [visible, setVisible] = React.useState(false);
   const [coords, setCoords] = React.useState({ top: 0, left: 0 });
   const triggerRef = React.useRef(null);
+  const tipRef = React.useRef(null);
+
+  // Keep the tip on screen: shift it left when it would pass the right edge
+  // (a trigger in a window's right-hand column), and flip it above the
+  // trigger when it would pass the bottom.
+  React.useLayoutEffect(() => {
+    if (!visible || !tipRef.current || !triggerRef.current) return;
+    const tip = tipRef.current.getBoundingClientRect();
+    const rect = triggerRef.current.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - tip.width - margin));
+    const top = rect.bottom + 6 + tip.height > window.innerHeight - margin
+      ? Math.max(margin, rect.top - 6 - tip.height) : rect.bottom + 6;
+    setCoords((c) => (c.left === left && c.top === top ? c : { top, left }));
+  }, [visible]);
 
   const show = () => {
     if (triggerRef.current) {
@@ -51,6 +66,7 @@ const FixedTooltip = ({ children, content }) => {
     children,
     visible && content && ReactDOM.createPortal(
       React.createElement('div', {
+        ref: tipRef,
         style: {
           position: 'fixed',
           top: coords.top,

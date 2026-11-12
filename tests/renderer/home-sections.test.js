@@ -40,6 +40,11 @@ describe('AlbumCard', () => {
     expect(html).toMatch(/aria-label="Why Shuffleupagus picked this"[^>]*>.*<svg[^>]*width="18"/);
     expect(html).not.toContain('Shuffleupagus ·');
   });
+  test('the badge sits in the art\'s lower right corner, clear of the top-left tag', () => {
+    const html = h(S.AlbumCard, { album: { ...album, tag: 'New', resolverId: 'shuffleupagus', reason: 'r' } });
+    expect(html).toMatch(/bottom:8px;right:8px;z-index:2/);
+    expect(html).not.toMatch(/top:8px;left:8px;z-index:2/);
+  });
   test('a Critical Darlings pick badges only when it has a summary', () => {
     const pick = { title: 'Valentine', artist: 'CMA', homeRow: 'critical' };
     expect(h(S.AlbumCard, { album: pick })).not.toContain('What the critics said');
