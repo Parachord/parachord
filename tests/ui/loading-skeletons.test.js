@@ -106,6 +106,14 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(view).toMatch(/const LLM_TAIL_ROWS = new Set\(\['foryou:album', 'foryou:artist'\]\);/);
     expect(renderSubsection).toMatch(/const llmTail = llmLoading && LLM_TAIL_ROWS\.has\(sub\.key\) \? LLM_TAIL : 0;/);
     expect(renderSubsection).toMatch(/Array\.from\(\{ length: llmTail \}[\s\S]{0,160}RecommendationCardSkeleton/);
+    // The tail trails the row's real preview, never replaces it: a collapsed
+    // row shows its full preview, and See all is measured against that.
+    expect(renderSubsection).toMatch(/const visible = expanded \? items : items\.slice\(0, preview\);/);
+    expect(renderSubsection).toMatch(/const canExpand = items\.length > preview;/);
+    expect(renderSubsection).not.toMatch(/preview - llmTail/);
+    const grid = renderSubsection.slice(renderSubsection.indexOf('...visible.map((item, index) => cardFor(item, index, sub))'));
+    expect(grid.indexOf('...visible.map((item, index) => cardFor(item, index, sub))')).toBe(0);
+    expect(grid.indexOf('Array.from({ length: llmTail }')).toBeGreaterThan(0);
     expect(view).toMatch(/const llmPlaceholder = llmLoading && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
     expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSubsectionSkeleton, \{ key: 'rec-llm'/);
   });

@@ -40824,10 +40824,11 @@ useEffect(() => {
               const isSongs = sub.type === 'song';
               const preview = isSongs ? SONG_PREVIEW : SECTION_PREVIEW;
               const llmTail = llmLoading && LLM_TAIL_ROWS.has(sub.key) ? LLM_TAIL : 0;
-              // A collapsed row keeps its preview's size with the Shuffleupagus
-              // tail inside it: the batch's picks interleave near the front, so
-              // the row doesn't grow and shrink as it lands.
-              const visible = expanded ? items : items.slice(0, Math.max(0, preview - llmTail));
+              // The row's real preview always shows in full; the Shuffleupagus
+              // tail (a fixed LLM_TAIL placeholders) trails after it, so a
+              // skeleton never covers picks that are already here (#1328) and
+              // canExpand stays measured against what the row really shows.
+              const visible = expanded ? items : items.slice(0, preview);
               const canExpand = items.length > preview;
               const showToggle = expanded || canExpand || sub.canLoadMore;
               // A page in flight for this row's provider section shows a tail
