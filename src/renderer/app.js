@@ -35460,6 +35460,17 @@ useEffect(() => {
     });
   };
 
+  // Home's recommendations load: on every Home visit unless one is running
+  // (loadRecommendations serves each provider that answered within the hour
+  // from its cache and asks only the stale ones, as the Recommendations page
+  // does on each visit). `loading` starts true before any load has run, so
+  // the first visit is told apart by the provider-set ref, which every full
+  // load sets as it starts.
+  const loadHomeRecommendations = () => {
+    if (recommendations.loading && recommendationProviderIdsRef.current !== null) return;
+    loadRecommendations();
+  };
+
   // Home's right-click menus, the same ones the other pages show: an album
   // gets the release menu (its collection tracks, else the tracks a hover
   // prefetched), a playlist the playlist menu, and the recent-loves tile its
@@ -35602,7 +35613,7 @@ useEffect(() => {
     addToQueue, askShuffleupagus, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
     fetchAlbumTracksByName, getAlbumArt, handleCollectionAlbumClick, handleStartCollectionStation,
     loadAiRecommendations, loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    loadRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
+    loadHomeRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
     openSyncSetupModal, openTopAlbum, openWhatsNew, playTrackCollection, prefetchTopAlbumTracks,
     showHomeContextMenu,
   });

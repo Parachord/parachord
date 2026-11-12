@@ -104,6 +104,52 @@ describe('AskShuffleupagus', () => {
     expect(html).toContain('value="A rainy Sunday"');
     expect(html).toContain('>Ask<');
   });
+  // A minimal hook harness: one instance, re-rendered with new props; state
+  // writes land at once, as React's re-render after a render-phase update.
+  function askHarness() {
+    const slots = [];
+    let i = 0;
+    const real = global.React;
+    const fake = {
+      ...real,
+      useState: (init) => {
+        const k = i++;
+        if (!slots[k]) {
+          const slot = [typeof init === 'function' ? init() : init];
+          slot[1] = (v) => { slot[0] = typeof v === 'function' ? v(slot[0]) : v; };
+          slots[k] = slot;
+        }
+        return [slots[k][0], slots[k][1]];
+      },
+      useRef: (init) => { const k = i++; if (!slots[k]) slots[k] = { current: init }; return slots[k]; },
+    };
+    const find = (node) => {
+      if (!node || typeof node !== 'object') return null;
+      if (Array.isArray(node)) { for (const n of node) { const f = find(n); if (f) return f; } return null; }
+      if (node.props && node.props.id === 'home-ask-prompt') return node;
+      return find(node.props && node.props.children);
+    };
+    return (props) => {
+      global.React = fake;
+      try {
+        let tree;
+        for (let pass = 0; pass < 2; pass++) { i = 0; tree = S.AskShuffleupagus(props); }
+        return find(tree);
+      } finally { global.React = real; }
+    };
+  }
+  test('a new example replaces the prompt while the field is untouched', () => {
+    const render = askHarness();
+    expect(render({ initialPrompt: 'Make me a playlist', chatAvailable: true }).props.value).toBe('Make me a playlist');
+    expect(render({ initialPrompt: 'Songs that sound like Frog', chatAvailable: true }).props.value).toBe('Songs that sound like Frog');
+  });
+  test('once the user types, a new example never overwrites it', () => {
+    const render = askHarness();
+    const input = render({ initialPrompt: 'Make me a playlist', chatAvailable: true });
+    input.props.onChange({ target: { value: 'my own words' } });
+    expect(render({ initialPrompt: 'Make me a playlist', chatAvailable: true }).props.value).toBe('my own words');
+    expect(render({ initialPrompt: 'Songs that sound like Frog', chatAvailable: true }).props.value).toBe('my own words');
+  });
   test('chatAvailable false renders only the setup button', () => {
     const html = h(S.AskShuffleupagus, { initialPrompt: 'x', chatAvailable: false });
     expect(html).not.toContain('<input');

@@ -38,10 +38,30 @@ describe('source', () => {
     expect(i).toBeGreaterThan(-1);
     const effect = page.slice(page.lastIndexOf('React.useEffect(', i), page.indexOf('}, [cacheLoaded]);', i));
     expect(effect).toMatch(/setTimeout\([^,]+, 0\)/);
-    expect(effect).toContain('loadRecommendations()');
     expect(effect).toMatch(/!newReleasesLoaded && !newReleasesLoading\) loadNewReleases\(\)/);
     expect(effect).toMatch(/!criticsPicksLoaded && !criticsPicksLoading\) loadCriticsPicks\(\)/);
-    expect(effect).toMatch(/!concertsLoaded && !concertsLoading\) loadConcerts\(\)/);
+    expect(effect).toMatch(/!concertsLoaded && !concertsLoading && !concertsError\) loadConcerts\(\)/);
+    // Recommendations: every Home mount, unless a load is running; the
+    // per-provider cache TTL inside decides what is fetched.
+    expect(effect).toContain('loadHomeRecommendations();');
+    const i2 = app.indexOf('const loadHomeRecommendations = () => {');
+    expect(app.slice(i2, i2 + 200)).toMatch(/if \(recommendations\.loading && recommendationProviderIdsRef\.current !== null\) return;\s*loadRecommendations\(\);/);
+  });
+
+  test('the import card leads to Library Sync in Settings', () => {
+    expect(page).toContain("onImport: () => { navigateTo('settings'); setSettingsTab('general'); },");
+    expect(page).not.toContain("navigateTo('search')");
+  });
+
+  test('the Ask box is not re-keyed on the example (that wiped typed text)', () => {
+    expect(page).not.toMatch(/key: examplePrompt/);
+  });
+
+  test('the rows are memoized', () => {
+    for (const name of ['tiles', 'albums', 'fresh', 'critical']) {
+      expect(page).toMatch(new RegExp(`const ${name} = React\\.useMemo\\(`));
+    }
+    expect(page).not.toMatch(/releaseTag\(r\.date, Date\.now\(\)\)/);
   });
 
   test('app.js no longer runs its own Home discovery load', () => {
@@ -50,7 +70,7 @@ describe('source', () => {
   });
 
   test('the new handlers are stable handlers', () => {
-    for (const name of ['openServicePlaylist', 'loadConcerts', 'loadRecommendations', 'askShuffleupagus',
+    for (const name of ['openServicePlaylist', 'loadConcerts', 'loadHomeRecommendations', 'askShuffleupagus',
       'dismissHomeBanner', 'openHomeBannerCta', 'dismissHomeSetupItem', 'showHomeContextMenu']) {
       expect(HOME_PAGE_HANDLERS).toContain(name);
     }

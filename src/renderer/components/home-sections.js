@@ -437,6 +437,15 @@ const PROMPT_CAP = 500;
 
 function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
   const [value, setValue] = React.useState(initialPrompt || '');
+  // A new example (the collection arriving late) replaces the prompt only
+  // while the user hasn't touched the field; their own words always stay.
+  // Adopted during render, React's pattern for state derived from a prop.
+  const [shownExample, setShownExample] = React.useState(initialPrompt || '');
+  const touched = React.useRef(false);
+  if ((initialPrompt || '') !== shownExample) {
+    setShownExample(initialPrompt || '');
+    if (!touched.current) setValue(initialPrompt || '');
+  }
   const box = {
     display: 'flex', flexDirection: 'column', gap: '12px', padding: '20px', borderRadius: '16px',
     border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-secondary)',
@@ -466,7 +475,7 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
       }, 'Prompt for Shuffleupagus'),
       e('input', {
         id: 'home-ask-prompt', type: 'text', maxLength: PROMPT_CAP, value,
-        onChange: (ev) => setValue(ev.target.value),
+        onChange: (ev) => { touched.current = true; setValue(ev.target.value); },
         style: {
           flex: '1 1 360px', minWidth: 0, font: 'inherit', fontSize: '15px', color: 'var(--text-primary)',
           backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-default)', borderRadius: '12px',

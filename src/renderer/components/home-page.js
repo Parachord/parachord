@@ -41,9 +41,9 @@ const HOME_PAGE_HANDLERS = [
   'loadAiRecommendations',
   'loadConcerts',
   'loadCriticsPicks',
+  'loadHomeRecommendations',
   'loadNewReleases',
   'loadPlaylist',
-  'loadRecommendations',
   'navigateTo',
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
@@ -120,9 +120,9 @@ const HomePage = React.memo(function HomePage(props) {
     loadAiRecommendations,
     loadConcerts,
     loadCriticsPicks,
+    loadHomeRecommendations,
     loadNewReleases,
     loadPlaylist,
-    loadRecommendations,
     metaServiceConfigs,
     mixes,
     navigateTo,
@@ -180,17 +180,20 @@ const HomePage = React.memo(function HomePage(props) {
 
   // ------------------------------------------------------- background loads
 
-  // One effect, after first paint. Each loader runs only while its data
-  // isn't loaded; the loaders' own caches and TTLs decide the rest, so a
-  // return visit refetches nothing. Concerts load only with a location set,
-  // since the row hides without one.
+  // One effect, after first paint. Recommendations load on every visit
+  // unless a load is running (loadHomeRecommendations in app.js): each
+  // provider that answered within the hour is served from its cache and only
+  // the stale ones are asked, as the Recommendations page does on each visit. The other loaders run only
+  // while their data isn't loaded (or failed), so a return visit refetches
+  // nothing. Concerts load only with a location set, since the row hides
+  // without one.
   React.useEffect(() => {
     if (!cacheLoaded) return undefined;
     const run = () => {
-      if ((recommendations.sections || []).length === 0 && !recommendations.error) loadRecommendations();
+      loadHomeRecommendations();
       if (!newReleasesLoaded && !newReleasesLoading) loadNewReleases();
       if (!criticsPicksLoaded && !criticsPicksLoading) loadCriticsPicks();
-      if (concertsLocation && !concertsLoaded && !concertsLoading) loadConcerts();
+      if (concertsLocation && !concertsLoaded && !concertsLoading && !concertsError) loadConcerts();
     };
     const idle = globalThis.requestIdleCallback;
     if (typeof idle === 'function') {
@@ -256,10 +259,10 @@ const HomePage = React.memo(function HomePage(props) {
     () => jumpBackInTiles({ playlists, loves, mixes, active: homeActive }),
     [playlists, loves, mixes, homeActive],
   );
-  const lovesCover = loves.length > 0
+  const lovesCover = React.useMemo(() => (loves.length > 0
     ? { imageUrl: coverFor(loves[0].artist, loves[0].album, loves[0].albumArt), artist: loves[0].artist, title: loves[0].album }
-    : null;
-  const tiles = tilesRaw.map((tile) => {
+    : null), [loves, art]);
+  const tiles = React.useMemo(() => tilesRaw.map((tile) => {
     if (tile.kind === 'playlist') return { ...tile, mosaic: allPlaylistCovers[tile.item.id] || null };
     if (tile.kind === 'loves') return { ...tile, imageUrl: lovesCover && lovesCover.imageUrl };
     if (tile.kind === 'album') {
@@ -269,7 +272,7 @@ const HomePage = React.memo(function HomePage(props) {
       return { ...tile, imageUrl, item: { ...tile.item, imageUrl, title: album } };
     }
     return tile;
-  });
+  }), [tilesRaw, allPlaylistCovers, lovesCover, loves, art]);
 
   const homePlaylists = React.useMemo(() => {
     const now = Date.now();
@@ -288,12 +291,19 @@ const HomePage = React.memo(function HomePage(props) {
 
   // ----------------------------------------------------------- album rows
 
-  const albums = (recommendationAlbums || []).map((a) => ({ ...a, imageUrl: coverFor(a.artist, a.title, a.imageUrl) }));
-  const fresh = (newReleases || []).slice(0, HOME_HALF_ROW_CARDS).map((r) => ({
-    ...r, imageUrl: coverFor(r.artist, r.title, r.albumArt), tag: releaseTag(r.date, Date.now()), homeRow: 'fresh',
-  }));
-  const critical = (criticsPicks || []).slice(0, HOME_HALF_ROW_CARDS)
-    .map((c) => ({ ...c, imageUrl: coverFor(c.artist, c.title, c.albumArt), homeRow: 'critical' }));
+  // The cover map (`art`) is a dependency: coverFor reads it, and a broken
+  // URL is dropped by a write to it.
+  const albums = React.useMemo(
+    () => (recommendationAlbums || []).map((a) => ({ ...a, imageUrl: coverFor(a.artist, a.title, a.imageUrl) })),
+    [recommendationAlbums, art],
+  );
+  // "Out Friday" and the like are relative to now, fixed when the list changes.
+  const freshNow = React.useMemo(() => Date.now(), [newReleases]);
+  const fresh = React.useMemo(() => (newReleases || []).slice(0, HOME_HALF_ROW_CARDS).map((r) => ({
+    ...r, imageUrl: coverFor(r.artist, r.title, r.albumArt), tag: releaseTag(r.date, freshNow), homeRow: 'fresh',
+  })), [newReleases, freshNow, art]);
+  const critical = React.useMemo(() => (criticsPicks || []).slice(0, HOME_HALF_ROW_CARDS)
+    .map((c) => ({ ...c, imageUrl: coverFor(c.artist, c.title, c.albumArt), homeRow: 'critical' })), [criticsPicks, art]);
 
   // Covers Home resolves itself: the album tile and recommended albums that
   // came without one. Fresh Drops and Critical Darlings resolve their own;
@@ -432,9 +442,9 @@ const HomePage = React.memo(function HomePage(props) {
 
   // The Ask box's example: built from local collection names only (Home's
   // Ask skips the chat confirmation), with a phrasing picked once per visit.
-  // The key re-mounts the box when a late collection changes the example;
-  // once it is built from artists it stays put for the visit, so a
-  // background collection update never wipes what the user is typing.
+  // The box adopts a new example only while its field is untouched; and once
+  // the example is built from artists it stays put for the visit, so a
+  // background collection update doesn't keep changing it.
   const askSeed = React.useRef(Date.now());
   const askPrompt = React.useRef(null);
   const topArtists = React.useMemo(() => homeTopArtists(loves), [loves]);
@@ -518,7 +528,8 @@ const HomePage = React.memo(function HomePage(props) {
           ? skeletonSection('jump', 'Jump back in', React.createElement(JumpBackInSkeleton))
           : React.createElement(JumpBackIn, {
             tiles, onPlayTile, onContextMenu: onTileMenu, onArtError,
-            onImport: () => navigateTo('search'),
+            // Library Sync lives in Settings › General.
+            onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
           }),
 
         show.mixes && React.createElement(MixesRow, { mixes, ...mixActions }),
@@ -555,7 +566,6 @@ const HomePage = React.memo(function HomePage(props) {
           : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton)),
 
         React.createElement(AskShuffleupagus, {
-          key: examplePrompt,
           initialPrompt: examplePrompt,
           chatAvailable,
           onAsk: askShuffleupagus,
