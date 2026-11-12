@@ -99,8 +99,9 @@ function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log
     let nextIndex = null;
     try {
       const prev = playlistsIndex || indexPlaylists(keyStore(key).get(key));
-      toWrite = stampTrackChanges(prev, value, now());
-      nextIndex = Array.isArray(toWrite) ? indexPlaylists(toWrite) : null;
+      const filled = new Map();
+      toWrite = stampTrackChanges(prev, value, now(), filled);
+      nextIndex = Array.isArray(toWrite) ? filled : null;
     } catch (error) {
       log(`⚠️ Playlist freshness stamp skipped: ${error && error.message}`);
       toWrite = value;

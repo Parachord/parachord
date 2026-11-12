@@ -25247,6 +25247,9 @@ ${tracks}
     if (stamped.tracksChangedAt != null && stamped.tracksChangedAt !== stateCopy?.tracksChangedAt) {
       const { id, tracksChangedAt, lastChangeAdded } = stamped;
       // After the current updater, never inside it. Only ever moves forward.
+      // Two edits before the playlistsRef effect commits are both diffed
+      // against the pre-edit copy, so lastChangeAdded can over-count by the
+      // first edit's additions. Acceptable for a "+N" badge.
       Promise.resolve().then(() => setPlaylists(prev => {
         const i = prev.findIndex(p => p.id === id);
         if (i < 0 || prev[i].tracksChangedAt >= tracksChangedAt) return prev;

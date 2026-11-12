@@ -292,7 +292,7 @@ A fresh reviewer read this spec as its builder and raised the points below. Each
    - Both run in the background, after Home's local sections (Jump back in, Your playlists) have painted. "No new requests on the critical path" means exactly that: nothing Home needs for its first paint waits on the network.
 2. **Freshness gets its own field (my call).**
    - `lastModified` is bumped by renames and other non-track writes, so it can't be the freshness signal. Add `tracksChangedAt`, set only where a playlist's tracks change: local edits, sync pulls, hosted refreshes.
-   - Also store `lastChangeAdded`, the number of tracks the latest change added (new ids minus old ids), computed at the same moment.
+   - Also store `lastChangeAdded`, the number of tracks the latest change added, computed at the same moment. A track is its content key, not its `id`: artist and title folded like `trackSlug`, with duplicates counted (new keys minus old keys, as a multiset). Track ids can't do it: hosted XSPF tracks have no ids, and ListenBrainz ids are positional (`listenbrainz-track-<playlist>-<index>`), so a weekly playlist that replaces every track keeps every id.
    - Both ride along in the save payload through `buildPlaylistSavePayload`'s spread. No field list changes, and no sync contract changes, because neither field is pushed to a service.
    - A playlist saved before the field exists falls back to `lastModified` until its tracks next change.
 3. **The "+N" badge and "N new" lines use the latest change, not "since your last visit" (my call; this replaces the window stated in section 5).**

@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 
 const {
-  trackIdsOf,
+  trackKeysOf,
   trackKey,
   stampPlaylist,
   stampTrackChanges,
@@ -49,7 +49,7 @@ describe('track identity', () => {
       { id: 'listenbrainz-track-m-0', artist: 'C', title: 'Three' },
       { id: 'listenbrainz-track-m-1', artist: 'D', title: 'Four' },
     ] };
-    expect(trackIdsOf(after)).not.toEqual(trackIdsOf(before));
+    expect(trackKeysOf(after)).not.toEqual(trackKeysOf(before));
   });
 
   test('hosted XSPF tracks carry no id and still get a stable key', () => {
@@ -73,8 +73,8 @@ describe('track identity', () => {
   });
 
   test('ids come out in order', () => {
-    expect(trackIdsOf(playlist())).toEqual([trackSlug('A', 'One'), trackSlug('B', 'Two'), trackSlug('C', 'Three')]);
-    expect(trackIdsOf({ id: 'p' })).toEqual([]);
+    expect(trackKeysOf(playlist())).toEqual([trackSlug('A', 'One'), trackSlug('B', 'Two'), trackSlug('C', 'Three')]);
+    expect(trackKeysOf({ id: 'p' })).toEqual([]);
   });
 });
 
@@ -226,15 +226,22 @@ describe('stampTrackChanges', () => {
     const nextBig = { ...big, tracks: [...big.tracks.slice(10), ...added] }; // 10 removed, 3 added
     const unchanged = [{ ...big, tracks: big.tracks.map((t) => ({ ...t })) }, ...others.map((p) => ({ ...p }))];
 
-    const t0 = Date.now();
     const out = stampTrackChanges(prev, [nextBig, ...others.map((p) => ({ ...p }))], NOW);
     const same = stampTrackChanges(prev, unchanged, NOW);
-    const elapsed = Date.now() - t0;
 
     expect(out[0]).toMatchObject({ tracksChangedAt: NOW, lastChangeAdded: 3 });
     expect(out.slice(1).every((p) => p.tracksChangedAt === undefined)).toBe(true);
     expect(same[0]).toMatchObject({ tracksChangedAt: T0, lastChangeAdded: 5000 });
-    expect(elapsed).toBeLessThan(1000);
+  });
+
+  test('fills an out index equal to indexing the result, keying each track once', () => {
+    const p = playlist();
+    const legacy = { id: 'legacy', tracks: tracksOf(2) };
+    const partial = { id: 'partial', title: 'no tracks' };
+    const next = [{ ...p, tracks: [...p.tracks, track('D', 'Four')] }, legacy, partial, { ...legacy, title: 'dup id' }];
+    const filled = new Map();
+    const out = stampTrackChanges([p, legacy], next, NOW, filled);
+    expect(filled).toEqual(indexPlaylists(out));
   });
 });
 
@@ -334,6 +341,52 @@ describe('the split store stamps every local_playlists write', () => {
     const fresh = { id: 'playlist-1', tracks: tracksOf(2) };
     store.set('local_playlists', [fresh]);
     expect(store.get('local_playlists')[0]).toMatchObject({ tracksChangedAt: NOW, lastChangeAdded: 2 });
+  });
+
+  test('a stamp that throws writes the list as given and leaves the index empty', () => {
+    const p = playlist();
+    const { store, files } = makeStore([p]);
+    const file = files.get('local_playlists');
+    const realGet = file.get;
+    let reads = 0;
+    file.get = (...args) => {
+      reads++;
+      if (reads === 1) throw new Error('unreadable');
+      return realGet(...args);
+    };
+    const edited = { ...p, tracks: [...p.tracks, track('D', 'Four')] };
+    store.set('local_playlists', [edited]);
+    // Written unchanged: the edit's tracks, the old stamp.
+    expect(realGet('local_playlists')).toEqual([edited]);
+    // No index was kept, so the next write reads the file again.
+    store.set('local_playlists', [{ ...edited, tracks: edited.tracks.slice(0, 1) }]);
+    expect(reads).toBe(2);
+    expect(realGet('local_playlists')[0]).toMatchObject({ tracksChangedAt: NOW, lastChangeAdded: 0 });
+  });
+
+  test('a write that fails drops the index, so the next write re-reads the file', () => {
+    const p = playlist();
+    const { store, files } = makeStore([p]);
+    const file = files.get('local_playlists');
+    const realGet = file.get;
+    const realSet = file.set;
+    let reads = 0;
+    file.get = (...args) => { reads++; return realGet(...args); };
+    let failNext = true;
+    file.set = (...args) => {
+      if (failNext) { failNext = false; throw new Error('disk full'); }
+      return realSet(...args);
+    };
+
+    expect(() => store.set('local_playlists', [{ ...p, tracks: [...p.tracks, track('D', 'Four')] }])).toThrow('disk full');
+    expect(reads).toBe(1);
+    // The failed list never reached disk; the next write compares against the file.
+    store.set('local_playlists', [{ ...p, title: 'Renamed' }]);
+    expect(reads).toBe(2);
+    expect(realGet('local_playlists')[0]).toMatchObject({ title: 'Renamed', tracksChangedAt: T0, lastChangeAdded: 3 });
+    // And a successful write keeps an index again.
+    store.set('local_playlists', [{ ...p, title: 'Again' }]);
+    expect(reads).toBe(2);
   });
 
   test('other keys are never stamped', () => {

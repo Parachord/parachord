@@ -47,7 +47,7 @@ function trackKey(track) {
 }
 
 // The playlist's track keys in order. A record with no tracks array gives [].
-function trackIdsOf(playlist) {
+function trackKeysOf(playlist) {
   const tracks = playlist && Array.isArray(playlist.tracks) ? playlist.tracks : [];
   const out = new Array(tracks.length);
   for (let i = 0; i < tracks.length; i++) out[i] = trackKey(tracks[i]);
@@ -61,7 +61,7 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 function entryOf(playlist) {
   if (!playlist) return null;
   return {
-    keys: Array.isArray(playlist.tracks) ? trackIdsOf(playlist) : null,
+    keys: Array.isArray(playlist.tracks) ? trackKeysOf(playlist) : null,
     tracksChangedAt: num(playlist.tracksChangedAt),
     lastChangeAdded: num(playlist.lastChangeAdded),
   };
@@ -104,54 +104,64 @@ function withStamp(record, tracksChangedAt, lastChangeAdded) {
   return { ...record, tracksChangedAt, lastChangeAdded: lastChangeAdded == null ? 0 : lastChangeAdded };
 }
 
-// Stamp one record against its previous version's entry.
+// Stamp one record against its previous version's entry. Returns the record
+// to save and its keys (null when it has no tracks array), so a caller that
+// indexes the result doesn't key the tracks a second time.
 function stampAgainst(prev, next, now) {
-  if (!next || typeof next !== 'object') return next;
   const incomingAt = num(next.tracksChangedAt);
   const incomingAdded = num(next.lastChangeAdded);
   const prevAt = prev ? prev.tracksChangedAt : null;
   const forward = incomingAt != null && (prevAt == null || incomingAt > prevAt);
 
   // No tracks array (a partial record): we can't tell, so keep what we have.
-  const unknown = !Array.isArray(next.tracks);
-  const nextKeys = unknown ? null : trackIdsOf(next);
-  const changed = !unknown && (!prev || prev.keys == null || !sameKeys(prev.keys, nextKeys));
+  const nextKeys = Array.isArray(next.tracks) ? trackKeysOf(next) : null;
+  const changed = nextKeys != null && (!prev || prev.keys == null || !sameKeys(prev.keys, nextKeys));
 
   if (!changed) {
     // Keep the newer of the stored stamp and the incoming one.
-    if (forward || prevAt == null) return next;
-    return withStamp(next, prevAt, prev.lastChangeAdded);
+    if (forward || prevAt == null) return [next, nextKeys];
+    return [withStamp(next, prevAt, prev.lastChangeAdded), nextKeys];
   }
   // Someone (the renderer) already stamped this change.
-  if (forward) return withStamp(next, incomingAt, incomingAdded);
+  if (forward) return [withStamp(next, incomingAt, incomingAdded), nextKeys];
   const added = prev && prev.keys ? countAdded(prev.keys, nextKeys) : nextKeys.length;
-  return withStamp(next, now, added);
+  return [withStamp(next, now, added), nextKeys];
 }
 
 // stampPlaylist(prevPlaylist | null, nextPlaylist, now): the record to save,
 // with the fields set when its tracks changed (next itself when nothing moves).
 function stampPlaylist(prevPlaylist, nextPlaylist, now) {
-  return stampAgainst(entryOf(prevPlaylist), nextPlaylist, now);
+  if (!nextPlaylist || typeof nextPlaylist !== 'object') return nextPlaylist;
+  return stampAgainst(entryOf(prevPlaylist), nextPlaylist, now)[0];
 }
 
-// stampTrackChanges(prevList | index, nextList, now): nextList with every
-// record whose tracks changed stamped. Returns nextList itself when nothing
-// moved, a new array otherwise; never mutates its input. Anything that isn't
-// an array passes through.
-function stampTrackChanges(prevList, nextList, now) {
+// stampTrackChanges(prevList | index, nextList, now[, outIndex]): nextList
+// with every record whose tracks changed stamped. Returns nextList itself when
+// nothing moved, a new array otherwise; never mutates its input. Anything that
+// isn't an array passes through. When `outIndex` (a Map) is given, it is
+// filled with the result's index, the same as indexPlaylists(result), from
+// the keys this call already computed.
+function stampTrackChanges(prevList, nextList, now, outIndex) {
   if (!Array.isArray(nextList)) return nextList;
   const prev = prevList instanceof Map ? prevList : indexPlaylists(prevList);
   let out = null;
   for (let i = 0; i < nextList.length; i++) {
     const p = nextList[i];
     if (!p || typeof p !== 'object' || p.id == null) continue;
-    const stamped = stampAgainst(prev.get(p.id) || null, p, now);
+    const [stamped, keys] = stampAgainst(prev.get(p.id) || null, p, now);
     if (stamped !== p) {
       if (!out) out = nextList.slice();
       out[i] = stamped;
+    }
+    if (outIndex && !outIndex.has(p.id)) {
+      outIndex.set(p.id, {
+        keys,
+        tracksChangedAt: num(stamped.tracksChangedAt),
+        lastChangeAdded: num(stamped.lastChangeAdded),
+      });
     }
   }
   return out || nextList;
 }
 
-module.exports = { trackKey, trackIdsOf, indexPlaylists, stampPlaylist, stampTrackChanges };
+module.exports = { trackKey, trackKeysOf, indexPlaylists, stampPlaylist, stampTrackChanges };
