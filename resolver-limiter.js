@@ -9,7 +9,8 @@
  *
  *  2. `wrapResolverSearchesWithLimiter(resolvers)` — in-place mutation
  *     helper that routes each non-skipped resolver's `.search` method
- *     through `window.globalResolverLimiter`. Idempotent.
+ *     through `window.globalResolverLimiter`, and gives EVERY resolver's
+ *     `.resolve` a time budget (RESOLVE_BUDGET_MS). Idempotent.
  *
  * The factory schedules jobs with three throttle dimensions:
  *
@@ -173,8 +174,40 @@
     return undefined;
   };
 
+  // Every resolver's resolve() gets this long. Track resolution waits for every
+  // active resolver and the scheduler resolves one track at a time, so one
+  // resolver that never answers held every row on screen (2026-11-12: iTunes
+  // answered 403 and Apple Music's fallback waited minutes in its queue). Past
+  // the budget the call rejects with ResolverTimeoutError: the row moves on
+  // with what the others found, and since it is an error, not an empty answer,
+  // nothing is cached as a miss, so the resolver is asked again next time.
+  const RESOLVE_BUDGET_MS = 8000;
+  const withResolveBudget = (r) => {
+    if (!r || typeof r.resolve !== 'function' || r.__resolveBudgetWrapped) return;
+    const original = r.resolve;
+    r.resolve = function (...args) {
+      let timer = null;
+      const budget = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const err = new Error(`${r.id} did not answer within ${RESOLVE_BUDGET_MS}ms`);
+          err.name = 'ResolverTimeoutError';
+          reject(err);
+        }, RESOLVE_BUDGET_MS);
+        if (timer && typeof timer.unref === 'function') timer.unref();
+      });
+      const call = Promise.resolve().then(() => original.apply(this, args));
+      return Promise.race([call, budget]).finally(() => clearTimeout(timer));
+    };
+    r.__resolveBudgetWrapped = true;
+  };
+
   const wrapResolverSearchesWithLimiter = (resolvers, limiter) => {
     if (!Array.isArray(resolvers)) return resolvers;
+    // The resolve budget applies to every resolver, the limiter-skipped ones
+    // (Apple Music, Spotify, local files) included.
+    for (const r of resolvers) {
+      if (r && typeof r === 'object') withResolveBudget(r);
+    }
     const lim = limiter
       || (typeof window !== 'undefined' ? window.globalResolverLimiter : null);
     if (!lim || typeof lim.run !== 'function') return resolvers;
@@ -196,6 +229,7 @@
     window.wrapResolverSearchesWithLimiter = wrapResolverSearchesWithLimiter;
     window.laneRunOptions = laneRunOptions;
     window.RESOLVER_LIMITER_SKIP_IDS = RESOLVER_LIMITER_SKIP_IDS;
+    window.RESOLVE_BUDGET_MS = RESOLVE_BUDGET_MS;
   }
 
   // Export for Node.js (tests).
@@ -204,7 +238,8 @@
       createLimiter,
       wrapResolverSearchesWithLimiter,
       laneRunOptions,
-      RESOLVER_LIMITER_SKIP_IDS
+      RESOLVER_LIMITER_SKIP_IDS,
+      RESOLVE_BUDGET_MS
     };
   }
 })();
