@@ -1,4 +1,4 @@
-// Source of truth for plugins/listenbrainz.axe v1.4.0.
+// Source of truth for plugins/listenbrainz.axe v1.5.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -248,6 +248,67 @@ module.exports = {
       });
     });
     return { mixes };
+  },
+
+  // The urlLookup capability for a ListenBrainz playlist page
+  // (https://listenbrainz.org/playlist/<mbid>, with or without www. or a
+  // trailing slash): what Home's history-mix cards and any pasted playlist
+  // link go through (resolver-loader.js lookupPlaylist). Fetches the JSPF
+  // from /1/playlist/<mbid> and maps its tracks. A page that isn't a playlist
+  // URL is a miss (null); a failed request throws so the caller can say so
+  // instead of treating an outage as an empty playlist.
+  lookupPlaylist: async function (url, config) {
+    const match = String(url || '').match(/listenbrainz\.org\/playlist\/([^/?#]+)/i);
+    if (!match) return null;
+    const mbid = match[1];
+    const headers = config && config.userToken ? { Authorization: 'Token ' + config.userToken } : {};
+    // Inline retry helper (functions materialize isolated), as in
+    // getRecommendations.
+    const maxRetries = 3;
+    let response = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        response = await fetch(`https://api.listenbrainz.org/1/playlist/${encodeURIComponent(mbid)}`, { headers });
+        if (response.ok) break;
+        if (response.status === 429 || response.status === 503) {
+          if (attempt < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1500));
+          }
+          continue;
+        }
+        break;
+      } catch (networkError) {
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1500));
+        } else {
+          throw networkError;
+        }
+      }
+    }
+    if (!response || !response.ok) {
+      throw new Error(`Failed to fetch the ListenBrainz playlist: ${response ? response.status : 'no response'}`);
+    }
+    const data = await response.json();
+    const playlist = (data && data.playlist) || {};
+    const tracks = [];
+    for (const track of (playlist.track || [])) {
+      const title = track && track.title;
+      if (!title) continue;
+      const mbid = (track.identifier && track.identifier[0] || '').split('/').pop() || null;
+      const out = {
+        artist: (track && track.creator) || 'Unknown Artist',
+        title: title,
+        duration: track.duration ? Math.floor(track.duration / 1000) : null
+      };
+      if (track.album) out.album = track.album;
+      if (mbid) out.mbid = mbid;
+      tracks.push(out);
+    }
+    return {
+      name: playlist.title || 'ListenBrainz Playlist',
+      creator: playlist.creator || undefined,
+      tracks: tracks
+    };
   },
 
   // The similarUsers capability: listeners whose taste is closest to the

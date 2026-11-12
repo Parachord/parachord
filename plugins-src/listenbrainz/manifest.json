@@ -3,7 +3,7 @@
     "id": "listenbrainz",
     "name": "ListenBrainz",
     "type": "meta-service",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "author": "Parachord Team",
     "description": "Open-source music listening data and recommendations powered by your ListenBrainz history",
     "icon": "\ud83c\udfb5",
@@ -13,10 +13,15 @@
   "capabilities": {
     "recommendations": true,
     "historyMixes": true,
+    "urlLookup": true,
     "similarUsers": true,
     "metadata": true,
     "listeningHistory": true
   },
+  "urlPatterns": [
+    "listenbrainz.org/playlist/*",
+    "*.listenbrainz.org/playlist/*"
+  ],
   "settings": {
     "requiresAuth": true,
     "authType": "token",

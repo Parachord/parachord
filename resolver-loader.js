@@ -639,6 +639,10 @@ class ResolverLoader {
       }
       if (url.includes('/song/')) return 'track';
     }
+    // ListenBrainz (a playlist page, e.g. a Daily or Weekly Jams mix)
+    if (url.includes('listenbrainz.org')) {
+      if (/listenbrainz\.org\/playlist\/[^/?#]+/i.test(url)) return 'playlist';
+    }
     // YouTube
     if (url.includes('youtube.com') || url.includes('youtu.be')) {
       if (url.includes('/playlist?list=') || url.includes('&list=')) return 'playlist';

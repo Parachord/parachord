@@ -67,4 +67,18 @@ describe('Apple Music history mixes (capabilities.historyMixes)', () => {
     global.window = { appleMusicPersonalRecommendations: jest.fn().mockRejectedValue(err) };
     await expect(getHistoryMixes({})).rejects.toMatchObject({ notReady: true });
   });
+
+  test('Your Essentials and Favorites are mixes; the name or the URL slug decides', async () => {
+    const b = { data: [group('g', 'Mixes', [
+      playlist('p1', 'Your Essentials', 'personal-mix', 'your-essentials'),
+      playlist('p2', 'Favorites Mix', 'personal-mix', 'favorites-mix'),
+      // Renamed by the locale, but the slug still says Heavy Rotation.
+      playlist('p3', 'Tourniquet', 'personal-mix', 'heavy-rotation-mix'),
+      playlist('p4', 'Favorites', 'editorial', 'favorites'),
+      playlist('p5', 'Get Up!', 'personal-mix', 'get-up')
+    ])] };
+    global.window = { appleMusicPersonalRecommendations: jest.fn().mockResolvedValue(b) };
+    const { mixes } = await getHistoryMixes({});
+    expect(mixes.map(m => m.id)).toEqual(['applemusic-playlist-p1', 'applemusic-playlist-p2', 'applemusic-playlist-p3']);
+  });
 });
