@@ -45,6 +45,8 @@
 
 ## Playback
 
+- **A slow service no longer holds up the tracks you can see.** Parachord waits for every service to answer before a track shows its sources, so one that never answered stopped a whole page from filling in, rows on screen included. Each service now gets 8 seconds per track; one that misses it is skipped this time and asked again later.
+- **Apple Music isn't marked "not found" when Apple is busy.** When Apple's iTunes search turned requests away, Parachord queued them for minutes and then recorded the tracks as missing from Apple Music. It now gives up quickly while Apple is refusing, tries again a little later, and never saves a refusal as a miss.
 - **Previous restarts the song, and the end of the queue clears it.** Previous more than 3 seconds into a song now starts it over, and goes back a song only in the first 3 seconds, as on Android and iOS. When your queue runs out, playback stops and the playbar clears instead of leaving the last song on screen; Previous brings it back.
 - **Previous goes back to the song you were on before.** Playing a song from a track list, a link or the AI DJ replaced the current one without remembering it, so Previous skipped past it. It now goes back to that song, and repeating the queue still starts over from the queue you were playing.
 - **Shuffle from the menu, a link or the AI DJ shuffles the queue.** These only flipped the shuffle setting and left the queue in order; they now shuffle it (and restore the order when turned off), as the playbar button does. During a spinoff or Listen Along, shuffle is unavailable everywhere, not just on the button.
