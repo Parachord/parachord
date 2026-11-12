@@ -280,3 +280,55 @@ describe('Critical Darlings skeleton matches the album cards', () => {
     expect(skeleton).not.toMatch(/w-28 h-28|bg-white rounded-xl border/);
   });
 });
+
+describe('Home skeletons match the Home rows', () => {
+  const dir = path.join(__dirname, '..', '..', 'src', 'renderer', 'components');
+  const sections = fs.readFileSync(path.join(dir, 'home-sections.js'), 'utf8');
+  const skeletons = fs.readFileSync(path.join(dir, 'home-skeletons.js'), 'utf8');
+  const sk = require('../../src/renderer/components/home-skeletons');
+
+  test('the row sizes are the spec values', () => {
+    expect(sk.HOME_TILE_HEIGHT).toBe(72);
+    expect(sk.HOME_ROW_CARDS).toBe(6);
+    expect(sk.HOME_HALF_ROW_CARDS).toBe(3);
+    expect(sk.HOME_CONCERT_CARDS).toBe(4);
+  });
+
+  test('both files use the same HOME_* constants', () => {
+    for (const name of ['HOME_TILE_HEIGHT', 'HOME_ROW_CARDS', 'HOME_HALF_ROW_CARDS', 'HOME_CONCERT_CARDS']) {
+      expect(sections).toContain(name);
+      expect(skeletons).toContain(name);
+    }
+  });
+
+  test('both files use the same grid strings', () => {
+    const grids = (src) => new Set(src.match(/repeat\([^)]*, minmax\(0, 1fr\)\)/g));
+    const inSections = grids(sections);
+    expect(inSections.size).toBeGreaterThan(0);
+    // The tiles and the concert cards are fixed grids in both files; the
+    // card rows pass their count to CardRowSkeleton, which builds the same string.
+    for (const g of ['repeat(4, minmax(0, 1fr))', 'repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))']) {
+      expect(inSections.has(g)).toBe(true);
+      expect(grids(skeletons).has(g)).toBe(true);
+    }
+    expect(sections).toContain('repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))');
+    expect(sections).toContain('repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))');
+    expect(skeletons).toContain('repeat(${cols}, minmax(0, 1fr))');
+  });
+
+  test('the tile and card box match the real ones', () => {
+    expect(sections).toContain('height: `${HOME_TILE_HEIGHT}px`');
+    expect(skeletons).toContain('height: `${HOME_TILE_HEIGHT}px`');
+    expect(sections).toMatch(/aspectRatio: '1'/);
+    expect(skeletons).toContain('aspect-square');
+  });
+
+  test('skeletons render', () => {
+    global.React = global.React || require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    expect(renderToStaticMarkup(React.createElement(sk.JumpBackInSkeleton))).toContain('shimmer');
+    expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 6 })).match(/aspect-square/g) || []).length).toBe(6);
+    expect((renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, { count: 3, columns: 3 })).match(/aspect-square/g) || []).length).toBe(3);
+    expect(renderToStaticMarkup(React.createElement(sk.ConcertRowSkeleton))).toContain('shimmer');
+  });
+});
