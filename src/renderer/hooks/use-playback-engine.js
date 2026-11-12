@@ -244,6 +244,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   // isPlayingRef is a Parachord-owned input (volume-hook consumes it first —
   // the engine syncs it here every render from the engine-owned isPlaying)
   const [trackLoading, setTrackLoading] = React.useState(false);
+  // The track the load in progress is starting (playbarShowsTrack): a play of
+  // the track already in the playbar keeps its cover and title on screen.
+  const [loadingTrack, setLoadingTrack] = React.useState(null);
+  React.useEffect(() => {
+    if (!trackLoading) setLoadingTrack(null);
+  }, [trackLoading]);
   const [browserPlaybackActive, setBrowserPlaybackActive] = React.useState(false); // Track confirmed playing in the user's browser
   const [activeExtensionTabId, setActiveExtensionTabId] = React.useState(null); // Which extension tab is playing
   // (spinoff session state is Parachord-owned input — its mode evaluates in
@@ -799,6 +805,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     };
 
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
+    setLoadingTrack(trackOrSource);
     setTrackLoading(true); // Show loading state in playbar
 
     // Stop all local audio sources (HTML5 Audio) - do this first to prevent overlap
@@ -3715,6 +3722,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     setIsPlaying,
     trackLoading,
     setTrackLoading,
+    loadingTrack,
     browserPlaybackActive,
     setBrowserPlaybackActive,
     activeExtensionTabId,

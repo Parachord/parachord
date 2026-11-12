@@ -1182,7 +1182,7 @@ const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require(
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
-const { holdPreviousPlaybarArt, trackArtKey } = require('./lib/playbar-art');
+const { holdPreviousPlaybarArt, trackArtKey, playbarShowsTrack } = require('./lib/playbar-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
 const { checkSpinoffAvailable, lastfmJsonFetcher } = require('./lib/spinoff-pool');
@@ -8179,6 +8179,7 @@ const Parachord = () => {
     setIsPlaying,
     trackLoading,
     setTrackLoading,
+    loadingTrack,
     browserPlaybackActive,
     setBrowserPlaybackActive,
     activeExtensionTabId,
@@ -45593,7 +45594,7 @@ useEffect(() => {
             zone: 'now-playing',
             isActive: isDraggingUrl && dropZoneTarget === 'now-playing'
           }),
-          currentTrack && !trackLoading ? [
+          playbarShowsTrack(currentTrack, trackLoading, loadingTrack) ? [
             React.createElement(Tooltip, {
               key: 'album-art-tooltip',
               content: window.pickAlbumNameForTrack(currentTrack, null) ? `View "${window.pickAlbumNameForTrack(currentTrack, null)}" · Drag to add to playlist` : 'Drag to add to playlist',

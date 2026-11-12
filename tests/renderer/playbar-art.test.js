@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { holdPreviousPlaybarArt, trackArtKey } = require('../../src/renderer/lib/playbar-art');
+const { holdPreviousPlaybarArt, trackArtKey, playbarShowsTrack } = require('../../src/renderer/lib/playbar-art');
 
 const track = { artist: 'Swapmeet', album: 'Mount Zero', title: 'I Know!' };
 
@@ -37,6 +37,55 @@ describe('holdPreviousPlaybarArt', () => {
 
   test('with no track at all, nothing changes', () => {
     expect(holdPreviousPlaybarArt(null, null)).toBe(true);
+  });
+});
+
+// Play on a paused track that goes back through handlePlay (the first Play
+// after a restart, after a failed play, or after the engine was stopped)
+// swapped the playbar's cover, title and artist for the loading skeleton and
+// back, though the track never changed: it looked like a reload.
+describe('playbarShowsTrack', () => {
+  const playing = { id: 'swapmeet-i-know', artist: 'Swapmeet', title: 'I Know!', albumArt: 'https://x/a.jpg' };
+
+  test('not loading: the track shows', () => {
+    expect(playbarShowsTrack(playing, false, null)).toBe(true);
+  });
+
+  test('loading the track already on screen keeps it there', () => {
+    expect(playbarShowsTrack(playing, true, { ...playing })).toBe(true);
+    // handlePlay may pass a copy with more sources or a resolving status.
+    expect(playbarShowsTrack({ ...playing, status: 'resolving' }, true, { ...playing, sources: { spotify: {} } })).toBe(true);
+  });
+
+  test('loading another track shows the skeleton, not the old cover and title', () => {
+    expect(playbarShowsTrack(playing, true, { id: 'other', artist: 'B', title: 'T' })).toBe(false);
+  });
+
+  test('a load flagged before handlePlay ran is another track: skeleton', () => {
+    expect(playbarShowsTrack(playing, true, null)).toBe(false);
+  });
+
+  test('no track: skeleton', () => {
+    expect(playbarShowsTrack(null, false, null)).toBe(false);
+    expect(playbarShowsTrack(null, true, playing)).toBe(false);
+  });
+});
+
+describe('the engine and playbar wire it', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+  const engine = fs.readFileSync(path.join(__dirname, '../../src/renderer/hooks/use-playback-engine.js'), 'utf8');
+
+  test('handlePlay records the track it starts with the loading flag', () => {
+    expect(engine).toMatch(/setLoadingTrack\(trackOrSource\);\s*setTrackLoading\(true\)/);
+  });
+
+  test('the record clears when the load ends, so a later click is not mistaken for it', () => {
+    expect(engine).toMatch(/if \(!trackLoading\) setLoadingTrack\(null\);\s*\}, \[trackLoading\]\)/);
+  });
+
+  test('the playbar asks playbarShowsTrack instead of hiding on any load', () => {
+    expect(app).toContain('playbarShowsTrack(currentTrack, trackLoading, loadingTrack) ? [');
+    expect(app).not.toContain('currentTrack && !trackLoading ? [');
   });
 });
 
