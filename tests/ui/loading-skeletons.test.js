@@ -6,7 +6,8 @@
  *   skeleton", but the cards that shimmer their own images only exist once
  *   the fetch returns. The sectioned page (#1309) has its skeletons in
  *   src/renderer/components/recommendation-skeletons.js: cards, song rows,
- *   whole sections, a provider still loading, a page still being fetched.
+ *   friends, a subsection (header and row), the page (section headings then
+ *   subsections), a provider still loading, a page still being fetched.
  * - Critical Darlings' skeleton was a different box from the album cards
  *   (112px cover vs 180px, 16px vs 12px padding, bordered white box vs the
  *   card background), so the list jumped when the picks arrived.
@@ -24,8 +25,9 @@ describe('Recommendations skeletons match the sectioned page', () => {
   const skel = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'recommendation-skeletons.js'), 'utf8');
   const view = app.slice(app.indexOf("activeView === 'recommendations' && React.createElement"));
   const loading = view.slice(view.indexOf('recommendations.loading && sections.length === 0 ?'), view.indexOf(": recommendations.error === 'not_configured' ?"));
-  const renderSection = view.slice(view.indexOf('const renderSection = (section) => {'));
-  const songRow = view.slice(view.indexOf('const songRow = (item, index, allSongs, section) => {'), view.indexOf('// ── One section'));
+  const renderSubsection = view.slice(view.indexOf('const renderSubsection = (sub) => {'));
+  const songRow = view.slice(view.indexOf('const songRow = (item, index, allSongs, section) => {'), view.indexOf('// ── Friends'));
+  const friendCard = view.slice(view.indexOf('const friendCard = (item, index) => {'), view.indexOf('// ── One subsection'));
   const artistCard = view.slice(view.indexOf('const artistCard = (item, index) => {'), view.indexOf('const albumCard = (item, index) => {'));
 
   test('the empty page renders the page skeleton', () => {
@@ -34,8 +36,23 @@ describe('Recommendations skeletons match the sectioned page', () => {
 
   test('same grid as the section cards', () => {
     const grid = "gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))'";
-    expect(renderSection).toContain(grid);
+    expect(renderSubsection).toContain(grid);
     expect(skel).toContain(grid);
+  });
+
+  test('same grid, card box and hexagon as the friend cards', () => {
+    const grid = "gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))'";
+    expect(renderSubsection).toContain(grid);
+    expect(skel).toContain(grid);
+    for (const part of ["padding: '14px 12px'", "borderRadius: '10px'", "width: '100px', height: '100px'"]) {
+      expect(friendCard).toContain(part);
+      expect(skel).toContain(part);
+    }
+    // The hexagon is Collection -> Friends' clip-path, verbatim.
+    const collection = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'collection-page.js'), 'utf8');
+    const hex = collection.match(/clipPath: '(polygon\([^']+\))'/)[1];
+    expect(friendCard).toContain(hex);
+    expect(skel).toContain(hex);
   });
 
   test('same card box', () => {
@@ -65,25 +82,59 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(skel).toContain(`const SONG_PREVIEW = ${songs};`);
   });
 
-  test('providers still loading and Shuffleupagus thinking get section skeletons', () => {
+  test('providers still loading get one unlabeled skeleton after the content sections, before Friends', () => {
     // One unlabeled skeleton: a provider can answer "not ready" (Amazon Music
     // active without a subscription), so naming one promised sections that
     // never came (#1328 review).
-    expect(view).toMatch(/recommendationsPending\.length > 0 && React\.createElement\(RecommendationSectionSkeleton, \{\s*key: 'rec-pending'\s*\}\)/);
+    expect(view).toMatch(/recommendationsPending\.some\(p => !p\.friends\) && React\.createElement\(RecommendationSubsectionSkeleton, \{\s*key: 'rec-pending'/);
     expect(view).not.toMatch(/badge: p\.name/);
-    // Where the providers' rows land: after the type sections on screen
-    // (Shuffleupagus no longer has a section of its own; its picks blend into
-    // the For you rows), with the LLM's thinking skeleton after it.
-    const list = view.slice(view.indexOf('...typeSection.rows.map(renderSection)'));
-    expect(list.indexOf('recommendationsPending.length > 0 &&')).toBeGreaterThan(0);
-    expect(list.indexOf('llmLoading && React.createElement(RecommendationSectionSkeleton, {'))
-      .toBeGreaterThan(list.indexOf('recommendationsPending.length > 0 &&'));
+    // Friends is last, so a pending provider never pushes content down from above.
+    const list = view.slice(view.indexOf('...contentBlocks,'));
+    const pending = list.indexOf("key: 'rec-pending'");
+    expect(pending).toBeGreaterThan(0);
+    expect(list.indexOf('friendsSection && renderTypeSection(friendsSection)')).toBeGreaterThan(pending);
+    // The old Shuffleupagus section skeleton is gone: its picks blend into the
+    // For you rows, so its loading state is a tail on them.
+    expect(view).not.toContain("title: 'Shuffleupagus'");
+    expect(view).not.toContain('RecommendationSectionSkeleton');
   });
 
-  test('an expanded section loading its next page shows placeholder cards and rows', () => {
-    expect(renderSection).toMatch(/const showLoadingTail = loadingMore && expanded;/);
-    expect(renderSection).toMatch(/showLoadingTail && songItems\.length === 0[\s\S]{0,120}RecommendationCardSkeleton/);
-    expect(renderSection).toMatch(/showLoadingTail[\s\S]{0,120}RecommendationSongRowSkeleton/);
+  test('Shuffleupagus thinking: a card tail on the Albums and Artists For you rows, or one subsection skeleton when neither exists', () => {
+    // Only while there are no picks to show (a refresh keeps the cached batch as real cards).
+    expect(view).toMatch(/const llmHasPicks = !!\(ai && \(\(ai\.albums \|\| \[\]\)\.length > 0 \|\| \(ai\.artists \|\| \[\]\)\.length > 0\)\);/);
+    expect(view).toMatch(/const llmLoading = !!ai\?\.loading && !llmHasPicks;/);
+    expect(view).toMatch(/const LLM_TAIL_ROWS = new Set\(\['foryou:album', 'foryou:artist'\]\);/);
+    expect(renderSubsection).toMatch(/const llmTail = llmLoading && LLM_TAIL_ROWS\.has\(sub\.key\) \? LLM_TAIL : 0;/);
+    expect(renderSubsection).toMatch(/Array\.from\(\{ length: llmTail \}[\s\S]{0,160}RecommendationCardSkeleton/);
+    expect(view).toMatch(/const llmPlaceholder = llmLoading && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
+    expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSubsectionSkeleton, \{ key: 'rec-llm'/);
+  });
+
+  test('Friends shows hexagon skeletons while its answer is pending and nothing is cached', () => {
+    expect(view).toMatch(/const friendsPending = recommendationsPending\.some\(p => p\.friends\);/);
+    expect(view).toMatch(/!friendsSection && friendsPending && React\.createElement\(RecommendationSubsectionSkeleton, \{ key: 'rec-friends-pending', kind: 'friends'/);
+    // The pending entry is added only for a lookup with nothing cached to
+    // show, and leaves the list when that lookup settles.
+    const load = app.slice(app.indexOf('const providers = metaOnly'), app.indexOf('// "Load more" for a titled section'));
+    expect(load).toMatch(/\.concat\(similarToFetch\s*\.filter\(p => !similarStale\[p\.id\]\)\s*\.map\(p => \(\{ id: `friends:\$\{p\.id\}`, name: p\.name \|\| p\.id, friends: true \}\)\)\)/);
+    const fetchBlock = load.slice(load.indexOf('const fetchSimilarUsers = async (provider) => {'), load.indexOf('await Promise.all(['));
+    expect(fetchBlock).toMatch(/applyFresh\(\);\s*if \(isLatest\(\)\) setRecommendationsPending\(prev => prev\.filter\(p => p\.id !== `friends:\$\{provider\.id\}`\)\);/);
+  });
+
+  test('an expanded split loading its next page shows placeholders only while its pages bring it items', () => {
+    // In flight per provider section (the splits share a cursor), shown per
+    // split: a page that brought this split nothing of its type (the provider
+    // section paging for its other splits) ends this split's tail.
+    expect(renderSubsection).toMatch(/const loadingMore = !!recommendationsLoadingMore\[sub\.pagingKey\];/);
+    expect(renderSubsection).toMatch(/const expansion = expandedSections\[sub\.pagingKey\];/);
+    expect(renderSubsection).toMatch(/const lastPageHadMine = !expansion \|\| !Array\.isArray\(expansion\.lastPageTypes\) \|\| expansion\.lastPageTypes\.includes\(sub\.type\);/);
+    expect(renderSubsection).toMatch(/const showLoadingTail = loadingMore && expanded && lastPageHadMine;/);
+    expect(renderSubsection).toMatch(/showLoadingTail[\s\S]{0,200}RecommendationCardSkeleton/);
+    expect(renderSubsection).toMatch(/showLoadingTail[\s\S]{0,200}RecommendationSongRowSkeleton/);
+    // The page fetch records which types it brought.
+    const more = app.slice(app.indexOf('const loadMoreRecommendationSection = async'), app.indexOf('// Re-merge when a "load more" answered'));
+    expect(more).toMatch(/lastPageTypes: \[\.\.\.new Set\(result\.items\.map\(i => i && i\.type\)\.filter\(Boolean\)\)\]/);
+    expect(more).toMatch(/exhausted: true, lastPageTypes: \[\]/);
   });
 
   test('the pending list is set before the provider fetch and cleared once results apply', () => {
@@ -111,24 +162,51 @@ describe('Recommendations skeletons match the sectioned page', () => {
 describe('Recommendations skeleton components render', () => {
   global.React = global.React || require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
+  const skeletons = require('../../src/renderer/components/recommendation-skeletons');
   const {
     RecommendationsPageSkeleton,
-    RecommendationSectionSkeleton
-  } = require('../../src/renderer/components/recommendation-skeletons');
+    RecommendationSubsectionSkeleton,
+    RecommendationFriendSkeleton
+  } = skeletons;
   const count = (html, needle) => html.split(needle).length - 1;
+  const render = (C, props) => renderToStaticMarkup(React.createElement(C, props));
 
-  test('the page skeleton is two card sections and a song section', () => {
-    const html = renderToStaticMarkup(React.createElement(RecommendationsPageSkeleton));
-    expect(count(html, 'aspect-square')).toBe(12);
+  test('the page skeleton is a Songs section and an Albums section, each heading then a subsection header with a tag bar', () => {
+    const html = render(RecommendationsPageSkeleton);
+    // Albums: one collapsed card row; Songs: one collapsed song list.
+    expect(count(html, 'aspect-square')).toBe(6);
     expect(count(html, 'flex items-center gap-4 py-3 px-4')).toBe(5);
+    expect(count(html, 'data-skeleton="section-heading"')).toBe(2);
+    expect(count(html, 'data-skeleton="tag"')).toBe(2);
+    expect(html.indexOf('data-skeleton="section-heading"')).toBeLessThan(html.indexOf('data-skeleton="tag"'));
+    // Songs first, as on the page.
+    expect(html.indexOf('flex items-center gap-4 py-3 px-4')).toBeLessThan(html.indexOf('aspect-square'));
   });
 
-  test('a section skeleton shows a known title, badge and note as text', () => {
-    const html = renderToStaticMarkup(React.createElement(RecommendationSectionSkeleton, { title: 'Shuffleupagus', badge: 'Amazon Music', note: 'thinking…', count: 3 }));
-    expect(html).toContain('Shuffleupagus');
-    expect(html).toContain('Amazon Music');
-    expect(html).toContain('thinking…');
-    expect(count(html, 'aspect-square')).toBe(3);
+  test('a subsection skeleton draws its header (title and tag bars) and the row its kind shows', () => {
+    const songs = render(RecommendationSubsectionSkeleton, { kind: 'songs' });
+    expect(count(songs, 'flex items-center gap-4 py-3 px-4')).toBe(5);
+    expect(count(songs, 'data-skeleton="tag"')).toBe(1);
+    const cards = render(RecommendationSubsectionSkeleton, { kind: 'cards', lines: 2 });
+    expect(count(cards, 'aspect-square')).toBe(6);
+    const friends = render(RecommendationSubsectionSkeleton, { kind: 'friends' });
+    expect(count(friends, 'data-skeleton="friend"')).toBe(6);
+  });
+
+  test('a friend skeleton is a hexagon placeholder', () => {
+    const html = render(RecommendationFriendSkeleton, { index: 2 });
+    expect(html).toContain('data-skeleton="friend"');
+    expect(html).toContain('clip-path:polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)');
+  });
+
+  test('every skeleton export renders aria-hidden', () => {
+    for (const [name, C] of Object.entries(skeletons)) {
+      expect([name, render(C)]).toEqual([name, expect.stringMatching(/^<div[^>]*aria-hidden="true"/)]);
+    }
+  });
+
+  test('the titled section skeleton is gone (Shuffleupagus has no section any more)', () => {
+    expect(skeletons.RecommendationSectionSkeleton).toBeUndefined();
   });
 });
 

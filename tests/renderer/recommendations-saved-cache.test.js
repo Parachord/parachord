@@ -105,7 +105,7 @@ describe('each provider applies as it lands', () => {
 });
 
 describe('recommended playlist cards', () => {
-  const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'), app.indexOf('const cardFor = (item, index, section) => ('));
+  const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'), app.indexOf('// ── Weekly playlists (moved from Home)'));
 
   test('carry the standard playlist hover set: Add to Playlist, Play, Add to Queue', () => {
     const titles = [...card.matchAll(/title: '([^']+)'/g)].map(m => m[1]);

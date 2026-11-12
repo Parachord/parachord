@@ -35,7 +35,7 @@ describe('app.js', () => {
   });
 
   test('an empty provider result is shown as a message and not cached', () => {
-    const i = src.indexOf('if (!anySections && !llmHas) {', src.indexOf('const loadRecommendations = async'));
+    const i = src.indexOf('if (!anySections && !llmHas && !anyFriends) {', src.indexOf('const loadRecommendations = async'));
     const block = src.slice(i, i + 700);
     expect(i).toBeGreaterThan(-1);
     expect(block).toMatch(/error: emptyRecommendationsMessage\(/);

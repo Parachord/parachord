@@ -1215,7 +1215,7 @@ const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-sh
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, flattenRecommendationItems,
-  weeklyHomeEntries, shuffleupagusSection
+  filterSubsectionItems, weeklyHomeEntries, shuffleupagusSection
 } = require('./lib/recommendation-model');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
@@ -1979,7 +1979,7 @@ const { SearchPage } = require('./components/search-page');
 const {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
-  RecommendationSectionSkeleton,
+  RecommendationSubsectionSkeleton,
   RecommendationsPageSkeleton
 } = require('./components/recommendation-skeletons');
 const { useStableHandlers } = require('./lib/stable-handlers');
@@ -3404,7 +3404,17 @@ const Parachord = () => {
   const [recommendationsLoadingMore, setRecommendationsLoadingMore] = useState({});
   // Providers being asked that have nothing on screen yet ({ id, name }), so a
   // page already showing other sections still shows that more is coming.
+  // A similar-users lookup with nothing cached joins the same list as
+  // { id: 'friends:<providerId>', name, friends: true } (the Friends row's
+  // hexagon skeleton), so one set of load-round clears covers both.
   const [recommendationsPending, setRecommendationsPending] = useState([]);
+  // Source filters per row ({ [subsection.key]: Set of source ids turned
+  // OFF}). Session-only on purpose (spec "Filters"): a restart turns every
+  // source back on, so this is never written to the store.
+  const [recommendationSourceFilters, setRecommendationSourceFilters] = useState({});
+  // Whether the last merge put a Friends row on the page: the empty-page
+  // checks run in async load code (refs, not render state) and must count it.
+  const recommendationsFriendsShownRef = useRef(false);
   // Providers whose last answer this session had no sections (empty, or not
   // ready: an active resolver the account can't use, e.g. Amazon Music without
   // a subscription). They are still asked every load, but get no skeleton,
@@ -19457,12 +19467,15 @@ ${trackListXml}
     if (pendingPlaylistLoad) {
       const timer = setTimeout(() => {
         if (pendingPlaylistLoad) {
-          // For ephemeral ListenBrainz playlists, fall back to home (where Weekly Jams are displayed)
+          // For ephemeral ListenBrainz playlists, fall back to Recommendations
+          // (its Playlists section holds Weekly Jams and Exploration). Through
+          // navigateTo so the page loads on arrival; the history then starts
+          // there, as the old fallback's did.
           if (pendingPlaylistLoad.isEphemeral && pendingPlaylistLoad.source === 'listenbrainz') {
-            console.log(`📦 Weekly Jam not found after timeout: ${pendingPlaylistLoad.title}, falling back to home view`);
+            console.log(`📦 Weekly Jam not found after timeout: ${pendingPlaylistLoad.title}, falling back to recommendations view`);
             setPendingPlaylistLoad(null);
-            setActiveView('home');
-            setViewHistory(['home']);
+            navigateTo('recommendations');
+            setViewHistory(['recommendations']);
           } else {
             console.log(`📦 Playlist not found after timeout: ${pendingPlaylistLoad.title}, falling back to playlists view`);
             setPendingPlaylistLoad(null);
@@ -27239,6 +27252,7 @@ Return ONLY the JSON array, no other text.`;
       similarUsers: Object.values(similarUsersRef.current),
       exclude: recommendationExclusions()
     });
+    recommendationsFriendsShownRef.current = sections.some(s => s.type === 'friend');
     setRecommendations(prev => ({ ...prev, sections }));
 
     // Home's weekly fields mirror the page's weekly rows (the playlist view's
@@ -27433,10 +27447,11 @@ Return ONLY the JSON array, no other text.`;
       const anySections = Object.values(providerSectionsRef.current).some(p => p.sections.length > 0);
       const llm = aiRecommendationsRef.current;
       const llmHas = !!(llm && ((llm.albums || []).length > 0 || (llm.artists || []).length > 0));
+      const anyFriends = recommendationsFriendsShownRef.current;
       setRecommendations(prev => ({
         ...prev,
         loading: false,
-        error: (!anySections && !llmHas) ? emptyRecommendationsMessage({ hasListenbrainz, hasLastfm }) : null
+        error: (!anySections && !llmHas && !anyFriends) ? emptyRecommendationsMessage({ hasListenbrainz, hasLastfm }) : null
       }));
       return;
     }
@@ -27452,7 +27467,14 @@ Return ONLY the JSON array, no other text.`;
     setRecommendationsPending(toFetch
       .filter(p => !((providerSectionsRef.current[p.id] || {}).sections || []).length)
       .filter(p => !recommendationsQuietRef.current.has(p.id))
-      .map(p => ({ id: p.id, name: p.name || p.id })));
+      .map(p => ({ id: p.id, name: p.name || p.id }))
+      // A similar-users lookup whose provider has nothing cached to show: the
+      // Friends row's skeleton (a cached answer shows while it refreshes).
+      // Its own id, so a provider that is both kinds (Last.fm) leaves the
+      // list once per answer.
+      .concat(similarToFetch
+        .filter(p => !similarStale[p.id])
+        .map(p => ({ id: `friends:${p.id}`, name: p.name || p.id, friends: true }))));
 
     const loader = resolverLoaderRef.current;
     let failed = 0;
@@ -27527,6 +27549,10 @@ Return ONLY the JSON array, no other text.`;
             accept(late);
             applyFresh();
             saveRecommendationsCache();
+            // The round may already have shown the empty message: Friends win.
+            if (isLatest() && recommendationsFriendsShownRef.current) {
+              setRecommendations(prev => ({ ...prev, loading: false, error: null }));
+            }
           }).catch(() => { /* the provider's own failure: nothing to apply */ });
           throw new Error('timed out');
         }
@@ -27537,6 +27563,7 @@ Return ONLY the JSON array, no other text.`;
         if (similarCachedFor(provider)) similarFresh[provider.id] = similarCachedFor(provider);
       }
       applyFresh();
+      if (isLatest()) setRecommendationsPending(prev => prev.filter(p => p.id !== `friends:${provider.id}`));
     };
 
     await Promise.all([
@@ -27623,7 +27650,10 @@ Return ONLY the JSON array, no other text.`;
     const anySections = Object.values(providerSectionsRef.current).some(p => p.sections.length > 0);
     const llm = aiRecommendationsRef.current;
     const llmHas = !!(llm && ((llm.albums || []).length > 0 || (llm.artists || []).length > 0));
-    if (!anySections && !llmHas) {
+    // Friends counts: a page whose only content is the Friends row is not
+    // empty (the empty branch below would also clear the row off the page).
+    const anyFriends = recommendationsFriendsShownRef.current;
+    if (!anySections && !llmHas && !anyFriends) {
       if (failed === toFetch.length && failed > 0) {
         setRecommendations({ sections: [], loading: false, error: 'Failed to load recommendations. Please try again.' });
       } else {
@@ -27661,7 +27691,7 @@ Return ONLY the JSON array, no other text.`;
       if (!result || !Array.isArray(result.items) || result.items.length === 0) {
         // Nothing more from the provider: remember the exhaustion so the
         // button goes away (a force-refresh resets it).
-        setExpandedSections(prev => ({ ...prev, [key]: { ...(prev[key] || { items: [] }), exhausted: true } }));
+        setExpandedSections(prev => ({ ...prev, [key]: { ...(prev[key] || { items: [] }), exhausted: true, lastPageTypes: [] } }));
       } else {
         // No-advance guard (the same rule paginatePlaylistTracks enforces for
         // playlist pages): a provider answering the very cursor that was sent
@@ -27683,7 +27713,12 @@ Return ONLY the JSON array, no other text.`;
               items: [...(prior.items || []), ...result.items],
               nextCursor,
               exhausted: !nextCursor || pages >= EXPANSION_PAGE_CAP,
-              pages
+              pages,
+              // Which item types this page brought: every split of the
+              // section shares the fetch, and a split whose type the page
+              // didn't bring stops showing its loading tail (spec "Paging
+              // guards") while the section pages on for the others.
+              lastPageTypes: [...new Set(result.items.map(i => i && i.type).filter(Boolean))]
             }
           };
         });
@@ -27714,6 +27749,16 @@ Return ONLY the JSON array, no other text.`;
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
+    });
+  };
+  // A blended row's source tag: turn that source off or back on for THIS row
+  // only (the render applies it through filterSubsectionItems; nothing is
+  // refetched or re-merged).
+  const toggleRecommendationSourceFilter = (subKey, sourceId) => {
+    setRecommendationSourceFilters(prev => {
+      const next = new Set(prev[subKey] || []);
+      if (next.has(sourceId)) next.delete(sourceId); else next.add(sourceId);
+      return { ...prev, [subKey]: next };
     });
   };
 
@@ -34963,7 +35008,7 @@ useEffect(() => {
     getArtistTopTracks, getChatServices, handleCollectionAlbumClick, handlePlay,
     handlePlayPause, handleStartCollectionStation, isOnAir, isServiceEnabled,
     loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    loadWeeklyJamTracks, navigateTo, navigateToFriend, openAiChat,
+    navigateTo, navigateToFriend, openAiChat,
     openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
     setQueueWithContext,
   });
@@ -37147,7 +37192,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, setWhatsNewOpen, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, weeklyJamCovers, whatsNewDismissedVersion,
+          allPlaylistCovers, allResolvers, appVersion, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, setWhatsNewOpen, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, whatsNewDismissedVersion,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServices: metaServices,
@@ -39828,13 +39873,14 @@ useEffect(() => {
         );
         })(),
 
-        // Recommendations view with collapsible hero header. INTERIM render of
-        // the grouped model (the redesign's Task 5 replaces it): each type
-        // section's heading, then its rows (subsections) through renderSection,
-        // which still draws them like the old flat sections. The Friends row
-        // is not drawn yet. Every row shows a few items with a Show-more
-        // toggle; providers that paginate (expandRecommendationSection) fill
-        // an open row in the background.
+        // Recommendations view with collapsible hero header. The grouped page
+        // (docs/superpowers/specs/2026-11-11-recommendations-redesign-design.md
+        // "Rendering"): five type sections in the model's order (Songs,
+        // Albums, Artists, Playlists, Friends), each a heading and its rows
+        // (subsections). A row's header carries its title, its source tags
+        // (filters in a blended row) and See all. Every row shows a preview
+        // until opened; providers that paginate (expandRecommendationSection)
+        // fill an open row in the background.
         activeView === 'recommendations' && React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
           style: { overflow: 'hidden', minHeight: 0 }
@@ -39920,14 +39966,24 @@ useEffect(() => {
               }, 'Personalized picks from your services and Shuffleupagus')
             )
           ),
-          // Scrollable content area — the sectioned page
+          // Scrollable content area: the grouped page
           (() => {
             const sections = recommendations.sections;
-            // Shuffleupagus has no section of its own any more: its items
-            // blend into the For you rows, tagged by sourceIds.
-            const llmSectionPresent = sections.some(s => s.subsections.some(sub => sub.sources.some(src => src.id === 'shuffleupagus')));
-            const llmLoading = !!homeData.aiRecommendations?.loading && !llmSectionPresent;
-            // A collapsed section shows this many items (cards); songs show fewer rows.
+            const allSubsections = sections.flatMap(s => s.subsections || []);
+            // Shuffleupagus has no section of its own: its picks blend into the
+            // Albums and Artists For you rows, so a batch still loading shows
+            // as a card tail on those rows (or, when neither row exists yet,
+            // one subsection skeleton in the Albums slot). Only while it has
+            // no picks to show: a refresh keeps the cached batch on screen as
+            // real cards until the new one lands, and a skeleton only covers
+            // what has nothing to show (#1328).
+            const ai = homeData.aiRecommendations;
+            const llmHasPicks = !!(ai && ((ai.albums || []).length > 0 || (ai.artists || []).length > 0));
+            const llmLoading = !!ai?.loading && !llmHasPicks;
+            const LLM_TAIL_ROWS = new Set(['foryou:album', 'foryou:artist']);
+            const LLM_TAIL = 3;
+            const llmPlaceholder = llmLoading && !allSubsections.some(s => LLM_TAIL_ROWS.has(s.key));
+            // A collapsed row shows this many items (cards); songs show fewer rows.
             const SECTION_PREVIEW = 6;
             const SONG_PREVIEW = 5;
 
@@ -40349,10 +40405,126 @@ useEffect(() => {
               );
             };
 
-            const cardFor = (item, index, section) => (
+            // ── Weekly playlists (moved from Home) ─────────────────────────
+            // A playlist item carrying `weekly` opens and plays through the
+            // weekly path Home used: loadWeeklyJamTracks and the weekly-jam /
+            // weekly-exploration contexts. Its entry in homeData (filled from
+            // these rows at merge) carries tracks a card already loaded, and
+            // the playlist view's pendingPlaylistLoad restore reads it.
+            const weeklyEntryFor = (item) => {
+              const field = item.weekly.contextType === 'weekly-jam' ? 'weeklyJams' : 'weeklyExploration';
+              const entry = (homeData[field] || []).find(j => j.id === item.weekly.id) || null;
+              return { field, entry };
+            };
+            const playWeeklyPlaylist = async (item) => {
+              const { field, entry } = weeklyEntryFor(item);
+              let tracks = (entry && entry.tracks) || [];
+              if (!entry || !entry.tracksLoaded || tracks.length === 0) {
+                tracks = await loadWeeklyJamTracks(item.weekly.id);
+                setHomeData(prev => ({
+                  ...prev,
+                  [field]: prev[field]
+                    ? prev[field].map(j => (j.id === item.weekly.id ? { ...j, tracks, tracksLoaded: true } : j))
+                    : prev[field]
+                }));
+              }
+              if (tracks.length > 0) {
+                const name = `${item.weekly.weekLabel}'s ${item.weekly.label}`;
+                playTrackCollection(tracks, { type: item.weekly.contextType, name });
+                showToast(`Playing ${name}`, 'success');
+              }
+            };
+            const weeklyCard = (item, index, sub) => {
+              const { entry } = weeklyEntryFor(item);
+              const covers = weeklyJamCovers[item.weekly.id];
+              const creator = sub.resolverName || item.resolverId;
+              const record = {
+                id: `${item.resolverId}-${item.weekly.id}`,
+                listenbrainzId: item.weekly.id,
+                title: item.weekly.label,
+                weekLabel: item.weekly.weekLabel,
+                description: entry ? entry.description : null,
+                tracks: (entry && entry.tracks) || [],
+                tracksLoaded: !!(entry && entry.tracksLoaded),
+                isExternal: true,
+                isEphemeral: true,
+                source: item.resolverId,
+                creator
+              };
+              return React.createElement('div', {
+                key: item.id,
+                className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
+                style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
+                onClick: () => loadPlaylist({
+                  id: record.id,
+                  listenbrainzId: item.weekly.id,
+                  title: record.title,
+                  weekLabel: record.weekLabel,
+                  description: record.description,
+                  tracks: record.tracks,
+                  tracksLoaded: record.tracksLoaded,
+                  isExternal: true,
+                  isEphemeral: true,
+                  source: record.source,
+                  creator: record.creator
+                }),
+                onContextMenu: (e) => {
+                  e.preventDefault();
+                  if (window.electron?.contextMenu?.showTrackMenu) {
+                    window.electron.contextMenu.showTrackMenu({
+                      type: 'playlist',
+                      playlistId: record.id,
+                      name: record.title,
+                      creator: record.creator,
+                      tracks: record.tracks
+                    });
+                  }
+                }
+              },
+                React.createElement('div', { className: 'aspect-square relative group/art' },
+                  // Home's 2x2 mosaic from the weekly covers effect, shimmering
+                  // until its covers land.
+                  React.createElement('div', {
+                    className: `w-full h-full grid grid-cols-2 grid-rows-2${!covers ? ' animate-shimmer' : ''}`,
+                    style: {
+                      background: covers
+                        ? 'var(--placeholder-bg)'
+                        : 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
+                      backgroundSize: !covers ? '200% 100%' : undefined
+                    }
+                  },
+                    ...(covers
+                      ? covers.slice(0, 4).map((url, i) => React.createElement('img', { key: i, src: url, alt: '', className: 'w-full h-full object-cover' }))
+                      : [])
+                  ),
+                  React.createElement('div', {
+                    className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/art:opacity-100 pointer-events-none group-hover/art:pointer-events-auto transition-opacity duration-200 flex items-center justify-center',
+                    style: { zIndex: 20 }
+                  },
+                    React.createElement('button', {
+                      onClick: (e) => {
+                        e.stopPropagation();
+                        playWeeklyPlaylist(item);
+                      },
+                      className: 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110',
+                      style: { border: 'none', cursor: 'pointer' },
+                      title: 'Play'
+                    }, React.createElement(Play, { size: 22, className: 'text-gray-800 ml-0.5' }))
+                  )
+                ),
+                React.createElement('div', { className: 'p-3' },
+                  React.createElement('p', { className: 'font-medium text-gray-900 truncate text-sm transition-colors' }, item.weekly.weekLabel),
+                  React.createElement('p', { className: 'text-xs text-gray-500 truncate mt-0.5' },
+                    record.tracksLoaded && record.tracks.length > 0 ? `${record.tracks.length} tracks` : item.weekly.label)
+                )
+              );
+            };
+
+            const cardFor = (item, index, sub) => (
               item.type === 'artist' ? artistCard(item, index)
                 : item.type === 'album' ? albumCard(item, index)
-                : playlistCard(item, index, section)
+                : item.weekly ? weeklyCard(item, index, sub)
+                : playlistCard(item, index, sub)
             );
 
             // ── Song rows (resolve through the shared scheduler) ─────────
@@ -40364,16 +40536,19 @@ useEffect(() => {
               const resolvedSources = trackSources[track.id] || track.sources || {};
               const hasResolved = Object.keys(resolvedSources).length > 0;
               const isResolving = Object.keys(resolvedSources).length === 0;
-              // The row playing now: this track, played from THIS section (the
+              // The row playing now: this track, played from THIS row (the
               // context a row click sets), the playlist view's rule with the
-              // section name standing in for the playlist id, so the same song
-              // in two sections lights only the one it was played from.
+              // row's key standing in for the playlist id. The key, not the
+              // title: "For you" heads every section and a split Amazon
+              // section keeps its title in each, so the same song in two rows
+              // lights only the one it was played from. The name stays the
+              // title, which the queue drawer shows.
               const contextName = section.title || 'Recommendations';
               const isNowPlaying = isPlaying && currentTrack?.id === track.id
-                && playbackContext?.type === 'recommendations' && playbackContext?.name === contextName;
+                && playbackContext?.type === 'recommendations' && playbackContext?.rowKey === section.key;
               const queueTail = (playResolverId) => {
                 const tracksAfter = allSongs.slice(index + 1).map(i => i.track);
-                const context = { type: 'recommendations', name: contextName };
+                const context = { type: 'recommendations', name: contextName, rowKey: section.key };
                 setQueueWithContext(tracksAfter, context);
                 handlePlay(playResolverId ? { ...track, preferredResolver: playResolverId } : track);
               };
@@ -40493,102 +40668,245 @@ useEffect(() => {
               );
             };
 
-            // ── One section ────────────────────────────────────────────────
-            const renderSection = (section) => {
-              const expanded = recommendationsExpandedSections.has(section.key);
-              const songItems = section.items.filter(i => i.type === 'song');
-              const cardItems = section.items.filter(i => i.type !== 'song');
-              const visibleCards = expanded ? cardItems : cardItems.slice(0, SECTION_PREVIEW);
-              const visibleSongs = expanded ? songItems : songItems.slice(0, SONG_PREVIEW);
-              const hiddenCount = section.items.length - visibleCards.length - visibleSongs.length;
-              // In flight per provider section (the splits share a cursor).
-              const loadingMore = !!recommendationsLoadingMore[section.pagingKey];
-              // Only an expanded section shows the incoming page; a collapsed
-              // one has more than it shows already. A section with songs gets
-              // the tail on its song list (its last block on screen).
-              const showLoadingTail = loadingMore && expanded;
-              // Collapse is offered once a section was expandable: more than
-              // the preview of EITHER kind (a 6-song, no-cards section expands
-              // past SONG_PREVIEW and must be able to fold back).
-              const expandable = cardItems.length > SECTION_PREVIEW || songItems.length > SONG_PREVIEW;
-              // A row with Shuffleupagus picks carries its Refresh (the LLM
-              // batch stays until refreshed — lib/home-suggestions-refresh.js).
-              const isShuffleupagus = (section.sources || []).some(src => src.id === 'shuffleupagus');
-              return React.createElement('div', { key: section.key, className: 'mb-8' },
-                React.createElement('div', { className: 'flex items-center justify-between mb-4 gap-4' },
-                  React.createElement('div', { className: 'min-w-0' },
-                    React.createElement('h2', { className: 'text-lg font-semibold text-gray-900 flex items-center gap-2' },
-                      section.title || 'Recommendations',
-                      section.resolverName && React.createElement('span', {
-                        className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded',
-                        style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' }
-                      }, section.resolverName),
-                      React.createElement('span', { className: 'text-xs font-normal text-gray-400' },
-                        loadingMore ? `${section.items.length}…` : `${section.items.length}`),
-                      loadingMore && React.createElement('span', {
-                        className: 'w-3 h-3 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin',
-                        title: `Loading more from ${section.resolverName || 'the service'}`
-                      })
-                    ),
-                    section.description && React.createElement('p', { className: 'text-sm text-gray-500 mt-0.5 truncate' }, section.description)
-                  ),
-                  React.createElement('div', { className: 'flex items-center gap-2 flex-shrink-0' },
-                    isShuffleupagus && React.createElement('button', {
-                      onClick: () => fetchAiRecommendations(),
-                      disabled: !!homeData.aiRecommendations?.loading,
-                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
-                      style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)', opacity: homeData.aiRecommendations?.loading ? 0.6 : 1 },
-                      onMouseEnter: (e) => { if (!homeData.aiRecommendations?.loading) e.currentTarget.style.backgroundColor = 'var(--hover-bg)'; },
-                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)',
-                      title: 'Ask Shuffleupagus for a new batch of suggestions'
-                    }, homeData.aiRecommendations?.loading ? 'Thinking…' : 'Refresh'),
-                    // One toggle per section. Expanding a paginated section also
-                    // kicks off the background page fetches (the auto-fetch effect
-                    // below) — the header just shows a quiet "loading more…" while
-                    // they land, so there is no separate Load-more button.
-                    !expanded && (expandable || hiddenCount > 0) && React.createElement('button', {
-                      onClick: () => toggleRecommendationSection(section.key),
-                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
-                      style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' },
-                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg)',
-                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)'
-                    }, 'Show more'),
-                    expanded && expandable && React.createElement('button', {
-                      onClick: () => toggleRecommendationSection(section.key),
-                      className: 'text-xs font-medium px-3 py-1.5 rounded-full transition-colors no-drag',
-                      style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' },
-                      onMouseEnter: (e) => e.currentTarget.style.backgroundColor = 'var(--hover-bg)',
-                      onMouseLeave: (e) => e.currentTarget.style.backgroundColor = 'var(--placeholder-bg)'
-                    }, 'Show less')
+            // ── Friends ───────────────────────────────────────────────────
+            // A person who listens like you: Collection -> Friends' hexagon
+            // avatar, the username, and the provider's similarity as a whole
+            // percent. A user with no picture (ListenBrainz's lookup sends
+            // none) gets the initial placeholder Collection uses. Opening one
+            // goes to their profile through a friend-shaped object that isn't
+            // in `friends` (the friend loaders work from service and username
+            // alone); nobody is followed or saved from here.
+            const friendCard = (item, index) => {
+              const HEXAGON = 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)';
+              const pct = Number.isFinite(item.similarity)
+                ? Math.round(Math.min(1, Math.max(0, item.similarity)) * 100)
+                : null;
+              return React.createElement('div', {
+                key: item.id,
+                className: 'flex flex-col items-center cursor-pointer group release-card card-fade-up',
+                style: {
+                  padding: '14px 12px',
+                  borderRadius: '10px',
+                  backgroundColor: 'var(--card-bg)',
+                  boxShadow: 'var(--card-shadow)',
+                  animationDelay: `${Math.min(index * 30, 300)}ms`
+                },
+                title: `Open ${item.name}'s profile`,
+                onClick: () => navigateToFriend({
+                  id: `similar:${item.service}:${item.name}`,
+                  username: item.name,
+                  service: item.service,
+                  displayName: item.name,
+                  avatarUrl: item.avatarUrl || null
+                })
+              },
+                React.createElement('div', { className: 'relative', style: { width: '100px', height: '100px' } },
+                  // Outer hexagon ring
+                  React.createElement('div', {
+                    className: 'group-hover:scale-105',
+                    style: {
+                      position: 'absolute',
+                      inset: 0,
+                      clipPath: HEXAGON,
+                      background: 'linear-gradient(135deg, var(--hover-bg-subtle) 0%, var(--hover-bg-default) 100%)',
+                      transition: 'transform 0.3s ease'
+                    }
+                  }),
+                  // Inner hexagon with the avatar or the initial
+                  React.createElement('div', {
+                    style: { position: 'absolute', inset: '3px', clipPath: HEXAGON, overflow: 'hidden' }
+                  },
+                    React.createElement('div', {
+                      className: 'group-hover:scale-110 transition-transform duration-300',
+                      style: {
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        ...(item.avatarUrl
+                          ? { backgroundImage: `url(${JSON.stringify(item.avatarUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                          : { backgroundColor: 'var(--placeholder-bg)' })
+                      }
+                    },
+                      !item.avatarUrl && React.createElement('span', {
+                        style: { fontSize: '28px', fontWeight: '500', color: 'var(--text-tertiary)' }
+                      }, (item.name || '?').charAt(0).toUpperCase())
+                    )
                   )
                 ),
-                visibleCards.length > 0 && React.createElement('div', {
+                React.createElement('div', {
+                  style: { marginTop: '10px', height: '20px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                },
+                  React.createElement('span', {
+                    className: 'truncate',
+                    style: { fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }
+                  }, item.name)
+                ),
+                React.createElement('div', {
+                  className: 'text-xs',
+                  style: { marginTop: '2px', height: '16px', color: 'var(--text-secondary)' }
+                }, pct != null ? `${pct}% similar` : '')
+              );
+            };
+
+            // ── Source tags and the row header ────────────────────────────
+            // Sources are tags in the row's title, never badges on items. In a
+            // blended row each tag is that row's on/off filter (a real button
+            // with aria-pressed); in a single-source row it is a plain label.
+            const sourceTags = (sub) => {
+              const sources = sub.sources || [];
+              if (!sub.blended) {
+                return sources.map(src => React.createElement('span', {
+                  key: src.id,
+                  className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded',
+                  style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' }
+                }, src.name));
+              }
+              const off = recommendationSourceFilters[sub.key];
+              return sources.map(src => {
+                const on = !(off && off.has(src.id));
+                return React.createElement('button', {
+                  key: src.id,
+                  type: 'button',
+                  className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded transition-colors no-drag',
+                  'aria-pressed': on ? 'true' : 'false',
+                  title: on ? `Hide ${src.name}'s picks in this row` : `Show ${src.name}'s picks in this row`,
+                  onClick: () => toggleRecommendationSourceFilter(sub.key, src.id),
+                  style: {
+                    // On: accent-tinted. Off: outlined and struck through. Both
+                    // keep a 1px border, so toggling never shifts the header.
+                    backgroundColor: on ? 'var(--accent-surface)' : 'transparent',
+                    color: on ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                    border: on ? '1px solid transparent' : '1px solid var(--border-default)',
+                    textDecoration: on ? 'none' : 'line-through',
+                    cursor: 'pointer'
+                  }
+                }, src.name);
+              });
+            };
+
+            // The title (a step below the section heading), the tags, and See
+            // all / Show less in Home's link style on the right.
+            const subsectionHeader = (sub, { expanded, showToggle }) => React.createElement('div', {
+              className: 'flex items-start justify-between gap-4 mb-3'
+            },
+              React.createElement('div', { className: 'min-w-0' },
+                React.createElement('div', { className: 'flex items-center gap-2 flex-wrap', style: { minHeight: '24px' } },
+                  React.createElement('h3', { className: 'text-base font-medium', style: { color: 'var(--text-primary)' } }, sub.title || 'Recommendations'),
+                  ...sourceTags(sub)
+                ),
+                sub.description && React.createElement('p', {
+                  className: 'text-sm mt-0.5 truncate',
+                  style: { color: 'var(--text-secondary)' }
+                }, sub.description)
+              ),
+              // Opening a row that can load more also starts its background
+              // page fetches (the auto-paging effect), so there is no separate
+              // load-more control.
+              showToggle && React.createElement('button', {
+                type: 'button',
+                onClick: () => toggleRecommendationSection(sub.key),
+                className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors flex-shrink-0 no-drag',
+                style: { lineHeight: '24px' }
+              }, expanded ? 'Show less' : 'See all')
+            );
+
+            // ── One subsection ────────────────────────────────────────────
+            // A row: its header, then its items under this row's source
+            // filters (filterSubsectionItems: an item hides only when every
+            // source that sent it is off). Open state is per row (sub.key); the
+            // page fetches are per provider section (sub.pagingKey), which its
+            // splits share.
+            const renderSubsection = (sub) => {
+              const expanded = recommendationsExpandedSections.has(sub.key);
+              const items = filterSubsectionItems(sub, recommendationSourceFilters[sub.key]);
+              const isSongs = sub.type === 'song';
+              const preview = isSongs ? SONG_PREVIEW : SECTION_PREVIEW;
+              const llmTail = llmLoading && LLM_TAIL_ROWS.has(sub.key) ? LLM_TAIL : 0;
+              // A collapsed row keeps its preview's size with the Shuffleupagus
+              // tail inside it: the batch's picks interleave near the front, so
+              // the row doesn't grow and shrink as it lands.
+              const visible = expanded ? items : items.slice(0, Math.max(0, preview - llmTail));
+              const canExpand = items.length > preview;
+              const showToggle = expanded || canExpand || sub.canLoadMore;
+              // A page in flight for this row's provider section shows a tail
+              // only on an open split that its pages are still filling: a page
+              // that brought this split nothing of its type (the section paging
+              // on for its other splits) ends this split's tail.
+              const loadingMore = !!recommendationsLoadingMore[sub.pagingKey];
+              const expansion = expandedSections[sub.pagingKey];
+              const lastPageHadMine = !expansion || !Array.isArray(expansion.lastPageTypes) || expansion.lastPageTypes.includes(sub.type);
+              const showLoadingTail = loadingMore && expanded && lastPageHadMine;
+              // Albums and weekly playlists have two text lines.
+              const cardLines = sub.type === 'album' || (sub.items[0] && sub.items[0].weekly) ? 2 : 1;
+              const header = subsectionHeader(sub, { expanded, showToggle });
+
+              let body;
+              if (items.length === 0 && sub.items.length > 0) {
+                // Every source is off: the row stays, with its tags, so a
+                // source can be turned back on.
+                body = React.createElement('p', {
+                  className: 'text-sm py-4',
+                  style: { color: 'var(--text-tertiary)' }
+                }, 'Every source is turned off for this row. Turn one back on to see its picks.');
+              } else if (isSongs) {
+                // `items` is the row's FULL filtered list (the collapsed view
+                // shows a slice): the queue after a clicked row is the rest.
+                body = React.createElement('div', { className: 'space-y-0' },
+                  ...visible.map((item, index) => songRow(item, index, items, sub)),
+                  ...(showLoadingTail
+                    ? Array.from({ length: SONG_PREVIEW }, (_, i) => React.createElement(RecommendationSongRowSkeleton, { key: `rec-more-${i}`, index: i }))
+                    : [])
+                );
+              } else if (sub.type === 'friend') {
+                body = React.createElement('div', {
+                  className: 'grid gap-x-4 gap-y-5',
+                  style: { gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }
+                }, ...visible.map(friendCard));
+              } else {
+                body = React.createElement('div', {
                   className: 'grid gap-4',
                   style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
                 },
-                  ...visibleCards.map((item, index) => cardFor(item, index, section)),
-                  // An expanded section fetching its next page: placeholders
-                  // where the new cards will land (the header spinner alone
-                  // is easy to miss at the bottom of a long grid).
-                  ...(showLoadingTail && songItems.length === 0
-                    ? Array.from({ length: SECTION_PREVIEW }, (_, i) => React.createElement(RecommendationCardSkeleton, {
-                        key: `rec-more-${i}`,
-                        index: i,
-                        lines: cardItems[0] && cardItems[0].type === 'album' ? 2 : 1
-                      }))
-                    : [])
-                ),
-                visibleSongs.length > 0 && React.createElement('div', { className: 'space-y-0' },
-                  ...visibleSongs.map((item, index) => songRow(item, index, songItems, section)),
+                  ...visible.map((item, index) => cardFor(item, index, sub)),
+                  // An open row fetching its next page: placeholders where the
+                  // new cards will land.
                   ...(showLoadingTail
-                    ? Array.from({ length: SONG_PREVIEW }, (_, i) => React.createElement(RecommendationSongRowSkeleton, {
-                        key: `rec-more-${i}`,
-                        index: i
-                      }))
-                    : [])
-                )
-              );
+                    ? Array.from({ length: SECTION_PREVIEW }, (_, i) => React.createElement(RecommendationCardSkeleton, { key: `rec-more-${i}`, index: i, lines: cardLines }))
+                    : []),
+                  // Shuffleupagus still thinking: where its picks will land.
+                  ...Array.from({ length: llmTail }, (_, i) => React.createElement(RecommendationCardSkeleton, {
+                    key: `rec-llm-${i}`, index: visible.length + i, lines: cardLines
+                  }))
+                );
+              }
+              return React.createElement('div', { key: sub.key, className: 'mb-8' }, header, body);
             };
+
+            // ── Types ─────────────────────────────────────────────────────
+            // A type section: its heading at Home's section size (no count),
+            // then its rows. With Shuffleupagus thinking and neither For you
+            // row it would tail on the page, one subsection skeleton stands in
+            // the Albums slot: atop the Albums section, or alone after Songs.
+            const llmSlot = llmPlaceholder && React.createElement(RecommendationSubsectionSkeleton, { key: 'rec-llm', kind: 'cards', lines: 2 });
+            const renderTypeSection = (section) => React.createElement('div', { key: `type:${section.type}`, className: 'mb-4' },
+              React.createElement('h2', { className: 'text-lg font-semibold mb-4', style: { color: 'var(--text-primary)' } }, section.title),
+              section.type === 'album' && llmSlot,
+              ...section.subsections.map(renderSubsection)
+            );
+
+            // ── The page ──────────────────────────────────────────────────
+            const contentSections = sections.filter(s => s.type !== 'friend');
+            const friendsSection = sections.find(s => s.type === 'friend') || null;
+            const friendsPending = recommendationsPending.some(p => p.friends);
+            const contentBlocks = [];
+            let llmSlotPlaced = !llmSlot || contentSections.some(s => s.type === 'album');
+            for (const section of contentSections) {
+              if (!llmSlotPlaced && section.type !== 'song') { contentBlocks.push(llmSlot); llmSlotPlaced = true; }
+              contentBlocks.push(renderTypeSection(section));
+            }
+            if (!llmSlotPlaced) contentBlocks.push(llmSlot);
 
             return React.createElement('div', {
               ref: (el) => {
@@ -40661,32 +40979,22 @@ useEffect(() => {
                       className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
                     }, 'Try Again')
                   )
-                // Sections
+                // The sections (Friends last)
                 : React.createElement('div', null,
-                    ...sections
-                      .map(typeSection => ({ ...typeSection, rows: typeSection.subsections.filter(sub => sub.type !== 'friend') }))
-                      .filter(typeSection => typeSection.rows.length > 0)
-                      .map(typeSection => React.createElement('div', { key: `type:${typeSection.type}`, className: 'mb-4' },
-                        React.createElement('h2', { className: 'text-2xl font-semibold text-gray-900 mb-4' }, typeSection.title),
-                        ...typeSection.rows.map(renderSection)
-                      )),
+                    ...contentBlocks,
                     // Providers still being asked that have nothing on screen
-                    // yet: one unlabeled section skeleton where their rows
-                    // will land. Unlabeled because a provider can answer "not
+                    // yet: one unlabeled skeleton after the last section and
+                    // before Friends, so it never pushes content down from
+                    // above. Unlabeled because a provider can answer "not
                     // ready" (an active resolver the account can't use):
                     // naming it would promise rows that never come.
-                    recommendationsPending.length > 0 && React.createElement(RecommendationSectionSkeleton, {
+                    recommendationsPending.some(p => !p.friends) && React.createElement(RecommendationSubsectionSkeleton, {
                       key: 'rec-pending'
                     }),
-                    // Shuffleupagus skeleton while the LLM thinks (cached
-                    // suggestions render as a real section meanwhile)
-                    llmLoading && React.createElement(RecommendationSectionSkeleton, {
-                      key: 'rec-llm-skeleton',
-                      title: 'Shuffleupagus',
-                      note: 'thinking…',
-                      count: 5,
-                      lines: 2
-                    })
+                    friendsSection && renderTypeSection(friendsSection),
+                    // The similar-users lookups still out with nothing cached:
+                    // hexagon placeholders where the Friends row will land.
+                    !friendsSection && friendsPending && React.createElement(RecommendationSubsectionSkeleton, { key: 'rec-friends-pending', kind: 'friends' })
                   )
               )
             );
@@ -54352,8 +54660,8 @@ useEffect(() => {
             // Open the source URL in the default browser
             window.electron.shell.openExternal(playbackContext.url);
           } else if (playbackContext.type === 'weekly-jam' || playbackContext.type === 'weekly-exploration') {
-            // Navigate to home view where Weekly Jams/Exploration are displayed
-            navigateTo('home');
+            // The weekly playlists live in Recommendations' Playlists section
+            navigateTo('recommendations');
           }
           setQueueDrawerOpen(false);
         },

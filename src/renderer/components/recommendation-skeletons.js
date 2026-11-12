@@ -2,7 +2,8 @@
  * Loading skeletons for the Recommendations page.
  *
  * Each one has the same box as the element it stands in for (the album / artist /
- * playlist card, the song row, a section with its header), so content
+ * playlist card, the song row, a recommended person, a subsection with its
+ * header, the page's section headings), so content
  * replaces it without the page jumping. A layout change to those elements in
  * src/renderer/app.js changes the matching skeleton here in the same PR
  * (renderer-patterns.md, "Loading skeletons match the layout").
@@ -10,9 +11,9 @@
  * Presentational and props-driven: no app state, no hooks.
  */
 
-// The section grid the real cards use (app.js renderSection).
+// The row grid the real cards use (app.js renderSubsection).
 const GRID_STYLE = { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' };
-// What a collapsed section shows (SECTION_PREVIEW / SONG_PREVIEW in app.js).
+// What a collapsed row shows (SECTION_PREVIEW / SONG_PREVIEW in app.js).
 const CARD_PREVIEW = 6;
 const SONG_PREVIEW = 5;
 // Varied bar widths, so a skeleton list doesn't read as one repeated row.
@@ -73,48 +74,89 @@ function RecommendationSongRowSkeleton({ index = 0 } = {}) {
   );
 }
 
+// Collection -> Friends' hexagon and grid (collection-page.js), which the
+// Friends row's cards reuse.
+const HEXAGON = 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)';
+const FRIEND_GRID_STYLE = { gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' };
+
+/** A recommended person: hexagon avatar, then the name and "NN% similar" lines. */
+function RecommendationFriendSkeleton({ index = 0 } = {}) {
+  return React.createElement('div', {
+    className: 'flex flex-col items-center',
+    style: { padding: '14px 12px', borderRadius: '10px', backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)' },
+    'aria-hidden': 'true',
+    'data-skeleton': 'friend'
+  },
+    React.createElement('div', {
+      className: 'shimmer-strong animate-shimmer',
+      style: { width: '100px', height: '100px', clipPath: HEXAGON, backgroundSize: '200% 100%', animationDelay: stagger(index) }
+    }),
+    // The real name line (13px text in a 20px box) and similarity line (text-xs, 16px).
+    React.createElement('div', { style: { marginTop: '10px', height: '20px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+      bar('h-3', { width: TITLE_WIDTHS[index % TITLE_WIDTHS.length], animationDelay: stagger(index, 50) })),
+    React.createElement('div', { style: { marginTop: '2px', height: '16px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+      bar('h-3', { width: '45%', animationDelay: stagger(index, 100) }))
+  );
+}
+
+// A subsection header's stand-ins: the title, then one source tag (the
+// header row is 24px tall, like the real one).
+const subsectionHeader = () => React.createElement('div', {
+  className: 'flex items-center gap-2 mb-3', style: { minHeight: '24px' }
+},
+  bar('h-4', { width: '120px' }),
+  React.createElement('div', {
+    className: 'rounded shimmer-light animate-shimmer',
+    'data-skeleton': 'tag',
+    style: { width: '64px', height: '16px', backgroundSize: '200% 100%', animationDelay: '50ms' }
+  })
+);
+
 /**
- * A whole section: its header, then a collapsed section's worth of cards
- * ('cards') or song rows ('songs'). The header shows `title` / `badge` /
- * `note` as text when they are known (a provider still loading, Shuffleupagus
- * thinking), else a shimmer bar.
+ * One subsection: its header (title and a tag), then a collapsed row's worth
+ * of song rows ('songs'), cards ('cards'; `lines` 2 for albums) or people
+ * ('friends'). Unlabeled on purpose: a provider still loading may answer "not
+ * ready", so naming it would promise a row that never comes (#1328).
  */
-function RecommendationSectionSkeleton({ kind = 'cards', count, lines = 1, title, badge, note } = {}) {
+function RecommendationSubsectionSkeleton({ kind = 'cards', lines = 1, count } = {}) {
   const n = count || (kind === 'songs' ? SONG_PREVIEW : CARD_PREVIEW);
-  return React.createElement('div', { className: 'mb-8', 'aria-busy': 'true' },
-    // Same height as the real header row (text-lg, 28px), so the content below doesn't move.
-    React.createElement('div', { className: 'flex items-center gap-2 mb-4', style: { minHeight: '28px' } },
-      title
-        ? React.createElement('span', { className: 'text-lg font-semibold text-gray-400' }, title)
-        : bar('h-5', { width: '160px' }),
-      badge && React.createElement('span', {
-        className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded',
-        style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' }
-      }, badge),
-      note && React.createElement('span', { className: 'text-xs text-gray-400' }, note)
-    ),
+  return React.createElement('div', { className: 'mb-8', 'aria-hidden': 'true' },
+    subsectionHeader(),
     kind === 'songs'
       ? React.createElement('div', { className: 'space-y-0' },
           ...Array.from({ length: n }, (_, i) =>
             React.createElement(RecommendationSongRowSkeleton, { key: `song-${i}`, index: i })))
-      : React.createElement('div', { className: 'grid gap-4', style: GRID_STYLE },
-          ...Array.from({ length: n }, (_, i) =>
-            React.createElement(RecommendationCardSkeleton, { key: `card-${i}`, index: i, lines })))
+      : kind === 'friends'
+        ? React.createElement('div', { className: 'grid gap-x-4 gap-y-5', style: FRIEND_GRID_STYLE },
+            ...Array.from({ length: n }, (_, i) =>
+              React.createElement(RecommendationFriendSkeleton, { key: `friend-${i}`, index: i })))
+        : React.createElement('div', { className: 'grid gap-4', style: GRID_STYLE },
+            ...Array.from({ length: n }, (_, i) =>
+              React.createElement(RecommendationCardSkeleton, { key: `card-${i}`, index: i, lines })))
   );
 }
 
-/** The empty page while nothing has loaded: the mix of sections the page usually opens with. */
+// A type section's heading (text-lg, 28px line, mb-4 like the real h2).
+const sectionHeading = () => React.createElement('div', {
+  className: 'flex items-center mb-4', style: { minHeight: '28px' }, 'data-skeleton': 'section-heading'
+}, bar('h-5', { width: '100px' }));
+
+/** The empty page while nothing has loaded: the Songs and Albums sections the page opens with. */
 function RecommendationsPageSkeleton() {
-  return React.createElement('div', null,
-    React.createElement(RecommendationSectionSkeleton, { kind: 'cards' }),
-    React.createElement(RecommendationSectionSkeleton, { kind: 'songs' }),
-    React.createElement(RecommendationSectionSkeleton, { kind: 'cards', lines: 2 })
+  return React.createElement('div', { 'aria-hidden': 'true' },
+    React.createElement('div', { className: 'mb-4' },
+      sectionHeading(),
+      React.createElement(RecommendationSubsectionSkeleton, { kind: 'songs' })),
+    React.createElement('div', { className: 'mb-4' },
+      sectionHeading(),
+      React.createElement(RecommendationSubsectionSkeleton, { kind: 'cards', lines: 2 }))
   );
 }
 
 module.exports = {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
-  RecommendationSectionSkeleton,
+  RecommendationFriendSkeleton,
+  RecommendationSubsectionSkeleton,
   RecommendationsPageSkeleton
 };

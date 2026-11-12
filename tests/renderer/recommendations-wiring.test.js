@@ -87,15 +87,17 @@ describe('recommendations wiring', () => {
     expect(albumCard).toMatch(/report\(art, \{ artist: item\.artist, album: item\.name \}\)/);
   });
 
-  test('the song playing from a section shows the now-playing row, like a playlist\'s', () => {
-    // The row had no now-playing state at all; it uses the playlist view's
-    // rule (this track, played from this list, while playing), keyed on the
-    // section name the row click puts in the playback context.
+  test('the song playing from a row shows the now-playing row, like a playlist\'s, in that row only', () => {
+    // The playlist view's rule (this track, played from this list, while
+    // playing), keyed on the ROW the click put in the playback context: two
+    // rows can share a title ("For you" in every section, a split Amazon
+    // section), so the name (what the queue drawer shows) can't decide.
     const start = app.indexOf('const songRow = (');
-    const row = app.slice(start, app.indexOf('const renderSection', start));
+    const row = app.slice(start, app.indexOf('// ── Friends', start));
     expect(row).toMatch(/const contextName = section\.title \|\| 'Recommendations';/);
-    expect(row).toMatch(/const isNowPlaying = isPlaying && currentTrack\?\.id === track\.id\s*&& playbackContext\?\.type === 'recommendations' && playbackContext\?\.name === contextName;/);
-    expect(row).toMatch(/const context = \{ type: 'recommendations', name: contextName \};/);
+    expect(row).toMatch(/const isNowPlaying = isPlaying && currentTrack\?\.id === track\.id\s*&& playbackContext\?\.type === 'recommendations' && playbackContext\?\.rowKey === section\.key;/);
+    expect(row).toMatch(/const context = \{ type: 'recommendations', name: contextName, rowKey: section\.key \};/);
+    expect(row).not.toMatch(/playbackContext\?\.name === contextName/);
     // the playlist view's marks: tinted row, a play glyph for the number, accent title
     expect(row).toMatch(/isNowPlaying \? 'bg-purple-50'/);
     expect(row).toMatch(/isNowPlaying \? '▶' : String\(index \+ 1\)\.padStart\(2, '0'\)/);
@@ -170,11 +172,12 @@ describe('the single Show-more control with background pagination', () => {
     expect(effect).toMatch(/if \(!section\.canLoadMore\) continue;/);
     expect(effect).toMatch(/recommendationsLoadingMoreRef\.current\[section\.pagingKey\]\) continue;/);
     expect(effect).toMatch(/loadMoreRecommendationSection\(section\);/);
-    // One toggle: Show more / Show less — never a Load-more button.
+    // One toggle: See all / Show less, never a Load-more button.
     const view = app.slice(app.indexOf("// Recommendations view with collapsible hero header."));
-    expect(view).toMatch(/'Show more'/);
+    expect(view).toMatch(/'See all'/);
     expect(view).toMatch(/'Show less'/);
     expect(view).not.toMatch(/'Load more'/);
+    expect(view).not.toMatch(/'Show more'/);
   });
 
   test('the background pagination is page-capped per section (a provider minting endless cursors cannot page forever)', () => {
@@ -338,5 +341,129 @@ describe('the grouped model wiring (similar users, weekly sections, readers)', (
     const fn = app.slice(i, app.indexOf('\n  };', i));
     expect(fn).toMatch(/const weekly = weeklyHomeEntries\(sections, prev\);/);
     expect(fn).toMatch(/if \(weekly\.weeklyJams === prev\.weeklyJams && weekly\.weeklyExploration === prev\.weeklyExploration\) return prev;/);
+  });
+});
+
+describe('the five-section page render', () => {
+  const start = app.indexOf('// Recommendations view with collapsible hero header.');
+  const view = app.slice(start, app.indexOf('// History view with collapsible hero header and tabs', start));
+  const between = (from, to) => view.slice(view.indexOf(from), view.indexOf(to, view.indexOf(from)));
+  const home = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-page.js'), 'utf8');
+
+  test('the interim flat render is gone', () => {
+    expect(start).toBeGreaterThan(-1);
+    expect(view).not.toContain('INTERIM');
+    expect(view).not.toContain('const renderSection = ');
+    // The unguarded read the interim render had.
+    expect(view).not.toMatch(/sub\.sources\.some/);
+  });
+
+  test('sections render in the model order, Friends last, each heading at Home\'s section size with no count', () => {
+    expect(view).toMatch(/const contentSections = sections\.filter\(s => s\.type !== 'friend'\);/);
+    expect(view).toMatch(/const friendsSection = sections\.find\(s => s\.type === 'friend'\) \|\| null;/);
+    const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
+    expect(typeSection).toMatch(/React\.createElement\('h2', \{ className: 'text-lg font-semibold mb-4', style: \{ color: 'var\(--text-primary\)' \} \}, section\.title\)/);
+    expect(typeSection).toMatch(/section\.subsections\.map\(renderSubsection\)/);
+    // No item counts beside titles (the old header printed items.length).
+    expect(view).not.toMatch(/`\$\{section\.items\.length\}`|`\$\{sub\.items\.length\}`/);
+  });
+
+  test('"See all" / "Show less" carry Home\'s link classes exactly', () => {
+    const header = between('const subsectionHeader = (sub, ', '// ── One subsection');
+    expect(header).toMatch(/className: 'text-sm text-purple-600 hover:text-purple-700 font-medium( [^']*)?'/);
+    expect(header).toMatch(/expanded \? 'Show less' : 'See all'/);
+    // Only for a row with more than its preview, or more to load.
+    const row = between('const renderSubsection = (sub) => {', '// ── Types');
+    expect(row).toMatch(/const showToggle = expanded \|\| canExpand \|\| sub\.canLoadMore;/);
+  });
+
+  test('no Shuffleupagus Refresh on the page (Home keeps its own)', () => {
+    expect(view).not.toContain('fetchAiRecommendations');
+    // A whole word: the error state's Try Again passes { forceRefresh: true }.
+    expect(view).not.toMatch(/\bRefresh\b/);
+    expect(view).not.toContain('Thinking…');
+  });
+
+  test('a blended row\'s source tags are buttons with aria-pressed; a single-source row\'s tag is a plain label', () => {
+    const tags = between('const sourceTags = (sub) => {', 'const subsectionHeader = (sub, ');
+    expect(tags).toMatch(/if \(!sub\.blended\) \{/);
+    expect(tags).toMatch(/className: 'text-\[10px\] font-semibold uppercase tracking-wider px-1\.5 py-0\.5 rounded'/);
+    expect(tags).toMatch(/style: \{ backgroundColor: 'var\(--placeholder-bg\)', color: 'var\(--text-secondary\)' \}/);
+    expect(tags).toMatch(/React\.createElement\('button', \{[\s\S]{0,300}'aria-pressed': on \? 'true' : 'false'/);
+    expect(tags).toMatch(/onClick: \(\) => toggleRecommendationSourceFilter\(sub\.key, src\.id\)/);
+    // On is accent-tinted; off is outlined and struck through; CSS variables only.
+    expect(tags).toMatch(/textDecoration: on \? 'none' : 'line-through'/);
+    expect(tags).not.toMatch(/#[0-9a-fA-F]{3,6}\b|rgba?\(/);
+  });
+
+  test('filters are session state applied at render, one row at a time, never persisted', () => {
+    expect(app).toContain('const [recommendationSourceFilters, setRecommendationSourceFilters] = useState({});');
+    const row = between('const renderSubsection = (sub) => {', '// ── Types');
+    expect(row).toMatch(/const items = filterSubsectionItems\(sub, recommendationSourceFilters\[sub\.key\]\);/);
+    const toggle = app.slice(app.indexOf('const toggleRecommendationSourceFilter = '), app.indexOf('\n  };', app.indexOf('const toggleRecommendationSourceFilter = ')));
+    expect(toggle).toMatch(/return \{ \.\.\.prev, \[subKey\]: next \};/);
+    // Never written to the store.
+    for (const line of app.split('\n').filter(l => l.includes('recommendationSourceFilters') || l.includes('RecommendationSourceFilter'))) {
+      expect(line).not.toMatch(/store|localStorage/);
+    }
+    expect(app).not.toMatch(/recommendation_source_filters/);
+  });
+
+  test('a row with every source off shows the empty note and keeps its tags', () => {
+    const row = between('const renderSubsection = (sub) => {', '// ── Types');
+    expect(row).toMatch(/items\.length === 0 && sub\.items\.length > 0/);
+    expect(row).toContain('Every source is turned off for this row. Turn one back on to see its picks.');
+    // The header (with the tags) renders before the empty-note branch.
+    expect(row.indexOf('subsectionHeader(sub, ')).toBeLessThan(row.indexOf('Every source is turned off'));
+  });
+
+  test('weekly cards keep Home\'s mosaic, open as ephemeral playlists and play in their weekly context', () => {
+    const card = between('const weeklyCard = (item, index, sub) => {', 'const cardFor = ');
+    expect(card).toMatch(/weeklyJamCovers\[item\.weekly\.id\]/);
+    expect(card).toMatch(/loadPlaylist\(\{[\s\S]*?listenbrainzId: item\.weekly\.id,[\s\S]*?isEphemeral: true,[\s\S]*?\}\)/);
+    const play = view.slice(view.indexOf('const playWeeklyPlaylist = async (item) => {'));
+    expect(play.slice(0, 1400)).toMatch(/tracks = await loadWeeklyJamTracks\(item\.weekly\.id\);/);
+    expect(play.slice(0, 1400)).toMatch(/playTrackCollection\(tracks, \{ type: item\.weekly\.contextType, name/);
+    // Routed by the item's field, never by provider name.
+    expect(view).toMatch(/item\.weekly \? weeklyCard\(item, index, sub\)/);
+    expect(card).not.toMatch(/'listenbrainz'|'ListenBrainz'/);
+  });
+
+  test('a friend card opens the profile with a friend-shaped object that is not in friends', () => {
+    const card = between('const friendCard = (item, index) => {', '// ── One subsection');
+    expect(card).toMatch(/navigateToFriend\(\{\s*id: `similar:\$\{item\.service\}:\$\{item\.name\}`,\s*username: item\.name,\s*service: item\.service,\s*displayName: item\.name,\s*avatarUrl: item\.avatarUrl \|\| null\s*\}\)/);
+    expect(card).toMatch(/% similar/);
+    // No per-item source badge (sources live in the row's tags).
+    expect(card).not.toContain('release-badge');
+  });
+
+  test('Home has no weekly section, and no weekly props', () => {
+    expect(home).not.toContain('Weekly Exploration');
+    expect(home).not.toContain('Weekly Jams');
+    expect(home).not.toContain('weeklyJamCovers');
+    expect(home).not.toContain('loadWeeklyJamTracks');
+  });
+
+  test('both back paths for a weekly playlist go to Recommendations', () => {
+    const drawer = app.slice(app.indexOf("} else if (playbackContext.type === 'weekly-jam' || playbackContext.type === 'weekly-exploration') {"));
+    expect(drawer.slice(0, 300)).toContain("navigateTo('recommendations');");
+    expect(drawer.slice(0, 300)).not.toContain("navigateTo('home')");
+    const timeout = app.slice(app.indexOf('// Give up on pending playlist load after timeout'));
+    const ephemeral = timeout.slice(0, timeout.indexOf('} else {'));
+    expect(ephemeral).toContain("navigateTo('recommendations');");
+    expect(ephemeral).not.toContain("setActiveView('home')");
+  });
+
+  test('the empty-page checks count Friends (a page whose only content is Friends is not empty)', () => {
+    const i = app.indexOf('const loadRecommendations = async');
+    const fn = app.slice(i, app.indexOf('\n  };', i));
+    const checks = fn.match(/!anySections && !llmHas && !anyFriends/g) || [];
+    expect(checks.length).toBe(2);
+    expect((fn.match(/const anyFriends = recommendationsFriendsShownRef\.current;/g) || []).length).toBe(2);
+    const merge = app.slice(app.indexOf('const refreshMergedRecommendations = () => {'));
+    expect(merge.slice(0, merge.indexOf('\n  };'))).toMatch(/recommendationsFriendsShownRef\.current = sections\.some\(s => s\.type === 'friend'\);/);
+    // A late Friends answer clears an empty message the round already showed.
+    const fetchBlock = fn.slice(fn.indexOf('const fetchSimilarUsers = async (provider) => {'), fn.indexOf('await Promise.all(['));
+    expect(fetchBlock).toMatch(/saveRecommendationsCache\(\);\s*(\/\/[^\n]*\n\s*)?if \(isLatest\(\) && recommendationsFriendsShownRef\.current\) \{\s*setRecommendations\(prev => \(\{ \.\.\.prev, loading: false, error: null \}\)\);/);
   });
 });

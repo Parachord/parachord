@@ -45,7 +45,6 @@ const HOME_PAGE_HANDLERS = [
   'loadCriticsPicks',
   'loadNewReleases',
   'loadPlaylist',
-  'loadWeeklyJamTracks',
   'navigateTo',
   'navigateToFriend',
   'openAiChat',
@@ -98,7 +97,6 @@ const HomePage = React.memo(function HomePage(props) {
     loadCriticsPicks,
     loadNewReleases,
     loadPlaylist,
-    loadWeeklyJamTracks,
     metaServiceConfigs,
     navigateTo,
     navigateToFriend,
@@ -127,7 +125,6 @@ const HomePage = React.memo(function HomePage(props) {
     showToast,
     spotifyConnected,
     trackSourcesCache,
-    weeklyJamCovers,
     whatsNewDismissedVersion,
   } = props;
   return React.createElement('div', {
@@ -660,142 +657,6 @@ const HomePage = React.memo(function HomePage(props) {
                     )
                 )
               ),
-
-              // SECTION: Weekly Jams & Weekly Exploration (ListenBrainz, side by side)
-              (homeData.weeklyJams?.length > 0 || homeData.weeklyExploration?.length > 0) && (() => {
-                const hasJams = homeData.weeklyJams?.length > 0;
-                const hasExploration = homeData.weeklyExploration?.length > 0;
-                const hasBoth = hasJams && hasExploration;
-
-                // Render a column of playlist cards for a given list
-                const renderWeeklyColumn = (items, label, contextType, stateField) =>
-                  React.createElement('div', { className: 'flex flex-col' },
-                    React.createElement('div', { className: 'flex items-center gap-2 mb-4' },
-                      React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, label),
-                      React.createElement('span', {
-                        className: 'px-2 py-0.5 rounded-full text-xs font-medium',
-                        style: { backgroundColor: '#FFF3E0', color: '#E65100' }
-                      }, 'ListenBrainz')
-                    ),
-                    React.createElement('div', {
-                      className: hasBoth ? 'grid grid-cols-2 gap-4' : 'grid grid-cols-4 gap-4'
-                    },
-                      items.map((jam, index) =>
-                        React.createElement('button', {
-                          key: jam.id,
-                          className: 'release-card card-fade-up text-left rounded-xl overflow-hidden transition-all hover:shadow-lg',
-                          style: {
-                            backgroundColor: 'var(--card-bg)',
-                            border: 'none',
-                            boxShadow: 'var(--card-shadow)',
-                            animationDelay: `${index * 50}ms`
-                          },
-                          onClick: () => {
-                            const playlist = {
-                              id: `listenbrainz-${jam.id}`,
-                              listenbrainzId: jam.id,
-                              title: jam.title,
-                              weekLabel: jam.weekLabel,
-                              description: jam.description,
-                              tracks: jam.tracks || [],
-                              tracksLoaded: jam.tracksLoaded,
-                              isExternal: true,
-                              isEphemeral: true,
-                              source: 'listenbrainz',
-                              creator: 'ListenBrainz'
-                            };
-                            loadPlaylist(playlist);
-                          },
-                          onContextMenu: (e) => {
-                            e.preventDefault();
-                            if (window.electron?.contextMenu?.showTrackMenu) {
-                              window.electron.contextMenu.showTrackMenu({
-                                type: 'playlist',
-                                playlistId: `listenbrainz-${jam.id}`,
-                                name: jam.title,
-                                creator: 'ListenBrainz',
-                                tracks: jam.tracks || []
-                              });
-                            }
-                          }
-                        },
-                          React.createElement('div', {
-                            className: 'relative aspect-square group/mosaic'
-                          },
-                            React.createElement('div', {
-                              className: `w-full h-full grid grid-cols-2 grid-rows-2${!weeklyJamCovers[jam.id] ? ' animate-shimmer' : ''}`,
-                              style: {
-                                background: weeklyJamCovers[jam.id]
-                                  ? 'linear-gradient(145deg, #1f1f1f 0%, #2d2d2d 50%, #1a1a1a 100%)'
-                                  : 'linear-gradient(to right, var(--shimmer-from), var(--shimmer-via), var(--shimmer-to))',
-                                backgroundSize: !weeklyJamCovers[jam.id] ? '200% 100%' : undefined
-                              }
-                            },
-                              weeklyJamCovers[jam.id]?.slice(0, 4).map((url, i) =>
-                                React.createElement('img', {
-                                  key: i,
-                                  src: url,
-                                  alt: '',
-                                  className: 'w-full h-full object-cover'
-                                })
-                              ) || Array.from({ length: 4 }).map((_, i) =>
-                                React.createElement('div', {
-                                  key: `placeholder-${i}`,
-                                  className: 'w-full h-full',
-                                  style: { backgroundColor: 'transparent' }
-                                })
-                              )
-                            ),
-                            React.createElement('div', {
-                              className: 'absolute inset-0 bg-black/50 opacity-0 group-hover/mosaic:opacity-100 transition-opacity flex items-center justify-center'
-                            },
-                              React.createElement('div', {
-                                className: 'w-14 h-14 rounded-full bg-white flex items-center justify-center hover:scale-110 transition-transform shadow-lg cursor-pointer',
-                                onClick: async (e) => {
-                                  e.stopPropagation();
-                                  let tracks = jam.tracks;
-                                  if (!jam.tracksLoaded || tracks.length === 0) {
-                                    tracks = await loadWeeklyJamTracks(jam.id);
-                                    setHomeData(prev => ({
-                                      ...prev,
-                                      [stateField]: prev[stateField].map(j =>
-                                        j.id === jam.id ? { ...j, tracks, tracksLoaded: true } : j
-                                      )
-                                    }));
-                                  }
-                                  if (tracks.length > 0) {
-                                    playTrackCollection(tracks, { type: contextType, name: `${jam.weekLabel}'s ${label}` });
-                                    showToast(`Playing ${jam.weekLabel}'s ${label}`, 'success');
-                                  }
-                                }
-                              },
-                                React.createElement('svg', { className: 'w-6 h-6 text-gray-900 ml-1', fill: 'currentColor', viewBox: '0 0 24 24' },
-                                  React.createElement('path', { d: 'M8 5v14l11-7z' })
-                                )
-                              )
-                            )
-                          ),
-                          React.createElement('div', { className: 'p-3' },
-                            React.createElement('p', {
-                              className: 'text-gray-900 font-medium truncate',
-                              style: { fontSize: '14px' }
-                            }, jam.weekLabel),
-                            React.createElement('p', {
-                              className: 'text-xs text-gray-500 truncate mt-0.5'
-                            }, jam.tracksLoaded ? `${jam.tracks.length} tracks` : label)
-                          )
-                        )
-                      )
-                    )
-                  );
-
-                return React.createElement('div', {
-                  className: hasBoth ? 'grid grid-cols-2 gap-6' : null
-                },
-                  hasJams && renderWeeklyColumn(homeData.weeklyJams, 'Weekly Jams', 'weekly-jam', 'weeklyJams'),
-                  hasExploration && renderWeeklyColumn(homeData.weeklyExploration, 'Weekly Exploration', 'weekly-exploration', 'weeklyExploration')
-                );
-              })(),
 
               // SECTION: Your Playlists & Friends Listening Now (side by side)
               (() => {
