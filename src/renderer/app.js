@@ -564,7 +564,7 @@ const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
 const { seekSpotify, spotifyPollPredatesSeek, SPOTIFY_SEEK_DEBOUNCE_MS } = require('./lib/spotify-seek');
-const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue } = require('./lib/playback-helpers');
+const { savedPluginConfig, sourcesChangedOnRecheck, shuffleAllowed, SHUFFLE_UNAVAILABLE_MESSAGE, LISTEN_ALONG_FAILED_POLLS_LIMIT, listenAlongWaitDecision, resumeStartPosition, trackPositionKey, REPEAT_UNAVAILABLE_MESSAGE, nextRepeatMode, normalizeRepeatMode, repeatModeFromLoop, loopFromRepeatMode, shouldRestoreQueue, trackBehindPlaceholder } = require('./lib/playback-helpers');
 const { parseFriendLink, buildFriendLink } = require('./lib/friend-link');
 const { listenBrainzCoverUrl } = require('./lib/listenbrainz-cover');
 const {
@@ -11447,6 +11447,18 @@ const Parachord = () => {
       throw new Error('No resolvable input parameters');
     };
 
+    // A link that fails before it plays takes its loading placeholder down
+    // and puts back the track it stood in front of, playing if it was: the
+    // engine never stopped (#1343). It used to clear the playbar, and
+    // "Nothing to play" left the placeholder up. A newer play has already
+    // replaced the placeholder, so this leaves that alone.
+    const restoreProtocolPlaceholder = () => {
+      const shown = currentTrackRef.current;
+      setCurrentTrack(prev => (prev?._protocolLoading ? trackBehindPlaceholder(prev) : prev));
+      if (shown?._protocolLoading && shown._replacedWasPlaying && trackBehindPlaceholder(shown)) setIsPlaying(true);
+      setTrackLoading(false);
+    };
+
     const cleanup = window.electron.onProtocolUrl(async (url) => {
       console.log('🔗 Protocol URL received:', url);
 
@@ -11514,12 +11526,17 @@ const Parachord = () => {
           // Its acknowledgement toast already says "Connecting to …".
           if (['album', 'playlist'].includes(playKind)) {
             const placeholderTitle = params.title || (playKind === 'album' ? 'Loading album…' : 'Loading playlist…');
+            // The track on screen rides on the placeholder (trackBehindPlaceholder):
+            // the play records it on the history, and a failure puts it back.
+            const shown = currentTrackRef.current;
             setCurrentTrack({
               id: `__protocol-loading-${Date.now()}`,
               title: placeholderTitle,
               artist: '',
               status: 'resolving',
               _protocolLoading: true,
+              _replaces: trackBehindPlaceholder(shown),
+              _replacedWasPlaying: shown?._protocolLoading ? !!shown._replacedWasPlaying : !!isPlayingRef.current,
             });
             setIsPlaying(false);
             // Drives the playbar's existing shimmer/loading UI (used by
@@ -11561,6 +11578,7 @@ const Parachord = () => {
                 });
                 if (!tracks || tracks.length === 0) {
                   showToast(`Nothing to play: ${displayName || 'Untitled'}`);
+                  restoreProtocolPlaceholder();
                   break;
                 }
                 // Fisher-Yates shuffle when ?shuffle=1
@@ -11634,6 +11652,7 @@ const Parachord = () => {
               } catch (err) {
                 console.error(`play/${playKind} failed:`, err);
                 showToast(`Play failed: ${err.message}`);
+                restoreProtocolPlaceholder();
               }
               break;
             }
@@ -12222,11 +12241,10 @@ ${trackListXml}
       } catch (error) {
         console.error('🔗 Protocol URL error:', error);
         showToast(`Protocol error: ${error.message}`);
-        // Clear the loading placeholder if one was set; the toast surfaces
-        // the failure but the playbar shouldn't keep showing "Loading…"
-        // forever.
-        setCurrentTrack(prev => prev?._protocolLoading ? null : prev);
-        setTrackLoading(false);
+        // Take the loading placeholder down if one was set; the toast
+        // surfaces the failure but the playbar shouldn't keep showing
+        // "Loading…" forever.
+        restoreProtocolPlaceholder();
       }
     });
 
