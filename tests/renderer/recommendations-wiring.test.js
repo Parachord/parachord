@@ -75,7 +75,7 @@ describe('recommendations wiring', () => {
     const idle = home.indexOf('globalThis.requestIdleCallback');
     const effect = home.slice(home.lastIndexOf('React.useEffect(', idle), home.indexOf('}, [cacheLoaded]);', idle));
     expect(effect).toContain('loadHomeRecommendations();');
-    expect(app).toMatch(/const loadHomeRecommendations = \(\) => \{[\s\S]{0,200}loadRecommendations\(\);/);
+    expect(app).toMatch(/const loadHomeRecommendations = \(\) => \{[\s\S]{0,400}loadRecommendations\(\);/);
     const i = app.indexOf('const loadRecommendations = async');
     const fn = app.slice(i, app.indexOf('\n  };', i));
     expect(fn).toContain('const metaOnly = opts !== true && !!opts?.metaServicesOnly;');

@@ -41,11 +41,21 @@ describe('source', () => {
     expect(effect).toMatch(/!newReleasesLoaded && !newReleasesLoading\) loadNewReleases\(\)/);
     expect(effect).toMatch(/!criticsPicksLoaded && !criticsPicksLoading\) loadCriticsPicks\(\)/);
     expect(effect).toMatch(/!concertsLoaded && !concertsLoading && !concertsError\) loadConcerts\(\)/);
-    // Recommendations: every Home mount, unless a load is running; the
-    // per-provider cache TTL inside decides what is fetched.
+    // Recommendations: every Home mount, unless a load is running or a full
+    // load finished in the last 10 minutes; the per-provider cache TTL
+    // inside decides what is fetched.
     expect(effect).toContain('loadHomeRecommendations();');
     const i2 = app.indexOf('const loadHomeRecommendations = () => {');
-    expect(app.slice(i2, i2 + 200)).toMatch(/if \(recommendations\.loading && recommendationProviderIdsRef\.current !== null\) return;\s*loadRecommendations\(\);/);
+    const fn = app.slice(i2, app.indexOf('\n  };', i2));
+    expect(fn).toMatch(/if \(!shouldLoadHomeRecommendations\(\{[\s\S]*loading: recommendations\.loading,[\s\S]*loadStarted: recommendationProviderIdsRef\.current !== null,[\s\S]*lastFullLoadAt: recommendationsFullLoadAtRef\.current,[\s\S]*\}\)\) return;\s*loadRecommendations\(\);/);
+  });
+
+  test('a full recommendations load stamps when it finishes, from cache or after fetching', () => {
+    const i = app.indexOf('const loadRecommendations = async');
+    const fn = app.slice(i, app.indexOf('\n  };', i));
+    const stamps = fn.match(/if \(!metaOnly\) recommendationsFullLoadAtRef\.current = Date\.now\(\);/g) || [];
+    expect(stamps).toHaveLength(2);
+    expect(fn.indexOf('recommendationsFullLoadAtRef')).toBeGreaterThan(fn.indexOf('if (toFetch.length === 0 && similarToFetch.length === 0) {'));
   });
 
   test('the import card leads to Library Sync in Settings', () => {

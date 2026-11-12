@@ -193,9 +193,19 @@
     return !!(pending && String(pending).trim() && chatOpen && providerId && !loading);
   }
 
+  // Whether a queued Ask prompt is dropped: only when the chat panel goes from
+  // open to closed (the user closed it before the prompt went out). A panel
+  // that is still closed, or still opening, keeps it: the Ask path queues the
+  // prompt in the same tick it opens the panel.
+  /** @param {{ wasOpen?: boolean, chatOpen?: boolean }} [opts] */
+  function shouldDropPendingChatPrompt({ wasOpen, chatOpen } = {}) {
+    return !!wasOpen && !chatOpen;
+  }
+
   const api = {
     buildChatPromptUrl,
     shouldSendPendingChatPrompt,
+    shouldDropPendingChatPrompt,
     isPublicHttpUrl,
     HOSTED_PLAYLIST_MAX_BYTES,
     hostedPlaylistFetchProblem,
@@ -209,6 +219,7 @@
   if (typeof window !== 'undefined') {
     /** @type {any} */ (window).buildChatPromptUrl = buildChatPromptUrl;
     /** @type {any} */ (window).shouldSendPendingChatPrompt = shouldSendPendingChatPrompt;
+    /** @type {any} */ (window).shouldDropPendingChatPrompt = shouldDropPendingChatPrompt;
     /** @type {any} */ (window).isPublicHttpUrl = isPublicHttpUrl;
     /** @type {any} */ (window).HOSTED_PLAYLIST_MAX_BYTES = HOSTED_PLAYLIST_MAX_BYTES;
     /** @type {any} */ (window).hostedPlaylistFetchProblem = hostedPlaylistFetchProblem;

@@ -560,6 +560,7 @@ const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
+const { shouldLoadHomeRecommendations } = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
@@ -1182,6 +1183,7 @@ const { classifyLibraryChanges, applyLibraryPatch, albumArtGroupKey } = require(
 const { createFriendPollBackoff } = require('./lib/friend-poll-backoff');
 const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
+const { cachedCoversToSeed, coverAttemptKey, coverFetchOrder } = require('./lib/playlist-cover-queue');
 const { holdPreviousPlaybarArt, trackArtKey, playbarShowsTrack } = require('./lib/playbar-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
@@ -15312,37 +15314,78 @@ ${trackListXml}
     }
   };
 
-  // Fetch playlist covers when viewing playlists page or home page
+  // Fetch playlist covers when viewing playlists page or home page.
+  // First, every cover set the cache already holds goes on screen in one state
+  // write, before any network work. Then the missing ones are fetched
+  // freshest first (Home's order; hosted XSPF playlists sit at the end of
+  // storage but lead Home), one loop at a time: a playlists change while the
+  // loop runs makes it start over with the new order instead of stacking a
+  // second loop. A playlist that got covers (or has no tracks) isn't asked
+  // again until its tracks change; one that got none (offline, say) is asked
+  // again on the next pass, as before.
+  // (src/renderer/lib/playlist-cover-queue.js)
+  const playlistCoverLoopRef = useRef({ running: false, again: false, tried: new Set() });
   useEffect(() => {
     if ((activeView !== 'playlists' && activeView !== 'home') || playlists.length === 0) return;
 
-    // Fetch covers for playlists that don't have cached covers yet
+    const seed = cachedCoversToSeed(playlists, playlistCoverCache.current, allPlaylistCovers);
+    if (seed) {
+      setAllPlaylistCovers(prev => {
+        let next = prev;
+        for (const [id, covers] of Object.entries(seed)) {
+          if (next[id]) continue;
+          if (next === prev) next = { ...prev };
+          next[id] = covers;
+        }
+        return next;
+      });
+    }
+
+    const loop = playlistCoverLoopRef.current;
+    if (loop.running) {
+      loop.again = true;
+      return;
+    }
+    loop.running = true;
     const fetchMissingCovers = async () => {
-      for (const playlist of playlists) {
-        // Skip if we already have covers for this playlist
-        if (allPlaylistCovers[playlist.id]) continue;
+      try {
+        do {
+          loop.again = false;
+          const order = coverFetchOrder(playlistsRef.current, playlistCoverCache.current, loop.tried);
+          for (const playlist of order) {
+            if (loop.again) break; // the list changed: start over in its order
 
-        // Get tracks from playlist
-        let tracks = playlist.tracks || [];
+            // Get tracks from playlist
+            let tracks = playlist.tracks || [];
 
-        // If no tracks array but has XSPF, parse it
-        if (tracks.length === 0 && playlist.xspf) {
-          const parsed = parseXSPF(playlist.xspf);
-          if (parsed) {
-            tracks = parsed.tracks;
+            // If no tracks array but has XSPF, parse it
+            if (tracks.length === 0 && playlist.xspf) {
+              const parsed = parseXSPF(playlist.xspf);
+              if (parsed) {
+                tracks = parsed.tracks;
+              }
+            }
+
+            if (tracks.length === 0) {
+              loop.tried.add(coverAttemptKey(playlist));
+              continue;
+            }
+
+            // Fetch covers using the existing function (which handles caching)
+            const covers = await getPlaylistCovers(playlist.id, tracks);
+            if (covers.length > 0) {
+              loop.tried.add(coverAttemptKey(playlist));
+              setAllPlaylistCovers(prev => ({
+                ...prev,
+                [playlist.id]: covers
+              }));
+            }
           }
-        }
-
-        if (tracks.length === 0) continue;
-
-        // Fetch covers using the existing function (which handles caching)
-        const covers = await getPlaylistCovers(playlist.id, tracks);
-        if (covers.length > 0) {
-          setAllPlaylistCovers(prev => ({
-            ...prev,
-            [playlist.id]: covers
-          }));
-        }
+        } while (loop.again);
+      } catch (err) {
+        console.warn('Playlist covers failed:', err);
+      } finally {
+        loop.running = false;
       }
     };
 
@@ -17684,6 +17727,18 @@ ${trackListXml}
     pendingChatPromptRef.current = null;
     handleAiChatSendRef.current?.(pending);
   }, [aiChatOpen, selectedChatProvider, aiChatLoading, pendingChatTick]);
+
+  // Closing the panel before a queued Ask prompt went out drops it, so it
+  // isn't sent the next time the panel opens. Only an open-to-closed change
+  // drops it (the previous value is kept in a ref): the Ask path queues the
+  // prompt while the panel is still opening, and that must survive.
+  const aiChatWasOpenRef = useRef(aiChatOpen);
+  useEffect(() => {
+    if (window.shouldDropPendingChatPrompt({ wasOpen: aiChatWasOpenRef.current, chatOpen: aiChatOpen })) {
+      pendingChatPromptRef.current = null;
+    }
+    aiChatWasOpenRef.current = aiChatOpen;
+  }, [aiChatOpen]);
 
   // Scroll to bottom when chat window is opened (after slide-in animation completes)
   useEffect(() => {
@@ -27486,6 +27541,9 @@ Return ONLY the JSON array, no other text.`;
   // A load that ran before the plugins finished loading (the app reopening on
   // this page) asked none; the effect below loads again once the set changes.
   const recommendationProviderIdsRef = useRef(null);
+  // When the last full (not meta-only) load finished: Home's load skips a
+  // visit within 10 minutes of it (loadHomeRecommendations).
+  const recommendationsFullLoadAtRef = useRef(0);
   // Bumped by every load that fetches; only the latest one puts sections on screen.
   const recommendationsLoadGenRef = useRef(0);
   // Saves the provider answers that have sections and are young enough to show
@@ -27649,6 +27707,7 @@ Return ONLY the JSON array, no other text.`;
     };
 
     if (toFetch.length === 0 && similarToFetch.length === 0) {
+      if (!metaOnly) recommendationsFullLoadAtRef.current = Date.now();
       setRecommendationsPending([]);
       applyFresh();
       // Everything came from cache (or no provider exists): the same empty
@@ -27857,6 +27916,7 @@ Return ONLY the JSON array, no other text.`;
 
     recommendationsCache.current.timestamp = Date.now();
     saveRecommendationsCache();
+    if (!metaOnly) recommendationsFullLoadAtRef.current = Date.now();
     if (!isLatest()) return;
     setRecommendationsPending([]);
 
@@ -35499,14 +35559,21 @@ useEffect(() => {
     });
   };
 
-  // Home's recommendations load: on every Home visit unless one is running
-  // (loadRecommendations serves each provider that answered within the hour
-  // from its cache and asks only the stale ones, as the Recommendations page
-  // does on each visit). `loading` starts true before any load has run, so
-  // the first visit is told apart by the provider-set ref, which every full
-  // load sets as it starts.
+  // Home's recommendations load: on a Home visit unless one is running, or a
+  // full load finished within the last 10 minutes (shouldLoadHomeRecommendations
+  // in lib/home-model.js; the time is recommendationsFullLoadAtRef, stamped
+  // as a full load finishes). loadRecommendations serves each provider that
+  // answered within the hour from its cache and asks only the stale ones;
+  // the throttle skips even that work on quick returns to Home. `loading`
+  // starts true before any load has run, so the first visit is told apart by
+  // the provider-set ref, which every full load sets as it starts.
   const loadHomeRecommendations = () => {
-    if (recommendations.loading && recommendationProviderIdsRef.current !== null) return;
+    if (!shouldLoadHomeRecommendations({
+      loading: recommendations.loading,
+      loadStarted: recommendationProviderIdsRef.current !== null,
+      lastFullLoadAt: recommendationsFullLoadAtRef.current,
+      now: Date.now(),
+    })) return;
     loadRecommendations();
   };
 
