@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const {
   amazonPlaybackLimit,
+  appleMusicPlaybackLimit,
   planBlockedIds,
   playbackResolverIds,
   tileStatus,
@@ -51,6 +52,35 @@ describe('per-service limits', () => {
     expect(amazonPlaybackLimit(null)).toBeNull();
     expect(amazonPlaybackLimit(amazonStatus('prime', false))).toBeNull();
     expect(amazonPlaybackLimit(amazonStatus(null))).toBeNull();
+  });
+});
+
+describe('Apple Music: signed out leaves playback until it connects (2026-11)', () => {
+  test('no verdict until the startup sign-in check has finished', () => {
+    expect(appleMusicPlaybackLimit({ checked: false, connected: false })).toBeNull();
+    expect(appleMusicPlaybackLimit({ checked: false, connected: true })).toBeNull();
+  });
+  test('checked and not connected blocks, says so, and holds no searches back', () => {
+    expect(appleMusicPlaybackLimit({ checked: true, connected: false })).toMatchObject({
+      blocked: true, planKey: 'signed-out', label: 'Not connected', searchesHeldBack: false,
+    });
+    expect(appleMusicPlaybackLimit({ checked: true, connected: false }).message).toMatch(/Connect/);
+  });
+  test('connected plays', () => {
+    expect(appleMusicPlaybackLimit({ checked: true, connected: true })).toMatchObject({ blocked: false, label: null });
+  });
+  test('the app feeds it the startup check and the connection', () => {
+    const map = between(app, 'const playbackLimits = useMemo(() => ({', '}), [');
+    expect(map).toMatch(/applemusic: PlaybackLimits\.appleMusicPlaybackLimit\(\{ checked: appleMusicAuthChecked, connected: appleMusicConnected \}\)/);
+    expect(app).toMatch(/\}\), \[amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected\]\);/);
+    // The check marks itself finished whatever it decided.
+    const check = between(app, 'const checkMusicKitAvailable = async () => {', 'checkMusicKitAvailable();');
+    expect(check).toMatch(/finally \{\s*setAppleMusicAuthChecked\(true\);/);
+  });
+  test('a tile that can\'t play is grayed out', () => {
+    expect(app).toMatch(/unplayable: isActive && planBlockedResolverIds\.includes\(resolver\.id\),/);
+    const card = read('src/renderer/components/settings-cards.js');
+    expect(card).toMatch(/const isGrayed = isAvailable \|\| \(isEnabled && unplayable\);/);
   });
 });
 

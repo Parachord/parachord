@@ -72,7 +72,10 @@ function registerMusicKitIpc({ ipcMain, getMusicKitBridge, getDeveloperToken }) 
     }
   });
 
-  ipcMain.handle('musickit:fetch-user-token', async () => {
+  // opts.ignoreCache: only after Apple has refused the token we hold, to make
+  // MusicKit mint a fresh one instead of returning its cached copy (may show
+  // a sign-in prompt, which is why the default keeps the cache, #773).
+  ipcMain.handle('musickit:fetch-user-token', async (event, opts) => {
     const bridge = getMusicKitBridge();
     try {
       // Priority chain + .p8-generation await live in the injected getter
@@ -81,7 +84,9 @@ function registerMusicKitIpc({ ipcMain, getMusicKitBridge, getDeveloperToken }) 
       if (!developerToken) {
         return { success: false, error: 'No developer token available' };
       }
-      const result = await bridge.fetchUserToken(developerToken);
+      const result = opts && opts.ignoreCache
+        ? await bridge.fetchUserToken(developerToken, { ignoreCache: true })
+        : await bridge.fetchUserToken(developerToken);
       return { success: true, ...result };
     } catch (error) {
       return { success: false, error: error.message };

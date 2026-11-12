@@ -370,22 +370,47 @@ class MusicKitBridge extends EventEmitter {
    * Stop the helper process
    */
   stop() {
-    if (this.process) {
+    const proc = this.process;
+    if (proc) {
       console.log('[MusicKit] Stopping helper');
       try {
-        this.process.stdin.write(JSON.stringify({ id: 'quit', action: 'quit', params: {} }) + '\n');
+        proc.stdin.write(JSON.stringify({ id: 'quit', action: 'quit', params: {} }) + '\n');
       } catch (e) {
         // Ignore write errors
       }
+      // Kill this helper only: by the time the timer fires a new one may be
+      // running (restart()), and it must not be killed or forgotten.
       setTimeout(() => {
-        if (this.process) {
-          this.process.kill();
-          this.process = null;
-        }
+        try { proc.kill(); } catch (e) { /* already gone */ }
+        if (this.process === proc) this.process = null;
       }, 500);
     }
     this.isReady = false;
     this.rejectAllPending('MusicKit helper stopped');
+  }
+
+  /**
+   * Stop the helper, wait for it to exit, and start a new one. A running
+   * helper keeps the Media & Apple Music permission it saw when it started:
+   * after the user turns Parachord on in System Settings, the old process
+   * still answers "denied" (seen 2026-11-12: denied until the app restarted,
+   * then authorized with the same helper binary). A new process reads the
+   * current permission.
+   */
+  async restart() {
+    const proc = this.process;
+    if (proc) {
+      const exited = new Promise((resolve) => {
+        proc.once('close', resolve);
+        setTimeout(resolve, 2000);
+      });
+      this.stop();
+      await exited;
+      if (this.process === proc) this.process = null;
+    }
+    this.isReady = false;
+    this.invalidateAuthCache();
+    return this.start();
   }
 
   // High-level API methods
@@ -437,7 +462,14 @@ class MusicKitBridge extends EventEmitter {
     };
 
     try {
-      return await attempt();
+      const result = await attempt();
+      // "denied" from a helper started before the user allowed Parachord in
+      // System Settings is stale: ask a new helper once (see restart()).
+      if (result && result.status === 'denied' && this.process) {
+        console.log('[MusicKit] Authorization denied; asking a restarted helper in case the permission changed since it started');
+        if (await this.restart()) return await attempt();
+      }
+      return result;
     } catch (firstError) {
       // send() already retried once.  For authorize specifically, try one
       // more time with a longer settle delay — the activation-policy change

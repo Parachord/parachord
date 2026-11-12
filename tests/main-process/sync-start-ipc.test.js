@@ -144,6 +144,21 @@ describe('sync:check-auth', () => {
     });
   });
 
+  test('applemusic: a 403 traced to the user token says so, so the renderer may sign in again', async () => {
+    const seen = [];
+    const { handlers } = makeHarness({
+      storeData: { applemusic_user_token: 'U' },
+      provider: {
+        checkAuthStatus: async () => ({ ok: false, status: 403, tokenRejected: true }),
+        describeAuthFailure: (s, opts) => { seen.push(opts); return `reconnect (HTTP ${s})`; },
+      },
+    });
+    await expect(handlers.get('sync:check-auth')(null, 'applemusic')).resolves.toEqual({
+      authenticated: false, status: 403, error: 'reconnect (HTTP 403)', tokenRejected: true,
+    });
+    expect(seen).toEqual([{ tokenRejected: true }]);
+  });
+
   test('#1288 applemusic: ok passes the status through', async () => {
     const { handlers } = makeHarness({
       storeData: { applemusic_user_token: 'U' },

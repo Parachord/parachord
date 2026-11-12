@@ -16,6 +16,9 @@ const { Tooltip, SERVICE_LOGOS } = require('./ui-atoms');
 //   4. Installing (spinner overlay)
 // statusLabel (with statusTitle as its tooltip) replaces "Setup required" for
 // a resolver that is set up but limited, e.g. Amazon without Music Unlimited.
+// unplayable: enabled but left out of playback (a playback limit: Amazon
+// without Music Unlimited, Apple Music not signed in). Grayed like an
+// available card, keeping its checkmark and label.
 const ResolverCard = React.memo(({
   resolver,
   isActive,
@@ -24,6 +27,7 @@ const ResolverCard = React.memo(({
   needsConfiguration,
   statusLabel = null,
   statusTitle = null,
+  unplayable = false,
   priorityNumber,
   onClick,
   onDragStart,
@@ -40,6 +44,7 @@ const ResolverCard = React.memo(({
   const logo = SERVICE_LOGOS[resolver.id];
   const isEnabled = isActive === true;
   const isAvailable = !isEnabled && !isInstalling;
+  const isGrayed = isAvailable || (isEnabled && unplayable);
 
   return React.createElement('div', {
     className: `flex flex-col items-center relative ${isDragging ? 'opacity-50' : ''}`,
@@ -63,13 +68,13 @@ const ResolverCard = React.memo(({
     }),
     // Card
     React.createElement('div', {
-      className: `relative flex items-center justify-center cursor-pointer transition-all ${isAvailable ? 'grayscale' : ''}`,
+      className: `relative flex items-center justify-center cursor-pointer transition-all ${isGrayed ? 'grayscale' : ''}`,
       style: {
         width: '120px',
         height: '120px',
         borderRadius: '16px',
         backgroundColor: resolver.color || '#6B7280',
-        opacity: isAvailable ? 0.5 : 1,
+        opacity: isGrayed ? 0.5 : 1,
         boxShadow: isDragOver
           ? '0 0 0 3px var(--accent-primary), 0 4px 12px rgba(0, 0, 0, 0.15)'
           : '0 2px 8px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05)'
@@ -146,7 +151,7 @@ const ResolverCard = React.memo(({
         marginTop: '10px',
         fontSize: '13px',
         fontWeight: '500',
-        color: isAvailable ? 'var(--text-tertiary)' : 'var(--text-primary)',
+        color: isGrayed ? 'var(--text-tertiary)' : 'var(--text-primary)',
         textAlign: 'center',
         width: '120px',
         overflow: 'hidden',

@@ -540,7 +540,8 @@ contextBridge.exposeInMainWorld('electron', {
     // Clear native MusicKit auth state (invalidate cache, stop helper)
     unauthorize: () => ipcRenderer.invoke('musickit:unauthorize'),
     // Fetch a Music User Token for REST API access (requires native MusicKit + dev token)
-    fetchUserToken: () => ipcRenderer.invoke('musickit:fetch-user-token'),
+    // opts.ignoreCache: mint a fresh one (after Apple refused the stored token)
+    fetchUserToken: (opts) => ipcRenderer.invoke('musickit:fetch-user-token', opts && opts.ignoreCache ? { ignoreCache: true } : undefined),
     // Diagnostic: get token generation status for debugging auth issues
     tokenStatus: () => ipcRenderer.invoke('musickit:token-status'),
     // Search for songs

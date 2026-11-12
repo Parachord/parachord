@@ -685,6 +685,33 @@ async function getMusicKitDeveloperToken() {
   return '';
 }
 
+// Which stored Apple Music user token Apple still accepts (2026-11). Asks
+// /v1/me/storefront with each token on hand (the app's copy, the harvested
+// sign-in cookie, MusicKit JS's own copy, then `extraTokens`), and adopts the
+// first that works as the app's copy in localStorage and electron-store, so a
+// working sign-in is never lost behind a dead one. Returns the verdict from
+// findWorkingUserToken: ok / rejected (sign in again) / unknown / none.
+const AppleMusicUserToken = require('./lib/apple-music-user-token');
+async function checkAppleMusicUserToken(developerToken, extraTokens = []) {
+  if (!developerToken) return { verdict: 'unknown', token: null, status: null };
+  const candidates = AppleMusicUserToken.userTokenCandidates(localStorage, extraTokens);
+  const { probeUserToken, probeDeveloperToken } = AppleMusicUserToken.makeAppleProbes(window.fetch.bind(window), developerToken);
+  const result = await AppleMusicUserToken.findWorkingUserToken(candidates, probeUserToken, probeDeveloperToken);
+  if (result.verdict === 'ok') {
+    const current = localStorage.getItem(AppleMusicUserToken.APP_TOKEN_KEY);
+    if (result.token !== current) {
+      console.log('🍎 Stored Apple Music user token was refused; adopting another token Apple accepts');
+      try { localStorage.setItem(AppleMusicUserToken.APP_TOKEN_KEY, result.token); } catch (_e) { /* ignore */ }
+      if (window.electron?.store) {
+        await window.electron.store.set('applemusic_user_token', result.token).catch(() => {});
+      }
+    }
+  } else if (result.verdict === 'rejected') {
+    console.warn(`🍎 Apple refuses every stored Apple Music user token (HTTP ${result.status}); sign-in needed`);
+  }
+  return result;
+}
+
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
 // opts.lane: the resolver lane the plugin's caller asked for ('priority' for a
@@ -3663,6 +3690,9 @@ const Parachord = () => {
 
   // Apple Music / MusicKit state
   const [appleMusicConnected, setAppleMusicConnected] = useState(false);
+  // True once the startup sign-in check (checkMusicKitAvailable) has finished,
+  // whatever it decided. Until then Apple Music keeps its priority slot.
+  const [appleMusicAuthChecked, setAppleMusicAuthChecked] = useState(false);
   const [appleMusicUserToken, setAppleMusicUserToken] = useState(null);
   const [appleMusicDeveloperToken, setAppleMusicDeveloperToken] = useState('');
   const [appleMusicAdvancedOpen, setAppleMusicAdvancedOpen] = useState(false);
@@ -5986,9 +6016,12 @@ const Parachord = () => {
   // (search, album search, artist photos, links, playlist sync), but
   // playbackResolvers leaves it out: source selection, source icons and the
   // priority numbers.
+  // Apple Music not signed in is in the same map (appleMusicPlaybackLimit):
+  // it can't play, so it leaves the priority order until it connects.
   const playbackLimits = useMemo(() => ({
-    amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus)
-  }), [amazonMusicStatus]);
+    amazonmusic: PlaybackLimits.amazonPlaybackLimit(amazonMusicStatus),
+    applemusic: PlaybackLimits.appleMusicPlaybackLimit({ checked: appleMusicAuthChecked, connected: appleMusicConnected })
+  }), [amazonMusicStatus, appleMusicAuthChecked, appleMusicConnected]);
   const planBlockedResolverIds = useMemo(() => PlaybackLimits.planBlockedIds(playbackLimits), [playbackLimits]);
   const playbackResolvers = useMemo(
     () => PlaybackLimits.playbackResolverIds(activeResolvers, planBlockedResolverIds),
@@ -9293,10 +9326,12 @@ const Parachord = () => {
         return;
       }
       // Apple Music: stored token may have expired — try re-authorizing for a fresh one.
-      // Only a 401 (or no answer at all) can be fixed by signing in again; any other
-      // refusal goes straight to the error, which names Apple's status (parachord#1288).
+      // Only a 401, no answer at all, or a 403 traced to the user token itself
+      // (tokenRejected: /me/storefront refused it too) can be fixed by signing in
+      // again; any other refusal goes straight to the error, which names Apple's
+      // status (parachord#1288).
       if (providerId === 'applemusic') {
-        const reauthCanHelp = !authStatus.status || authStatus.status === 401;
+        const reauthCanHelp = !authStatus.status || authStatus.status === 401 || authStatus.tokenRejected === true;
         if (reauthCanHelp) {
           console.log('[Sync] Apple Music auth check failed, attempting re-authorization for fresh token...');
           const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
@@ -9314,7 +9349,8 @@ const Parachord = () => {
               if (!status.configured && devToken) {
                 await musicKitWeb.configure(devToken, 'Parachord', '1.0.0');
               }
-              const authResult = await musicKitWeb.authorize();
+              // fresh: MusicKit would otherwise hand back the refused token it holds.
+              const authResult = await musicKitWeb.authorize({ fresh: true });
               freshToken = authResult.userToken || musicKitWeb.getUserToken();
             } catch (error) {
               console.log('[Sync] MusicKit JS re-auth failed:', error.message);
@@ -9326,7 +9362,8 @@ const Parachord = () => {
           // Fallback: try native MusicKit on macOS
           if (!freshToken && window.electron?.musicKit) {
             try {
-              const result = await window.electron.musicKit.fetchUserToken();
+              // ignoreCache: the native cache may hold the same refused token.
+              const result = await window.electron.musicKit.fetchUserToken({ ignoreCache: true });
               if (result.success && result.userToken) {
                 freshToken = result.userToken;
               }
@@ -33986,12 +34023,43 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // Check if native MusicKit is available on startup
   useEffect(() => {
     const checkMusicKitAvailable = async () => {
+      // Whether this check ended with Apple Music usable (MusicKit JS or native).
+      let connected = false;
+      const markConnected = () => {
+        connected = true;
+        setAppleMusicConnected(true);
+        // Re-enable if it was in the user's saved active resolvers (restores priority position)
+        reEnableResolver('applemusic');
+      };
+      try {
       // Check for MusicKit JS first (cross-platform)
       const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
 
       // Load the developer token (the main process picks it)
       const developerToken = await getMusicKitDeveloperToken();
+
+      // Ask Apple whether a stored user token still works before trusting it
+      // (2026-11). A token Apple refuses used to be restored by MusicKit JS
+      // over every fresh sign-in, and the app showed "connected" while every
+      // /v1/me call got a 403. checkAppleMusicUserToken adopts any stored token
+      // that works (the harvested sign-in cookie, for one) as the app's copy.
+      let tokenCheck = { verdict: 'none', token: null, status: null };
+      if (developerToken && AppleMusicUserToken.userTokenCandidates(localStorage).length > 0) {
+        tokenCheck = await checkAppleMusicUserToken(developerToken);
+      }
+      if (tokenCheck.verdict === 'rejected') {
+        // Every stored token is dead: drop them all, so MusicKit JS starts
+        // signed out and nothing counts the account as connected on them.
+        AppleMusicUserToken.clearMusicKitTokenSlots(localStorage);
+        localStorage.removeItem('musickit_user_token');
+        if (window.electron?.store) {
+          await window.electron.store.delete('applemusic_user_token').catch(() => {});
+        }
+      }
       const userToken = localStorage.getItem('musickit_user_token') || '';
+      // The app's copy is the one of record: put it in MusicKit JS's own slot
+      // too, or configure restores whatever MusicKit stored last.
+      if (userToken) AppleMusicUserToken.syncMusicKitTokenSlots(localStorage, userToken);
 
       if (musicKitWeb && developerToken) {
         try {
@@ -34011,8 +34079,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           if (status.authorized) {
             console.log('🍎 MusicKit JS already authorized');
 
-            // Ensure user token is persisted to electron-store for sync
-            const currentToken = musicKitWeb.getUserToken() || localStorage.getItem('musickit_user_token');
+            // Ensure user token is persisted to electron-store for sync. The
+            // app's copy first: MusicKit's own is only a fallback for an
+            // install that never had one.
+            const currentToken = userToken || musicKitWeb.getUserToken();
             if (currentToken && window.electron?.store) {
               await window.electron.store.set('applemusic_user_token', currentToken);
               localStorage.setItem('musickit_user_token', currentToken);
@@ -34026,9 +34096,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
               return;
             }
 
-            setAppleMusicConnected(true);
-            // Re-enable if it was in the user's saved active resolvers (restores priority position)
-            reEnableResolver('applemusic');
+            markConnected();
           } else if (userToken) {
             // parachord#834 — MusicKit JS configure() didn't auto-authorize
             // even though we passed a userToken. This is the path moop250
@@ -34050,8 +34118,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
               : false;
             if (storedAuthFlag === true) {
               console.log('🍎 MusicKit JS reports unauthorized but stored auth flag + userToken present → treating as connected (parachord#834)');
-              setAppleMusicConnected(true);
-              reEnableResolver('applemusic');
+              markConnected();
               // Also persist the userToken to electron-store if not already
               // there, so sync has it.
               if (window.electron?.store) {
@@ -34093,19 +34160,27 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
               // it uses the system Apple Music subscription directly. Always
               // reconnect if native auth is valid. Fetch a user token in the
               // background for sync features, but don't gate connection on it.
-              setAppleMusicConnected(true);
-              // Re-enable if it was in the user's saved active resolvers (restores priority position)
-              reEnableResolver('applemusic');
+              markConnected();
 
-              // Best-effort: fetch and persist a user token for sync features
+              // Best-effort: fetch and persist a user token for sync features.
+              // After Apple refused every stored token, bypass the native
+              // cache (it may hold the same dead token) and keep the new one
+              // only if Apple accepts it.
               const hasToken = !!(await window.electron?.store?.get('applemusic_user_token'));
               if (!hasToken && window.electron.musicKit.fetchUserToken) {
                 try {
-                  const tokenResult = await window.electron.musicKit.fetchUserToken();
+                  const tokenResult = await window.electron.musicKit.fetchUserToken({ ignoreCache: tokenCheck.verdict === 'rejected' });
                   if (tokenResult.success && tokenResult.userToken) {
-                    await window.electron.store.set('applemusic_user_token', tokenResult.userToken);
-                    localStorage.setItem('musickit_user_token', tokenResult.userToken);
-                    console.log('🍎 Fetched and stored user token from native MusicKit on startup');
+                    const nativeCheck = developerToken
+                      ? await checkAppleMusicUserToken(developerToken, [tokenResult.userToken])
+                      : { verdict: 'unknown' };
+                    if (nativeCheck.verdict !== 'rejected') {
+                      await window.electron.store.set('applemusic_user_token', tokenResult.userToken);
+                      localStorage.setItem('musickit_user_token', tokenResult.userToken);
+                      console.log('🍎 Fetched and stored user token from native MusicKit on startup');
+                    } else {
+                      console.warn('🍎 Native MusicKit returned a user token Apple refuses; sync needs a fresh sign-in');
+                    }
                   }
                 } catch (e) {
                   console.log('🍎 Failed to fetch user token from native MusicKit (sync features may be limited):', e.message);
@@ -34116,6 +34191,23 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             console.log('🍎 Native MusicKit available but no prior connection - skipping auto-reconnect');
           }
         }
+      }
+
+      // Apple refused the sign-in and nothing else connected: say so and
+      // offer to sign in again, instead of showing Apple Music as connected.
+      if (tokenCheck.verdict === 'rejected' && !connected) {
+        if (window.electron?.store) {
+          await window.electron.store.set('applemusic_authorized', false).catch(() => {});
+        }
+        showToast(
+          'Apple Music signed you out. Reconnect to play and sync from Apple Music.',
+          'warning',
+          { label: 'Reconnect', onClick: () => { connectAppleMusic(); } },
+          { persistent: true }
+        );
+      }
+      } finally {
+        setAppleMusicAuthChecked(true);
       }
     };
     // Run AM init eagerly. We previously deferred this to idle (#765) for a
@@ -34235,30 +34327,58 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
 
         // Fetch and store user token for sync (native MusicKit doesn't
         // return it from authorize(), so we need a separate fetch)
-        let nativeUserToken = null;
-        if (window.electron.musicKit.fetchUserToken) {
-          try {
-            const tokenResult = await window.electron.musicKit.fetchUserToken();
-            if (tokenResult.success && tokenResult.userToken) {
-              nativeUserToken = tokenResult.userToken;
+        // The account token (library, sync, recommendations) must be one
+        // Apple's REST API accepts. Measured 2026-11-12: tokens the native
+        // helper mints, cached or fresh, were refused with 403 code 40300
+        // ("Invalid authentication") while the web sign-in's token worked
+        // with the same developer token; the helper carries no MusicKit
+        // provisioning profile. So: keep a stored token Apple accepts, else
+        // try the native one, and store nothing Apple refuses.
+        let accountTokenOk = false;
+        if (developerToken) {
+          const stored = await checkAppleMusicUserToken(developerToken);
+          accountTokenOk = stored.verdict === 'ok';
+        }
+        if (!accountTokenOk && window.electron.musicKit.fetchUserToken) {
+          const { probeUserToken } = AppleMusicUserToken.makeAppleProbes(window.fetch.bind(window), developerToken);
+          for (const opts of [undefined, { ignoreCache: true }]) {
+            try {
+              const tokenResult = await window.electron.musicKit.fetchUserToken(opts);
+              if (!tokenResult.success || !tokenResult.userToken) {
+                console.warn('🍎 Native MusicKit authorized but could not fetch user token:', tokenResult.error);
+                break;
+              }
+              const status = developerToken ? await probeUserToken(tokenResult.userToken) : null;
+              if (AppleMusicUserToken.classifyStatus(status) === 'rejected') {
+                console.warn(`🍎 Apple refuses the native MusicKit user token${opts ? ' (fresh)' : ''} (HTTP ${status})`);
+                continue;
+              }
               localStorage.setItem('musickit_user_token', tokenResult.userToken);
               if (window.electron?.store) {
                 await window.electron.store.set('applemusic_user_token', tokenResult.userToken);
               }
+              accountTokenOk = true;
               console.log('🍎 Native MusicKit user token stored');
-            } else {
-              console.warn('🍎 Native MusicKit authorized but could not fetch user token:', tokenResult.error);
+              break;
+            } catch (e) {
+              console.warn('🍎 Failed to fetch user token after native auth:', e.message);
+              break;
             }
-          } catch (e) {
-            console.warn('🍎 Failed to fetch user token after native auth:', e.message);
           }
         }
 
-        if (!nativeUserToken) {
+        if (!accountTokenOk) {
+          // Playback works natively; the library, sync and recommendations
+          // need the web sign-in's token.
           showConfirmDialog({
-            type: 'error',
+            type: 'info',
             title: 'Apple Music',
-            message: 'Apple Music authorized but could not obtain a sync token. Library sync will not be available.\n\nThis usually means the MusicKit developer token is missing from this build.'
+            message: developerToken
+              ? 'Apple Music playback is connected.\n\nYour library, playlist sync and recommendations need one more sign-in, on Apple\'s site. Sign in now?'
+              : 'Apple Music authorized but could not obtain a sync token. Library sync will not be available.\n\nThis usually means the MusicKit developer token is missing from this build.',
+            ...(developerToken && window.electron?.musicKit?.openAuthWindow
+              ? { confirmLabel: 'Sign in', onConfirm: () => { tryAuthWindowFlow(); } }
+              : {})
           });
         }
 
@@ -43497,6 +43617,7 @@ useEffect(() => {
                           needsConfiguration: needsConfiguration,
                           statusLabel: planStatus.statusLabel,
                           statusTitle: planStatus.statusTitle,
+                          unplayable: isActive && planBlockedResolverIds.includes(resolver.id),
                           priorityNumber: resolver.priorityNumber,
                           isInstalling: isInstalling,
                           draggable: reorderable,

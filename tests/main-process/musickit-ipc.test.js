@@ -128,6 +128,16 @@ describe('musickit IPC surface', () => {
     expect(calls).toEqual([{ method: 'fetchUserToken', given: ['a-real-token'] }]);
   });
 
+  test('fetch-user-token bypasses the native token cache only when asked', async () => {
+    const { handlers, calls } = makeHarness({ developerToken: 'a-real-token' });
+    await handlers.get('musickit:fetch-user-token')(null, { ignoreCache: true });
+    await handlers.get('musickit:fetch-user-token')(null, { ignoreCache: false });
+    expect(calls).toEqual([
+      { method: 'fetchUserToken', given: ['a-real-token', { ignoreCache: true }] },
+      { method: 'fetchUserToken', given: ['a-real-token'] },
+    ]);
+  });
+
   test('fetch-user-token with no developer token fails without touching the bridge', async () => {
     const { handlers, calls } = makeHarness({ developerToken: null });
     await expect(handlers.get('musickit:fetch-user-token')()).resolves.toEqual({
