@@ -171,6 +171,21 @@ describe('recommended playlist cards', () => {
     expect(card).not.toMatch(/handleImportPlaylistFromUrl\(item\.url\)/);
   });
 
+  test('a recommended playlist keeps each track\'s service ids and ISRC, so it resolves on its own service at once', () => {
+    // The lookup returns them (resolveProviderPlaylistUrl); dropping them made
+    // every track of an Apple Music playlist search every service from scratch,
+    // Apple included, one track at a time. resolveTrack marks a track carrying
+    // appleMusicId (or spotifyUri + spotifyId) resolved on that service at once.
+    const mapper = app.slice(app.indexOf('const recommendationPlaylistTracks = async (item) => {'), app.indexOf('const playRecommendationPlaylist = async'));
+    expect(mapper).toContain('...(t.appleMusicId ? { appleMusicId: t.appleMusicId } : {}),');
+    expect(mapper).toContain('...(t.spotifyId ? { spotifyId: t.spotifyId, spotifyUri: `spotify:track:${t.spotifyId}` } : {}),');
+    expect(mapper).toContain('...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {}),');
+    expect(mapper).toContain('...(t.isrc ? { isrc: t.isrc } : {})');
+    // The shortcut those fields feed.
+    expect(app).toMatch(/if \(track\.appleMusicId && currentActiveResolvers\.includes\('applemusic'\) && !persistedSources\.applemusic\)/);
+    expect(app).toMatch(/if \(track\.spotifyUri && track\.spotifyId && currentActiveResolvers\.includes\('spotify'\) && !persistedSources\.spotify\)/);
+  });
+
   test('every playlist action uses the same trackSlug-keyed tracks', () => {
     for (const fn of ['playRecommendationPlaylist', 'addRecommendationPlaylistToPlaylist', 'queueRecommendationPlaylist']) {
       const at = app.indexOf(`const ${fn} = async`);
