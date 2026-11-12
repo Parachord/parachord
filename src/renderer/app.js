@@ -35158,6 +35158,14 @@ useEffect(() => {
     openChartsAlbum, openSyncSetupModal, setQueueWithContext, syncFriendsFromServices,
   });
 
+  // The sidebar item a playlist page belongs to. An ephemeral playlist (a
+  // recommended or weekly one, not saved) opens from Recommendations, so it
+  // keeps Recommendations lit, as its breadcrumb says; your own playlists keep
+  // Playlists lit.
+  const viewingRecommendedPlaylist = activeView === 'playlist-view' && !!selectedPlaylist?.isEphemeral;
+  const playlistsNavActive = activeView === 'playlists' || (activeView === 'playlist-view' && !viewingRecommendedPlaylist);
+  const recommendationsNavActive = activeView === 'recommendations' || viewingRecommendedPlaylist;
+
   return React.createElement('div', {
     className: 'h-screen bg-gray-100 text-gray-900 flex flex-col'
   },
@@ -35292,9 +35300,9 @@ useEffect(() => {
                 borderRadius: '4px',
                 color: '#ec4899'
               } : {
-                backgroundColor: (activeView === 'playlists' || activeView === 'playlist-view') ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
-                color: (activeView === 'playlists' || activeView === 'playlist-view') ? '#ec4899' : 'var(--nav-inactive)',
-                fontWeight: (activeView === 'playlists' || activeView === 'playlist-view') ? '500' : '400'
+                backgroundColor: playlistsNavActive ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
+                color: playlistsNavActive ? '#ec4899' : 'var(--nav-inactive)',
+                fontWeight: playlistsNavActive ? '500' : '400'
               }
             },
               React.createElement('svg', { className: 'w-4 h-4 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
@@ -35406,9 +35414,9 @@ useEffect(() => {
               onClick: () => navigateTo('recommendations'),
               className: 'w-full flex items-center gap-3 px-3 py-1.5 rounded text-sm transition-colors',
               style: {
-                backgroundColor: activeView === 'recommendations' ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
-                color: activeView === 'recommendations' ? '#f59e0b' : 'var(--nav-inactive)',
-                fontWeight: activeView === 'recommendations' ? '500' : '400'
+                backgroundColor: recommendationsNavActive ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                color: recommendationsNavActive ? '#f59e0b' : 'var(--nav-inactive)',
+                fontWeight: recommendationsNavActive ? '500' : '400'
               }
             },
               // Star icon for Recommendations

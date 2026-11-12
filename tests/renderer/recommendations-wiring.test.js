@@ -537,6 +537,15 @@ describe('the five-section page render', () => {
     expect(ephemeral).not.toContain("setActiveView('home')");
   });
 
+  test('the sidebar keeps Recommendations lit on a recommended playlist, Playlists on your own', () => {
+    expect(app).toContain("const viewingRecommendedPlaylist = activeView === 'playlist-view' && !!selectedPlaylist?.isEphemeral;");
+    expect(app).toContain("const playlistsNavActive = activeView === 'playlists' || (activeView === 'playlist-view' && !viewingRecommendedPlaylist);");
+    expect(app).toContain("const recommendationsNavActive = activeView === 'recommendations' || viewingRecommendedPlaylist;");
+    expect(app).toContain("backgroundColor: playlistsNavActive ? 'rgba(236, 72, 153, 0.1)' : 'transparent',");
+    expect(app).toContain("backgroundColor: recommendationsNavActive ? 'rgba(245, 158, 11, 0.1)' : 'transparent',");
+    expect(app).not.toContain("(activeView === 'playlists' || activeView === 'playlist-view') ? '#ec4899'");
+  });
+
   test('the playlist view\'s breadcrumb and Close go back to Recommendations for an ephemeral playlist', () => {
     // Every ephemeral playlist opens from Recommendations (weekly cards,
     // provider playlists, the restore path), so neither back control says or
