@@ -27,21 +27,32 @@
 // Pure apart from what it is handed ({ main, openKeyStore, listKeyStores }),
 // so jest drives it with real conf stores in a temp dir
 // (tests/store/split-store.test.js).
+//
+// Every `local_playlists` write is also where playlist freshness is stamped
+// (`tracksChangedAt`, `lastChangeAdded`; playlist-freshness.js): the renderer's
+// playlists.save IPC, the sync IPC and main.js's own handlers all land here.
+// The previous version comes from an index of what this store last wrote (or,
+// before the first write, from the file), so a write doesn't parse the 17 MB
+// list a second time. Stamping never blocks a write: if it throws, the list
+// is written as given.
 
 'use strict';
+
+const { stampTrackChanges, indexPlaylists } = require('../playlist-freshness');
 
 // Big or frequently rewritten keys. Every cache_* key the renderer persists
 // is split by prefix, so a new cache gets its own file without an edit here.
 const SPLIT_KEYS = new Set(['local_playlists', 'sync_playlist_state']);
 const SPLIT_PREFIX = 'cache_';
 const SAFE_KEY = /^[a-z0-9_]+$/;
+const PLAYLISTS_KEY = 'local_playlists';
 
 function isSplitStoreKey(key) {
   return typeof key === 'string' && SAFE_KEY.test(key)
     && (SPLIT_KEYS.has(key) || key.startsWith(SPLIT_PREFIX));
 }
 
-function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log }) {
+function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log, now = Date.now }) {
   const keyStores = new Map();
   const keyStore = (key) => {
     let s = keyStores.get(key);
@@ -76,6 +87,29 @@ function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log
 
   const route = (key) => (isSplitStoreKey(key) ? keyStore(key) : main);
 
+  // Freshness index of the stored playlists (see the header). Null means
+  // "read the file"; reset whenever the key is deleted or cleared.
+  let playlistsIndex = null;
+  const writeSplit = (key, value) => {
+    if (key !== PLAYLISTS_KEY) {
+      keyStore(key).set(key, value);
+      return;
+    }
+    let toWrite = value;
+    let nextIndex = null;
+    try {
+      const prev = playlistsIndex || indexPlaylists(keyStore(key).get(key));
+      toWrite = stampTrackChanges(prev, value, now());
+      nextIndex = Array.isArray(toWrite) ? indexPlaylists(toWrite) : null;
+    } catch (error) {
+      log(`⚠️ Playlist freshness stamp skipped: ${error && error.message}`);
+      toWrite = value;
+    }
+    playlistsIndex = null;
+    keyStore(key).set(key, toWrite);
+    playlistsIndex = nextIndex;
+  };
+
   return {
     get(key, defaultValue) {
       return route(key).get(key, defaultValue);
@@ -84,21 +118,24 @@ function createSplitStore({ main, openKeyStore, listKeyStores, log = console.log
       if (key !== null && typeof key === 'object') {
         const rest = {};
         for (const [k, v] of Object.entries(key)) {
-          if (isSplitStoreKey(k)) keyStore(k).set(k, v);
+          if (isSplitStoreKey(k)) writeSplit(k, v);
           else rest[k] = v;
         }
         if (Object.keys(rest).length > 0) main.set(rest);
         return;
       }
-      route(key).set(key, value);
+      if (isSplitStoreKey(key)) writeSplit(key, value);
+      else main.set(key, value);
     },
     has(key) {
       return route(key).has(key);
     },
     delete(key) {
+      if (key === PLAYLISTS_KEY) playlistsIndex = null;
       route(key).delete(key);
     },
     clear() {
+      playlistsIndex = null;
       main.clear();
       for (const key of splitKeysOnDisk()) keyStore(key).clear();
     },

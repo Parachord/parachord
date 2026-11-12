@@ -1190,6 +1190,9 @@ const { cachedCoversToSeed, coverAttemptKey, coverFetchOrder } = require('./lib/
 const { holdPreviousPlaybarArt, trackArtKey, playbarShowsTrack } = require('./lib/playbar-art');
 const { isOtherVersion } = require('./lib/track-variants');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
+// Playlist freshness stamps (tracksChangedAt, lastChangeAdded) for Home; the
+// split store stamps every local_playlists write with the same module.
+const { stampPlaylist } = require('../../playlist-freshness');
 const { checkSpinoffAvailable, lastfmJsonFetcher } = require('./lib/spinoff-pool');
 const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_REF_LOOKUPS: DISCOGS_MAX_REF_LOOKUPS } = require('./lib/discogs-markup');
 const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
@@ -25232,6 +25235,28 @@ ${tracks}
       return;
     }
 
+    // Freshness (Home's "Your playlists, freshest first" and its "+N"):
+    // stamp tracksChangedAt / lastChangeAdded against the copy in state when
+    // the tracks changed, and put the stamp in state so Home sees it without
+    // a reload. Most callers save from inside a setPlaylists updater (or
+    // right after one), so playlistsRef still holds the version before this
+    // edit; when it doesn't, the split store still stamps the write. It
+    // compares against disk and keeps a stamp made here.
+    const stateCopy = (playlistsRef.current || []).find(p => p.id === playlist.id) || null;
+    const stamped = stampPlaylist(stateCopy, playlist, Date.now());
+    if (stamped.tracksChangedAt != null && stamped.tracksChangedAt !== stateCopy?.tracksChangedAt) {
+      const { id, tracksChangedAt, lastChangeAdded } = stamped;
+      // After the current updater, never inside it. Only ever moves forward.
+      Promise.resolve().then(() => setPlaylists(prev => {
+        const i = prev.findIndex(p => p.id === id);
+        if (i < 0 || prev[i].tracksChangedAt >= tracksChangedAt) return prev;
+        const next = prev.slice();
+        next[i] = { ...prev[i], tracksChangedAt, lastChangeAdded };
+        return next;
+      }));
+    }
+    playlist = stamped;
+
     // Invalidate playlist cover cache when tracks change
     // This ensures the 2x2 cover grid regenerates with new tracks
     if (playlistCoverCache.current[playlist.id]) {
@@ -33881,7 +33906,10 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           // so the sync loop pushes XSPF-driven updates to providers, but startup
           // reloads with unchanged content don't trigger spurious pushes.
           const contentChanged = existing.xspf !== content;
-          updatedPlaylist = {
+          // Freshness: a refresh that brought different tracks is a change
+          // (tracksChangedAt, lastChangeAdded); a re-poll with the same
+          // tracks keeps the existing stamp.
+          updatedPlaylist = stampPlaylist(existing, {
             ...existing,
             xspf: content,
             title: playlistTitle,
@@ -33889,7 +33917,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
             tracks: parsed.tracks || [],
             lastUpdated: Date.now(),
             ...(contentChanged ? { locallyModified: true, lastModified: Date.now() } : {})
-          };
+          }, Date.now());
           if (existingIndex >= 0) {
             return prev.map((p, i) => i === existingIndex ? updatedPlaylist : p);
           }
@@ -33916,7 +33944,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // Add new hosted playlist
       // Set source based on how the playlist was imported
       const importSource = resolverId ? `${resolverId}-import` : 'hosted-xspf';
-      const newPlaylist = {
+      const newPlaylist = stampPlaylist(null, {
         id: id,
         filename: null,  // No local file for hosted playlists
         title: playlistTitle,
@@ -33928,7 +33956,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         createdAt: parsed.date || Date.now(), // Use XSPF date (original creation) or import time
         addedAt: storedAddedAt || Date.now(), // When added to library (use stored value on reload)
         lastModified: Date.now()
-      };
+      }, Date.now());
 
       // Persist to disk so sync reloads and sync-to-provider pick it up
       try {
