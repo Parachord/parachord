@@ -29,6 +29,7 @@ const { Play, Pause } = Icons;
 const HOME_PAGE_HANDLERS = [
   'activateListenAlong',
   'addToQueue',
+  'askShuffleupagus',
   'copyParachordLink',
   'deactivateListenAlong',
   'fetchAlbumTracksFromMusicBrainz',
@@ -68,6 +69,7 @@ const HomePage = React.memo(function HomePage(props) {
     allPlaylistCovers,
     allResolvers,
     appVersion,
+    askShuffleupagus,
     bannerItems,
     cacheLoaded,
     charts,

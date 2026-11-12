@@ -5875,6 +5875,7 @@ const Parachord = () => {
   const showToastRef = useRef(null);
   const showExternalTrackPromptUIRef = useRef(null);
   const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
+  const dispatchProtocolUrlRef = useRef(null); // Latest protocol dispatcher, for in-app callers (Home's Ask box)
   const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
   const handleStartCollectionStationRef = useRef(null); // Ref for protocol handler
   const fetchAlbumTracksByNameRef = useRef(null); // Ref to fetchAlbumTracksByName for use in ChatCard
@@ -11514,7 +11515,11 @@ const Parachord = () => {
       setTrackLoading(false);
     };
 
-    const cleanup = window.electron.onProtocolUrl(async (url) => {
+    // `origin` is a direct-call option only: the IPC listener below never
+    // passes one, and nothing parsed from the URL can set it. 'home' means the
+    // renderer itself built the link (Ask Shuffleupagus); everything else is
+    // an outside link.
+    const dispatchProtocolUrl = async (url, { origin = 'external' } = {}) => {
       console.log('🔗 Protocol URL received:', url);
 
       try {
@@ -12092,6 +12097,11 @@ const Parachord = () => {
             }
             if (params.prompt && handleAiChatSendRef.current) {
               const prompt = params.prompt.slice(0, 500);
+              if (origin === 'home') {
+                // The user typed or approved this prompt in the app.
+                handleAiChatSendRef.current(prompt);
+                break;
+              }
               showConfirmDialog({
                 type: 'info',
                 title: 'Send to Chat',
@@ -12301,7 +12311,10 @@ ${trackListXml}
         // "Loading…" forever.
         restoreProtocolPlaceholder();
       }
-    });
+    };
+    dispatchProtocolUrlRef.current = dispatchProtocolUrl;
+
+    const cleanup = window.electron.onProtocolUrl((url) => dispatchProtocolUrl(url));
 
     return cleanup;
   }, [friends, playlists]);
@@ -17453,6 +17466,13 @@ ${trackListXml}
   };
 
   // Open AI Chat
+  // Home's Ask Shuffleupagus box: the same parachord://chat path outside links
+  // use, with the in-app origin that skips the external-link confirmation.
+  const askShuffleupagus = (prompt) => {
+    if (!dispatchProtocolUrlRef.current) return;
+    return dispatchProtocolUrlRef.current(window.buildChatPromptUrl(prompt), { origin: 'home' });
+  };
+
   const openAiChat = () => {
     const chatServices = getChatServices();
     // Filter to only enabled services with required config
@@ -35356,7 +35376,7 @@ useEffect(() => {
     getArtistTopTracks, getChatServices, handleCollectionAlbumClick, handlePlay,
     handlePlayPause, handleStartCollectionStation, isOnAir, isServiceEnabled,
     loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    navigateTo, navigateToFriend, openAiChat,
+    askShuffleupagus, navigateTo, navigateToFriend, openAiChat,
     openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
     setQueueWithContext, dismissHomeBanner, openHomeBannerCta, dismissHomeSetupItem,
   });

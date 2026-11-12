@@ -175,7 +175,14 @@
     return JSON.parse(text);
   }
 
+  // The deep link Home's Ask Shuffleupagus box sends through. The 500-character
+  // cap is the parachord://chat limit.
+  function buildChatPromptUrl(prompt) {
+    return 'parachord://chat?prompt=' + encodeURIComponent(String(prompt == null ? '' : prompt).slice(0, 500));
+  }
+
   const api = {
+    buildChatPromptUrl,
     isPublicHttpUrl,
     HOSTED_PLAYLIST_MAX_BYTES,
     hostedPlaylistFetchProblem,
@@ -187,6 +194,7 @@
   };
 
   if (typeof window !== 'undefined') {
+    /** @type {any} */ (window).buildChatPromptUrl = buildChatPromptUrl;
     /** @type {any} */ (window).isPublicHttpUrl = isPublicHttpUrl;
     /** @type {any} */ (window).HOSTED_PLAYLIST_MAX_BYTES = HOSTED_PLAYLIST_MAX_BYTES;
     /** @type {any} */ (window).hostedPlaylistFetchProblem = hostedPlaylistFetchProblem;
