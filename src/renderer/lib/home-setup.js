@@ -1,4 +1,4 @@
-// src/renderer/lib/home-setup.js — the "Finish setting up" checklist model.
+// src/renderer/lib/home-setup.js: the "Finish setting up" checklist model.
 // Pure: Home passes in what it already knows and gets back the items. The
 // checks are the ones the old "Enhance Your Experience" cards used.
 //

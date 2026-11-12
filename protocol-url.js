@@ -188,6 +188,7 @@
   // Whether a prompt queued by Home's Ask box can be sent now: the chat panel
   // has committed open with a provider and no reply is in flight. Sending
   // earlier would read the previous render's chat state.
+  /** @param {{ pending?: string|null, chatOpen?: boolean, providerId?: string|null, loading?: boolean }} [opts] */
   function shouldSendPendingChatPrompt({ pending, chatOpen, providerId, loading } = {}) {
     return !!(pending && String(pending).trim() && chatOpen && providerId && !loading);
   }

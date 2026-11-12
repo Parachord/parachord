@@ -272,9 +272,9 @@ const HomePage = React.memo(function HomePage(props) {
             }),
             React.createElement('div', { className: 'p-6 space-y-8' },
 
-              // SECTION: Finish setting up (checklist button; it replaces the old
-              // setup cards, including the empty-collection
-              // card, are gone. The empty-collection card returns in Jump back in.)
+              // SECTION: Finish setting up (checklist button). It replaces the old
+              // setup cards, including the empty-collection card, which
+              // returns in Jump back in.)
               React.createElement('div', { className: 'mb-2' },
                 React.createElement(HomeSetupButton, {
                   setup: homeSetup,

@@ -120,3 +120,16 @@ describe('wiring', () => {
     expect(read('src/renderer/components/home-page.js')).not.toContain('Enhance Your Experience');
   });
 });
+
+describe('HomeSetupButton without a release version', () => {
+  const mk = (whatsNew) => ({ mode: 'whats-new', items: [], done: 5, total: 5, whatsNew });
+  test('reads "What\'s new" with no "vnull"', () => {
+    const html = renderToStaticMarkup(React.createElement(HomeSetupButton, { setup: mk({ version: null, unread: false }) }));
+    expect(html).toContain('What&#x27;s new');
+    expect(html).not.toMatch(/vnull|vundefined/);
+  });
+  test('keeps the version when there is one', () => {
+    const html = renderToStaticMarkup(React.createElement(HomeSetupButton, { setup: mk({ version: '1.2.3', unread: false }) }));
+    expect(html).toContain('v1.2.3');
+  });
+});

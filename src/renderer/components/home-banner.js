@@ -1,5 +1,5 @@
-// src/renderer/components/home-banner.js — the one banner slot at the top of
-// Home. It shows items[0] (What's New first, then remote announcements; see
+// src/renderer/components/home-banner.js: the one banner slot at the top of
+// Home. It shows items[0] (backend-pushed announcements only; see
 // lib/home-banners.js) and nothing when the list is empty. Dismissing the
 // shown item makes the parent drop it, so the next one takes the slot.
 //

@@ -1,10 +1,14 @@
-// src/renderer/components/home-setup.js — the "Finish setting up · N of M"
+// src/renderer/components/home-setup.js: the "Finish setting up · N of M"
 // pill on Home and its popover checklist. Props-driven; hooks are qualified
 // and the module loads under plain Node.
 //
 // Done items are checked and struck through. Open items have an action
 // button and a × that dismisses them for good. The popover closes on an
 // outside click or Escape.
+
+function whatsNewLabel(notes) {
+  return notes && notes.version ? `What's new in v${notes.version}` : "What's new";
+}
 
 // Accent dot marking unread release notes.
 function UnreadDot() {
@@ -13,7 +17,7 @@ function UnreadDot() {
     'aria-label': 'New release notes',
     style: {
       display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-      backgroundColor: '#7c3aed', // fill-accent
+      backgroundColor: 'var(--accent-primary)',
     }
   });
 }
@@ -54,7 +58,7 @@ function HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew }) {
       onClick: () => onOpenWhatsNew && onOpenWhatsNew(),
       className: pillClass,
       style: pillStyle
-    }, `What's new in v${notes.version}`, notes.unread && React.createElement(UnreadDot));
+    }, whatsNewLabel(notes), notes.unread && React.createElement(UnreadDot));
   }
 
   return React.createElement('div', { ref: rootRef, style: { position: 'relative', display: 'inline-block' } },
@@ -82,7 +86,7 @@ function HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew }) {
         className: 'flex items-center gap-2 px-2 py-1.5 w-full text-left rounded-md',
         style: { fontSize: '13px', color: 'var(--text-primary)', backgroundColor: 'var(--accent-surface)', border: 'none' }
       },
-        React.createElement('span', { className: 'flex-1 min-w-0' }, `What's new in v${notes.version}`),
+        React.createElement('span', { className: 'flex-1 min-w-0' }, whatsNewLabel(notes)),
         notes.unread && React.createElement(UnreadDot)
       ),
       setup.items.map((item) => React.createElement('div', {
@@ -103,6 +107,7 @@ function HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew }) {
         }, item.label),
         !item.done && React.createElement('button', {
           type: 'button',
+          'aria-label': `Set up ${item.label}`,
           onClick: () => { setOpen(false); onAction && onAction(item.action); },
           className: 'px-2 py-0.5 rounded-md text-xs font-medium',
           style: { border: '1px solid var(--border-default)', color: 'var(--text-primary)', backgroundColor: 'transparent' }

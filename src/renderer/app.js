@@ -9082,14 +9082,14 @@ const Parachord = () => {
       .sort((a, b) => String(b.id).localeCompare(String(a.id)));
   }, [announcements, dismissedAnnouncementIds, appVersion]);
 
-  // Fire a 'view' event the first time each banner id renders this session.
-  // Re-renders for the same id (state updates, focus refetches) don't double-count.
   // Home's banner slot: backend-pushed announcements only. Release notes
   // live in the setup element, not here.
   const bannerItems = useMemo(() => homeBannerItems({
     announcements: activeAnnouncements,
   }), [activeAnnouncements]);
 
+  // Fire a 'view' event the first time each banner id renders this session.
+  // Re-renders for the same id (state updates, focus refetches) don't double-count.
   // Only while Home is showing it, and only for the banner Home paints
   // (bannerItems[0]).
   useEffect(() => {
@@ -11565,7 +11565,7 @@ const Parachord = () => {
           else if (command === 'play' && playKind === 'radio') ackMessage = `Loading radio${params.name || params.title ? `: ${params.name || params.title}` : ''}…`;
           else if (command === 'play') ackMessage = `Looking up "${params.title || ''}"${params.artist ? ` by ${params.artist}` : ''}…`;
           else if (command === 'import') ackMessage = 'Importing…';
-          else if (command === 'chat') ackMessage = 'Opening chat…';
+          else if (command === 'chat') ackMessage = origin === 'home' ? null : 'Opening chat…'; // Home's panel opens at once
           else if (command === 'listen-along') ackMessage = `Connecting to ${params.user || 'friend'}…`;
           // Hold the acknowledgment for 30s so it stays visible through the
           // entire resolution window (radio fetch + JSPF parse + N=2

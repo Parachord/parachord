@@ -627,7 +627,7 @@ Open the AI DJ chat panel, optionally with a pre-filled prompt.
 
 > **User confirmation required.** When a `prompt` parameter is provided, Parachord shows a confirmation dialog displaying the message before sending it to the AI. This prevents external sources from silently injecting prompts. See [Security Considerations](#security-considerations).
 >
-> The one exception is the app itself: Home's Ask Shuffleupagus box sends its prompt through this same link with an in-app origin and skips the dialog, because the user typed or approved the prompt in the app. The origin is an option the renderer passes when it calls the protocol handler directly. It is never a URL parameter, so a link from the OS, the local `/protocol` endpoint or the browser extension always confirms.
+> The one exception is the app itself: the Home Ask box that the Home redesign adds sends its prompt through this same link with an in-app origin, skips the dialog and sends once the chat panel is ready (it waits for the chat state), because the user typed or approved the prompt in the app. The origin is an option the renderer passes when it calls the protocol handler directly. It is never a URL parameter, so a link from the OS, the local `/protocol` endpoint or the browser extension always confirms.
 
 ```
 parachord://chat?prompt={text}
