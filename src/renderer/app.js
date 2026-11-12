@@ -1217,6 +1217,7 @@ const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, flattenRecommendationItems,
   filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES
 } = require('./lib/recommendation-model');
+const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
 const { restorableArtistDataEntries } = require('./lib/artist-data-cache');
@@ -3396,6 +3397,26 @@ const Parachord = () => {
         return next;
       });
     }, 100);
+  }
+  // Album release dates for the "Coming <date>" badge (lib/release-date.js):
+  // { [releaseDateKey(artist, title)]: { date: string|null, at } }, looked up
+  // on MusicBrainz in the background and kept a week. Results land through a
+  // coalesced writer (one render per batch) and are saved with the
+  // Recommendations cache a few seconds after they settle.
+  const [recommendationReleaseDates, setRecommendationReleaseDates] = useState({});
+  const recommendationReleaseDatesRef = useRef({});
+  const recommendationReleaseDateSaveTimerRef = useRef(null);
+  const saveRecommendationsCacheRef = useRef(null);
+  const recommendationReleaseDatesWriterRef = useRef(null);
+  if (!recommendationReleaseDatesWriterRef.current) {
+    recommendationReleaseDatesWriterRef.current = window.createCoalescedUpdater((batch) => {
+      const next = { ...recommendationReleaseDatesRef.current };
+      for (const [key, ops] of batch) next[key] = window.applyCoalescedOps(next[key], ops);
+      recommendationReleaseDatesRef.current = next;
+      setRecommendationReleaseDates(next);
+      clearTimeout(recommendationReleaseDateSaveTimerRef.current);
+      recommendationReleaseDateSaveTimerRef.current = setTimeout(() => saveRecommendationsCacheRef.current?.(), 5000);
+    }, 250);
   }
   // Section collapse state: a section shows only its first few items until
   // expanded (the user's collapse choice survives re-merges by section key).
@@ -18612,6 +18633,16 @@ ${trackListXml}
         };
         console.log(`📦 Loaded saved recommendations for ${Object.keys(recsData.providers).length} provider(s)`);
       }
+      // Saved album release dates (the "Coming <date>" badge), still fresh.
+      if (recsData && recsData.releaseDates && typeof recsData.releaseDates === 'object'
+          && Object.keys(recommendationReleaseDatesRef.current).length === 0) {
+        const fresh = {};
+        for (const [key, entry] of Object.entries(recsData.releaseDates)) {
+          if (entry && typeof entry.at === 'number' && (Date.now() - entry.at) < RELEASE_DATE_TTL_MS) fresh[key] = entry;
+        }
+        recommendationReleaseDatesRef.current = fresh;
+        setRecommendationReleaseDates(fresh);
+      }
 
       // Load AI suggestions cache (show previous session's suggestions instantly)
       if (aiSuggestionsData && (aiSuggestionsData.albums?.length > 0 || aiSuggestionsData.artists?.length > 0)) {
@@ -27343,10 +27374,16 @@ Return ONLY the JSON array, no other text.`;
     for (const [id, entry] of Object.entries(recommendationsCache.current.similarUsers || {})) {
       if (entry && Array.isArray(entry.users) && (now - entry.fetchedAt) < CACHE_TTL.recommendationsStale) similarUsers[id] = entry;
     }
+    // Album release dates still inside their week, newest 1500 at most.
+    const releaseDates = Object.fromEntries(Object.entries(recommendationReleaseDatesRef.current || {})
+      .filter(([, entry]) => entry && typeof entry.at === 'number' && (now - entry.at) < RELEASE_DATE_TTL_MS)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, 1500));
     try {
-      window.electron.store.set('cache_recommendations', { providers, similarUsers, savedAt: now });
+      window.electron.store.set('cache_recommendations', { providers, similarUsers, releaseDates, savedAt: now });
     } catch (e) { /* best-effort: the page refetches next launch */ }
   };
+  saveRecommendationsCacheRef.current = saveRecommendationsCache;
   const recommendationProviderKey = (providers) => providers.map(p => p.id).join('|');
   const loadRecommendations = async (opts = {}) => {
     const forceRefresh = opts === true || opts?.forceRefresh === true;
@@ -31608,6 +31645,33 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     }
   }, [activeView, recommendations.sections, recommendationImages]);
+
+  // Album release dates for the "Coming <date>" badge: no provider sends one,
+  // so each album card's first release date is looked up on MusicBrainz
+  // (lib/release-date.js), in the background lane behind every request the
+  // user made, in page order (the cards on screen come first), once per album
+  // a week. A failed lookup stores nothing and is tried on a later visit.
+  const recommendationReleaseDateFetchesRef = useRef(new Set());
+  useEffect(() => {
+    if (activeView !== 'recommendations') return;
+    const now = Date.now();
+    for (const item of flattenRecommendationItems(recommendations.sections)) {
+      if (item.type !== 'album' || !item.artist || !item.name) continue;
+      const key = releaseDateKey(item.artist, item.name);
+      const known = recommendationReleaseDatesRef.current[key];
+      if (known && (now - known.at) < RELEASE_DATE_TTL_MS) continue;
+      if (recommendationReleaseDateFetchesRef.current.has(key)) continue;
+      recommendationReleaseDateFetchesRef.current.add(key);
+      fetch(releaseGroupSearchUrl(item.artist, item.name), { mbBackground: true, queuedTimeoutMs: 15000 })
+        .then(res => (res && res.ok ? res.json() : Promise.reject(new Error(`MusicBrainz ${res && res.status}`))))
+        .then(data => {
+          const date = pickReleaseGroupDate(data && data['release-groups'], { artist: item.artist, title: item.name });
+          recommendationReleaseDatesWriterRef.current.queue(key, { date, at: Date.now() });
+        })
+        .catch(() => { /* nothing stored: a later visit asks again */ })
+        .finally(() => recommendationReleaseDateFetchesRef.current.delete(key));
+    }
+  }, [activeView, recommendations.sections]);
 
   // Fetch artist biography from Last.fm (lazy loaded on Biography tab click)
   const getLastfmBio = async (artistName) => {
@@ -40455,6 +40519,24 @@ useEffect(() => {
                   className: 'aspect-square relative group/art',
                   style: { background: 'var(--placeholder-bg)' }
                 },
+                  // Not out yet: "Coming <date>" over the cover, from the
+                  // album's MusicBrainz release date. Fresh Drops' cover badge
+                  // (the release-badge class, top-right, a fixed semi-opaque
+                  // colour that reads on any cover in either theme).
+                  (() => {
+                    const entry = recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];
+                    const label = entry && upcomingLabel(entry.date);
+                    return label && React.createElement('div', {
+                      className: 'pointer-events-none',
+                      style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }
+                    },
+                      React.createElement('span', {
+                        className: 'release-badge',
+                        'data-upcoming-badge': 'true',
+                        style: { backgroundColor: 'rgba(124, 58, 237, 0.9)', color: 'white', whiteSpace: 'nowrap' }
+                      }, label)
+                    );
+                  })(),
                   !artLoaded && React.createElement('div', {
                     className: 'absolute inset-0 shimmer-strong animate-shimmer',
                     style: { backgroundSize: '200% 100%', animationDelay: `${Math.min(index * 30, 300)}ms` }

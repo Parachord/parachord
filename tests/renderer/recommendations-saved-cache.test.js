@@ -39,8 +39,38 @@ describe('saved recommendations', () => {
   test('saved after every fetch round, keeping only answers with sections young enough to show', () => {
     const save = app.slice(app.indexOf('const saveRecommendationsCache = () => {'), app.indexOf('const loadRecommendations = async'));
     expect(save).toMatch(/entry\.sections\.length > 0 && \(now - entry\.fetchedAt\) < CACHE_TTL\.recommendationsStale/);
-    expect(save).toMatch(/window\.electron\.store\.set\('cache_recommendations', \{ providers, similarUsers, savedAt: now \}\)/);
+    expect(save).toMatch(/window\.electron\.store\.set\('cache_recommendations', \{ providers, similarUsers, releaseDates, savedAt: now \}\)/);
     expect(load).toMatch(/recommendationsCache\.current\.timestamp = Date\.now\(\);\s*saveRecommendationsCache\(\);/);
+  });
+
+  test('album release dates are saved with the cache inside their week, newest 1500, and restored when fresh', () => {
+    const save = app.slice(app.indexOf('const saveRecommendationsCache = () => {'), app.indexOf('const loadRecommendations = async'));
+    expect(save).toContain('.filter(([, entry]) => entry && typeof entry.at === \'number\' && (now - entry.at) < RELEASE_DATE_TTL_MS)');
+    expect(save).toContain('.slice(0, 1500)');
+    expect(app).toContain('saveRecommendationsCacheRef.current = saveRecommendationsCache;');
+    const restore = app.slice(app.indexOf('// Saved album release dates'), app.indexOf('// Load AI suggestions cache'));
+    expect(restore).toContain("(Date.now() - entry.at) < RELEASE_DATE_TTL_MS");
+    // Results save a few seconds after they settle (they arrive about once a second).
+    const writer = app.slice(app.indexOf('const recommendationReleaseDatesWriterRef = useRef(null);'), app.indexOf('// Section collapse state'));
+    expect(writer).toContain('setTimeout(() => saveRecommendationsCacheRef.current?.(), 5000)');
+  });
+
+  test('each album card\'s release date is looked up on MusicBrainz in the background, once a week, never stored on failure', () => {
+    const effect = app.slice(app.indexOf('const recommendationReleaseDateFetchesRef = useRef(new Set());'), app.indexOf('// Fetch artist biography from Last.fm'));
+    expect(effect).toContain("if (activeView !== 'recommendations') return;");
+    expect(effect).toContain("if (item.type !== 'album' || !item.artist || !item.name) continue;");
+    expect(effect).toContain('if (known && (now - known.at) < RELEASE_DATE_TTL_MS) continue;');
+    expect(effect).toContain('fetch(releaseGroupSearchUrl(item.artist, item.name), { mbBackground: true, queuedTimeoutMs: 15000 })');
+    expect(effect).toContain('.catch(() => { /* nothing stored: a later visit asks again */ })');
+    expect(effect).toContain('}, [activeView, recommendations.sections]);');
+  });
+
+  test('an album dated after today carries Fresh Drops\' cover badge with "Coming <date>"', () => {
+    const card = app.slice(app.indexOf('const albumCard = (item, index) => {'), app.indexOf('const playlistCard = (item, index, section) => {'));
+    expect(card).toContain("const entry = recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];");
+    expect(card).toContain('const label = entry && upcomingLabel(entry.date);');
+    expect(card).toContain("className: 'release-badge',");
+    expect(card).toContain("style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }");
   });
 
   test('fresh answers are used as is; stale ones show while their provider refreshes', () => {
