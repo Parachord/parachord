@@ -564,8 +564,19 @@ module.exports = {
         }
         return { sections: [] };
       }
+      // Only the personal sections. Amazon's personal shelves are named
+      // strategies ("…mp3YmlRecentPlaybackStrategy", "…playlistStrategy");
+      // its editorial ones ("Top Playlists", "Featured This Week", "Amazon
+      // Music Live", "Recently Played") carry UUID ids and the onboarding
+      // shelf is GET_STARTED. The genre shelf ("Soundtracks") is a strategy
+      // but a promo, so it is named out. Live-captured 2026-11-12.
+      var EDITORIAL_STRATEGIES = { mp3GenreForYouStrategy: true };
+      var isPersonal = function (id) {
+        var last = String(id || '').split('/').pop().replace(/^(browse|music)-home_/, '');
+        return /Strategy$/.test(last) && !EDITORIAL_STRATEGIES[last];
+      };
       var sections = (result.sections || []).filter(function (s) {
-        return s && Array.isArray(s.items) && s.items.length > 0;
+        return s && Array.isArray(s.items) && s.items.length > 0 && isPersonal(s.id);
       }).map(function (s) {
         // The bridge's synthesized "Playlists for You" section carries its
         // first page's continuation cursor — pass it through so the page's

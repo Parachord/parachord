@@ -283,6 +283,10 @@ ReleaseCard({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFe
 - Active state: `translateY(-2px)` with reduced shadow
 - Entry animation: `cardFadeUp` with staggered delays
 
+### Recommendation rows
+
+The Recommendations page reuses Home's and the other tabs' pieces. Each section is one row under its heading (`text-lg font-semibold`); **"See all" / "Show less"** is Home's purple link (accent colour text, no button chrome, right-aligned on the heading's line); sections carry no item counts. Sources are filtered for the whole page in a **filter bar** under the hero, Fresh Drops' bar and pills: All, then one pill per source, no counts, one pick at a time, each pill with its own active colour as on the other tabs (All `#7c3aed`, a source its plugin's brand colour, Shuffleupagus `var(--accent-primary)`). Collapsed, a card section shows two full rows. Items carry no source badges.
+
 ### Artist Cards
 
 - **`RelatedArtistCard`** — Related artist display on artist pages
@@ -437,7 +441,7 @@ Navigation is state-driven via `activeView`. Available views:
 
 | View | Description |
 |------|-------------|
-| `home` | Dashboard with recommendations, weekly jams, new releases |
+| `home` | Dashboard with recommendations, AI suggestions, new releases |
 | `search` | Search results with category tabs and detail panels |
 | `library` | Collection browser (tracks, albums, artists tabs) |
 | `artist` | Artist detail page with discography, bio, related artists, concerts |
@@ -445,7 +449,7 @@ Navigation is state-driven via `activeView`. Available views:
 | `playlists` | Playlist list and management |
 | `playlist-view` | Individual playlist detail |
 | `settings` | App settings (resolvers, scrobblers, AI, plugins) |
-| `recommendations` | Recommended artists and songs from Last.fm and ListenBrainz |
+| `recommendations` | A source filter bar, then five sections (Songs, Albums, Artists, Playlists, Listeners), each one row blending every provider's picks, weekly playlists first in Playlists |
 | `discover` | Charts (Pop of the Tops) |
 | `critics-picks` | Curated editor/critic selections |
 | `new-releases` | Latest releases |
