@@ -557,7 +557,7 @@ const { carriedReleaseArt, withArchiveCover, createReleaseGroupPicks } = require
 const { firstNonEmptyList, entriesFromMusicBrainzRelease, entriesFromCatalogRelease, pickReleaseGroup } = require('./lib/album-track-list');
 const { pickRelease } = require('./lib/release-pick');
 const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/release-lookup');
-const { artistLookupPlan, loadArtistReleaseGroups } = require('./lib/artist-discography');
+const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
@@ -3497,6 +3497,10 @@ const Parachord = () => {
   const [loadingBio, setLoadingBio] = useState(false);
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [loadingArtist, setLoadingArtist] = useState(false);
+  // { name, message } when MusicBrainz couldn't load the artist's discography
+  // and no service's could stand in (#874). The artist page shows it with Try
+  // again while that artist is the one on screen with no releases.
+  const [artistLoadError, setArtistLoadError] = useState(null);
   // On Tour tab state (artist-specific concerts)
   const [artistConcerts, setArtistConcerts] = useState([]);
   const [artistConcertsLoading, setArtistConcertsLoading] = useState(false);
@@ -19987,6 +19991,7 @@ ${trackListXml}
     // Increment fetch ID to invalidate any in-flight requests for previous artists
     artistFetchId.current++;
     const thisFetchId = artistFetchId.current;
+    setArtistLoadError(null);
 
     // Clear any current release view when navigating to a new artist
     setCurrentRelease(null);
@@ -20100,7 +20105,14 @@ ${trackListXml}
     // showing, or the not-on-MusicBrainz path took over.
     let discographySettled = false;
     let serviceDiscographySource = null;
-    const slowFallbackTimer = setTimeout(async () => {
+    // The name the header shows: the one asked for until MusicBrainz names
+    // the artist. A load error is recorded against it.
+    let shownArtistName = artistName;
+    let mbReleasesShown = false;
+    // One pass over the services, shared by the slow timer and a MusicBrainz
+    // failure that lands while the timer's pass is still asking.
+    let serviceDiscographyRun = null;
+    const showServiceDiscography = () => serviceDiscographyRun || (serviceDiscographyRun = (async () => {
       for (const fetchFn of [fetchArtistFromSpotify, fetchArtistFromMusicKit, fetchArtistFromLastfm, fetchArtistFromDiscogs]) {
         if (thisFetchId !== artistFetchId.current || discographySettled) return;
         let result = null;
@@ -20108,7 +20120,7 @@ ${trackListXml}
         if (thisFetchId !== artistFetchId.current || discographySettled) return;
         if (!result?.releases?.length) continue;
         serviceDiscographySource = result.source;
-        console.log(`🎵 MusicBrainz still loading "${artistName}" after ${ARTIST_SLOW_FALLBACK_MS}ms: showing ${result.source}'s ${result.releases.length} releases meanwhile`);
+        console.log(`🎵 MusicBrainz still loading or failed for "${artistName}": showing ${result.source}'s ${result.releases.length} releases`);
         const shown = result.releases.map(release => ({
           ...release,
           albumArt: release.albumArt || albumArtCache.current[release.id]?.url || undefined
@@ -20122,7 +20134,25 @@ ${trackListXml}
         processAlbumArtQueue();
         return;
       }
-    }, ARTIST_SLOW_FALLBACK_MS);
+    })());
+    const slowFallbackTimer = setTimeout(showServiceDiscography, ARTIST_SLOW_FALLBACK_MS);
+
+    // MusicBrainz couldn't load the discography (#874): an outage or
+    // throttling used to read as an artist with no releases ("No albums
+    // found", and cached for a month when the release-group requests were
+    // the ones failing). Releases MusicBrainz already showed stay; otherwise
+    // the services' discography stands in, and only when none has one does
+    // the page say it couldn't load, with Try again. Never cached.
+    const discographyFailed = async (error) => {
+      clearTimeout(slowFallbackTimer);
+      if (thisFetchId !== artistFetchId.current) return;
+      if (!mbReleasesShown && !serviceDiscographySource) await showServiceDiscography();
+      if (thisFetchId !== artistFetchId.current) return;
+      if (!mbReleasesShown && !serviceDiscographySource) {
+        setArtistLoadError({ name: shownArtistName, message: describeMusicBrainzError(error, { online: navigator.onLine }) });
+      }
+      setLoadingArtist(false);
+    };
 
     console.log('🌐 Fetching fresh artist data from MusicBrainz...');
 
@@ -20176,14 +20206,7 @@ ${trackListXml}
 
       if (!knownArtist && !searchResponse.ok) {
         console.error('Artist search failed:', searchResponse.status);
-        if (searchResponse.status === 503 || searchResponse.status === 429) {
-          showConfirmDialog({
-            type: 'error',
-            title: 'Service Busy',
-            message: 'MusicBrainz is temporarily unavailable. Please try again in a few seconds.'
-          });
-        }
-        setLoadingArtist(false);
+        await discographyFailed(musicBrainzHttpError(searchResponse.status));
         return;
       }
 
@@ -20326,6 +20349,7 @@ ${trackListXml}
       }
 
       // Set artist name immediately so header shows while releases load
+      shownArtistName = artist.name;
       setCurrentArtist({
         name: artist.name,
         mbid: artist.id,
@@ -20367,6 +20391,7 @@ ${trackListXml}
         if (thisFetchId !== artistFetchId.current || batch.length === 0) return;
         discographySettled = true; // replaces a service discography on screen
         clearTimeout(slowFallbackTimer);
+        mbReleasesShown = true;
         fetchedReleases.push(...batch);
         const sorted = [...fetchedReleases].sort(byNewest);
         // Rows already on screen keep their object (and any cover the art
@@ -20390,14 +20415,19 @@ ${trackListXml}
         processAlbumArtQueue();
       };
 
+      const releaseGroupErrors = [];
       const uniqueReleases = (await loadArtistReleaseGroups(artist.id, {
         fetch: mbFetch,
         onBatch: (releases) => showReleases(releases),
-        onError: (error, type) => console.error(`Error fetching ${type} release-groups:`, error)
+        onError: (error, type) => {
+          releaseGroupErrors.push(error);
+          console.error(`Error fetching ${type} release-groups:`, error);
+        }
       })).sort(byNewest);
 
       console.log(`Found ${uniqueReleases.length} release-groups for ${artist.name}`);
       clearTimeout(slowFallbackTimer);
+      const outcome = discographyOutcome({ releaseCount: uniqueReleases.length, failedTypes: releaseGroupErrors.length });
 
       // MusicBrainz answered with nothing (every request failed, or it has no
       // releases) while a service's discography is showing: keep that, and
@@ -20405,6 +20435,13 @@ ${trackListXml}
       if (uniqueReleases.length === 0 && serviceDiscographySource) {
         console.log(`🎵 MusicBrainz had no releases for "${artist.name}": keeping ${serviceDiscographySource}'s`);
         if (thisFetchId === artistFetchId.current) setLoadingArtist(false);
+        return;
+      }
+
+      // Every release-group request that could have answered failed: not an
+      // artist with no releases.
+      if (outcome === 'failed') {
+        await discographyFailed(releaseGroupErrors[0]);
         return;
       }
 
@@ -20416,14 +20453,20 @@ ${trackListXml}
         type: artist.type
       };
 
-      // Cache the artist data (version 2: release-group categorization)
-      artistDataCache.current[cacheKey] = {
-        artist: artistData,
-        releases: uniqueReleases,
-        timestamp: Date.now(),
-        cacheVersion: 2
-      };
-      console.log('💾 Cached artist data for:', artistName);
+      // Cache the artist data (version 2: release-group categorization). A
+      // partial discography (a release type failed) shows but isn't cached,
+      // so the next visit asks again.
+      if (outcome === 'partial') {
+        console.log(`⚠️ ${releaseGroupErrors.length} release type(s) failed for "${artist.name}": showing ${uniqueReleases.length} releases, not caching`);
+      } else {
+        artistDataCache.current[cacheKey] = {
+          artist: artistData,
+          releases: uniqueReleases,
+          timestamp: Date.now(),
+          cacheVersion: 2
+        };
+        console.log('💾 Cached artist data for:', artistName);
+      }
 
       // Check if this fetch is still current before updating state
       if (thisFetchId !== artistFetchId.current) {
@@ -20436,15 +20479,11 @@ ${trackListXml}
 
     } catch (error) {
       console.error('Error fetching artist data:', error);
-      // Name what failed. The old check called any TypeError mentioning
-      // "fetch" a network error and told the user to check their internet
-      // connection, which during a MusicBrainz outage was wrong.
-      showConfirmDialog({
-        type: 'error',
-        title: 'Load Failed',
-        message: describeMusicBrainzError(error, { online: navigator.onLine })
-      });
-      setLoadingArtist(false);
+      // Name what failed, on the page (describeMusicBrainzError). The old
+      // check called any TypeError mentioning "fetch" a network error and
+      // told the user to check their internet connection, which during a
+      // MusicBrainz outage was wrong; a dialog then left "No albums found".
+      await discographyFailed(error);
     }
   };
 
@@ -36724,7 +36763,7 @@ useEffect(() => {
 
       // Main content area - Artist Page (completely separate layout)
       activeView === 'artist' ? React.createElement(ArtistPage, {
-          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
+          activeResolvers: playbackResolvers, addArtistToCollection, albumArtObserver, albumArtQueue, albumVersions, artistBio, artistConcerts, artistConcertsLoaded, artistConcertsLoading, artistConcertsTicketFlyout, artistExtendedInfo, artistImage, artistImagePosition, artistPageScrollRef, artistPageTab, artistReleases, artistSearch, artistSearchOpen, artistSort, artistSortDropdownOpen, artistSortOptions, collectionData, copyCollectionEmbedCode, currentArtist, currentRelease, currentTrack, effectiveTheme, filterArtistReleases, handleArtistPageScroll, isCompactHeader, isHeaderCollapsed, isPlaying, artistLoadError, loadingArtist, loadingBio, loadingExtendedInfo, loadingRelated, loadingRelease, playbackContext, prefetchedReleasesRef, publishCollectionSmartLink, relatedArtists, relatedArtistsSourceFilter, releaseObserverRef, releaseTrackRowRefs, releaseTypeFilter, removeArtistFromCollection, resolvers, setAddToPlaylistPanel, setArtistBio, setArtistConcertsTicketFlyout, setArtistPageTab, setArtistSearch, setArtistSearchOpen, setArtistSort, setArtistSortDropdownOpen, setCurrentRelease, setDraggingTrackForPlaylist, setIsHeaderCollapsed, setLoadingBio, setRelatedArtists, setRelatedArtistsSourceFilter, setReleaseTypeFilter, setSelectedPlaylistsForAdd, setShareDropdownOpen, setTrackLoading, shareDropdownOpen, showToast, sortArtistReleases, trackSources, visibleAlbumIds,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServiceConfigs: metaServiceConfigs,
@@ -37084,10 +37123,27 @@ useEffect(() => {
                 )
               )
           ),
-          // Import Playlist button - styled like Add Friend button
+          // Import Playlist button: the outlined secondary style of the album
+          // and playlist Share button (theme variables, card-style border and
+          // hover), sized to sit level with the filled New button beside it.
           React.createElement('button', {
+            type: 'button',
             onClick: () => setShowUrlImportDialog(true),
-            className: 'ml-3 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+            className: 'ml-3 flex items-center gap-1.5 no-drag',
+            style: {
+              padding: '5px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-default)',
+              backgroundColor: 'var(--card-bg)',
+              color: 'var(--text-secondary)',
+              fontSize: '14px',
+              fontWeight: 500,
+              lineHeight: '20px',
+              cursor: 'pointer',
+              transition: 'border-color 150ms ease, color 150ms ease'
+            },
+            onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'var(--text-tertiary)'; e.currentTarget.style.color = 'var(--text-primary)'; },
+            onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-secondary)'; }
           },
             React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 -4l-4 4m0 0l-4-4m4 4V4' })

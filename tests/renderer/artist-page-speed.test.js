@@ -97,7 +97,10 @@ describe('slow MusicBrainz: the services\' discography meanwhile', () => {
 
   test('after 3s, the not-on-MusicBrainz sources fill the page', () => {
     expect(app).toMatch(/const ARTIST_SLOW_FALLBACK_MS = 3000;/);
-    const timer = fetchArtist.slice(fetchArtist.indexOf('const slowFallbackTimer = setTimeout('), fetchArtist.indexOf('}, ARTIST_SLOW_FALLBACK_MS);'));
+    // One pass over the services, run by the timer and by a MusicBrainz
+    // failure (#874) alike
+    expect(fetchArtist).toMatch(/const slowFallbackTimer = setTimeout\(showServiceDiscography, ARTIST_SLOW_FALLBACK_MS\);/);
+    const timer = fetchArtist.slice(fetchArtist.indexOf('const showServiceDiscography = () =>'), fetchArtist.indexOf('const slowFallbackTimer = setTimeout('));
     expect(timer).toMatch(/\[fetchArtistFromSpotify, fetchArtistFromMusicKit, fetchArtistFromLastfm, fetchArtistFromDiscogs\]/);
     // stale and settled checks before and after every source
     expect(timer.match(/if \(thisFetchId !== artistFetchId\.current \|\| discographySettled\) return;/g)).toHaveLength(2);
