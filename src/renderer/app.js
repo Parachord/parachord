@@ -9084,17 +9084,14 @@ const Parachord = () => {
 
   // Fire a 'view' event the first time each banner id renders this session.
   // Re-renders for the same id (state updates, focus refetches) don't double-count.
-  // Home's banner slot: What's New first (until dismissed for this version),
-  // then remote announcements.
+  // Home's banner slot: backend-pushed announcements only. Release notes
+  // live in the setup element, not here.
   const bannerItems = useMemo(() => homeBannerItems({
-    whatsNew: appVersion && whatsNewDismissedVersion !== appVersion
-      ? { version: appVersion, title: `What's new in ${appVersion}`, body: `See what's new in v${appVersion}` }
-      : null,
     announcements: activeAnnouncements,
-  }), [appVersion, whatsNewDismissedVersion, activeAnnouncements]);
+  }), [activeAnnouncements]);
 
   // Only while Home is showing it, and only for the banner Home paints
-  // (bannerItems[0]): What's New ahead of an announcement hides it.
+  // (bannerItems[0]).
   useEffect(() => {
     if (activeView !== 'home') return;
     const viewId = bannerViewId(bannerItems);
@@ -9106,16 +9103,26 @@ const Parachord = () => {
 
   const dismissHomeBanner = async (item) => {
     if (!item) return;
-    if (item.kind === 'whats-new') {
-      if (appVersion) {
-        setWhatsNewDismissedVersion(appVersion);
-        if (window.electron?.store) {
-          await window.electron.store.set('whats_new_dismissed_version', appVersion);
-        }
-      }
-      return;
-    }
     dismissAnnouncement(item.id);
+  };
+
+  // Record the current version's release notes as seen (the unread dot goes).
+  // The What's New modal's own dismiss and Home's openWhatsNew both use it.
+  const markWhatsNewSeen = async () => {
+    if (!appVersion) return;
+    setWhatsNewDismissedVersion(appVersion);
+    if (window.electron?.store) {
+      await window.electron.store.set('whats_new_dismissed_version', appVersion);
+    }
+  };
+
+  // Home's setup element opens the notes; opening them counts as seeing them.
+  const whatsNewUnread = useMemo(
+    () => !!appVersion && whatsNewDismissedVersion !== appVersion,
+    [appVersion, whatsNewDismissedVersion]);
+  const openWhatsNew = async () => {
+    setWhatsNewOpen(true);
+    await markWhatsNewSeen();
   };
 
   const dismissHomeSetupItem = async (id) => {
@@ -9127,10 +9134,6 @@ const Parachord = () => {
 
   const openHomeBannerCta = (item) => {
     if (!item) return;
-    if (item.kind === 'whats-new') {
-      setWhatsNewOpen(true);
-      return;
-    }
     if (!item.cta || typeof item.cta.url !== 'string' || !/^https?:\/\//i.test(item.cta.url)) return;
     recordAnnouncementEvent(item.id, 'cta-click');
     if (window.electron?.shell?.openExternal) {
@@ -35396,7 +35399,7 @@ useEffect(() => {
     loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
     askShuffleupagus, navigateTo, navigateToFriend, openAiChat,
     openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
-    setQueueWithContext, dismissHomeBanner, openHomeBannerCta, dismissHomeSetupItem,
+    setQueueWithContext, dismissHomeBanner, openHomeBannerCta, dismissHomeSetupItem, openWhatsNew,
   });
 
   // Stable function props for the memo'd CollectionPage: same identity on
@@ -37503,7 +37506,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, homeSetupDismissed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache,
+          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, homeSetupDismissed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, whatsNewUnread,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServices: metaServices,
@@ -51870,12 +51873,7 @@ useEffect(() => {
           React.createElement('button', {
             onClick: async () => {
               setWhatsNewOpen(false);
-              if (appVersion) {
-                setWhatsNewDismissedVersion(appVersion);
-                if (window.electron?.store) {
-                  await window.electron.store.set('whats_new_dismissed_version', appVersion);
-                }
-              }
+              await markWhatsNewSeen();
             },
             className: 'transition-colors',
             style: {

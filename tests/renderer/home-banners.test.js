@@ -11,10 +11,10 @@ const contrastOnWhite = (hex) => 1.05 / (luminance(hex) + 0.05);
 
 describe('homeBannerItems', () => {
   test('empty inputs give an empty list', () => {
-    expect(homeBannerItems({ whatsNew: null, announcements: [] })).toEqual([]);
+    expect(homeBannerItems({ announcements: [] })).toEqual([]);
   });
 
-  test('What\'s New comes first, announcements keep their order', () => {
+  test('only announcements, in their given order; a whatsNew input is ignored', () => {
     const items = homeBannerItems({
       whatsNew: { version: '0.9.14', title: "What's new in 0.9.14" },
       announcements: [
@@ -22,17 +22,13 @@ describe('homeBannerItems', () => {
         { id: 'a2', title: 'Two', body: 'b2' },
       ],
     });
-    expect(items).toHaveLength(3);
-    expect(items[0].id).toBe('whats-new:0.9.14');
-    expect(items[0].kind).toBe('whats-new');
-    expect(items[0].severity).toBe('info');
-    expect(items[1].id).toBe('a1');
-    expect(items[1].kind).toBe('announcement');
-    expect(items[2].id).toBe('a2');
+    expect(items.map((i) => i.id)).toEqual(['a1', 'a2']);
+    expect(items.every((i) => i.kind === 'announcement')).toBe(true);
+    expect(items.some((i) => i.kind === 'whats-new')).toBe(false);
   });
 
   test('an announcement without severity gets info', () => {
-    const [item] = homeBannerItems({ whatsNew: null, announcements: [{ id: 'x', title: 'T' }] });
+    const [item] = homeBannerItems({ announcements: [{ id: 'x', title: 'T' }] });
     expect(item.severity).toBe('info');
   });
 

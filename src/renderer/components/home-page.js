@@ -56,6 +56,7 @@ const HOME_PAGE_HANDLERS = [
   'openAiChat',
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
+  'openWhatsNew',
   'openSyncSetupModal',
   'openTopAlbum',
   'playTrackCollection',
@@ -116,6 +117,7 @@ const HomePage = React.memo(function HomePage(props) {
     openAiChat,
     openCriticsPicksAlbum,
     openHomeBannerCta,
+    openWhatsNew,
     openSyncSetupModal,
     openTopAlbum,
     playTrackCollection,
@@ -137,6 +139,7 @@ const HomePage = React.memo(function HomePage(props) {
     showToast,
     spotifyConnected,
     trackSourcesCache,
+    whatsNewUnread,
   } = props;
 
   // The setup checklist: same checks the old cards used.
@@ -148,7 +151,9 @@ const HomePage = React.memo(function HomePage(props) {
     extensionConnected,
     isMac: typeof navigator !== 'undefined' && !!navigator.platform && navigator.platform.includes('Mac'),
     dismissed: homeSetupDismissed,
-  }), [allResolvers, metaServiceConfigs, spotifyConnected, extensionConnected, homeSetupDismissed]);
+    appVersion,
+    whatsNewUnread,
+  }), [allResolvers, metaServiceConfigs, spotifyConnected, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
 
   // Each item's click does what its old card did.
   const onSetupAction = (id) => {
@@ -259,7 +264,7 @@ const HomePage = React.memo(function HomePage(props) {
               }
             }
           },
-            // Announcements and What's New: one banner, Home only.
+            // Backend announcements: one banner, Home only.
             React.createElement(HomeBanner, {
               items: bannerItems,
               onDismiss: dismissHomeBanner,
@@ -270,11 +275,12 @@ const HomePage = React.memo(function HomePage(props) {
               // SECTION: Finish setting up (checklist button; it replaces the old
               // setup cards, including the empty-collection
               // card, are gone. The empty-collection card returns in Jump back in.)
-              homeSetup.visible && React.createElement('div', { className: 'mb-2' },
+              React.createElement('div', { className: 'mb-2' },
                 React.createElement(HomeSetupButton, {
                   setup: homeSetup,
                   onAction: onSetupAction,
-                  onDismiss: dismissHomeSetupItem
+                  onDismiss: dismissHomeSetupItem,
+                  onOpenWhatsNew: openWhatsNew
                 })
               ),
 

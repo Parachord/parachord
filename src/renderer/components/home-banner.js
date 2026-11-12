@@ -30,10 +30,8 @@ function HomeBanner({ items, onDismiss, onCta }) {
         }, iconText)
       : null;
 
-  // A What's New item has no URL: its button opens the modal.
-  const isWhatsNew = item.kind === 'whats-new';
-  const ctaOk = isWhatsNew || (item.cta && typeof item.cta.url === 'string' && /^https?:\/\//i.test(item.cta.url));
-  const ctaLabel = isWhatsNew ? "See what's new" : (item.cta && item.cta.label);
+  const ctaOk = item.cta && typeof item.cta.url === 'string' && /^https?:\/\//i.test(item.cta.url);
+  const ctaLabel = item.cta && item.cta.label;
 
   return React.createElement('div', {
     key: item.id,

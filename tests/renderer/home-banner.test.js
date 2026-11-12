@@ -36,11 +36,6 @@ describe('HomeBanner', () => {
     expect(html).toContain('>Go<');
   });
 
-  test('a What\'s New item has a CTA button without a url', () => {
-    const html = render({ items: [item({ kind: 'whats-new', cta: null })] });
-    expect(html).toContain('See what');
-  });
-
   test('prefers an https iconUrl, falls back to the glyph', () => {
     expect(render({ items: [item({ iconUrl: 'https://x.test/i.png', icon: 'A' })] })).toContain('<img');
     expect(render({ items: [item({ iconUrl: 'http://x.test/i.png', icon: 'A' })] })).not.toContain('<img');
@@ -62,10 +57,18 @@ describe('Home-only wiring', () => {
   });
 });
 
+describe('release notes stay out of the banner', () => {
+  test.each([
+    'src/renderer/app.js', 'src/renderer/components/home-banner.js', 'src/renderer/lib/home-banners.js',
+  ])("%s has no 'whats-new' kind", (f) => {
+    expect(read(f)).not.toContain("'whats-new'");
+  });
+});
+
 describe('bannerViewId', () => {
   test('returns the id only when the painted banner is an announcement', () => {
     expect(bannerViewId([item({ id: 'a1' })])).toBe('a1');
-    expect(bannerViewId([item({ id: 'w', kind: 'whats-new' }), item({ id: 'a1' })])).toBeNull();
+    expect(bannerViewId([item({ id: 'w', kind: 'other' }), item({ id: 'a1' })])).toBeNull();
     expect(bannerViewId([])).toBeNull();
     expect(bannerViewId(undefined)).toBeNull();
   });

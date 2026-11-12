@@ -6,7 +6,19 @@
 // button and a × that dismisses them for good. The popover closes on an
 // outside click or Escape.
 
-function HomeSetupButton({ setup, onAction, onDismiss }) {
+// Accent dot marking unread release notes.
+function UnreadDot() {
+  return React.createElement('span', {
+    role: 'img',
+    'aria-label': 'New release notes',
+    style: {
+      display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+      backgroundColor: '#7c3aed', // fill-accent
+    }
+  });
+}
+
+function HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew }) {
   const [open, setOpen] = React.useState(false);
   const rootRef = React.useRef(null);
 
@@ -24,7 +36,26 @@ function HomeSetupButton({ setup, onAction, onDismiss }) {
     };
   }, [open]);
 
-  if (!setup || !setup.visible) return null;
+  if (!setup) return null;
+
+  const notes = setup.whatsNew || {};
+  const pillClass = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors';
+  const pillStyle = {
+    backgroundColor: 'var(--card-bg)',
+    color: 'var(--text-primary)',
+    border: '1px solid var(--border-default)',
+    boxShadow: 'var(--card-shadow)'
+  };
+
+  // Nothing left to set up: the pill is the release notes link, no popover.
+  if (setup.mode === 'whats-new') {
+    return React.createElement('button', {
+      type: 'button',
+      onClick: () => onOpenWhatsNew && onOpenWhatsNew(),
+      className: pillClass,
+      style: pillStyle
+    }, `What's new in v${notes.version}`, notes.unread && React.createElement(UnreadDot));
+  }
 
   return React.createElement('div', { ref: rootRef, style: { position: 'relative', display: 'inline-block' } },
     React.createElement('button', {
@@ -32,14 +63,9 @@ function HomeSetupButton({ setup, onAction, onDismiss }) {
       'aria-expanded': open,
       'aria-haspopup': 'true',
       onClick: () => setOpen((v) => !v),
-      className: 'px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
-      style: {
-        backgroundColor: 'var(--card-bg)',
-        color: 'var(--text-primary)',
-        border: '1px solid var(--border-default)',
-        boxShadow: 'var(--card-shadow)'
-      }
-    }, `Finish setting up · ${setup.done} of ${setup.total}`),
+      className: pillClass,
+      style: pillStyle
+    }, `Finish setting up · ${setup.done} of ${setup.total}`, notes.unread && React.createElement(UnreadDot)),
     open && React.createElement('div', {
       role: 'dialog',
       'aria-label': 'Finish setting up',
@@ -50,6 +76,15 @@ function HomeSetupButton({ setup, onAction, onDismiss }) {
         boxShadow: 'var(--card-shadow)'
       }
     },
+      React.createElement('button', {
+        type: 'button',
+        onClick: () => { setOpen(false); onOpenWhatsNew && onOpenWhatsNew(); },
+        className: 'flex items-center gap-2 px-2 py-1.5 w-full text-left rounded-md',
+        style: { fontSize: '13px', color: 'var(--text-primary)', backgroundColor: 'var(--accent-surface)', border: 'none' }
+      },
+        React.createElement('span', { className: 'flex-1 min-w-0' }, `What's new in v${notes.version}`),
+        notes.unread && React.createElement(UnreadDot)
+      ),
       setup.items.map((item) => React.createElement('div', {
         key: item.id,
         className: 'flex items-center gap-2 px-2 py-1.5',

@@ -15,9 +15,10 @@ const allDone = {
 };
 
 describe('homeSetupItems', () => {
-  test('everything connected and not a Mac is not visible', () => {
+  test('everything connected is in whats-new mode', () => {
     const s = homeSetupItems(allDone);
-    expect(s.visible).toBe(false);
+    expect(s.mode).toBe('whats-new');
+    expect(s.visible).toBeUndefined();
     expect(s.done).toBe(5);
     expect(s.total).toBe(5);
   });
@@ -41,7 +42,16 @@ describe('homeSetupItems', () => {
     expect(r).toHaveLength(1);
     expect(r[0].done).toBe(false);
     expect(r[0].action).toBe('resolvers');
-    expect(s.visible).toBe(true);
+    expect(s.mode).toBe('setup');
+  });
+
+  test('whatsNew is reported but never counted or listed', () => {
+    const s = homeSetupItems({ ...allDone, missingPopularResolvers: 1, appVersion: '0.9.14', whatsNewUnread: true });
+    expect(s.whatsNew).toEqual({ version: '0.9.14', unread: true });
+    expect(s.total).toBe(5);
+    expect(s.done).toBe(4);
+    expect(s.items.some((i) => /new/i.test(i.id))).toBe(false);
+    expect(homeSetupItems(allDone).whatsNew.unread).toBe(false);
   });
 
   test('order and labels', () => {
@@ -59,19 +69,34 @@ describe('homeSetupItems', () => {
 });
 
 describe('HomeSetupButton', () => {
-  test('shows the progress label', () => {
-    const setup = {
-      items: [
-        { id: 'a', label: 'A', done: true, action: 'a' }, { id: 'b', label: 'B', done: true, action: 'b' },
-        { id: 'c', label: 'C', done: false, action: 'c' }, { id: 'd', label: 'D', done: false, action: 'd' },
-      ],
-      done: 2, total: 4, visible: true,
-    };
-    expect(renderToStaticMarkup(React.createElement(HomeSetupButton, { setup }))).toContain('Finish setting up · 2 of 4');
+  const render = (props) => renderToStaticMarkup(React.createElement(HomeSetupButton, props));
+  const setupMode = (unread) => ({
+    items: [
+      { id: 'a', label: 'A', done: true, action: 'a' }, { id: 'b', label: 'B', done: true, action: 'b' },
+      { id: 'c', label: 'C', done: false, action: 'c' }, { id: 'd', label: 'D', done: false, action: 'd' },
+    ],
+    done: 2, total: 4, mode: 'setup', whatsNew: { version: '0.9.14', unread },
   });
+  const notesMode = (unread) => ({ items: [], done: 0, total: 0, mode: 'whats-new', whatsNew: { version: '0.9.14', unread } });
 
-  test('renders nothing when not visible', () => {
-    expect(renderToStaticMarkup(React.createElement(HomeSetupButton, { setup: { items: [], done: 0, total: 0, visible: false } }))).toBe('');
+  test('setup mode shows the progress label', () => {
+    expect(render({ setup: setupMode(false) })).toContain('Finish setting up · 2 of 4');
+  });
+  test('setup mode shows the dot only when unread', () => {
+    expect(render({ setup: setupMode(true) })).toContain('aria-label="New release notes"');
+    expect(render({ setup: setupMode(false) })).not.toContain('New release notes');
+  });
+  test('whats-new mode reads What\'s new in v{version}', () => {
+    const html = render({ setup: notesMode(false) });
+    expect(html).toContain('What&#x27;s new in v0.9.14');
+    expect(html).not.toContain('Finish setting up');
+    expect(html).not.toContain('New release notes');
+  });
+  test('whats-new mode shows the dot when unread', () => {
+    expect(render({ setup: notesMode(true) })).toContain('aria-label="New release notes"');
+  });
+  test('renders nothing without a setup model', () => {
+    expect(render({ setup: null })).toBe('');
   });
 });
 
@@ -84,6 +109,12 @@ describe('wiring', () => {
     expect(app).toContain("'home_setup_dismissed'");
     expect(app).toContain('dismissHomeSetupItem');
     expect(read('src/renderer/components/home-page.js')).toContain("'dismissHomeSetupItem'");
+  });
+  test('Home wires openWhatsNew and no longer hides the element', () => {
+    const page = read('src/renderer/components/home-page.js');
+    expect(page).toContain("'openWhatsNew'");
+    expect(page).not.toContain('homeSetup.visible');
+    expect(read('src/renderer/app.js')).toContain('openWhatsNew');
   });
   test('the old Enhance Your Experience section is gone', () => {
     expect(read('src/renderer/components/home-page.js')).not.toContain('Enhance Your Experience');

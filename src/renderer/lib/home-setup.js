@@ -20,6 +20,8 @@ function homeSetupItems({
   extensionConnected = null,
   isMac = false,
   dismissed = [],
+  appVersion = null,
+  whatsNewUnread = false,
 } = {}) {
   const gone = new Set(Array.isArray(dismissed) ? dismissed : []);
   const all = [
@@ -34,7 +36,13 @@ function homeSetupItems({
 
   const items = all.filter((i) => !gone.has(i.id)).map((i) => ({ ...i, action: i.id }));
   const done = items.filter((i) => i.done).length;
-  return { items, done, total: items.length, visible: items.some((i) => !i.done) };
+  // What's New is never an item and never counts toward done or total. The
+  // element always renders: 'setup' while anything is open, else 'whats-new'.
+  return {
+    items, done, total: items.length,
+    mode: items.some((i) => !i.done) ? 'setup' : 'whats-new',
+    whatsNew: { version: appVersion, unread: !!whatsNewUnread },
+  };
 }
 
 module.exports = { homeSetupItems, missingPopularResolverCount, POPULAR_RESOLVER_IDS };
