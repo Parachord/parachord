@@ -139,11 +139,14 @@ describe('recommended playlist cards', () => {
   });
 
   test('every playlist action uses the same trackSlug-keyed tracks', () => {
-    for (const fn of ['playRecommendationPlaylist', 'addRecommendationPlaylistToPlaylist', 'queueRecommendationPlaylist', 'openRecommendationPlaylist']) {
+    for (const fn of ['playRecommendationPlaylist', 'addRecommendationPlaylistToPlaylist', 'queueRecommendationPlaylist']) {
       const at = app.indexOf(`const ${fn} = async`);
       expect(at).toBeGreaterThan(-1);
       expect(app.slice(at, at + 400)).toMatch(/await recommendationPlaylistTracks\(item\)/);
     }
+    // Open hands the same lookup to the playlist view, which fills in when it lands.
+    const open = app.slice(app.indexOf('const openRecommendationPlaylist = (item, section) => {'));
+    expect(open.slice(0, 900)).toContain('fetchTracks: () => recommendationPlaylistTracks(item)');
     expect(app).toMatch(/const recommendationPlaylistTracks = async \(item\) => \{[\s\S]{0,300}id: trackSlug\(t\.artist \|\| '', t\.title \|\| ''\)/);
   });
 });

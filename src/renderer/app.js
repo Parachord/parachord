@@ -3362,6 +3362,13 @@ const Parachord = () => {
   // beside the sections for the same reason; the follow/removal exclusions
   // apply at every merge, not here.
   const similarUsersRef = useRef({}); // { [resolverId]: { resolverId, resolverName, users } }
+  // A recommended playlist's track lookup, per playlist URL, for the session
+  // ({ promise, at }): a hover prefetch, Open, Play, Add to Queue and Add to
+  // Playlist all share one lookup (an Amazon one takes 2 to 3 seconds and its
+  // bridge does not cache). A failed lookup leaves the map.
+  const recommendationPlaylistLookupsRef = useRef(new Map());
+  // Pending hover-prefetch timers per playlist card (item.id → timeout).
+  const recommendationPrefetchTimersRef = useRef(new Map());
   // The similar-users lookup in flight per provider ({ account, request }), so
   // a load that starts while another's lookup is still running (leave the
   // page and come back within Last.fm's ~13s) awaits that run instead of
@@ -3452,6 +3459,11 @@ const Parachord = () => {
   const [playlistsLoading, setPlaylistsLoading] = useState(true); // Loading state for playlists
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const selectedPlaylistRef = useRef(null); // Ref for accessing in callbacks without stale closures
+  // The latest navigateBack and active view, for async code that outlives the
+  // render it started in (a playlist lookup that fails after the view opened:
+  // the click-time navigateBack would read the history from before it).
+  const navigateBackRef = useRef(null);
+  const activeViewNowRef = useRef(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [weeklyJamCovers, setWeeklyJamCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
@@ -32529,6 +32541,38 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         // Background-enrich playlist tracks with MBIDs
         enrichTracksWithMbids(tracksWithIds);
       }
+    } else if (playlist.isEphemeral && typeof playlist.fetchTracks === 'function' && (!playlist.tracks || playlist.tracks.length === 0)) {
+      // An ephemeral playlist whose tracks are still being looked up (a
+      // recommended provider playlist): the view is already open on its
+      // skeleton rows; fill them when the lookup lands, unless the user has
+      // moved on to another playlist. A failed lookup says so and goes back.
+      setPlaylistTracks([]);
+      const playlistId = playlist.id;
+      let tracks;
+      try {
+        tracks = await playlist.fetchTracks();
+      } catch (error) {
+        // Only while this playlist is still on screen, and through the
+        // latest navigateBack (this closure's is from before the view opened).
+        if (selectedPlaylistRef.current?.id === playlistId && activeViewNowRef.current === 'playlist-view') {
+          showToast(error?.message || `Could not load ${playlist.title}`, 'error');
+          navigateBackRef.current?.();
+        }
+        return;
+      }
+      if (selectedPlaylistRef.current?.id !== playlistId) return;
+      const tracksWithIds = (tracks || []).map(track => {
+        const trackId = track.id || trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
+        return { ...track, id: trackId, sources: track.sources || {} };
+      });
+      setPlaylistTracks(tracksWithIds);
+      setSelectedPlaylist(prev => (prev && prev.id === playlistId
+        ? { ...prev, tracks: tracksWithIds, tracksLoaded: true, trackCount: tracksWithIds.length }
+        : prev));
+      getPlaylistCovers(playlistId, tracksWithIds).then(covers => {
+        if (selectedPlaylistRef.current?.id === playlistId) setPlaylistCoverArt(covers);
+      });
+      enrichTracksWithMbids(tracksWithIds);
     } else if (playlist.isEphemeral && playlist.listenbrainzId && (!playlist.tracks || playlist.tracks.length === 0)) {
       // Handle ephemeral ListenBrainz playlists - load tracks from API
       console.log(`🎵 Loading ephemeral playlist tracks from ListenBrainz: ${playlist.listenbrainzId}`);
@@ -32982,6 +33026,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       }
     }
   };
+  navigateBackRef.current = navigateBack;
+  activeViewNowRef.current = activeView;
 
   const navigateForward = () => {
     if (forwardHistory.length > 0) {
@@ -40151,8 +40197,37 @@ useEffect(() => {
             // trackSlug(artist, title), the id every no-album track context keys
             // session state on, so they share resolution state with the rest of
             // the app (renderer-patterns.md). Used by every playlist action.
+            // One lookup per playlist URL for the session (see
+            // recommendationPlaylistLookupsRef), fresh for 10 minutes.
+            const PLAYLIST_LOOKUP_TTL = 10 * 60 * 1000;
+            const lookupRecommendationPlaylist = (item) => {
+              const cache = recommendationPlaylistLookupsRef.current;
+              const hit = cache.get(item.url);
+              if (hit && Date.now() - hit.at < PLAYLIST_LOOKUP_TTL) return hit.promise;
+              const entry = { promise: loadPlaylistTracks(item), at: Date.now() };
+              cache.set(item.url, entry);
+              entry.promise.catch(() => { if (cache.get(item.url) === entry) cache.delete(item.url); });
+              return entry.promise;
+            };
+            // Hovering a playlist card for 250ms starts its lookup (the
+            // renderer's hover-prefetch dwell), so a click usually finds the
+            // tracks ready; leaving the card first cancels it.
+            const prefetchRecommendationPlaylist = (item) => {
+              if (!item.url || item.weekly) return;
+              const timers = recommendationPrefetchTimersRef.current;
+              if (timers.has(item.id)) return;
+              timers.set(item.id, setTimeout(() => {
+                timers.delete(item.id);
+                lookupRecommendationPlaylist(item).catch(() => { /* the click reports it */ });
+              }, 250));
+            };
+            const cancelRecommendationPlaylistPrefetch = (item) => {
+              const timers = recommendationPrefetchTimersRef.current;
+              const timer = timers.get(item.id);
+              if (timer) { clearTimeout(timer); timers.delete(item.id); }
+            };
             const recommendationPlaylistTracks = async (item) => {
-              const resolved = await loadPlaylistTracks(item);
+              const resolved = await lookupRecommendationPlaylist(item);
               const art = imageFor(item);
               return resolved.tracks.map((t) => ({
                 id: trackSlug(t.artist || '', t.title || ''),
@@ -40214,31 +40289,28 @@ useEffect(() => {
               const src = ((row && row.sources) || []).find(x => x.id === item.resolverId);
               return (src && src.name) || (row && row.resolverName) || item.resolverId || null;
             };
-            const openRecommendationPlaylist = async (item, section) => {
+            // The click opens the playlist view at once (its skeleton rows
+            // stand in), and the tracks fill in when the lookup lands
+            // (loadPlaylist's fetchTracks branch): a click changes the view
+            // before its lookup.
+            const openRecommendationPlaylist = (item, section) => {
               if (!item.url) return;
-              setTrackLoading(true);
-              try {
-                const tracks = await recommendationPlaylistTracks(item);
-                setTrackLoading(false);
-                const resolverName = itemSourceName(item, section) || 'the service';
-                loadPlaylist({
-                  id: `${item.resolverId}-rec-${item.id}`,
-                  title: item.name,
-                  creator: resolverName,
-                  description: `Recommended by ${resolverName}`,
-                  tracks,
-                  tracksLoaded: true,
-                  isExternal: true,
-                  isEphemeral: true,
-                  source: item.resolverId,
-                  sourceUrl: item.url,
-                  addedAt: Date.now(),
-                  trackCount: tracks.length
-                });
-              } catch (error) {
-                setTrackLoading(false);
-                showToast(error?.message || `Could not load ${item.name}`, 'error');
-              }
+              cancelRecommendationPlaylistPrefetch(item);
+              const resolverName = itemSourceName(item, section) || 'the service';
+              loadPlaylist({
+                id: `${item.resolverId}-rec-${item.id}`,
+                title: item.name,
+                creator: resolverName,
+                description: `Recommended by ${resolverName}`,
+                tracks: [],
+                tracksLoaded: false,
+                isExternal: true,
+                isEphemeral: true,
+                source: item.resolverId,
+                sourceUrl: item.url,
+                addedAt: Date.now(),
+                fetchTracks: () => recommendationPlaylistTracks(item)
+              });
             };
 
             // ── Cards ─────────────────────────────────────────────────────
@@ -40478,6 +40550,8 @@ useEffect(() => {
                 className: 'rounded-lg overflow-hidden cursor-pointer group release-card card-fade-up',
                 style: { backgroundColor: 'var(--card-bg)', boxShadow: 'var(--card-shadow)', animationDelay: `${Math.min(index * 30, 300)}ms` },
                 onClick: () => openRecommendationPlaylist(item, section),
+                onMouseEnter: () => prefetchRecommendationPlaylist(item),
+                onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();

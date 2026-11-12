@@ -137,7 +137,7 @@ describe('recommendations wiring', () => {
   });
 
   test('opening a recommended playlist is provider-neutral (creator/source from the item and section, trackSlug ids)', () => {
-    const i = app.indexOf('const openRecommendationPlaylist = async');
+    const i = app.indexOf('const openRecommendationPlaylist = (item, section) => {');
     expect(i).toBeGreaterThan(-1);
     const fn = app.slice(i, app.indexOf('\n            };', i));
     // The record's identity comes from the item's resolver and that source's
@@ -152,11 +152,55 @@ describe('recommendations wiring', () => {
     // Track ids are trackSlug(artist, title) — the id every no-album track
     // context keys session state on — never an asin or an index fallback.
     // (mapped by recommendationPlaylistTracks, shared by every playlist action)
-    expect(fn).toContain('await recommendationPlaylistTracks(item)');
+    expect(fn).toContain('fetchTracks: () => recommendationPlaylistTracks(item)');
     const mapper = app.slice(app.indexOf('const recommendationPlaylistTracks = async'), app.indexOf('const playRecommendationPlaylist = async'));
     expect(mapper).toContain("id: trackSlug(t.artist || '', t.title || '')");
     expect(mapper).not.toContain('amazonmusic-${t.amazonAsin}');
     expect(mapper).not.toContain('rec-playlist-');
+  });
+});
+
+describe('opening a recommended playlist is responsive', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../src/renderer/app.js'), 'utf8');
+
+  test('the click opens the view at once and the tracks fill in when the lookup lands', () => {
+    const open = app.slice(app.indexOf('const openRecommendationPlaylist = (item, section) => {'));
+    const body = open.slice(0, open.indexOf('\n            };'));
+    // No waiting before the view changes: no await, no global spinner.
+    expect(body).not.toContain('await ');
+    expect(body).not.toContain('setTrackLoading');
+    expect(body).toContain('tracks: [],');
+    expect(body).toContain('tracksLoaded: false,');
+    const load = app.slice(app.indexOf('const loadPlaylist = async (playlistOrId'));
+    const branch = load.slice(load.indexOf("typeof playlist.fetchTracks === 'function'"), load.indexOf('} else if (playlist.isEphemeral && playlist.listenbrainzId'));
+    expect(branch).toContain('tracks = await playlist.fetchTracks();');
+    // A user who moved on to another playlist is never overwritten.
+    expect(branch).toContain('if (selectedPlaylistRef.current?.id !== playlistId) return;');
+    // A failed lookup says so and goes back, only if still on this playlist.
+    expect(branch).toContain("if (selectedPlaylistRef.current?.id === playlistId && activeViewNowRef.current === 'playlist-view') {");
+    // Through the latest navigateBack: the closure's own is from before the view opened.
+    expect(branch).toContain('navigateBackRef.current?.();');
+    expect(branch).not.toMatch(/\bnavigateBack\(\);/);
+    expect(app).toContain('navigateBackRef.current = navigateBack;');
+  });
+
+  test('one lookup per playlist URL is shared for 10 minutes, and a failed one is dropped', () => {
+    expect(app).toContain('const recommendationPlaylistLookupsRef = useRef(new Map());');
+    const lookup = app.slice(app.indexOf('const lookupRecommendationPlaylist = (item) => {'), app.indexOf('const prefetchRecommendationPlaylist = (item) => {'));
+    expect(app).toContain('const PLAYLIST_LOOKUP_TTL = 10 * 60 * 1000;');
+    expect(lookup).toContain('if (hit && Date.now() - hit.at < PLAYLIST_LOOKUP_TTL) return hit.promise;');
+    expect(lookup).toContain('entry.promise.catch(() => { if (cache.get(item.url) === entry) cache.delete(item.url); });');
+    expect(app).toMatch(/const recommendationPlaylistTracks = async \(item\) => \{\s*const resolved = await lookupRecommendationPlaylist\(item\);/);
+  });
+
+  test('hovering a playlist card for 250ms starts its lookup; leaving cancels it', () => {
+    const prefetch = app.slice(app.indexOf('const prefetchRecommendationPlaylist = (item) => {'), app.indexOf('const recommendationPlaylistTracks = async'));
+    expect(prefetch).toContain('if (!item.url || item.weekly) return;');
+    expect(prefetch).toMatch(/\}, 250\)\);/);
+    expect(prefetch).toContain('clearTimeout(timer);');
+    const card = app.slice(app.indexOf('const playlistCard = (item, index, section) => {'));
+    expect(card.slice(0, 800)).toContain('onMouseEnter: () => prefetchRecommendationPlaylist(item),');
+    expect(card.slice(0, 800)).toContain('onMouseLeave: () => cancelRecommendationPlaylistPrefetch(item),');
   });
 });
 
