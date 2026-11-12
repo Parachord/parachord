@@ -305,4 +305,29 @@ describe('fix round 1', () => {
     const body = load.slice(0, load.indexOf('\n  };\n'));
     expect(body).toMatch(/let initTimer = null;[\s\S]{0,400}initTimer = setTimeout\(resolve, 15000\)[\s\S]{0,200}clearTimeout\(initTimer\);/);
   });
+
+  test('a loader still null after the init wait clears the key so the provider effect reloads', () => {
+    const load = app.slice(app.indexOf('const loadHistoryMixes = async (opts = {}) => {'));
+    const body = load.slice(0, load.indexOf('\n  };\n'));
+    expect(body).toMatch(/if \(!loader\) \{[\s\S]{0,250}historyMixProviderKeyRef\.current = '';\s*return;/);
+  });
+
+  test('provider playlist tracks carry their mbid', () => {
+    const resolve = app.slice(app.indexOf('const resolveProviderPlaylistUrl = async'));
+    expect(resolve.slice(0, 4000)).toContain('if (t.mbid) out.mbid = t.mbid;');
+    const rec = app.slice(app.indexOf('const recommendationPlaylistTracks = async'));
+    expect(rec.slice(0, 2000)).toContain('...(t.mbid ? { mbid: t.mbid } : {})');
+  });
+
+  test('an opened history mix restores to Home, not Recommendations or Playlists', () => {
+    expect(app).toContain('viewData.isHistoryMix = Object.values(mixProviders).some(');
+    expect(app).toMatch(/pendingPlaylistLoad\.isHistoryMix\) \{[\s\S]{0,300}navigateTo\('home'\)/);
+  });
+
+  test('a mix has no right-click menu, on the card or the Jump tile', () => {
+    const page = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/home-page.js'), 'utf8');
+    const mixActions = page.slice(page.indexOf('const mixActions = {'), page.indexOf('};', page.indexOf('const mixActions = {')));
+    expect(mixActions).not.toMatch(/onContextMenu:/);
+    expect(page).toContain("else if (tile.kind !== 'mix') showHomeContextMenu('playlist', tile.item);");
+  });
 });

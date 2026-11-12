@@ -10,7 +10,7 @@ All playlists live in the electron-store key `local_playlists`, read and written
 
 | Path | Entry point | Accepts | Saved to library? | Ongoing? |
 |---|---|---|---|---|
-| Import from URL | Import Playlist modal; Playlists page Import button; File menu | Spotify, Apple Music, SoundCloud sets, YouTube playlists, Amazon playlists, any hosted XSPF URL | Yes | Hosted XSPF: re-fetched at startup and every 5 minutes. Provider URL imports are snapshots: manual Refresh only |
+| Import from URL | Import Playlist modal; Playlists page Import button; File menu | Spotify, Apple Music, SoundCloud sets, YouTube playlists, Amazon playlists, ListenBrainz playlists, any hosted XSPF URL | Yes | Hosted XSPF: re-fetched at startup and every 5 minutes. Provider URL imports are snapshots: manual Refresh only |
 | Drop a URL | Sidebar Playlists button; Playlists page | Same as above | Yes | Same as above: hosted XSPF yes, provider URLs are snapshots |
 | Drop a URL on the queue or now-playing | Queue panel; playbar | Track, album or playlist URL any resolver claims | No, queue only | No |
 | XSPF file | Import modal "Load from File" | `.xspf` file | Yes | No |
@@ -24,7 +24,7 @@ All playlists live in the electron-store key `local_playlists`, read and written
 | Weekly Jams / Exploration | Recommendations (Playlists), SAVE button | ListenBrainz generated playlist | Yes, as `playlist-*` | No |
 | Add-to-Playlist panel | 19 places across album, track, playlist and friend views; drag a track onto the sidebar | Tracks | Creates or extends a playlist | No |
 
-Not supported anywhere: Bandcamp playlist URLs (no `lookupPlaylist` in `bandcamp.axe`), Tidal, Deezer, listenbrainz.org playlist URLs or MBIDs (only the sync provider brings LB playlists in), Last.fm or Libre.fm playlists, dropping `.xspf`, `.m3u` or audio files onto the window, paste-to-import, `.m3u`/`.pls` scanning in the local files library, and saving a spinoff, radio or history session as a playlist.
+Not supported anywhere: Bandcamp playlist URLs (no `lookupPlaylist` in `bandcamp.axe`), Tidal, Deezer, bare ListenBrainz playlist MBIDs (a `listenbrainz.org/playlist/<mbid>` link works, see the table below), Last.fm or Libre.fm playlists, dropping `.xspf`, `.m3u` or audio files onto the window, paste-to-import, `.m3u`/`.pls` scanning in the local files library, and saving a spinoff, radio or history session as a playlist.
 
 ## Import from URL
 
@@ -44,6 +44,7 @@ Resolvers that implement `lookupPlaylist`:
 | applemusic.axe | `music.apple.com/*/playlist/*/*` | `window.appleMusicLookupPlaylist`: a MusicKit catalog lookup. Returns nothing when MusicKit is not configured. |
 | soundcloud.axe | `soundcloud.com/*/sets/*` | Needs a SoundCloud OAuth token; returns nothing without one. |
 | youtube.axe | `youtube.com/playlist?list=*`, `music.youtube.com`, any URL with `&list=` | Scrapes the playlist page, stops at 100 tracks, splits "Artist - Title" on the dash. Not mentioned in the modal label. |
+| listenbrainz.axe | `listenbrainz.org/playlist/<mbid>` (with or without `www.` or a trailing slash) | Fetches the JSPF from `/1/playlist/<mbid>` and maps its tracks, with each track's recording MBID. Sends the user's token when one is set, so a private playlist of theirs loads. A failed request throws rather than answering an empty playlist. Also what Home's Daily and Weekly Jams cards play. |
 | amazonmusic.axe | `music.amazon.com/playlists/*`, `music.amazon.com/my/playlists/*`, `music.amazon.com/user-playlists/*` | Loads the playlist page in a hidden view and replays the page's own `playlistDetail` GraphQL request, following the continuation token page by page. Needs an Amazon Music sign-in, not the Widevine CDM. Rows Amazon has delisted are dropped. See [docs/architecture/amazon-music.md](../architecture/amazon-music.md). |
 
 The imported playlist gets the id `hosted-${hash(url)}`, `sourceUrl: url`, and `source` of `${resolverId}-import` or `hosted-xspf`. A hosted XSPF URL is appended to the `hosted_playlists` store list. A provider URL import is not — that list is re-imported at launch, and fetching a provider playlist page as XSPF shows "Failed to parse XSPF" (Electron's `file://` renderer does not enforce CORS, so the HTML comes back and parses to zero tracks). Re-importing an existing URL updates the playlist in place and sets `locallyModified` only when the content changed. Provider imports keep `sourceUrl` for a manual Refresh button, which re-runs `lookupPlaylist` and toasts on failure. They are not polled.

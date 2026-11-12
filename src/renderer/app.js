@@ -11346,6 +11346,7 @@ const Parachord = () => {
           if (t.appleMusicId) out.appleMusicId = t.appleMusicId;
           if (t.amazonAsin) out.amazonAsin = t.amazonAsin;
           if (t.isrc) out.isrc = t.isrc;
+          if (t.mbid) out.mbid = t.mbid;
           return out;
         })
         .filter(t => t.artist && t.title);
@@ -18991,7 +18992,7 @@ ${trackListXml}
             // Restore playlist detail view - need to find the playlist by ID
             setActiveView('playlist-view');
             // Use different view history for ephemeral playlists (e.g., Weekly Jams from home)
-            if (savedLastView.isEphemeral && savedLastView.playlistSource === 'listenbrainz') {
+            if (savedLastView.isHistoryMix || (savedLastView.isEphemeral && savedLastView.playlistSource === 'listenbrainz')) {
               setViewHistory(['home', 'playlist-view']);
             } else {
               setViewHistory(['library', 'playlists', 'playlist-view']);
@@ -19002,6 +19003,7 @@ ${trackListXml}
               id: savedLastView.playlistId,
               title: savedLastView.playlistTitle,
               isEphemeral: savedLastView.isEphemeral,
+              isHistoryMix: savedLastView.isHistoryMix,
               source: savedLastView.playlistSource,
               listenbrainzId: savedLastView.listenbrainzId,
               weekLabel: savedLastView.weekLabel
@@ -19618,6 +19620,10 @@ ${trackListXml}
       if (selectedPlaylist.isEphemeral) {
         viewData.isEphemeral = true;
         viewData.playlistSource = selectedPlaylist.source;
+        // A history mix lives on Home, so a relaunch falls back there.
+        const mixProviders = (historyMixesCache.current && historyMixesCache.current.providers) || {};
+        viewData.isHistoryMix = Object.values(mixProviders).some((entry) =>
+          entry && Array.isArray(entry.items) && entry.items.some((m) => `${entry.resolverId}-rec-${m.id}` === selectedPlaylist.id));
         if (selectedPlaylist.listenbrainzId) {
           viewData.listenbrainzId = selectedPlaylist.listenbrainzId;
           viewData.weekLabel = selectedPlaylist.weekLabel;
@@ -19731,7 +19737,12 @@ ${trackListXml}
           // (its Playlists section holds Weekly Jams and Exploration). Through
           // navigateTo so the page loads on arrival; the history then starts
           // there, as the old fallback's did.
-          if (pendingPlaylistLoad.isEphemeral && pendingPlaylistLoad.source === 'listenbrainz') {
+          if (pendingPlaylistLoad.isHistoryMix) {
+            console.log(`📦 History mix not restorable: ${pendingPlaylistLoad.title}, falling back to Home`);
+            setPendingPlaylistLoad(null);
+            navigateTo('home');
+            setViewHistory(['home']);
+          } else if (pendingPlaylistLoad.isEphemeral && pendingPlaylistLoad.source === 'listenbrainz') {
             console.log(`📦 Weekly Jam not found after timeout: ${pendingPlaylistLoad.title}, falling back to recommendations view`);
             setPendingPlaylistLoad(null);
             navigateTo('recommendations');
@@ -28075,7 +28086,12 @@ Return ONLY the JSON array, no other text.`;
         clearTimeout(initTimer);
       }
       const loader = resolverLoaderRef.current;
-      if (!loader) return;
+      if (!loader) {
+        // A slow launch: the plugins are still loading after the wait. Clear
+        // the key so the provider-set effect loads once they are in.
+        historyMixProviderKeyRef.current = '';
+        return;
+      }
       const providers = historyMixProviders();
       historyMixProviderKeyRef.current = historyMixProviderKey(providers);
 
@@ -35806,7 +35822,8 @@ useEffect(() => {
       ...(t.appleMusicId ? { appleMusicId: t.appleMusicId } : {}),
       ...(t.spotifyId ? { spotifyId: t.spotifyId, spotifyUri: `spotify:track:${t.spotifyId}` } : {}),
       ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {}),
-      ...(t.isrc ? { isrc: t.isrc } : {})
+      ...(t.isrc ? { isrc: t.isrc } : {}),
+      ...(t.mbid ? { mbid: t.mbid } : {})
     }));
   };
 

@@ -416,10 +416,12 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 
 // Mixes are playlist cards with the service named on the art.
 function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
-  const [source, setSource] = React.useState('All');
+  const [picked, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
   if (all.length === 0) return null;
   const chips = sourceChips(all, (m, id) => m.resolverName || id, sourceColors);
+  // A chip whose source has gone leaves the row on All.
+  const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
@@ -456,10 +458,12 @@ function albumHandlers(p) {
 
 function AlbumsRow(props) {
   const { albums, navigateTo, onRefresh, refreshing } = props;
-  const [source, setSource] = React.useState('All');
+  const [picked, setSource] = React.useState('All');
   const all = Array.isArray(albums) ? albums : [];
   if (all.length === 0) return null;
   const chips = sourceChips(all, (a, id) => a.sourceLabel || id, props.sourceColors);
+  // A chip whose source has gone leaves the row on All.
+  const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
   // While a refresh runs the icon spins, is disabled and says it's busy.
   const refresh = onRefresh && e('button', {

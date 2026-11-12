@@ -49,7 +49,8 @@ describe('ListenBrainz history mixes (capabilities.historyMixes)', () => {
     const { mixes } = await getHistoryMixes({ username: 'someone' });
     expect(mixes.map(m => m.id)).toEqual(['daily-new', 'weekly-new']);
     expect(mixes.every(m => m.type === 'playlist' && m.url === `https://listenbrainz.org/playlist/${m.id}/`)).toBe(true);
-    expect(mixes[0].description).toBeTruthy();
+    expect(mixes.map(m => m.name)).toEqual(['Daily Jams', 'Weekly Jams']);
+    expect(mixes[0].description).toBe('Daily Jams for someone, 2026-11-11');
   });
 
   test('the Weekly Jams id is the one getRecommendations uses for it', async () => {
@@ -90,7 +91,7 @@ describe('ListenBrainz playlist links (urlLookup, lookupPlaylist)', () => {
 
   test('the manifest declares urlLookup and the patterns', () => {
     expect(axe.capabilities.urlLookup).toBe(true);
-    expect(axe.manifest.version).toBe('1.5.0');
+    expect(axe.manifest.version).toBe('1.5.1');
   });
 
   test.each([

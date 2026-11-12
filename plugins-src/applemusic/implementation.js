@@ -199,7 +199,11 @@ module.exports = {
         var id = 'applemusic-playlist-' + c.id;
         if (seen[id]) return;
         seen[id] = true;
-        mixes.push({ type: 'playlist', id: id, name: a.name, imageUrl: art(a), url: a.url });
+        var d = a.description || {};
+        var desc = String(d.short || d.standard || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+        var mix = { type: 'playlist', id: id, name: a.name, imageUrl: art(a), url: a.url };
+        if (desc) mix.description = desc;
+        mixes.push(mix);
       });
     };
     ((body && body.data) || []).forEach(function (g) { addGroup(g, 0); });

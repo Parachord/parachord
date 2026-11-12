@@ -227,10 +227,6 @@ module.exports = {
     }
     const data = await response.json();
     const playlists = (data && data.playlists) || [];
-    const DESCRIPTIONS = {
-      'daily-jams': 'Made from your listening, refreshed daily',
-      'weekly-jams': 'Made from your listening, refreshed weekly'
-    };
     const NAMES = { 'daily-jams': 'Daily Jams', 'weekly-jams': 'Weekly Jams' };
     const mixes = [];
     ['daily-jams', 'weekly-jams'].forEach((type) => {
@@ -242,8 +238,9 @@ module.exports = {
       mixes.push({
         type: 'playlist',
         id,
-        name: String(newest.playlist.title || '') || NAMES[type],
-        description: DESCRIPTIONS[type],
+        name: NAMES[type],
+        // The dated full title ("Daily Jams for x, generated on ...").
+        description: String(newest.playlist.title || '') || undefined,
         url: `https://listenbrainz.org/playlist/${id}/`
       });
     });

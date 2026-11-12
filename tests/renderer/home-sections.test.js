@@ -197,6 +197,15 @@ describe('Rows', () => {
     // The card names its service.
     expect(html).toContain('Apple Music');
   });
+  test('a selected source chip that is gone falls back to All', () => {
+    const spy = jest.spyOn(React, 'useState').mockImplementation(() => ['lastfm', () => {}]);
+    try {
+      const mixes = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', resolverName: 'Apple Music' }] });
+      expect(mixes).toContain('Heavy Rotation');
+      const albums = h(S.AlbumsRow, { albums: [{ title: 'Frog', artist: 'Hovvdy', resolverId: 'listenbrainz' }], navigateTo: () => {} });
+      expect(albums).toContain('Frog');
+    } finally { spy.mockRestore(); }
+  });
   test('Albums row see-all goes to Recommendations', () => {
     const html = h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} });
     expect(html).toContain('aria-label="See all in Recommendations"');

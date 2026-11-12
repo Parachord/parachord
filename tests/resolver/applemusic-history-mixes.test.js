@@ -11,7 +11,7 @@ const getHistoryMixes = new Function('return ' + axe.implementation.getHistoryMi
 const getRecommendations = new Function('return ' + axe.implementation.getRecommendations)();
 
 const artwork = (id) => ({ url: `https://is1-ssl.mzstatic.com/image/thumb/${id}/{w}x{h}bb.{f}`, width: 3000, height: 3000 });
-const playlist = (id, name, playlistType, slug) => ({ id, type: 'playlists', attributes: { name, playlistType, url: `https://music.apple.com/us/playlist/${slug}/${id}`, artwork: artwork(id) } });
+const playlist = (id, name, playlistType, slug, description) => ({ id, type: 'playlists', attributes: { name, playlistType, url: `https://music.apple.com/us/playlist/${slug}/${id}`, artwork: artwork(id), ...(description ? { description } : {}) } });
 const group = (id, title, contents) => ({
   id, type: 'personal-recommendation',
   attributes: { kind: 'music-recommendations', title: { stringForDisplay: title } },
@@ -20,8 +20,8 @@ const group = (id, title, contents) => ({
 const body = {
   data: [
     group('g1', 'Playlists Made for You', [
-      playlist('pl.pm-1', 'Heavy Rotation', 'personal-mix', 'heavy-rotation'),
-      playlist('pl.rp-1', 'Replay 2026', 'replay', 'replay-2026'),
+      playlist('pl.pm-1', 'Heavy Rotation', 'personal-mix', 'heavy-rotation', { short: 'The songs you play most.' }),
+      playlist('pl.rp-1', 'Replay 2026', 'replay', 'replay-2026', { standard: 'Your <b>year</b> in\nmusic.' }),
       playlist('pl.pm-3', 'Chill Mix', 'personal-mix', 'chill-mix')
     ])
   ]
@@ -43,9 +43,12 @@ describe('Apple Music history mixes (capabilities.historyMixes)', () => {
       type: 'playlist',
       id: 'applemusic-playlist-pl.pm-1',
       name: 'Heavy Rotation',
+      description: 'The songs you play most.',
       imageUrl: 'https://is1-ssl.mzstatic.com/image/thumb/pl.pm-1/600x600bb.jpg',
       url: 'https://music.apple.com/us/playlist/heavy-rotation/pl.pm-1'
     });
+    // The standard blurb is the fallback, with its markup stripped.
+    expect(mixes[1].description).toBe('Your year in music.');
   });
 
   test('getRecommendations still leaves those two out and keeps the rest', async () => {

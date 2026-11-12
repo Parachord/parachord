@@ -395,7 +395,7 @@ const HomePage = React.memo(function HomePage(props) {
     onOpen: openMix,
     onPlay: (m) => playServicePlaylist(m, mixContext(m)),
     onQueue: (m) => queueServicePlaylist(m, mixContext(m)),
-    onContextMenu: (ev, m) => showHomeContextMenu('playlist', m),
+    // No context menu: a service mix has no library copy to act on.
     onArtError,
   };
 
@@ -420,7 +420,7 @@ const HomePage = React.memo(function HomePage(props) {
   const onTileMenu = (ev, tile) => {
     if (tile.kind === 'loves') showHomeContextMenu('loves', loves);
     else if (tile.kind === 'album') showHomeContextMenu('album', tile.item);
-    else showHomeContextMenu('playlist', tile.item);
+    else if (tile.kind !== 'mix') showHomeContextMenu('playlist', tile.item);
   };
 
   // Shuffleupagus's batch keeps its Refresh: the cached batch stays on
