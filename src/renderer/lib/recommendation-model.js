@@ -82,6 +82,12 @@ function normalizeRecommendationItem(raw, resolverId) {
   if (typeof raw.imageUrl === 'string' && raw.imageUrl.trim()) item.imageUrl = raw.imageUrl.trim();
   if (typeof raw.url === 'string' && raw.url.trim()) item.url = raw.url.trim();
   if (typeof raw.reason === 'string' && raw.reason.trim()) item.reason = raw.reason.trim();
+  // An album's release date when the provider knows it ('YYYY', 'YYYY-MM' or
+  // 'YYYY-MM-DD'; Apple Music sends it): the "Coming <date>" badge uses it
+  // instead of looking the album up on MusicBrainz. Anything else is dropped.
+  if (type === 'album' && typeof raw.releaseDate === 'string' && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(raw.releaseDate.trim().slice(0, 10))) {
+    item.releaseDate = raw.releaseDate.trim().slice(0, 10);
+  }
   // Optional stable ids a provider already knows — a song's recording MBID
   // (ListenBrainz), an ISRC where a provider has one. Carried on the item and
   // copied onto the track, so MBID enrichment doesn't re-ask the mapper and

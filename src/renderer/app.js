@@ -712,6 +712,37 @@ async function checkAppleMusicUserToken(developerToken, extraTokens = []) {
   return result;
 }
 
+// The Apple Music plugin's personal recommendations (its getRecommendations):
+// GET /v1/me/recommendations with the developer token and the app's user token
+// of record (musickit_user_token, see checkAppleMusicUserToken). Narrow on
+// purpose: the one account call the plugin needs, never a general proxy.
+// Returns Apple's JSON. Throws an error with notReady set when there is no
+// developer token, no user token, or Apple refuses every stored token (after
+// adopting one it still accepts, if any), so the Recommendations page never
+// caches a refusal as "nothing for you"; any other failure throws plainly.
+window.appleMusicPersonalRecommendations = async (limit = 30) => {
+  const notReady = (code, message) => Object.assign(new Error(message), { notReady: true, code });
+  const developerToken = await getMusicKitDeveloperToken();
+  if (!developerToken) throw notReady('no-developer-token', 'Apple Music developer token unavailable');
+  const n = Math.max(1, Math.min(30, Number(limit) || 30));
+  const url = `https://api.music.apple.com/v1/me/recommendations?limit=${n}`;
+  const ask = (userToken) => fetch(url, { headers: { Authorization: `Bearer ${developerToken}`, 'Music-User-Token': userToken } });
+  let userToken = localStorage.getItem(AppleMusicUserToken.APP_TOKEN_KEY) || '';
+  if (!userToken) throw notReady('not-signed-in', 'Not signed in to Apple Music');
+  let res = await ask(userToken);
+  if (res.status === 401 || res.status === 403) {
+    const check = await checkAppleMusicUserToken(developerToken);
+    if (check.verdict !== 'ok' || !check.token || check.token === userToken) {
+      throw notReady('token-refused', `Apple Music refused the sign-in (HTTP ${res.status})`);
+    }
+    userToken = check.token;
+    res = await ask(userToken);
+    if (res.status === 401 || res.status === 403) throw notReady('token-refused', `Apple Music refused the sign-in (HTTP ${res.status})`);
+  }
+  if (!res.ok) throw new Error(`Apple Music recommendations failed: ${res.status}`);
+  return res.json();
+};
+
 // MusicKit-enabled Apple Music search wrapper
 // Falls back to iTunes API if MusicKit is not configured/authorized
 // opts.lane: the resolver lane the plugin's caller asked for ('priority' for a
@@ -31612,6 +31643,8 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     const now = Date.now();
     for (const item of flattenRecommendationItems(recommendations.sections)) {
       if (item.type !== 'album' || !item.artist || !item.name) continue;
+      // The provider sent the date (Apple Music does): no lookup.
+      if (item.releaseDate) continue;
       const key = releaseDateKey(item.artist, item.name);
       const known = recommendationReleaseDatesRef.current[key];
       if (known && (now - known.at) < RELEASE_DATE_TTL_MS) continue;
@@ -40562,7 +40595,11 @@ useEffect(() => {
                   // (the release-badge class, top-right, a fixed semi-opaque
                   // colour that reads on any cover in either theme).
                   (() => {
-                    const entry = recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];
+                    // The provider's own date first (Apple Music sends one),
+                    // else the MusicBrainz lookup's.
+                    const entry = item.releaseDate
+                      ? { date: item.releaseDate }
+                      : recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];
                     const label = entry && upcomingLabel(entry.date);
                     return label && React.createElement('div', {
                       className: 'pointer-events-none',
