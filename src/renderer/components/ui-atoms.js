@@ -43,6 +43,9 @@ const FixedTooltip = ({ children, content }) => {
     ref: triggerRef,
     onMouseEnter: show,
     onMouseLeave: hide,
+    // Keyboard focus anywhere inside shows it too (React's focus events bubble).
+    onFocus: show,
+    onBlur: hide,
     style: { position: 'relative' }
   },
     children,

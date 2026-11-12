@@ -23,8 +23,28 @@ describe('AlbumCard', () => {
     expect(html).toContain('aria-label="Add Frog to the queue"');
     expect(count(html, /<button/g)).toBeGreaterThanOrEqual(3);
   });
-  test('play button is 52px', () => {
-    expect(h(S.AlbumCard, { album })).toMatch(/aria-label="Play Frog"[^>]*width:52px|width:52px[^>]*aria-label="Play Frog"/);
+  test('overlay buttons size with the art and the overlay pads at least 8px', () => {
+    const html = h(S.AlbumCard, { album });
+    expect(html).toMatch(/aria-label="Play Frog"[^>]*width:clamp\(46px, 19%, 52px\)/);
+    expect(html).toMatch(/aria-label="Add Frog to the queue"[^>]*width:clamp\(34px, 14%, 40px\)/);
+    expect(html).toMatch(/padding:8px;box-sizing:border-box/);
+  });
+  test('no badge on an ordinary album; its source line shows', () => {
+    const html = h(S.AlbumCard, { album: { ...album, resolverId: 'lastfm', why: 'Last.fm' } });
+    expect(html).not.toContain('Why Shuffleupagus');
+    expect(html).toContain('Last.fm');
+  });
+  test('a Shuffleupagus album has a focusable icon badge and no reason line', () => {
+    const html = h(S.AlbumCard, { album: { ...album, resolverId: 'shuffleupagus', reason: 'Because you love slowcore', why: 'Shuffleupagus · Because you love slowcore' } });
+    expect(html).toMatch(/<button[^>]*aria-label="Why Shuffleupagus picked this"/);
+    expect(html).toMatch(/aria-label="Why Shuffleupagus picked this"[^>]*>.*<svg[^>]*width="18"/);
+    expect(html).not.toContain('Shuffleupagus ·');
+  });
+  test('a Critical Darlings pick badges only when it has a summary', () => {
+    const pick = { title: 'Valentine', artist: 'CMA', homeRow: 'critical' };
+    expect(h(S.AlbumCard, { album: pick })).not.toContain('What the critics said');
+    const html = h(S.AlbumCard, { album: { ...pick, description: 'A quiet masterpiece.' } });
+    expect(html).toMatch(/<button[^>]*aria-label="What the critics said"/);
   });
   test('shows the tag and the artist', () => {
     const html = h(S.AlbumCard, { album });
@@ -57,11 +77,42 @@ describe('SourceFilter', () => {
 });
 
 describe('JumpBackIn', () => {
-  test('each tile is a button; empty shows the import card', () => {
+  test('a tile opens, and a separate always-visible Play button plays', () => {
     const tiles = [{ kind: 'loves', item: [], subtitle: 'Your recent loves' }];
-    expect(h(S.JumpBackIn, { tiles })).toMatch(/<button[^>]*>.*Recent loves/);
+    const html = h(S.JumpBackIn, { tiles });
+    expect(html).toContain('aria-label="Open Recent loves"');
+    expect(html).toMatch(/aria-label="Play Recent loves"[^>]*width:38px/);
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*<button/);
+    expect(html).not.toMatch(/aria-label="Play Recent loves"[^>]*opacity/);
     const empty = h(S.JumpBackIn, { tiles: [] });
     expect(empty).toContain('Import');
+  });
+});
+
+describe('JumpBackIn handlers', () => {
+  // Walk the element tree: plain function components are called, so the
+  // handlers on the rendered buttons can be fired.
+  const find = (node, pred) => {
+    if (!node || typeof node !== 'object') return null;
+    if (Array.isArray(node)) { for (const n of node) { const f = find(n, pred); if (f) return f; } return null; }
+    if (node.props && pred(node)) return node;
+    return find(node.props && node.props.children, pred);
+  };
+  test('Open calls onOpenTile and Play calls onPlayTile, not each other', () => {
+    const tile = { kind: 'playlist', item: { id: 'p', title: 'Daily' }, subtitle: 'Playlist' };
+    const onOpenTile = jest.fn();
+    const onPlayTile = jest.fn();
+    const tree = S.JumpBackIn({ tiles: [tile], onOpenTile, onPlayTile });
+    const jt = find(tree, (n) => n.props.tile === tile);
+    const real = global.React;
+    global.React = { ...real, useState: (v) => [v, () => {}] };
+    let inner;
+    try { inner = jt.type(jt.props); } finally { global.React = real; }
+    find(inner, (n) => n.props['aria-label'] === 'Open Daily').props.onClick();
+    expect(onOpenTile).toHaveBeenCalledWith(tile);
+    expect(onPlayTile).not.toHaveBeenCalled();
+    find(inner, (n) => n.props['aria-label'] === 'Play Daily').props.onClick();
+    expect(onPlayTile).toHaveBeenCalledWith(tile);
   });
 });
 
@@ -92,6 +143,72 @@ describe('Rows', () => {
     expect(html).toContain('Los Angeles');
     expect(html).toContain('Tickets');
     expect(html).toContain('aria-label="See all in Concerts"');
+  });
+});
+
+describe('Concert cards', () => {
+  const base = { id: 'c1', date: '2026-12-05', artist: 'Hovvdy', venue: { name: 'Lodge Room' } };
+  const sellers2 = [
+    { source: 'songkick', label: 'Songkick', ticketUrl: 'https://s' },
+    { source: 'seatgeek', label: 'SeatGeek', ticketUrl: 'https://g' },
+  ];
+  const walk = (node, out = []) => {
+    if (!node || typeof node !== 'object') return out;
+    if (Array.isArray(node)) { node.forEach((n) => walk(n, out)); return out; }
+    if (node.props) { out.push(node); walk(node.props.children, out); }
+    return out;
+  };
+  test('the card has no click handler and no button but Tickets', () => {
+    const tree = S.ConcertsRow({ concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
+    const card = walk(tree).find((n) => n.type === S.ConcertsRow || (n.props && n.props.concert));
+    const el = card.type(card.props);
+    expect(el.props.onClick).toBeUndefined();
+    expect(el.props.style.cursor).toBeUndefined();
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
+    expect(count(html, /<button/g)).toBe(1); // the See all button only
+  });
+  test('one seller is a direct link', () => {
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
+    expect(html).toMatch(/<a href="https:\/\/s"[^>]*>Tickets<\/a>/);
+  });
+  test('several sellers: Tickets is a button, the popover starts closed', () => {
+    const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: sellers2 }] });
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*>Tickets<\/button>/);
+    expect(html).not.toContain('Songkick');
+  });
+  test('the popover lists each seller as a link and closes on Escape and outside click', () => {
+    const slots = [];
+    let i = 0;
+    const real = global.React;
+    const listeners = {};
+    global.document = { addEventListener: (t, f) => { listeners[t] = f; }, removeEventListener: () => {} };
+    let effect;
+    global.React = {
+      ...real,
+      useState: (init) => { const k = i++; if (!slots[k]) { slots[k] = [init, (v) => { slots[k][0] = typeof v === 'function' ? v(slots[k][0]) : v; }]; } return [slots[k][0], slots[k][1]]; },
+      useRef: (init) => { const k = i++; if (!slots[k]) slots[k] = { current: init }; return slots[k]; },
+      useEffect: (fn) => { effect = fn; },
+    };
+    const render = () => { i = 0; return S.__TicketsLink({ sellers: sellers2, artist: 'Hovvdy' }); };
+    try {
+      let tree = render();
+      const toggle = walk(tree).find((n) => n.props['aria-haspopup']);
+      toggle.props.onClick();
+      tree = render();
+      const links = walk(tree).filter((n) => n.type === 'a');
+      expect(links.map((n) => n.props.href)).toEqual(['https://s', 'https://g']);
+      effect();
+      listeners.keydown({ key: 'Escape' });
+      tree = render();
+      expect(walk(tree).filter((n) => n.type === 'a')).toHaveLength(0);
+      walk(tree).find((n) => n.props['aria-haspopup']).props.onClick();
+      render();
+      effect();
+      slots[1].current = { contains: () => false };
+      listeners.mousedown({ target: {} });
+      tree = render();
+      expect(walk(tree).filter((n) => n.type === 'a')).toHaveLength(0);
+    } finally { global.React = real; delete global.document; }
   });
 });
 

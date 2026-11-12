@@ -37722,7 +37722,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setConcertsTicketFlyout, setExtensionInfoOpen, setHomeData, setRaycastInfoOpen, setSettingsTab, showToast, spotifyConnected, whatsNewUnread,
+          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setHomeData, setRaycastInfoOpen, setSettingsTab, showToast, spotifyConnected, whatsNewUnread,
           ...homePageHandlers
         }),
 

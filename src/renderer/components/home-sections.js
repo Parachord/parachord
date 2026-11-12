@@ -11,6 +11,7 @@
 // home-skeletons.js; change one, change the other.
 
 const { filterBySource } = require('../lib/home-model');
+const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
 } = require('./home-skeletons');
@@ -62,13 +63,17 @@ const AddGlyph = () => svg(16, e('path', { d: 'M3 6h12M3 12h12M3 18h8M18 14v8M14
 // A round action over art. `primary` is the filled play button.
 function ActionButton({ label, onClick, primary, size, children }) {
   const px = size || (primary ? 44 : 40);
+  // A number is fixed pixels; a CSS string (a clamp()) is a width that can
+  // shrink with the art, the height following through aspect-ratio.
+  const fluid = typeof px === 'string';
   return e('button', {
     type: 'button',
     'aria-label': label,
     onClick: (ev) => { ev.stopPropagation(); if (onClick) onClick(ev); },
     style: {
-      width: `${px}px`, height: `${px}px`, borderRadius: '50%', border: 'none', cursor: 'pointer',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      width: fluid ? px : `${px}px`, height: fluid ? 'auto' : `${px}px`, aspectRatio: '1',
+      minWidth: 0, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: fluid ? 1 : 0,
       backgroundColor: primary ? PLAY_FILL : CHIP_BG,
       color: primary ? ON_FILL : CHIP_FG,
     },
@@ -113,44 +118,54 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style }) {
 
 // ---------------------------------------------------------------- Jump back in
 
-function JumpTile({ tile, onPlayTile, onContextMenu, onArtError }) {
+// The tile opens its item (the open control on the left, an <a>-like button);
+// a separate Play button on the right plays it. Two sibling buttons in a
+// container, never a button inside a button.
+function JumpTile({ tile, onOpenTile, onPlayTile, onContextMenu, onArtError }) {
   const reveal = useReveal();
   const item = tile.item;
   const title = tile.kind === 'loves' ? 'Recent loves'
     : tile.kind === 'album' ? (item && item.album) : (item && item.title);
   const imageUrl = tile.imageUrl || (item && !Array.isArray(item) && item.imageUrl) || null;
   const mosaic = tile.mosaic || (item && !Array.isArray(item) && item.mosaic) || null;
-  return e('button', Object.assign({
-    type: 'button',
-    onClick: () => onPlayTile && onPlayTile(tile),
+  return e('div', Object.assign({
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, tile); } },
     style: {
-      font: 'inherit', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '12px',
-      padding: '0 12px 0 0', border: 'none', borderRadius: '10px', cursor: 'pointer', overflow: 'hidden',
+      display: 'flex', alignItems: 'center', gap: '8px',
+      padding: '0 12px 0 0', borderRadius: '10px', overflow: 'hidden',
       height: `${HOME_TILE_HEIGHT}px`, minWidth: 0,
       backgroundColor: reveal.shown ? 'var(--accent-surface)' : 'var(--bg-secondary)',
       color: 'var(--text-primary)',
     },
   }, reveal.props),
-    e('span', { style: { flex: `0 0 ${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, display: 'block' } },
-      e(ArtBox, {
-        imageUrl, mosaic, item, onArtError,
-        style: { width: `${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, borderRadius: 0, aspectRatio: 'auto' },
-      })),
-    e('span', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' } },
-      e('span', { style: Object.assign({ fontWeight: 600, fontSize: '14px' }, ELLIPSIS) }, title),
-      e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, tile.subtitle)),
-    e('span', {
-      'aria-hidden': 'true',
+    e('button', {
+      type: 'button', 'aria-label': `Open ${title}`,
+      onClick: () => onOpenTile && onOpenTile(tile),
       style: {
-        flex: '0 0 36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center',
-        justifyContent: 'center', backgroundColor: PLAY_FILL, color: ON_FILL,
-        opacity: reveal.shown ? 1 : 0, transition: 'opacity .15s',
+        font: 'inherit', textAlign: 'left', color: 'inherit', background: 'none', border: 'none', padding: 0,
+        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0,
+        height: `${HOME_TILE_HEIGHT}px`,
       },
-    }, PlayGlyph(14)));
+    },
+      e('span', { style: { flex: `0 0 ${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, display: 'block' } },
+        e(ArtBox, {
+          imageUrl, mosaic, item, onArtError,
+          style: { width: `${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, borderRadius: 0, aspectRatio: 'auto' },
+        })),
+      e('span', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' } },
+        e('span', { style: Object.assign({ fontWeight: 600, fontSize: '14px' }, ELLIPSIS) }, title),
+        e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, tile.subtitle))),
+    e('button', {
+      type: 'button', 'aria-label': `Play ${title}`,
+      onClick: () => onPlayTile && onPlayTile(tile),
+      style: {
+        flex: '0 0 38px', width: '38px', height: '38px', borderRadius: '50%', border: 'none', padding: 0, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: PLAY_FILL, color: ON_FILL,
+      },
+    }, PlayGlyph(15)));
 }
 
-function JumpBackIn({ tiles, onPlayTile, onContextMenu, onImport, onArtError }) {
+function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, onArtError }) {
   const list = Array.isArray(tiles) ? tiles.slice(0, 4) : [];
   if (list.length === 0) {
     return e('section', { 'aria-labelledby': 'home-jump', style: SECTION_STYLE },
@@ -175,11 +190,37 @@ function JumpBackIn({ tiles, onPlayTile, onContextMenu, onImport, onArtError }) 
     e('h2', { id: 'home-jump', style: H2_STYLE }, 'Jump back in'),
     e('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' } },
       list.map((tile, i) => e(JumpTile, {
-        key: `${tile.kind}-${(tile.item && tile.item.id) || i}`, tile, onPlayTile, onContextMenu, onArtError,
+        key: `${tile.kind}-${(tile.item && tile.item.id) || i}`, tile, onOpenTile, onPlayTile, onContextMenu, onArtError,
       }))));
 }
 
 // ----------------------------------------------------------------------- Cards
+
+// Overlay buttons size with the art (a clamp on its width), so they never
+// clip at a narrow card: 34/46/34px at the narrowest, 40/52/40px at most.
+const SIDE_BTN = 'clamp(34px, 14%, 40px)';
+const MAIN_BTN = 'clamp(46px, 19%, 52px)';
+
+// The sidebar's Critical Darlings icon.
+const TrophyGlyph = () => svg(16, e('path', { d: 'M6 2h12v6a6 6 0 01-12 0V2zM9 21h6M12 14v7M6 4H3v2a3 3 0 003 3M18 4h3v2a3 3 0 01-3 3' }));
+
+// Shuffleupagus's icon from the shared icon set, sized to 18px.
+const shuffleupagusIcon = () => (SERVICE_LOGOS && SERVICE_LOGOS.shuffleupagus
+  ? React.cloneElement(SERVICE_LOGOS.shuffleupagus, { className: undefined, width: 18, height: 18, 'aria-hidden': 'true' })
+  : null);
+
+// The round badge in the art's top-left corner: Shuffleupagus's reason, or a
+// Critical Darlings pick's review summary. A critics pick with no summary
+// (the feed item had no description) gets no badge.
+function artBadge(album) {
+  if (album.resolverId === 'shuffleupagus') {
+    return { label: 'Why Shuffleupagus picked this', text: album.reason || 'Picked by Shuffleupagus', icon: shuffleupagusIcon() };
+  }
+  if (album.homeRow === 'critical' && album.description) {
+    return { label: 'What the critics said', text: album.description, icon: TrophyGlyph() };
+  }
+  return null;
+}
 
 function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError }) {
   const reveal = useReveal();
@@ -188,6 +229,7 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
   if (!album) return null;
   const title = album.title;
   const open = () => onOpen && onOpen(album);
+  const badge = artBadge(album);
   const enter = reveal.props.onMouseEnter;
   const leave = reveal.props.onMouseLeave;
   const dwell = {
@@ -209,19 +251,32 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
       e('div', {
         onClick: open,
         style: {
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 'clamp(4px, 2%, 8px)', padding: '8px', boxSizing: 'border-box',
           backgroundColor: ART_DIM, opacity: reveal.shown ? 1 : 0, transition: 'opacity .15s',
         },
       },
-        e(ActionButton, { label: `Add ${title} to a playlist`, onClick: () => onAddToPlaylist && onAddToPlaylist(album) }, AddGlyph()),
-        e(ActionButton, { label: `Play ${title}`, primary: true, size: 52, onClick: () => onPlay && onPlay(album) }, PlayGlyph(18)),
-        e(ActionButton, { label: `Add ${title} to the queue`, onClick: () => onQueue && onQueue(album) }, QueueGlyph()))),
+        e(ActionButton, { label: `Add ${title} to a playlist`, size: SIDE_BTN, onClick: () => onAddToPlaylist && onAddToPlaylist(album) }, AddGlyph()),
+        e(ActionButton, { label: `Play ${title}`, primary: true, size: MAIN_BTN, onClick: () => onPlay && onPlay(album) }, PlayGlyph(18)),
+        e(ActionButton, { label: `Add ${title} to the queue`, size: SIDE_BTN, onClick: () => onQueue && onQueue(album) }, QueueGlyph())),
+      badge && e('span', { style: { position: 'absolute', top: '8px', left: '8px', zIndex: 2 } },
+        e(FixedTooltip, { content: badge.text },
+          e('button', {
+            type: 'button', 'aria-label': badge.label,
+            style: {
+              width: '26px', height: '26px', borderRadius: '50%', border: 'none', padding: 0, cursor: 'help',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backgroundColor: CHIP_BG, color: CHIP_FG,
+            },
+          }, badge.icon)))),
     e('button', {
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
       style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
     album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist),
-    album.why && e('div', { style: Object.assign({ fontSize: '11px', color: 'var(--text-secondary)' }, CLAMP2), title: album.why }, album.why));
+    // Shuffleupagus and Critical Darlings say why in the badge; the other
+    // sources keep their one-line source text.
+    !badge && album.why && e('div', { style: Object.assign({ fontSize: '11px', color: 'var(--text-secondary)' }, CLAMP2), title: album.why }, album.why));
 }
 
 // "Refreshed 18m ago · since 2023" shows as two lines: the age, then "Since 2023".
@@ -250,12 +305,13 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
         }, badge),
         e('div', {
           style: {
-            position: 'absolute', right: '8px', bottom: '8px', display: 'flex', gap: '8px', alignItems: 'center',
+            position: 'absolute', right: '8px', bottom: '8px', display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end',
+            left: '8px',
             opacity: reveal.shown ? 1 : 0, transition: 'opacity .15s',
           },
         },
-          e(ActionButton, { label: `Add ${title} to the queue`, onClick: () => onQueue && onQueue(playlist) }, QueueGlyph()),
-          e(ActionButton, { label: `Play ${title}`, primary: true, onClick: () => onPlay && onPlay(playlist) }, PlayGlyph(16))))),
+          e(ActionButton, { label: `Add ${title} to the queue`, size: 'clamp(32px, 16%, 40px)', onClick: () => onQueue && onQueue(playlist) }, QueueGlyph()),
+          e(ActionButton, { label: `Play ${title}`, primary: true, size: 'clamp(36px, 19%, 44px)', onClick: () => onPlay && onPlay(playlist) }, PlayGlyph(16))))),
     e('button', {
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
       style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }, ELLIPSIS),
@@ -387,8 +443,47 @@ function FreshCriticalRow(props) {
     c.length > 0 && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c));
 }
 
-function ConcertCard({ concert, onOpenTickets }) {
-  const reveal = useReveal();
+// A concert card is not clickable as a whole: "Tickets" is its only action.
+// One seller is a direct link; several open a small popover of links that
+// closes on an outside click or Escape.
+function TicketsLink({ sellers, artist }) {
+  const [open, setOpen] = React.useState(false);
+  const wrap = React.useRef(null);
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (ev) => { if (wrap.current && !wrap.current.contains(ev.target)) setOpen(false); };
+    const onKey = (ev) => { if (ev.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const tix = { font: 'inherit', fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--accent-primary)', textDecoration: 'underline', textAlign: 'left' };
+  if (sellers.length === 0) return null;
+  if (sellers.length === 1) {
+    return e('a', { href: sellers[0].ticketUrl, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Tickets for ${artist}`, style: tix }, 'Tickets');
+  }
+  return e('div', { ref: wrap, style: { position: 'relative', alignSelf: 'flex-start' } },
+    e('button', {
+      type: 'button', 'aria-haspopup': 'true', 'aria-expanded': open, 'aria-label': `Tickets for ${artist}`,
+      onClick: () => setOpen((v) => !v),
+      style: Object.assign({ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }, tix),
+    }, 'Tickets'),
+    open && e('div', {
+      role: 'menu',
+      style: {
+        position: 'absolute', left: 0, top: '100%', marginTop: '4px', zIndex: 20, minWidth: '160px',
+        display: 'flex', flexDirection: 'column', padding: '4px', borderRadius: '10px',
+        border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-secondary)',
+        boxShadow: '0 4px 12px rgba(0,0,0,.18)',
+      },
+    }, sellers.map((s, i) => e('a', {
+      key: i, role: 'menuitem', href: s.ticketUrl, target: '_blank', rel: 'noopener noreferrer',
+      onClick: () => setOpen(false),
+      style: { fontSize: '13px', padding: '8px 10px', borderRadius: '6px', color: 'var(--text-primary)', textDecoration: 'none' },
+    }, s.label || s.source || 'Tickets'))));
+}
+
+function ConcertCard({ concert }) {
   const d = concert.date ? new Date(`${concert.date}T00:00:00`) : null;
   const valid = d && !Number.isNaN(d.getTime());
   const mon = valid ? d.toLocaleDateString('en-US', { month: 'short' }) : '';
@@ -397,16 +492,12 @@ function ConcertCard({ concert, onOpenTickets }) {
   const city = [venue.city, venue.region, venue.country].filter(Boolean).join(', ');
   const place = [venue.name || 'Venue TBA', city].filter(Boolean).join(' · ');
   const sellers = (concert.ticketSources || []).filter((s) => s && s.ticketUrl);
-  const tix = { fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--accent-primary)', textDecoration: reveal.shown ? 'underline' : 'none' };
-  const open = () => onOpenTickets && onOpenTickets(concert);
-  return e('div', Object.assign({
-    onClick: open,
+  return e('div', {
     style: {
-      display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', borderRadius: '14px', cursor: 'pointer', minWidth: 0,
-      border: `1px solid ${reveal.shown ? 'var(--accent-primary)' : 'var(--border-default)'}`,
-      backgroundColor: reveal.shown ? 'var(--accent-surface)' : 'transparent', transition: 'background .15s, border-color .15s',
+      display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', borderRadius: '14px', minWidth: 0,
+      border: '1px solid var(--border-default)',
     },
-  }, reveal.props),
+  },
     e('div', {
       'aria-hidden': 'true',
       style: {
@@ -417,17 +508,12 @@ function ConcertCard({ concert, onOpenTickets }) {
       e('span', { style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--accent-primary)' } }, mon),
       e('span', { style: { fontSize: '22px', fontWeight: 700, lineHeight: 1, color: 'var(--text-primary)' } }, day)),
     e('div', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' } },
-      e('button', {
-        type: 'button', onClick: (ev) => { ev.stopPropagation(); open(); }, 'aria-label': `Tickets for ${concert.artist}`,
-        style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }, ELLIPSIS),
-      }, concert.artist),
+      e('span', { style: Object.assign({ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }, ELLIPSIS) }, concert.artist),
       e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, place),
-      sellers.length === 1
-        ? e('a', { href: sellers[0].ticketUrl, target: '_blank', rel: 'noopener noreferrer', onClick: (ev) => ev.stopPropagation(), style: tix }, 'Tickets')
-        : e('span', { style: tix }, 'Tickets')));
+      e(TicketsLink, { sellers, artist: concert.artist })));
 }
 
-function ConcertsRow({ concerts, navigateTo, onOpenTickets }) {
+function ConcertsRow({ concerts, navigateTo }) {
   const list = Array.isArray(concerts) ? concerts.slice(0, HOME_CONCERT_CARDS) : [];
   if (list.length === 0) return null;
   return e('section', { 'aria-labelledby': 'home-concerts', style: SECTION_STYLE },
@@ -436,7 +522,7 @@ function ConcertsRow({ concerts, navigateTo, onOpenTickets }) {
       page: 'Concerts', view: 'concerts', navigateTo,
     }),
     e('div', { style: grid(`repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-      list.map((c, i) => e(ConcertCard, { key: c.id || i, concert: c, onOpenTickets }))));
+      list.map((c, i) => e(ConcertCard, { key: c.id || i, concert: c }))));
 }
 
 // ------------------------------------------------------------------------- Ask
@@ -503,5 +589,5 @@ function AskShuffleupagus({ initialPrompt, chatAvailable, onAsk, onSetup }) {
 
 module.exports = {
   JumpBackIn, AlbumCard, PlaylistCard, SourceFilter, MixesRow, PlaylistsRow, AlbumsRow,
-  FreshCriticalRow, ConcertsRow, AskShuffleupagus,
+  FreshCriticalRow, ConcertsRow, AskShuffleupagus, __TicketsLink: TicketsLink,
 };

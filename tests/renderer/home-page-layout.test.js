@@ -80,8 +80,9 @@ describe('source', () => {
     expect(page).toContain("const LOVES_CONTEXT = { type: 'loves', name: 'Recent loves' };");
   });
 
-  test('a concert card opens its ticket flyout on the Concerts page', () => {
-    expect(page).toMatch(/navigateTo\('concerts'\);[\s\S]{0,200}setConcertsTicketFlyout\(concert\.id\)/);
+  test('a concert card only links tickets: Home no longer opens the Concerts flyout', () => {
+    expect(page).not.toContain('setConcertsTicketFlyout');
+    expect(page).not.toContain('onOpenTickets');
   });
 
   test('every cover that fails reports through reportBrokenAlbumArt', () => {

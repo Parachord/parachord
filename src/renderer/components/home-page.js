@@ -143,7 +143,8 @@ const HomePage = React.memo(function HomePage(props) {
     recommendationAlbums,
     recommendations,
     setAddToPlaylistPanel,
-    setConcertsTicketFlyout,
+    setCollectionSort,
+    setCollectionTab,
     setExtensionInfoOpen,
     setHomeData,
     setRaycastInfoOpen,
@@ -382,7 +383,18 @@ const HomePage = React.memo(function HomePage(props) {
     onArtError,
   };
 
-  // Jump back in: the whole tile is the play button.
+  // Jump back in: the tile opens its page, its Play button plays it.
+  // Recent loves opens Collection's songs, newest loved first.
+  const onOpenTile = (tile) => {
+    if (tile.kind === 'playlist') loadPlaylist(tile.item);
+    else if (tile.kind === 'mix') openMix(tile.item);
+    else if (tile.kind === 'album') openAlbum({ title: tile.item.album, artist: tile.item.artist, imageUrl: tile.imageUrl || tile.item.imageUrl || null });
+    else if (tile.kind === 'loves') {
+      navigateTo('library');
+      setCollectionTab('tracks');
+      setCollectionSort((prev) => ({ ...prev, tracks: 'recent' }));
+    }
+  };
   const onPlayTile = (tile) => {
     if (tile.kind === 'playlist') playPlaylist(tile.item);
     else if (tile.kind === 'loves') playTrackCollection(loves, LOVES_CONTEXT);
@@ -393,14 +405,6 @@ const HomePage = React.memo(function HomePage(props) {
     if (tile.kind === 'loves') showHomeContextMenu('loves', loves);
     else if (tile.kind === 'album') showHomeContextMenu('album', tile.item);
     else showHomeContextMenu('playlist', tile.item);
-  };
-
-  // A concert opens the Concerts page with its ticket flyout open. The
-  // flyout is set after this click finishes, so the page's click-outside
-  // listener doesn't close it on the same click.
-  const openConcertTickets = (concert) => {
-    navigateTo('concerts');
-    if (concert && concert.id) setTimeout(() => setConcertsTicketFlyout(concert.id), 0);
   };
 
   // Shuffleupagus's batch keeps its Refresh: the cached batch stays on
@@ -527,7 +531,7 @@ const HomePage = React.memo(function HomePage(props) {
         jumpLoading
           ? skeletonSection('jump', 'Jump back in', React.createElement(JumpBackInSkeleton))
           : React.createElement(JumpBackIn, {
-            tiles, onPlayTile, onContextMenu: onTileMenu, onArtError,
+            tiles, onOpenTile, onPlayTile, onContextMenu: onTileMenu, onArtError,
             // Library Sync lives in Settings › General.
             onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
           }),
@@ -562,7 +566,7 @@ const HomePage = React.memo(function HomePage(props) {
             criticalLoading && skeletonSection('critical', 'Critical Darlings', React.createElement(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS }))),
 
         show.concerts
-          ? React.createElement(ConcertsRow, { concerts, navigateTo, onOpenTickets: openConcertTickets })
+          ? React.createElement(ConcertsRow, { concerts, navigateTo })
           : concertsSkeleton && skeletonSection('concerts', 'Concerts near you', React.createElement(ConcertRowSkeleton)),
 
         React.createElement(AskShuffleupagus, {
