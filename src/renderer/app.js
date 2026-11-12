@@ -44904,7 +44904,7 @@ useEffect(() => {
                   ),
                   // Show unread badges toggle
                   React.createElement('div', { className: 'flex items-center justify-between py-3' },
-                    React.createElement('div', null,
+                    React.createElement('div', { className: 'flex-1 min-w-0 pr-12' },
                       React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
                         'Show unread badges'
                       ),
@@ -44920,7 +44920,7 @@ useEffect(() => {
                           await window.electron.store.set('show_discovery_badges', newValue);
                         }
                       },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${showDiscoveryBadges ? 'bg-purple-600' : 'bg-gray-300'}`
+                      className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${showDiscoveryBadges ? 'bg-purple-600' : 'bg-gray-300'}`
                     },
                       React.createElement('span', {
                         className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${showDiscoveryBadges ? 'translate-x-5' : 'translate-x-0'}`
@@ -44929,7 +44929,7 @@ useEffect(() => {
                   ),
                   // Refresh Shuffleupagus suggestions on every visit toggle
                   React.createElement('div', { className: 'flex items-center justify-between py-3' },
-                    React.createElement('div', null,
+                    React.createElement('div', { className: 'flex-1 min-w-0 pr-12' },
                       React.createElement('p', { className: 'text-sm text-gray-900 font-medium' },
                         'Refresh Shuffleupagus suggestions on every visit'
                       ),
@@ -44946,7 +44946,7 @@ useEffect(() => {
                           await window.electron.store.set('home_suggestions_auto_refresh', newValue);
                         }
                       },
-                      className: `relative w-11 h-6 rounded-full transition-colors ${homeSuggestionsAutoRefresh ? 'bg-purple-600' : 'bg-gray-300'}`
+                      className: `relative w-11 h-6 flex-shrink-0 rounded-full transition-colors ${homeSuggestionsAutoRefresh ? 'bg-purple-600' : 'bg-gray-300'}`
                     },
                       React.createElement('span', {
                         className: `absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${homeSuggestionsAutoRefresh ? 'translate-x-5' : 'translate-x-0'}`
@@ -45012,7 +45012,7 @@ useEffect(() => {
 
                   // Note about configuring scrobblers
                   React.createElement('p', {
-                    className: 'text-xs text-gray-500 mt-4 text-center'
+                    className: 'text-xs text-gray-500 mt-4'
                   }, 'Configure scrobbling services in their respective settings: Last.fm, ListenBrainz, and Libre.fm.')
                 ),
 
