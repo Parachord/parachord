@@ -124,7 +124,15 @@ class MusicKitWeb {
       // setMusicUserToken if present; then setUserToken (legacy v2 API
       // some bundles still expose). All three are wrapped in try/catch —
       // failing one shouldn't take down the others.
-      if (userToken && !initialAuth) {
+      //
+      // Inject whenever MusicKit holds a different token, not only when it
+      // starts signed out: MusicKit restores its own stored copy at configure,
+      // and until 2026-11 a stale copy (Apple answered 403 to every /v1/me
+      // call) won over every fresh sign-in because it already counted as
+      // authorized. The caller's token is the one of record; the caller also
+      // writes it into MusicKit's slot first (syncMusicKitTokenSlots in
+      // src/renderer/lib/apple-music-user-token.js).
+      if (userToken && this.musicKit.musicUserToken !== userToken) {
         console.log(`[MusicKitWeb] Attempting userToken injection (token length: ${userToken.length})`);
         try {
           this.musicKit.musicUserToken = userToken;
@@ -217,12 +225,19 @@ class MusicKitWeb {
   /**
    * Request user authorization (Apple ID sign-in)
    */
-  async authorize() {
+  async authorize({ fresh = false } = {}) {
     if (!this.musicKit) {
       throw new Error('MusicKit not configured');
     }
 
     try {
+      // MusicKit's authorize() resolves with the token it already holds when
+      // it counts itself authorized, without asking Apple. After Apple has
+      // refused that token, `fresh` signs out first so this is a real sign-in.
+      if (fresh && this.musicKit.isAuthorized) {
+        console.log('[MusicKitWeb] Signing out the refused token before authorizing again');
+        try { await this.musicKit.unauthorize(); } catch (_e) { /* best effort */ }
+      }
       console.log('[MusicKitWeb] Requesting authorization...');
       const musicUserToken = await this.musicKit.authorize();
       this.isAuthorized = true;

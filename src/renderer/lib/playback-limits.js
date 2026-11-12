@@ -40,6 +40,24 @@ function amazonPlaybackLimit(status) {
   };
 }
 
+// Apple Music's limit: a resolver that isn't signed in can't play (MusicKit JS
+// would only play 30-second previews), so it leaves playback and the
+// priority order until it connects, then returns to its saved slot. Not a
+// plan, but the same "set up, can't play" state. `checked` is false until the
+// startup sign-in check has finished; until then there's no verdict (null),
+// so a launch doesn't drop Apple Music for the moment the check takes.
+function appleMusicPlaybackLimit({ checked, connected }) {
+  if (!checked) return null;
+  if (connected) return { blocked: false, planKey: 'connected', label: null, message: null, searchesHeldBack: false };
+  return {
+    blocked: true,
+    planKey: 'signed-out',
+    label: 'Not connected',
+    message: "Apple Music isn't signed in, so Parachord won't play from it. Connect it in Settings → Apple Music.",
+    searchesHeldBack: false
+  };
+}
+
 // The ids whose plan can't play, in a stable order.
 function planBlockedIds(limits) {
   return Object.keys(limits || {}).filter((id) => limits[id] && limits[id].blocked).sort();
@@ -84,6 +102,7 @@ function limitStorageKey(id) {
 
 module.exports = {
   amazonPlaybackLimit,
+  appleMusicPlaybackLimit,
   planBlockedIds,
   playbackResolverIds,
   tileStatus,
