@@ -41,6 +41,7 @@ const HOME_PAGE_HANDLERS = [
   'loadAiRecommendations',
   'loadConcerts',
   'loadCriticsPicks',
+  'loadHomeHistoryMixes',
   'loadHomeRecommendations',
   'loadNewReleases',
   'loadPlaylist',
@@ -51,8 +52,10 @@ const HOME_PAGE_HANDLERS = [
   'openSyncSetupModal',
   'openTopAlbum',
   'openWhatsNew',
+  'playServicePlaylist',
   'playTrackCollection',
   'prefetchTopAlbumTracks',
+  'queueServicePlaylist',
   'showHomeContextMenu',
 ];
 
@@ -120,6 +123,7 @@ const HomePage = React.memo(function HomePage(props) {
     loadAiRecommendations,
     loadConcerts,
     loadCriticsPicks,
+    loadHomeHistoryMixes,
     loadHomeRecommendations,
     loadNewReleases,
     loadPlaylist,
@@ -136,10 +140,12 @@ const HomePage = React.memo(function HomePage(props) {
     openSyncSetupModal,
     openTopAlbum,
     openWhatsNew,
+    playServicePlaylist,
     playTrackCollection,
     playlists,
     playlistsLoading,
     prefetchTopAlbumTracks,
+    queueServicePlaylist,
     recommendationAlbums,
     recommendations,
     setAddToPlaylistPanel,
@@ -181,10 +187,12 @@ const HomePage = React.memo(function HomePage(props) {
 
   // ------------------------------------------------------- background loads
 
-  // One effect, after first paint. Recommendations load on every visit
-  // unless a load is running (loadHomeRecommendations in app.js): each
-  // provider that answered within the hour is served from its cache and only
-  // the stale ones are asked, as the Recommendations page does on each visit. The other loaders run only
+  // One effect, after first paint. Recommendations and the history mixes
+  // load on every visit unless a load is running or one answered within 10
+  // minutes (loadHomeRecommendations and loadHomeHistoryMixes in app.js):
+  // each provider that answered within the hour is served from its cache and
+  // only the stale ones are asked, as the Recommendations page does on each
+  // visit. The other loaders run only
   // while their data isn't loaded (or failed), so a return visit refetches
   // nothing. Concerts load only with a location set, since the row hides
   // without one.
@@ -192,6 +200,7 @@ const HomePage = React.memo(function HomePage(props) {
     if (!cacheLoaded) return undefined;
     const run = () => {
       loadHomeRecommendations();
+      loadHomeHistoryMixes();
       if (!newReleasesLoaded && !newReleasesLoading) loadNewReleases();
       if (!criticsPicksLoaded && !criticsPicksLoading) loadCriticsPicks();
       if (concertsLocation && !concertsLoaded && !concertsLoading && !concertsError) loadConcerts();
@@ -376,11 +385,16 @@ const HomePage = React.memo(function HomePage(props) {
     onContextMenu: (ev, p) => showHomeContextMenu('playlist', p),
     onArtError,
   };
-  // A service mix opens the remote-playlist view the Recommendations cards
-  // open. Play and Add to Queue land with the mixes (Phase C).
-  const openMix = (m) => openServicePlaylist(m, m.serviceLabel);
+  // A service mix: the card opens the remote-playlist view the
+  // Recommendations cards open, and Play and Add to Queue load its tracks
+  // through the same lookup. The 'mix' context lets Jump back in leave the
+  // mix out while it plays or waits in the queue.
+  const mixContext = (m) => ({ type: 'mix', id: m.id, name: m.title });
+  const openMix = (m) => openServicePlaylist(m, m.resolverName);
   const mixActions = {
-    onOpen: openMix, onPlay: openMix, onQueue: openMix,
+    onOpen: openMix,
+    onPlay: (m) => playServicePlaylist(m, mixContext(m)),
+    onQueue: (m) => queueServicePlaylist(m, mixContext(m)),
     onContextMenu: (ev, m) => showHomeContextMenu('playlist', m),
     onArtError,
   };
@@ -401,7 +415,7 @@ const HomePage = React.memo(function HomePage(props) {
     if (tile.kind === 'playlist') playPlaylist(tile.item);
     else if (tile.kind === 'loves') playTrackCollection(loves, LOVES_CONTEXT);
     else if (tile.kind === 'album') albumActions.onPlay(tile.item);
-    else if (tile.kind === 'mix') openMix(tile.item);
+    else if (tile.kind === 'mix') playServicePlaylist(tile.item, mixContext(tile.item));
   };
   const onTileMenu = (ev, tile) => {
     if (tile.kind === 'loves') showHomeContextMenu('loves', loves);

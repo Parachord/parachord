@@ -419,14 +419,14 @@ function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu,
   const [source, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
   if (all.length === 0) return null;
-  const chips = sourceChips(all, (m, id) => m.serviceLabel || id, sourceColors);
+  const chips = sourceChips(all, (m, id) => m.resolverName || id, sourceColors);
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource, label: 'Filter mixes by source' }),
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       shown.map((m, i) => e(PlaylistCard, {
-        key: m.id || i, playlist: m, chip: m.serviceLabel, subtitle: m.description || m.subtitle,
+        key: m.id || i, playlist: m, chip: m.resolverName, subtitle: m.description || m.subtitle,
         onOpen, onPlay, onQueue, onContextMenu, onArtError,
       }))));
 }

@@ -272,13 +272,18 @@ function sourcesFor(items, order, names) {
 //   similarUsers is
 //   [{ resolverId, resolverName, users: [{ username, similarity, avatarUrl? }] }];
 //   exclude is { friendKeys, selfKeys }, Sets of `service:username-lowercased`.
+//   excludePlaylistIds     a Set of playlist ids the page leaves out: Home's
+//                          history mixes (getHistoryMixes). An older plugin
+//                          still returns some of them from getRecommendations
+//                          (for older apps), and they are play history, not
+//                          recommendations.
 //
 // A row's `pageable` lists the provider sections that can still page items
 // of its type ({ resolverId, resolverName, sectionId, title, pagingKey,
 // nextCursor }); opening the row pages each of them. Paged items append
 // AFTER the blended first pages, in provider order, so a page landing never
 // moves a card already on screen.
-function buildRecommendationPage({ providers, shuffleupagus, expandedSections, expandableResolverIds, similarUsers, exclude } = {}) {
+function buildRecommendationPage({ providers, shuffleupagus, expandedSections, expandableResolverIds, similarUsers, exclude, excludePlaylistIds } = {}) {
   const names = {};
   const order = [];
   const addProvider = (id, name) => {
@@ -376,6 +381,11 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
         items = items.map((item, i) => ({ item, i }))
           .sort((a, b) => (rank(a.item) - rank(b.item)) || (a.i - b.i))
           .map(x => x.item);
+        // History mixes go after the newest-week pick: dropping this week's
+        // Jams first would let last week's take its place.
+        if (excludePlaylistIds && excludePlaylistIds.size > 0) {
+          items = items.filter(item => !excludePlaylistIds.has(item.id));
+        }
       }
       if (items.length) {
         const sources = sourcesFor(items, order, names);

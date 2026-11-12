@@ -191,9 +191,11 @@ describe('Rows', () => {
     expect(html).toContain('aria-label="See all in Playlists"');
   });
   test('Mixes row has no See all', () => {
-    const html = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', serviceLabel: 'Apple Music' }] });
+    const html = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', resolverName: 'Apple Music' }] });
     expect(html).not.toContain('See all');
     expect(html).toContain('Heavy Rotation');
+    // The card names its service.
+    expect(html).toContain('Apple Music');
   });
   test('Albums row see-all goes to Recommendations', () => {
     const html = h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} });

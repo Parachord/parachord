@@ -175,6 +175,55 @@ function whenPhraseShort(at, now) {
   return p.startsWith('this ') ? 'today' : p;
 }
 
+// One provider's getHistoryMixes answer as Home's mix cards: playlists with
+// an id, a name and a URL (the URL is what opens and plays them, through the
+// same lookup the Recommendations page's playlist cards use). `title` is
+// what the playlist card and the Jump back in tile print; `resolverId` and
+// `resolverName` name the service for the source chips and the card label.
+const trimmed = (v) => (typeof v === 'string' ? v.trim() : '');
+function normalizeHistoryMixes(items, provider) {
+  const resolverId = (provider && provider.id) || null;
+  const resolverName = (provider && provider.name) || resolverId;
+  const out = [];
+  for (const raw of Array.isArray(items) ? items : []) {
+    if (!raw || typeof raw !== 'object') continue;
+    if (raw.type != null && raw.type !== 'playlist') continue;
+    const id = trimmed(raw.id);
+    const name = trimmed(raw.name);
+    const url = trimmed(raw.url);
+    if (!id || !name || !url) continue;
+    const mix = { type: 'playlist', id, name, title: name };
+    if (trimmed(raw.description)) mix.description = trimmed(raw.description);
+    if (trimmed(raw.imageUrl)) mix.imageUrl = trimmed(raw.imageUrl);
+    mix.url = url;
+    mix.resolverId = resolverId;
+    mix.resolverName = resolverName;
+    out.push(mix);
+  }
+  return out;
+}
+
+// Every provider's mixes as one list: round-robin in provider order (the
+// first of each, then the second of each, ...), so a service with many mixes
+// doesn't fill the row before the next one shows. An id seen once is kept
+// where it first appeared.
+function flattenHistoryMixes(entries) {
+  const lists = (Array.isArray(entries) ? entries : [])
+    .map((e) => (e && Array.isArray(e.items) ? e.items : []));
+  const longest = lists.reduce((n, l) => Math.max(n, l.length), 0);
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < longest; i++) {
+    for (const list of lists) {
+      const mix = list[i];
+      if (!mix || mix.id == null || seen.has(mix.id)) continue;
+      seen.add(mix.id);
+      out.push(mix);
+    }
+  }
+  return out;
+}
+
 // The import card is for a new user only: no collection and no playlists.
 // Empty tiles alone (a collection with no loves, say) don't show it.
 function homeSections({
@@ -316,6 +365,7 @@ function shouldStampHomeRecommendationsLoad({ fetched, failed, sectionCount }) {
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
+  normalizeHistoryMixes, flattenHistoryMixes,
   exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists, albumsNeedingArt,
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
 };
