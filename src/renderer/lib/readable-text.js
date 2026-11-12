@@ -1,5 +1,5 @@
 // Pick the text colour that reads best on a brand-coloured fill: white or
-// near-black, white unless it falls under 3:1, then whichever has the higher WCAG contrast. A colour that is not a
+// near-black, whichever has the higher WCAG contrast. A colour that is not a
 // hex string (a CSS variable, nothing) gets white, the accent's text colour.
 
 const LIGHT = '#ffffff';
@@ -31,11 +31,7 @@ function readableTextOn(hex) {
   const rgb = parseHex(hex);
   if (!rgb) return LIGHT;
   const l = luminance(rgb);
-  // White wins while it clears 3:1 (the WCAG floor for bold UI text), which
-  // keeps saturated reds such as Apple Music's on white; below that, the
-  // higher-contrast of the two.
-  const white = contrast(1, l);
-  return white >= 3 || white >= contrast(l, luminance(parseHex(DARK))) ? LIGHT : DARK;
+  return contrast(1, l) >= contrast(l, luminance(parseHex(DARK))) ? LIGHT : DARK;
 }
 
 module.exports = { readableTextOn };

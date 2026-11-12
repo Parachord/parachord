@@ -25,6 +25,7 @@ const CHIP_FG = '#111827'; // on-art
 const ART_DIM = 'rgba(17,24,39,.38)'; // on-art
 const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
+const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
 
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
 const H2_STYLE = { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' };
@@ -348,14 +349,14 @@ function SourceFilter({ sources, value, onChange, label }) {
 
 // Chips: All, then one per source that has at least one item.
 // `colors` maps a source id to its plugin colour (see HomePage); Shuffleupagus
-// is not a plugin and uses the app accent.
+// is not a plugin and uses the fixed accent.
 function sourceChips(items, labelOf, colors) {
   const seen = new Map();
   for (const it of items || []) {
     const ids = [it.resolverId].concat(Array.isArray(it.sourceIds) ? it.sourceIds : []).filter(Boolean);
     for (const id of ids) if (!seen.has(id)) seen.set(id, labelOf(it, id));
   }
-  const colorOf = (id) => (id === 'shuffleupagus' ? 'var(--accent-primary)' : (colors && colors[id]) || null);
+  const colorOf = (id) => (id === 'shuffleupagus' ? SHUFFLE_COLOR : (colors && colors[id]) || null);
   return [{ id: 'All', label: 'All' }].concat(Array.from(seen, ([id, label]) => ({ id, label, color: colorOf(id) })));
 }
 
