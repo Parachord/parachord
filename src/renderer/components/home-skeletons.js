@@ -13,6 +13,10 @@ const HOME_TILE_HEIGHT = 72;
 const HOME_ROW_CARDS = 6;
 const HOME_HALF_ROW_CARDS = 3;
 const HOME_CONCERT_CARDS = 4;
+// Gap between cards in every card row (columns and wrapped rows), and the
+// art-to-title gap inside a card. Rows and skeletons both read these.
+const HOME_ROW_GAP = 24;
+const HOME_CARD_TEXT_GAP = 10;
 
 const bar = (className, style) => React.createElement('div', {
   className: `rounded shimmer-light animate-shimmer ${className}`,
@@ -51,24 +55,26 @@ function CardRowSkeleton({ count = HOME_ROW_CARDS, columns } = {}) {
   const cols = columns || count;
   return React.createElement('div', {
     'aria-hidden': 'true',
-    style: { display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: '16px' }
+    style: { display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: `${HOME_ROW_GAP}px` }
   }, Array.from({ length: count }, (_, i) => React.createElement('div', {
     key: i,
-    style: { display: 'flex', flexDirection: 'column', gap: '8px' }
+    style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px` }
   },
     React.createElement('div', {
       className: 'aspect-square shimmer-strong animate-shimmer',
       style: { borderRadius: '10px', backgroundSize: '200% 100%', animationDelay: stagger(i) }
     }),
     bar('h-3.5', { width: '70%', animationDelay: stagger(i) }),
-    bar('h-3', { width: '50%', animationDelay: stagger(i) }))));
+    // Two subtitle lines: the real card's subtitle can wrap to two.
+    bar('h-3', { width: '50%', animationDelay: stagger(i) }),
+    bar('h-3', { width: '35%', animationDelay: stagger(i) }))));
 }
 
 /** Concerts: four cards, a date block beside three text lines. */
 function ConcertRowSkeleton() {
   return React.createElement('div', {
     'aria-hidden': 'true',
-    style: { display: 'grid', gridTemplateColumns: `repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, gap: '16px' }
+    style: { display: 'grid', gridTemplateColumns: `repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, gap: `${HOME_ROW_GAP}px` }
   }, Array.from({ length: HOME_CONCERT_CARDS }, (_, i) => React.createElement('div', {
     key: i,
     style: {
@@ -89,4 +95,5 @@ function ConcertRowSkeleton() {
 module.exports = {
   JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton,
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS,
+  HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
 };

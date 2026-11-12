@@ -12,7 +12,7 @@
 
 const { filterBySource } = require('../lib/home-model');
 const {
-  HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS,
+  HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
 } = require('./home-skeletons');
 
 const e = React.createElement;
@@ -27,6 +27,7 @@ const ON_FILL = '#fff'; // on-color
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
 const H2_STYLE = { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' };
 const SUB_STYLE = { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' };
+const CLAMP2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
 const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 
 // Hover or keyboard focus anywhere inside the card reveals its actions.
@@ -201,7 +202,7 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
   };
   return e('div', Object.assign({
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, album); } },
-    style: { display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 },
+    style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 },
   }, reveal.props, dwell),
     e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, style: { cursor: 'pointer' } },
       album.tag && e('span', { style: chipStyle() }, album.tag),
@@ -219,8 +220,14 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
       style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
-    album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-4px' }, ELLIPSIS) }, album.artist),
-    album.why && e('div', { style: Object.assign({ fontSize: '11px', color: 'var(--text-secondary)' }, ELLIPSIS), title: album.why }, album.why));
+    album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist),
+    album.why && e('div', { style: Object.assign({ fontSize: '11px', color: 'var(--text-secondary)' }, CLAMP2), title: album.why }, album.why));
+}
+
+// "Refreshed 18m ago · since 2023" shows as two lines: the age, then "Since 2023".
+function subtitleLines(subtitle) {
+  return String(subtitle).split(' · ').filter(Boolean)
+    .map((l, i) => (i === 0 ? l : l.charAt(0).toUpperCase() + l.slice(1)));
 }
 
 function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
@@ -230,7 +237,7 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
   const open = () => onOpen && onOpen(playlist);
   return e('div', Object.assign({
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, playlist); } },
-    style: { display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 },
+    style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 },
   }, reveal.props),
     e('div', { onClick: open, style: { cursor: 'pointer' } },
       e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError },
@@ -253,7 +260,8 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
       style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
-    subtitle && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-4px' }, ELLIPSIS) }, subtitle));
+    subtitle && e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' } },
+      subtitleLines(subtitle).map((line, i) => e('div', { key: i, style: i === 0 ? CLAMP2 : ELLIPSIS }, line))));
 }
 
 // --------------------------------------------------------------------- Filters
@@ -313,7 +321,7 @@ function MixesRow({ mixes, onOpen, onPlay, onQueue, onContextMenu, onArtError })
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource, label: 'Filter mixes by source' }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, '16px') },
+    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       shown.map((m, i) => e(PlaylistCard, {
         key: m.id || i, playlist: m, chip: m.serviceLabel, subtitle: m.description || m.subtitle,
         onOpen, onPlay, onQueue, onContextMenu, onArtError,
@@ -329,7 +337,7 @@ function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onContex
       sub: 'By last change, so a playlist that refreshes itself stays up front however old it is',
       page: 'Playlists', view: 'playlists', navigateTo,
     }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, '16px') },
+    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((p, i) => e(PlaylistCard, {
         key: p.id || i, playlist: p, badge: p.badge, subtitle: p.subtitle,
         onOpen, onPlay, onQueue, onContextMenu, onArtError,
@@ -359,7 +367,7 @@ function AlbumsRow(props) {
       id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo, extra: refresh,
     }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource }),
-    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, '16px') },
+    e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       shown.map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
 }
 
@@ -369,7 +377,7 @@ function FreshCriticalRow(props) {
     key: id, 'aria-labelledby': id, style: Object.assign({ flex: '1 1 480px', minWidth: 0 }, SECTION_STYLE),
   },
     e(SectionHeader, { id, title, sub, page, view, navigateTo }),
-    e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, '16px') },
+    e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
   const f = Array.isArray(fresh) ? fresh : [];
   const c = Array.isArray(critical) ? critical : [];
@@ -427,7 +435,7 @@ function ConcertsRow({ concerts, navigateTo, onOpenTickets }) {
       id: 'home-concerts', title: 'Concerts near you', sub: 'Artists from your collection playing soon',
       page: 'Concerts', view: 'concerts', navigateTo,
     }),
-    e('div', { style: grid(`repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, '16px') },
+    e('div', { style: grid(`repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((c, i) => e(ConcertCard, { key: c.id || i, concert: c, onOpenTickets }))));
 }
 

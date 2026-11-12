@@ -294,6 +294,16 @@ describe('Home skeletons match the Home rows', () => {
     expect(sk.HOME_CONCERT_CARDS).toBe(4);
   });
 
+  test('card rows and their skeletons share one gap', () => {
+    expect(sk.HOME_ROW_GAP).toBe(24);
+    expect(sk.HOME_CARD_TEXT_GAP).toBe(10);
+    expect(sections).toContain('${HOME_ROW_GAP}px');
+    expect(skeletons).toContain('${HOME_ROW_GAP}px');
+    expect(sections).toContain('${HOME_CARD_TEXT_GAP}px');
+    expect(skeletons).toContain('${HOME_CARD_TEXT_GAP}px');
+    expect(sections).not.toMatch(/minmax\(0, 1fr\)\)`, '16px'\)/);
+  });
+
   test('both files use the same HOME_* constants', () => {
     for (const name of ['HOME_TILE_HEIGHT', 'HOME_ROW_CARDS', 'HOME_HALF_ROW_CARDS', 'HOME_CONCERT_CARDS']) {
       expect(sections).toContain(name);
