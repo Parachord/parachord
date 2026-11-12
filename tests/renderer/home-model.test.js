@@ -137,8 +137,17 @@ describe('homeSections', () => {
     const s = m.homeSections({ bannerItems: [], tiles: [], mixes: [], playlists: [], albums: [], fresh: [], critical: [], concerts: [], concertsLocation: '' });
     expect(Object.keys(s).filter((k) => s[k]).sort()).toEqual(['ask', 'importCard']);
   });
+  test('the import card is for a new user only: no collection and no playlists', () => {
+    // Empty tiles alone don't bring it back (a collection with no loves).
+    expect(m.homeSections({ tiles: [], playlists: [], hasCollection: true }).importCard).toBe(false);
+    expect(m.homeSections({ tiles: [], playlists: [{ id: 'p' }], hasCollection: false }).importCard).toBe(false);
+    expect(m.homeSections({ tiles: [], playlists: [], hasCollection: false }).importCard).toBe(true);
+    // A new user with a service mix sees the tile and the card's flag both;
+    // the row shows tiles when it has them.
+    expect(m.homeSections({ tiles: [1], playlists: [], hasCollection: false })).toMatchObject({ jump: true, importCard: true });
+  });
   test('albums shows with Shuffleupagus items; concerts needs a location', () => {
-    const s = m.homeSections({ tiles: [1], albums: [1], concerts: [1], concertsLocation: '' });
+    const s = m.homeSections({ tiles: [1], albums: [1], concerts: [1], concertsLocation: '', hasCollection: true });
     expect(s).toMatchObject({ jump: true, importCard: false, albums: true, concerts: false, ask: true });
     expect(m.homeSections({ concerts: [1], concertsLocation: 'Austin' }).concerts).toBe(true);
   });
@@ -192,5 +201,66 @@ describe('homeTopArtists', () => {
   });
   test('drops blank and over-long names', () => {
     expect(m.homeTopArtists([{ artist: ' ' }, { artist: 'x'.repeat(81) }, { artist: 'Frog' }])).toEqual(['Frog']);
+  });
+});
+
+describe('exampleShufflePrompt hardening', () => {
+  test('bidi controls and other control characters are stripped from names', () => {
+    const evil = 'Frog‮evil⁦x⁩\u0007‏';
+    const p = m.exampleShufflePrompt([evil], 0);
+    expect(p).toBe('A rainy Sunday playlist built around Frogevilx');
+    expect(p).not.toMatch(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/);
+  });
+  test('whitespace controls become one space', () => {
+    expect(m.exampleShufflePrompt(['Nap\t\nEyes'], 0)).toBe('A rainy Sunday playlist built around Nap Eyes');
+  });
+  test('each name is capped at 40 characters', () => {
+    const p = m.exampleShufflePrompt(['y'.repeat(60), 'Frog'], 0);
+    expect(p).toBe(`A rainy Sunday playlist built around ${'y'.repeat(40)} and Frog`);
+  });
+  test('a name that is only controls is dropped', () => {
+    expect(m.exampleShufflePrompt(['‮⁦', 'Frog'], 0)).toBe('A rainy Sunday playlist built around Frog');
+    expect(m.exampleShufflePrompt(['‮'], 0)).toBe('Make me a playlist for right now');
+  });
+});
+
+describe('albumsNeedingArt', () => {
+  const mk = (src, n, extra = {}) => Array.from({ length: n }, (_, i) => ({ title: `${src}${i}`, resolverId: src, ...extra }));
+  test('the first six overall plus the first six of each source', () => {
+    const albums = [...mk('lastfm', 10), ...mk('applemusic', 10)];
+    const want = m.albumsNeedingArt(albums, 6);
+    expect(want.map((a) => a.title)).toEqual([
+      'lastfm0', 'lastfm1', 'lastfm2', 'lastfm3', 'lastfm4', 'lastfm5',
+      'applemusic0', 'applemusic1', 'applemusic2', 'applemusic3', 'applemusic4', 'applemusic5',
+    ]);
+  });
+  test('a pick two sources share counts for both', () => {
+    const shared = { title: 'shared', resolverId: 'lastfm', sourceIds: ['lastfm', 'listenbrainz'] };
+    const albums = [...mk('lastfm', 8), ...mk('listenbrainz', 3), shared];
+    const titles = m.albumsNeedingArt(albums, 6).map((a) => a.title);
+    expect(titles).toContain('shared');
+    expect(titles.filter((t) => t === 'shared')).toHaveLength(1);
+  });
+  test('empty and missing input', () => {
+    expect(m.albumsNeedingArt(null)).toEqual([]);
+    expect(m.albumsNeedingArt([])).toEqual([]);
+  });
+});
+
+describe('shouldLoadHomeRecommendations', () => {
+  const t = 1_000_000_000;
+  const ok = { loading: false, loadStarted: true, lastFullLoadAt: 0, now: t };
+  test('loads when idle and no full load has finished', () => {
+    expect(m.shouldLoadHomeRecommendations(ok)).toBe(true);
+    // `loading` is true before any load has run: the first visit still loads.
+    expect(m.shouldLoadHomeRecommendations({ ...ok, loading: true, loadStarted: false })).toBe(true);
+  });
+  test('skips while a load runs', () => {
+    expect(m.shouldLoadHomeRecommendations({ ...ok, loading: true })).toBe(false);
+  });
+  test('skips within 10 minutes of a finished full load, loads after', () => {
+    expect(m.HOME_RECOMMENDATIONS_THROTTLE_MS).toBe(10 * 60 * 1000);
+    expect(m.shouldLoadHomeRecommendations({ ...ok, lastFullLoadAt: t - 9 * 60 * 1000 })).toBe(false);
+    expect(m.shouldLoadHomeRecommendations({ ...ok, lastFullLoadAt: t - 10 * 60 * 1000 })).toBe(true);
   });
 });

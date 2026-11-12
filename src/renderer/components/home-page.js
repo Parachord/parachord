@@ -21,10 +21,10 @@ const { HomeSetupButton } = require('./home-setup');
 // (Single-line destructures above the props one: page-memo.test.js reads
 // the first multi-line `const {` block as the props list.)
 const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, ConcertsRow, AskShuffleupagus } = require('./home-sections');
-const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS } = require('./home-skeletons');
+const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS } = require('./home-skeletons');
 const { homeSetupItems, missingPopularResolverCount } = require('../lib/home-setup');
 const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
-const { playlistSubtitle, homeSections, exampleShufflePrompt, releaseTag, homeTopArtists } = require('../lib/home-model');
+const { playlistSubtitle, homeSections, exampleShufflePrompt, releaseTag, homeTopArtists, albumsNeedingArt } = require('../lib/home-model');
 const { trackSlug } = require('../lib/track-slug');
 
 // Plain functions from Parachord, passed as stable wrappers.
@@ -81,7 +81,7 @@ const playlistTracks = (p) => (p.tracks || []).map((t) => ({
 
 // A loading row: its heading, then the skeleton in the row's grid.
 const skeletonSection = (key, title, body) => React.createElement('section', {
-  key, 'aria-busy': 'true', style: { display: 'flex', flexDirection: 'column', gap: '14px', flex: '1 1 480px', minWidth: 0 },
+  key, 'aria-busy': 'true', style: { display: 'flex', flexDirection: 'column', gap: '14px', minWidth: 0 },
 }, React.createElement('h2', { style: H2_STYLE }, title), body);
 
 const HomePage = React.memo(function HomePage(props) {
@@ -307,8 +307,10 @@ const HomePage = React.memo(function HomePage(props) {
     .map((c) => ({ ...c, imageUrl: coverFor(c.artist, c.title, c.albumArt), homeRow: 'critical' })), [criticsPicks, art]);
 
   // Covers Home resolves itself: the album tile and recommended albums that
-  // came without one. Fresh Drops and Critical Darlings resolve their own;
-  // a cover of theirs that fails is retried into this map (reportBroken).
+  // came without one (the first six of the whole list and of each source's,
+  // so a source chip never shows uncovered cards). Fresh Drops and Critical
+  // Darlings resolve their own; a cover of theirs that fails is retried into
+  // this map (reportBroken).
   React.useEffect(() => {
     for (const tile of tilesRaw) {
       if (tile.kind !== 'album') continue;
@@ -316,7 +318,7 @@ const HomePage = React.memo(function HomePage(props) {
       if (!loves.some((t) => t.album === album && t.artist === artist && t.albumArt)) requestArt(artist, album);
     }
     if (loves.length > 0 && !loves[0].albumArt) requestArt(loves[0].artist, loves[0].album);
-    for (const a of (recommendationAlbums || []).slice(0, 24)) {
+    for (const a of albumsNeedingArt(recommendationAlbums, HOME_ROW_CARDS)) {
       if (!a.imageUrl) requestArt(a.artist, a.title);
     }
   }, [tilesRaw, loves, recommendationAlbums]);
@@ -471,15 +473,15 @@ const HomePage = React.memo(function HomePage(props) {
     return map;
   }, [allResolvers]);
 
+  const hasCollection = (collectionData.tracks || []).length > 0 || (library || []).length > 0;
   const show = homeSections({
-    bannerItems, tiles, mixes, playlists: homePlaylists, albums, fresh, critical, concerts, concertsLocation,
+    bannerItems, tiles, mixes, playlists: homePlaylists, albums, fresh, critical, concerts, concertsLocation, hasCollection,
   });
   const jumpLoading = !show.jump && (collectionLoading || playlistsLoading);
   const albumsLoading = !show.albums && (!!recommendations.loading || aiLoading);
   const freshLoading = !show.fresh && !newReleasesError && (newReleasesLoading || !newReleasesLoaded);
   const criticalLoading = !show.critical && !criticsPicksError && (criticsPicksLoading || !criticsPicksLoaded);
   const concertsSkeleton = !show.concerts && !!concertsLocation && !concertsError && (concertsLoading || !concertsLoaded);
-  const hasCollection = (collectionData.tracks || []).length > 0 || (library || []).length > 0;
 
   // Backend announcements: one banner, Home only.
   const banner = React.createElement(HomeBanner, {
@@ -541,7 +543,7 @@ const HomePage = React.memo(function HomePage(props) {
         jumpLoading
           ? skeletonSection('jump', 'Jump back in', React.createElement(JumpBackInSkeleton))
           : React.createElement(JumpBackIn, {
-            tiles, onOpenTile, onPlayTile, onContextMenu: onTileMenu, onArtError,
+            tiles, onOpenTile, onPlayTile, onContextMenu: onTileMenu, onArtError, showImport: show.importCard,
             // Library Sync lives in Settings › General.
             onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
           }),
@@ -559,10 +561,14 @@ const HomePage = React.memo(function HomePage(props) {
           })
           : albumsLoading && skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton)),
 
-        (show.fresh || show.critical)
-          ? React.createElement(FreshCriticalRow, {
+        // One row for both halves, loaded or not: a half still loading draws
+        // its skeleton in its own place, so nothing moves when it lands.
+        (show.fresh || show.critical || freshLoading || criticalLoading)
+          && React.createElement(FreshCriticalRow, {
             fresh,
             critical,
+            freshLoading,
+            criticalLoading,
             navigateTo,
             ...albumActions,
             // Each half opens its album the way its own page does; a Fresh
@@ -570,10 +576,7 @@ const HomePage = React.memo(function HomePage(props) {
             onOpen: (album) => (album.homeRow === 'fresh'
               ? openTopAlbum({ ...album, name: album.title, image: album.imageUrl, releaseGroupId: album.id })
               : openCriticsPicksAlbum(album)),
-          })
-          : (freshLoading || criticalLoading) && React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '32px' } },
-            freshLoading && skeletonSection('fresh', 'Fresh Drops', React.createElement(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })),
-            criticalLoading && skeletonSection('critical', 'Critical Darlings', React.createElement(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS }))),
+          }),
 
         show.concerts
           ? React.createElement(ConcertsRow, { concerts, navigateTo })

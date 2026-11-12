@@ -315,15 +315,34 @@ describe('Home skeletons match the Home rows', () => {
     const grids = (src) => new Set(src.match(/repeat\([^)]*, minmax\(0, 1fr\)\)/g));
     const inSections = grids(sections);
     expect(inSections.size).toBeGreaterThan(0);
-    // The tiles and the concert cards are fixed grids in both files; the
-    // card rows pass their count to CardRowSkeleton, which builds the same string.
-    for (const g of ['repeat(4, minmax(0, 1fr))', 'repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))']) {
+    // The concert cards are a fixed grid in both files; the card rows pass
+    // their count to CardRowSkeleton, which builds the same string.
+    for (const g of ['repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))']) {
       expect(inSections.has(g)).toBe(true);
       expect(grids(skeletons).has(g)).toBe(true);
     }
+    // Jump back in: one shared grid string (four across, two by two when
+    // narrow) and gap, used by the row and its skeleton.
+    expect(sections).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
+    expect(skeletons).toContain('gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px`');
+    expect(sections).not.toContain("'repeat(4, minmax(0, 1fr))'");
     expect(sections).toContain('repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))');
     expect(sections).toContain('repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))');
     expect(skeletons).toContain('repeat(${cols}, minmax(0, 1fr))');
+  });
+
+  test('the jump tile skeleton uses the real tile\'s background token', () => {
+    expect(sections).toMatch(/reveal\.shown \? 'var\(--accent-surface\)' : 'var\(--bg-secondary\)'/);
+    const jump = skeletons.slice(skeletons.indexOf('function JumpBackInSkeleton'), skeletons.indexOf('function CardRowSkeleton'));
+    expect(jump).toContain("backgroundColor: 'var(--bg-secondary)'");
+    expect(jump).not.toContain('--card-bg');
+  });
+
+  test('Fresh Drops and Critical Darlings halves share one fixed basis, loading or loaded', () => {
+    expect(sk.HOME_HALF_FLEX).toBe(`0 0 calc(50% - ${sk.HOME_HALF_GAP / 2}px)`);
+    expect(sections).toContain('flex: HOME_HALF_FLEX');
+    // The loading half renders CardRowSkeleton inside the same section box.
+    expect(sections).toContain('e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })');
   });
 
   test('the tile and card box match the real ones', () => {

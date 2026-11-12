@@ -15,6 +15,7 @@ const { readableTextOn } = require('../lib/readable-text');
 const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
+  HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_FLEX, HOME_HALF_GAP, CardRowSkeleton,
 } = require('./home-skeletons');
 
 const e = React.createElement;
@@ -32,6 +33,14 @@ const H2_STYLE = { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--t
 const SUB_STYLE = { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' };
 const CLAMP2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
 const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+// Read by screen readers, not drawn.
+const VISUALLY_HIDDEN = {
+  position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px',
+  overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
+};
+
+// Only http(s) ticket links reach an href.
+const isHttpUrl = (u) => typeof u === 'string' && /^https?:\/\//i.test(u.trim());
 
 // Hover or keyboard focus anywhere inside the card reveals its actions.
 function useReveal() {
@@ -88,8 +97,20 @@ const chipStyle = (extra) => Object.assign({
   backgroundColor: CHIP_BG, color: CHIP_FG, ...ELLIPSIS,
 }, extra);
 
-// Square art: a mosaic (2x2), one cover, or a placeholder block.
-function ArtBox({ imageUrl, mosaic, item, onArtError, children, style }) {
+// The Playlists page's placeholder glyph: three lines and a play triangle.
+const PlaylistGlyph = () => e('svg', {
+  'aria-hidden': 'true', 'data-playlist-glyph': '', viewBox: '0 0 24 24', fill: 'currentColor',
+  style: { width: '40%', height: '40%', maxWidth: '48px', maxHeight: '48px', color: 'var(--text-secondary)' },
+},
+  e('rect', { x: 3, y: 5, width: 18, height: 2, rx: 1 }),
+  e('rect', { x: 3, y: 11, width: 10, height: 2, rx: 1 }),
+  e('rect', { x: 3, y: 17, width: 7, height: 2, rx: 1 }),
+  e('path', { d: 'M15 13.5v6l5.5-3-5.5-3z' }));
+
+// Square art: a mosaic (2x2), one cover, or a placeholder block. A playlist
+// with no covers yet (`placeholder: 'playlist'`) shows the Playlists page's
+// glyph rather than an empty box.
+function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placeholder }) {
   const tiles = Array.isArray(mosaic) ? mosaic.filter(Boolean).slice(0, 4) : [];
   const fail = () => { if (onArtError) onArtError(item); };
   let art;
@@ -109,6 +130,9 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style }) {
       src: tiles[0], alt: '', loading: 'lazy', onError: fail,
       style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
     });
+  } else if (placeholder === 'playlist') {
+    art = e('div', { style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+      PlaylistGlyph());
   }
   return e('div', {
     style: Object.assign({
@@ -130,6 +154,7 @@ function JumpTile({ tile, onOpenTile, onPlayTile, onContextMenu, onArtError }) {
     : tile.kind === 'album' ? (item && item.album) : (item && item.title);
   const imageUrl = tile.imageUrl || (item && !Array.isArray(item) && item.imageUrl) || null;
   const mosaic = tile.mosaic || (item && !Array.isArray(item) && item.mosaic) || null;
+  const placeholder = tile.kind === 'playlist' || tile.kind === 'mix' ? 'playlist' : null;
   return e('div', Object.assign({
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, tile); } },
     style: {
@@ -151,12 +176,17 @@ function JumpTile({ tile, onOpenTile, onPlayTile, onContextMenu, onArtError }) {
     },
       e('span', { style: { flex: `0 0 ${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, display: 'block' } },
         e(ArtBox, {
-          imageUrl, mosaic, item, onArtError,
+          imageUrl, mosaic, item, onArtError, placeholder,
           style: { width: `${HOME_TILE_HEIGHT}px`, height: `${HOME_TILE_HEIGHT}px`, borderRadius: 0, aspectRatio: 'auto' },
         })),
       e('span', { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' } },
         e('span', { style: Object.assign({ fontWeight: 600, fontSize: '14px' }, ELLIPSIS) }, title),
-        e('span', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)' }, ELLIPSIS) }, tile.subtitle))),
+        // On the hover fill (--accent-surface) the secondary grey falls under
+        // 4.5:1 in light mode, so the subtitle takes the primary text colour.
+        e('span', {
+          'data-jump-subtitle': '',
+          style: Object.assign({ fontSize: '12px', color: reveal.shown ? 'var(--text-primary)' : 'var(--text-secondary)' }, ELLIPSIS),
+        }, tile.subtitle))),
     e('button', {
       type: 'button', 'aria-label': `Play ${title}`,
       onClick: () => onPlayTile && onPlayTile(tile),
@@ -167,9 +197,12 @@ function JumpTile({ tile, onOpenTile, onPlayTile, onContextMenu, onArtError }) {
     }, PlayGlyph(15)));
 }
 
-function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, onArtError }) {
+// The import card shows only for a new user (no collection, no playlists:
+// `showImport`); with neither tiles nor the card the row hides.
+function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, onArtError, showImport }) {
   const list = Array.isArray(tiles) ? tiles.slice(0, 4) : [];
   if (list.length === 0) {
+    if (!showImport) return null;
     return e('section', { 'aria-labelledby': 'home-jump', style: SECTION_STYLE },
       e('h2', { id: 'home-jump', style: H2_STYLE }, 'Jump back in'),
       e('div', {
@@ -190,7 +223,7 @@ function JumpBackIn({ tiles, onOpenTile, onPlayTile, onContextMenu, onImport, on
   }
   return e('section', { 'aria-labelledby': 'home-jump', style: SECTION_STYLE },
     e('h2', { id: 'home-jump', style: H2_STYLE }, 'Jump back in'),
-    e('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' } },
+    e('div', { style: { display: 'grid', gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px` } },
       list.map((tile, i) => e(JumpTile, {
         key: `${tile.kind}-${(tile.item && tile.item.id) || i}`, tile, onOpenTile, onPlayTile, onContextMenu, onArtError,
       }))));
@@ -227,6 +260,7 @@ function artBadge(album) {
 function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError }) {
   const reveal = useReveal();
   const timer = React.useRef(null);
+  const badgeId = React.useId();
   React.useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   if (!album) return null;
   const title = album.title;
@@ -261,10 +295,13 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
         e(ActionButton, { label: `Add ${title} to a playlist`, size: SIDE_BTN, onClick: () => onAddToPlaylist && onAddToPlaylist(album) }, AddGlyph()),
         e(ActionButton, { label: `Play ${title}`, primary: true, size: MAIN_BTN, onClick: () => onPlay && onPlay(album) }, PlayGlyph(18)),
         e(ActionButton, { label: `Add ${title} to the queue`, size: SIDE_BTN, onClick: () => onQueue && onQueue(album) }, QueueGlyph())),
-      badge && e('span', { style: { position: 'absolute', bottom: '8px', right: '8px', zIndex: 2 } },
-        e(FixedTooltip, { content: badge.text },
+      // The reason is the button's description: a hidden copy is always in
+      // the tree for screen readers, and the tooltip draws it on hover/focus.
+      badge && e('div', { style: { position: 'absolute', bottom: '8px', right: '8px', zIndex: 2 } },
+        e('span', { id: `${badgeId}-why`, style: VISUALLY_HIDDEN }, badge.text),
+        e(FixedTooltip, { content: badge.text, id: `${badgeId}-tip` },
           e('button', {
-            type: 'button', 'aria-label': badge.label,
+            type: 'button', 'aria-label': badge.label, 'aria-describedby': `${badgeId}-why`,
             style: {
               width: '26px', height: '26px', borderRadius: '50%', border: 'none', padding: 0, cursor: 'help',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -297,7 +334,7 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
     style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 },
   }, reveal.props),
     e('div', { onClick: open, style: { cursor: 'pointer' } },
-      e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError },
+      e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist' },
         chip && e('span', { style: chipStyle() }, chip),
         badge && e('span', {
           style: {
@@ -424,10 +461,16 @@ function AlbumsRow(props) {
   if (all.length === 0) return null;
   const chips = sourceChips(all, (a, id) => a.sourceLabel || id, props.sourceColors);
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
+  // While a refresh runs the icon spins, is disabled and says it's busy.
   const refresh = onRefresh && e('button', {
-    type: 'button', 'aria-label': 'Refresh suggestions', disabled: !!refreshing, onClick: () => onRefresh(),
-    style: { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px', display: 'flex' },
-  }, svg(16, e('path', { d: 'M21 12a9 9 0 1 1-3-6.7M21 3v6h-6' })));
+    type: 'button', 'aria-label': refreshing ? 'Refreshing suggestions' : 'Refresh suggestions',
+    'aria-busy': refreshing ? 'true' : 'false', disabled: !!refreshing,
+    onClick: () => { if (!refreshing) onRefresh(); },
+    style: {
+      background: 'none', border: 'none', cursor: refreshing ? 'default' : 'pointer',
+      color: 'var(--text-secondary)', padding: '4px', display: 'flex',
+    },
+  }, svg(16, e('path', { d: 'M21 12a9 9 0 1 1-3-6.7M21 3v6h-6' }), refreshing ? { className: 'animate-spin' } : undefined));
   return e('section', { 'aria-labelledby': 'home-albums', style: SECTION_STYLE },
     e(SectionHeader, {
       id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo, extra: refresh,
@@ -437,57 +480,81 @@ function AlbumsRow(props) {
       shown.map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
 }
 
+// Two halves side by side. Each is its own column at a fixed basis (half the
+// row less half the gap), so a half that is alone stays half width, and a
+// half still loading draws its skeleton in its own place while the other
+// shows its cards. A half that is neither loading nor has cards is left out.
 function FreshCriticalRow(props) {
-  const { fresh, critical, navigateTo } = props;
-  const half = (id, title, sub, page, view, items) => e('section', {
-    key: id, 'aria-labelledby': id, style: Object.assign({ flex: '1 1 480px', minWidth: 0 }, SECTION_STYLE),
+  const { fresh, critical, freshLoading, criticalLoading, navigateTo } = props;
+  const half = (id, title, sub, page, view, items, loading) => e('section', {
+    key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
+    style: Object.assign({ flex: HOME_HALF_FLEX, minWidth: 0 }, SECTION_STYLE),
   },
     e(SectionHeader, { id, title, sub, page, view, navigateTo }),
-    e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-      items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
+    loading
+      ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })
+      : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+        items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
   const f = Array.isArray(fresh) ? fresh : [];
   const c = Array.isArray(critical) ? critical : [];
-  if (f.length === 0 && c.length === 0) return null;
-  return e('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '32px' } },
-    f.length > 0 && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f),
-    c.length > 0 && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c));
+  const showF = f.length > 0 || !!freshLoading;
+  const showC = c.length > 0 || !!criticalLoading;
+  if (!showF && !showC) return null;
+  return e('div', { style: { display: 'flex', gap: `${HOME_HALF_GAP}px` } },
+    showF && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f, f.length === 0),
+    showC && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c, c.length === 0));
 }
 
 // A concert card is not clickable as a whole: "Tickets" is its only action.
-// One seller is a direct link; several open a small popover of links that
-// closes on an outside click or Escape.
+// One seller is a direct link; several make a disclosure: the Tickets button
+// (aria-expanded, aria-controls) shows a list of plain links. It closes on an
+// outside click, on Escape (focus goes back to Tickets when it was inside),
+// and when focus leaves it.
 function TicketsLink({ sellers, artist }) {
   const [open, setOpen] = React.useState(false);
   const wrap = React.useRef(null);
+  const trigger = React.useRef(null);
+  const listId = `${React.useId()}-tickets`;
   React.useEffect(() => {
     if (!open) return undefined;
     const onDown = (ev) => { if (wrap.current && !wrap.current.contains(ev.target)) setOpen(false); };
-    const onKey = (ev) => { if (ev.key === 'Escape') setOpen(false); };
+    const onKey = (ev) => {
+      if (ev.key !== 'Escape') return;
+      const inside = !!(wrap.current && document.activeElement && wrap.current.contains(document.activeElement));
+      setOpen(false);
+      if (inside && trigger.current) trigger.current.focus();
+    };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [open]);
   const tix = { font: 'inherit', fontSize: '12px', fontWeight: 600, marginTop: '2px', color: 'var(--accent-primary)', textDecoration: 'underline', textAlign: 'left' };
-  if (sellers.length === 0) return null;
-  if (sellers.length === 1) {
-    return e('a', { href: sellers[0].ticketUrl, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Tickets for ${artist}`, style: tix }, 'Tickets');
+  const safe = (sellers || []).filter((s) => s && isHttpUrl(s.ticketUrl));
+  if (safe.length === 0) return null;
+  if (safe.length === 1) {
+    return e('a', { href: safe[0].ticketUrl, target: '_blank', rel: 'noopener noreferrer', 'aria-label': `Tickets for ${artist}`, style: tix }, 'Tickets');
   }
-  return e('div', { ref: wrap, style: { position: 'relative', alignSelf: 'flex-start' } },
+  return e('div', {
+    ref: wrap,
+    // Focus moving out of the trigger and its list closes the list.
+    onBlur: (ev) => { if (!ev.currentTarget.contains(ev.relatedTarget)) setOpen(false); },
+    style: { position: 'relative', alignSelf: 'flex-start' },
+  },
     e('button', {
-      type: 'button', 'aria-haspopup': 'true', 'aria-expanded': open, 'aria-label': `Tickets for ${artist}`,
+      ref: trigger, type: 'button', 'aria-expanded': open, 'aria-controls': listId, 'aria-label': `Tickets for ${artist}`,
       onClick: () => setOpen((v) => !v),
       style: Object.assign({ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }, tix),
     }, 'Tickets'),
     open && e('div', {
-      role: 'menu',
+      id: listId,
       style: {
         position: 'absolute', left: 0, top: '100%', marginTop: '4px', zIndex: 20, minWidth: '160px',
         display: 'flex', flexDirection: 'column', padding: '4px', borderRadius: '10px',
         border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-secondary)',
         boxShadow: '0 4px 12px rgba(0,0,0,.18)',
       },
-    }, sellers.map((s, i) => e('a', {
-      key: i, role: 'menuitem', href: s.ticketUrl, target: '_blank', rel: 'noopener noreferrer',
+    }, safe.map((s, i) => e('a', {
+      key: i, href: s.ticketUrl, target: '_blank', rel: 'noopener noreferrer',
       onClick: () => setOpen(false),
       style: { fontSize: '13px', padding: '8px 10px', borderRadius: '6px', color: 'var(--text-primary)', textDecoration: 'none' },
     }, s.label || s.source || 'Tickets'))));
@@ -501,7 +568,7 @@ function ConcertCard({ concert }) {
   const venue = concert.venue || {};
   const city = [venue.city, venue.region, venue.country].filter(Boolean).join(', ');
   const place = [venue.name || 'Venue TBA', city].filter(Boolean).join(' · ');
-  const sellers = (concert.ticketSources || []).filter((s) => s && s.ticketUrl);
+  const sellers = (concert.ticketSources || []).filter((s) => s && isHttpUrl(s.ticketUrl));
   return e('div', {
     style: {
       display: 'flex', alignItems: 'center', gap: '14px', padding: '12px', borderRadius: '14px', minWidth: 0,

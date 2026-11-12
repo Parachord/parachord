@@ -45,6 +45,17 @@ describe('AlbumCard', () => {
     expect(html).toMatch(/bottom:8px;right:8px;z-index:2/);
     expect(html).not.toMatch(/top:8px;left:8px;z-index:2/);
   });
+  test('the badge reason reaches screen readers: aria-describedby names a hidden copy', () => {
+    const html = h(S.AlbumCard, { album: { ...album, resolverId: 'shuffleupagus', reason: 'Because you love slowcore' } });
+    const id = (html.match(/aria-describedby="([^"]+)"/) || [])[1];
+    expect(id).toBeTruthy();
+    expect(html).toContain(`id="${id}"`);
+    expect(html).toMatch(new RegExp(`id="${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>Because you love slowcore<`));
+  });
+  test('the badge wrapper is a div, never a div inside a span', () => {
+    const html = h(S.AlbumCard, { album: { ...album, resolverId: 'shuffleupagus', reason: 'r' } });
+    expect(html).not.toMatch(/<span[^>]*><div/);
+  });
   test('a Critical Darlings pick badges only when it has a summary', () => {
     const pick = { title: 'Valentine', artist: 'CMA', homeRow: 'critical' };
     expect(h(S.AlbumCard, { album: pick })).not.toContain('What the critics said');
@@ -107,8 +118,43 @@ describe('JumpBackIn', () => {
     expect(html).toMatch(/aria-label="Play Recent loves"[^>]*width:38px/);
     expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*<button/);
     expect(html).not.toMatch(/aria-label="Play Recent loves"[^>]*opacity/);
-    const empty = h(S.JumpBackIn, { tiles: [] });
-    expect(empty).toContain('Import');
+  });
+  test('with no tiles, the import card shows only for a new user', () => {
+    expect(h(S.JumpBackIn, { tiles: [], showImport: true })).toContain('Import');
+    expect(h(S.JumpBackIn, { tiles: [], showImport: false })).toBe('');
+  });
+  test('a playlist tile with no covers yet shows the playlist glyph, not an empty box', () => {
+    const html = h(S.JumpBackIn, { tiles: [{ kind: 'playlist', item: { id: 'p', title: 'Hosted' }, subtitle: 'Playlist' }] });
+    expect(html).toContain('data-playlist-glyph');
+  });
+  test('the grid is four across when wide and two by two when narrow, shared with the skeleton', () => {
+    const { HOME_JUMP_GRID } = require('../../src/renderer/components/home-skeletons');
+    const html = h(S.JumpBackIn, { tiles: [{ kind: 'loves', item: [], subtitle: 'x' }] });
+    expect(html).toContain(`grid-template-columns:${HOME_JUMP_GRID}`);
+    expect(HOME_JUMP_GRID).toMatch(/^repeat\(auto-fit, minmax\(clamp\(calc\(25% - 10px\), calc\(\(920px - 100%\) \* 999\), calc\(50% - 7px\)\), 1fr\)\)$/);
+  });
+});
+
+describe('JumpTile hover contrast', () => {
+  const find = (node, pred) => {
+    if (!node || typeof node !== 'object') return null;
+    if (Array.isArray(node)) { for (const n of node) { const f = find(n, pred); if (f) return f; } return null; }
+    if (node.props && pred(node)) return node;
+    return find(node.props && node.props.children, pred);
+  };
+  const subtitleColor = (hovered) => {
+    const tile = { kind: 'loves', item: [], subtitle: 'Your recent loves' };
+    const jt = find(S.JumpBackIn({ tiles: [tile] }), (n) => n.props.tile === tile);
+    const real = global.React;
+    global.React = { ...real, useState: () => [hovered, () => {}] };
+    try {
+      const inner = jt.type(jt.props);
+      return find(inner, (n) => n.props['data-jump-subtitle'] === '').props.style.color;
+    } finally { global.React = real; }
+  };
+  test('the subtitle is secondary at rest and primary on the hover fill (4.5:1 in light mode)', () => {
+    expect(subtitleColor(false)).toBe('var(--text-secondary)');
+    expect(subtitleColor(true)).toBe('var(--text-primary)');
   });
 });
 
@@ -158,6 +204,42 @@ describe('Rows', () => {
     expect(html).toContain('aria-label="See all in Fresh Drops"');
     expect(html).not.toContain('Critical Darlings');
   });
+  test('a half that is still loading draws its skeleton in place beside the other half', () => {
+    const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [], criticalLoading: true, navigateTo: () => {} });
+    const fresh = html.indexOf('id="home-fresh"');
+    const critical = html.indexOf('id="home-critical"');
+    expect(fresh).toBeGreaterThan(-1);
+    expect(critical).toBeGreaterThan(fresh);
+    expect((html.slice(critical).match(/aspect-square/g) || []).length).toBe(3);
+    expect(html).toMatch(/aria-labelledby="home-critical" aria-busy="true"/);
+    expect(html.slice(fresh, critical)).not.toContain('animate-shimmer');
+  });
+  test('each half keeps a fixed half-width basis, alone or not, and the row never wraps', () => {
+    const { HOME_HALF_FLEX } = require('../../src/renderer/components/home-skeletons');
+    expect(HOME_HALF_FLEX).toBe('0 0 calc(50% - 16px)');
+    const alone = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [], navigateTo: () => {} });
+    expect(alone).toContain('flex:0 0 calc(50% - 16px)');
+    expect(alone.startsWith('<div style="display:flex;gap:32px">')).toBe(true);
+    const loading = h(S.FreshCriticalRow, { fresh: [], critical: [], freshLoading: true, criticalLoading: true });
+    expect((loading.match(/flex:0 0 calc\(50% - 16px\)/g) || []).length).toBe(2);
+  });
+  test('neither half: nothing', () => {
+    expect(h(S.FreshCriticalRow, { fresh: [], critical: [] })).toBe('');
+  });
+  test('the Refresh icon says it is busy and spins while a refresh runs', () => {
+    const albums = [{ title: 'T', artist: 'A', resolverId: 'lastfm' }];
+    const idle = h(S.AlbumsRow, { albums, onRefresh: () => {}, refreshing: false });
+    expect(idle).toMatch(/<button[^>]*aria-label="Refresh suggestions"[^>]*aria-busy="false"/);
+    expect(idle).not.toContain('animate-spin');
+    const busy = h(S.AlbumsRow, { albums, onRefresh: () => {}, refreshing: true });
+    expect(busy).toMatch(/<button[^>]*aria-busy="true"[^>]*disabled=""/);
+    expect(busy).toContain('class="animate-spin"');
+  });
+  test('a playlist card with no covers shows the playlist glyph', () => {
+    expect(h(S.PlaylistCard, { playlist: { id: 'p', title: 'P' } })).toContain('data-playlist-glyph');
+    expect(h(S.PlaylistCard, { playlist: { id: 'p', title: 'P', mosaic: ['a', 'b', 'c', 'd'] } })).not.toContain('data-playlist-glyph');
+    expect(h(S.AlbumCard, { album: { title: 'T', artist: 'A' } })).not.toContain('data-playlist-glyph');
+  });
   test('Concert card shows date, artist, venue, city', () => {
     const concerts = [{ id: 'c1', date: '2026-12-05', artist: 'Hovvdy', venue: { name: 'Lodge Room', city: 'Los Angeles' }, ticketSources: [{ source: 'songkick', ticketUrl: 'https://t' }] }];
     const html = h(S.ConcertsRow, { concerts, navigateTo: () => {} });
@@ -194,44 +276,127 @@ describe('Concert cards', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [sellers2[0]] }] });
     expect(html).toMatch(/<a href="https:\/\/s"[^>]*>Tickets<\/a>/);
   });
-  test('several sellers: Tickets is a button, the popover starts closed', () => {
+  test('several sellers: Tickets is a disclosure button, the list starts closed', () => {
     const html = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: sellers2 }] });
-    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*>Tickets<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*aria-controls="[^"]+"[^>]*>Tickets<\/button>/);
+    expect(html).not.toContain('aria-haspopup');
     expect(html).not.toContain('Songkick');
   });
-  test('the popover lists each seller as a link and closes on Escape and outside click', () => {
+  test('only http(s) ticket links reach an href', () => {
+    const bad = [{ source: 'x', ticketUrl: 'javascript:alert(1)' }, { source: 'y', ticketUrl: 'data:text/html,hi' }];
+    expect(h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: bad }] })).not.toContain('Tickets for');
+    const one = h(S.ConcertsRow, { concerts: [{ ...base, ticketSources: [bad[0], sellers2[0]] }] });
+    expect(one).toMatch(/<a href="https:\/\/s"[^>]*>Tickets<\/a>/);
+    expect(one).not.toContain('javascript:');
+  });
+
+  // A small hook harness for TicketsLink: one instance, state writes land at
+  // once, document listeners captured, a fake focusable trigger.
+  function ticketsHarness() {
     const slots = [];
     let i = 0;
     const real = global.React;
     const listeners = {};
-    global.document = { addEventListener: (t, f) => { listeners[t] = f; }, removeEventListener: () => {} };
-    let effect;
-    global.React = {
+    const doc = {
+      activeElement: null,
+      addEventListener: (t, f) => { listeners[t] = f; },
+      removeEventListener: (t) => { delete listeners[t]; },
+    };
+    let effect = null;
+    const fake = {
       ...real,
       useState: (init) => { const k = i++; if (!slots[k]) { slots[k] = [init, (v) => { slots[k][0] = typeof v === 'function' ? v(slots[k][0]) : v; }]; } return [slots[k][0], slots[k][1]]; },
       useRef: (init) => { const k = i++; if (!slots[k]) slots[k] = { current: init }; return slots[k]; },
+      useId: () => 'r1',
       useEffect: (fn) => { effect = fn; },
     };
-    const render = () => { i = 0; return S.__TicketsLink({ sellers: sellers2, artist: 'Hovvdy' }); };
+    const refs = () => slots.filter((x) => x && !Array.isArray(x)); // [wrap, trigger]
+    const render = () => {
+      global.React = fake;
+      global.document = doc;
+      try { i = 0; return S.__TicketsLink({ sellers: sellers2, artist: 'Hovvdy' }); } finally { global.React = real; }
+    };
+    const runEffect = () => { global.document = doc; effect(); };
+    const cleanup = () => { delete global.document; };
+    return { render, runEffect, listeners, doc, refs, cleanup };
+  }
+  const links = (tree) => walk(tree).filter((n) => n.type === 'a');
+  const trigger = (tree) => walk(tree).find((n) => n.type === 'button');
+
+  test('the trigger controls the list it opens; the list is plain links (no menu roles)', () => {
+    const t = ticketsHarness();
     try {
-      let tree = render();
-      const toggle = walk(tree).find((n) => n.props['aria-haspopup']);
-      toggle.props.onClick();
-      tree = render();
-      const links = walk(tree).filter((n) => n.type === 'a');
-      expect(links.map((n) => n.props.href)).toEqual(['https://s', 'https://g']);
-      effect();
-      listeners.keydown({ key: 'Escape' });
-      tree = render();
-      expect(walk(tree).filter((n) => n.type === 'a')).toHaveLength(0);
-      walk(tree).find((n) => n.props['aria-haspopup']).props.onClick();
-      render();
-      effect();
-      slots[1].current = { contains: () => false };
-      listeners.mousedown({ target: {} });
-      tree = render();
-      expect(walk(tree).filter((n) => n.type === 'a')).toHaveLength(0);
-    } finally { global.React = real; delete global.document; }
+      trigger(t.render()).props.onClick();
+      const tree = t.render();
+      const list = walk(tree).find((n) => n.props.id === trigger(tree).props['aria-controls']);
+      expect(list).toBeTruthy();
+      expect(trigger(tree).props['aria-expanded']).toBe(true);
+      expect(links(tree).map((n) => n.props.href)).toEqual(['https://s', 'https://g']);
+      expect(walk(tree).some((n) => n.props.role === 'menu' || n.props.role === 'menuitem')).toBe(false);
+    } finally { t.cleanup(); }
+  });
+
+  test('Escape closes it and returns focus to Tickets when focus was inside', () => {
+    const t = ticketsHarness();
+    try {
+      trigger(t.render()).props.onClick();
+      t.render();
+      const [wrap, trig] = t.refs();
+      const focused = { id: 'a link' };
+      const focus = jest.fn();
+      wrap.current = { contains: (el) => el === focused };
+      trig.current = { focus };
+      t.doc.activeElement = focused;
+      t.runEffect();
+      t.listeners.keydown({ key: 'Escape' });
+      expect(links(t.render())).toHaveLength(0);
+      expect(focus).toHaveBeenCalled();
+    } finally { t.cleanup(); }
+  });
+
+  test('Escape with focus elsewhere closes it without moving focus', () => {
+    const t = ticketsHarness();
+    try {
+      trigger(t.render()).props.onClick();
+      t.render();
+      const [wrap, trig] = t.refs();
+      const focus = jest.fn();
+      wrap.current = { contains: () => false };
+      trig.current = { focus };
+      t.doc.activeElement = { id: 'elsewhere' };
+      t.runEffect();
+      t.listeners.keydown({ key: 'Escape' });
+      expect(links(t.render())).toHaveLength(0);
+      expect(focus).not.toHaveBeenCalled();
+    } finally { t.cleanup(); }
+  });
+
+  test('an outside click closes it', () => {
+    const t = ticketsHarness();
+    try {
+      trigger(t.render()).props.onClick();
+      t.render();
+      t.refs()[0].current = { contains: () => false };
+      t.runEffect();
+      t.listeners.mousedown({ target: {} });
+      expect(links(t.render())).toHaveLength(0);
+    } finally { t.cleanup(); }
+  });
+
+  test('focus leaving the wrapper closes it; moving between its links does not', () => {
+    const t = ticketsHarness();
+    try {
+      let tree = t.render();
+      trigger(tree).props.onClick();
+      tree = t.render();
+      const wrapEl = walk(tree).find((n) => typeof n.props.onBlur === 'function');
+      const inside = { id: 'link 2' };
+      const currentTarget = { contains: (el) => el === inside };
+      wrapEl.props.onBlur({ currentTarget, relatedTarget: inside });
+      expect(links(t.render())).toHaveLength(2);
+      wrapEl.props.onBlur({ currentTarget, relatedTarget: { id: 'outside' } });
+      expect(links(t.render())).toHaveLength(0);
+    } finally { t.cleanup(); }
   });
 });
 

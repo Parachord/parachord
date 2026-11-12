@@ -175,14 +175,16 @@ function whenPhraseShort(at, now) {
   return p.startsWith('this ') ? 'today' : p;
 }
 
+// The import card is for a new user only: no collection and no playlists.
+// Empty tiles alone (a collection with no loves, say) don't show it.
 function homeSections({
-  bannerItems, tiles, mixes, playlists, albums, fresh, critical, concerts, concertsLocation,
+  bannerItems, tiles, mixes, playlists, albums, fresh, critical, concerts, concertsLocation, hasCollection,
 } = {}) {
   const has = (a) => Array.isArray(a) && a.length > 0;
   return {
     banner: has(bannerItems),
     jump: has(tiles),
-    importCard: !has(tiles),
+    importCard: !hasCollection && !has(playlists),
     mixes: has(mixes),
     playlists: has(playlists),
     albums: has(albums),
@@ -202,13 +204,25 @@ const PHRASINGS = [
   (a) => `A road trip playlist starting with ${a}`,
 ];
 
+// An artist name as it may appear in the prompt: control characters and the
+// bidi embedding, override and isolation characters (U+202A-202E, U+2066-2069)
+// removed, whitespace collapsed, and capped at 40 characters. The prompt is
+// sent without a confirmation dialog, so a name can't reorder or hide text.
+const NAME_CAP = 40;
+const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+function promptName(name) {
+  if (typeof name !== 'string') return '';
+  const clean = name.replace(/\s+/g, ' ').replace(UNSAFE_CHARS, '').replace(/ +/g, ' ').trim();
+  return Array.from(clean).slice(0, NAME_CAP).join('').trim();
+}
+
 function joinNames(names) {
   if (names.length <= 1) return names[0] || '';
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 function exampleShufflePrompt(artists, seed) {
-  const names = (artists || []).filter((n) => typeof n === 'string' && n.trim()).slice(0, 3);
+  const names = (artists || []).map(promptName).filter(Boolean).slice(0, 3);
   if (!names.length) return 'Make me a playlist for right now';
   const i = ((Math.trunc(seed) || 0) % 4 + 4) % 4;
   return PHRASINGS[i](joinNames(names));
@@ -261,8 +275,36 @@ function filterBySource(items, sourceId) {
     || (Array.isArray(it.sourceIds) && it.sourceIds.includes(sourceId))));
 }
 
+// Recommended albums Home asks a cover for: the first `perSource` of the
+// whole list (the All chip) and of each source's own list (its chip), so
+// picking a chip never shows cards without covers. Order kept, no repeats.
+function albumsNeedingArt(albums, perSource = 6) {
+  const all = Array.isArray(albums) ? albums.filter(Boolean) : [];
+  const ids = [];
+  for (const a of all) {
+    for (const id of [a.resolverId].concat(Array.isArray(a.sourceIds) ? a.sourceIds : [])) {
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+  }
+  const want = new Set(all.slice(0, perSource));
+  for (const id of ids) for (const a of filterBySource(all, id).slice(0, perSource)) want.add(a);
+  return all.filter((a) => want.has(a));
+}
+
+// Home's recommendations load runs on a visit unless one is running, or a
+// full load finished within the last 10 minutes (the per-provider cache
+// would serve it all anyway; this skips the work of asking).
+const HOME_RECOMMENDATIONS_THROTTLE_MS = 10 * 60 * 1000;
+function shouldLoadHomeRecommendations({ loading, loadStarted, lastFullLoadAt, now }) {
+  if (loading && loadStarted) return false;
+  const at = num(lastFullLoadAt);
+  if (at !== null && at > 0 && now - at < HOME_RECOMMENDATIONS_THROTTLE_MS) return false;
+  return true;
+}
+
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
-  exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists,
+  exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists, albumsNeedingArt,
+  shouldLoadHomeRecommendations, HOME_RECOMMENDATIONS_THROTTLE_MS,
 };

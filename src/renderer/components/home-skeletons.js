@@ -17,6 +17,18 @@ const HOME_CONCERT_CARDS = 4;
 // art-to-title gap inside a card. Rows and skeletons both read these.
 const HOME_ROW_GAP = 24;
 const HOME_CARD_TEXT_GAP = 10;
+// Jump back in: four tiles across on a wide page, two by two below about
+// 920px of row width (four tiles under ~220px each can't show their text).
+// The min track width is a clamp: a quarter of the row (less its share of the
+// gaps) when the row is wide, half of it when narrow, since the middle term is
+// hugely negative or positive on either side of the 920px break.
+const HOME_JUMP_GAP = 12;
+const HOME_JUMP_GRID = 'repeat(auto-fit, minmax(clamp(calc(25% - 10px), calc((920px - 100%) * 999), calc(50% - 7px)), 1fr))';
+// Fresh Drops and Critical Darlings: each half sits at a fixed basis of half
+// the row, so a half alone stays half width and nothing reflows as the other
+// half's data lands.
+const HOME_HALF_GAP = 32;
+const HOME_HALF_FLEX = `0 0 calc(50% - ${HOME_HALF_GAP / 2}px)`;
 
 const bar = (className, style) => React.createElement('div', {
   className: `rounded shimmer-light animate-shimmer ${className}`,
@@ -29,12 +41,12 @@ const stagger = (index) => `${Math.min(index * 30, 300)}ms`;
 function JumpBackInSkeleton() {
   return React.createElement('div', {
     'aria-hidden': 'true',
-    style: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }
+    style: { display: 'grid', gridTemplateColumns: HOME_JUMP_GRID, gap: `${HOME_JUMP_GAP}px` }
   }, [0, 1, 2, 3].map((i) => React.createElement('div', {
     key: i,
     style: {
       display: 'flex', alignItems: 'center', gap: '12px', height: `${HOME_TILE_HEIGHT}px`,
-      borderRadius: '10px', overflow: 'hidden', backgroundColor: 'var(--card-bg)'
+      borderRadius: '10px', overflow: 'hidden', backgroundColor: 'var(--bg-secondary)'
     }
   },
     React.createElement('div', {
@@ -95,5 +107,5 @@ function ConcertRowSkeleton() {
 module.exports = {
   JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton,
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS,
-  HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
+  HOME_ROW_GAP, HOME_CARD_TEXT_GAP, HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_GAP, HOME_HALF_FLEX,
 };
