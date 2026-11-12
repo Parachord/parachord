@@ -5875,6 +5875,7 @@ const Parachord = () => {
   const showToastRef = useRef(null);
   const showExternalTrackPromptUIRef = useRef(null);
   const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
+  const pendingChatPromptRef = useRef(null); // Home's Ask prompt, sent once the chat panel state commits
   const dispatchProtocolUrlRef = useRef(null); // Latest protocol dispatcher, for in-app callers (Home's Ask box)
   const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
   const handleStartCollectionStationRef = useRef(null); // Ref for protocol handler
@@ -12092,14 +12093,16 @@ const Parachord = () => {
             break;
 
           case 'chat': {
-            if (openAiChatRef.current) {
-              openAiChatRef.current();
-            }
+            // false = no chat plugin enabled; openAiChat already toasted.
+            const chatOpened = openAiChatRef.current ? openAiChatRef.current() : true;
             if (params.prompt && handleAiChatSendRef.current) {
               const prompt = params.prompt.slice(0, 500);
               if (origin === 'home') {
-                // The user typed or approved this prompt in the app.
-                handleAiChatSendRef.current(prompt);
+                // The user typed or approved this prompt in the app. Queue it:
+                // openAiChat's state hasn't committed yet, so sending now would
+                // use the previous render's provider and messages.
+                pendingChatPromptRef.current = chatOpened === false ? null : prompt;
+                if (chatOpened !== false) setPendingChatTick((t) => t + 1);
                 break;
               }
               showConfirmDialog({
@@ -17480,7 +17483,7 @@ ${trackListXml}
 
     if (enabledServices.length === 0) {
       showToast('No AI chat plugins configured. Enable Ollama or Claude in Settings.', 'error');
-      return;
+      return false;
     }
 
     // Use selected provider or first available
@@ -17518,6 +17521,7 @@ ${trackListXml}
       provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
       loading: false
     });
+    return true;
   };
 
   // Close sidebar with animation
@@ -17655,6 +17659,20 @@ ${trackListXml}
   // Keep AI chat refs in sync for protocol handler
   useEffect(() => { openAiChatRef.current = openAiChat; });
   useEffect(() => { handleAiChatSendRef.current = handleAiChatSend; });
+
+  // A prompt from Home's Ask box waits here until openAiChat's state has
+  // committed (the send reads selectedChatProvider and the messages, which a
+  // same-tick call would see stale) and any in-flight reply has finished. The
+  // tick makes the effect run when the panel is already open.
+  const [pendingChatTick, setPendingChatTick] = useState(0);
+  useEffect(() => {
+    const pending = pendingChatPromptRef.current;
+    if (!window.shouldSendPendingChatPrompt({
+      pending, chatOpen: aiChatOpen, providerId: selectedChatProvider, loading: aiChatLoading,
+    })) return;
+    pendingChatPromptRef.current = null;
+    handleAiChatSendRef.current?.(pending);
+  }, [aiChatOpen, selectedChatProvider, aiChatLoading, pendingChatTick]);
 
   // Scroll to bottom when chat window is opened (after slide-in animation completes)
   useEffect(() => {
