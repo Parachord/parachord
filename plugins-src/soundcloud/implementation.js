@@ -5,50 +5,45 @@
 // new Function) — no shared scope between them; helpers must be embedded per function.
 module.exports = {
   search: async function (query, config) {
+    // Signed out is a miss: an empty answer. A request that fails (offline,
+    // a 401 or 429, a server error, a body that isn't a list) throws, so the
+    // host can tell "SoundCloud has nothing" from "SoundCloud couldn't answer"
+    // and ask again later instead of recording a miss (parachord-mobile#566).
+    // The message carries the HTTP status ("SoundCloud search failed: 401"),
+    // so a host can refresh the sign-in and retry on a 401.
     if (!config.token) {
       console.log('SoundCloud: No token, skipping search');
       return [];
     }
-    try {
-      console.log('Searching SoundCloud for:', query);
-      const response = await fetch(
-        `https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`,
-        { headers: { Authorization: `OAuth ${config.token}` } },
-      );
-      if (!response.ok) {
-        console.error('SoundCloud search failed:', response.status);
-        if (response.status === 401) {
-          console.log('SoundCloud token expired or invalid');
-        }
-        return [];
-      }
-      const tracks = await response.json();
-      if (!Array.isArray(tracks)) {
-        console.log('No SoundCloud results found');
-        return [];
-      }
-      const results = tracks.map((track) => ({
-        id: `soundcloud-${track.id}`,
-        title: track.title,
-        artist: track.user?.username || 'Unknown Artist',
-        album: track.label_name || undefined,
-        duration: Math.floor((track.duration || 0) / 1000),
-        sources: ['soundcloud'],
-        soundcloudId: track.id,
-        soundcloudUrl: track.permalink_url,
-        albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url,
-        streamable: track.streamable && track.access !== 'blocked',
-        // The widget plays `preview` and `blocked` tracks in full almost
-        // never; rank them after other sources (compareCandidateSources).
-        limitedPlayback: !!track.access && track.access !== 'playable',
-        waveformUrl: track.waveform_url,
-      }));
-      console.log(`Found ${results.length} SoundCloud results`);
-      return results;
-    } catch (error) {
-      console.error('SoundCloud search error:', error);
-      return [];
+    console.log('Searching SoundCloud for:', query);
+    const response = await fetch(
+      `https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=20`,
+      { headers: { Authorization: `OAuth ${config.token}` } },
+    );
+    if (!response.ok) {
+      console.error('SoundCloud search failed:', response.status);
+      throw new Error('SoundCloud search failed: ' + response.status);
     }
+    const tracks = await response.json();
+    if (!Array.isArray(tracks)) throw new Error('SoundCloud search returned no track list');
+    const results = tracks.map((track) => ({
+      id: `soundcloud-${track.id}`,
+      title: track.title,
+      artist: track.user?.username || 'Unknown Artist',
+      album: track.label_name || undefined,
+      duration: Math.floor((track.duration || 0) / 1000),
+      sources: ['soundcloud'],
+      soundcloudId: track.id,
+      soundcloudUrl: track.permalink_url,
+      albumArt: track.artwork_url?.replace('-large', '-t500x500') || track.user?.avatar_url,
+      streamable: track.streamable && track.access !== 'blocked',
+      // The widget plays `preview` and `blocked` tracks in full almost
+      // never; rank them after other sources (compareCandidateSources).
+      limitedPlayback: !!track.access && track.access !== 'playable',
+      waveformUrl: track.waveform_url,
+    }));
+    console.log(`Found ${results.length} SoundCloud results`);
+    return results;
   },
   resolve: async function (artist, track, album, config) {
     // The search result to play (#1306). SoundCloud is mostly fan uploads, so a
