@@ -1,4 +1,4 @@
-// Source of truth for plugins/listenbrainz.axe v1.3.0.
+// Source of truth for plugins/listenbrainz.axe v1.4.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -166,6 +166,88 @@ module.exports = {
     if (explorationItems.length) sections.push({ id: 'weekly-exploration', title: 'Weekly Exploration', items: explorationItems });
     if (jamsItems.length) sections.push({ id: 'weekly-jams', title: 'Weekly Jams', items: jamsItems });
     return { sections };
+  },
+
+  // capabilities.historyMixes (docs/architecture/plugins.md, "History
+  // mixes"): the newest Daily Jams and the newest Weekly Jams, both made from
+  // the user's own listening. The ids and urls are the ones getRecommendations
+  // gives its weekly-jams playlist items (the bare playlist MBID,
+  // https://listenbrainz.org/playlist/<mbid>/), so the Recommendations page
+  // can drop a mix by id. getRecommendations still returns the Weekly Jams
+  // for apps older than this capability. No username is a miss; a failed
+  // request throws so an outage never replaces the cached mixes with [].
+  getHistoryMixes: async function (config) {
+    const username = config && config.username;
+    if (!username) return { mixes: [] };
+    // Inline retry helper (functions materialize isolated), as in
+    // getRecommendations.
+    const fetchListenBrainz = async (url) => {
+      const maxRetries = 3;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(url);
+          if (response.ok) return response;
+          if (response.status === 429 || response.status === 503) {
+            const delay = Math.pow(2, attempt) * 1500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          return response;
+        } catch (networkError) {
+          if (attempt < maxRetries - 1) {
+            const delay = Math.pow(2, attempt) * 1500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            throw networkError;
+          }
+        }
+      }
+      return fetch(url);
+    };
+    const dateOf = (entry) => {
+      const t = Date.parse((entry && entry.playlist && entry.playlist.date) || '');
+      return Number.isFinite(t) ? t : 0;
+    };
+    // Same classification as getRecommendations: the algorithm source_patch,
+    // then the title.
+    const typeOf = (entry) => {
+      const pl = (entry && entry.playlist) || {};
+      const ext = (pl.extension && pl.extension['https://musicbrainz.org/doc/jspf#playlist']) || {};
+      const meta = (ext.additional_metadata && ext.additional_metadata.algorithm_metadata) || {};
+      if (typeof meta.source_patch === 'string' && meta.source_patch) return meta.source_patch;
+      const title = String(pl.title || '').toLowerCase();
+      if (title.indexOf('weekly exploration') === 0) return 'weekly-exploration';
+      if (title.indexOf('daily jams') === 0) return 'daily-jams';
+      if (title.indexOf('weekly jams') === 0) return 'weekly-jams';
+      return '';
+    };
+    const response = await fetchListenBrainz(`https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/playlists/recommendations`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ListenBrainz history mixes: ${response.status}`);
+    }
+    const data = await response.json();
+    const playlists = (data && data.playlists) || [];
+    const DESCRIPTIONS = {
+      'daily-jams': 'Made from your listening, refreshed daily',
+      'weekly-jams': 'Made from your listening, refreshed weekly'
+    };
+    const NAMES = { 'daily-jams': 'Daily Jams', 'weekly-jams': 'Weekly Jams' };
+    const mixes = [];
+    ['daily-jams', 'weekly-jams'].forEach((type) => {
+      const newest = playlists
+        .filter(entry => typeOf(entry) === type)
+        .sort((a, b) => dateOf(b) - dateOf(a))[0];
+      const id = newest && String((newest.playlist && newest.playlist.identifier) || '').split('/').pop();
+      if (!id) return;
+      mixes.push({
+        type: 'playlist',
+        id,
+        name: String(newest.playlist.title || '') || NAMES[type],
+        description: DESCRIPTIONS[type],
+        url: `https://listenbrainz.org/playlist/${id}/`
+      });
+    });
+    return { mixes };
   },
 
   // The similarUsers capability: listeners whose taste is closest to the

@@ -151,6 +151,61 @@ module.exports = {
     console.log('[AppleMusic] recommendations', sections.length, 'sections');
     return { sections: sections };
   },
+  // capabilities.historyMixes (docs/architecture/plugins.md, "History
+  // mixes"): the personal mixes made from what the account already plays
+  // (Heavy Rotation, Your Essentials, Favorites, Replay), which
+  // getRecommendations leaves off the Recommendations page. Same source body
+  // (window.appleMusicPersonalRecommendations) and same ids
+  // (applemusic-playlist-<id>) as getRecommendations, so the page can drop a
+  // mix by id. isPlayHistoryMix and HISTORY_MIXES are a verbatim copy of
+  // getRecommendations' (functions materialize isolated, so a shared
+  // module-scope helper would not survive the build); keep the two in step.
+  // A host without the hook answers { mixes: [] }; a refused or missing
+  // sign-in arrives as the hook's notReady error and is rethrown.
+  getHistoryMixes: async function (config) {
+    if (typeof window === 'undefined' || typeof window.appleMusicPersonalRecommendations !== 'function') {
+      return { mixes: [] };
+    }
+    var body = await window.appleMusicPersonalRecommendations(30);
+    var art = function (a) {
+      var u = a && a.artwork && a.artwork.url;
+      return u ? String(u).replace('{w}', '600').replace('{h}', '600').replace('{f}', 'jpg') : null;
+    };
+    var HISTORY_MIXES = ['heavy rotation', 'your essentials', 'favorites', 'favourites'];
+    var isPlayHistoryMix = function (a) {
+      if (a.playlistType === 'replay') return true;
+      if (a.playlistType !== 'personal-mix') return false;
+      var name = String(a.name || '').toLowerCase().replace(/ mix$/, '').trim();
+      var slug = (String(a.url || '').match(/\/playlist\/([^/]+)\//) || [])[1] || '';
+      slug = slug.replace(/-mix$/, '').replace(/-/g, ' ');
+      return HISTORY_MIXES.indexOf(name) !== -1 || HISTORY_MIXES.indexOf(slug) !== -1;
+    };
+    var mixes = [];
+    var seen = {};
+    var addGroup = function (g, depth) {
+      var ga = g && g.attributes;
+      if (!ga) return;
+      var rel = g.relationships || {};
+      var nested = rel.recommendations && rel.recommendations.data;
+      if (Array.isArray(nested) && depth < 2) {
+        nested.forEach(function (n) { addGroup(n, depth + 1); });
+      }
+      var contents = (rel.contents && rel.contents.data) || [];
+      contents.forEach(function (c) {
+        var a = c && c.attributes;
+        if (!a || c.type !== 'playlists' || !c.id) return;
+        if (typeof a.name !== 'string' || !a.name.trim() || !a.url) return;
+        if (!isPlayHistoryMix(a)) return;
+        var id = 'applemusic-playlist-' + c.id;
+        if (seen[id]) return;
+        seen[id] = true;
+        mixes.push({ type: 'playlist', id: id, name: a.name, imageUrl: art(a), url: a.url });
+      });
+    };
+    ((body && body.data) || []).forEach(function (g) { addGroup(g, 0); });
+    console.log('[AppleMusic] history mixes', mixes.length);
+    return { mixes: mixes };
+  },
   resolve: async function (artist, track, album, config) {
     // The platform's gate (validateResolvedTrack in
     // sync-providers/confidence-scoring.js), copied because an .axe function can't
