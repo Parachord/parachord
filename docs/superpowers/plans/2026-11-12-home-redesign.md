@@ -84,7 +84,7 @@ Branching:
 2. **A prompt with `&`, `?`, `#`, quotes or emoji, or over 500 characters**, sent from the Ask box: arrives intact, capped at 500. *Task 4: `buildChatPromptUrl` test.*
 3. **A hosted playlist refreshed with the same tracks reordered:** counts as a change (fresh), adds 0, and shows no "+0" badge. *Task 5: `changeBadge`. Task 12: `stampTrackChanges`.*
 4. **The playing or queued item is also the freshest playlist or the latest love's album:** Jump back in skips it and takes the next candidate, never a duplicate tile. *Task 5: `jumpBackInTiles`.*
-5. **Dismissing the last banner item:** the slot collapses completely, and a dismissed What's New for this version never returns after a restart. *Task 1: `homeBannerItems`. Task 2: smoke render.*
+5. **Dismissing the last banner item:** the slot collapses completely. Release notes stay reachable from the setup element, which turns into a What's new link once setup is done (Task 4b). *Task 1: `homeBannerItems`. Task 2: smoke render.*
 
 ---
 
@@ -233,6 +233,55 @@ Behavior:
   - links from the OS, `/protocol` or the extension always confirm.
 - [ ] **Step 4: Run the protocol tests.** `npx jest tests/protocol`, expecting PASS.
 - [ ] **Step 5: Commit** with the message `feat(protocol): Home's Ask Shuffleupagus sends through parachord://chat without the external-link confirmation`.
+
+### Task 4b: Release notes move into the setup element (the user's correction)
+
+The banner slot is only for announcements created on the backend and pushed to Parachord and/or Achordion. Release notes never use it. They live in the "Finish setting up" element instead.
+
+**Files:**
+- Modify:
+  - `src/renderer/lib/home-banners.js`
+  - `src/renderer/components/home-banner.js`
+  - `src/renderer/lib/home-setup.js`
+  - `src/renderer/components/home-setup.js`
+  - `src/renderer/app.js`: `bannerItems`, `dismissHomeBanner`, `openHomeBannerCta`, and the new `openWhatsNew`.
+  - `src/renderer/components/home-page.js`
+  - `docs/architecture/announcements.md`
+- Test:
+  - `tests/renderer/home-banners.test.js`
+  - `tests/renderer/home-banner.test.js`
+  - `tests/renderer/home-setup.test.js`
+
+**Interfaces:**
+- Banner: `homeBannerItems({ announcements })` returns only `kind: 'announcement'` items. The `whatsNew` input and the `'whats-new'` kind are removed everywhere, including the What's New branches in `dismissHomeBanner` and `openHomeBannerCta`. `bannerViewId` stays.
+- Setup model: `homeSetupItems({ …existing, appVersion, whatsNewUnread })` adds `whatsNew: { version, unread }` to its result.
+  - What's New is never one of `items`, and never counts toward `done` or `total`.
+  - `visible` becomes `mode: 'setup' | 'whats-new'`. It is `'setup'` while any item is open, else `'whats-new'`. The element always renders.
+- `HomeSetupButton({ setup, onAction, onDismiss, onOpenWhatsNew })`:
+  - In `'setup'` mode:
+    - the pill reads "Finish setting up · {done} of {total}", plus an accent dot (`aria-label="New release notes"`) when `setup.whatsNew.unread`;
+    - the popover's first row is "What's new in v{version}" with the same dot. It has no ×, and clicking it calls `onOpenWhatsNew`.
+  - In `'whats-new'` mode: the pill reads "What's new in v{version}", plus the dot when unread, and a click calls `onOpenWhatsNew` directly, with no popover.
+  - Theme variables only.
+- `openWhatsNew()` in `app.js`, added to `HOME_PAGE_HANDLERS` and `homePageHandlers`:
+  - calls `setWhatsNewOpen(true)`;
+  - writes `whats_new_dismissed_version` = the current version (the same write the modal's own dismiss does).
+  - `whatsNewUnread` is `whatsNewDismissedVersion !== appVersion`.
+
+- [ ] **Step 1: Write the failing tests.**
+  - `homeBannerItems` ignores `whatsNew`, and never outputs `kind: 'whats-new'`.
+  - `homeSetupItems`:
+    - with everything connected, `mode === 'whats-new'`;
+    - with one open item, `mode === 'setup'`;
+    - `whatsNew` is never counted in `total`.
+  - Render tests:
+    - `'setup'` mode shows "Finish setting up" and, when unread, the dot labelled "New release notes";
+    - `'whats-new'` mode shows "What's new in v0.9.14".
+  - Source check: no `'whats-new'` kind in `app.js`, `home-banner.js` or `home-banners.js`.
+- [ ] **Step 2: Run them and see them fail.**
+- [ ] **Step 3: Implement**, and update `announcements.md`: the banner is for backend-pushed announcements only, and release notes live in the setup element.
+- [ ] **Step 4: Run the focused tests and page-memo**, then `npm test`.
+- [ ] **Step 5: Commit** with the message `fix(home): release notes live in the setup element; the banner is for announcements only`.
 
 Then run `npm test`, open PR A ("Home redesign 1/4"), referencing #1350 and listing the docs changed.
 

@@ -241,9 +241,12 @@ Today's "Enhance Your Experience" cards (`home-page.js`, around L232) become the
   - Raycast (Mac only).
 - **Done items** show checked and struck through. Open items have an action button and a ×.
 - **Dismissing** an item hides it for good. It's stored under a new key, `home_setup_dismissed` (an array of item ids). Add the key to `ALLOWED_STORE_KEYS`.
-- **Finishing.** The button disappears once every item is done or dismissed.
-- **The What's New card** stops being a setup item.
-  - My call: it shows in the banner slot as a local item, with the same one-at-a-time and dismiss behaviour as an announcement, keyed on the app version as today.
+- **Finishing.** Once every item is done or dismissed, the pill turns into the What's new link (below), and doesn't disappear.
+- **Release notes live in this element too** (the user's call). They never use the banner.
+  - The popover's first row is **What's new in vX.Y.Z**. It opens the existing What's New modal, and shows a dot until this version's notes are opened (`whats_new_dismissed_version`).
+  - The row can't be dismissed and doesn't count toward N of M.
+  - While this version's notes are unread, the pill carries the same dot.
+  - Once every setup item is done or dismissed, the pill doesn't disappear. It becomes **What's new in vX.Y.Z** (with the dot while unread), and a click opens the notes directly. So the release notes always have an entry point.
 - **An empty collection** isn't a setup item. Home shows its own empty state for a new user (below).
 
 ## A new user
@@ -300,10 +303,10 @@ A fresh reviewer read this spec as its builder and raised the points below. Each
    - "Loved" means a track in the collection; its `addedAt` is the love time. The builder checks that synced loves (Spotify and others) carry `addedAt`, and sorts any track without one last.
    - The album tile needs no lookup to render: it shows the track's album name and artist, with art from `getAlbumArt` in the background lane.
    - Opening it uses the normal album opener (placeholder first, lookup after), so nothing lands on the critical path.
-5. **What's New in the banner slot (my call).**
-   - It ranks first, ahead of remote announcements, because it is version-specific and short-lived.
-   - It keeps its existing dismissal key, `whats_new_dismissed_version`, and sends no announcement telemetry.
-   - The banner component takes a list of `{ id, title, body, cta, severity, onDismiss }` items, so the local item and remote announcements share one renderer.
+5. **Release notes are not a banner (the user's correction, 2026-11-12).**
+   - The banner slot is only for announcements created on the backend and pushed to Parachord and/or Achordion.
+   - Release notes live in the "Finish setting up" element (the user's call): a "What's new in vX.Y.Z" row in its popover. Once setup is done, the pill itself becomes that link. See "The setup checklist".
+   - #1352 tracks any further polish.
 6. **"Already playing or queued" (my call).** Jump back in compares each candidate against the playback context of what's playing and of what's queued:
    - a playlist by its id;
    - an album by its MBID, else normalised album and artist;
