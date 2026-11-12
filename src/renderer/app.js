@@ -36905,10 +36905,27 @@ useEffect(() => {
                 )
               )
           ),
-          // Import Playlist button - styled like Add Friend button
+          // Import Playlist button: the outlined secondary style of the album
+          // and playlist Share button (theme variables, card-style border and
+          // hover), sized to sit level with the filled New button beside it.
           React.createElement('button', {
+            type: 'button',
             onClick: () => setShowUrlImportDialog(true),
-            className: 'ml-3 px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5'
+            className: 'ml-3 flex items-center gap-1.5 no-drag',
+            style: {
+              padding: '5px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-default)',
+              backgroundColor: 'var(--card-bg)',
+              color: 'var(--text-secondary)',
+              fontSize: '14px',
+              fontWeight: 500,
+              lineHeight: '20px',
+              cursor: 'pointer',
+              transition: 'border-color 150ms ease, color 150ms ease'
+            },
+            onMouseEnter: (e) => { e.currentTarget.style.borderColor = 'var(--text-tertiary)'; e.currentTarget.style.color = 'var(--text-primary)'; },
+            onMouseLeave: (e) => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-secondary)'; }
           },
             React.createElement('svg', { className: 'w-4 h-4', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
               React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 -4l-4 4m0 0l-4-4m4 4V4' })
