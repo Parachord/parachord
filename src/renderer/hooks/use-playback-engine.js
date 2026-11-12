@@ -688,6 +688,9 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     const startedAtPosition = () => {
       if (startAt > 0 && pendingStartPositionRef.current === pendingStart) pendingStartPositionRef.current = null;
     };
+    // Resuming a listen that was scrobbled before the restart (the saved
+    // position records it): the scrobbler doesn't submit it again.
+    const scrobbleStart = { continuesScrobbled: startAt > 0 && !!pendingStart.scrobbled };
     // If user manually plays something while listening along, end the listen-along session
     // Listen-along tracks are tagged with _playbackContext.type === 'listenAlong'
     const listenAlongFriendNow = listenAlongFriendRef.current;
@@ -1404,7 +1407,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
-          window.scrobbleManager.onTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
         }
 
         // If audio element has duration now, update the track
@@ -1630,7 +1633,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         console.log(`✅ ${serviceName} playing via its embedded player (${effectiveVolume.toFixed(1)}% volume)`);
 
         if (window.scrobbleManager) {
-          window.scrobbleManager.onTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
         }
       } catch (error) {
         if ((error && error.reason === 'superseded') || !isCurrentPlay()) return;
@@ -1897,7 +1900,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       // Notify scrobble manager of track start
       if (window.scrobbleManager) {
-        window.scrobbleManager.onTrackStart(trackToSet);
+        window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
       }
       return;
     }
@@ -2032,7 +2035,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
-          window.scrobbleManager.onTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
         }
       } catch (error) {
         console.error(`❌ ${streamLabel} playback error:`, error);
@@ -2231,7 +2234,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
-          window.scrobbleManager.onTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
         }
 
         if (audioContext) {
@@ -2315,7 +2318,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
             // Notify scrobble manager of track start
             if (window.scrobbleManager) {
-              window.scrobbleManager.onTrackStart(trackToSet);
+              window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
             }
 
             if (audioContext) {

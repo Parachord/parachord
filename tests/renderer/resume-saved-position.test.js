@@ -64,11 +64,11 @@ describe('the wiring', () => {
   });
 
   test('the restored first track resumes at its own saved position only', () => {
-    expect(app).toMatch(/const firstTrackKey = trackPositionKey\(firstTrack\);\s*if \(firstTrackKey && savedQueuePosition && savedQueuePosition\.trackKey === firstTrackKey\) \{\s*const startAt = resumeStartPosition\(\{ position: savedQueuePosition\.position, duration: firstTrack\.duration \}\);\s*if \(startAt > 0\) \{\s*pendingStartPositionRef\.current = \{ trackKey: firstTrackKey, position: startAt \};\s*setProgress\(startAt\);/);
+    expect(app).toMatch(/const firstTrackKey = trackPositionKey\(firstTrack\);\s*if \(firstTrackKey && savedQueuePosition && savedQueuePosition\.trackKey === firstTrackKey\) \{\s*const startAt = resumeStartPosition\(\{ position: savedQueuePosition\.position, duration: firstTrack\.duration \}\);\s*if \(startAt > 0\) \{\s*pendingStartPositionRef\.current = \{ trackKey: firstTrackKey, position: startAt, \.\.\.\(savedQueuePosition\.scrobbled \? \{ scrobbled: true \} : \{\}\) \};\s*setProgress\(startAt\);/);
   });
 
   test('the position is saved every 5 s while playing and on pause, keyed by the track', () => {
-    expect(app).toMatch(/const trackKey = trackPositionKey\(track\);\s*if \(!trackKey \|\| track\._protocolLoading\) return;\s*Promise\.resolve\(window\.electron\.store\.set\('saved_queue_position', \{ trackKey, position: progressRef\.current \}\)\)/);
+    expect(app).toMatch(/const trackKey = trackPositionKey\(track\);\s*if \(!trackKey \|\| track\._protocolLoading\) return;[\s\S]{0,600}?Promise\.resolve\(window\.electron\.store\.set\('saved_queue_position', \{ trackKey, position: progressRef\.current, \.\.\.\(scrobbled \? \{ scrobbled: true \} : \{\}\) \}\)\)/);
     expect(app).toMatch(/if \(!isPlaying\) \{ save\(\); return undefined; \}\s*const timer = setInterval\(save, 5000\);/);
   });
 
@@ -78,7 +78,7 @@ describe('the wiring', () => {
   });
 
   test('a seek on a track that isn\'t loaded yet moves where Play will start', () => {
-    expect(app).toMatch(/if \(trackNeedsExplicitStart\.current && !isPlayingRef\.current\) \{\s*pendingStartPositionRef\.current = \{ trackKey: trackPositionKey\(currentTrack\), position: newPosition \};\s*setProgress\(newPosition\);\s*return;/);
+    expect(app).toMatch(/if \(trackNeedsExplicitStart\.current && !isPlayingRef\.current\) \{[\s\S]{0,400}?pendingStartPositionRef\.current = \{ trackKey, position: newPosition, [^\n]*\};\s*setProgress\(newPosition\);\s*return;/);
   });
 
   test('Previous on a track that isn\'t loaded yet moves the start back to 0 without playing', () => {
