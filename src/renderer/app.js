@@ -18769,6 +18769,12 @@ ${trackListXml}
             setActiveView('new-releases');
             setViewHistory(['library', 'new-releases']);
             console.log(`📦 Restoring last view: new-releases (Fresh Drops)`);
+          } else if (savedLastView.view === 'friendHistory' && String(savedLastView.friendId || '').startsWith('similar:')) {
+            // A recommended listener was never a friend, so there is nothing to
+            // reload on a restart: land on Recommendations instead of a blank page.
+            setActiveView('recommendations');
+            setViewHistory(['recommendations']);
+            console.log(`📦 Restoring last view: recommendations (was a recommended profile)`);
           } else if (savedLastView.view === 'friendHistory' && savedLastView.friendId) {
             // Restore friend history view - need to find the friend and load their data
             setActiveView('friendHistory');
@@ -29328,6 +29334,68 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     }
   };
 
+  // Add one person on a known service: look them up on that exact service (no
+  // fallback to the other one), add them, pin them to the sidebar, un-hide
+  // them and follow on the service. Throws when they are already a friend or
+  // can't be found. No modal, no toast: callers own their own UI.
+  const addFriendCore = async ({ service, username }) => {
+    const userInfo = service === 'lastfm'
+      ? await fetchLastfmUserInfo(username)
+      : await fetchListenbrainzUserInfo(username);
+    const finalService = service === 'lastfm' ? 'lastfm' : 'listenbrainz';
+
+    // Check if already added
+    const existingFriend = friendsRef.current.find(f =>
+      f.username.toLowerCase() === userInfo.username.toLowerCase() &&
+      f.service === finalService
+    );
+    if (existingFriend) {
+      throw new Error(`${userInfo.displayName} is already in your friends list`);
+    }
+
+    // Create friend object
+    const newFriend = {
+      id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      username: userInfo.username,
+      service: finalService,
+      displayName: userInfo.displayName,
+      avatarUrl: userInfo.avatarUrl,
+      addedAt: Date.now(),
+      lastFetched: Date.now(),
+      cachedRecentTrack: null,
+      savedToCollection: false  // Friends added from sidebar are NOT saved to collection by default
+    };
+
+    // Fetch recent track for initial on-air status
+    const { track: recentTrack, hidesListening } = await fetchFriendRecentTrack(newFriend);
+    if (hidesListening) newFriend.hidesListening = true;
+    if (recentTrack) {
+      newFriend.cachedRecentTrack = recentTrack;
+      // Resolve the track in background for instant playback
+      resolveFriendTrack(recentTrack);
+    }
+
+    setFriends(prev => [...prev, newFriend]);
+    // Auto-pin the friend to sidebar (they're not saved to collection yet)
+    setPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
+    // Mark as auto-pinned so they get auto-unpinned when offline
+    // (only manually pinned friends via context menu/drag stay permanently)
+    setAutoPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
+
+    // If the user previously hid this friend, un-hide so the next sync
+    // doesn't skip them. Adding is the un-hide escape hatch.
+    const key = friendKey(finalService, userInfo.username);
+    if (hiddenFriendKeysRef.current.includes(key)) {
+      setHiddenFriendKeys(prev => prev.filter(k => k !== key));
+    }
+
+    // Outbound push: follow on ListenBrainz (no-op on Last.fm). Fire-and-forget.
+    followOnService(newFriend);
+
+    console.log(`👥 Added friend: ${newFriend.displayName} (${finalService})`);
+    return newFriend;
+  };
+
   const addFriend = async (input) => {
     setAddFriendLoading(true);
 
@@ -29339,24 +29407,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         return;
       }
 
-      let userInfo = null;
       let finalService = service;
-
-      if (service === 'lastfm') {
-        userInfo = await fetchLastfmUserInfo(username);
-        finalService = 'lastfm';
-      } else if (service === 'listenbrainz') {
-        userInfo = await fetchListenbrainzUserInfo(username);
-        finalService = 'listenbrainz';
-      } else {
-        // Try Last.fm first, then ListenBrainz
+      if (!service) {
+        // Plain username: try Last.fm first, then ListenBrainz
         try {
-          userInfo = await fetchLastfmUserInfo(username);
+          await fetchLastfmUserInfo(username);
           finalService = 'lastfm';
         } catch (lfmError) {
           console.log(`User not found on Last.fm, trying ListenBrainz...`);
           try {
-            userInfo = await fetchListenbrainzUserInfo(username);
+            await fetchListenbrainzUserInfo(username);
             finalService = 'listenbrainz';
           } catch (lbError) {
             throw new Error('User not found on Last.fm or ListenBrainz');
@@ -29364,65 +29424,33 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         }
       }
 
-      // Check if already added
-      const existingFriend = friends.find(f =>
-        f.username.toLowerCase() === userInfo.username.toLowerCase() &&
-        f.service === finalService
-      );
-      if (existingFriend) {
-        showToast(`${userInfo.displayName} is already in your friends list`, 'error');
-        return;
-      }
-
-      // Create friend object
-      const newFriend = {
-        id: `friend-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        username: userInfo.username,
-        service: finalService,
-        displayName: userInfo.displayName,
-        avatarUrl: userInfo.avatarUrl,
-        addedAt: Date.now(),
-        lastFetched: Date.now(),
-        cachedRecentTrack: null,
-        savedToCollection: false  // Friends added from sidebar are NOT saved to collection by default
-      };
-
-      // Fetch recent track for initial on-air status
-      const { track: recentTrack, hidesListening } = await fetchFriendRecentTrack(newFriend);
-      if (hidesListening) newFriend.hidesListening = true;
-      if (recentTrack) {
-        newFriend.cachedRecentTrack = recentTrack;
-        // Resolve the track in background for instant playback
-        resolveFriendTrack(recentTrack);
-      }
-
-      setFriends(prev => [...prev, newFriend]);
-      // Auto-pin the friend to sidebar (they're not saved to collection yet)
-      setPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
-      // Mark as auto-pinned so they get auto-unpinned when offline
-      // (only manually pinned friends via context menu/drag stay permanently)
-      setAutoPinnedFriendIds(prev => prev.includes(newFriend.id) ? prev : [...prev, newFriend.id]);
-
-      // If the user previously hid this friend, un-hide so the next sync
-      // doesn't skip them. Adding via the modal IS the un-hide escape hatch.
-      const key = friendKey(finalService, userInfo.username);
-      if (hiddenFriendKeysRef.current.includes(key)) {
-        setHiddenFriendKeys(prev => prev.filter(k => k !== key));
-      }
-
-      // Outbound push: follow on ListenBrainz (no-op on Last.fm). Fire-and-forget.
-      followOnService(newFriend);
+      const newFriend = await addFriendCore({ service: finalService, username });
 
       setAddFriendModalOpen(false);
       setAddFriendInput('');
       showToast(`${newFriend.displayName} pinned to sidebar`);
-
-      console.log(`👥 Added friend: ${newFriend.displayName} (${finalService})`);
     } catch (error) {
       console.error('Failed to add friend:', error);
       showToast(error.message || 'Failed to add friend', 'error');
     } finally {
       setAddFriendLoading(false);
+    }
+  };
+
+  // Follow a person opened from Recommendations (not yet in `friends`).
+  const [followingRecommended, setFollowingRecommended] = useState(false);
+  const followRecommendedFriend = async (person) => {
+    if (followingRecommended) return;
+    setFollowingRecommended(true);
+    try {
+      const newFriend = await addFriendCore({ service: person.service, username: person.username });
+      setCurrentFriend(newFriend);
+      showToast(`Following ${newFriend.displayName}`);
+    } catch (error) {
+      console.error('Failed to follow:', error);
+      showToast(error.message || 'Failed to follow', 'error');
+    } finally {
+      setFollowingRecommended(false);
     }
   };
 
@@ -42256,8 +42284,22 @@ useEffect(() => {
                   )
                 ),
               React.createElement('div', { className: 'flex-1' }),
+              // A person opened from Recommendations isn't a friend yet: Follow
+              // adds them (and pins them); pinning a non-friend would pin nothing.
+              !friends.some(f => f.id === currentFriend.id) && React.createElement('button', {
+                type: 'button',
+                disabled: followingRecommended,
+                onClick: () => followRecommendedFriend(currentFriend),
+                className: 'flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors',
+                style: {
+                  backgroundColor: 'var(--accent-primary)',
+                  color: '#ffffff',
+                  opacity: followingRecommended ? 0.6 : 1,
+                  cursor: followingRecommended ? 'default' : 'pointer'
+                }
+              }, followingRecommended ? 'Following\u2026' : 'Follow'),
               // Pin/Unpin button on right side of filter bar
-              React.createElement('button', {
+              friends.some(f => f.id === currentFriend.id) && React.createElement('button', {
                 onClick: () => pinnedFriendIds.includes(currentFriend.id) ? unpinFriend(currentFriend.id) : pinFriend(currentFriend.id),
                 className: 'flex items-center gap-2 px-3 py-1.5 text-sm rounded-full transition-colors',
                 style: pinnedFriendIds.includes(currentFriend.id)
