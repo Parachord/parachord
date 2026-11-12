@@ -40380,7 +40380,16 @@ useEffect(() => {
                 albumArt: resolved.albumArt || art || null,
                 duration: t.duration || null,
                 sources: {},
-                ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {})
+                // The lookup's own ids and ISRC ride along: resolveTrack marks a
+                // track with appleMusicId (or spotifyUri + spotifyId) resolved
+                // on that service at once, at full confidence, and asks only the
+                // others; without them every track of an Apple Music playlist
+                // searched every service from scratch, Apple included. The
+                // ISRC lets the others match the exact recording.
+                ...(t.appleMusicId ? { appleMusicId: t.appleMusicId } : {}),
+                ...(t.spotifyId ? { spotifyId: t.spotifyId, spotifyUri: `spotify:track:${t.spotifyId}` } : {}),
+                ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {}),
+                ...(t.isrc ? { isrc: t.isrc } : {})
               }));
             };
 
