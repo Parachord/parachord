@@ -19,6 +19,8 @@
 const Icons = require('./icons');
 const { FixedTooltip } = require('./ui-atoms');
 const { HomeBanner } = require('./home-banner');
+const { HomeSetupButton } = require('./home-setup');
+const { homeSetupItems, missingPopularResolverCount } = require('../lib/home-setup');
 const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
 
 const { Play, Pause } = Icons;
@@ -49,6 +51,7 @@ const HOME_PAGE_HANDLERS = [
   'navigateTo',
   'navigateToFriend',
   'dismissHomeBanner',
+  'dismissHomeSetupItem',
   'openAiChat',
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
@@ -76,6 +79,7 @@ const HomePage = React.memo(function HomePage(props) {
     currentTrack,
     deactivateListenAlong,
     dismissHomeBanner,
+    dismissHomeSetupItem,
     discoveryUnread,
     extensionConnected,
     fetchAlbumTracksFromMusicBrainz,
@@ -92,6 +96,7 @@ const HomePage = React.memo(function HomePage(props) {
     homeData,
     homeFriendsSortRef,
     homeHeaderCollapsed,
+    homeSetupDismissed,
     isOnAir,
     isPlaying,
     isServiceEnabled,
@@ -131,6 +136,27 @@ const HomePage = React.memo(function HomePage(props) {
     spotifyConnected,
     trackSourcesCache,
   } = props;
+
+  // The setup checklist: same checks the old cards used.
+  const homeSetup = React.useMemo(() => homeSetupItems({
+    missingPopularResolvers: missingPopularResolverCount(allResolvers),
+    lastfmConnected: !!metaServiceConfigs?.lastfm?.username,
+    listenbrainzConnected: !!metaServiceConfigs?.listenbrainz?.username,
+    spotifyConnected: !!spotifyConnected,
+    extensionConnected,
+    isMac: typeof navigator !== 'undefined' && !!navigator.platform && navigator.platform.includes('Mac'),
+    dismissed: homeSetupDismissed,
+  }), [allResolvers, metaServiceConfigs, spotifyConnected, extensionConnected, homeSetupDismissed]);
+
+  // Each item's click does what its old card did.
+  const onSetupAction = (id) => {
+    if (id === 'resolvers') { navigateTo('settings'); setSettingsTab('plugins'); }
+    else if (id === 'lastfm' || id === 'listenbrainz') { navigateTo('settings'); setSettingsTab('general'); }
+    else if (id === 'spotify') openSyncSetupModal('spotify');
+    else if (id === 'browser-extension') setExtensionInfoOpen(true);
+    else if (id === 'raycast') setRaycastInfoOpen(true);
+  };
+
   return React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
           style: { overflow: 'hidden', minHeight: 0 }
@@ -239,188 +265,16 @@ const HomePage = React.memo(function HomePage(props) {
             }),
             React.createElement('div', { className: 'p-6 space-y-8' },
 
-              // SECTION: Enhance Your Experience (Setup suggestions for new users)
-              (() => {
-                // Build list of suggestions
-                const suggestions = [];
-
-                // Check for uninstalled popular resolvers
-                const popularResolverIds = ['youtube', 'soundcloud', 'bandcamp'];
-                const installedIds = allResolvers.map(r => r.id);
-                const uninstalledPopular = popularResolverIds.filter(id => !installedIds.includes(id));
-
-                if (uninstalledPopular.length > 0) {
-                  suggestions.push({
-                    id: 'resolvers',
-                    icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
-                    title: 'Add More Music Sources',
-                    description: `Install ${uninstalledPopular.length} more resolver${uninstalledPopular.length > 1 ? 's' : ''} to expand your library`,
-                    action: () => { navigateTo('settings'); setSettingsTab('plugins'); },
-                    actionLabel: 'Browse Plugins',
-                    color: 'var(--accent-secondary)'
-                  });
-                }
-
-                // Check Last.fm configuration
-                if (!metaServiceConfigs.lastfm?.username) {
-                  suggestions.push({
-                    id: 'lastfm',
-                    icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3',
-                    title: 'Connect Last.fm',
-                    description: 'Scrobble tracks and get personalized recommendations',
-                    action: () => { navigateTo('settings'); setSettingsTab('general'); },
-                    actionLabel: 'Set Up',
-                    color: '#dc2626'
-                  });
-                }
-
-                // Check ListenBrainz configuration
-                if (!metaServiceConfigs.listenbrainz?.username) {
-                  suggestions.push({
-                    id: 'listenbrainz',
-                    icon: 'M13 10V3L4 14h7v7l9-11h-7z',
-                    title: 'Connect ListenBrainz',
-                    description: 'Open-source scrobbling and weekly playlists',
-                    action: () => { navigateTo('settings'); setSettingsTab('general'); },
-                    actionLabel: 'Set Up',
-                    color: '#ea580c'
-                  });
-                }
-
-                // Check Spotify connection
-                if (!spotifyConnected) {
-                  suggestions.push({
-                    id: 'spotify',
-                    icon: 'M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3',
-                    title: 'Connect Spotify',
-                    description: 'Stream music directly through Spotify Connect',
-                    action: () => { navigateTo('settings'); setSettingsTab('general'); },
-                    actionLabel: 'Connect',
-                    color: '#1DB954'
-                  });
-                }
-
-                // Check browser extension connection (only show if explicitly false, not null/unknown)
-                if (extensionConnected === false) {
-                  suggestions.push({
-                    id: 'extension',
-                    icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
-                    title: 'Install Browser Extension',
-                    description: 'Control YouTube, Bandcamp, SoundCloud from Parachord',
-                    action: () => {
-                      setExtensionInfoOpen(true);
-                    },
-                    actionLabel: 'Get Extension',
-                    color: '#4285f4'
-                  });
-                }
-
-                // Raycast extension suggestion (Mac only)
-                if (navigator.platform.includes('Mac')) {
-                  suggestions.push({
-                    id: 'raycast',
-                    icon: 'M13 10V3L4 14h7v7l9-11h-7z',
-                    title: 'Raycast Extension',
-                    description: 'Control Parachord with keyboard shortcuts',
-                    action: () => setRaycastInfoOpen(true),
-                    actionLabel: 'Learn More',
-                    color: '#FF6363'
-                  });
-                }
-
-                // Empty collection prompt
-                if (collectionData.tracks.length === 0 && collectionData.albums.length === 0) {
-                  suggestions.push({
-                    id: 'collection',
-                    icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
-                    title: 'Build Your Collection',
-                    description: 'Search for music and add favorites to your library',
-                    action: () => navigateTo('search'),
-                    actionLabel: 'Start Searching',
-                    color: '#06b6d4'
-                  });
-                }
-
-                // No suggestions? Don't render section
-                if (suggestions.length === 0) return null;
-
-                // Limit to 3 suggestions max
-                const visibleSuggestions = suggestions.slice(0, 3);
-
-                return React.createElement('div', { className: 'mb-2' },
-                  React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-                    React.createElement('h2', { className: 'text-lg font-semibold text-gray-900' }, 'Enhance Your Experience'),
-                    suggestions.length > 3 && React.createElement('button', {
-                      onClick: () => { navigateTo('settings'); setSettingsTab('plugins'); },
-                      className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors'
-                    }, 'See all')
-                  ),
-                  React.createElement('div', {
-                    className: 'grid grid-cols-1 md:grid-cols-3 gap-3'
-                  },
-                    visibleSuggestions.map((suggestion, index) =>
-                      React.createElement('button', {
-                        key: suggestion.id,
-                        className: 'release-card card-fade-up flex items-start gap-3 p-4 text-left',
-                        style: {
-                          backgroundColor: 'var(--card-bg)',
-                          borderRadius: '10px',
-                          border: 'none',
-                          boxShadow: 'var(--card-shadow)',
-                          animationDelay: `${index * 50}ms`
-                        },
-                        onClick: suggestion.action
-                      },
-                        // Icon
-                        React.createElement('div', {
-                          className: 'w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0',
-                          style: { backgroundColor: `${suggestion.color}15` }
-                        },
-                          React.createElement('svg', {
-                            className: 'w-5 h-5',
-                            style: { color: suggestion.color },
-                            fill: 'none',
-                            viewBox: '0 0 24 24',
-                            stroke: 'currentColor'
-                          },
-                            React.createElement('path', {
-                              strokeLinecap: 'round',
-                              strokeLinejoin: 'round',
-                              strokeWidth: 2,
-                              d: suggestion.icon
-                            })
-                          )
-                        ),
-                        // Content
-                        React.createElement('div', { className: 'flex-1 min-w-0' },
-                          React.createElement('p', {
-                            className: 'text-gray-900 font-medium',
-                            style: { fontSize: '13px' }
-                          }, suggestion.title),
-                          React.createElement('p', {
-                            className: 'text-gray-500 mt-0.5',
-                            style: { fontSize: '12px', lineHeight: '1.4' }
-                          }, suggestion.description)
-                        ),
-                        // Arrow
-                        React.createElement('svg', {
-                          className: 'w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5',
-                          fill: 'none',
-                          viewBox: '0 0 24 24',
-                          stroke: 'currentColor'
-                        },
-                          React.createElement('path', {
-                            strokeLinecap: 'round',
-                            strokeLinejoin: 'round',
-                            strokeWidth: 2,
-                            d: 'M9 5l7 7-7 7'
-                          })
-                        )
-                      )
-                    )
-                  )
-                );
-              })(),
+              // SECTION: Finish setting up (checklist button; it replaces the old
+              // setup cards, including the empty-collection
+              // card, are gone. The empty-collection card returns in Jump back in.)
+              homeSetup.visible && React.createElement('div', { className: 'mb-2' },
+                React.createElement(HomeSetupButton, {
+                  setup: homeSetup,
+                  onAction: onSetupAction,
+                  onDismiss: dismissHomeSetupItem
+                })
+              ),
 
               // SECTION: Quick Play / Continue Listening
               currentTrack && React.createElement('div', { className: 'mb-2' },

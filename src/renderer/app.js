@@ -3693,6 +3693,7 @@ const Parachord = () => {
   const [extensionInfoOpen, setExtensionInfoOpen] = useState(false); // Browser extension info modal
   const [raycastInfoOpen, setRaycastInfoOpen] = useState(false); // Raycast extension info modal
   const [whatsNewOpen, setWhatsNewOpen] = useState(false); // What's New release notes modal
+  const [homeSetupDismissed, setHomeSetupDismissed] = useState([]); // ids dismissed from the Home setup checklist
   const [whatsNewDismissedVersion, setWhatsNewDismissedVersion] = useState(null); // Last version user dismissed What's New for
   const [whatsNewHighlights, setWhatsNewHighlights] = useState([]); // Parsed release note highlights
   const [appVersion, setAppVersion] = useState(null); // Current app version from electron
@@ -9113,6 +9114,13 @@ const Parachord = () => {
       return;
     }
     dismissAnnouncement(item.id);
+  };
+
+  const dismissHomeSetupItem = async (id) => {
+    if (!id || homeSetupDismissed.includes(id)) return;
+    const next = [...homeSetupDismissed, id];
+    setHomeSetupDismissed(next);
+    if (window.electron?.store) await window.electron.store.set('home_setup_dismissed', next);
   };
 
   const openHomeBannerCta = (item) => {
@@ -18401,7 +18409,7 @@ ${trackListXml}
         'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
         // Queue & tutorial
         'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state', 'repeat_mode',
-        'tutorial_completed', 'whats_new_dismissed_version',
+        'tutorial_completed', 'whats_new_dismissed_version', 'home_setup_dismissed',
         // Loved-tracks push to LB/LFM (opt-in per service)
         'scrobbler_love_push_enabled', 'love_pushed_keys',
         // In-app announcements (banner)
@@ -19194,6 +19202,7 @@ ${trackListXml}
       const savedShuffleState = savedRememberQueue ? d['saved_shuffle_state'] : null;
       const tutorialCompleted = d['tutorial_completed'];
       const dismissedVersion = d['whats_new_dismissed_version'];
+      if (Array.isArray(d['home_setup_dismissed'])) setHomeSetupDismissed(d['home_setup_dismissed']);
       // Repeat (#1319) is a player setting, restored whether or not the queue is.
       setRepeatMode(d['repeat_mode']);
 
@@ -35349,7 +35358,7 @@ useEffect(() => {
     loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
     navigateTo, navigateToFriend, openAiChat,
     openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
-    setQueueWithContext, dismissHomeBanner, openHomeBannerCta,
+    setQueueWithContext, dismissHomeBanner, openHomeBannerCta, dismissHomeSetupItem,
   });
 
   // Stable function props for the memo'd CollectionPage: same identity on
@@ -37456,7 +37465,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache,
+          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, homeSetupDismissed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServices: metaServices,

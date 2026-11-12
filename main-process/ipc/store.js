@@ -39,7 +39,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'skip_external_prompt', 'skip_unsaved_friend_warning',
   'suppressed_sync_playlists',
   'theme_preference',
-  'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version',
+  'tutorial_completed', 'uninstalled_resolvers', 'whats_new_dismissed_version', 'home_setup_dismissed',
   'cached_announcements', 'dismissed_announcement_ids',
   'playlists_sort',
   'hidden_friend_keys',
