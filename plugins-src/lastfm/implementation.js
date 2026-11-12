@@ -52,9 +52,13 @@ module.exports = {
   // user.getSimilar, artist.getTopFans and tasteometer.compare all answered
   // "Invalid Method" on 2026-11-11). Spec: "Last.fm: worked out from
   // friends-of-friends". Candidates are friends of your friends (ranked by how
-  // many of your friends know them, top 30), scored by the cosine similarity of
-  // 6-month top-artist lists with rank weight 1/(1+rank); under 0.05 is dropped.
-  // The weights and the cutoff are the spec's call.
+  // many of your friends know them, top 40), scored by shared top artists: a
+  // binary cosine over the two 6-month top-50 artist-name sets,
+  // shared / sqrt(|a| * |b|) with names lowercased; under 0.06 is dropped
+  // (3 shared of 50 each). A rank-weighted cosine scored a real account's
+  // candidates all under 0.05 (an artist shared far down both lists counted
+  // for almost nothing), so the row came back empty; the binary score and the
+  // 40-candidate check are the maintainer's call (2026-11-12).
   // A failed request or error body throws (the page keeps what it has and
   // caches nothing empty); only "you have no friends" is a miss ([]).
   // Isolated (new Function): the pacer, fetch wrapper and cosine live inside.
@@ -114,23 +118,24 @@ module.exports = {
 
     const topArtists = async (user) => {
       const res = await call('user.gettopartists', user, '&period=6month&limit=50');
-      if (res.missing) return new Map();
+      if (res.missing) return new Set();
       let list = res.data && res.data.topartists && res.data.topartists.artist;
-      if (!list) return new Map();
+      if (!list) return new Set();
       if (!Array.isArray(list)) list = [list];
-      const weights = new Map();
-      list.forEach((a, rank) => {
+      const names = new Set();
+      for (const a of list) {
         const key = a && a.name && String(a.name).toLowerCase();
-        if (key && !weights.has(key)) weights.set(key, 1 / (1 + rank));
-      });
-      return weights;
+        if (key) names.add(key);
+      }
+      return names;
     };
 
+    // Binary cosine over two name sets: shared / sqrt(|a| * |b|).
     const cosine = (a, b) => {
-      let dot = 0; let na = 0; let nb = 0;
-      for (const [k, w] of a) { na += w * w; if (b.has(k)) dot += w * b.get(k); }
-      for (const w of b.values()) nb += w * w;
-      return na && nb ? dot / Math.sqrt(na * nb) : 0;
+      if (!a.size || !b.size) return 0;
+      let shared = 0;
+      for (const k of a) if (b.has(k)) shared += 1;
+      return shared / Math.sqrt(a.size * b.size);
     };
 
     // 1. Your friends. None means no candidates: a miss, not an error.
@@ -155,16 +160,16 @@ module.exports = {
     }
     const top = Array.from(candidates.values())
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-      .slice(0, 30);
+      .slice(0, 40);
     if (!top.length) return [];
 
-    // 3. Score the top 30 against your own taste.
+    // 3. Score the top 40 against your own taste.
     const mineArtists = await topArtists(username);
     if (!mineArtists.size) return [];
     const scored = [];
     for (const c of top) {
       const similarity = cosine(mineArtists, await topArtists(c.name));
-      if (similarity >= 0.05) scored.push({ username: c.name, similarity, avatarUrl: c.avatarUrl });
+      if (similarity >= 0.06) scored.push({ username: c.name, similarity, avatarUrl: c.avatarUrl });
     }
     return scored.sort((a, b) => b.similarity - a.similarity);
   }

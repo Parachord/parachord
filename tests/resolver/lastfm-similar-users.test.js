@@ -1,6 +1,7 @@
 /**
- * Last.fm getSimilarUsers: friends-of-friends candidates, cosine-scored on
- * 6-month top artists. Loads the built plugin (plugins/lastfm.axe, produced by
+ * Last.fm getSimilarUsers: friends-of-friends candidates (top 40 by mutual
+ * count), scored by a binary cosine over their 6-month top-artist name sets.
+ * Loads the built plugin (plugins/lastfm.axe, produced by
  * scripts/build-axes.js) the way the app materializes it: new Function.
  */
 const fs = require('fs');
@@ -59,20 +60,20 @@ test('no username or apiKey: [] with no request', async () => {
   expect(calls).toHaveLength(0);
 });
 
-test('candidates are friends of friends ranked by mutual count, top 30 scored', async () => {
+test('candidates are friends of friends ranked by mutual count, top 40 scored', async () => {
   const friends = { me: ['f1', 'f2', 'f3'], f1: [], f2: [], f3: [] };
   const artists = { me: ['a'] };
-  // 35 candidates; c0 is known by all three friends, c1 by two, the rest by one.
-  for (let i = 0; i < 35; i++) { artists['c' + i] = ['a']; }
-  friends.f1 = ['c0', 'c1', ...Array.from({ length: 17 }, (_, i) => 'c' + (i + 2))];
-  friends.f2 = ['c0', 'c1', ...Array.from({ length: 16 }, (_, i) => 'c' + (i + 19))];
+  // 45 candidates; c0 is known by all three friends, c1 by two, the rest by one.
+  for (let i = 0; i < 45; i++) { artists['c' + i] = ['a']; }
+  friends.f1 = ['c0', 'c1', ...Array.from({ length: 22 }, (_, i) => 'c' + (i + 2))];
+  friends.f2 = ['c0', 'c1', ...Array.from({ length: 21 }, (_, i) => 'c' + (i + 24))];
   friends.f3 = ['c0'];
   mock({ friends, artists });
   const out = await runPaced(cfg());
   const scoredUsers = calls.filter((c) => c.method === 'user.gettopartists' && c.user !== 'me').map((c) => c.user);
-  expect(scoredUsers).toHaveLength(30);
+  expect(scoredUsers).toHaveLength(40);
   expect(scoredUsers.slice(0, 2)).toEqual(['c0', 'c1']);
-  expect(out).toHaveLength(30);
+  expect(out).toHaveLength(40);
   expect(out[0].similarity).toBeCloseTo(1, 5);
 });
 
@@ -95,28 +96,41 @@ test('drops self, your Last.fm friends and excludeUsernames', async () => {
   expect(out.map((u) => u.username)).toEqual(['keep']);
 });
 
-test('cosine with rank weights: identical lists score 1, disjoint score 0, cutoff 0.05', async () => {
-  const mine = ['a', 'b', 'c'];
-  // "tail" shares only one far-down artist with you: below the cutoff.
-  const bigMine = Array.from({ length: 50 }, (_, i) => 'x' + i);
+test('binary cosine over the top-artist name sets: identical 1, disjoint 0, cutoff 0.06', async () => {
+  // shared / sqrt(|a| * |b|), names lowercased, no rank weight: where an
+  // artist sits in either list does not matter.
+  const fifty = (prefix) => Array.from({ length: 50 }, (_, i) => prefix + i);
+  const mine = fifty('x');
+  // "three" shares 3 of 50 (3/50 = 0.06, kept); "two" shares 2 of 50 (0.04,
+  // dropped). The shared ones sit at the BOTTOM of their lists: a rank weight
+  // would have scored them near zero.
+  const withShared = (n) => [...fifty('n' + n + '_').slice(0, 50 - n), ...mine.slice(50 - n)];
   mock({
-    friends: { me: ['f1'], f1: ['same', 'disjoint', 'partial'] },
-    artists: { me: mine, same: ['A', 'B', 'C'], disjoint: ['q', 'r'], partial: ['a', 'z', 'y', 'w'] }
+    friends: { me: ['f1'], f1: ['same', 'disjoint', 'three', 'two'] },
+    artists: {
+      me: mine,
+      same: mine.map((a) => a.toUpperCase()).reverse(),
+      disjoint: fifty('q'),
+      three: withShared(3),
+      two: withShared(2)
+    }
   });
   const out = await runPaced(cfg());
   const by = Object.fromEntries(out.map((u) => [u.username, u.similarity]));
   expect(by.same).toBeCloseTo(1, 10);
   expect(by.disjoint).toBeUndefined();
-  // a=1 vs a=1: dot 1; |me|^2 = 1+.25+.111; |p|^2 = 1+.25+.111+.0625
-  const expected = 1 / Math.sqrt((1 + 0.25 + 1 / 9) * (1 + 1 / 4 + 1 / 9 + 1 / 16));
-  expect(by.partial).toBeCloseTo(expected, 10);
-  expect(out[0].username).toBe('same');
+  expect(by.three).toBeCloseTo(0.06, 10);
+  expect(by.two).toBeUndefined();
+  expect(out.map((u) => u.username)).toEqual(['same', 'three']);
 
+  // Unequal list sizes: mine has 4 artists, theirs 2, both shared:
+  // 2 / sqrt(4 * 2).
   mock({
-    friends: { me: ['f1'], f1: ['tail'] },
-    artists: { me: bigMine, tail: [...Array.from({ length: 49 }, (_, i) => 'n' + i), 'x49'] }
+    friends: { me: ['f1'], f1: ['partial'] },
+    artists: { me: ['a', 'b', 'c', 'd'], partial: ['b', 'A'] }
   });
-  expect(await runPaced(cfg())).toEqual([]);
+  const [partial] = await runPaced(cfg());
+  expect(partial.similarity).toBeCloseTo(2 / Math.sqrt(8), 10);
 });
 
 test('avatar is the largest image', async () => {
