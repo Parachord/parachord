@@ -39,7 +39,7 @@ describe('saved recommendations', () => {
   test('saved after every fetch round, keeping only answers with sections young enough to show', () => {
     const save = app.slice(app.indexOf('const saveRecommendationsCache = () => {'), app.indexOf('const loadRecommendations = async'));
     expect(save).toMatch(/entry\.sections\.length > 0 && \(now - entry\.fetchedAt\) < CACHE_TTL\.recommendationsStale/);
-    expect(save).toMatch(/window\.electron\.store\.set\('cache_recommendations', \{ providers, savedAt: now \}\)/);
+    expect(save).toMatch(/window\.electron\.store\.set\('cache_recommendations', \{ providers, similarUsers, savedAt: now \}\)/);
     expect(load).toMatch(/recommendationsCache\.current\.timestamp = Date\.now\(\);\s*saveRecommendationsCache\(\);/);
   });
 
@@ -57,6 +57,31 @@ describe('saved recommendations', () => {
 
   test('a not-ready answer drops the saved sections (on screen and on disk)', () => {
     expect(load).toMatch(/if \(error\?\.notReady\) \{[\s\S]{0,600}?delete stale\[provider\.id\];\s*delete recommendationsCache\.current\.providers\[provider\.id\];/);
+  });
+});
+
+describe('saved similar users (the Friends row)', () => {
+  const save = app.slice(app.indexOf('const saveRecommendationsCache = () => {'), app.indexOf('const loadRecommendations = async'));
+
+  test('a cache without similarUsers loads', () => {
+    // Read back as an object whatever the saved value holds (an old cache has
+    // no field; anything malformed becomes {}), and every read in the load
+    // tolerates a missing map (the uninstall path resets the whole cache).
+    const readback = app.slice(app.indexOf("const recsData = d['cache_recommendations'];"), app.indexOf('// Load AI suggestions cache'));
+    expect(readback).toMatch(/similarUsers: \(recsData\.similarUsers && typeof recsData\.similarUsers === 'object' && !Array\.isArray\(recsData\.similarUsers\)\)\s*\? \{ \.\.\.recsData\.similarUsers \}\s*: \{\}/);
+    expect(save).toMatch(/Object\.entries\(recommendationsCache\.current\.similarUsers \|\| \{\}\)/);
+    expect(load).toMatch(/const entry = \(recommendationsCache\.current\.similarUsers \|\| \{\}\)\[provider\.id\];/);
+    // A saved entry must hold a users array to be used at all.
+    expect(load).toMatch(/return entry && Array\.isArray\(entry\.users\) && \(entry\.account \|\| ''\) === accountFor\(provider\) \? entry : null;/);
+  });
+
+  test('similarUsers entries older than recommendationsStale are not saved', () => {
+    expect(save).toMatch(/entry && Array\.isArray\(entry\.users\) && entry\.users\.length > 0 && \(now - entry\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) similarUsers\[id\] = entry;/);
+  });
+
+  test('similar users follow the providers\' freshness rule (a fresh one is not asked again)', () => {
+    expect(load).toMatch(/if \(!forceRefresh && hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendations\) \{\s*similarFresh\[provider\.id\] = cached;\s*continue;\s*\}/);
+    expect(load).toMatch(/if \(hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) similarStale\[provider\.id\] = cached;/);
   });
 });
 

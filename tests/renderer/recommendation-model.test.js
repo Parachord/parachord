@@ -16,8 +16,10 @@ const {
   buildRecommendationPage,
   filterSubsectionItems,
   flattenRecommendationItems,
+  weeklyHomeEntries,
   shuffleupagusSection
 } = require('../../src/renderer/lib/recommendation-model');
+const recommendationModel = require('../../src/renderer/lib/recommendation-model');
 const { trackSlug } = require('../../src/renderer/lib/track-slug');
 
 describe('normalizeRecommendationItem', () => {
@@ -342,6 +344,65 @@ describe('buildRecommendationPage', () => {
       expect(flat[0].name).toBe('a');
       expect(flattenRecommendationItems(undefined)).toEqual([]);
     });
+  });
+});
+
+describe('weeklyHomeEntries', () => {
+  // The playlist view's pendingPlaylistLoad lookup and the weekly covers
+  // effect read homeData.weeklyJams / weeklyExploration in Home's old entry
+  // shape; the page fills them from its weekly rows.
+  const w = (id, contextType, weekLabel, date) => ({ id, contextType, label: contextType === 'weekly-jam' ? 'Weekly Jams' : 'Weekly Exploration', weekLabel, date });
+  const page = () => buildRecommendationPage({ providers: [
+    normalizeRecommendationSections({ sections: [
+      { id: 'weekly-exploration', title: 'Weekly Exploration', items: [
+        { type: 'playlist', id: 'e1', name: 'This Week', weekly: w('e1', 'weekly-exploration', 'This Week', '2026-11-09') },
+        { type: 'playlist', id: 'e2', name: 'Last Week', weekly: w('e2', 'weekly-exploration', 'Last Week', '2026-11-02') }
+      ] },
+      { id: 'weekly-jams', title: 'Weekly Jams', items: [
+        { type: 'playlist', id: 'j1', name: 'This Week', weekly: w('j1', 'weekly-jam', 'This Week', '2026-11-09') }
+      ] },
+      { items: [{ type: 'playlist', name: 'Not weekly', url: 'https://x/p' }] }
+    ] }, { resolverId: 'lbish', resolverName: 'Brainz' })
+  ] });
+
+  test('builds Home\'s entry shape from items carrying weekly, by context type', () => {
+    const out = weeklyHomeEntries(page(), {});
+    expect(out.weeklyExploration.map(e => e.id)).toEqual(['e1', 'e2']);
+    expect(out.weeklyJams).toEqual([{
+      id: 'j1', title: 'Weekly Jams', weekLabel: 'This Week', date: '2026-11-09',
+      description: 'Your favorite tracks from the past week, curated by Brainz',
+      tracks: [], tracksLoaded: false
+    }]);
+    expect(out.weeklyExploration[0].description).toBe('New discoveries based on your listening habits, curated by Brainz');
+  });
+
+  test('no weekly items is null for both, as Home had before they loaded', () => {
+    expect(weeklyHomeEntries([], {})).toEqual({ weeklyJams: null, weeklyExploration: null });
+    expect(weeklyHomeEntries(undefined, undefined)).toEqual({ weeklyJams: null, weeklyExploration: null });
+  });
+
+  test('an entry that already loaded its tracks keeps them, and an unchanged list keeps its identity', () => {
+    const first = weeklyHomeEntries(page(), {});
+    const loaded = { ...first, weeklyJams: [{ ...first.weeklyJams[0], tracks: [{ id: 't' }], tracksLoaded: true }] };
+    const again = weeklyHomeEntries(page(), loaded);
+    expect(again.weeklyJams).toBe(loaded.weeklyJams);
+    expect(again.weeklyJams[0].tracks).toEqual([{ id: 't' }]);
+    expect(again.weeklyExploration).toBe(loaded.weeklyExploration);
+  });
+
+  test('a changed week makes a new list but keeps loaded tracks for the ids that stayed', () => {
+    const first = weeklyHomeEntries(page(), {});
+    const prev = { weeklyJams: null, weeklyExploration: [{ ...first.weeklyExploration[0], tracks: [{ id: 't' }], tracksLoaded: true }] };
+    const out = weeklyHomeEntries(page(), prev);
+    expect(out.weeklyExploration).not.toBe(prev.weeklyExploration);
+    expect(out.weeklyExploration[0]).toBe(prev.weeklyExploration[0]);
+    expect(out.weeklyExploration[1].tracksLoaded).toBe(false);
+  });
+});
+
+describe('the legacy flat builder', () => {
+  test('is gone (app.js reads the grouped page only)', () => {
+    expect(recommendationModel.buildRecommendationSections).toBeUndefined();
   });
 });
 

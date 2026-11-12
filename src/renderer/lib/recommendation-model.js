@@ -27,15 +27,6 @@
 
 const { trackSlug, slug } = require('./track-slug');
 
-// LEGACY (flat page): only buildRecommendationSections below uses it. Task 4
-// of the redesign rewires app.js onto buildRecommendationPage and deletes both.
-const GENERIC_BUCKET_ORDER = [
-  { type: 'artist', key: 'generic:artist' },
-  { type: 'song', key: 'generic:song' },
-  { type: 'album', key: 'generic:album' },
-  { type: 'playlist', key: 'generic:playlist' }
-];
-
 const RECOMMENDATION_TYPES = ['artist', 'album', 'song', 'playlist'];
 
 // The blocklist pick for a recommendation item (recommendation-blocklist.js
@@ -182,108 +173,6 @@ function dedupeItems(items) {
   return out;
 }
 
-// A display section. Generic buckets carry bucketType instead of a title; a
-// titled section keeps its provider identity so the expand/paginate path can
-// reach the right resolver.
-function displaySection({ key, title, description, bucketType, resolverId, resolverName, sectionId, canLoadMore, nextCursor, items }) {
-  return {
-    key,
-    title: title || null,
-    description: description || null,
-    bucketType: bucketType || null,
-    resolverId: resolverId || null,
-    resolverName: resolverName || null,
-    sectionId: sectionId || null,
-    canLoadMore: !!canLoadMore,
-    nextCursor: nextCursor || null,
-    items
-  };
-}
-
-// LEGACY shim for the flat page until app.js moves to buildRecommendationPage
-// (Task 4 deletes it). Behavior is unchanged.
-// The display model: generic buckets first (Artists, Songs, Albums,
-// Playlists), then the providers' titled sections in provider order, then the
-// Shuffleupagus section.
-//
-//   providers              normalizeRecommendationSections results, in the
-//                          order the page should show them
-//   shuffleupagus         the shuffleupagusSection result, or null
-//   expandedSections       { [`${resolverId}|${sectionId}`]: { items, nextCursor } } —
-//                          items a "load more" already fetched for a titled
-//                          section, so a re-merge (the LLM streaming an update)
-//                          keeps them and the cursor
-//   expandableResolverIds  resolvers that implement expandRecommendationSection;
-//                          only their titled sections get canLoadMore
-//
-// Returns the sections array for the recommendations state.
-function buildRecommendationSections({ providers, shuffleupagus, expandedSections, expandableResolverIds } = {}) {
-  const generic = { artist: [], song: [], album: [], playlist: [] };
-  const titled = [];
-  for (const provider of providers || []) {
-    for (const section of (provider && provider.sections) || []) {
-      const items = section.items || [];
-      if (section.title) {
-        titled.push({ provider, section, items });
-      } else {
-        for (const item of items) {
-          if (generic[item.type]) generic[item.type].push(item);
-        }
-      }
-    }
-  }
-  // Derived artists only from the GENERIC songs (a titled mixed section
-  // already names its artists explicitly).
-  generic.artist.push(...deriveArtistsFromSongs(generic.song));
-
-  const sections = [];
-  for (const bucket of GENERIC_BUCKET_ORDER) {
-    const items = dedupeItems(generic[bucket.type]);
-    if (!items.length) continue;
-    sections.push(displaySection({
-      key: bucket.key,
-      bucketType: bucket.type,
-      items
-    }));
-  }
-  const expandable = new Set(expandableResolverIds || []);
-  for (const { provider, section, items } of titled) {
-    const expansion = (expandedSections || {})[`${provider.resolverId}|${section.id || section.title}`] || null;
-    // Items a "load more" fetched arrive raw (the loader hands the plugin's
-    // answer through); normalize them with the section's provider identity.
-    const extraItems = (expansion && Array.isArray(expansion.items) ? expansion.items : [])
-      .map(raw => normalizeRecommendationItem(raw, provider.resolverId))
-      .filter(Boolean);
-    const merged = extraItems.length
-      ? dedupeItems([...items, ...extraItems])
-      : dedupeItems(items);
-    if (!merged.length) continue;
-    sections.push(displaySection({
-      key: `${provider.resolverId}:${section.id || section.title}`,
-      title: section.title,
-      description: section.description,
-      resolverId: provider.resolverId,
-      resolverName: provider.resolverName,
-      sectionId: section.id || null,
-      canLoadMore: !!section.id && expandable.has(provider.resolverId) && !(expansion && expansion.exhausted),
-      nextCursor: (expansion && expansion.nextCursor) || section.nextCursor || null,
-      items: merged
-    }));
-  }
-  if (shuffleupagus && shuffleupagus.sections.length && shuffleupagus.sections[0].items.length) {
-    const section = shuffleupagus.sections[0];
-    sections.push(displaySection({
-      key: `shuffleupagus:${section.title}`,
-      title: section.title,
-      description: section.description,
-      resolverId: shuffleupagus.resolverId,
-      resolverName: shuffleupagus.resolverName,
-      items: section.items
-    }));
-  }
-  return sections;
-}
-
 const TYPE_SECTIONS = [
   { type: 'song', title: 'Songs' },
   { type: 'album', title: 'Albums' },
@@ -357,8 +246,15 @@ function sourcesFor(items, order, names) {
 // The grouped page: sections by type, each with For you first, then the
 // providers' titled rows, per the header comment.
 //
-//   providers, shuffleupagus, expandedSections, expandableResolverIds as the
-//   legacy builder took them; similarUsers is
+//   providers              normalizeRecommendationSections results, in the
+//                          order the page should show them
+//   shuffleupagus          the shuffleupagusSection result, or null
+//   expandedSections       { [pagingKey]: { items, nextCursor, exhausted } } —
+//                          items a "load more" already fetched for a titled
+//                          section, so a re-merge keeps them and the cursor
+//   expandableResolverIds  resolvers that implement expandRecommendationSection;
+//                          only their titled sections get canLoadMore
+//   similarUsers is
 //   [{ resolverId, resolverName, users: [{ username, similarity, avatarUrl? }] }];
 //   exclude is { friendKeys, selfKeys }, Sets of `service:username-lowercased`.
 function buildRecommendationPage({ providers, shuffleupagus, expandedSections, expandableResolverIds, similarUsers, exclude } = {}) {
@@ -522,6 +418,64 @@ function flattenRecommendationItems(sections) {
   return (sections || []).flatMap(s => s.subsections.flatMap(sub => sub.items));
 }
 
+// Home's weekly playlist fields (homeData.weeklyJams / weeklyExploration),
+// which the playlist view's pendingPlaylistLoad lookup and the weekly covers
+// effect still read, built from the page's weekly rows: items carrying
+// `weekly` (never recognized by provider). Home's old entry shape; `previous`
+// is the current { weeklyJams, weeklyExploration }, and an entry whose week
+// is unchanged is reused as is, so tracks a card already loaded survive a
+// re-merge, and an unchanged list keeps its identity (the caller can then skip
+// the state write). A list with no entries is null, as before it loaded.
+const WEEKLY_FIELDS = { 'weekly-jam': 'weeklyJams', 'weekly-exploration': 'weeklyExploration' };
+const WEEKLY_DESCRIPTIONS = {
+  'weekly-jam': 'Your favorite tracks from the past week',
+  'weekly-exploration': 'New discoveries based on your listening habits'
+};
+function weeklyHomeEntries(sections, previous) {
+  const prev = previous || {};
+  const prior = new Map();
+  for (const field of Object.values(WEEKLY_FIELDS)) {
+    for (const entry of prev[field] || []) if (entry && entry.id) prior.set(entry.id, entry);
+  }
+  const lists = { weeklyJams: [], weeklyExploration: [] };
+  const seen = new Set();
+  for (const section of sections || []) {
+    for (const sub of section.subsections || []) {
+      for (const item of sub.items || []) {
+        const w = item.weekly;
+        const field = w && WEEKLY_FIELDS[w.contextType];
+        if (!field || seen.has(w.id)) continue;
+        seen.add(w.id);
+        const description = `${WEEKLY_DESCRIPTIONS[w.contextType]}, curated by ${sub.resolverName || sub.resolverId || 'your service'}`;
+        const old = prior.get(w.id);
+        if (old && old.title === w.label && old.weekLabel === w.weekLabel
+          && (old.date || null) === (w.date || null) && old.description === description) {
+          lists[field].push(old);
+          continue;
+        }
+        lists[field].push({
+          id: w.id,
+          title: w.label,
+          weekLabel: w.weekLabel,
+          description,
+          date: w.date || null,
+          tracks: (old && old.tracks) || [],
+          tracksLoaded: !!(old && old.tracksLoaded)
+        });
+      }
+    }
+  }
+  const out = {};
+  for (const field of Object.values(WEEKLY_FIELDS)) {
+    const next = lists[field];
+    const before = prev[field];
+    if (!next.length) out[field] = null;
+    else if (Array.isArray(before) && before.length === next.length && before.every((e, i) => e === next[i])) out[field] = before;
+    else out[field] = next;
+  }
+  return out;
+}
+
 // The Shuffleupagus (LLM) provider: its albums and artists (from
 // loadAiRecommendations / the cache_ai_suggestions store key) become one
 // titled section so the reasons and the AI identity stay visible. `albums` is
@@ -571,9 +525,9 @@ module.exports = {
   deriveArtistsFromSongs,
   recommendationItemKey,
   dedupeItems,
-  buildRecommendationSections, // legacy shim, removed in Task 4
   buildRecommendationPage,
   filterSubsectionItems,
   flattenRecommendationItems,
+  weeklyHomeEntries,
   shuffleupagusSection
 };

@@ -1214,7 +1214,8 @@ const { discogsRefIds, normalizeDiscogsProfile, REF_PATH: DISCOGS_REF_PATH, MAX_
 const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-share');
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
-  blockedItemPick, normalizeRecommendationSections, buildRecommendationSections, shuffleupagusSection
+  blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, flattenRecommendationItems,
+  weeklyHomeEntries, shuffleupagusSection
 } = require('./lib/recommendation-model');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
@@ -3341,11 +3342,13 @@ const Parachord = () => {
   const searchQueryRef = useRef('');
   const abortControllerRef = useRef(null);
   const searchInputRef = useRef(null); // Ref for search input to support Ctrl+F focus
-  // Recommendations state — the sectioned display model built by
-  // src/renderer/lib/recommendation-model.js from every recommendations
-  // provider (plugins with the `recommendations` capability + Shuffleupagus).
-  // Sections: generic buckets (Artists/Songs/Albums/Playlists) first, then
-  // provider-titled sections.
+  // Recommendations state — the grouped display model built by
+  // src/renderer/lib/recommendation-model.js (buildRecommendationPage) from
+  // every recommendations provider (plugins with the `recommendations`
+  // capability + Shuffleupagus) and the similar-users providers. `sections`
+  // is Section[]: one per item type (Songs, Albums, Artists, Playlists,
+  // Friends), each holding subsections (rows). Readers that want every item
+  // go through flattenRecommendationItems.
   const [recommendations, setRecommendations] = useState({
     sections: [],
     loading: true,
@@ -3355,12 +3358,16 @@ const Parachord = () => {
   // ref so the LLM's streaming updates can re-merge the display model without
   // refetching providers.
   const providerSectionsRef = useRef({}); // { [resolverId]: { resolverName, sections } }
+  // Per-provider similar users for the Friends row, in display order, kept
+  // beside the sections for the same reason; the follow/removal exclusions
+  // apply at every merge, not here.
+  const similarUsersRef = useRef({}); // { [resolverId]: { resolverId, resolverName, users } }
   // Which resolvers implement expandRecommendationSection (titled sections
   // get a "load more" only when their provider can paginate).
   const expandableResolverIdsRef = useRef([]);
   // Items a "load more" already fetched for a titled section + the next
   // cursor, so a re-merge keeps the expanded rows.
-  const [expandedSections, setExpandedSections] = useState({}); // { [`${resolverId}|${sectionId}`]: { items, nextCursor } }
+  const [expandedSections, setExpandedSections] = useState({}); // { [pagingKey `${resolverId}|${sectionId}`]: { items, nextCursor } }
   const expandedSectionsRef = useRef({});
   // Recommendation item images (LLM album art / artist photos — provider
   // items that carry their own imageUrl skip this). Keyed by item id;
@@ -3386,7 +3393,8 @@ const Parachord = () => {
   // per card with useState).
   const recommendationBrokenArtRef = useRef(new Set());
   const recommendationsExpandedSectionsRef = useRef(new Set());
-  // "load more" in-flight markers per section key
+  // "load more" in-flight markers per provider section (subsection.pagingKey:
+  // the splits of one mixed section share it)
   const [recommendationsLoadingMore, setRecommendationsLoadingMore] = useState({});
   // Providers being asked that have nothing on screen yet ({ id, name }), so a
   // page already showing other sections still shows that more is coming.
@@ -8306,10 +8314,12 @@ const Parachord = () => {
   };
 
   // Cache for recommendations data (tracks from API)
-  // { [resolverId]: { resolverId, resolverName, sections, fetchedAt, account } };
+  // providers: { [resolverId]: { resolverId, resolverName, sections, fetchedAt, account } };
+  // similarUsers: { [resolverId]: { users, fetchedAt, account } } (may be
+  // missing: an old saved cache, or the uninstall reset);
   // saved as cache_recommendations after every fetch round and read back at
   // launch (loadCacheFromStore), so the page opens on last time's sections.
-  const recommendationsCache = useRef({ providers: {}, timestamp: 0 });
+  const recommendationsCache = useRef({ providers: {}, similarUsers: {}, timestamp: 0 });
 
   // Cache for charts data (keyed by source-country, e.g., 'apple-us', 'lastfm-us')
   const chartsCache = useRef({});
@@ -8523,9 +8533,13 @@ const Parachord = () => {
         );
         // Meta services with the recommendations capability (the Recommendations
         // page calls getRecommendations on them; lastfm/listenbrainz since
-        // their fetches moved out of app.js)
+        // their fetches moved out of app.js), or the similarUsers one (the
+        // page's Friends row calls getSimilarUsers): either one materializes
+        // the meta-service into the loader, where the page finds it by
+        // capability.
         const metaServicesWithRecommendations = metaServiceAxes.filter(axe =>
-          axe.capabilities?.recommendations && axe.implementation?.getRecommendations
+          (axe.capabilities?.recommendations && axe.implementation?.getRecommendations)
+          || (axe.capabilities?.similarUsers && axe.implementation?.getSimilarUsers)
         );
         // Meta services with playback-telemetry capability — fired on track start/scrobble
         // via window.scrobbleManager. The plugin's init() self-registers with the manager.
@@ -8651,7 +8665,8 @@ const Parachord = () => {
         const withChat = filteredAxes.filter(axe =>
           axe.capabilities?.chat && axe.implementation?.chat);
         const withRecommendations = filteredAxes.filter(axe =>
-          axe.capabilities?.recommendations && axe.implementation?.getRecommendations);
+          (axe.capabilities?.recommendations && axe.implementation?.getRecommendations)
+          || (axe.capabilities?.similarUsers && axe.implementation?.getSimilarUsers));
         const withPlaybackTelemetry = filteredAxes.filter(axe =>
           axe.capabilities?.playbackTelemetry && axe.implementation?.init);
 
@@ -12696,11 +12711,16 @@ ${trackListXml}
     // meta_service_configs (Subsonic's server URL, username and password, for
     // one). Read through the ref so search/play see the latest save, and from
     // the store if the startup bulk load hasn't filled the ref yet.
-    return savedPluginConfig(
+    const saved = await savedPluginConfig(
       resolverId,
       metaServiceConfigsRef.current?.[resolverId] || metaServiceConfigs[resolverId],
       () => window.electron.store.get('meta_service_configs')
     );
+    // Last.fm's API calls (its getSimilarUsers) need a key, and its saved
+    // config only carries one when the user set their own in Settings: give it
+    // the effective key (the user's, else the app's). Never logged.
+    if (resolverId === 'lastfm') return { ...saved, apiKey: saved.apiKey || getLastfmApiKey() };
+    return saved;
   };
 
   useEffect(() => {
@@ -18540,7 +18560,14 @@ ${trackListXml}
       const recsData = d['cache_recommendations'];
       if (recsData && recsData.providers && typeof recsData.providers === 'object'
           && Object.keys(recommendationsCache.current.providers).length === 0) {
-        recommendationsCache.current = { providers: { ...recsData.providers }, timestamp: recsData.savedAt || 0 };
+        recommendationsCache.current = {
+          providers: { ...recsData.providers },
+          // A cache saved before the Friends row has no similarUsers.
+          similarUsers: (recsData.similarUsers && typeof recsData.similarUsers === 'object' && !Array.isArray(recsData.similarUsers))
+            ? { ...recsData.similarUsers }
+            : {},
+          timestamp: recsData.savedAt || 0
+        };
         console.log(`📦 Loaded saved recommendations for ${Object.keys(recsData.providers).length} provider(s)`);
       }
 
@@ -19326,7 +19353,7 @@ ${trackListXml}
   // Mark discovery features as seen when user views them (clears unread badge)
   useEffect(() => {
     if (activeView === 'recommendations' && recommendations.sections.length > 0) {
-      const hash = generateDiscoveryHash(recommendations.sections.flatMap(s => s.items), i => i.name);
+      const hash = generateDiscoveryHash(flattenRecommendationItems(recommendations.sections), i => i.name);
       markDiscoverySeen('recommendations', hash);
     } else if (activeView === 'critics-picks' && criticsPicks.length > 0) {
       const hash = generateDiscoveryHash(criticsPicks);
@@ -23140,17 +23167,23 @@ ${trackListXml}
     return () => friendsObserverRef.current?.disconnect();
   }, [pinnedFriendIds, updateSchedulerVisibility]);
 
-  // Every song track on the page — the generic Songs bucket plus any titled
-  // section's songs (a provider's titled sections can carry tracks) — for the
-  // scheduler effects below. The OBSERVER effect keys on a digest of the ids
+  // Every song track on the page — every Songs row (For you and the titled
+  // ones), once per track id even when two rows show it — for the scheduler
+  // effects below. The OBSERVER effect keys on a digest of the ids
   // (recommendationSongsKey), not the array identity: the LLM's streaming
   // updates re-merge the sections once per streamed item, and a new array
   // identity per item would disconnect/recreate the observer each time over
   // the SAME songs.
-  const recommendationSongs = useMemo(
-    () => recommendations.sections.flatMap(s => s.items.filter(i => i.type === 'song').map(i => i.track)),
-    [recommendations.sections]
-  );
+  const recommendationSongs = useMemo(() => {
+    const seen = new Set();
+    const tracks = [];
+    for (const item of flattenRecommendationItems(recommendations.sections)) {
+      if (item.type !== 'song' || !item.track || seen.has(item.track.id)) continue;
+      seen.add(item.track.id);
+      tracks.push(item.track);
+    }
+    return tracks;
+  }, [recommendations.sections]);
   const recommendationSongsKey = useMemo(
     () => recommendationSongs.map(t => t && t.id).join('|'),
     [recommendationSongs]
@@ -23161,12 +23194,12 @@ ${trackListXml}
   // model): kept in sync with the same flat song list.
   useEffect(() => { recommendationsTracksRef.current = recommendationSongs; }, [recommendationSongs]);
 
-  // Home's For You card previews the first recommended artist (generic bucket
-  // first, then any titled section's artist items) with its photo from
+  // Home's For You card previews the first recommended artist (the Artists
+  // For you row first, then the titled rows' artist items) with its photo from
   // recommendationImages — the shape home-page.js always read
   // ({ artists: [{ name, image }] }).
   const recommendationsPreview = useMemo(() => {
-    const artistItems = recommendations.sections.flatMap(s => s.items.filter(i => i.type === 'artist'));
+    const artistItems = flattenRecommendationItems(recommendations.sections).filter(i => i.type === 'artist');
     return {
       artists: artistItems.slice(0, 1).map(a => ({
         name: a.name,
@@ -27087,12 +27120,13 @@ Return ONLY the JSON array, no other text.`;
   // `recommendations` capability (content resolvers and meta-services alike)
   // answers getRecommendations with sections of typed items
   // (docs/architecture/plugins.md, "Recommendations"), and the Shuffleupagus
-  // (LLM) suggestions render as one titled section built from
+  // (LLM) suggestions blend into the For you rows from
   // homeData.aiRecommendations (the same state Home renders its section
-  // from). loadRecommendations fetches each provider (a per-provider
+  // from). Providers with the `similarUsers` capability fill the Friends row.
+  // loadRecommendations fetches each provider (a per-provider
   // cache in recommendationsCache, saved as cache_recommendations), and
   // refreshMergedRecommendations rebuilds the display model through
-  // buildRecommendationSections — the LLM streams into its own state and
+  // buildRecommendationPage — the LLM streams into its own state and
   // re-merges without refetching anyone, and the blocklist re-applies on
   // every merge so a block made since a cache was filled takes effect at once
   // (parachord#1006, same rule the flat page had).
@@ -27112,6 +27146,37 @@ Return ONLY the JSON array, no other text.`;
       loader.getRecommendationResolvers().filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
       { activeIds, order }
     );
+  };
+
+  // The similar-users providers (the Friends row), found by capability and
+  // ordered like the recommendation providers.
+  const similarUsersProviders = () => {
+    const loader = resolverLoaderRef.current;
+    if (!loader?.getSimilarUsersResolvers) return [];
+    const activeIds = activeResolversRef.current || [];
+    const order = resolverOrderRef.current || [];
+    const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
+    return orderCatalogResolvers(
+      loader.getSimilarUsersResolvers().filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
+      { activeIds, order }
+    );
+  };
+
+  // Who the Friends row leaves out, read at merge time so a follow or a
+  // removal made since the similar users were fetched applies at once: people
+  // the user follows (same service and username, case-insensitive), people
+  // they removed (hidden_friend_keys, already in friendKey form), and the
+  // user's own account on each similar-users provider. A provider's id is the
+  // friend `service` it speaks for.
+  const recommendationExclusions = () => {
+    const friendKeys = new Set((friendsRef.current || []).map(f => friendKey(f.service, f.username)));
+    for (const key of hiddenFriendKeysRef.current || []) friendKeys.add(key);
+    const selfKeys = new Set();
+    for (const id of Object.keys(similarUsersRef.current)) {
+      const username = metaServiceConfigsRef.current?.[id]?.username;
+      if (username) selfKeys.add(friendKey(id, username));
+    }
+    return { friendKeys, selfKeys };
   };
 
   // Rebuild the display model from the current provider results + the LLM
@@ -27153,21 +27218,45 @@ Return ONLY the JSON array, no other text.`;
             .filter(s => s.items.length > 0)
         }
       : rawShuffle;
-    const sections = buildRecommendationSections({
+    const sections = buildRecommendationPage({
       providers,
       shuffleupagus: shuffle,
       expandedSections,
-      expandableResolverIds: expandableResolverIdsRef.current
+      expandableResolverIds: expandableResolverIdsRef.current,
+      similarUsers: Object.values(similarUsersRef.current),
+      exclude: recommendationExclusions()
     });
     setRecommendations(prev => ({ ...prev, sections }));
+
+    // Home's weekly fields mirror the page's weekly rows (the playlist view's
+    // pendingPlaylistLoad lookup and the weekly covers effect read them; they
+    // used to be fetched by name for Home). The functional update keeps
+    // tracks a card already loaded, and an unchanged week returns `prev`, so
+    // the LLM's streamed re-merges cost no render here.
+    setHomeData(prev => {
+      const weekly = weeklyHomeEntries(sections, prev);
+      if (weekly.weeklyJams === prev.weeklyJams && weekly.weeklyExploration === prev.weeklyExploration) return prev;
+      return { ...prev, ...weekly };
+    });
 
     // Unread badge (discovery): new content turns the dot on until the page
     // is seen — hashed over item names like the flat page hashed artist names.
     if (sections.length > 0) {
-      const hash = generateDiscoveryHash(sections.flatMap(s => s.items), i => i.name);
+      const hash = generateDiscoveryHash(flattenRecommendationItems(sections), i => i.name);
       checkDiscoveryUnread('recommendations', hash);
     }
   };
+
+  // A follow or a removal re-merges at once (no refetch): the exclusions are
+  // read at merge time. Keyed on a digest of the friend keys, not the friends
+  // array, which the activity polls replace without changing who's in it.
+  const similarExclusionDigest = useMemo(() => [
+    ...friends.map(f => `${f.service}:${(f.username || '').toLowerCase()}`),
+    ...hiddenFriendKeys
+  ].sort().join('|'), [friends, hiddenFriendKeys]);
+  useEffect(() => {
+    if (Object.keys(similarUsersRef.current).length > 0) refreshMergedRecommendations();
+  }, [similarExclusionDigest]);
 
   // `opts.metaServicesOnly` asks only the meta-service providers (Last.fm,
   // ListenBrainz): Home's For You preview loads with it, so a content
@@ -27190,8 +27279,14 @@ Return ONLY the JSON array, no other text.`;
     for (const [id, entry] of Object.entries(recommendationsCache.current.providers || {})) {
       if (entry && entry.sections && entry.sections.length > 0 && (now - entry.fetchedAt) < CACHE_TTL.recommendationsStale) providers[id] = entry;
     }
+    // Similar users by the same rule: an empty answer or one past the stale
+    // bound is not worth showing next launch.
+    const similarUsers = {};
+    for (const [id, entry] of Object.entries(recommendationsCache.current.similarUsers || {})) {
+      if (entry && Array.isArray(entry.users) && entry.users.length > 0 && (now - entry.fetchedAt) < CACHE_TTL.recommendationsStale) similarUsers[id] = entry;
+    }
     try {
-      window.electron.store.set('cache_recommendations', { providers, savedAt: now });
+      window.electron.store.set('cache_recommendations', { providers, similarUsers, savedAt: now });
     } catch (e) { /* best-effort: the page refetches next launch */ }
   };
   const recommendationProviderKey = (providers) => providers.map(p => p.id).join('|');
@@ -27256,6 +27351,30 @@ Return ONLY the JSON array, no other text.`;
       toFetch.push(provider);
     }
 
+    // Similar users (the Friends row): the providers' freshness rule, under
+    // the same account check, and an empty answer is never served. Fetched
+    // only on a full load: Home's meta-only load shows what's cached and asks
+    // no one (one provider's lookup can be ~50 paced requests).
+    const similarProviders = similarUsersProviders();
+    const similarCachedFor = (provider) => {
+      const entry = (recommendationsCache.current.similarUsers || {})[provider.id];
+      return entry && Array.isArray(entry.users) && (entry.account || '') === accountFor(provider) ? entry : null;
+    };
+    const similarFresh = {};
+    const similarStale = {};
+    const similarToFetch = [];
+    for (const provider of similarProviders) {
+      const cached = similarCachedFor(provider);
+      const hasUsers = !!(cached && cached.users.length > 0);
+      if (!forceRefresh && hasUsers && (now - cached.fetchedAt) < CACHE_TTL.recommendations) {
+        similarFresh[provider.id] = cached;
+        continue;
+      }
+      if (hasUsers && (now - cached.fetchedAt) < CACHE_TTL.recommendationsStale) similarStale[provider.id] = cached;
+      if (metaOnly) continue;
+      similarToFetch.push(provider);
+    }
+
     // A forced refresh also forgets the "load more" pages (their items merge
     // into the refreshed sections; a stale cursor must not survive a re-fetch).
     if (forceRefresh) {
@@ -27278,13 +27397,19 @@ Return ONLY the JSON array, no other text.`;
         if (entry) ordered[provider.id] = entry;
       }
       providerSectionsRef.current = ordered;
+      const orderedUsers = {};
+      for (const provider of similarProviders) {
+        const entry = similarFresh[provider.id] || similarStale[provider.id];
+        if (entry) orderedUsers[provider.id] = { resolverId: provider.id, resolverName: provider.name || provider.id, users: entry.users };
+      }
+      similarUsersRef.current = orderedUsers;
       expandableResolverIdsRef.current = providers
         .filter(p => typeof p.expandRecommendationSection === 'function')
         .map(p => p.id);
       refreshMergedRecommendations();
     };
 
-    if (toFetch.length === 0) {
+    if (toFetch.length === 0 && similarToFetch.length === 0) {
       setRecommendationsPending([]);
       applyFresh();
       // Everything came from cache (or no provider exists): the same empty
@@ -27316,7 +27441,66 @@ Return ONLY the JSON array, no other text.`;
 
     const loader = resolverLoaderRef.current;
     let failed = 0;
-    await Promise.all(toFetch.map(async (provider) => {
+
+    // The usernames a similar-users provider should leave out on its own
+    // service: the people followed there and the ones removed (hidden friend
+    // keys are `${service}:${lowercased username}`). Last.fm's lookup uses them
+    // to skip candidates before paying for their top artists; the merge
+    // applies the full exclusion either way.
+    const excludeUsernamesFor = (serviceId) => {
+      const names = new Set();
+      for (const f of friendsRef.current || []) {
+        if (f && f.service === serviceId && f.username) names.add(f.username.toLowerCase());
+      }
+      const prefix = `${serviceId}:`;
+      for (const key of hiddenFriendKeysRef.current || []) {
+        if (typeof key === 'string' && key.startsWith(prefix)) names.add(key.slice(prefix.length));
+      }
+      return [...names];
+    };
+    // One similar-users provider, under the providers' bound and generation
+    // guard. A failure keeps the cached answer (even a stale one) and caches
+    // nothing; a late answer is applied and saved, as for the providers.
+    const fetchSimilarUsers = async (provider) => {
+      try {
+        const config = await getResolverConfig(provider.id);
+        let timer = null;
+        const request = loader.getSimilarUsers(provider.id, { ...config, excludeUsernames: excludeUsernamesFor(provider.id) });
+        const TIMED_OUT = Symbol('timed out');
+        const raw = await Promise.race([
+          request,
+          new Promise(resolve => {
+            timer = setTimeout(() => resolve(TIMED_OUT), CACHE_TTL.recommendationProvider);
+            if (typeof timer.unref === 'function') timer.unref();
+          })
+        ]);
+        clearTimeout(timer);
+        const accept = (users) => {
+          similarFresh[provider.id] = { users: Array.isArray(users) ? users : [], fetchedAt: Date.now(), account: accountFor(provider) };
+          // Stored even when empty so it replaces an older answer; an empty
+          // one is never served or saved.
+          if (!recommendationsCache.current.similarUsers) recommendationsCache.current.similarUsers = {};
+          recommendationsCache.current.similarUsers[provider.id] = similarFresh[provider.id];
+        };
+        if (raw === TIMED_OUT) {
+          request.then((late) => {
+            accept(late);
+            applyFresh();
+            saveRecommendationsCache();
+          }).catch(() => { /* the provider's own failure: nothing to apply */ });
+          throw new Error('timed out');
+        }
+        accept(raw);
+      } catch (error) {
+        // The message only: the config can carry an API key.
+        console.warn(`⭐ Similar users from ${provider.name || provider.id} failed:`, error?.message || error);
+        if (similarCachedFor(provider)) similarFresh[provider.id] = similarCachedFor(provider);
+      }
+      applyFresh();
+    };
+
+    await Promise.all([
+      ...toFetch.map(async (provider) => {
       try {
         const config = await getResolverConfig(provider.id);
         // Providers are not on an interactive path (the page shows the other
@@ -27387,7 +27571,9 @@ Return ONLY the JSON array, no other text.`;
       // holds back the others.
       applyFresh();
       if (isLatest()) setRecommendationsPending(prev => prev.filter(p => p.id !== provider.id));
-    }));
+      }),
+      ...similarToFetch.map(fetchSimilarUsers)
+    ]);
 
     recommendationsCache.current.timestamp = Date.now();
     saveRecommendationsCache();
@@ -27417,14 +27603,18 @@ Return ONLY the JSON array, no other text.`;
   // clicks both passed it), and the append builds from the functional
   // update's `prev` (the ref is only synced post-commit, so a second expansion
   // landing before the re-render would otherwise overwrite the first page).
+  // `section` is a subsection (row). The guard and the expansion record are
+  // keyed by its PROVIDER section (pagingKey): a mixed section splits into one
+  // row per type, the splits share one cursor, and two open splits must never
+  // fetch the same page twice.
   const recommendationsLoadingMoreRef = useRef({});
   const loadMoreRecommendationSection = async (section) => {
     const loader = resolverLoaderRef.current;
-    if (!section?.resolverId || !section?.sectionId || !loader) return;
-    if (recommendationsLoadingMoreRef.current[section.key]) return;
-    recommendationsLoadingMoreRef.current[section.key] = true;
-    setRecommendationsLoadingMore(prev => ({ ...prev, [section.key]: true }));
-    const key = `${section.resolverId}|${section.sectionId}`;
+    if (!section?.resolverId || !section?.sectionId || !section?.pagingKey || !loader) return;
+    if (recommendationsLoadingMoreRef.current[section.pagingKey]) return;
+    recommendationsLoadingMoreRef.current[section.pagingKey] = true;
+    setRecommendationsLoadingMore(prev => ({ ...prev, [section.pagingKey]: true }));
+    const key = section.pagingKey;
     try {
       const config = await getResolverConfig(section.resolverId);
       const result = await loader.expandRecommendationSection(section.resolverId, section.sectionId, section.nextCursor, config);
@@ -27462,8 +27652,8 @@ Return ONLY the JSON array, no other text.`;
       console.warn(`⭐ Failed to expand recommendation section ${section.title || key}:`, error?.message || error);
       showToast(`Couldn't load more from ${section.resolverName || 'the service'}`, 'error');
     } finally {
-      delete recommendationsLoadingMoreRef.current[section.key];
-      setRecommendationsLoadingMore(prev => ({ ...prev, [section.key]: false }));
+      delete recommendationsLoadingMoreRef.current[section.pagingKey];
+      setRecommendationsLoadingMore(prev => ({ ...prev, [section.pagingKey]: false }));
     }
   };
 
@@ -27497,13 +27687,15 @@ Return ONLY the JSON array, no other text.`;
   // base items — the merge dedupes). Collapsing stops the chain (the expanded
   // check), a failed page breaks it (the section state does not change on
   // failure, so the effect does not re-fire), and the ref guard inside
-  // loadMoreRecommendationSection keeps one page in flight per section.
+  // loadMoreRecommendationSection keeps one page in flight per provider
+  // section. It walks the rows: open state is per row (subsection.key), the
+  // in-flight guard per provider section (subsection.pagingKey).
   useEffect(() => {
     if (activeView !== 'recommendations') return;
-    for (const section of recommendations.sections) {
+    for (const section of recommendations.sections.flatMap(s => s.subsections)) {
       if (!recommendationsExpandedSections.has(section.key)) continue;
       if (!section.canLoadMore) continue;
-      if (recommendationsLoadingMoreRef.current[section.key]) continue;
+      if (recommendationsLoadingMoreRef.current[section.pagingKey]) continue;
       loadMoreRecommendationSection(section);
     }
   }, [activeView, recommendations.sections, recommendationsExpandedSections]);
@@ -27540,66 +27732,6 @@ Return ONLY the JSON array, no other text.`;
     return fetch(url); // Final attempt
   };
 
-  // Load weekly jams and weekly exploration playlists from ListenBrainz
-  const loadWeeklyPlaylists = async () => {
-    const listenbrainzConfig = metaServiceConfigs.listenbrainz;
-    if (!listenbrainzConfig?.username) return { jams: null, exploration: null };
-
-    try {
-      // Fetch playlists created for the user (includes Weekly Jams, Weekly Exploration, etc.)
-      // Request enough results to capture several weeks of both jams and exploration playlists
-      const response = await fetchListenBrainz(
-        `https://api.listenbrainz.org/1/user/${encodeURIComponent(listenbrainzConfig.username)}/playlists/createdfor?count=100`
-      );
-
-      if (!response.ok) return { jams: null, exploration: null };
-
-      const data = await response.json();
-      const allPlaylists = data.playlists || [];
-
-      // Separate Weekly Jams from Weekly Exploration
-      const jamsPlaylists = allPlaylists
-        .filter(p => p.playlist?.title?.toLowerCase().includes('weekly jams'))
-        .sort((a, b) => new Date(b.playlist?.date || 0) - new Date(a.playlist?.date || 0));
-
-      const explorationPlaylists = allPlaylists
-        .filter(p => p.playlist?.title?.toLowerCase().includes('weekly exploration'))
-        .sort((a, b) => new Date(b.playlist?.date || 0) - new Date(a.playlist?.date || 0));
-
-      const buildResults = (weeklyPlaylists, defaultTitle, defaultDescription) => {
-        if (weeklyPlaylists.length === 0) return null;
-        const results = [];
-        for (let i = 0; i < Math.min(4, weeklyPlaylists.length); i++) {
-          const entry = weeklyPlaylists[i];
-          const playlistId = entry.playlist?.identifier?.split('/').pop();
-          if (!playlistId) continue;
-
-          const title = entry.playlist?.title || defaultTitle;
-          let weekLabel = i === 0 ? 'This Week' : i === 1 ? 'Last Week' : i === 2 ? '2 Weeks Ago' : '3 Weeks Ago';
-
-          results.push({
-            id: playlistId,
-            title: title,
-            weekLabel: weekLabel,
-            description: entry.playlist?.annotation || defaultDescription,
-            date: entry.playlist?.date,
-            tracks: [],
-            tracksLoaded: false
-          });
-        }
-        return results.length > 0 ? results : null;
-      };
-
-      return {
-        jams: buildResults(jamsPlaylists, 'Weekly Jams', 'Your favorite tracks from the past week, curated by ListenBrainz'),
-        exploration: buildResults(explorationPlaylists, 'Weekly Exploration', 'New discoveries based on your listening habits, curated by ListenBrainz')
-      };
-    } catch (error) {
-      console.error('Failed to load weekly playlists:', error);
-      return { jams: null, exploration: null };
-    }
-  };
-
   // Load tracks for a specific Weekly Jam playlist
   const loadWeeklyJamTracks = async (playlistId) => {
     try {
@@ -27630,20 +27762,9 @@ Return ONLY the JSON array, no other text.`;
     }
   };
 
-  // Load weekly playlists when HOME is active and ListenBrainz is connected
-  useEffect(() => {
-    const fetchWeeklyPlaylists = async () => {
-      if (activeView === 'home' && cacheLoaded && metaServiceConfigs.listenbrainz?.username && !homeData.weeklyJams && !homeData.weeklyExploration) {
-        const { jams, exploration } = await loadWeeklyPlaylists();
-        setHomeData(prev => ({
-          ...prev,
-          ...(jams && jams.length > 0 ? { weeklyJams: jams } : {}),
-          ...(exploration && exploration.length > 0 ? { weeklyExploration: exploration } : {})
-        }));
-      }
-    };
-    fetchWeeklyPlaylists();
-  }, [activeView, cacheLoaded, metaServiceConfigs.listenbrainz?.username]);
+  // homeData.weeklyJams / weeklyExploration are filled by
+  // refreshMergedRecommendations from the page's weekly rows (the plugin's
+  // weekly sections), never fetched here by service name.
 
   // Load covers for weekly jams and weekly exploration when they're available
   useEffect(() => {
@@ -31283,23 +31404,21 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
     // On Home only the For You card needs one photo — the first ARTIST item
     // (the preview derives its image from it); the full page fetches everything.
     let budget = activeView === 'recommendations' ? Infinity : 1;
-    for (const section of recommendations.sections) {
-      for (const item of section.items) {
-        if (budget <= 0) break;
-        if (item.type !== 'artist' && item.type !== 'album') continue;
-        if (activeView === 'home' && item.type !== 'artist') continue;
-        if (item.imageUrl || recommendationImages[item.id] || recommendationImageFetchesRef.current.has(item.id)) continue;
-        recommendationImageFetchesRef.current.add(item.id);
-        budget--;
-        const write = (url) => recommendationImagesWriterRef.current.queue(item.id, { url: url || null, loaded: true }, { merge: true });
-        // Album art / artist photos are decoration: getAlbumArt and
-        // getArtistImage run their MusicBrainz requests in the background
-        // lane, never holding a foreground slot.
-        if (item.type === 'album') {
-          getAlbumArt(item.artist || '', item.name).then(write).catch(() => write(null));
-        } else {
-          getArtistImage(item.name).then(result => write(result?.url || null)).catch(() => write(null));
-        }
+    for (const item of flattenRecommendationItems(recommendations.sections)) {
+      if (budget <= 0) break;
+      if (item.type !== 'artist' && item.type !== 'album') continue;
+      if (activeView === 'home' && item.type !== 'artist') continue;
+      if (item.imageUrl || recommendationImages[item.id] || recommendationImageFetchesRef.current.has(item.id)) continue;
+      recommendationImageFetchesRef.current.add(item.id);
+      budget--;
+      const write = (url) => recommendationImagesWriterRef.current.queue(item.id, { url: url || null, loaded: true }, { merge: true });
+      // Album art / artist photos are decoration: getAlbumArt and
+      // getArtistImage run their MusicBrainz requests in the background
+      // lane, never holding a foreground slot.
+      if (item.type === 'album') {
+        getAlbumArt(item.artist || '', item.name).then(write).catch(() => write(null));
+      } else {
+        getArtistImage(item.name).then(result => write(result?.url || null)).catch(() => write(null));
       }
     }
   }, [activeView, recommendations.sections, recommendationImages]);
@@ -39669,12 +39788,13 @@ useEffect(() => {
         );
         })(),
 
-        // Recommendations view with collapsible hero header — the sectioned
-        // page: generic buckets (Artists / Songs / Albums / Playlists) first,
-        // then the provider-titled sections, then the
-        // Shuffleupagus (LLM) section. Every section shows a few items with a
-        // Show-all button; providers that paginate (expandRecommendationSection)
-        // get a Load more.
+        // Recommendations view with collapsible hero header. INTERIM render of
+        // the grouped model (the redesign's Task 5 replaces it): each type
+        // section's heading, then its rows (subsections) through renderSection,
+        // which still draws them like the old flat sections. The Friends row
+        // is not drawn yet. Every row shows a few items with a Show-more
+        // toggle; providers that paginate (expandRecommendationSection) fill
+        // an open row in the background.
         activeView === 'recommendations' && React.createElement('div', {
           className: 'flex-1 flex flex-col h-full',
           style: { overflow: 'hidden', minHeight: 0 }
@@ -39763,9 +39883,10 @@ useEffect(() => {
           // Scrollable content area — the sectioned page
           (() => {
             const sections = recommendations.sections;
-            const llmSectionPresent = sections.some(s => s.resolverId === 'shuffleupagus');
+            // Shuffleupagus has no section of its own any more: its items
+            // blend into the For you rows, tagged by sourceIds.
+            const llmSectionPresent = sections.some(s => s.subsections.some(sub => sub.sources.some(src => src.id === 'shuffleupagus')));
             const llmLoading = !!homeData.aiRecommendations?.loading && !llmSectionPresent;
-            const BUCKET_TITLES = { artist: 'Artists', song: 'Songs', album: 'Albums', playlist: 'Playlists' };
             // A collapsed section shows this many items (cards); songs show fewer rows.
             const SECTION_PREVIEW = 6;
             const SONG_PREVIEW = 5;
@@ -40340,7 +40461,8 @@ useEffect(() => {
               const visibleCards = expanded ? cardItems : cardItems.slice(0, SECTION_PREVIEW);
               const visibleSongs = expanded ? songItems : songItems.slice(0, SONG_PREVIEW);
               const hiddenCount = section.items.length - visibleCards.length - visibleSongs.length;
-              const loadingMore = !!recommendationsLoadingMore[section.key];
+              // In flight per provider section (the splits share a cursor).
+              const loadingMore = !!recommendationsLoadingMore[section.pagingKey];
               // Only an expanded section shows the incoming page; a collapsed
               // one has more than it shows already. A section with songs gets
               // the tail on its song list (its last block on screen).
@@ -40349,14 +40471,14 @@ useEffect(() => {
               // the preview of EITHER kind (a 6-song, no-cards section expands
               // past SONG_PREVIEW and must be able to fold back).
               const expandable = cardItems.length > SECTION_PREVIEW || songItems.length > SONG_PREVIEW;
-              // The Shuffleupagus section carries its own Refresh (the LLM
+              // A row with Shuffleupagus picks carries its Refresh (the LLM
               // batch stays until refreshed — lib/home-suggestions-refresh.js).
-              const isShuffleupagus = section.resolverId === 'shuffleupagus';
+              const isShuffleupagus = (section.sources || []).some(src => src.id === 'shuffleupagus');
               return React.createElement('div', { key: section.key, className: 'mb-8' },
                 React.createElement('div', { className: 'flex items-center justify-between mb-4 gap-4' },
                   React.createElement('div', { className: 'min-w-0' },
                     React.createElement('h2', { className: 'text-lg font-semibold text-gray-900 flex items-center gap-2' },
-                      section.title || BUCKET_TITLES[section.bucketType] || 'Recommendations',
+                      section.title || 'Recommendations',
                       section.resolverName && React.createElement('span', {
                         className: 'text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded',
                         style: { backgroundColor: 'var(--placeholder-bg)', color: 'var(--text-secondary)' }
@@ -40501,19 +40623,21 @@ useEffect(() => {
                   )
                 // Sections
                 : React.createElement('div', null,
-                    ...sections.filter(s => s.resolverId !== 'shuffleupagus').map(renderSection),
+                    ...sections
+                      .map(typeSection => ({ ...typeSection, rows: typeSection.subsections.filter(sub => sub.type !== 'friend') }))
+                      .filter(typeSection => typeSection.rows.length > 0)
+                      .map(typeSection => React.createElement('div', { key: `type:${typeSection.type}`, className: 'mb-4' },
+                        React.createElement('h2', { className: 'text-2xl font-semibold text-gray-900 mb-4' }, typeSection.title),
+                        ...typeSection.rows.map(renderSection)
+                      )),
                     // Providers still being asked that have nothing on screen
-                    // yet: one unlabeled section skeleton where their sections
-                    // will land (the providers' sections all come before the
-                    // Shuffleupagus one in the merge, so a cached Shuffleupagus
-                    // batch doesn't push it below the fold). Unlabeled because
-                    // a provider can answer "not ready" (an active resolver the
-                    // account can't use): naming it would promise sections
-                    // that never come.
+                    // yet: one unlabeled section skeleton where their rows
+                    // will land. Unlabeled because a provider can answer "not
+                    // ready" (an active resolver the account can't use):
+                    // naming it would promise rows that never come.
                     recommendationsPending.length > 0 && React.createElement(RecommendationSectionSkeleton, {
                       key: 'rec-pending'
                     }),
-                    ...sections.filter(s => s.resolverId === 'shuffleupagus').map(renderSection),
                     // Shuffleupagus skeleton while the LLM thinks (cached
                     // suggestions render as a real section meanwhile)
                     llmLoading && React.createElement(RecommendationSectionSkeleton, {

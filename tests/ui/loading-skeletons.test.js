@@ -71,14 +71,13 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // never came (#1328 review).
     expect(view).toMatch(/recommendationsPending\.length > 0 && React\.createElement\(RecommendationSectionSkeleton, \{\s*key: 'rec-pending'\s*\}\)/);
     expect(view).not.toMatch(/badge: p\.name/);
-    // Where the providers' sections land: after the ones on screen, before
-    // Shuffleupagus (always last in the merge), so a cached Shuffleupagus
-    // batch doesn't push the skeletons below the fold.
-    const list = view.slice(view.indexOf("...sections.filter(s => s.resolverId !== 'shuffleupagus').map(renderSection)"));
+    // Where the providers' rows land: after the type sections on screen
+    // (Shuffleupagus no longer has a section of its own; its picks blend into
+    // the For you rows), with the LLM's thinking skeleton after it.
+    const list = view.slice(view.indexOf('...typeSection.rows.map(renderSection)'));
     expect(list.indexOf('recommendationsPending.length > 0 &&')).toBeGreaterThan(0);
-    expect(list.indexOf("...sections.filter(s => s.resolverId === 'shuffleupagus').map(renderSection)"))
+    expect(list.indexOf('llmLoading && React.createElement(RecommendationSectionSkeleton, {'))
       .toBeGreaterThan(list.indexOf('recommendationsPending.length > 0 &&'));
-    expect(view).toMatch(/llmLoading && React\.createElement\(RecommendationSectionSkeleton, \{/);
   });
 
   test('an expanded section loading its next page shows placeholder cards and rows', () => {
@@ -90,7 +89,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
   test('the pending list is set before the provider fetch and cleared once results apply', () => {
     const load = app.slice(app.indexOf('const providers = metaOnly'), app.indexOf('// "Load more" for a titled section'));
     const set = load.indexOf('setRecommendationsPending(toFetch');
-    const fetch = load.indexOf('await Promise.all(toFetch.map(');
+    const fetch = load.indexOf('...toFetch.map(async (provider) => {');
     expect(set).toBeGreaterThan(-1);
     expect(set).toBeLessThan(fetch);
     // Each provider leaves the list as its answer lands; the round's end clears it.
