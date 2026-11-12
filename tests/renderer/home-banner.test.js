@@ -4,6 +4,7 @@ const path = require('path');
 global.React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
+const { bannerViewId } = require('../../src/renderer/lib/home-banners');
 const { HomeBanner } = require('../../src/renderer/components/home-banner');
 
 const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
@@ -52,11 +53,27 @@ describe('Home-only wiring', () => {
     expect(app).not.toContain('// In-app announcement banner');
   });
   test('the view telemetry effect only fires on Home', () => {
-    const i = app.indexOf("recordAnnouncementEvent(top.id, 'view')");
+    const i = app.indexOf("recordAnnouncementEvent(viewId, 'view')");
     expect(i).toBeGreaterThan(-1);
     expect(app.slice(i - 600, i)).toContain("activeView !== 'home'");
   });
   test('Home no longer builds its own What\'s New card', () => {
     expect(read('src/renderer/components/home-page.js')).not.toContain("What's New card");
+  });
+});
+
+describe('bannerViewId', () => {
+  test('returns the id only when the painted banner is an announcement', () => {
+    expect(bannerViewId([item({ id: 'a1' })])).toBe('a1');
+    expect(bannerViewId([item({ id: 'w', kind: 'whats-new' }), item({ id: 'a1' })])).toBeNull();
+    expect(bannerViewId([])).toBeNull();
+    expect(bannerViewId(undefined)).toBeNull();
+  });
+  test('the view effect uses it on bannerItems', () => {
+    const app = read('src/renderer/app.js');
+    const i = app.indexOf("recordAnnouncementEvent(viewId, 'view')");
+    expect(i).toBeGreaterThan(-1);
+    expect(app.slice(i - 500, i + 120)).toContain('bannerViewId(bannerItems)');
+    expect(app.indexOf('const bannerItems = useMemo')).toBeLessThan(i);
   });
 });

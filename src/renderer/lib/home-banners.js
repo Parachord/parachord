@@ -39,4 +39,12 @@ function homeBannerItems({ whatsNew, announcements } = {}) {
   return items;
 }
 
-module.exports = { homeBannerItems, BANNER_SEVERITY_COLORS };
+// The id that earns a `view` event: only when the banner Home paints (the
+// first item) is a remote announcement. What's New sends no telemetry, and an
+// announcement queued behind it has not been seen.
+function bannerViewId(items) {
+  const top = Array.isArray(items) ? items[0] : null;
+  return top && top.kind === 'announcement' && top.id ? top.id : null;
+}
+
+module.exports = { homeBannerItems, bannerViewId, BANNER_SEVERITY_COLORS };

@@ -1960,7 +1960,7 @@ const {
   RecommendationsPageSkeleton
 } = require('./components/recommendation-skeletons');
 const { useStableHandlers } = require('./lib/stable-handlers');
-const { homeBannerItems } = require('./lib/home-banners');
+const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
@@ -9081,16 +9081,6 @@ const Parachord = () => {
 
   // Fire a 'view' event the first time each banner id renders this session.
   // Re-renders for the same id (state updates, focus refetches) don't double-count.
-  // Only while Home is showing it: the banner renders nowhere else.
-  useEffect(() => {
-    if (activeView !== 'home') return;
-    const top = activeAnnouncements[0];
-    if (!top || !top.id) return;
-    if (announcementViewedThisSessionRef.current.has(top.id)) return;
-    announcementViewedThisSessionRef.current.add(top.id);
-    recordAnnouncementEvent(top.id, 'view');
-  }, [activeAnnouncements, activeView]);
-
   // Home's banner slot: What's New first (until dismissed for this version),
   // then remote announcements.
   const bannerItems = useMemo(() => homeBannerItems({
@@ -9099,6 +9089,17 @@ const Parachord = () => {
       : null,
     announcements: activeAnnouncements,
   }), [appVersion, whatsNewDismissedVersion, activeAnnouncements]);
+
+  // Only while Home is showing it, and only for the banner Home paints
+  // (bannerItems[0]): What's New ahead of an announcement hides it.
+  useEffect(() => {
+    if (activeView !== 'home') return;
+    const viewId = bannerViewId(bannerItems);
+    if (!viewId) return;
+    if (announcementViewedThisSessionRef.current.has(viewId)) return;
+    announcementViewedThisSessionRef.current.add(viewId);
+    recordAnnouncementEvent(viewId, 'view');
+  }, [bannerItems, activeView]);
 
   const dismissHomeBanner = async (item) => {
     if (!item) return;
@@ -9120,7 +9121,7 @@ const Parachord = () => {
       setWhatsNewOpen(true);
       return;
     }
-    if (!item.cta || !item.cta.url) return;
+    if (!item.cta || typeof item.cta.url !== 'string' || !/^https?:\/\//i.test(item.cta.url)) return;
     recordAnnouncementEvent(item.id, 'cta-click');
     if (window.electron?.shell?.openExternal) {
       window.electron.shell.openExternal(item.cta.url);
