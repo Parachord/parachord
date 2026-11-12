@@ -21,7 +21,7 @@ All playlists live in the electron-store key `local_playlists`, read and written
 | Shuffleupagus chat | AI chat `create_playlist` and playlist tools | Model-chosen tracks | Yes, as `ai-chat-*` | No |
 | MCP server | External agents (Claude Desktop etc.) | `create_playlist` | Yes | No |
 | Save queue | Queue panel SAVE; File menu "Export Queue as Playlist" | Current queue | Yes, as `queue-*` | No |
-| Weekly Jams / Exploration | Recommendations (Playlists), SAVE button | ListenBrainz generated playlist | Yes, as `playlist-*` | No |
+| Weekly Exploration | Recommendations (Playlists), SAVE button | ListenBrainz generated playlist (Weekly and Daily Jams are history mixes on Home instead) | Yes, as `playlist-*` | No |
 | Add-to-Playlist panel | 19 places across album, track, playlist and friend views; drag a track onto the sidebar | Tracks | Creates or extends a playlist | No |
 
 Not supported anywhere: Bandcamp playlist URLs (no `lookupPlaylist` in `bandcamp.axe`), Tidal, Deezer, bare ListenBrainz playlist MBIDs (a `listenbrainz.org/playlist/<mbid>` link works, see the table below), Last.fm or Libre.fm playlists, dropping `.xspf`, `.m3u` or audio files onto the window, paste-to-import, `.m3u`/`.pls` scanning in the local files library, and saving a spinoff, radio or history session as a playlist.
