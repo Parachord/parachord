@@ -8,7 +8,7 @@
 // filtering) moves with its pre-component consumers and is exported back to
 // app.js for the in-component call sites; PlayTop10Icon / QueueTop10Icon are
 // cards-only (the playtop-10 / queue-top-10 affordances).
-const { ResolverIcon, PlaybackProgress } = require('./ui-atoms');
+const { ResolverIcon, PlaybackProgress, ShareButton } = require('./ui-atoms');
 const { getBestSourceConfidence } = require('./track-lists');
 const Icons = require('./icons');
 const { Play } = Icons;
@@ -1685,15 +1685,10 @@ const ReleasePage = ({
 
           // Share button
           React.createElement('div', { className: 'relative mt-5 flex justify-start', style: { width: `${albumArtSize}px` } },
-            React.createElement('button', {
-              onClick: (e) => { e.stopPropagation(); setSourceOpen(false); setShareDropdownOpen(shareDropdownOpen === 'album' ? false : 'album'); },
-              className: 'px-2 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-md text-xs font-medium transition-colors flex items-center gap-1 no-drag'
-            },
-              React.createElement('svg', { className: 'w-3 h-3', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', strokeWidth: 2 },
-                React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z' })
-              ),
-              'Share'
-            ),
+            React.createElement(ShareButton, {
+              open: shareDropdownOpen === 'album',
+              onClick: (e) => { e.stopPropagation(); setSourceOpen(false); setShareDropdownOpen(shareDropdownOpen === 'album' ? false : 'album'); }
+            }),
             shareDropdownOpen === 'album' && React.createElement('div', {
               className: 'absolute left-0 top-full mt-1 rounded-lg py-1 min-w-[160px] z-30',
               style: { backgroundColor: 'var(--tooltip-bg)', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)' },
