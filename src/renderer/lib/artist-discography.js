@@ -48,13 +48,19 @@ function releaseFromReleaseGroup(rg, type) {
 // three started at once (the MusicBrainz limiter spaces them 1.1s apart).
 // Release groups rather than releases, so each album appears once. Each type
 // is handed to onBatch as it answers, so the page shows albums first instead
-// of waiting for all three. A failed type answers []. Resolves to every
-// release, in request order (the caller sorts).
+// of waiting for all three. A failed type answers [] and is reported to
+// onError, a refused request (an HTTP error) as well as a thrown one, so the
+// caller can tell "MusicBrainz couldn't answer" from "no releases"
+// (discographyOutcome). Resolves to every release, in request order (the
+// caller sorts).
 async function loadArtistReleaseGroups(artistMbid, { fetch, onBatch = () => {}, onError = () => {} } = {}) {
   const results = await Promise.all(ARTIST_RELEASE_TYPES.map(async (type) => {
     try {
       const response = await fetch(`https://musicbrainz.org/ws/2/release-group?artist=${artistMbid}&type=${type}&fmt=json&limit=100`);
-      if (!response.ok) return [];
+      if (!response.ok) {
+        onError(musicBrainzHttpError(response.status), type);
+        return [];
+      }
       const data = await response.json();
       if (!data['release-groups']) return [];
       const releases = data['release-groups'].map(rg => releaseFromReleaseGroup(rg, type));
@@ -68,4 +74,29 @@ async function loadArtistReleaseGroups(artistMbid, { fetch, onBatch = () => {}, 
   return results.flat();
 }
 
-module.exports = { ARTIST_RELEASE_TYPES, artistLookupPlan, releaseFromReleaseGroup, loadArtistReleaseGroups };
+// An error for a MusicBrainz request that answered with an HTTP error,
+// flagged the way describeMusicBrainzError words it: throttled for 429 and
+// 503 (the fetch interceptor normally throws those itself after its retries),
+// unreachable for any other 5xx.
+function musicBrainzHttpError(status) {
+  const err = new Error(`MusicBrainz answered HTTP ${status}`);
+  err.status = status;
+  if (status === 429 || status === 503) err.mbThrottled = true;
+  else if (status >= 500) err.mbUnreachable = true;
+  return err;
+}
+
+// What the artist page does with MusicBrainz's answer (#874):
+//   'complete': releases, and every type answered. Cache it.
+//   'empty':    no releases, and every type answered. The artist really has
+//               none; cache it and show the plain empty state.
+//   'partial':  releases, but a type failed. Show them, don't cache, so the
+//               next visit asks again.
+//   'failed':   no releases because a type failed. Never cache it; show
+//               "couldn't load" with Try again (after the services' fallback).
+function discographyOutcome({ releaseCount = 0, failedTypes = 0 } = {}) {
+  if (failedTypes > 0) return releaseCount > 0 ? 'partial' : 'failed';
+  return releaseCount > 0 ? 'complete' : 'empty';
+}
+
+module.exports = { ARTIST_RELEASE_TYPES, artistLookupPlan, releaseFromReleaseGroup, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome };
