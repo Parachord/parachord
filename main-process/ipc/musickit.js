@@ -116,10 +116,10 @@ function registerMusicKitIpc({ ipcMain, getMusicKitBridge, getDeveloperToken }) 
   });
 
   // Play a song by Apple Music ID
-  ipcMain.handle('musickit:play', async (event, songId) => {
+  ipcMain.handle('musickit:play', async (event, songId, startTime) => {
     const bridge = getMusicKitBridge();
     try {
-      const result = await bridge.play(songId);
+      const result = await bridge.play(songId, startTime);
       return { success: true, ...result };
     } catch (error) {
       return { success: false, error: error.message };

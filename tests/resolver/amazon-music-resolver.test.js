@@ -302,7 +302,7 @@ describe('amazonmusic play (host-owned through capabilities.widevine)', () => {
     // Transport is hook-extracted: markers live in the engine hook.
     const appSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'hooks', 'use-playback-engine.js'), 'utf8');
     expect(appSrc).toContain('if (isWidevineResolver(resolverId)) {');
-    expect(appSrc).toMatch(/window\.__parachordWidevine\.play\(audioRef\.current, \{\s*resolverId,\s*entity: \{ asin \}/);
+    expect(appSrc).toMatch(/window\.__parachordWidevine\.play\(audioRef\.current, \{\s*resolverId,\s*startTime: startAt,\s*entity: \{ asin \}/);
     expect(appSrc).toMatch(/error\.reason === 'not-signed-in' && window\.__parachordManageAmazonMusic/);
     expect(appSrc).toContain('await startWidevine();');
   });

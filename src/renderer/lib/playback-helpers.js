@@ -201,6 +201,13 @@ function trackPositionKey(track) {
   if (!track.artist || !track.title) return null;
   return `${String(track.artist).toLowerCase()}|${String(track.title).toLowerCase()}|${String(track.album || '').toLowerCase()}`;
 }
+// Where a play of `track` starts: the pending position (a restored queue's
+// resume, or a seek before Play) when it belongs to this track, else 0.
+function pendingStartAt(pending, track) {
+  if (!pending || !(pending.position > 0)) return 0;
+  const key = trackPositionKey(track);
+  return key && key === pending.trackKey ? pending.position : 0;
+}
 function resumeStartPosition({ position, duration }) {
   const at = Number(position);
   if (!Number.isFinite(at) || at < RESUME_MIN_SECONDS) return 0;
@@ -380,6 +387,7 @@ module.exports = {
   RESUME_END_MARGIN_SECONDS,
   resumeStartPosition,
   trackPositionKey,
+  pendingStartAt,
   RADIO_SEED_PROBE_COUNT,
   noPlayableSimilarTracksMessage,
   hasPlayableSource,

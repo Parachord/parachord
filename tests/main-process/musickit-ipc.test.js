@@ -17,7 +17,7 @@ const UNIFORM_CHANNELS = {
   'musickit:fetch-user-token': ['fetchUserToken', 'DEV_TOKEN'],
   'musickit:search': ['search', 'radiohead', 25],
   'musickit:resolve': ['resolve', 'artist', 'title', 'album'],
-  'musickit:play': ['play', 'songId'],
+  'musickit:play': ['play', 'songId', 141.5], // startTime: a resumed track (#1319)
   'musickit:pause': ['pause'],
   'musickit:resume': ['resume'],
   'musickit:stop': ['stop_playback'],

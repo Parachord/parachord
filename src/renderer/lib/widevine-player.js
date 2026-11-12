@@ -530,7 +530,7 @@ function playableVariants(tracks) {
 //     manager is re-fed a one-family set on every choice, forever.
 // preferredAudioCodecs stays EMPTY everywhere on this engine.
 
-async function play(audio, { resolverId, entity, trackContext } = {}) {
+async function play(audio, { resolverId, entity, trackContext, startTime } = {}) {
   if (!audio || !resolverId) throw new Error('widevine-player: audio element and resolverId are required');
   if (!ensureLicenseScheme()) throw new Error('widevine-player: shaka did not load (index.html script tag)');
   if (!window.electron || !window.electron.widevine) throw new Error('widevine-player: bridge missing (preload)');
@@ -694,7 +694,9 @@ async function play(audio, { resolverId, entity, trackContext } = {}) {
   const blob = new Blob([result.manifest], { type: 'application/dash+xml' });
   const uri = URL.createObjectURL(blob);
   try {
-    await player.load(uri);
+    // startTime: a resumed track starts where it was (#1319) instead of
+    // playing from 0:00 until a seek lands.
+    await player.load(uri, startTime > 0 ? startTime : undefined);
   } catch (loadErr) {
     // The manifest mint already allocated a bridge session — a failed load
     // must close it (matched-close by sessionId), or the session idles open

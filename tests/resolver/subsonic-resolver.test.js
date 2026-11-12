@@ -474,7 +474,7 @@ describe('app.js integration', () => {
     expect(appSrc).toContain('if (isHtml5StreamResolver(resolverId)) {');
     // the branch must come before the generic resolver.play() path
     const branchIdx = appSrc.indexOf('if (isHtml5StreamResolver(resolverId)) {');
-    const genericIdx = appSrc.indexOf('const success = await resolver.play(sourceToPlay, config);');
+    const genericIdx = appSrc.indexOf('const success = await resolver.play(playSource, config);');
     expect(branchIdx).toBeGreaterThan(0);
     expect(branchIdx).toBeLessThan(genericIdx);
   });

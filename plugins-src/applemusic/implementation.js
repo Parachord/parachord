@@ -505,9 +505,16 @@ module.exports = {
         console.log('[AppleMusic] Native auth status:', authStatus);
         if (authStatus.success && authStatus.authorized) {
           console.log('[AppleMusic] Playing via native MusicKit:', track.appleMusicId);
-          var playResult = await window.electron.musicKit.play(track.appleMusicId);
+          // _startAt: a resumed track starts where it was. The helper answers
+          // startTime when it applied it (an older one starts at 0:00), and
+          // _startedAt tells the host, which then skips its own seek.
+          var startAt = track._startAt > 0 ? track._startAt : 0;
+          var playResult = startAt > 0
+            ? await window.electron.musicKit.play(track.appleMusicId, startAt)
+            : await window.electron.musicKit.play(track.appleMusicId);
           console.log('[AppleMusic] Native play result:', JSON.stringify(playResult));
           if (playResult.success) {
+            if (startAt > 0 && playResult.startTime === startAt) track._startedAt = startAt;
             return true;
           }
           var errMsg = playResult.error || '';

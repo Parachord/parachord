@@ -30,7 +30,7 @@ describe('Spotify pause on track change', () => {
   });
 
   test('the ref is set right before a Spotify play and cleared by each pause', () => {
-    expect(app).toMatch(/if \(resolverId === 'spotify'\) spotifyPlaySentRef\.current = true;\n\s*const success = await resolver\.play\(sourceToPlay, config\);/);
+    expect(app).toMatch(/if \(resolverId === 'spotify'\) spotifyPlaySentRef\.current = true;\n[\s\S]{0,500}?const success = await resolver\.play\(playSource, config\);/);
     expect(app.match(/spotifyPlaySentRef\.current\)\) \{\n\s*spotifyPlaySentRef\.current = false;/g)).toHaveLength(3);
   });
 });

@@ -521,9 +521,12 @@ class MusicKitBridge extends EventEmitter {
     return this.send('resolve', { artist, title, album });
   }
 
-  async play(songId) {
+  // startTime (seconds): start there instead of 0:00. A helper that applied it
+  // answers startTime; an older helper ignores it and starts at 0:00.
+  async play(songId, startTime = 0) {
     try {
-      const result = await this.send('play', { songId });
+      const params = Number.isFinite(startTime) && startTime > 0 ? { songId, startTime } : { songId };
+      const result = await this.send('play', params);
       return result;
     } catch (error) {
       // If play fails, invalidate auth cache so next call re-checks
