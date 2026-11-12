@@ -1,0 +1,42 @@
+// Banner list model for the Home page. `announcements` arrives already
+// filtered (expiry, version range, dismissals), so this only orders and
+// normalises: What's New first, then announcements in their given order.
+
+// Same in both themes; each has at least 4.5:1 contrast with white text.
+const BANNER_SEVERITY_COLORS = {
+  info: '#2563eb',
+  success: '#15803d',
+  warn: '#b45309',
+  error: '#b91c1c',
+};
+
+function homeBannerItems({ whatsNew, announcements } = {}) {
+  const items = [];
+  if (whatsNew) {
+    items.push({
+      id: `whats-new:${whatsNew.version}`,
+      kind: 'whats-new',
+      title: whatsNew.title,
+      body: whatsNew.body,
+      icon: null,
+      iconUrl: null,
+      cta: null,
+      severity: 'info',
+    });
+  }
+  for (const a of announcements || []) {
+    items.push({
+      id: a.id,
+      kind: 'announcement',
+      title: a.title,
+      body: a.body,
+      icon: a.icon || null,
+      iconUrl: a.iconUrl || null,
+      cta: a.cta || null,
+      severity: a.severity || 'info',
+    });
+  }
+  return items;
+}
+
+module.exports = { homeBannerItems, BANNER_SEVERITY_COLORS };
