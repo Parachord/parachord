@@ -59,6 +59,8 @@ describe('saved recommendations', () => {
     const effect = app.slice(app.indexOf('const recommendationReleaseDateFetchesRef = useRef(new Set());'), app.indexOf('// Fetch artist biography from Last.fm'));
     expect(effect).toContain("if (activeView !== 'recommendations') return;");
     expect(effect).toContain("if (item.type !== 'album' || !item.artist || !item.name) continue;");
+    // A provider's own date (Apple Music) needs no lookup.
+    expect(effect).toContain('if (item.releaseDate) continue;');
     expect(effect).toContain('if (known && (now - known.at) < RELEASE_DATE_TTL_MS) continue;');
     expect(effect).toContain('fetch(releaseGroupSearchUrl(item.artist, item.name), { mbBackground: true, queuedTimeoutMs: 15000 })');
     expect(effect).toContain('.catch(() => { /* nothing stored: a later visit asks again */ })');
@@ -67,7 +69,8 @@ describe('saved recommendations', () => {
 
   test('an album dated after today carries Fresh Drops\' cover badge with "Coming <date>"', () => {
     const card = app.slice(app.indexOf('const albumCard = (item, index) => {'), app.indexOf('const playlistCard = (item, index, section) => {'));
-    expect(card).toContain("const entry = recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];");
+    expect(card).toContain('const entry = item.releaseDate');
+    expect(card).toContain(": recommendationReleaseDates[releaseDateKey(item.artist || '', item.name)];");
     expect(card).toContain('const label = entry && upcomingLabel(entry.date);');
     expect(card).toContain("className: 'release-badge',");
     expect(card).toContain("style: { position: 'absolute', top: '8px', right: '8px', zIndex: 10 }");

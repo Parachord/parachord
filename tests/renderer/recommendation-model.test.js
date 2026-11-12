@@ -79,6 +79,18 @@ describe('normalizeRecommendationItem', () => {
   });
 });
 
+describe('normalizeRecommendationItem releaseDate', () => {
+  test('an album keeps a provider release date (date part only); anything else drops it', () => {
+    const album = (releaseDate) => normalizeRecommendationItem({ type: 'album', name: 'A', artist: 'B', releaseDate }, 'applemusic');
+    expect(album('2026-12-05').releaseDate).toBe('2026-12-05');
+    expect(album('2026-12-05T00:00:00Z').releaseDate).toBe('2026-12-05');
+    expect(album('2027').releaseDate).toBe('2027');
+    expect(album('soon')).not.toHaveProperty('releaseDate');
+    expect(album(20261205)).not.toHaveProperty('releaseDate');
+    expect(normalizeRecommendationItem({ type: 'playlist', name: 'P', releaseDate: '2026-12-05' }, 'x')).not.toHaveProperty('releaseDate');
+  });
+});
+
 describe('normalizeRecommendationSections', () => {
   test('normalizes sections, drops empty ones and untitled sections keep no title', () => {
     const result = normalizeRecommendationSections({

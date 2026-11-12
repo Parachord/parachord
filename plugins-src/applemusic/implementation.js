@@ -69,6 +69,72 @@ module.exports = {
       throw error;
     }
   },
+  // capabilities.recommendations (docs/architecture/plugins.md,
+  // "Recommendations"): Apple Music's personal recommendations, GET
+  // /v1/me/recommendations, through the host's account hook
+  // (window.appleMusicPersonalRecommendations, which picks the user token Apple
+  // accepts). Each of Apple's groups ("Playlists Made for You", "New Releases
+  // for You", "More from <artist>", "<artist> Fans Like", genre and decade
+  // picks) becomes a titled section of albums, playlists and songs; stations
+  // (Parachord can't play them) and "Recently Played" (history, not a
+  // recommendation) are left out, and a group of groups is flattened. Albums
+  // carry Apple's releaseDate for the page's "Coming" badge. A host without
+  // the hook (older apps, other platforms) is a quiet empty provider; a
+  // refused or missing sign-in arrives as the hook's notReady error and is
+  // rethrown, never answered as a miss.
+  getRecommendations: async function (config) {
+    if (typeof window === 'undefined' || typeof window.appleMusicPersonalRecommendations !== 'function') {
+      return { sections: [] };
+    }
+    var body = await window.appleMusicPersonalRecommendations(30);
+    var art = function (a) {
+      var u = a && a.artwork && a.artwork.url;
+      return u ? String(u).replace('{w}', '600').replace('{h}', '600').replace('{f}', 'jpg') : null;
+    };
+    var mapItem = function (c) {
+      var a = c && c.attributes;
+      if (!a || typeof a.name !== 'string' || !a.name.trim()) return null;
+      if (c.type === 'albums') {
+        return {
+          type: 'album',
+          id: 'applemusic-album-' + c.id,
+          name: a.name,
+          artist: a.artistName || '',
+          imageUrl: art(a),
+          url: a.url || null,
+          releaseDate: a.releaseDate || null,
+        };
+      }
+      if (c.type === 'playlists') {
+        return { type: 'playlist', id: 'applemusic-playlist-' + c.id, name: a.name, imageUrl: art(a), url: a.url || null };
+      }
+      if (c.type === 'songs') {
+        var song = { type: 'song', name: a.name, artist: a.artistName || '', imageUrl: art(a), url: a.url || null };
+        if (a.durationInMillis) song.duration = Math.round(a.durationInMillis / 1000);
+        if (a.isrc) song.isrc = a.isrc;
+        return song;
+      }
+      return null;
+    };
+    var sections = [];
+    var addGroup = function (g, depth) {
+      var ga = g && g.attributes;
+      if (!ga || ga.kind === 'recently-played') return;
+      var rel = g.relationships || {};
+      var nested = rel.recommendations && rel.recommendations.data;
+      if (Array.isArray(nested) && depth < 2) {
+        nested.forEach(function (n) { addGroup(n, depth + 1); });
+      }
+      var contents = (rel.contents && rel.contents.data) || [];
+      var items = contents.map(mapItem).filter(Boolean);
+      if (!items.length) return;
+      var title = (ga.title && ga.title.stringForDisplay) || 'Apple Music';
+      sections.push({ id: 'applemusic:' + g.id, title: title, items: items });
+    };
+    ((body && body.data) || []).forEach(function (g) { addGroup(g, 0); });
+    console.log('[AppleMusic] recommendations', sections.length, 'sections');
+    return { sections: sections };
+  },
   resolve: async function (artist, track, album, config) {
     // The platform's gate (validateResolvedTrack in
     // sync-providers/confidence-scoring.js), copied because an .axe function can't
