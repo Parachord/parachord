@@ -1,18 +1,24 @@
 // src/renderer/lib/recommendation-model.js — the pure model behind the
-// Recommendations page's sectioned layout.
+// Recommendations page's grouped layout.
 //
 // Plugins with the `recommendations` capability answer getRecommendations with
 // sections of typed items (docs/architecture/plugins.md, "Recommendations").
-// This module normalizes those answers into one display model:
+// This module normalizes those answers into one display model: five sections
+// by item type (Songs, Albums, Artists, Playlists, Friends), each holding
+// subsections (rows):
 //
-//   - items with a section title keep that title and become their own
-//     subsection, in provider order after the generic buckets;
-//   - items with no title fall into the GENERIC buckets, one per type
-//     (Artists, Songs, Albums, Playlists), which come first in the page;
-//   - the generic Artists bucket is also fed by artists DERIVED from the
-//     generic songs (the pre-sectioning page's Artists tab);
-//   - everything is deduplicated per type so two providers recommending the
-//     same thing show it once.
+//   - "For you" (key foryou:<type>) blends every provider's untitled items of
+//     that type, interleaved round-robin by provider with Shuffleupagus last,
+//     deduplicated per type; each merged item records every provider that sent
+//     it in `sourceIds` so the page can filter by source;
+//   - a provider's titled section becomes one subsection per item type it
+//     holds, all sharing one `pagingKey` so "load more" stays per section;
+//   - weekly playlist rows (items carrying `weekly`) lead Playlists' titled
+//     rows, Exploration before Jams;
+//   - Friends is one blended row built from the providers' similar users.
+//
+// Filtering is NOT done here: filterSubsectionItems is applied at render so
+// toggling a source never re-merges or refetches.
 //
 // Pure on purpose: loadable under plain Node (globalThis, not window) and
 // unit-tested (tests/renderer/recommendation-model.test.js). The renderer
@@ -21,9 +27,8 @@
 
 const { trackSlug, slug } = require('./track-slug');
 
-// The generic buckets, in display order. A bucket only appears when it has
-// items. Songs and artists interleave across providers, so the order is the
-// one thing that is not the input's business.
+// LEGACY (flat page): only buildRecommendationSections below uses it. Task 4
+// of the redesign rewires app.js onto buildRecommendationPage and deletes both.
 const GENERIC_BUCKET_ORDER = [
   { type: 'artist', key: 'generic:artist' },
   { type: 'song', key: 'generic:song' },
@@ -86,6 +91,17 @@ function normalizeRecommendationItem(raw, resolverId) {
   // pickTrackMatch's exact-MBID tier can fire without a lookup.
   if (typeof raw.mbid === 'string' && raw.mbid.trim()) item.mbid = raw.mbid.trim();
   if (typeof raw.isrc === 'string' && raw.isrc.trim()) item.isrc = raw.isrc.trim();
+  // A weekly playlist (ListenBrainz Weekly Jams / Exploration) carries what the
+  // existing weekly path needs to open and play it. Recognized by this field,
+  // never by provider name; a malformed value is dropped, not half-kept.
+  const w = raw.weekly;
+  if (type === 'playlist' && w && typeof w === 'object'
+    && typeof w.id === 'string' && w.id
+    && (w.contextType === 'weekly-jam' || w.contextType === 'weekly-exploration')
+    && typeof w.label === 'string' && typeof w.weekLabel === 'string') {
+    item.weekly = { id: w.id, contextType: w.contextType, label: w.label, weekLabel: w.weekLabel };
+    if (typeof w.date === 'string') item.weekly.date = w.date;
+  }
   if (type === 'song') {
     if (raw.duration && Number.isFinite(Number(raw.duration))) item.duration = Number(raw.duration);
     // The track object every shared path (resolution scheduler, play, queue)
@@ -184,6 +200,8 @@ function displaySection({ key, title, description, bucketType, resolverId, resol
   };
 }
 
+// LEGACY shim for the flat page until app.js moves to buildRecommendationPage
+// (Task 4 deletes it). Behavior is unchanged.
 // The display model: generic buckets first (Artists, Songs, Albums,
 // Playlists), then the providers' titled sections in provider order, then the
 // Shuffleupagus section.
@@ -266,6 +284,244 @@ function buildRecommendationSections({ providers, shuffleupagus, expandedSection
   return sections;
 }
 
+const TYPE_SECTIONS = [
+  { type: 'song', title: 'Songs' },
+  { type: 'album', title: 'Albums' },
+  { type: 'artist', title: 'Artists' },
+  { type: 'playlist', title: 'Playlists' },
+  { type: 'friend', title: 'Friends' }
+];
+
+const WEEKLY_RANK = { 'weekly-exploration': 0, 'weekly-jam': 1 };
+
+// Dedupe several providers' lists of ONE type: the first provider in priority
+// order owns an item's position and fields; later providers sending the same
+// thing add their id to sourceIds. A later Shuffleupagus reason is copied when
+// the kept item has none, so the AI's "why" survives the merge. Returns one
+// owned list per input list (so the caller can interleave them).
+function mergeOwned(lists) {
+  const kept = new Map();
+  return lists.map((list) => {
+    const owned = [];
+    for (const item of list) {
+      const key = recommendationItemKey(item);
+      const existing = kept.get(key);
+      if (!existing) {
+        const copy = { ...item, sourceIds: [item.resolverId] };
+        kept.set(key, copy);
+        owned.push(copy);
+        continue;
+      }
+      if (item.resolverId && !existing.sourceIds.includes(item.resolverId)) existing.sourceIds.push(item.resolverId);
+      if (!existing.reason && item.reason && item.resolverId === 'shuffleupagus') existing.reason = item.reason;
+    }
+    return owned;
+  });
+}
+
+// One item per list per round, in list order.
+function interleave(lists) {
+  const out = [];
+  const longest = Math.max(0, ...lists.map(l => l.length));
+  for (let i = 0; i < longest; i++) {
+    for (const list of lists) if (i < list.length) out.push(list[i]);
+  }
+  return out;
+}
+
+function subsection(fields) {
+  return {
+    key: fields.key,
+    type: fields.type,
+    title: fields.title || null,
+    description: fields.description || null,
+    blended: !!fields.blended,
+    sources: fields.sources || [],
+    resolverId: fields.resolverId || null,
+    resolverName: fields.resolverName || null,
+    sectionId: fields.sectionId || null,
+    pagingKey: fields.pagingKey || null,
+    canLoadMore: !!fields.canLoadMore,
+    nextCursor: fields.nextCursor || null,
+    items: fields.items
+  };
+}
+
+// The providers with at least one item in `items`'s sourceIds, in `order`.
+function sourcesFor(items, order, names) {
+  const present = new Set();
+  for (const item of items) for (const id of item.sourceIds || []) present.add(id);
+  return order.filter(id => present.has(id)).map(id => ({ id, name: names[id] || id }));
+}
+
+// The grouped page: sections by type, each with For you first, then the
+// providers' titled rows, per the header comment.
+//
+//   providers, shuffleupagus, expandedSections, expandableResolverIds as the
+//   legacy builder took them; similarUsers is
+//   [{ resolverId, resolverName, users: [{ username, similarity, avatarUrl? }] }];
+//   exclude is { friendKeys, selfKeys }, Sets of `service:username-lowercased`.
+function buildRecommendationPage({ providers, shuffleupagus, expandedSections, expandableResolverIds, similarUsers, exclude } = {}) {
+  const names = {};
+  const order = [];
+  const addProvider = (id, name) => {
+    if (!id || order.includes(id)) return;
+    order.push(id);
+    names[id] = name || id;
+  };
+
+  // Per provider (in order), the untitled items by type; derived artists come
+  // from THAT provider's untitled songs and keep it as their source.
+  const forYou = []; // [{ id, byType }]
+  const titledRows = { song: [], album: [], artist: [], playlist: [] };
+  const expandable = new Set(expandableResolverIds || []);
+
+  for (const provider of providers || []) {
+    if (!provider) continue;
+    addProvider(provider.resolverId, provider.resolverName);
+    const byType = { artist: [], song: [], album: [], playlist: [] };
+    for (const section of provider.sections || []) {
+      const items = section.items || [];
+      if (!section.title) {
+        for (const item of items) if (byType[item.type]) byType[item.type].push(item);
+        continue;
+      }
+      const pagingId = section.id || section.title;
+      const expansion = (expandedSections || {})[`${provider.resolverId}|${pagingId}`] || null;
+      // Items a "load more" fetched arrive raw; normalize them with the
+      // section's provider identity.
+      const extra = (expansion && Array.isArray(expansion.items) ? expansion.items : [])
+        .map(raw => normalizeRecommendationItem(raw, provider.resolverId))
+        .filter(Boolean);
+      const merged = mergeOwned([[...items, ...extra]])[0];
+      const types = [];
+      for (const item of merged) if (!types.includes(item.type)) types.push(item.type);
+      for (const type of types) {
+        if (!titledRows[type]) continue;
+        titledRows[type].push(subsection({
+          key: `${provider.resolverId}:${pagingId}:${type}`,
+          type,
+          title: section.title,
+          description: section.description,
+          sources: [{ id: provider.resolverId, name: provider.resolverName || provider.resolverId }],
+          resolverId: provider.resolverId,
+          resolverName: provider.resolverName,
+          sectionId: section.id || null,
+          pagingKey: `${provider.resolverId}|${pagingId}`,
+          canLoadMore: !!section.id && expandable.has(provider.resolverId) && !(expansion && expansion.exhausted),
+          nextCursor: (expansion && expansion.nextCursor) || section.nextCursor || null,
+          items: merged.filter(item => item.type === type)
+        }));
+      }
+    }
+    byType.artist.push(...deriveArtistsFromSongs(byType.song));
+    forYou.push({ id: provider.resolverId, byType });
+  }
+
+  if (shuffleupagus && Array.isArray(shuffleupagus.sections)) {
+    addProvider(shuffleupagus.resolverId, shuffleupagus.resolverName);
+    const byType = { artist: [], song: [], album: [], playlist: [] };
+    for (const section of shuffleupagus.sections) {
+      for (const item of section.items || []) if (byType[item.type]) byType[item.type].push(item);
+    }
+    forYou.push({ id: shuffleupagus.resolverId, byType });
+  }
+
+  const page = [];
+  for (const { type, title } of TYPE_SECTIONS) {
+    const subsections = [];
+    if (type === 'friend') {
+      const row = friendsRow(similarUsers, exclude);
+      if (row) subsections.push(row);
+    } else {
+      const items = interleave(mergeOwned(forYou.map(p => p.byType[type])));
+      if (items.length) {
+        const sources = sourcesFor(items, order, names);
+        subsections.push(subsection({
+          key: `foryou:${type}`, type, title: 'For you', blended: sources.length > 1, sources, items
+        }));
+      }
+      let rows = titledRows[type];
+      if (type === 'playlist') {
+        // Weekly rows lead the titled playlists (recognized by the field their
+        // items carry, not by provider), Exploration before Jams; the rest
+        // keep provider order.
+        const weeklyRank = (row) => {
+          const w = row.items.find(i => i.weekly);
+          return w ? (WEEKLY_RANK[w.weekly.contextType] ?? 2) : -1;
+        };
+        const weekly = rows.filter(r => weeklyRank(r) >= 0).sort((a, b) => weeklyRank(a) - weeklyRank(b));
+        rows = [...weekly, ...rows.filter(r => weeklyRank(r) < 0)];
+      }
+      subsections.push(...rows);
+    }
+    if (subsections.length) page.push({ type, title, subsections });
+  }
+  return page;
+}
+
+// Friends: one blended "Listen like you" row. Same name on two services stays
+// two entries (not known to be the same person); followed, removed and self
+// accounts are dropped by key.
+function friendsRow(similarUsers, exclude) {
+  const friendKeys = (exclude && exclude.friendKeys) || new Set();
+  const selfKeys = (exclude && exclude.selfKeys) || new Set();
+  const lists = [];
+  const order = [];
+  const names = {};
+  for (const provider of similarUsers || []) {
+    if (!provider || !provider.resolverId) continue;
+    const service = provider.resolverId;
+    const seen = new Set();
+    const list = [];
+    for (const user of provider.users || []) {
+      const username = user && typeof user.username === 'string' ? user.username.trim() : '';
+      if (!username) continue;
+      const key = `${service}:${username.toLowerCase()}`;
+      if (seen.has(key) || friendKeys.has(key) || selfKeys.has(key)) continue;
+      seen.add(key);
+      list.push({
+        type: 'friend',
+        id: `similar:${service}:${username}`,
+        name: username,
+        service,
+        similarity: user.similarity,
+        avatarUrl: user.avatarUrl || null,
+        resolverId: service,
+        sourceIds: [service]
+      });
+    }
+    if (!list.length) continue;
+    order.push(service);
+    names[service] = provider.resolverName || service;
+    lists.push(list);
+  }
+  const items = interleave(lists);
+  if (!items.length) return null;
+  const sources = sourcesFor(items, order, names);
+  return subsection({
+    key: 'friends:similar', type: 'friend', title: 'Listen like you', blended: sources.length > 1, sources, items
+  });
+}
+
+// The items a row shows under the page's source filters. An item is hidden
+// only when EVERY provider that sent it is off, so turning ListenBrainz off
+// keeps an artist Shuffleupagus also picked. Pure: never touches the row.
+function filterSubsectionItems(sub, offIds) {
+  const items = (sub && sub.items) || [];
+  if (!offIds || !offIds.size) return items;
+  return items.filter(item => {
+    const ids = item.sourceIds || [];
+    return !ids.length || !ids.every(id => offIds.has(id));
+  });
+}
+
+// Every subsection's items, in page order (what the resolution scheduler,
+// MBID enrichment and the blocklist walk).
+function flattenRecommendationItems(sections) {
+  return (sections || []).flatMap(s => s.subsections.flatMap(sub => sub.items));
+}
+
 // The Shuffleupagus (LLM) provider: its albums and artists (from
 // loadAiRecommendations / the cache_ai_suggestions store key) become one
 // titled section so the reasons and the AI identity stay visible. `albums` is
@@ -307,7 +563,7 @@ function shuffleupagusSection({ albums, artists } = {}) {
 }
 
 module.exports = {
-  GENERIC_BUCKET_ORDER,
+  TYPE_SECTIONS,
   RECOMMENDATION_TYPES,
   blockedItemPick,
   normalizeRecommendationItem,
@@ -315,6 +571,9 @@ module.exports = {
   deriveArtistsFromSongs,
   recommendationItemKey,
   dedupeItems,
-  buildRecommendationSections,
+  buildRecommendationSections, // legacy shim, removed in Task 4
+  buildRecommendationPage,
+  filterSubsectionItems,
+  flattenRecommendationItems,
   shuffleupagusSection
 };
