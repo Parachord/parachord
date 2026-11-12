@@ -1,4 +1,4 @@
-// Source of truth for plugins/listenbrainz.axe v1.2.1.
+// Source of truth for plugins/listenbrainz.axe v1.3.0.
 // Imported from the .axe by `node scripts/build-axes.js --import`.
 // Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.
 // The functions materialize fully isolated (resolver-loader.js uses
@@ -124,6 +124,83 @@ module.exports = {
         mbid
       });
     }
-    return { sections: [{ items }] };
+
+    const sections = [{ items }];
+
+    // Weekly Exploration and Weekly Jams, the last four of each (the cards
+    // Home used to build itself). They live in /playlists/createdfor, not
+    // /playlists/recommendations. A failed request throws like the others:
+    // an empty answer would be cached as "no weekly playlists".
+    const createdForResponse = await fetchListenBrainz(`https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/playlists/createdfor?count=100`);
+    if (!createdForResponse.ok) {
+      throw new Error(`Failed to fetch ListenBrainz weekly playlists: ${createdForResponse.status}`);
+    }
+    const createdForData = await createdForResponse.json();
+    const createdFor = (createdForData && createdForData.playlists) || [];
+    const WEEK_LABELS = ['This Week', 'Last Week', '2 Weeks Ago', '3 Weeks Ago'];
+    const weeklyItems = (titleNeedle, contextType, label) => createdFor
+      .filter(e => String((e && e.playlist && e.playlist.title) || '').toLowerCase().includes(titleNeedle))
+      .sort((a, b) => dateOf(b) - dateOf(a))
+      .slice(0, 4)
+      .map((e, i) => {
+        const id = String(e.playlist.identifier || '').split('/').pop();
+        if (!id) return null;
+        return {
+          type: 'playlist',
+          id,
+          name: WEEK_LABELS[i],
+          url: `https://listenbrainz.org/playlist/${id}/`,
+          weekly: { id, contextType, label, weekLabel: WEEK_LABELS[i], date: e.playlist.date }
+        };
+      })
+      .filter(Boolean);
+    const explorationItems = weeklyItems('weekly exploration', 'weekly-exploration', 'Weekly Exploration');
+    const jamsItems = weeklyItems('weekly jams', 'weekly-jam', 'Weekly Jams');
+    if (explorationItems.length) sections.push({ id: 'weekly-exploration', title: 'Weekly Exploration', items: explorationItems });
+    if (jamsItems.length) sections.push({ id: 'weekly-jams', title: 'Weekly Jams', items: jamsItems });
+    return { sections };
+  },
+
+  // The similarUsers capability: listeners whose taste is closest to the
+  // user's, for the Recommendations page's Friends section. No username is a
+  // miss ([]); a failed request throws so an outage is never cached as
+  // "no similar listeners".
+  getSimilarUsers: async function (config) {
+    const username = config && config.username;
+    if (!username) return [];
+    const fetchListenBrainz = async (url) => {
+      const maxRetries = 3;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(url);
+          if (response.ok) return response;
+          if (response.status === 429 || response.status === 503) {
+            const delay = Math.pow(2, attempt) * 1500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          return response;
+        } catch (networkError) {
+          if (attempt < maxRetries - 1) {
+            const delay = Math.pow(2, attempt) * 1500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            throw networkError;
+          }
+        }
+      }
+      return fetch(url);
+    };
+    const response = await fetchListenBrainz(`https://api.listenbrainz.org/1/user/${encodeURIComponent(username)}/similar-users`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ListenBrainz similar users: ${response.status}`);
+    }
+    const data = await response.json();
+    // The API wraps the list in { payload }; accept a bare array too.
+    const rows = Array.isArray(data) ? data : ((data && data.payload) || []);
+    return rows
+      .filter(r => r && r.user_name)
+      .map(r => ({ username: r.user_name, similarity: Number(r.similarity) || 0 }))
+      .sort((a, b) => b.similarity - a.similarity);
   }
 };

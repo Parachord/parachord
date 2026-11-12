@@ -12,6 +12,9 @@ const path = require('path');
 
 const axe = JSON.parse(fs.readFileSync(path.join(__dirname, '../../plugins/listenbrainz.axe'), 'utf8'));
 const getRecommendations = new Function('return ' + axe.implementation.getRecommendations)();
+const getSimilarUsers = axe.implementation.getSimilarUsers
+  ? new Function('return ' + axe.implementation.getSimilarUsers)()
+  : null;
 
 const DAY = 24 * 60 * 60 * 1000;
 const iso = (daysAgo) => new Date(Date.now() - daysAgo * DAY).toISOString();
@@ -39,10 +42,13 @@ const jspf = (id) => ({
 });
 
 let requested;
-const run = async (playlists, { listStatus = 200 } = {}) => {
+const run = async (playlists, { listStatus = 200, createdfor = [], createdforStatus = 200 } = {}) => {
   requested = [];
   global.fetch = async (url) => {
     requested.push(url);
+    if (url.includes('/playlists/createdfor')) {
+      return { ok: createdforStatus === 200, status: createdforStatus, json: async () => ({ playlists: createdfor }) };
+    }
     if (url.includes('/playlists/recommendations')) {
       return { ok: listStatus === 200, status: listStatus, json: async () => ({ playlists }) };
     }
@@ -117,5 +123,86 @@ describe('ListenBrainz getRecommendations picks a playlist by type', () => {
 
   test('a failed list request throws rather than reading as a miss', async () => {
     await expect(run([], { listStatus: 500 })).rejects.toThrow(/500/);
+  });
+});
+
+describe('ListenBrainz weekly sections', () => {
+  const weeks = (kind, n, idPrefix) => Array.from({ length: n }, (_, i) =>
+    entry(`${idPrefix}${i}`, `Weekly ${kind} for someone, week of 2026-11-0${i} Mon`, 2 + i * 7, null));
+
+  test('weekly sections: four newest of each, labels in order, Exploration and Jams ids', async () => {
+    // Shuffled and over-long on purpose: only the newest four of each survive.
+    const createdfor = [
+      ...weeks('Jams', 6, 'j').reverse(),
+      ...weeks('Exploration', 5, 'x'),
+      entry('other', 'Top Discoveries of 2025 for someone', 0, null),
+    ];
+    const result = await run([entry('explore', 'Weekly Exploration for someone', 1, 'weekly-exploration')], { createdfor });
+    expect(requested.filter(u => u.includes('/playlists/createdfor'))).toEqual([
+      'https://api.listenbrainz.org/1/user/someone/playlists/createdfor?count=100'
+    ]);
+    expect(result.sections).toHaveLength(3);
+    expect(result.sections[0].title).toBeUndefined();
+    const [, exploration, jams] = result.sections;
+    expect(exploration).toMatchObject({ id: 'weekly-exploration', title: 'Weekly Exploration' });
+    expect(jams).toMatchObject({ id: 'weekly-jams', title: 'Weekly Jams' });
+    expect(exploration.items.map(i => i.id)).toEqual(['x0', 'x1', 'x2', 'x3']);
+    expect(jams.items.map(i => i.id)).toEqual(['j0', 'j1', 'j2', 'j3']);
+    expect(jams.items.map(i => i.name)).toEqual(['This Week', 'Last Week', '2 Weeks Ago', '3 Weeks Ago']);
+    expect(exploration.items[0]).toEqual({
+      type: 'playlist',
+      id: 'x0',
+      name: 'This Week',
+      url: 'https://listenbrainz.org/playlist/x0/',
+      weekly: { id: 'x0', contextType: 'weekly-exploration', label: 'Weekly Exploration', weekLabel: 'This Week', date: expect.any(String) }
+    });
+    expect(jams.items[1].weekly).toMatchObject({ contextType: 'weekly-jam', label: 'Weekly Jams', weekLabel: 'Last Week' });
+  });
+
+  test('no weekly playlists: only the songs section', async () => {
+    const result = await run([entry('explore', 'Weekly Exploration for someone', 1, 'weekly-exploration')], {
+      createdfor: [entry('other', 'Top Discoveries of 2025 for someone', 0, null)]
+    });
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0].items[0].type).toBe('song');
+  });
+
+  test('createdfor failure throws', async () => {
+    await expect(run([entry('explore', 'Weekly Exploration for someone', 1, 'weekly-exploration')], { createdforStatus: 500 }))
+      .rejects.toThrow(/500/);
+  });
+});
+
+describe('ListenBrainz getSimilarUsers', () => {
+  test('getSimilarUsers maps and sorts the similar-users answer', async () => {
+    requested = [];
+    global.fetch = async (url) => {
+      requested.push(url);
+      return { ok: true, status: 200, json: async () => ({ payload: [
+        { user_name: 'low', similarity: 0.2 },
+        { user_name: 'high', similarity: 0.9 },
+        { similarity: 0.5 },
+        { user_name: 'mid', similarity: 0.5 }
+      ] }) };
+    };
+    const users = await getSimilarUsers({ username: 'some one' });
+    expect(requested).toEqual(['https://api.listenbrainz.org/1/user/some%20one/similar-users']);
+    expect(users).toEqual([
+      { username: 'high', similarity: 0.9 },
+      { username: 'mid', similarity: 0.5 },
+      { username: 'low', similarity: 0.2 }
+    ]);
+  });
+
+  test('getSimilarUsers without a username makes no request', async () => {
+    requested = [];
+    global.fetch = async (url) => { requested.push(url); return { ok: true, json: async () => [] }; };
+    expect(await getSimilarUsers({})).toEqual([]);
+    expect(requested).toHaveLength(0);
+  });
+
+  test('getSimilarUsers failure throws', async () => {
+    global.fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
+    await expect(getSimilarUsers({ username: 'someone' })).rejects.toThrow(/500/);
   });
 });
