@@ -201,7 +201,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             className: 'sticky top-0 z-10 flex items-center justify-between px-6 py-4',
             style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
-            // Breadcrumb navigation: Playlists > Playlist Name (or HOME for ephemeral)
+            // Breadcrumb navigation: Playlists > Playlist Name (or Recommendations for ephemeral)
             React.createElement('div', {
               className: 'flex items-center gap-2 text-xs font-medium tracking-widest uppercase'
             },
@@ -214,9 +214,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   setSelectedPlaylist(null);
                   setPlaylistTracks([]);
                   setPlaylistCoverArt([]);
-                  // Navigate to HOME for ephemeral playlists, otherwise to playlists
+                  // Ephemeral playlists (weekly cards, provider playlists, the
+                  // restore path) all open from Recommendations, so they go back
+                  // there; saved ones go to Playlists.
                   if (selectedPlaylist?.isEphemeral) {
-                    navigateTo('home');
+                    navigateTo('recommendations');
                   } else {
                     navigateTo('playlists');
                   }
@@ -225,7 +227,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                 style: { color: 'var(--text-tertiary)' },
                 onMouseEnter: (e) => { e.currentTarget.style.color = 'var(--text-secondary)'; },
                 onMouseLeave: (e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; }
-              }, selectedPlaylist?.isEphemeral ? 'HOME' : 'Playlists'),
+              }, selectedPlaylist?.isEphemeral ? 'Recommendations' : 'Playlists'),
               React.createElement('span', { style: { color: 'var(--text-tertiary)' } }, '/'),
               React.createElement('span', { className: 'uppercase', style: { color: 'var(--text-secondary)' } },
                 playlistEditMode ? 'Editing' : (selectedPlaylist?.weekLabel || selectedPlaylist.title || 'Playlist Details')
@@ -351,9 +353,11 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   setSelectedPlaylist(null);
                   setPlaylistTracks([]);
                   setPlaylistCoverArt([]);
-                  // Navigate to HOME for ephemeral playlists, otherwise to playlists
+                  // Ephemeral playlists (weekly cards, provider playlists, the
+                  // restore path) all open from Recommendations, so they go back
+                  // there; saved ones go to Playlists.
                   if (selectedPlaylist?.isEphemeral) {
-                    navigateTo('home');
+                    navigateTo('recommendations');
                   } else {
                     navigateTo('playlists');
                   }

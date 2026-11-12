@@ -187,13 +187,15 @@ const WEEKLY_RANK = { 'weekly-exploration': 0, 'weekly-jam': 1 };
 // order owns an item's position and fields; later providers sending the same
 // thing add their id to sourceIds. A later Shuffleupagus reason is copied when
 // the kept item has none, so the AI's "why" survives the merge. Returns one
-// owned list per input list (so the caller can interleave them).
+// owned list per input list (so the caller can interleave them). The key
+// carries the type, as dedupeItems' does: a mixed titled section can hold an
+// album and its same-named title track, and both must survive.
 function mergeOwned(lists) {
   const kept = new Map();
   return lists.map((list) => {
     const owned = [];
     for (const item of list) {
-      const key = recommendationItemKey(item);
+      const key = `${item.type}:${recommendationItemKey(item)}`;
       const existing = kept.get(key);
       if (!existing) {
         const copy = { ...item, sourceIds: [item.resolverId] };
@@ -359,6 +361,14 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
 // Friends: one blended "Listen like you" row. Same name on two services stays
 // two entries (not known to be the same person); followed, removed and self
 // accounts are dropped by key.
+// The services a friend can be followed on (addFriendCore looks a username up
+// on exactly these). A similar-users provider's id is the friend `service` it
+// speaks for, so the Friends row takes only providers whose id is one of
+// these: a future third similarUsers plugin must not make Follow look the
+// same name up somewhere else. The one deliberate service-name list in the
+// recommendations code, mirroring addFriendCore.
+const FRIEND_SERVICES = ['lastfm', 'listenbrainz'];
+
 function friendsRow(similarUsers, exclude) {
   const friendKeys = (exclude && exclude.friendKeys) || new Set();
   const selfKeys = (exclude && exclude.selfKeys) || new Set();
@@ -366,7 +376,7 @@ function friendsRow(similarUsers, exclude) {
   const order = [];
   const names = {};
   for (const provider of similarUsers || []) {
-    if (!provider || !provider.resolverId) continue;
+    if (!provider || !FRIEND_SERVICES.includes(provider.resolverId)) continue;
     const service = provider.resolverId;
     const seen = new Set();
     const list = [];
@@ -529,5 +539,6 @@ module.exports = {
   filterSubsectionItems,
   flattenRecommendationItems,
   weeklyHomeEntries,
-  shuffleupagusSection
+  shuffleupagusSection,
+  FRIEND_SERVICES
 };

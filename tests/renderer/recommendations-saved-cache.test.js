@@ -75,15 +75,29 @@ describe('saved similar users (the Friends row)', () => {
     expect(load).toMatch(/return entry && Array\.isArray\(entry\.users\) && \(entry\.account \|\| ''\) === accountFor\(provider\) \? entry : null;/);
   });
 
-  test('similarUsers entries older than recommendationsStale are not saved', () => {
-    expect(save).toMatch(/entry && Array\.isArray\(entry\.users\) && entry\.users\.length > 0 && \(now - entry\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) similarUsers\[id\] = entry;/);
+  test('similarUsers entries older than recommendationsStale are not saved; an empty answer is', () => {
+    // A successful empty answer is a real answer (failures throw), so it is
+    // saved with its fetchedAt like any other.
+    expect(save).toMatch(/if \(entry && Array\.isArray\(entry\.users\) && \(now - entry\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) similarUsers\[id\] = entry;/);
+    expect(save).not.toMatch(/entry\.users\.length > 0/);
   });
 
   test('similar users are asked again only once their answer is stale (7 days), or on a forced refresh', () => {
-    expect(load).toMatch(/if \(!forceRefresh && hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) \{\s*similarFresh\[provider\.id\] = cached;\s*continue;\s*\}/);
+    // Any young answer is fresh, an empty one too: an empty answer re-asked
+    // on every visit re-ran Last.fm's paced lookup and flashed the skeleton.
+    expect(load).toMatch(/const young = !!\(cached && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendationsStale\);/);
+    expect(load).toMatch(/if \(!forceRefresh && young\) \{\s*similarFresh\[provider\.id\] = cached;\s*continue;\s*\}/);
     expect(load).not.toMatch(/hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendations\)/);
-    // A forced refresh still shows the cached answer while it asks again.
-    expect(load).toMatch(/if \(hasUsers && \(now - cached\.fetchedAt\) < CACHE_TTL\.recommendationsStale\) similarStale\[provider\.id\] = cached;/);
+    // A forced refresh still shows a cached answer with people while it asks again.
+    expect(load).toMatch(/const hasUsers = young && cached\.users\.length > 0;/);
+    expect(load).toMatch(/if \(hasUsers\) similarStale\[provider\.id\] = cached;/);
+  });
+
+  test('a provider whose last answer was empty stays out of the Friends skeleton (quiet, like providers)', () => {
+    expect(load).toMatch(/if \(young && cached\.users\.length === 0\) recommendationsQuietRef\.current\.add\(`friends:\$\{provider\.id\}`\);/);
+    const fetchBlock = load.slice(load.indexOf('const fetchSimilarUsers = async (provider) => {'), load.indexOf('await Promise.all(['));
+    expect(fetchBlock).toMatch(/if \(similarFresh\[provider\.id\]\.users\.length > 0\) recommendationsQuietRef\.current\.delete\(`friends:\$\{provider\.id\}`\);\s*else recommendationsQuietRef\.current\.add\(`friends:\$\{provider\.id\}`\);/);
+    expect(load).toMatch(/\.concat\(similarToFetch\s*\.filter\(p => !similarStale\[p\.id\] && !recommendationsQuietRef\.current\.has\(`friends:\$\{p\.id\}`\)\)/);
   });
 });
 

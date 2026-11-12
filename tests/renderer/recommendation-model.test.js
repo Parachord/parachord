@@ -17,7 +17,8 @@ const {
   filterSubsectionItems,
   flattenRecommendationItems,
   weeklyHomeEntries,
-  shuffleupagusSection
+  shuffleupagusSection,
+  FRIEND_SERVICES
 } = require('../../src/renderer/lib/recommendation-model');
 const recommendationModel = require('../../src/renderer/lib/recommendation-model');
 const { trackSlug } = require('../../src/renderer/lib/track-slug');
@@ -230,6 +231,17 @@ describe('buildRecommendationPage', () => {
     expect(songs.subsections[0].key).toBe('foryou:song');
   });
 
+  test('a mixed titled section keeps an album and its same-named title track', () => {
+    // Album "Blue" and its title track "Blue" share artist+title; the dedupe
+    // key carries the type, so each survives in its own split.
+    const providers = [norm('amazonmusic', 'Amazon Music', [{ id: 's1', title: 'Hot', items: [
+      { type: 'album', name: 'Blue', artist: 'X' }, { type: 'song', name: 'Blue', artist: 'X' }
+    ] }])];
+    const page = buildRecommendationPage({ providers });
+    expect(names(sub(page, 'amazonmusic:s1:album'))).toEqual(['Blue']);
+    expect(names(sub(page, 'amazonmusic:s1:song'))).toEqual(['Blue']);
+  });
+
   test('titled rows come after For you in their section', () => {
     const providers = [
       norm('amazonmusic', 'Amazon Music', [{ id: 's1', title: 'Hot', items: [song('t1')] }]),
@@ -304,6 +316,18 @@ describe('buildRecommendationPage', () => {
       ];
       const row = buildRecommendationPage({ similarUsers: su }).find(s => s.type === 'friend').subsections[0];
       expect(row.items).toHaveLength(2);
+    });
+
+    test('only a friend service makes Friends entries (Follow can only look up Last.fm or ListenBrainz)', () => {
+      expect(FRIEND_SERVICES).toEqual(['lastfm', 'listenbrainz']);
+      const su = [
+        { resolverId: 'someservice', resolverName: 'Some Service', users: [{ username: 'Zed', similarity: 1 }] },
+        similarUsers[0]
+      ];
+      const row = buildRecommendationPage({ similarUsers: su }).find(s => s.type === 'friend').subsections[0];
+      expect(row.items.map(i => i.service)).toEqual(['lastfm', 'lastfm', 'lastfm']);
+      expect(row.sources).toEqual([{ id: 'lastfm', name: 'Last.fm' }]);
+      expect(buildRecommendationPage({ similarUsers: [su[0]] })).toEqual([]);
     });
 
     test('everyone excluded leaves no Friends section', () => {

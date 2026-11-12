@@ -1215,7 +1215,7 @@ const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-sh
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, flattenRecommendationItems,
-  filterSubsectionItems, weeklyHomeEntries, shuffleupagusSection
+  filterSubsectionItems, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES
 } = require('./lib/recommendation-model');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
 const { createConcertLimiters } = require('./lib/concert-limiters');
@@ -3419,7 +3419,8 @@ const Parachord = () => {
   // ready: an active resolver the account can't use, e.g. Amazon Music without
   // a subscription). They are still asked every load, but get no skeleton,
   // which would promise sections that never come; an answer with sections
-  // clears the mark.
+  // clears the mark. A similar-users provider whose last answer had no
+  // people is marked `friends:${id}` the same way (no Friends skeleton).
   const recommendationsQuietRef = useRef(new Set());
   // Pagination state - how many items to show per column
   const [displayLimits, setDisplayLimits] = useState({
@@ -27181,7 +27182,10 @@ Return ONLY the JSON array, no other text.`;
   };
 
   // The similar-users providers (the Friends row), found by capability and
-  // ordered like the recommendation providers.
+  // ordered like the recommendation providers. Only those whose id is a
+  // friend service (FRIEND_SERVICES): Follow looks the person up on the
+  // provider's id, so a provider for any other service would be asked for
+  // people nobody can follow.
   const similarUsersProviders = () => {
     const loader = resolverLoaderRef.current;
     if (!loader?.getSimilarUsersResolvers) return [];
@@ -27189,7 +27193,9 @@ Return ONLY the JSON array, no other text.`;
     const order = resolverOrderRef.current || [];
     const metaIds = new Set((metaServicesRef.current || []).map(s => s.id));
     return orderCatalogResolvers(
-      loader.getSimilarUsersResolvers().filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
+      loader.getSimilarUsersResolvers()
+        .filter(r => FRIEND_SERVICES.includes(r.id))
+        .filter(r => activeIds.includes(r.id) || metaIds.has(r.id)),
       { activeIds, order }
     );
   };
@@ -27312,11 +27318,12 @@ Return ONLY the JSON array, no other text.`;
     for (const [id, entry] of Object.entries(recommendationsCache.current.providers || {})) {
       if (entry && entry.sections && entry.sections.length > 0 && (now - entry.fetchedAt) < CACHE_TTL.recommendationsStale) providers[id] = entry;
     }
-    // Similar users by the same rule: an empty answer or one past the stale
-    // bound is not worth showing next launch.
+    // Similar users: any answer younger than the stale bound, an empty one
+    // too. A successful empty answer is a real answer (a failure throws and
+    // stores nothing), so the next launch does not re-run the lookup for it.
     const similarUsers = {};
     for (const [id, entry] of Object.entries(recommendationsCache.current.similarUsers || {})) {
-      if (entry && Array.isArray(entry.users) && entry.users.length > 0 && (now - entry.fetchedAt) < CACHE_TTL.recommendationsStale) similarUsers[id] = entry;
+      if (entry && Array.isArray(entry.users) && (now - entry.fetchedAt) < CACHE_TTL.recommendationsStale) similarUsers[id] = entry;
     }
     try {
       window.electron.store.set('cache_recommendations', { providers, similarUsers, savedAt: now });
@@ -27384,12 +27391,16 @@ Return ONLY the JSON array, no other text.`;
       toFetch.push(provider);
     }
 
-    // Similar users (the Friends row): under the providers' account check, an
-    // empty answer is never served, but a cached answer stays fresh until it
-    // is stale (CACHE_TTL.recommendationsStale, 7 days), not the providers'
-    // hour: who listens like you changes slowly, and one provider's lookup
-    // can be ~50 paced requests. A forced refresh asks again. Fetched only on
-    // a full load: Home's meta-only load shows what's cached and asks no one.
+    // Similar users (the Friends row): under the providers' account check, a
+    // cached answer stays fresh until it is stale (CACHE_TTL.recommendationsStale,
+    // 7 days), not the providers' hour: who listens like you changes slowly,
+    // and one provider's lookup can be ~60 paced requests. Unlike the
+    // providers, an EMPTY answer counts too: a successful empty answer is a
+    // real answer (failures throw and store nothing), and re-asking it on
+    // every visit re-ran the paced lookup behind a Friends skeleton. Such a
+    // provider is quiet (no skeleton) until it answers with people. A forced
+    // refresh asks again. Fetched only on a full load: Home's meta-only load
+    // shows what's cached and asks no one.
     const similarProviders = similarUsersProviders();
     const similarCachedFor = (provider) => {
       const entry = (recommendationsCache.current.similarUsers || {})[provider.id];
@@ -27400,12 +27411,14 @@ Return ONLY the JSON array, no other text.`;
     const similarToFetch = [];
     for (const provider of similarProviders) {
       const cached = similarCachedFor(provider);
-      const hasUsers = !!(cached && cached.users.length > 0);
-      if (!forceRefresh && hasUsers && (now - cached.fetchedAt) < CACHE_TTL.recommendationsStale) {
+      const young = !!(cached && (now - cached.fetchedAt) < CACHE_TTL.recommendationsStale);
+      const hasUsers = young && cached.users.length > 0;
+      if (young && cached.users.length === 0) recommendationsQuietRef.current.add(`friends:${provider.id}`);
+      if (!forceRefresh && young) {
         similarFresh[provider.id] = cached;
         continue;
       }
-      if (hasUsers && (now - cached.fetchedAt) < CACHE_TTL.recommendationsStale) similarStale[provider.id] = cached;
+      if (hasUsers) similarStale[provider.id] = cached;
       if (metaOnly) continue;
       similarToFetch.push(provider);
     }
@@ -27475,11 +27488,12 @@ Return ONLY the JSON array, no other text.`;
       .filter(p => !recommendationsQuietRef.current.has(p.id))
       .map(p => ({ id: p.id, name: p.name || p.id }))
       // A similar-users lookup whose provider has nothing cached to show: the
-      // Friends row's skeleton (a cached answer shows while it refreshes).
+      // Friends row's skeleton (a cached answer shows while it refreshes, and
+      // one whose last answer was empty is quiet, as for the providers).
       // Its own id, so a provider that is both kinds (Last.fm) leaves the
       // list once per answer.
       .concat(similarToFetch
-        .filter(p => !similarStale[p.id])
+        .filter(p => !similarStale[p.id] && !recommendationsQuietRef.current.has(`friends:${p.id}`))
         .map(p => ({ id: `friends:${p.id}`, name: p.name || p.id, friends: true }))));
 
     const loader = resolverLoaderRef.current;
@@ -27545,10 +27559,12 @@ Return ONLY the JSON array, no other text.`;
         clearTimeout(timer);
         const accept = (users) => {
           similarFresh[provider.id] = { users: Array.isArray(users) ? users : [], fetchedAt: Date.now(), account };
-          // Stored even when empty so it replaces an older answer; an empty
-          // one is never served or saved.
+          // Stored and saved even when empty: a successful empty answer is a
+          // real answer, fresh for the stale bound like any other.
           if (!recommendationsCache.current.similarUsers) recommendationsCache.current.similarUsers = {};
           recommendationsCache.current.similarUsers[provider.id] = similarFresh[provider.id];
+          if (similarFresh[provider.id].users.length > 0) recommendationsQuietRef.current.delete(`friends:${provider.id}`);
+          else recommendationsQuietRef.current.add(`friends:${provider.id}`);
         };
         if (raw === TIMED_OUT) {
           request.then((late) => {
@@ -27857,8 +27873,12 @@ Return ONLY the JSON array, no other text.`;
   // refreshMergedRecommendations from the page's weekly rows (the plugin's
   // weekly sections), never fetched here by service name.
 
-  // Load covers for weekly jams and weekly exploration when they're available
+  // Load covers for weekly jams and weekly exploration when they're available,
+  // on Recommendations only: Home's meta-only load fills homeData.weekly* too,
+  // but Home shows no weekly cards. (The playlist view's restore path reads
+  // homeData, not these covers.)
   useEffect(() => {
+    if (activeView !== 'recommendations') return;
     const loadWeeklyPlaylistCoversAsync = async () => {
       const allWeekly = [
         ...(homeData.weeklyJams || []),
@@ -27895,7 +27915,7 @@ Return ONLY the JSON array, no other text.`;
       }
     };
     loadWeeklyPlaylistCoversAsync();
-  }, [homeData.weeklyJams, homeData.weeklyExploration]);
+  }, [homeData.weeklyJams, homeData.weeklyExploration, activeView]);
 
   // Load AI-generated recommendations for the home page
   const loadAiRecommendations = async (onUpdate) => {
@@ -29339,10 +29359,15 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // them and follow on the service. Throws when they are already a friend or
   // can't be found. No modal, no toast: callers own their own UI.
   const addFriendCore = async ({ service, username }) => {
+    // Exactly the friend services: anything else used to fall through to a
+    // ListenBrainz lookup of the same name.
+    if (!FRIEND_SERVICES.includes(service)) {
+      throw new Error(`Can't follow people on ${service || 'that service'}`);
+    }
     const userInfo = service === 'lastfm'
       ? await fetchLastfmUserInfo(username)
       : await fetchListenbrainzUserInfo(username);
-    const finalService = service === 'lastfm' ? 'lastfm' : 'listenbrainz';
+    const finalService = service;
 
     // Check if already added
     const existingFriend = friendsRef.current.find(f =>
@@ -40917,12 +40942,19 @@ useEffect(() => {
             // A type section: its heading at Home's section size (no count),
             // then its rows. With Shuffleupagus thinking and neither For you
             // row it would tail on the page, one subsection skeleton stands in
-            // the Albums slot: atop the Albums section, or alone after Songs.
+            // the Albums slot: atop the Albums section, or alone after Songs
+            // under an Albums heading (pendingTypeSection).
             const llmSlot = llmPlaceholder && React.createElement(RecommendationSubsectionSkeleton, { key: 'rec-llm', kind: 'cards', lines: 2 });
             const renderTypeSection = (section) => React.createElement('div', { key: `type:${section.type}`, className: 'mb-4' },
               React.createElement('h2', { className: 'text-lg font-semibold mb-4', style: { color: 'var(--text-primary)' } }, section.title),
               section.type === 'album' && llmSlot,
               ...section.subsections.map(renderSubsection)
+            );
+            // A skeleton standing in for a section that has not arrived yet,
+            // under the heading the real section will bring.
+            const pendingTypeSection = (key, title, skeleton) => React.createElement('div', { key, className: 'mb-4' },
+              React.createElement('h2', { className: 'text-lg font-semibold mb-4', style: { color: 'var(--text-primary)' } }, title),
+              skeleton
             );
 
             // ── The page ──────────────────────────────────────────────────
@@ -40932,10 +40964,10 @@ useEffect(() => {
             const contentBlocks = [];
             let llmSlotPlaced = !llmSlot || contentSections.some(s => s.type === 'album');
             for (const section of contentSections) {
-              if (!llmSlotPlaced && section.type !== 'song') { contentBlocks.push(llmSlot); llmSlotPlaced = true; }
+              if (!llmSlotPlaced && section.type !== 'song') { contentBlocks.push(pendingTypeSection('type:album-pending', 'Albums', llmSlot)); llmSlotPlaced = true; }
               contentBlocks.push(renderTypeSection(section));
             }
-            if (!llmSlotPlaced) contentBlocks.push(llmSlot);
+            if (!llmSlotPlaced) contentBlocks.push(pendingTypeSection('type:album-pending', 'Albums', llmSlot));
 
             return React.createElement('div', {
               ref: (el) => {
@@ -41023,7 +41055,7 @@ useEffect(() => {
                     friendsSection && renderTypeSection(friendsSection),
                     // The similar-users lookups still out with nothing cached:
                     // hexagon placeholders where the Friends row will land.
-                    !friendsSection && friendsPending && React.createElement(RecommendationSubsectionSkeleton, { key: 'rec-friends-pending', kind: 'friends' })
+                    !friendsSection && friendsPending && pendingTypeSection('type:friend-pending', 'Friends', React.createElement(RecommendationSubsectionSkeleton, { key: 'rec-friends-pending', kind: 'friends' }))
                   )
               )
             );

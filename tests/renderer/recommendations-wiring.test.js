@@ -444,6 +444,16 @@ describe('the five-section page render', () => {
     expect(home).not.toContain('loadWeeklyJamTracks');
   });
 
+  test('the weekly covers effect runs only on Recommendations (Home shows no weekly cards)', () => {
+    // Home's meta-only load fills homeData.weekly* too; loading up to 8
+    // playlists' tracks and covers there was work for cards nobody sees.
+    const i = app.indexOf('const loadWeeklyPlaylistCoversAsync = async () => {');
+    expect(i).toBeGreaterThan(-1);
+    const effect = app.slice(i, app.indexOf('loadWeeklyPlaylistCoversAsync();', i) + 200);
+    expect(app).toMatch(/useEffect\(\(\) => \{\s*if \(activeView !== 'recommendations'\) return;\s*const loadWeeklyPlaylistCoversAsync = async \(\) => \{/);
+    expect(effect).toMatch(/\}, \[homeData\.weeklyJams, homeData\.weeklyExploration, activeView\]\);/);
+  });
+
   test('both back paths for a weekly playlist go to Recommendations', () => {
     const drawer = app.slice(app.indexOf("} else if (playbackContext.type === 'weekly-jam' || playbackContext.type === 'weekly-exploration') {"));
     expect(drawer.slice(0, 300)).toContain("navigateTo('recommendations');");
@@ -452,6 +462,18 @@ describe('the five-section page render', () => {
     const ephemeral = timeout.slice(0, timeout.indexOf('} else {'));
     expect(ephemeral).toContain("navigateTo('recommendations');");
     expect(ephemeral).not.toContain("setActiveView('home')");
+  });
+
+  test('the playlist view\'s breadcrumb and Close go back to Recommendations for an ephemeral playlist', () => {
+    // Every ephemeral playlist opens from Recommendations (weekly cards,
+    // provider playlists, the restore path), so neither back control says or
+    // goes Home.
+    const view = fs.readFileSync(path.join(__dirname, '../../src/renderer/components/playlist-view-page.js'), 'utf8');
+    const backs = view.match(/if \(selectedPlaylist\?\.isEphemeral\) \{\s*navigateTo\('[a-z]+'\);/g) || [];
+    expect(backs).toHaveLength(2);
+    for (const back of backs) expect(back).toContain("navigateTo('recommendations');");
+    expect(view).toContain("selectedPlaylist?.isEphemeral ? 'Recommendations' : 'Playlists'");
+    expect(view).not.toContain("'HOME'");
   });
 
   test('the empty-page checks count Friends (a page whose only content is Friends is not empty)', () => {

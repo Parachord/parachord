@@ -116,15 +116,23 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(grid.indexOf('Array.from({ length: llmTail }')).toBeGreaterThan(0);
     expect(view).toMatch(/const llmPlaceholder = llmLoading && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
     expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSubsectionSkeleton, \{ key: 'rec-llm'/);
+    // Alone (no Albums section), the slot sits under an Albums heading, the
+    // one its picks will bring; both places it can land wrap it.
+    const lone = view.match(/contentBlocks\.push\(pendingTypeSection\('type:album-pending', 'Albums', llmSlot\)\)/g) || [];
+    expect(lone).toHaveLength(2);
+    expect(view).not.toMatch(/contentBlocks\.push\(llmSlot\)/);
   });
 
   test('Friends shows hexagon skeletons while its answer is pending and nothing is cached', () => {
     expect(view).toMatch(/const friendsPending = recommendationsPending\.some\(p => p\.friends\);/);
-    expect(view).toMatch(/!friendsSection && friendsPending && React\.createElement\(RecommendationSubsectionSkeleton, \{ key: 'rec-friends-pending', kind: 'friends'/);
+    // Under the Friends heading the real row brings, so the page does not
+    // reflow a heading in when the answer lands.
+    expect(view).toMatch(/!friendsSection && friendsPending && pendingTypeSection\('type:friend-pending', 'Friends', React\.createElement\(RecommendationSubsectionSkeleton, \{ key: 'rec-friends-pending', kind: 'friends'/);
     // The pending entry is added only for a lookup with nothing cached to
-    // show, and leaves the list when that lookup settles.
+    // show (and not for a provider whose last answer was empty: quiet), and
+    // leaves the list when that lookup settles.
     const load = app.slice(app.indexOf('const providers = metaOnly'), app.indexOf('// "Load more" for a titled section'));
-    expect(load).toMatch(/\.concat\(similarToFetch\s*\.filter\(p => !similarStale\[p\.id\]\)\s*\.map\(p => \(\{ id: `friends:\$\{p\.id\}`, name: p\.name \|\| p\.id, friends: true \}\)\)\)/);
+    expect(load).toMatch(/\.concat\(similarToFetch\s*\.filter\(p => !similarStale\[p\.id\] && !recommendationsQuietRef\.current\.has\(`friends:\$\{p\.id\}`\)\)\s*\.map\(p => \(\{ id: `friends:\$\{p\.id\}`, name: p\.name \|\| p\.id, friends: true \}\)\)\)/);
     const fetchBlock = load.slice(load.indexOf('const fetchSimilarUsers = async (provider) => {'), load.indexOf('await Promise.all(['));
     expect(fetchBlock).toMatch(/applyFresh\(\);\s*if \(isLatest\(\)\) setRecommendationsPending\(prev => prev\.filter\(p => p\.id !== `friends:\$\{provider\.id\}`\)\);/);
   });

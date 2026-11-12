@@ -20,6 +20,23 @@ describe('follow a recommended listener', () => {
     expect(core).toMatch(/throw new Error/);
   });
 
+  test('addFriendCore refuses a service that is not a friend service, before any lookup', () => {
+    // A third similarUsers plugin must never make Follow look the same name
+    // up on ListenBrainz (the old fallback mapped any non-Last.fm service there).
+    const core = body('const addFriendCore = async', 'const addFriend = async');
+    const guard = core.search(/if \(!FRIEND_SERVICES\.includes\(service\)\) \{\s*throw new Error\(/);
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(core.indexOf('fetchLastfmUserInfo(username)'));
+    expect(core).toMatch(/const finalService = service;/);
+    expect(core).not.toMatch(/service === 'lastfm' \? 'lastfm' : 'listenbrainz'/);
+    expect(src).toMatch(/const \{[^}]*\bFRIEND_SERVICES\b[^}]*\} = require\('\.\/lib\/recommendation-model'\);/);
+  });
+
+  test('only friend-service similar-users providers are asked (the Friends row input)', () => {
+    const fn = body('const similarUsersProviders = () => {', 'const recommendationExclusions');
+    expect(fn).toMatch(/\.filter\(r => FRIEND_SERVICES\.includes\(r\.id\)\)/);
+  });
+
   test('addFriend delegates to addFriendCore and keeps its modal behavior', () => {
     const fn = body('const addFriend = async', 'const followRecommendedFriend');
     expect(fn).toMatch(/addFriendCore\(/);
