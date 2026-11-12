@@ -59,8 +59,9 @@ module.exports = {
   // candidates all under 0.05 (an artist shared far down both lists counted
   // for almost nothing), so the row came back empty; the binary score and the
   // 40-candidate check are the maintainer's call (2026-11-12).
-  // Each kept person carries `topArtists`, their last month's top 3 (else
-  // their 6-month top 3) for the card.
+  // Each kept person carries `topArtists`, their last month's top 3, for
+  // the card; anyone who played nothing in the last month is dropped as
+  // inactive (a failed check keeps them, with their 6-month top 3).
   // A failed request or error body throws (the page keeps what it has and
   // caches nothing empty); only "you have no friends" is a miss ([]).
   // Isolated (new Function): the pacer, fetch wrapper and cosine live inside.
@@ -181,16 +182,22 @@ module.exports = {
     scored.sort((a, b) => b.similarity - a.similarity);
 
     // 4. Each card lists the person's top few recent artists: the last
-    // month's top 3 (one more request per person kept, usually a handful),
-    // or their 6-month top 3 when the month is empty or the request fails
-    // (the line is extra; it never costs the answer).
+    // month's top 3 (one more request per person kept, usually a handful).
+    // The same answer says who is active: nothing played in the last month
+    // is an inactive listener, dropped. A failed request is not "inactive":
+    // that person stays with their 6-month top 3, so an outage never empties
+    // the row.
+    const active = [];
     for (const user of scored) {
-      let recent = [];
-      try { recent = await artistNames(user.username, '1month', 3); } catch (e) { recent = []; }
-      const names = (recent.length ? recent : user.sixMonth || []).slice(0, 3);
+      let recent = null;
+      try { recent = await artistNames(user.username, '1month', 3); } catch (e) { recent = null; }
+      const sixMonth = user.sixMonth || [];
       delete user.sixMonth;
+      if (recent && recent.length === 0) continue;
+      const names = (recent && recent.length ? recent : sixMonth).slice(0, 3);
       if (names.length) user.topArtists = names;
+      active.push(user);
     }
-    return scored;
+    return active;
   }
 };

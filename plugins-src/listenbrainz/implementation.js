@@ -210,31 +210,39 @@ module.exports = {
       .map(r => ({ username: r.user_name, similarity: Number(r.similarity) || 0 }))
       .sort((a, b) => b.similarity - a.similarity);
     // Each card lists the person's top few recent artists: this month's top
-    // 3, or last month's when this month has no stats yet (a 204). One or two
-    // requests each, for the 20 most similar only, one at a time, each asked
-    // once with no retry (a backoff per person would stall the row). A failed
-    // or rate-limited stats request costs that card its line, never the answer.
-    const topArtistsFor = async (user) => {
+    // 3, or last month's when this month has no stats yet (a 204). The same
+    // answer says who is active: no stats this month or last (204 both
+    // times) is an inactive listener, dropped. Only the 20 most similar are
+    // checked, one at a time, each request asked once with no retry (a
+    // backoff per person would stall the row); people past 20 are dropped
+    // unchecked. A failed request is not "inactive": that person stays,
+    // without the line, so an outage never empties the row.
+    const activityFor = async (user) => {
+      let failed = false;
       for (const range of ['this_month', 'month']) {
         try {
           const res = await fetch(`https://api.listenbrainz.org/1/stats/user/${encodeURIComponent(user)}/artists?range=${range}&count=3`);
-          if (res.status === 204 || !res.ok) continue;
+          if (res.status === 204) continue;
+          if (!res.ok) { failed = true; continue; }
           const body = await res.json();
           const names = ((body && body.payload && body.payload.artists) || [])
             .map(a => a && a.artist_name)
             .filter(n => typeof n === 'string' && n.trim())
             .slice(0, 3);
-          if (names.length) return names;
+          if (names.length) return { active: true, names };
         } catch (e) {
-          return [];
+          failed = true;
         }
       }
-      return [];
+      return failed ? { active: true, names: [] } : { active: false, names: [] };
     };
+    const active = [];
     for (const user of users.slice(0, 20)) {
-      const names = await topArtistsFor(user.username);
-      if (names.length) user.topArtists = names;
+      const activity = await activityFor(user.username);
+      if (!activity.active) continue;
+      if (activity.names.length) user.topArtists = activity.names;
+      active.push(user);
     }
-    return users;
+    return active;
   }
 };

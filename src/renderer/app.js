@@ -27412,9 +27412,10 @@ Return ONLY the JSON array, no other text.`;
       const entry = (recommendationsCache.current.similarUsers || {})[provider.id];
       return entry && Array.isArray(entry.users) && (entry.account || '') === accountFor(provider) ? entry : null;
     };
-    // An answer saved before the cards listed top artists (shape 2) is shown
-    // while a new one is fetched, so the line appears without a 7-day wait.
-    const SIMILAR_USERS_SHAPE = 2;
+    // An answer saved in an older shape is shown while a new one is fetched,
+    // so a change to what the plugins answer shows without a 7-day wait:
+    // 2 added the cards' top artists, 3 dropped inactive listeners.
+    const SIMILAR_USERS_SHAPE = 3;
     const similarFresh = {};
     const similarStale = {};
     const similarToFetch = [];
@@ -40814,6 +40815,12 @@ useEffect(() => {
             // alone); nobody is followed or saved from here.
             const friendCard = (item, index, row) => {
               const HEXAGON = 'polygon(50% 0%, 93.3% 25%, 93.3% 75%, 50% 100%, 6.7% 75%, 6.7% 25%)';
+              // The badge takes the service's brand colour (its plugin
+              // manifest's `color`), the accent when it has none.
+              const serviceResolver = (resolverLoaderRef.current?.getAllResolvers?.() || []).find(r => r.id === item.service);
+              const badgeColor = serviceResolver && serviceResolver.color && serviceResolver.color !== '#888888'
+                ? serviceResolver.color
+                : 'var(--accent-primary)';
               const pct = Number.isFinite(item.similarity)
                 ? Math.round(Math.min(1, Math.max(0, item.similarity)) * 100)
                 : null;
@@ -40885,7 +40892,7 @@ useEffect(() => {
                       fontWeight: '600',
                       lineHeight: '16px',
                       whiteSpace: 'nowrap',
-                      backgroundColor: 'var(--accent-primary)',
+                      backgroundColor: badgeColor,
                       color: '#fff',
                       boxShadow: 'var(--card-shadow)'
                     }

@@ -213,27 +213,27 @@ describe('ListenBrainz getSimilarUsers', () => {
       { user_name: 'high', similarity: 0.9 },
       { similarity: 0.5 },
       { user_name: 'mid', similarity: 0.5 }
-    ]);
+    ], { 'low|this_month': ['A'], 'high|this_month': ['B'], 'mid|month': ['C'] });
     const users = await getSimilarUsers({ username: 'some one' });
     expect(requested[0]).toBe('https://api.listenbrainz.org/1/user/some%20one/similar-users');
     expect(users).toEqual([
-      { username: 'high', similarity: 0.9 },
-      { username: 'mid', similarity: 0.5 },
-      { username: 'low', similarity: 0.2 }
+      { username: 'high', similarity: 0.9, topArtists: ['B'] },
+      { username: 'mid', similarity: 0.5, topArtists: ['C'] },
+      { username: 'low', similarity: 0.2, topArtists: ['A'] }
     ]);
   });
 
-  test('each person carries this month\'s top 3 artists, else last month\'s, for the 20 most similar', async () => {
+  test('only active listeners are kept, each with this month\'s top 3 artists, else last month\'s, from the 20 most similar', async () => {
     const payload = Array.from({ length: 22 }, (_, i) => ({ user_name: `u${i}`, similarity: 1 - i / 100 }));
-    mockSimilar(payload, {
-      'u0|this_month': ['A', 'B', 'C'],
-      'u1|month': ['D', 'E']
-    });
+    const stats = { 'u0|this_month': ['A', 'B', 'C'], 'u1|month': ['D', 'E'], 'u21|this_month': ['Z'] };
+    mockSimilar(payload, stats);
     const users = await getSimilarUsers({ username: 'me' });
+    // u0 played this month, u1 last month (this month's 204); u2..u19 have
+    // no stats either month: inactive, dropped. u20 and u21 are past the 20
+    // checked, so they are dropped unchecked.
+    expect(users.map(u => u.username)).toEqual(['u0', 'u1']);
     expect(users[0].topArtists).toEqual(['A', 'B', 'C']);
-    // This month has no stats yet (204): last month's.
     expect(users[1].topArtists).toEqual(['D', 'E']);
-    expect(users[2]).not.toHaveProperty('topArtists');
     // Only the 20 most similar are asked about.
     const asked = new Set(requested.filter(u => u.includes('/stats/')).map(u => u.match(/user\/([^/]+)\//)[1]));
     expect(asked.size).toBe(20);
@@ -243,7 +243,7 @@ describe('ListenBrainz getSimilarUsers', () => {
     expect(requested).not.toContain('https://api.listenbrainz.org/1/stats/user/u0/artists?range=month&count=3');
   });
 
-  test('a failed stats request costs only that card\'s line', async () => {
+  test('a failed stats request is not "inactive": the person stays, without the line', async () => {
     mockSimilar([{ user_name: 'a', similarity: 0.5 }], {}, true);
     expect(await getSimilarUsers({ username: 'me' })).toEqual([{ username: 'a', similarity: 0.5 }]);
   });

@@ -453,6 +453,10 @@ describe('the five-section page render', () => {
     // The score is a badge over the hexagon; the card names the source and
     // lists up to two lines of the person's recent artists.
     expect(card).toContain("'data-similarity-badge': 'true',");
+    // In the service's brand colour (manifest `color`), never a service by name.
+    expect(card).toContain('const serviceResolver = (resolverLoaderRef.current?.getAllResolvers?.() || []).find(r => r.id === item.service);');
+    expect(card).toContain('backgroundColor: badgeColor,');
+    expect(card).not.toMatch(/'lastfm'|'listenbrainz'/);
     expect(card).toContain('title: `${pct}% similar`,');
     expect(card).toContain("}, itemSourceName(item, row) || ''),");
     expect(card).toContain("display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'");

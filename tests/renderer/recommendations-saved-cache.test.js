@@ -94,8 +94,8 @@ describe('saved similar users (the Friends row)', () => {
     expect(load).toMatch(/if \(hasUsers\) similarStale\[provider\.id\] = cached;/);
   });
 
-  test('an answer saved before the cards listed top artists is asked again once (shape 2)', () => {
-    expect(load).toContain('const SIMILAR_USERS_SHAPE = 2;');
+  test('an answer saved in an older shape is asked again once (3: inactive listeners dropped)', () => {
+    expect(load).toContain('const SIMILAR_USERS_SHAPE = 3;');
     expect(load).toMatch(/const young = withinStale && cached\.shape === SIMILAR_USERS_SHAPE;/);
     const fetchBlock = load.slice(load.indexOf('const fetchSimilarUsers = async (provider) => {'), load.indexOf('await Promise.all(['));
     expect(fetchBlock).toMatch(/similarFresh\[provider\.id\] = \{ users: Array\.isArray\(users\) \? users : \[\], fetchedAt: Date\.now\(\), account, shape: SIMILAR_USERS_SHAPE \};/);

@@ -203,7 +203,7 @@ test('the API key never reaches console output or an error', async () => {
   for (const s of spies) expect(JSON.stringify(s.mock.calls)).not.toContain(KEY);
 });
 
-test('each kept person carries their last month\'s top 3 artists, else their 6-month top 3', async () => {
+test('only people who played something in the last month are kept, with its top 3 artists', async () => {
   mock({
     friends: { me: ['f1'], f1: ['monthly', 'quiet', 'flaky', 'dropped'] },
     artists: {
@@ -219,12 +219,12 @@ test('each kept person carries their last month\'s top 3 artists, else their 6-m
   const out = await runPaced(cfg());
   const by = Object.fromEntries(out.map((u) => [u.username, u.topArtists]));
   expect(by.monthly).toEqual(['New 1', 'New 2', 'New 3']);
-  // An empty month, or a failed 1-month request, falls back to the 6-month
-  // top 3, display case kept; the failure costs only the line.
-  expect(by.quiet).toEqual(['A', 'B', 'X']);
+  // Nothing in the last month: inactive, dropped.
+  expect(out.map((u) => u.username)).not.toContain('quiet');
+  // A failed 1-month request is not "inactive": kept, with the 6-month top 3.
   expect(by.flaky).toEqual(['A', 'Z', 'W']);
+  // Under the similarity cutoff: never checked.
   expect(out.map((u) => u.username)).not.toContain('dropped');
-  // One 1-month request per person kept, none for anyone dropped.
   const monthly = calls.filter((c) => c.period === '1month').map((c) => c.user).sort();
   expect(monthly).toEqual(['flaky', 'monthly', 'quiet']);
   expect(calls.find((c) => c.period === '1month').url).toContain('&limit=3');
