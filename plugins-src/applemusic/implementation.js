@@ -91,6 +91,21 @@ module.exports = {
       var u = a && a.artwork && a.artwork.url;
       return u ? String(u).replace('{w}', '600').replace('{h}', '600').replace('{f}', 'jpg') : null;
     };
+    // The personal mixes made from what the account already plays (Heavy
+    // Rotation, Your Essentials, Favorites, Replay) aren't recommendations, so
+    // they stay off the page, like Recently Played. Apple marks every personal
+    // mix 'personal-mix' alike (Chill, Get Up! and New Music are discovery), so
+    // these are told apart by name or URL slug, English only; Replay has its
+    // own playlistType.
+    var HISTORY_MIXES = ['heavy rotation', 'your essentials', 'favorites', 'favourites'];
+    var isPlayHistoryMix = function (a) {
+      if (a.playlistType === 'replay') return true;
+      if (a.playlistType !== 'personal-mix') return false;
+      var name = String(a.name || '').toLowerCase().replace(/ mix$/, '').trim();
+      var slug = (String(a.url || '').match(/\/playlist\/([^/]+)\//) || [])[1] || '';
+      slug = slug.replace(/-mix$/, '').replace(/-/g, ' ');
+      return HISTORY_MIXES.indexOf(name) !== -1 || HISTORY_MIXES.indexOf(slug) !== -1;
+    };
     var mapItem = function (c) {
       var a = c && c.attributes;
       if (!a || typeof a.name !== 'string' || !a.name.trim()) return null;
@@ -106,6 +121,7 @@ module.exports = {
         };
       }
       if (c.type === 'playlists') {
+        if (isPlayHistoryMix(a)) return null;
         return { type: 'playlist', id: 'applemusic-playlist-' + c.id, name: a.name, imageUrl: art(a), url: a.url || null };
       }
       if (c.type === 'songs') {
