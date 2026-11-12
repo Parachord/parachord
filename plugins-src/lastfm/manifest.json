@@ -3,7 +3,7 @@
     "id": "lastfm",
     "name": "Last.fm",
     "type": "meta-service",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "author": "Parachord Team",
     "description": "Personalized music recommendations powered by your Last.fm listening history",
     "icon": "\ud83c\udfa7",
@@ -12,6 +12,7 @@
   },
   "capabilities": {
     "recommendations": true,
+    "similarUsers": true,
     "metadata": true
   },
   "settings": {

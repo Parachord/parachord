@@ -45,5 +45,127 @@ module.exports = {
       });
     }
     return { sections: [{ items }] };
+  },
+
+  // The similarUsers capability: people who listen like you, worked out from
+  // friends-of-friends because Last.fm has no lookup for it (user.getNeighbours,
+  // user.getSimilar, artist.getTopFans and tasteometer.compare all answered
+  // "Invalid Method" on 2026-11-11). Spec: "Last.fm: worked out from
+  // friends-of-friends". Candidates are friends of your friends (ranked by how
+  // many of your friends know them, top 30), scored by the cosine similarity of
+  // 6-month top-artist lists with rank weight 1/(1+rank); under 0.05 is dropped.
+  // The weights and the cutoff are the spec's call.
+  // A failed request or error body throws (the page keeps what it has and
+  // caches nothing empty); only "you have no friends" is a miss ([]).
+  // Isolated (new Function): the pacer, fetch wrapper and cosine live inside.
+  // The API key is only ever encoded into request URLs, never into a message.
+  getSimilarUsers: async function (config) {
+    const username = config && config.username;
+    const apiKey = config && config.apiKey;
+    if (!username || !apiKey) return [];
+    const exclude = new Set(((config && config.excludeUsernames) || []).map((u) => String(u).toLowerCase()));
+    const selfName = String(username).toLowerCase();
+
+    // Serial pacer: no more than 4 requests start in any 1000ms window
+    // (the plugin's fetch skips the app's lastfmFetch, so it paces itself).
+    const starts = [];
+    const pace = async () => {
+      for (;;) {
+        const now = Date.now();
+        while (starts.length && now - starts[0] >= 1000) starts.shift();
+        if (starts.length < 4) { starts.push(now); return; }
+        await new Promise((resolve) => setTimeout(resolve, 1000 - (now - starts[0])));
+      }
+    };
+
+    // Returns { data } or { missing: true } for "user has nothing here"
+    // (error 6 / 17 / 404); anything else throws, naming only the method.
+    const call = async (method, user, extra) => {
+      await pace();
+      const url = 'https://ws.audioscrobbler.com/2.0/?method=' + method +
+        '&user=' + encodeURIComponent(user) +
+        '&api_key=' + encodeURIComponent(apiKey) + '&format=json' + extra;
+      const response = await fetch(url);
+      let data = null;
+      try { data = await response.json(); } catch (e) { data = null; }
+      const code = data && data.error;
+      if (code === 6 || code === 17 || (!response.ok && response.status === 404)) return { missing: true };
+      if (!response.ok) throw new Error('Last.fm ' + method + ' failed: ' + response.status);
+      if (code) throw new Error('Last.fm ' + method + ' error ' + code);
+      return { data };
+    };
+
+    const sizeOrder = ['small', 'medium', 'large', 'extralarge'];
+    const parseFriends = (data) => {
+      let list = data && data.friends && data.friends.user;
+      if (!list) return [];
+      if (!Array.isArray(list)) list = [list];
+      return list.filter((u) => u && u.name).map((u) => {
+        let best = null; let bestRank = -1;
+        for (const img of (Array.isArray(u.image) ? u.image : [])) {
+          const url = img && img['#text'];
+          if (!url) continue;
+          const r = sizeOrder.indexOf(img.size);
+          if (r >= bestRank) { best = url; bestRank = r; }
+        }
+        return { name: u.name, avatarUrl: best };
+      });
+    };
+
+    const topArtists = async (user) => {
+      const res = await call('user.gettopartists', user, '&period=6month&limit=50');
+      if (res.missing) return new Map();
+      let list = res.data && res.data.topartists && res.data.topartists.artist;
+      if (!list) return new Map();
+      if (!Array.isArray(list)) list = [list];
+      const weights = new Map();
+      list.forEach((a, rank) => {
+        const key = a && a.name && String(a.name).toLowerCase();
+        if (key && !weights.has(key)) weights.set(key, 1 / (1 + rank));
+      });
+      return weights;
+    };
+
+    const cosine = (a, b) => {
+      let dot = 0; let na = 0; let nb = 0;
+      for (const [k, w] of a) { na += w * w; if (b.has(k)) dot += w * b.get(k); }
+      for (const w of b.values()) nb += w * w;
+      return na && nb ? dot / Math.sqrt(na * nb) : 0;
+    };
+
+    // 1. Your friends. None means no candidates: a miss, not an error.
+    const mine = await call('user.getfriends', username, '&limit=50');
+    const myFriends = mine.missing ? [] : parseFriends(mine.data);
+    if (!myFriends.length) return [];
+    const myFriendNames = new Set(myFriends.map((f) => f.name.toLowerCase()));
+
+    // 2. Friends of up to 20 of them, ranked by how many of your friends know them.
+    const candidates = new Map();
+    for (const friend of myFriends.slice(0, 20)) {
+      const res = await call('user.getfriends', friend.name, '&limit=50');
+      if (res.missing) continue;
+      for (const fof of parseFriends(res.data)) {
+        const key = fof.name.toLowerCase();
+        if (key === selfName || myFriendNames.has(key) || exclude.has(key)) continue;
+        const entry = candidates.get(key) || { name: fof.name, avatarUrl: null, count: 0 };
+        entry.count += 1;
+        if (!entry.avatarUrl) entry.avatarUrl = fof.avatarUrl;
+        candidates.set(key, entry);
+      }
+    }
+    const top = Array.from(candidates.values())
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, 30);
+    if (!top.length) return [];
+
+    // 3. Score the top 30 against your own taste.
+    const mineArtists = await topArtists(username);
+    if (!mineArtists.size) return [];
+    const scored = [];
+    for (const c of top) {
+      const similarity = cosine(mineArtists, await topArtists(c.name));
+      if (similarity >= 0.05) scored.push({ username: c.name, similarity, avatarUrl: c.avatarUrl });
+    }
+    return scored.sort((a, b) => b.similarity - a.similarity);
   }
 };
