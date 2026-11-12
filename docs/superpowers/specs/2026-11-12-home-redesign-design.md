@@ -1,6 +1,6 @@
 # Home page redesign
 
-Date: 2026-11-12. Mock: "Parachord Home Redesign", a private claude.ai Design canvas. Board **A · Quick Play shelf** is the chosen direction. Board B was the alternative; A borrowed two things from it, the setup checklist and the "More to explore" row.
+Date: 2026-11-12. Mock: "Parachord Home Redesign", a private claude.ai Design canvas. Board **A · Quick Play shelf** is the chosen direction. Board B was the alternative; A borrowed the setup checklist from it (and briefly its "More to explore" row, since replaced by the Shuffleupagus prompt).
 
 ## Why
 
@@ -159,9 +159,27 @@ Four concert cards from the Concerts page's data (`concerts`, filtered by `conce
 
 **See all** opens Concerts. The section is **hidden** when no location is set or no shows are coming up. Same background-loading rule as section 7.
 
-### 9. More to explore
+### 9. Ask Shuffleupagus
 
-One row of link chips: Recommendations, Pop of the Tops, Ask Shuffleupagus. This is the only teaser for pages that have no section above.
+A prompt box at the bottom of Home, with an example prompt already filled in. It replaces the "More to explore" chips; the other pages stay reachable from the sidebar.
+
+**The example prompt.** It's built from what you've been playing, for example "A rainy Sunday playlist built around Hovvdy, Nap Eyes and Frog".
+- It's made locally from the top few artists in your recent plays and loves, with no AI call.
+- It changes on each visit.
+- The builder chooses the phrasings, from a small fixed set.
+
+**Editing.** The box is an ordinary text input: you can edit the example or replace it. It is capped at 500 characters, the `parachord://chat` limit.
+
+**Ask** (or Enter) opens the Shuffleupagus panel and sends the prompt.
+- It goes through the existing deep link, `parachord://chat?prompt=…` (see `docs/protocol-schema.md`, "AI Chat"), so Home and outside links share one code path.
+
+**The confirmation dialog.**
+- That link asks for confirmation before sending a prompt, so an outside link can't inject one. Home skips the dialog, because the user typed or approved the prompt in the app.
+- The skip comes from an in-app origin flag the renderer passes when it calls the protocol handler directly. It is never a URL parameter.
+- A `parachord://chat` link arriving from outside the app (the OS, the local `/protocol` endpoint, the browser extension) always confirms, as today. A test pins both paths.
+
+**No chat plugin enabled.** The section shows a "Set up Shuffleupagus" button in place of the box, and the button opens the AI plugin settings.
+- This keeps Home from offering a chat that #1020 shows can be unreachable.
 
 ## Card hover actions by asset type
 
@@ -232,7 +250,7 @@ Today's "Enhance Your Experience" cards (`home-page.js`, around L232) become the
 
 With no collection, no playlists and no services connected, most sections hide.
 
-- What remains: the header (with the checklist), Albums you might love (Shuffleupagus may still answer), Fresh Drops, Critical Darlings and More to explore.
+- What remains: the header (with the checklist), Albums you might love (Shuffleupagus may still answer), Fresh Drops, Critical Darlings and Ask Shuffleupagus (with an example prompt that needs no history, or the set-up button).
 - Plus an empty-state card in Jump back in's place pointing at importing a collection. This replaces today's "Build Your Collection" card.
 - The builder designs that card's look, in the page's style.
 
@@ -257,6 +275,7 @@ With no collection, no playlists and no services connected, most sections hide.
 - **Docs.** Update in the same PR:
   - `docs/architecture/announcements.md` (the banner is Home-only now);
   - `plugins.md` (`getHistoryMixes`);
+  - `docs/protocol-schema.md` (the in-app origin skips the chat confirmation; outside links still confirm);
   - `docs/features/` if Home is described there;
   - the README if it describes Home.
 
