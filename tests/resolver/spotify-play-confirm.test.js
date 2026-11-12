@@ -178,3 +178,38 @@ describe('starts the track inside its album (#1300)', () => {
     expect(lookups(calls)).toHaveLength(0);
   });
 });
+
+// A resumed track starts where it was (#1319): the host passes _startAt, the
+// play carries position_ms, and a play that started acknowledges with
+// _startedAt so the host doesn't seek there again.
+describe('starts at _startAt', () => {
+  const at = (body) => ({ ...body, position_ms: 141400 });
+
+  test('the album play carries position_ms and acknowledges', async () => {
+    const calls = mockSpotify({ device: desktop(true), playerStates: [playingState()] });
+    const t = { ...track, spotifyAlbumId: 'alb1', _startAt: 141.4 };
+    expect(await run(play(t, config))).toBe(true);
+    expect(calls.bodies).toEqual([at({ context_uri: 'spotify:album:alb1', offset: { uri: URI } })]);
+    expect(t._startedAt).toBe(141.4);
+  });
+
+  test('a bare play carries it, and is sent once (the album fallback still sees the bare body)', async () => {
+    const calls = mockSpotify({ device: desktop(true), playStatuses: [404], playerStates: [null] });
+    const t = { ...track, _startAt: 141.4 };
+    expect(await run(play(t, config))).toBe(false);
+    expect(calls.bodies).toEqual([at({ uris: [URI] })]);
+    expect(t._startedAt).toBeUndefined();
+  });
+
+  test('a refused album play is re-sent bare with the position too', async () => {
+    const calls = mockSpotify({ device: desktop(true), playStatuses: [404, 204], playerStates: [playingState()] });
+    expect(await run(play({ ...track, spotifyAlbumId: 'alb1', _startAt: 141.4 }, config))).toBe(true);
+    expect(calls.bodies).toEqual([at({ context_uri: 'spotify:album:alb1', offset: { uri: URI } }), at({ uris: [URI] })]);
+  });
+
+  test('no _startAt: no position_ms', async () => {
+    const calls = mockSpotify({ device: desktop(true), playerStates: [playingState()] });
+    expect(await run(play({ ...track, spotifyAlbumId: 'alb1' }, config))).toBe(true);
+    expect(calls.bodies[0]).not.toHaveProperty('position_ms');
+  });
+});

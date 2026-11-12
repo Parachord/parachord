@@ -495,6 +495,14 @@ module.exports = {
         return albumId ? { context_uri: `spotify:album:${albumId}`, offset: { uri } } : null;
       };
       let body = (await albumBody()) || bareBody;
+      // _startAt: a resumed track starts where it was, not at 0:00 then a
+      // seek. Spotify honours position_ms on both bodies. Set in place: the
+      // album fallback below compares body with bareBody.
+      if (track._startAt > 0) {
+        const positionMs = Math.round(track._startAt * 1000);
+        body.position_ms = positionMs;
+        bareBody.position_ms = positionMs;
+      }
       const sendPlay = () =>
         fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice.id}`, {
           method: 'PUT',
@@ -549,6 +557,13 @@ module.exports = {
       );
       return { success: true };
     }
+    // A play that started tells the host it started at _startAt (position_ms
+    // went with it), so the host doesn't seek there again.
+    const done = (r) => {
+      const ok = !!(r && r.success);
+      if (ok && track._startAt > 0) track._startedAt = track._startAt;
+      return ok;
+    };
     try {
       const result = await tryPlay(token);
       if (result.needsRefresh && config.refreshToken) {
@@ -557,10 +572,10 @@ module.exports = {
         if (newToken && newToken !== token) {
           console.log('🔄 Spotify play: Retrying with refreshed token');
           const retryResult = await tryPlay(newToken);
-          return retryResult.success || false;
+          return done(retryResult);
         }
       }
-      return result.success || false;
+      return done(result);
     } catch (error) {
       console.error('Spotify play error:', error);
       return false;

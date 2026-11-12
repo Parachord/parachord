@@ -57,13 +57,18 @@ class ScrobbleManager {
     return enabled;
   }
 
-  // Called when a new track starts playing
-  async onTrackStart(track) {
+  // Called when a new track starts playing. continuesScrobbled: this play
+  // carries on a listen that was already scrobbled (a restored queue's track
+  // resumed where it was, #1319), so it isn't submitted again. The resume
+  // threshold is on position, so a track paused past it scrobbled a second
+  // time within a second of Play. Now Playing still goes out.
+  async onTrackStart(track, { continuesScrobbled = false } = {}) {
     // Reset state for new track
     this.currentTrack = track;
     this.trackStartTime = Date.now();
-    this.scrobbleSubmitted = false;
+    this.scrobbleSubmitted = !!continuesScrobbled;
     this.nowPlayingSent = false;
+    if (continuesScrobbled) console.log('[ScrobbleManager] Resumed a listen that was already scrobbled; not scrobbling it again');
 
     // Validate track has required fields
     if (!track.title || !track.artist) {
@@ -165,6 +170,13 @@ class ScrobbleManager {
         console.error('[ScrobbleManager] onScrobbleCallback error:', error);
       }
     }
+  }
+
+  // Whether the playing track (isSameTrack picks it) has been scrobbled. The
+  // queue's saved position records it, so a resume after a restart doesn't
+  // scrobble it again.
+  hasScrobbled(isSameTrack) {
+    return !!(this.scrobbleSubmitted && this.currentTrack && typeof isSameTrack === 'function' && isSameTrack(this.currentTrack));
   }
 
   // Called when track ends or is skipped

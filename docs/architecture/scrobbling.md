@@ -46,6 +46,19 @@ The plugin contract is `window.scrobbleManager.registerPlugin({ id, isEnabled, s
 | Loved-tracks push toggles + backfill | inline in app.js, persisted at `scrobbler_love_push_enabled` / `love_pushed_keys` |
 | Removed | `scrobblers/` directory and `scrobble-manager.js` were a dead older copy, deleted 2026-10 (parachord#757; consolidation was commit [`26b7ebd`](https://github.com/Parachord/parachord/commit/26b7ebd)) |
 
+### A resumed track isn't scrobbled twice
+
+`ScrobbleManager` scrobbles once a track's position passes the threshold: half its length or 4 minutes, whichever is sooner, and at least 30 s. Every `onTrackStart` resets that.
+
+A restored queue's track resumes where it was (#1319, see playback.md), and Play starts it through `handlePlay`. So a track paused past its threshold, then restored after a restart and resumed, was scrobbled again within a second of Play.
+
+The fix:
+- The queue's saved position records whether that listen was scrobbled: `saved_queue_position.scrobbled`, from `ScrobbleManager.hasScrobbled`.
+- The restore carries the flag on the pending start position, and a seek before Play keeps it.
+- `handlePlay` passes `onTrackStart(track, { continuesScrobbled: true })` when it resumes that listen. The scrobbler then doesn't submit it again; Now Playing still goes out.
+
+A restored track that starts over from 0:00 is a new listen and scrobbles as usual. That happens when its position was in its first 5 s or last 10 s, or when Previous moved it back to the start. Tests: `tests/scrobbling/resume-no-double-scrobble.test.js`.
+
 ### ListenBrainz client identity
 
 Every listen carries `additional_info.media_player: "Parachord"`, `submission_client: "Parachord"` and `submission_client_version: "<app version> (desktop)"` (`formatSubmissionClientVersion` in `scrobbler-loader.js`; the version comes from `window.electron.updater.getVersion()` once per session, and a failed lookup sends `unknown (desktop)` and retries on the next submit). Mobile sends `"<version> (android)"` / `"<version> (ios)"` (parachord-mobile#418); the platform names match the `X-Parachord-Client` allowlist. The version used to be a hard-coded `"1.1.0"` on every client, so two Parachord clients on one ListenBrainz token could not be told apart in duplicate-listen reports (parachord#1125). Keep `submission_client` at `"Parachord"`: Achordion's importer detection (`lib/clients/listenbrainz.ts`) reads only that field, matching spotify / last.fm / libre.fm to spot ListenBrainz importers.

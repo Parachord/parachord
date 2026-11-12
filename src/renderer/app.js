@@ -8258,7 +8258,12 @@ const Parachord = () => {
       const track = currentTrackRef.current;
       const trackKey = trackPositionKey(track);
       if (!trackKey || track._protocolLoading) return;
-      Promise.resolve(window.electron.store.set('saved_queue_position', { trackKey, position: progressRef.current })).catch(() => {});
+      // Whether this listen was scrobbled: the scrobbler says so once it
+      // plays, and a restored track not played yet keeps what it was saved with.
+      const pending = pendingStartPositionRef.current;
+      const scrobbled = !!window.scrobbleManager?.hasScrobbled?.((t) => trackPositionKey(t) === trackKey)
+        || !!(pending && pending.trackKey === trackKey && pending.scrobbled);
+      Promise.resolve(window.electron.store.set('saved_queue_position', { trackKey, position: progressRef.current, ...(scrobbled ? { scrobbled: true } : {}) })).catch(() => {});
     };
     if (!isPlaying) { save(); return undefined; }
     const timer = setInterval(save, 5000);
@@ -19189,7 +19194,7 @@ ${trackListXml}
           if (firstTrackKey && savedQueuePosition && savedQueuePosition.trackKey === firstTrackKey) {
             const startAt = resumeStartPosition({ position: savedQueuePosition.position, duration: firstTrack.duration });
             if (startAt > 0) {
-              pendingStartPositionRef.current = { trackKey: firstTrackKey, position: startAt };
+              pendingStartPositionRef.current = { trackKey: firstTrackKey, position: startAt, ...(savedQueuePosition.scrobbled ? { scrobbled: true } : {}) };
               setProgress(startAt);
               console.log(`📦 Restored position: ${Math.round(startAt)}s into "${firstTrack.title}"`);
             }
@@ -35164,7 +35169,11 @@ useEffect(() => {
     // failed play left in the playbar) has no engine to seek: the seek moves
     // where Play will start (#1319, as on mobile).
     if (trackNeedsExplicitStart.current && !isPlayingRef.current) {
-      pendingStartPositionRef.current = { trackKey: trackPositionKey(currentTrack), position: newPosition };
+      // A seek before Play moves where the same listen continues, so a
+      // scrobbled one stays scrobbled.
+      const trackKey = trackPositionKey(currentTrack);
+      const prior = pendingStartPositionRef.current;
+      pendingStartPositionRef.current = { trackKey, position: newPosition, ...(prior && prior.trackKey === trackKey && prior.scrobbled ? { scrobbled: true } : {}) };
       setProgress(newPosition);
       return;
     }

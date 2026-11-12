@@ -38,7 +38,7 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack } = require('../lib/playback-helpers');
+const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack, pendingStartAt } = require('../lib/playback-helpers');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -678,6 +678,19 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         ? (outgoing && !isSameTrack(outgoing, trackOrSource) ? pushPlayHistory(playHistoryRef.current, outgoing) : playHistoryRef.current)
         : historyForReplacedTrack(playHistoryRef.current, outgoing, trackOrSource);
     }
+    // Where this play starts: a restored queue's resume or a seek before Play
+    // (#1319) leaves a pending position for this track. An engine that can
+    // start there does (startedAtPosition), so no audio from 0:00 plays first
+    // and the bar doesn't jump to 0:00 and back. For the others, the resume
+    // effect in app.js seeks once the track plays, as every engine used to.
+    const pendingStart = pendingStartPositionRef ? pendingStartPositionRef.current : null;
+    const startAt = pendingStartAt(pendingStart, trackOrSource);
+    const startedAtPosition = () => {
+      if (startAt > 0 && pendingStartPositionRef.current === pendingStart) pendingStartPositionRef.current = null;
+    };
+    // Resuming a listen that was scrobbled before the restart (the saved
+    // position records it): the scrobbler doesn't submit it again.
+    const scrobbleStart = { continuesScrobbled: startAt > 0 && !!pendingStart.scrobbled };
     // If user manually plays something while listening along, end the listen-along session
     // Listen-along tracks are tagged with _playbackContext.type === 'listenAlong'
     const listenAlongFriendNow = listenAlongFriendRef.current;
@@ -1352,6 +1365,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       // Explicitly load to trigger metadata events
       audioRef.current.load();
+      // Before metadata, this sets where playback starts.
+      if (startAt > 0) audioRef.current.currentTime = startAt;
 
       // Post-play state commit. Also run by the audio error listener when a
       // MEDIA_ERR_NETWORK retry succeeds (localFileRetryCommitRef), so a track
@@ -1378,7 +1393,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
-        setProgress(0);
+        setProgress(startAt);
+        startedAtPosition();
         setTrackLoading(false); // Clear loading state
         streamingPlaybackActiveRef.current = false;
         setBrowserPlaybackActive(false);
@@ -1391,7 +1407,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
-          window.scrobbleManager.onTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
         }
 
         // If audio element has duration now, update the track
@@ -1617,7 +1633,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         console.log(`✅ ${serviceName} playing via its embedded player (${effectiveVolume.toFixed(1)}% volume)`);
 
         if (window.scrobbleManager) {
-          window.scrobbleManager.onTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
         }
       } catch (error) {
         if ((error && error.reason === 'superseded') || !isCurrentPlay()) return;
@@ -1729,6 +1745,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         ensureSharedAudioElement({ ...trackOrSource, _streamOwner: resolverId });
         const wvResult = await window.__parachordWidevine.play(audioRef.current, {
           resolverId,
+          startTime: startAt,
           entity: { asin },
           trackContext: {
             albumAsin: sourceToPlay.albumAsin || trackOrSource.albumAsin || null,
@@ -1841,7 +1858,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       setCurrentTrack(trackToSet);
       setIsPlaying(true);
-      setProgress(0);
+      setProgress(startAt);
+      startedAtPosition();
       setTrackLoading(false);
       streamingPlaybackActiveRef.current = false;
       setBrowserPlaybackActive(false);
@@ -1882,7 +1900,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
       // Notify scrobble manager of track start
       if (window.scrobbleManager) {
-        window.scrobbleManager.onTrackStart(trackToSet);
+        window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
       }
       return;
     }
@@ -1977,6 +1995,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         console.log(`🔊 Applied ${streamLabel} volume: ${volumeToApply}% -> ${effectiveVolume.toFixed(1)}%${isMutedRef.current ? ' [MUTED]' : ''}`);
 
         audioRef.current.load();
+        // Before metadata, this sets where playback starts.
+        if (startAt > 0) audioRef.current.currentTime = startAt;
 
         await audioRef.current.play();
 
@@ -2002,7 +2022,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
-        setProgress(0);
+        setProgress(startAt);
+        startedAtPosition();
         setTrackLoading(false);
         streamingPlaybackActiveRef.current = false;
         setBrowserPlaybackActive(false);
@@ -2014,7 +2035,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
-          window.scrobbleManager.onTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
         }
       } catch (error) {
         console.error(`❌ ${streamLabel} playback error:`, error);
@@ -2129,7 +2150,12 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       console.log(`▶️ Using ${resolver.name} to play track...`);
 
       if (resolverId === 'spotify') spotifyPlaySentRef.current = true;
-      const success = await resolver.play(sourceToPlay, config);
+      // A plugin that can start mid-track reads _startAt and, once playback
+      // started there, sets _startedAt on this same object (play returns only
+      // success). One that doesn't starts at 0:00 and the resume effect seeks.
+      const playSource = startAt > 0 ? { ...sourceToPlay, _startAt: startAt } : sourceToPlay;
+      const success = await resolver.play(playSource, config);
+      const startedThere = startAt > 0 && playSource._startedAt === startAt;
 
       // Check if another play request superseded this one during play
       if (playbackGenerationRef.current !== thisGeneration) {
@@ -2195,19 +2221,20 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           { ...sourceToPlay, duration: playbackDurationSeconds(sourceToPlay, trackOrSource), _playbackContext: trackOrSource._playbackContext, _activeResolver: resolverId };
         setCurrentTrack(trackToSet);
         setIsPlaying(true);
-        setProgress(0);
+        setProgress(startedThere ? startAt : 0);
+        if (startedThere) startedAtPosition();
         setTrackLoading(false); // Clear loading state on success
         // Clear explicit start flag since we're playing a new track
         trackNeedsExplicitStart.current = false;
         playedSinceWrapRef.current = true; // a track played: repeat all may wrap (#1319)
         // Reset baseline for smooth progress interpolation
-        spotifyProgressBaselineRef.current = { progress: 0, timestamp: Date.now(), isPlaying: true };
+        spotifyProgressBaselineRef.current = { progress: startedThere ? startAt : 0, timestamp: Date.now(), isPlaying: true };
         // Reset Amazon Music interpolation baseline as well (resolverId !== 'spotify'
         // never reaches this line — spotify branch only; kept for symmetry below)
 
         // Notify scrobble manager of track start
         if (window.scrobbleManager) {
-          window.scrobbleManager.onTrackStart(trackToSet);
+          window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
         }
 
         if (audioContext) {
@@ -2291,7 +2318,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
 
             // Notify scrobble manager of track start
             if (window.scrobbleManager) {
-              window.scrobbleManager.onTrackStart(trackToSet);
+              window.scrobbleManager.onTrackStart(trackToSet, scrobbleStart);
             }
 
             if (audioContext) {

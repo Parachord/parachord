@@ -269,8 +269,10 @@ class MusicKitBridge {
         return nil
     }
 
-    // Play a song by Apple Music ID
-    func play(songId: String) async throws -> [String: Any] {
+    // Play a song by Apple Music ID. startTime (seconds) > 0 starts there:
+    // set after prepareToPlay and before play, so nothing from 0:00 is heard
+    // (a resumed track, #1319). The answer carries startTime when applied.
+    func play(songId: String, startTime: Double = 0) async throws -> [String: Any] {
         let request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(songId))
         let response = try await request.response()
 
@@ -283,6 +285,7 @@ class MusicKitBridge {
 
         do {
             try await player.prepareToPlay()
+            if startTime > 0 { player.playbackTime = startTime }
             try await player.play()
         } catch {
             let nsError = error as NSError
@@ -291,11 +294,12 @@ class MusicKitBridge {
             player.stop()
             player.queue = [song]
             try await player.prepareToPlay()
+            if startTime > 0 { player.playbackTime = startTime }
             try await Task.sleep(nanoseconds: 500_000_000) // 500ms
             try await player.play()
         }
 
-        return [
+        var answer: [String: Any] = [
             "playing": true,
             "song": [
                 "id": song.id.rawValue,
@@ -303,6 +307,8 @@ class MusicKitBridge {
                 "artist": song.artistName
             ]
         ]
+        if startTime > 0 { answer["startTime"] = startTime }
+        return answer
     }
 
     // Pause playback
@@ -569,7 +575,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let songId = params["songId"] as? String else {
                     return Response(id: request.id, success: false, data: nil, error: "Missing songId parameter")
                 }
-                result = try await bridge.play(songId: songId)
+                // Int or Double, like seek's position.
+                var startTime: Double = 0
+                if let d = params["startTime"] as? Double {
+                    startTime = d
+                } else if let i = params["startTime"] as? Int {
+                    startTime = Double(i)
+                }
+                result = try await bridge.play(songId: songId, startTime: startTime)
 
             case "pause":
                 result = bridge.pause()

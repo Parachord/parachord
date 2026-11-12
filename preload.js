@@ -549,7 +549,8 @@ contextBridge.exposeInMainWorld('electron', {
     // Resolve a track by artist/title/album
     resolve: (artist, title, album = null) => ipcRenderer.invoke('musickit:resolve', artist, title, album),
     // Playback controls
-    play: (songId) => ipcRenderer.invoke('musickit:play', songId),
+    // startTime (seconds, optional): start there instead of 0:00 (a resumed track, #1319).
+    play: (songId, startTime) => ipcRenderer.invoke('musickit:play', songId, startTime),
     pause: () => ipcRenderer.invoke('musickit:pause'),
     resume: () => ipcRenderer.invoke('musickit:resume'),
     stop: () => ipcRenderer.invoke('musickit:stop'),
