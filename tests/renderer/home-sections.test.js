@@ -114,7 +114,7 @@ describe('AskShuffleupagus', () => {
 describe('theme: no hard-coded neutrals in the Home modules', () => {
   const NEUTRAL = /#(?:fff|ffffff|111827|374151|4b5563|6b7280|9ca3af|d1d5db|e5e7eb|f3f4f6|f9fafb)\b/i;
   const MARK = /\/\/ (?:fill-accent|on-art|on-color)\b/;
-  test.each(['home-sections.js', 'home-skeletons.js', 'home-banner.js', 'home-setup.js'])('%s', (file) => {
+  test.each(['home-sections.js', 'home-skeletons.js', 'home-banner.js', 'home-setup.js', 'home-page.js'])('%s', (file) => {
     const lines = fs.readFileSync(path.join(COMP, file), 'utf8').split('\n');
     const bad = lines.map((l, i) => [i + 1, l]).filter(([, l]) => NEUTRAL.test(l) && !MARK.test(l));
     expect(bad).toEqual([]);

@@ -193,7 +193,7 @@ describe('recommended playlist cards', () => {
       expect(app.slice(at, at + 400)).toMatch(/await recommendationPlaylistTracks\(item\)/);
     }
     // Open hands the same lookup to the playlist view, which fills in when it lands.
-    const open = app.slice(app.indexOf('const openRecommendationPlaylist = (item, section) => {'));
+    const open = app.slice(app.indexOf('const openServicePlaylist = (item, sourceName) => {'));
     expect(open.slice(0, 900)).toContain('fetchTracks: () => recommendationPlaylistTracks(item)');
     expect(app).toMatch(/const recommendationPlaylistTracks = async \(item\) => \{[\s\S]{0,300}id: trackSlug\(t\.artist \|\| '', t\.title \|\| ''\)/);
   });

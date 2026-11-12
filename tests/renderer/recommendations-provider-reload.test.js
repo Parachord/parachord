@@ -30,7 +30,10 @@ describe('Recommendations reload when the provider set changes', () => {
   test('the reload effect compares the current set with the recorded one', () => {
     expect(reloadEffect).toBeGreaterThan(-1);
     const body = app.slice(reloadEffect - 200, reloadEffect + 300);
-    expect(body).toMatch(/if \(activeView !== 'recommendations' \|\| !cacheLoaded\) return;/);
+    expect(body).toMatch(/if \(!cacheLoaded\) return;/);
+    // On Recommendations, and on Home once Home's own background load has
+    // run (the ref is set), so it never starts Home's load before first paint.
+    expect(body).toMatch(/if \(activeView !== 'recommendations' && !\(activeView === 'home' && recommendationProviderIdsRef\.current !== null\)\) return;/);
     expect(body).toMatch(/loadRecommendations\(\);\s*\}, \[activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices\]\);/);
   });
 

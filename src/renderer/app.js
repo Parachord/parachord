@@ -3605,7 +3605,7 @@ const Parachord = () => {
   const [recommendationsVisitCount, setRecommendationsVisitCount] = useState(0); // Increments each visit to the Recommendations view (suggestion refresh trigger)
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeDataLoaded, setHomeDataLoaded] = useState(false);
-  const [homeHeaderCollapsed, setHomeHeaderCollapsed] = useState(false);
+  const openCollectionLovesRef = useRef(null); // Home's loves menu: Open in Collection
 
   const [trackSources, setTrackSources] = useState({}); // Resolved sources for each track: { trackId: { youtube: {...}, soundcloud: {...} } }
   // Per-track source writes are coalesced (window.createCoalescedUpdater): the
@@ -4710,7 +4710,6 @@ const Parachord = () => {
   const [addFriendLoading, setAddFriendLoading] = useState(false);
   const [friendDragOverSidebar, setFriendDragOverSidebar] = useState(false);
   const friendPollIntervalRef = useRef(null);
-  const homeFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for Home tab friend activity
   const sidebarFriendsSortRef = useRef({ fingerprint: '', sorted: [] }); // Stable sort cache for sidebar pinned friends
   const friendsRef = useRef(friends); // Ref for friends to avoid stale closures in polling
   const metaServiceConfigsRef = useRef({}); // Ref for LB/Last.fm credentials in async protocol handlers
@@ -14444,6 +14443,8 @@ ${trackListXml}
             context = { type: 'album', id: data.sourceId, name: data.sourceName, artist: data.artistName };
           } else if (data.sourceType === 'recommendations') {
             context = { type: 'recommendations', name: 'Recommendations' };
+          } else if (data.sourceType === 'loves') {
+            context = { type: 'loves', name: 'Recent loves' };
           }
           addToQueue(data.tracks, context);
         } else if (data.action === 'add-to-queue' && data.track) {
@@ -14462,6 +14463,9 @@ ${trackListXml}
             sourceType: 'track'
           });
           setSelectedPlaylistsForAdd([]);
+        } else if (data.action === 'open-collection-loves') {
+          // Home's recent-loves tile: Collection's songs, newest loved first.
+          if (openCollectionLovesRef.current) openCollectionLovesRef.current();
         } else if (data.action === 'add-track-to-collection' && data.track) {
           // Add single track to collection
           addTrackToCollection(data.track);
@@ -23377,20 +23381,6 @@ ${trackListXml}
   // model): kept in sync with the same flat song list.
   useEffect(() => { recommendationsTracksRef.current = recommendationSongs; }, [recommendationSongs]);
 
-  // Home's For You card previews the first recommended artist (the Artists
-  // For you row first, then the titled rows' artist items) with its photo from
-  // recommendationImages — the shape home-page.js always read
-  // ({ artists: [{ name, image }] }).
-  const recommendationsPreview = useMemo(() => {
-    const artistItems = flattenRecommendationItems(recommendations.sections).filter(i => i.type === 'artist');
-    return {
-      artists: artistItems.slice(0, 1).map(a => ({
-        name: a.name,
-        image: a.imageUrl || (recommendationImages[a.id] && recommendationImages[a.id].url) || null
-      }))
-    };
-  }, [recommendations.sections, recommendationImages]);
-
   // Register page context for recommendations tracks resolution
   useEffect(() => {
     if (activeView === 'recommendations' && recommendationSongs.length > 0) {
@@ -27448,11 +27438,11 @@ Return ONLY the JSON array, no other text.`;
   }, [similarExclusionDigest]);
 
   // `opts.metaServicesOnly` asks only the meta-service providers (Last.fm,
-  // ListenBrainz): Home's For You preview loads with it, so a content
-  // resolver's recommendation fetches — a resolver's can be service-page
-  // loads on the same search chain track resolution uses — never queue ahead
-  // of resolution on a Home visit, where resolution is busiest. The
-  // Recommendations page asks every provider.
+  // ListenBrainz). Home's old For You preview loaded with it, so a content
+  // resolver's recommendation fetches never queued ahead of resolution on a
+  // Home visit. The redesigned Home shows every provider's album picks, so it
+  // runs the full load, but only after first paint, from an idle callback
+  // (home-page.js). Nothing calls it with the option today.
   // Which providers the last full load asked, as recommendationProviderKey.
   // A load that ran before the plugins finished loading (the app reopening on
   // this page) asked none; the effect below loads again once the set changes.
@@ -28684,36 +28674,18 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // over the defaults, or a resolver was turned on or off. Declared after the
   // load-on-navigation effect so that one records its set first and a plain
   // navigation doesn't load twice.
+  // Home too, once its own background load has run (the ref is set): the app
+  // reopening on Home loads before the plugins, and Albums you might love
+  // would otherwise wait for a visit to Recommendations.
   useEffect(() => {
-    if (activeView !== 'recommendations' || !cacheLoaded) return;
+    if (!cacheLoaded) return;
+    if (activeView !== 'recommendations' && !(activeView === 'home' && recommendationProviderIdsRef.current !== null)) return;
     if (recommendationProviderKey(recommendationProviders()) === recommendationProviderIdsRef.current) return;
     loadRecommendations();
   }, [activeView, cacheLoaded, loadedResolvers, activeResolvers, metaServices]);
 
-  // Load discovery data (recommendations, charts, critics picks) for HOME view previews
-  useEffect(() => {
-    if (activeView === 'home' && cacheLoaded) {
-      // Load recommendations if a scrobbler can produce them and none loaded
-      // yet (the For You card previews the first recommended artist). Only
-      // the meta-services are asked — as on main — so a content resolver's
-      // recommendation fetches (a resolver's can be service-page loads on
-      // the search chain track resolution uses) never queue ahead of
-      // resolution on a Home visit; the Recommendations page asks them.
-      const metaConfigsHome = metaServiceConfigsRef.current || {};
-      const hasScrobbler = metaConfigsHome.lastfm?.username || metaConfigsHome.listenbrainz?.username;
-      if (recommendations.sections.length === 0 && !recommendations.error && hasScrobbler) {
-        loadRecommendations({ metaServicesOnly: true });
-      }
-      // Load charts if not already loaded
-      if (!chartsLoaded && !chartsLoading) {
-        loadCharts();
-      }
-      // Load critics picks if not already loaded
-      if (!criticsPicksLoaded && !criticsPicksLoading) {
-        loadCriticsPicks();
-      }
-    }
-  }, [activeView, cacheLoaded, metaServiceConfigs.lastfm?.username, metaServiceConfigs.listenbrainz?.username]);
+  // Home loads its own discovery data (recommendations, Fresh Drops,
+  // Critical Darlings, concerts) in one idle-time effect in home-page.js.
 
   // Resolve recommendation tracks using the resolver pipeline
   // Fetch images for recommended artists
@@ -31724,17 +31696,12 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // trap: the array is evaluated during render).
   const recommendationImageFetchesRef = useRef(new Set());
   useEffect(() => {
-    if (activeView !== 'recommendations' && activeView !== 'home') return;
-    // On Home only the For You card needs one photo — the first ARTIST item
-    // (the preview derives its image from it); the full page fetches everything.
-    let budget = activeView === 'recommendations' ? Infinity : 1;
+    // Home resolves the covers it shows itself (home-page.js).
+    if (activeView !== 'recommendations') return;
     for (const item of flattenRecommendationItems(recommendations.sections)) {
-      if (budget <= 0) break;
       if (item.type !== 'artist' && item.type !== 'album') continue;
-      if (activeView === 'home' && item.type !== 'artist') continue;
       if (item.imageUrl || recommendationImages[item.id] || recommendationImageFetchesRef.current.has(item.id)) continue;
       recommendationImageFetchesRef.current.add(item.id);
-      budget--;
       const write = (url) => recommendationImagesWriterRef.current.queue(item.id, { url: url || null, loaded: true }, { merge: true });
       // Album art / artist photos are decoration: getAlbumArt and
       // getArtistImage run their MusicBrainz requests in the background
@@ -35389,17 +35356,255 @@ useEffect(() => {
     refreshHostedPlaylist, savePlaylistToStore, setQueueWithContext,
   });
 
+  // A recommended (or Home's service-mix) playlist card's art: the
+  // provider's own URL unless it failed this session, else the fetched
+  // recommendationImages entry.
+  const recommendationImageFor = (item) => {
+    if (item.imageUrl && !recommendationBrokenArtRef.current.has(item.imageUrl)) return item.imageUrl;
+    return (recommendationImages[item.id] || {}).url || null;
+  };
+  // Play a recommended playlist: resolve it through the provider
+  // playlist path (resolver-loader lookupPlaylist)
+  // and play the tracks, without importing anything.
+  const loadPlaylistTracks = async (item) => {
+    const resolved = await resolveProviderPlaylistUrl(item.url);
+    if (!resolved || !resolved.tracks || !resolved.tracks.length) {
+      throw new Error(`Could not load ${item.name} — is the service connected?`);
+    }
+    return resolved;
+  };
+  // A recommended playlist's tracks in the app's shape: track ids are
+  // trackSlug(artist, title), the id every no-album track context keys
+  // session state on, so they share resolution state with the rest of
+  // the app (renderer-patterns.md). Used by every playlist action.
+  // One lookup per playlist URL for the session (see
+  // recommendationPlaylistLookupsRef), fresh for 10 minutes.
+  const PLAYLIST_LOOKUP_TTL = 10 * 60 * 1000;
+  const lookupRecommendationPlaylist = (item) => {
+    const cache = recommendationPlaylistLookupsRef.current;
+    const hit = cache.get(item.url);
+    if (hit && Date.now() - hit.at < PLAYLIST_LOOKUP_TTL) return hit.promise;
+    const entry = { promise: loadPlaylistTracks(item), at: Date.now() };
+    cache.set(item.url, entry);
+    entry.promise.catch(() => { if (cache.get(item.url) === entry) cache.delete(item.url); });
+    return entry.promise;
+  };
+  // Hovering a playlist card for 250ms starts its lookup (the
+  // renderer's hover-prefetch dwell), so a click usually finds the
+  // tracks ready; leaving the card first cancels it.
+  const prefetchRecommendationPlaylist = (item) => {
+    if (!item.url || item.weekly) return;
+    const timers = recommendationPrefetchTimersRef.current;
+    if (timers.has(item.id)) return;
+    timers.set(item.id, setTimeout(() => {
+      timers.delete(item.id);
+      lookupRecommendationPlaylist(item).catch(() => { /* the click reports it */ });
+    }, 250));
+  };
+  const cancelRecommendationPlaylistPrefetch = (item) => {
+    const timers = recommendationPrefetchTimersRef.current;
+    const timer = timers.get(item.id);
+    if (timer) { clearTimeout(timer); timers.delete(item.id); }
+  };
+  const recommendationPlaylistTracks = async (item) => {
+    const resolved = await lookupRecommendationPlaylist(item);
+    const art = recommendationImageFor(item);
+    return resolved.tracks.map((t) => ({
+      id: trackSlug(t.artist || '', t.title || ''),
+      title: t.title,
+      artist: t.artist,
+      album: t.album || null,
+      albumArt: resolved.albumArt || art || null,
+      duration: t.duration || null,
+      sources: {},
+      // The lookup's own ids and ISRC ride along: resolveTrack marks a
+      // track with appleMusicId (or spotifyUri + spotifyId) resolved
+      // on that service at once, at full confidence, and asks only the
+      // others; without them every track of an Apple Music playlist
+      // searched every service from scratch, Apple included. The
+      // ISRC lets the others match the exact recording.
+      ...(t.appleMusicId ? { appleMusicId: t.appleMusicId } : {}),
+      ...(t.spotifyId ? { spotifyId: t.spotifyId, spotifyUri: `spotify:track:${t.spotifyId}` } : {}),
+      ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {}),
+      ...(t.isrc ? { isrc: t.isrc } : {})
+    }));
+  };
+
+  // Open a service playlist (a recommended playlist, or one of Home's
+  // history mixes) in the playlist view: the ephemeral external-playlist
+  // flow. Provider-neutral: `sourceName` is the service's name from the
+  // registry records, and the track ids are trackSlug(artist, title), the id
+  // every no-album track context keys session state on, so these tracks
+  // share resolution state with the rest of the app (renderer-patterns.md).
+  // The click opens the playlist view at once (its skeleton rows stand in),
+  // and the tracks fill in when the lookup lands (loadPlaylist's fetchTracks
+  // branch): a click changes the view before its lookup. The Recommendations
+  // page and Home both call this one function.
+  const openServicePlaylist = (item, sourceName) => {
+    if (!item || !item.url) return;
+    cancelRecommendationPlaylistPrefetch(item);
+    const resolverName = sourceName || 'the service';
+    loadPlaylist({
+      id: `${item.resolverId}-rec-${item.id}`,
+      title: item.name || item.title,
+      creator: resolverName,
+      description: `Recommended by ${resolverName}`,
+      tracks: [],
+      tracksLoaded: false,
+      isExternal: true,
+      isEphemeral: true,
+      source: item.resolverId,
+      sourceUrl: item.url,
+      addedAt: Date.now(),
+      fetchTracks: () => recommendationPlaylistTracks(item)
+    });
+  };
+
+  // Home's right-click menus, the same ones the other pages show: an album
+  // gets the release menu (its collection tracks, else the tracks a hover
+  // prefetched), a playlist the playlist menu, and the recent-loves tile its
+  // own 'loves' menu (Add to Queue, Open in Collection).
+  const showHomeContextMenu = (kind, item) => {
+    const show = window.electron?.contextMenu?.showTrackMenu;
+    if (!show || !item) return;
+    if (kind === 'loves') {
+      show({ type: 'loves', name: 'Recent loves', tracks: Array.isArray(item) ? item : [] });
+      return;
+    }
+    if (kind === 'playlist') {
+      const local = item.id != null ? playlists.find(p => p.id === item.id) : null;
+      const tracks = ((local && local.tracks) || []).map(track => ({
+        ...track,
+        id: trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum'),
+        sources: {}
+      }));
+      show({
+        type: 'playlist',
+        playlistId: local ? local.id : undefined,
+        name: item.title || item.name,
+        creator: (local && local.creator) || null,
+        tracks
+      });
+      return;
+    }
+    const own = (collectionData.tracks || [])
+      .filter(t => t.artist === item.artist && t.album === item.title)
+      .sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0));
+    const prefetched = topAlbumTracksCache.current[`${item.artist}-${item.title}`.toLowerCase()] || [];
+    show({
+      type: 'release',
+      name: item.title,
+      album: { title: item.title, artist: item.artist, art: item.imageUrl || null },
+      tracks: own.length > 0 ? own : prefetched
+    });
+  };
+  // The loves menu's "Open in Collection": Collection's songs, newest loved
+  // first. Through a ref, since the context-menu listener registers once.
+  openCollectionLovesRef.current = () => {
+    navigateTo('library');
+    setCollectionTab('tracks');
+    setCollectionSort(prev => ({ ...prev, tracks: 'recent' }));
+  };
+
+  // Home's derived props (stable: each changes only with its inputs).
+  // Whether a chat plugin is on, for the Ask box.
+  const homeChatAvailable = useMemo(
+    () => getChatServices().some(isServiceEnabled),
+    [metaServices, metaServiceConfigs, loadedResolvers]
+  );
+  // What's playing and what's queued, by playback context: Jump back in
+  // leaves out a tile that would repeat either. The queued context is the
+  // first one in the queue; its object is shared by every track tagged with
+  // it, so a queue advance doesn't make a new one.
+  const homeQueuedContext = useMemo(() => {
+    for (const t of currentQueue) if (t && t._playbackContext) return t._playbackContext;
+    return null;
+  }, [currentQueue]);
+  const homeActive = useMemo(
+    () => ({ playing: playbackContext || null, queued: homeQueuedContext }),
+    [playbackContext, homeQueuedContext]
+  );
+  // The history mixes ("Made from your listening") arrive with
+  // getHistoryMixes; until then the row has nothing and hides.
+  const homeMixes = useMemo(() => [], []);
+  // Concerts near you: the Concerts page's location filter (coordinates and
+  // radius, else the city), upcoming shows only, soonest first.
+  const homeConcerts = useMemo(() => {
+    if (!concertsLocation) return [];
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const locCity = concertsLocation.toLowerCase().trim().split(',')[0].trim();
+    const near = (event) => {
+      const vLat = event.venue?.latitude, vLng = event.venue?.longitude;
+      if (concertsLocationCoords && vLat != null && vLng != null) {
+        return haversineDistance(concertsLocationCoords.lat, concertsLocationCoords.lng, vLat, vLng) <= concertsLocationRadius;
+      }
+      const city = (event.venue?.city || '').toLowerCase().trim();
+      const region = (event.venue?.region || '').toLowerCase().trim();
+      return !!((city && locCity.includes(city)) || (region && locCity.includes(region)));
+    };
+    return concerts
+      .filter(event => event && typeof event.date === 'string' && event.date.slice(0, 10) >= today && near(event))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+      .slice(0, 4);
+  }, [concerts, concertsLocation, concertsLocationCoords, concertsLocationRadius]);
+  // Albums you might love: every provider's album picks (the Recommendations
+  // cache) plus Shuffleupagus's, once each. The source label is the row's
+  // source record name (the registry's), and the card's second line says
+  // why it was picked.
+  const recommendationAlbums = useMemo(() => {
+    const out = [];
+    const seen = new Set();
+    const keyOf = (artist, title) => `${(artist || '').trim().toLowerCase()}|${(title || '').trim().toLowerCase()}`;
+    const why = (label, reason) => (reason ? `${label} · ${reason}` : label);
+    for (const section of recommendations.sections || []) {
+      for (const sub of section.subsections || []) {
+        for (const item of sub.items || []) {
+          if (item.type !== 'album' || !item.name) continue;
+          const key = keyOf(item.artist, item.name);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const source = (sub.sources || []).find(src => src.id === item.resolverId);
+          const sourceLabel = item.resolverId === 'shuffleupagus'
+            ? 'Shuffleupagus'
+            : ((source && source.name) || item.resolverId || '');
+          out.push({
+            ...item,
+            title: item.name,
+            sourceLabel,
+            imageUrl: recommendationImageFor(item),
+            why: why(sourceLabel, item.reason)
+          });
+        }
+      }
+    }
+    for (const album of homeData.aiRecommendations?.albums || []) {
+      if (!album || !album.title) continue;
+      const key = keyOf(album.artist, album.title);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        ...album,
+        id: `shuffleupagus:album:${trackSlug(album.artist || '', album.title)}`,
+        resolverId: 'shuffleupagus',
+        reason: album.reason || null,
+        sourceLabel: 'Shuffleupagus',
+        imageUrl: album.art || null,
+        why: why('Shuffleupagus', album.reason)
+      });
+    }
+    return out;
+  }, [recommendations.sections, homeData.aiRecommendations, recommendationImages]);
+
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
   const homePageHandlers = useStableHandlers({
-    activateListenAlong, addToQueue, copyParachordLink, deactivateListenAlong,
-    fetchAlbumTracksFromMusicBrainz, fetchArtistData, getAlbumArt, getArtistImage,
-    getArtistTopTracks, getChatServices, handleCollectionAlbumClick, handlePlay,
-    handlePlayPause, handleStartCollectionStation, isOnAir, isServiceEnabled,
-    loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    askShuffleupagus, navigateTo, navigateToFriend, openAiChat,
-    openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
-    setQueueWithContext, dismissHomeBanner, openHomeBannerCta, dismissHomeSetupItem, openWhatsNew,
+    addToQueue, askShuffleupagus, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
+    fetchAlbumTracksByName, getAlbumArt, handleCollectionAlbumClick, handleStartCollectionStation,
+    loadAiRecommendations, loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
+    loadRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
+    openSyncSetupModal, openTopAlbum, openWhatsNew, playTrackCollection, prefetchTopAlbumTracks,
+    showHomeContextMenu,
   });
 
   // Stable function props for the memo'd CollectionPage: same identity on
@@ -37506,10 +37711,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, homeSetupDismissed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, whatsNewUnread,
-          // Not read by the page directly; read during its render through a
-          // stable handler, so it must invalidate the memo.
-          _metaServices: metaServices,
+          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setConcertsTicketFlyout, setExtensionInfoOpen, setHomeData, setRaycastInfoOpen, setSettingsTab, showToast, spotifyConnected, whatsNewUnread,
           ...homePageHandlers
         }),
 
@@ -40362,73 +40564,6 @@ useEffect(() => {
             const imageLoadedFor = (item) =>
               (!!item.imageUrl && !brokenArt.has(item.imageUrl)) || !!(recommendationImages[item.id] || {}).loaded;
 
-            // Play a recommended playlist: resolve it through the provider
-            // playlist path (resolver-loader lookupPlaylist)
-            // and play the tracks, without importing anything.
-            const loadPlaylistTracks = async (item) => {
-              const resolved = await resolveProviderPlaylistUrl(item.url);
-              if (!resolved || !resolved.tracks || !resolved.tracks.length) {
-                throw new Error(`Could not load ${item.name} — is the service connected?`);
-              }
-              return resolved;
-            };
-            // A recommended playlist's tracks in the app's shape: track ids are
-            // trackSlug(artist, title), the id every no-album track context keys
-            // session state on, so they share resolution state with the rest of
-            // the app (renderer-patterns.md). Used by every playlist action.
-            // One lookup per playlist URL for the session (see
-            // recommendationPlaylistLookupsRef), fresh for 10 minutes.
-            const PLAYLIST_LOOKUP_TTL = 10 * 60 * 1000;
-            const lookupRecommendationPlaylist = (item) => {
-              const cache = recommendationPlaylistLookupsRef.current;
-              const hit = cache.get(item.url);
-              if (hit && Date.now() - hit.at < PLAYLIST_LOOKUP_TTL) return hit.promise;
-              const entry = { promise: loadPlaylistTracks(item), at: Date.now() };
-              cache.set(item.url, entry);
-              entry.promise.catch(() => { if (cache.get(item.url) === entry) cache.delete(item.url); });
-              return entry.promise;
-            };
-            // Hovering a playlist card for 250ms starts its lookup (the
-            // renderer's hover-prefetch dwell), so a click usually finds the
-            // tracks ready; leaving the card first cancels it.
-            const prefetchRecommendationPlaylist = (item) => {
-              if (!item.url || item.weekly) return;
-              const timers = recommendationPrefetchTimersRef.current;
-              if (timers.has(item.id)) return;
-              timers.set(item.id, setTimeout(() => {
-                timers.delete(item.id);
-                lookupRecommendationPlaylist(item).catch(() => { /* the click reports it */ });
-              }, 250));
-            };
-            const cancelRecommendationPlaylistPrefetch = (item) => {
-              const timers = recommendationPrefetchTimersRef.current;
-              const timer = timers.get(item.id);
-              if (timer) { clearTimeout(timer); timers.delete(item.id); }
-            };
-            const recommendationPlaylistTracks = async (item) => {
-              const resolved = await lookupRecommendationPlaylist(item);
-              const art = imageFor(item);
-              return resolved.tracks.map((t) => ({
-                id: trackSlug(t.artist || '', t.title || ''),
-                title: t.title,
-                artist: t.artist,
-                album: t.album || null,
-                albumArt: resolved.albumArt || art || null,
-                duration: t.duration || null,
-                sources: {},
-                // The lookup's own ids and ISRC ride along: resolveTrack marks a
-                // track with appleMusicId (or spotifyUri + spotifyId) resolved
-                // on that service at once, at full confidence, and asks only the
-                // others; without them every track of an Apple Music playlist
-                // searched every service from scratch, Apple included. The
-                // ISRC lets the others match the exact recording.
-                ...(t.appleMusicId ? { appleMusicId: t.appleMusicId } : {}),
-                ...(t.spotifyId ? { spotifyId: t.spotifyId, spotifyUri: `spotify:track:${t.spotifyId}` } : {}),
-                ...(t.amazonAsin ? { amazonAsin: t.amazonAsin } : {}),
-                ...(t.isrc ? { isrc: t.isrc } : {})
-              }));
-            };
-
             const playRecommendationPlaylist = async (item) => {
               if (!item.url) return;
               setTrackLoading(true);
@@ -40481,25 +40616,7 @@ useEffect(() => {
             // stand in), and the tracks fill in when the lookup lands
             // (loadPlaylist's fetchTracks branch): a click changes the view
             // before its lookup.
-            const openRecommendationPlaylist = (item, section) => {
-              if (!item.url) return;
-              cancelRecommendationPlaylistPrefetch(item);
-              const resolverName = itemSourceName(item, section) || 'the service';
-              loadPlaylist({
-                id: `${item.resolverId}-rec-${item.id}`,
-                title: item.name,
-                creator: resolverName,
-                description: `Recommended by ${resolverName}`,
-                tracks: [],
-                tracksLoaded: false,
-                isExternal: true,
-                isEphemeral: true,
-                source: item.resolverId,
-                sourceUrl: item.url,
-                addedAt: Date.now(),
-                fetchTracks: () => recommendationPlaylistTracks(item)
-              });
-            };
+            const openRecommendationPlaylist = (item, section) => openServicePlaylist(item, itemSourceName(item, section));
 
             // ── Cards ─────────────────────────────────────────────────────
             const artistCard = (item, index) => {
@@ -55092,6 +55209,9 @@ useEffect(() => {
               setCollectionTab('tracks');
               navigateTo('library');
             }
+          } else if (playbackContext.type === 'loves') {
+            // Home's recent loves: Collection's songs, newest loved first.
+            if (openCollectionLovesRef.current) openCollectionLovesRef.current();
           } else if (playbackContext.type === 'recommendations') {
             navigateTo('recommendations');
           } else if (playbackContext.type === 'history') {

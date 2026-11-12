@@ -80,7 +80,11 @@ function isActiveContext(candidate, { playing, queued } = {}) {
   return contexts.some((c) => {
     switch (candidate.kind) {
       case 'playlist':
-        return c.type === 'playlist' && candidate.id != null && c.id === candidate.id;
+        if (c.type !== 'playlist') return false;
+        // Several play sites emit { type: 'playlist', name } with no id: such
+        // a context matches by title. One with an id matches by id only.
+        if (c.id != null) return candidate.id != null && c.id === candidate.id;
+        return !!candidate.title && c.name === candidate.title;
       case 'mix':
         return c.type === 'mix' && candidate.id != null && c.id === candidate.id;
       case 'loves':
@@ -139,7 +143,7 @@ function playlistSubtitle(p, now) {
 function jumpBackInTiles({ playlists, loves, mixes, active, now = Date.now() } = {}) {
   const tiles = [];
   const playlist = freshestPlaylists(playlists, Infinity)
-    .find((p) => !isActiveContext({ kind: 'playlist', id: p.id }, active));
+    .find((p) => !isActiveContext({ kind: 'playlist', id: p.id, title: p.title }, active));
   if (playlist) {
     tiles.push({
       kind: 'playlist',
@@ -210,6 +214,45 @@ function exampleShufflePrompt(artists, seed) {
   return PHRASINGS[i](joinNames(names));
 }
 
+// A Fresh Drops card's tag from its release date (YYYY-MM-DD, local day):
+// "Out today", "Out Friday" within the coming week, "Out Nov 30" later,
+// "This week" for the past seven days, else the date. Null without a date.
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function releaseTag(date, now) {
+  const m = typeof date === 'string' && /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
+  if (!m) return null;
+  const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (Number.isNaN(day.getTime())) return null;
+  const t = new Date(now);
+  const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const diff = Math.round((day.getTime() - today.getTime()) / DAY_MS);
+  const short = `${MONTHS[day.getMonth()]} ${day.getDate()}`;
+  if (diff === 0) return 'Out today';
+  if (diff > 0 && diff < 7) return `Out ${WEEKDAYS[day.getDay()]}`;
+  if (diff > 0) return `Out ${short}`;
+  if (diff >= -7) return 'This week';
+  return short;
+}
+
+// The example prompt's artists: the most frequent among the given loves,
+// ties broken by recency. Local collection names only (see
+// exampleShufflePrompt); blank or over-long names are dropped.
+function homeTopArtists(loves, limit = 3) {
+  const counts = new Map();
+  (loves || []).forEach((t, i) => {
+    const name = t && typeof t.artist === 'string' ? t.artist.trim() : '';
+    if (!name || name.length > 80) return;
+    const c = counts.get(name);
+    if (c) c.n += 1; else counts.set(name, { n: 1, i });
+  });
+  return Array.from(counts, ([name, c]) => ({ name, ...c }))
+    .sort((a, b) => (b.n - a.n) || (a.i - b.i))
+    .slice(0, limit)
+    .map((x) => x.name);
+}
+
 // Matches the recommendation items' real fields: resolverId, and sourceIds
 // once the same album arrives from several providers.
 function filterBySource(items, sourceId) {
@@ -221,5 +264,5 @@ function filterBySource(items, sourceId) {
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
-  exampleShufflePrompt, filterBySource,
+  exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists,
 };
