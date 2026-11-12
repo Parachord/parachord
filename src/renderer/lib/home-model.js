@@ -205,11 +205,12 @@ const PHRASINGS = [
 ];
 
 // An artist name as it may appear in the prompt: control characters and the
-// bidi embedding, override and isolation characters (U+202A-202E, U+2066-2069)
+// bidi embedding, override and isolation characters (U+202A-202E, U+2066-2069),
+// the Arabic letter mark (U+061C) and zero-width characters (U+200B-200F)
 // removed, whitespace collapsed, and capped at 40 characters. The prompt is
 // sent without a confirmation dialog, so a name can't reorder or hide text.
 const NAME_CAP = 40;
-const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
 function promptName(name) {
   if (typeof name !== 'string') return '';
   const clean = name.replace(/\s+/g, ' ').replace(UNSAFE_CHARS, '').replace(/ +/g, ' ').trim();
@@ -302,9 +303,19 @@ function shouldLoadHomeRecommendations({ loading, loadStarted, lastFullLoadAt, n
   return true;
 }
 
+// Whether a finished full load counts for that throttle. Not when every
+// provider it asked failed (an outage, a timeout, offline), and not when it
+// left no section to show: Home then retries on its next visit instead of
+// waiting 10 minutes. A load served wholly from the cache (fetched 0) with
+// sections counts.
+function shouldStampHomeRecommendationsLoad({ fetched, failed, sectionCount }) {
+  if (failed > 0 && failed === fetched) return false;
+  return sectionCount > 0;
+}
+
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
   exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists, albumsNeedingArt,
-  shouldLoadHomeRecommendations, HOME_RECOMMENDATIONS_THROTTLE_MS,
+  shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
 };

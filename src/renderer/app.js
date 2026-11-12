@@ -560,7 +560,7 @@ const { createReleaseLookup, releaseFormats, hasCurrentAlias } = require('./lib/
 const { artistLookupPlan, loadArtistReleaseGroups, musicBrainzHttpError, discographyOutcome } = require('./lib/artist-discography');
 const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTracks, createPopularityLookup } = require('./lib/search-requests');
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
-const { shouldLoadHomeRecommendations } = require('./lib/home-model');
+const { shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad } = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
 const PlaybackLimits = require('./lib/playback-limits');
@@ -27706,8 +27706,23 @@ Return ONLY the JSON array, no other text.`;
       refreshMergedRecommendations();
     };
 
+    // The sections this load put up (its fresh and stale provider answers),
+    // for the Home throttle's stamp below.
+    const loadSectionCount = () => providers.reduce((n, p) => {
+      const entry = fresh[p.id] || stale[p.id];
+      return n + ((entry && entry.sections) ? entry.sections.length : 0);
+    }, 0);
+    // Home's throttle counts only a full load that answered: one where every
+    // asked provider failed, or that left no section, is retried next visit.
+    // (`failed` is passed in: its `let` is declared further down.)
+    const stampFullLoad = (fetched, failed) => {
+      if (!metaOnly && shouldStampHomeRecommendationsLoad({ fetched, failed, sectionCount: loadSectionCount() })) {
+        recommendationsFullLoadAtRef.current = Date.now();
+      }
+    };
+
     if (toFetch.length === 0 && similarToFetch.length === 0) {
-      if (!metaOnly) recommendationsFullLoadAtRef.current = Date.now();
+      stampFullLoad(0, 0);
       setRecommendationsPending([]);
       applyFresh();
       // Everything came from cache (or no provider exists): the same empty
@@ -27916,7 +27931,7 @@ Return ONLY the JSON array, no other text.`;
 
     recommendationsCache.current.timestamp = Date.now();
     saveRecommendationsCache();
-    if (!metaOnly) recommendationsFullLoadAtRef.current = Date.now();
+    stampFullLoad(toFetch.length, failed);
     if (!isLatest()) return;
     setRecommendationsPending([]);
 

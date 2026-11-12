@@ -53,9 +53,11 @@ describe('source', () => {
   test('a full recommendations load stamps when it finishes, from cache or after fetching', () => {
     const i = app.indexOf('const loadRecommendations = async');
     const fn = app.slice(i, app.indexOf('\n  };', i));
-    const stamps = fn.match(/if \(!metaOnly\) recommendationsFullLoadAtRef\.current = Date\.now\(\);/g) || [];
-    expect(stamps).toHaveLength(2);
-    expect(fn.indexOf('recommendationsFullLoadAtRef')).toBeGreaterThan(fn.indexOf('if (toFetch.length === 0 && similarToFetch.length === 0) {'));
+    // One stamp, behind the pure rule, called from both finish paths.
+    expect(fn.match(/recommendationsFullLoadAtRef\.current = Date\.now\(\);/g) || []).toHaveLength(1);
+    expect(fn).toMatch(/if \(!metaOnly && shouldStampHomeRecommendationsLoad\(\{ fetched, failed, sectionCount: loadSectionCount\(\) \}\)\) \{\s*recommendationsFullLoadAtRef\.current = Date\.now\(\);/);
+    expect(fn).toMatch(/if \(toFetch\.length === 0 && similarToFetch\.length === 0\) \{\s*stampFullLoad\(0, 0\);/);
+    expect(fn).toMatch(/saveRecommendationsCache\(\);\s*stampFullLoad\(toFetch\.length, failed\);/);
   });
 
   test('the import card leads to Library Sync in Settings', () => {

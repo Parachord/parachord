@@ -211,6 +211,10 @@ describe('exampleShufflePrompt hardening', () => {
     expect(p).toBe('A rainy Sunday playlist built around Frogevilx');
     expect(p).not.toMatch(/[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/);
   });
+  test('the Arabic letter mark and zero-width characters are stripped', () => {
+    const p = m.exampleShufflePrompt(['Fr\u061Cog\u200B\u200C\u200D'], 0);
+    expect(p).toBe('A rainy Sunday playlist built around Frog');
+  });
   test('whitespace controls become one space', () => {
     expect(m.exampleShufflePrompt(['Nap\t\nEyes'], 0)).toBe('A rainy Sunday playlist built around Nap Eyes');
   });
@@ -262,5 +266,22 @@ describe('shouldLoadHomeRecommendations', () => {
     expect(m.HOME_RECOMMENDATIONS_THROTTLE_MS).toBe(10 * 60 * 1000);
     expect(m.shouldLoadHomeRecommendations({ ...ok, lastFullLoadAt: t - 9 * 60 * 1000 })).toBe(false);
     expect(m.shouldLoadHomeRecommendations({ ...ok, lastFullLoadAt: t - 10 * 60 * 1000 })).toBe(true);
+  });
+});
+
+describe('shouldStampHomeRecommendationsLoad', () => {
+  test('every asked provider failed: no stamp', () => {
+    expect(m.shouldStampHomeRecommendationsLoad({ fetched: 3, failed: 3, sectionCount: 0 })).toBe(false);
+    // Even with stale cached sections still on screen.
+    expect(m.shouldStampHomeRecommendationsLoad({ fetched: 2, failed: 2, sectionCount: 4 })).toBe(false);
+  });
+  test('some answered: a stamp', () => {
+    expect(m.shouldStampHomeRecommendationsLoad({ fetched: 3, failed: 1, sectionCount: 2 })).toBe(true);
+  });
+  test('all served from the cache: a stamp', () => {
+    expect(m.shouldStampHomeRecommendationsLoad({ fetched: 0, failed: 0, sectionCount: 5 })).toBe(true);
+  });
+  test('no section ended up on the page: no stamp', () => {
+    expect(m.shouldStampHomeRecommendationsLoad({ fetched: 2, failed: 0, sectionCount: 0 })).toBe(false);
   });
 });
