@@ -28,7 +28,7 @@ function instantiate(axeContent) {
 
 const artwork = (id) => ({ url: `https://is1-ssl.mzstatic.com/image/thumb/${id}/{w}x{h}bb.{f}`, width: 3000, height: 3000 });
 const album = (id, name, artistName, releaseDate) => ({ id, type: 'albums', attributes: { name, artistName, releaseDate, url: `https://music.apple.com/us/album/x/${id}`, artwork: artwork(id), isSingle: false } });
-const playlist = (id, name, playlistType = 'editorial') => ({ id, type: 'playlists', attributes: { name, curatorName: 'Apple Music', playlistType, url: `https://music.apple.com/us/playlist/x/${id}`, artwork: artwork(id) } });
+const playlist = (id, name, playlistType = 'editorial', slug = 'x') => ({ id, type: 'playlists', attributes: { name, curatorName: 'Apple Music', playlistType, url: `https://music.apple.com/us/playlist/${slug}/${id}`, artwork: artwork(id) } });
 const station = (id, name) => ({ id, type: 'stations', attributes: { name, url: `https://music.apple.com/us/station/x/${id}`, artwork: artwork(id), isLive: false } });
 const group = (id, title, contents, extra = {}) => ({
   id, type: 'personal-recommendation',
@@ -38,7 +38,16 @@ const group = (id, title, contents, extra = {}) => ({
 
 const answer = {
   data: [
-    group('6-27s5hU6azhJY', 'Playlists Made for You', [playlist('pl.pm-1', 'Heavy Rotation', 'personal-mix'), playlist('pl.pm-2', 'Your Essentials', 'personal-mix')]),
+    group('6-27s5hU6azhJY', 'Playlists Made for You', [
+      playlist('pl.pm-1', 'Heavy Rotation', 'personal-mix', 'heavy-rotation'),
+      playlist('pl.pm-2', 'Your Essentials', 'personal-mix', 'your-essentials'),
+      playlist('pl.pm-3', 'Chill', 'personal-mix', 'chill'),
+      playlist('pl.pm-4', 'Favorites Mix', 'personal-mix', 'favorites-mix'),
+      playlist('pl.pm-5', 'Get Up!', 'personal-mix', 'get-up'),
+      playlist('pl.rp-1', 'Replay 2026', 'replay', 'replay-2026')
+    ]),
+    group('6-history-only', 'Your Mixes', [playlist('pl.pm-6', 'Heavy Rotation Mix', 'personal-mix', 'heavy-rotation-mix')]),
+    group('6-editorial', 'Editors', [playlist('pl.7', 'Favorites', 'editorial', 'favorites')]),
     group('6-recent', 'Recently Played', [album('100', 'It Goes On', 'Westside Cowboy', '2026-08-21')], { kind: 'recently-played' }),
     group('6-new', 'New Releases for You', [album('200', 'The Holy Cross Tigers', 'Twisted Teens', '2026-11-06'), album('201', 'Upcoming LP', 'Twisted Teens', '2026-12-05')]),
     group('6-stations', 'Stations for You', [station('ra.1', 'Discovery Station')]),
@@ -68,16 +77,18 @@ describe('Apple Music recommendations (capabilities.recommendations)', () => {
     expect(hook).toHaveBeenCalledWith(30);
     // Recently Played (history) and a stations-only group are left out; a
     // group of groups is flattened.
+    // A group left with only play-history mixes goes too.
     expect(sections.map(s => s.title)).toEqual([
-      'Playlists Made for You', 'New Releases for You', 'I Miss ’90s Indie', 'Inner', 'Songs for You'
+      'Playlists Made for You', 'Editors', 'New Releases for You', 'I Miss ’90s Indie', 'Inner', 'Songs for You'
     ]);
-    expect(sections.map(s => s.id)).toEqual(['applemusic:6-27s5hU6azhJY', 'applemusic:6-new', 'applemusic:6-mixed', 'applemusic:6-inner', 'applemusic:6-songs']);
+    expect(sections.map(s => s.id)).toEqual(['applemusic:6-27s5hU6azhJY', 'applemusic:6-editorial', 'applemusic:6-new', 'applemusic:6-mixed', 'applemusic:6-inner', 'applemusic:6-songs']);
     const mix = sections[0].items[0];
     expect(mix).toEqual({
-      type: 'playlist', id: 'applemusic-playlist-pl.pm-1', name: 'Heavy Rotation',
-      imageUrl: 'https://is1-ssl.mzstatic.com/image/thumb/pl.pm-1/600x600bb.jpg',
-      url: 'https://music.apple.com/us/playlist/x/pl.pm-1'
+      type: 'playlist', id: 'applemusic-playlist-pl.pm-3', name: 'Chill',
+      imageUrl: 'https://is1-ssl.mzstatic.com/image/thumb/pl.pm-3/600x600bb.jpg',
+      url: 'https://music.apple.com/us/playlist/chill/pl.pm-3'
     });
+    sections.splice(1, 1);
     expect(sections[1].items[1]).toEqual({
       type: 'album', id: 'applemusic-album-201', name: 'Upcoming LP', artist: 'Twisted Teens',
       imageUrl: 'https://is1-ssl.mzstatic.com/image/thumb/201/600x600bb.jpg',
@@ -86,6 +97,24 @@ describe('Apple Music recommendations (capabilities.recommendations)', () => {
     // Stations never reach a section.
     expect(sections[2].items.map(i => i.type)).toEqual(['album', 'playlist']);
     expect(sections[4].items[0]).toMatchObject({ type: 'song', name: 'A Song', artist: 'Someone', duration: 201, isrc: 'USABC2600001' });
+  });
+
+  test('mixes made from what the account plays are left out; discovery mixes stay', async () => {
+    global.window = { appleMusicPersonalRecommendations: jest.fn().mockResolvedValue(answer) };
+    const { sections } = await instantiate(axe).getRecommendations({});
+    const names = sections.flatMap(s => s.items).filter(i => i.type === 'playlist').map(i => i.name);
+    // Heavy Rotation, Your Essentials, Favorites Mix and Replay are history.
+    expect(names).toEqual(['Chill', 'Get Up!', 'Favorites', 'I Miss ’90s Indie']);
+  });
+
+  test('a mix is known by its URL slug when its name is translated', async () => {
+    const localized = { data: [group('6-l', 'Für dich', [
+      playlist('pl.pm-8', 'Häufig gehört', 'personal-mix', 'heavy-rotation'),
+      playlist('pl.pm-9', 'Entspannen', 'personal-mix', 'chill')
+    ])] };
+    global.window = { appleMusicPersonalRecommendations: jest.fn().mockResolvedValue(localized) };
+    const { sections } = await instantiate(axe).getRecommendations({});
+    expect(sections[0].items.map(i => i.name)).toEqual(['Entspannen']);
   });
 
   test('an empty answer is a miss', async () => {
