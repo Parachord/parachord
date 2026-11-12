@@ -283,6 +283,10 @@ ReleaseCard({ release, currentArtist, fetchReleaseData, onContextMenu, onHoverFe
 - Active state: `translateY(-2px)` with reduced shadow
 - Entry animation: `cardFadeUp` with staggered delays
 
+### Recommendation rows
+
+The Recommendations page's rows reuse Home's pieces. **"See all" / "Show less"** is Home's purple link (accent colour text, no button chrome, right-aligned in the row's header); rows carry no item counts. A row title can end in **source tags**, one per source: in a blended row each is a small pill toggle (on: accent-tinted, off: muted) that filters the row for the session, in a single-source row it is the same pill as a plain, non-interactive label. Colours come from the CSS variables, never literals.
+
 ### Artist Cards
 
 - **`RelatedArtistCard`** — Related artist display on artist pages
@@ -437,7 +441,7 @@ Navigation is state-driven via `activeView`. Available views:
 
 | View | Description |
 |------|-------------|
-| `home` | Dashboard with recommendations, weekly jams, new releases |
+| `home` | Dashboard with recommendations, AI suggestions, new releases |
 | `search` | Search results with category tabs and detail panels |
 | `library` | Collection browser (tracks, albums, artists tabs) |
 | `artist` | Artist detail page with discography, bio, related artists, concerts |
@@ -445,7 +449,7 @@ Navigation is state-driven via `activeView`. Available views:
 | `playlists` | Playlist list and management |
 | `playlist-view` | Individual playlist detail |
 | `settings` | App settings (resolvers, scrobblers, AI, plugins) |
-| `recommendations` | Recommended artists and songs from Last.fm and ListenBrainz |
+| `recommendations` | Five sections (Songs, Albums, Artists, Playlists, Friends), each with a blended "For you" row, plus the weekly playlists and providers' titled rows |
 | `discover` | Charts (Pop of the Tops) |
 | `critics-picks` | Curated editor/critic selections |
 | `new-releases` | Latest releases |

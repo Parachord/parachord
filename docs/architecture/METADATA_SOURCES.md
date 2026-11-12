@@ -155,13 +155,15 @@ Displayed on the "Critical Darlings" page.
 
 ## Recommendations
 
-Every recommendation and discovery surface (Recommendations page, Weekly Jams, Shuffleupagus suggestions and chat, Related Artists, Fresh Drops, Critical Darlings, charts, Spinoff, Collection Radio, protocol radio, Concerts, friends) is inventoried in [docs/features/RECOMMENDATIONS.md](../features/RECOMMENDATIONS.md), with the endpoint, seed data and output type for each.
+Every recommendation and discovery surface (Recommendations page, Weekly Jams and Exploration on it, Shuffleupagus suggestions and chat, Related Artists, Fresh Drops, Critical Darlings, charts, Spinoff, Collection Radio, protocol radio, Concerts, friends) is inventoried in [docs/features/RECOMMENDATIONS.md](../features/RECOMMENDATIONS.md), with the endpoint, seed data and output type for each.
 
 The Recommendations page itself uses:
 
 | Provider | Endpoint | Auth Required | Notes |
 |----------|----------|---------------|-------|
 | Last.fm | `last.fm/player/station/user/{username}/recommended` | None (website JSON, no API key) | Recommended tracks |
+| Last.fm (similar users) | `user.getfriends`, `user.gettopartists` (API key, the user's or the app's) | API key | Friends row: friends of friends scored by artist overlap, about 50 requests, cached 7 days |
+| ListenBrainz (similar users) | `api.listenbrainz.org/1/user/{username}/similar-users` | None | Friends row |
 | ListenBrainz | `api.listenbrainz.org/1/user/{username}/playlists/recommendations`, then `/1/playlist/{id}` for one playlist picked by type (see docs/features/RECOMMENDATIONS.md) | None | No fallback: with no recommendation playlist the page says so (parachord#1021) |
 
 **Code Location:** `src/renderer/app.js` → `loadRecommendations()`

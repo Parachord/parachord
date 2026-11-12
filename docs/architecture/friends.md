@@ -81,6 +81,10 @@ Sort switch lives in the friends-tab branch of the collection view (app.js L4374
 
 Small icon button (`M4 4v5h.582m15.356 2A8...` — circular arrows) beside the Add Friend button on the Friends tab header (app.js L43203+). Calls `syncFriendsFromServices({ silent: false })` which toasts "Synced N new friends" on success or "No new friends to sync" on a zero-result manual run. Disabled when neither service is configured.
 
+### Recommended people (Recommendations page)
+
+The Recommendations page's Friends row lists listeners from plugins with the `similarUsers` capability (see "Similar users" in [plugins.md](plugins.md) and "Friends (Recommendations)" in [../features/RECOMMENDATIONS.md](../features/RECOMMENDATIONS.md)). Opening one shows their profile as a non-friend: the friend page renders from a person who is not in `friends`, with a **Follow** button in place of Pin. Follow runs `addFriendCore({ service, username })` with the explicit service the recommendation came from (no Last.fm-then-ListenBrainz probe, which could pick the wrong service for a username that exists on both), the same path Add Friend uses: it builds the friend, pins them to the sidebar, un-hides them if they were removed, and follows them on ListenBrainz (Last.fm stays pull-only). The new friend is then selected, and the person leaves the Friends row because the row excludes anyone already followed. A saved last view for a recommended person restores to Recommendations, since they are not in `friends` to look up.
+
 ### Invariants for Cross-Platform Consistency
 
 - **Key shape is identical across Android and desktop:** `"${service}:${username_lowercase}"`. Either client can read the other's hidden-keys list without translation if we ever sync it.
