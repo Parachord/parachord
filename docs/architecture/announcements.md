@@ -13,6 +13,7 @@ Public banner notifications fetched from Achordion. Used to push messages (relea
 - **Desktop fetcher:** main.js, ~10s after `app.whenReady()` and on `browser-window-focus` when the last fetch is older than 6h. NO setInterval polling — earlier iteration polled every 1h, dropped to launch+focus-gated to cut request volume ~95% with no behavioural loss for product announcements.
 - **Cache:** electron-store key `cached_announcements = { fetchedAt, items }`. Hydrates the renderer at bulk-load time so the banner can render before the first fetch fires. Updated on every successful fetch.
 - **Dismissals:** electron-store key `dismissed_announcement_ids = string[]`. Per-id-once. The renderer's `activeAnnouncements` filter strips dismissed/expired/version-mismatched entries; the first remaining item renders.
+- **Where it renders:** only at the top of Home's scrollable content (`components/home-banner.js`, fed by `bannerItems` from `lib/home-banners.js`). No other page shows it. The `view` event fires when Home paints the banner (the effect is gated on `activeView === 'home'`, once per id per session), not when the announcement arrives. What's New shares the slot and ranks first: it is dismissed through `whats_new_dismissed_version` and sends no announcement telemetry. Severity fills are `BANNER_SEVERITY_COLORS`, darkened so white text passes 4.5:1.
 
 ### Schema
 
@@ -55,7 +56,7 @@ When `cacheLoaded` flips, the renderer logs `📢 Listener registered for announ
 
 ### Cross-process flow
 
-Main fetches → writes `cached_announcements` to electron-store → broadcasts `announcements:updated` via `webContents.send` to every BrowserWindow → renderer's `electron.announcements.onUpdated` listener fires → `setAnnouncements(payload.items)` → `activeAnnouncements` re-derives → banner re-renders. Listener registers in a `useEffect([cacheLoaded])` so it can't miss the broadcast as long as the renderer is up before the 10s mark (it always is — bulk-load completes much earlier).
+Main fetches → writes `cached_announcements` to electron-store → broadcasts `announcements:updated` via `webContents.send` to every BrowserWindow → renderer's `electron.announcements.onUpdated` listener fires → `setAnnouncements(payload.items)` → `activeAnnouncements` re-derives → Home's banner re-renders. Listener registers in a `useEffect([cacheLoaded])` so it can't miss the broadcast as long as the renderer is up before the 10s mark (it always is — bulk-load completes much earlier).
 
 ### Editing flow
 

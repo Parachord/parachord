@@ -1960,6 +1960,7 @@ const {
   RecommendationsPageSkeleton
 } = require('./components/recommendation-skeletons');
 const { useStableHandlers } = require('./lib/stable-handlers');
+const { homeBannerItems } = require('./lib/home-banners');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
@@ -9080,13 +9081,53 @@ const Parachord = () => {
 
   // Fire a 'view' event the first time each banner id renders this session.
   // Re-renders for the same id (state updates, focus refetches) don't double-count.
+  // Only while Home is showing it: the banner renders nowhere else.
   useEffect(() => {
+    if (activeView !== 'home') return;
     const top = activeAnnouncements[0];
     if (!top || !top.id) return;
     if (announcementViewedThisSessionRef.current.has(top.id)) return;
     announcementViewedThisSessionRef.current.add(top.id);
     recordAnnouncementEvent(top.id, 'view');
-  }, [activeAnnouncements]);
+  }, [activeAnnouncements, activeView]);
+
+  // Home's banner slot: What's New first (until dismissed for this version),
+  // then remote announcements.
+  const bannerItems = useMemo(() => homeBannerItems({
+    whatsNew: appVersion && whatsNewDismissedVersion !== appVersion
+      ? { version: appVersion, title: `What's new in ${appVersion}`, body: `See what's new in v${appVersion}` }
+      : null,
+    announcements: activeAnnouncements,
+  }), [appVersion, whatsNewDismissedVersion, activeAnnouncements]);
+
+  const dismissHomeBanner = async (item) => {
+    if (!item) return;
+    if (item.kind === 'whats-new') {
+      if (appVersion) {
+        setWhatsNewDismissedVersion(appVersion);
+        if (window.electron?.store) {
+          await window.electron.store.set('whats_new_dismissed_version', appVersion);
+        }
+      }
+      return;
+    }
+    dismissAnnouncement(item.id);
+  };
+
+  const openHomeBannerCta = (item) => {
+    if (!item) return;
+    if (item.kind === 'whats-new') {
+      setWhatsNewOpen(true);
+      return;
+    }
+    if (!item.cta || !item.cta.url) return;
+    recordAnnouncementEvent(item.id, 'cta-click');
+    if (window.electron?.shell?.openExternal) {
+      window.electron.shell.openExternal(item.cta.url);
+    } else {
+      window.open(item.cta.url, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   // Listen for sync progress
   useEffect(() => {
@@ -35307,7 +35348,7 @@ useEffect(() => {
     loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
     navigateTo, navigateToFriend, openAiChat,
     openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
-    setQueueWithContext,
+    setQueueWithContext, dismissHomeBanner, openHomeBannerCta,
   });
 
   // Stable function props for the memo'd CollectionPage: same identity on
@@ -36020,89 +36061,6 @@ useEffect(() => {
           className: 'h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10 drag',
           style: { pointerEvents: 'auto' }
         }),
-
-        // In-app announcement banner (one at a time; dismiss surfaces next)
-        activeAnnouncements.length > 0 && (() => {
-          const ann = activeAnnouncements[0];
-          const sev = ann.severity || 'info';
-          const palette = {
-            info:    { bg: '#2563eb', fg: '#ffffff' },
-            success: { bg: '#16a34a', fg: '#ffffff' },
-            warn:    { bg: '#d97706', fg: '#ffffff' },
-            error:   { bg: '#dc2626', fg: '#ffffff' }
-          }[sev] || { bg: '#2563eb', fg: '#ffffff' };
-          // Icon/image: prefer iconUrl (https-only image), fall back to icon glyph.
-          // Image errors silently swap to the glyph (or nothing) via onError.
-          const iconUrlOk = typeof ann.iconUrl === 'string' && /^https:\/\//i.test(ann.iconUrl);
-          const iconText = typeof ann.icon === 'string' && ann.icon.length > 0 && ann.icon.length <= 4 ? ann.icon : null;
-          const iconNode = iconUrlOk
-            ? React.createElement('img', {
-                src: ann.iconUrl,
-                alt: '',
-                referrerPolicy: 'no-referrer',
-                onError: (e) => { try { e.currentTarget.style.display = 'none'; } catch (_) {} },
-                style: { width: '20px', height: '20px', flexShrink: 0, marginTop: '1px', borderRadius: '4px', objectFit: 'cover' }
-              })
-            : iconText
-              ? React.createElement('div', {
-                  style: { fontSize: '16px', lineHeight: '20px', flexShrink: 0, marginTop: '1px' }
-                }, iconText)
-              : null;
-          return React.createElement('div', {
-            key: ann.id,
-            className: 'flex items-start gap-3 px-4 py-2.5 flex-shrink-0',
-            style: {
-              backgroundColor: palette.bg,
-              color: palette.fg,
-              fontSize: '13px',
-              marginTop: isMac ? '32px' : 0
-            }
-          },
-            iconNode,
-            React.createElement('div', { className: 'flex-1 min-w-0' },
-              React.createElement('div', { style: { fontWeight: 600 } }, ann.title),
-              ann.body && React.createElement('div', { style: { opacity: 0.9, marginTop: '2px' } }, ann.body)
-            ),
-            ann.cta && ann.cta.url && /^https?:\/\//i.test(ann.cta.url) && React.createElement('button', {
-              onClick: () => {
-                recordAnnouncementEvent(ann.id, 'cta-click');
-                if (window.electron?.shell?.openExternal) {
-                  window.electron.shell.openExternal(ann.cta.url);
-                } else {
-                  window.open(ann.cta.url, '_blank', 'noopener,noreferrer');
-                }
-              },
-              style: {
-                padding: '4px 12px',
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                border: '1px solid rgba(255, 255, 255, 0.35)',
-                borderRadius: '6px',
-                color: palette.fg,
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                flexShrink: 0
-              }
-            }, ann.cta.label),
-            React.createElement('button', {
-              onClick: () => dismissAnnouncement(ann.id),
-              'aria-label': 'Dismiss announcement',
-              title: 'Dismiss',
-              style: {
-                background: 'transparent',
-                border: 'none',
-                color: palette.fg,
-                opacity: 0.85,
-                cursor: 'pointer',
-                padding: '0 4px',
-                fontSize: '18px',
-                lineHeight: 1,
-                flexShrink: 0
-              }
-            }, '×')
-          );
-        })(),
 
     // External Track Prompt Modal - refined styling
     showExternalPrompt && pendingExternalTrack && React.createElement('div', {
@@ -37497,7 +37455,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, setWhatsNewOpen, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, whatsNewDismissedVersion,
+          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServices: metaServices,
