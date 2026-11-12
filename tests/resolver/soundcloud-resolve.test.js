@@ -114,6 +114,56 @@ describe('SoundCloud resolve', () => {
   });
 });
 
+describe('SoundCloud search', () => {
+  // A failed request throws, so a host tells "couldn't answer" from "nothing
+  // matched" and asks again later (parachord-mobile#566, #598).
+  const searchFn = new Function('return ' + axe.implementation.search)();
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+  const respond = (status, body) => {
+    global.fetch = jest.fn(async () => ({ ok: status >= 200 && status < 300, status, json: async () => body }));
+  };
+
+  test('signed out is an empty answer, and asks nothing', async () => {
+    global.fetch = jest.fn();
+    await expect(searchFn('Ramones Judy Is a Punk', {})).resolves.toEqual([]);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('a list of tracks is mapped; an empty list is a miss', async () => {
+    respond(200, [{ id: 7, title: 'Judy Is A Punk', user: { username: 'Ramones' }, permalink_url: 'https://soundcloud.com/r/j', streamable: true, access: 'playable', duration: 92000 }]);
+    const rows = await searchFn('q', { token: 't' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ soundcloudId: 7, artist: 'Ramones', duration: 92, streamable: true, limitedPlayback: false });
+    respond(200, []);
+    await expect(searchFn('q', { token: 't' })).resolves.toEqual([]);
+  });
+
+  test.each([401, 429, 500, 503])('an HTTP %i throws with its status', async (status) => {
+    respond(status, {});
+    await expect(searchFn('q', { token: 't' })).rejects.toThrow('SoundCloud search failed: ' + status);
+  });
+
+  test('a body that is not a list throws', async () => {
+    respond(200, { error: 'nope' });
+    await expect(searchFn('q', { token: 't' })).rejects.toThrow();
+  });
+
+  test('a network failure throws', async () => {
+    global.fetch = jest.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    await expect(searchFn('q', { token: 't' })).rejects.toThrow('Failed to fetch');
+  });
+
+  test('resolve passes a failed search on instead of answering no match', async () => {
+    const failing = { search: async () => { throw new Error('SoundCloud search failed: 503'); } };
+    await expect(resolveFn.call(failing, 'Ramones', 'Judy Is a Punk', '', {})).rejects.toThrow('503');
+  });
+});
+
 describe('capabilities.resolvePicks', () => {
   test('SoundCloud declares it', () => {
     expect(axe.capabilities.resolvePicks).toBe(true);
