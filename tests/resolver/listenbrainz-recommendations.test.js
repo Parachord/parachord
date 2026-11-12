@@ -95,7 +95,9 @@ describe('ListenBrainz getRecommendations picks a playlist by type', () => {
       entry('top-missed', 'Top Missed Recordings of 2025 for someone', 0, 'top-missed-recordings-of-2025'),
     ]);
     expect(result).toEqual({ sections: [] });
-    expect(requested).toHaveLength(1);
+    // The list, then createdfor (weeklies are independent of the songs pick); no playlist.
+    expect(requested).toHaveLength(2);
+    expect(requested[1]).toContain('/playlists/createdfor');
   });
 
   test('a stale Weekly Exploration still plays when it is the only kind there is', async () => {
@@ -165,6 +167,20 @@ describe('ListenBrainz weekly sections', () => {
     });
     expect(result.sections).toHaveLength(1);
     expect(result.sections[0].items[0].type).toBe('song');
+  });
+
+  test('weeklies still come back when the recommendations list is empty', async () => {
+    const result = await run([], { createdfor: weeks('Jams', 2, 'j') });
+    expect(result.sections.map(s => s.id)).toEqual(['weekly-jams']);
+    expect(result.sections[0].items.map(i => i.id)).toEqual(['j0', 'j1']);
+  });
+
+  test('weeklies still come back when no recommendation playlist type is recognised', async () => {
+    const result = await run(
+      [entry('top-disc', 'Top Discoveries of 2025 for someone', 0, 'top-discoveries-of-2025')],
+      { createdfor: weeks('Exploration', 1, 'x') }
+    );
+    expect(result.sections.map(s => s.id)).toEqual(['weekly-exploration']);
   });
 
   test('createdfor failure throws', async () => {
