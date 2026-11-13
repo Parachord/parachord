@@ -6,7 +6,7 @@
 // This module normalizes those answers into one display model: five sections
 // by item type (Songs, Albums, Artists, Playlists, Friends), each ONE row
 // (a subsection, kept as a one-element list so every reader walks the same
-// shape):
+// shape), except Playlists, which can be several category rows:
 //
 //   - a type's row (key type:<type>) blends every provider's items of that
 //     type, untitled and titled sections alike, interleaved round-robin by
@@ -15,6 +15,9 @@
 //     filter by source. A provider's section titles are not shown;
 //   - weekly playlists (items carrying `weekly`) lead Playlists, Exploration
 //     before Jams, newest week of each only;
+//   - Playlists splits into one row per category present (key
+//     playlists:<category>, in PLAYLIST_CATEGORIES order, each playlist once
+//     on the page); with one category it stays the single type:playlist row;
 //   - Friends is one blended row built from the providers' similar users.
 //
 // Filtering is NOT done here: filterRowBySource is applied at render so
@@ -179,14 +182,14 @@ function normalizeRecommendationSections(raw, { resolverId, resolverName } = {})
     if (typeof rawSection.id === 'string' && rawSection.id.trim()) section.id = rawSection.id.trim();
     if (typeof rawSection.title === 'string' && rawSection.title.trim()) section.title = rawSection.title.trim();
     if (typeof rawSection.description === 'string' && rawSection.description.trim()) section.description = rawSection.description.trim();
-    // A provider that pre-fetches a section's first page (Amazon's synthesized
-    // "Playlists for You") carries its continuation cursor on the section, so
-    // the page's first "Load more" starts from it.
     const category = validCategory(rawSection.category);
     if (category) section.category = category;
     if (category === 'artist' && typeof rawSection.seedArtist === 'string' && rawSection.seedArtist.trim()) {
       section.seedArtist = rawSection.seedArtist.trim();
     }
+    // A provider that pre-fetches a section's first page (Amazon's synthesized
+    // "Playlists for You") carries its continuation cursor on the section, so
+    // the page's first "Load more" starts from it.
     if (rawSection.nextCursor != null && typeof rawSection.nextCursor !== 'object') section.nextCursor = String(rawSection.nextCursor);
     sections.push(section);
   }
@@ -241,10 +244,13 @@ const WEEKLY_RANK = { 'weekly-exploration': 0, 'weekly-jam': 1 };
 // Dedupe several providers' lists of ONE type: the first provider in priority
 // order owns an item's position and fields; later providers sending the same
 // thing add their id to sourceIds. A later Shuffleupagus reason is copied when
-// the kept item has none, so the AI's "why" survives the merge. Returns one
+// the kept item has none, so the AI's "why" survives the merge. When both
+// copies of a playlist carry a category, the kept one takes whichever comes
+// first in PLAYLIST_CATEGORIES order (with that copy's seedArtist). Returns one
 // owned list per input list (so the caller can interleave them). The key
 // carries the type, as dedupeItems' does: a mixed titled section can hold an
 // album and its same-named title track, and both must survive.
+const CATEGORY_RANK = Object.fromEntries(PLAYLIST_CATEGORIES.map((c, i) => [c.id, i]));
 function mergeOwned(lists) {
   const kept = new Map();
   return lists.map((list) => {
@@ -260,6 +266,11 @@ function mergeOwned(lists) {
       }
       if (item.resolverId && !existing.sourceIds.includes(item.resolverId)) existing.sourceIds.push(item.resolverId);
       if (!existing.reason && item.reason && item.resolverId === 'shuffleupagus') existing.reason = item.reason;
+      if (existing.category && item.category && CATEGORY_RANK[item.category] < CATEGORY_RANK[existing.category]) {
+        existing.category = item.category;
+        if (item.seedArtist) existing.seedArtist = item.seedArtist;
+        else delete existing.seedArtist;
+      }
     }
     return owned;
   });
@@ -279,6 +290,9 @@ function subsection(fields) {
   return {
     key: fields.key,
     type: fields.type,
+    // A playlist category row's category id; null on every other row,
+    // including the single "Playlists" row.
+    category: fields.category || null,
     title: fields.title || null,
     description: fields.description || null,
     blended: !!fields.blended,
@@ -302,7 +316,8 @@ function sourcesFor(items, order, names) {
 }
 
 // The page: five sections by type, each ONE blended row (key type:<type>)
-// of every provider's items of that type, per the header comment.
+// of every provider's items of that type, per the header comment; Playlists
+// may instead be category rows (playlistCategoryRows).
 //
 //   providers              normalizeRecommendationSections results, in the
 //                          order the page should show them
@@ -322,8 +337,11 @@ function sourcesFor(items, order, names) {
 //                          recommendations.
 //
 // A row's `pageable` lists the provider sections that can still page items
-// of its type ({ resolverId, resolverName, sectionId, title, pagingKey,
-// nextCursor }); opening the row pages each of them. Paged items append
+// of its type ({ resolverId, resolverName, sectionId, title, category,
+// pagingKey, nextCursor }; `category` is the section's, or null); opening the
+// row pages each of them. A playlist category row lists the sections whose
+// playlists fall in its category, so a section feeding two rows is in both,
+// with one pagingKey. Paged items append
 // AFTER the blended first pages, in provider order, so a page landing never
 // moves a card already on screen.
 function buildRecommendationPage({ providers, shuffleupagus, expandedSections, expandableResolverIds, similarUsers, exclude, excludePlaylistIds } = {}) {
@@ -343,7 +361,22 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
   const base = []; // [{ id, byType }]
   const extra = []; // [{ id, byType }]
   const pageable = emptyByType();
+  // The playlist pageable entries again, per category row: a section is in
+  // every row its playlists (first page or paged) fall into.
+  const pageableByCategory = Object.fromEntries(PLAYLIST_CATEGORIES.map(c => [c.id, []]));
   const expandable = new Set(expandableResolverIds || []);
+
+  // Each playlist's category row, decided once: a shallow copy carrying
+  // `category` (and, for artist rows, its section's seedArtist). The provider
+  // items come from the page's cache and are re-merged on every update, so
+  // they are never stamped in place.
+  const stamp = (item, section) => {
+    if (item.type !== 'playlist') return item;
+    const category = playlistCategory(item, section && section.category);
+    const out = { ...item, category };
+    if (category === 'artist' && section && section.seedArtist) out.seedArtist = section.seedArtist;
+    return out;
+  };
 
   for (const provider of providers || []) {
     if (!provider) continue;
@@ -352,7 +385,7 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
     const extraByType = emptyByType();
     const untitledSongs = [];
     for (const section of provider.sections || []) {
-      const items = section.items || [];
+      const items = (section.items || []).map(item => stamp(item, section));
       for (const item of items) if (byType[item.type]) byType[item.type].push(item);
       if (!section.title) {
         for (const item of items) if (item.type === 'song') untitledSongs.push(item);
@@ -365,20 +398,25 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
       // section's provider identity.
       const fetched = (expansion && Array.isArray(expansion.items) ? expansion.items : [])
         .map(raw => normalizeRecommendationItem(raw, provider.resolverId))
-        .filter(Boolean);
+        .filter(Boolean)
+        .map(item => stamp(item, section));
       for (const item of fetched) if (extraByType[item.type]) extraByType[item.type].push(item);
       if (!section.id || !expandable.has(provider.resolverId) || (expansion && expansion.exhausted)) continue;
-      const types = new Set([...items, ...fetched].map(i => i.type));
-      for (const type of types) {
-        if (!pageable[type]) continue;
-        pageable[type].push({
-          resolverId: provider.resolverId,
-          resolverName: provider.resolverName || provider.resolverId,
-          sectionId: section.id,
-          title: section.title,
-          pagingKey,
-          nextCursor: (expansion && expansion.nextCursor) || section.nextCursor || null
-        });
+      const entry = {
+        resolverId: provider.resolverId,
+        resolverName: provider.resolverName || provider.resolverId,
+        sectionId: section.id,
+        title: section.title,
+        category: validCategory(section.category),
+        pagingKey,
+        nextCursor: (expansion && expansion.nextCursor) || section.nextCursor || null
+      };
+      const both = [...items, ...fetched];
+      for (const type of new Set(both.map(i => i.type))) {
+        if (pageable[type]) pageable[type].push(entry);
+      }
+      for (const category of new Set(both.filter(i => i.type === 'playlist').map(i => i.category))) {
+        if (pageableByCategory[category]) pageableByCategory[category].push(entry);
       }
     }
     byType.artist.push(...deriveArtistsFromSongs(untitledSongs));
@@ -390,7 +428,11 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
     addProvider(shuffleupagus.resolverId, shuffleupagus.resolverName);
     const byType = emptyByType();
     for (const section of shuffleupagus.sections) {
-      for (const item of section.items || []) if (byType[item.type]) byType[item.type].push(item);
+      // Its sections carry no category: a playlist from it goes by its own.
+      for (const raw of section.items || []) {
+        const item = stamp(raw, undefined);
+        if (byType[item.type]) byType[item.type].push(item);
+      }
     }
     base.push({ id: shuffleupagus.resolverId, byType });
   }
@@ -398,6 +440,7 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
   const page = [];
   for (const { type, title } of TYPE_SECTIONS) {
     let row = null;
+    let rows = null;
     if (type === 'friend') {
       row = friendsRow(similarUsers, exclude);
     } else {
@@ -429,8 +472,9 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
         if (excludePlaylistIds && excludePlaylistIds.size > 0) {
           items = items.filter(item => !excludePlaylistIds.has(item.id));
         }
+        rows = playlistCategoryRows(items, pageableByCategory, order, names);
       }
-      if (items.length) {
+      if (!rows && items.length) {
         const sources = sourcesFor(items, order, names);
         row = subsection({
           key: `type:${type}`, type, title, blended: sources.length > 1, sources, items
@@ -439,9 +483,44 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
         row.canLoadMore = row.pageable.length > 0;
       }
     }
-    if (row) page.push({ type, title, subsections: [row] });
+    if (rows) page.push({ type, title, subsections: rows });
+    else if (row) page.push({ type, title, subsections: [row] });
   }
   return page;
+}
+
+// The Playlists section's category rows, or null when the final playlist list
+// has fewer than two categories: the caller then builds today's single
+// "Playlists" row (key type:playlist, category null). `items` is the merged
+// list after the weekly and history-mix rules, so each row keeps its items'
+// relative order and weekly playlists lead Made for you.
+function playlistCategoryRows(items, pageableByCategory, order, names) {
+  const byCategory = new Map();
+  for (const item of items) {
+    const category = CATEGORY_RANK[item.category] != null ? item.category : 'other';
+    if (!byCategory.has(category)) byCategory.set(category, []);
+    byCategory.get(category).push(item);
+  }
+  if (byCategory.size < 2) return null;
+  const rows = [];
+  for (const { id, title } of PLAYLIST_CATEGORIES) {
+    const rowItems = byCategory.get(id);
+    if (!rowItems) continue;
+    const sources = sourcesFor(rowItems, order, names);
+    const row = subsection({
+      key: `playlists:${id}`,
+      type: 'playlist',
+      category: id,
+      title: id === 'artist' ? artistRowTitle(rowItems.map(i => i.seedArtist)) : title,
+      blended: sources.length > 1,
+      sources,
+      items: rowItems
+    });
+    row.pageable = pageableByCategory[id] || [];
+    row.canLoadMore = row.pageable.length > 0;
+    rows.push(row);
+  }
+  return rows;
 }
 
 // The page, plus the sections Home's weekly mirror reads (weeklyHomeEntries).
