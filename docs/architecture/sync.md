@@ -22,9 +22,17 @@ Every local playlist object can carry these sync-related fields. **Any client (d
 | `hasUpdates: boolean` | remote → local | Remote `snapshotId` differs from ours. Shown as "pull" banner. |
 | `locallyModified: boolean` | local → remote | Local content changed since last sync. Triggers the push branch. |
 | `lastModified: number` | local | Timestamp of the last local content change. |
+| `tracksChangedAt: number` | local only | When the playlist's tracks last changed (added, removed or reordered) by a local edit, a sync pull or a hosted refresh. Renames and sync metadata don't move it. Home's freshness order. Never pushed. |
+| `lastChangeAdded: number` | local only | How many tracks that change added (0 for a reorder or removal). Home's "Δ N" badge. Never pushed. |
 | `localOnly: boolean` | intent | User opted this playlist out of all provider sync. |
 | `sourceUrl: string` | hosted XSPF | Playlist mirrors a remote XSPF URL, polled every 5 min. |
 | `id` | local | Local playlist ID. Imported playlists use `${providerId}-${externalId}`; manually created use `playlist-${Date.now()}`, `ai-chat-${Date.now()}`, `hosted-${hash(url)}`, etc. |
+
+**Freshness stamps (`tracksChangedAt`, `lastChangeAdded`).** `lastModified` moves on renames and other metadata writes, so it can't say when a playlist's tracks last changed. These two fields can. They are stamped at the one place every `local_playlists` write lands, the split store's `set` (`main-process/split-store.js`, with `stampTrackChanges` from `playlist-freshness.js`), so the renderer's `playlists.save`, the `sync:start` pull, the N-way reconcile and main.js's own handlers are all covered without touching them. The renderer stamps first in `savePlaylistToStore` and the hosted refresh (`handleImportPlaylistFromUrl`) and puts the stamp in state, so Home sees it without a reload; the split store keeps a stamp the incoming record already moved forward. Rules:
+- A track is its artist and title, folded like `trackSlug`, not its `id`: hosted XSPF tracks have no id, and ListenBrainz track ids are positions (`listenbrainz-track-<playlist>-<index>`), so a weekly playlist that replaces every track keeps every id. Order matters, so a reorder is a change with `lastChangeAdded: 0`.
+- Album is not part of the key: replacing one album version of a song with another (same artist and title) is not a change, so album enrichment can't cause false "Δ N" badges. Duplicates are counted, so a second copy of a track already there is one added.
+- A new playlist is stamped with its track count. An unchanged playlist keeps the newer of its stored stamp and the incoming one, so a save path that rebuilds the record without the fields doesn't lose them. A record with no `tracks` array is never read as "every track removed".
+- Both fields ride along through the whole-record spread (`buildPlaylistSavePayload`), like every other field. No push sends them: providers get the name, description and tracks, and Achordion's playlist-links submit picks its own fields. A playlist saved before the fields existed has neither until its tracks next change; Home falls back to `lastModified`.
 
 ### Durable Link Map (`sync_playlist_links`)
 

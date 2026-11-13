@@ -21,7 +21,7 @@ const REQUIRED = [
   'syncedFrom', 'syncedTo', 'syncSources',
   'hasUpdates', 'locallyModified', 'lastModified',
   'localOnly', 'sourceUrl', 'source', 'creator',
-  'createdAt', 'addedAt',
+  'createdAt', 'addedAt', 'tracksChangedAt', 'lastChangeAdded',
 ];
 
 const full = {
@@ -41,6 +41,8 @@ const full = {
   creator: 'Me',
   createdAt: 10,
   addedAt: 11,
+  tracksChangedAt: 12,
+  lastChangeAdded: 2,
 };
 
 describe('buildPlaylistSavePayload', () => {

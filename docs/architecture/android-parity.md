@@ -115,8 +115,10 @@ id, title, description, tracks,
 syncedFrom, syncedTo, syncSources,
 hasUpdates, locallyModified, lastModified,
 localOnly, sourceUrl, source, creator,
-createdAt, addedAt
+createdAt, addedAt, tracksChangedAt, lastChangeAdded
 ```
+
+`tracksChangedAt` and `lastChangeAdded` are local only (Home's freshness order and "Δ N" badge; see "Freshness stamps" in [sync.md](sync.md)), never pushed, but a save path that drops them sends the playlist to the back of Home until its tracks next change.
 
 Missing any one of these on any save path causes a specific class of bug — e.g., dropping `syncedTo` causes duplicate remote creation; dropping `locallyModified` causes the propagation chain to silently break.
 
