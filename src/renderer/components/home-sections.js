@@ -363,9 +363,7 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
             padding: '3px 8px', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
           },
         }, badge),
-        // The app's overlay. A mix (a service playlist, tracks not loaded)
-        // has no Add to Playlist, so it shows Play and Add to Queue, as the
-        // app's cards do when an action is missing.
+        // The app's overlay: Add to Playlist, Play, Add to Queue.
         e(ArtOverlay, {
           shown: reveal.shown, title, onClick: open,
           onAddToPlaylist: onAddToPlaylist && (() => onAddToPlaylist(playlist)),
@@ -448,7 +446,7 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 // ------------------------------------------------------------------------ Rows
 
 // Mixes are playlist cards with the service named on the art.
-function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
+function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
   const [picked, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
   if (all.length === 0) return null;
@@ -462,7 +460,7 @@ function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu,
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       shown.map((m, i) => e(PlaylistCard, {
         key: m.id || i, playlist: m, chip: m.resolverName, subtitle: m.description || m.subtitle,
-        onOpen, onPlay, onQueue, onContextMenu, onArtError,
+        onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError,
       }))));
 }
 

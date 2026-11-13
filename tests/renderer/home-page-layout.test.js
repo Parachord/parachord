@@ -152,6 +152,20 @@ describe('render', () => {
     expect(actions).toContain("onAddToPlaylist: (p) => { const tracks = playlistTracks(p); if (tracks.length > 0) setAddToPlaylistPanel({ open: true, tracks, sourceName: p.title, sourceType: 'playlist' }); },");
   });
 
+  test('a mix hovers like every playlist card: Add to Playlist, Play, Add to Queue', () => {
+    const page = read('src/renderer/components/home-page.js');
+    const actions = page.slice(page.indexOf('const mixActions = {'), page.indexOf('// Jump back in: the tile opens'));
+    expect(actions).toContain('onAddToPlaylist: addServicePlaylistToPlaylist,');
+    const html = render({ mixes: [{ type: 'playlist', id: 'm1', title: 'Weekly Jams', url: 'https://listenbrainz.org/playlist/m1', resolverId: 'listenbrainz', resolverName: 'ListenBrainz' }] });
+    const row = html.slice(html.indexOf('id="home-mixes"'));
+    const add = row.indexOf('Add Weekly Jams to a playlist');
+    expect(add).toBeGreaterThan(-1);
+    expect(add).toBeLessThan(row.indexOf('aria-label="Play Weekly Jams"'));
+    expect(row.indexOf('aria-label="Play Weekly Jams"')).toBeLessThan(row.indexOf('Add Weekly Jams to the queue'));
+    // The Recommendations page's playlist cards share the same function.
+    expect(app).toContain('const addRecommendationPlaylistToPlaylist = async (item) => addServicePlaylistToPlaylist(item);');
+  });
+
   test('a new user sees the import card and the Ask box', () => {
     const html = render({});
     expect(html).toContain('Build your collection');
