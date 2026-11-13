@@ -157,6 +157,7 @@ const HomePage = React.memo(function HomePage(props) {
     setSettingsTab,
     showHomeContextMenu,
     showToast,
+    sourceColors,
     spotifyConnected,
     whatsNewUnread,
   } = props;
@@ -476,16 +477,6 @@ const HomePage = React.memo(function HomePage(props) {
   }, [topArtists]);
 
   // -------------------------------------------------------------- sections
-
-  // Source chips take each plugin's colour from the registry.
-  const sourceColors = React.useMemo(() => {
-    const map = {};
-    for (const r of allResolvers || []) {
-      const c = r && (r.color || (r.manifest && r.manifest.color));
-      if (r && r.id && c) map[r.id] = c;
-    }
-    return map;
-  }, [allResolvers]);
 
   const hasCollection = (collectionData.tracks || []).length > 0 || (library || []).length > 0;
   const show = homeSections({
