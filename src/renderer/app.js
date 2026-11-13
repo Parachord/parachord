@@ -9358,6 +9358,33 @@ const Parachord = () => {
     if (plugin) setSelectedResolver(plugin);
   };
 
+  // History's error state. "Not connected" offers to connect the service
+  // that's missing (its plugin's detail), instead of a "Try Again" that
+  // could only fail again (design audit bug 27). Any other error can retry.
+  // The token-based error state (cards.js ErrorState pattern): role=alert,
+  // CSS variables, the accent button.
+  const historyErrorState = (error, onRetry, services) => {
+    const notConnected = /^No (listening history service|Last\.fm account) connected/.test(error || '');
+    const button = (label, onClick) => React.createElement('button', {
+      key: label,
+      type: 'button',
+      onClick,
+      className: 'px-4 py-2 rounded-lg text-sm hover:opacity-90',
+      style: { backgroundColor: 'var(--accent-primary)', color: 'var(--bg-primary)', border: 'none', cursor: 'pointer' }
+    }, label);
+    return React.createElement('div', {
+      role: 'alert',
+      style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '48px 24px', textAlign: 'center' }
+    },
+      React.createElement('p', { style: { fontSize: '14px', color: 'var(--text-secondary)', maxWidth: '32rem' } }, error),
+      React.createElement('div', { style: { display: 'flex', gap: '12px', justifyContent: 'center' } },
+        notConnected
+          ? services.map(s => button(`Connect ${s.name}`, () => openPluginSettings(s.id)))
+          : button('Try again', onRetry)
+      )
+    );
+  };
+
   const openSyncSetupModal = async (providerId) => {
     // ListenBrainz: token comes from the scrobbler plugin's config, NOT a
     // separate sync OAuth flow. If the user hasn't connected LB for
@@ -42534,13 +42561,7 @@ useEffect(() => {
                   )
                 )
               : listeningHistory.error ?
-                React.createElement('div', { className: 'text-center py-12' },
-                  React.createElement('div', { className: 'text-gray-400 mb-4' }, listeningHistory.error),
-                  React.createElement('button', {
-                    onClick: loadListeningHistory,
-                    className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
-                  }, 'Try Again')
-                )
+                historyErrorState(listeningHistory.error, loadListeningHistory, [{ id: 'lastfm', name: 'Last.fm' }, { id: 'listenbrainz', name: 'ListenBrainz' }])
               : (() => {
                   const filtered = filterHistory(listeningHistory.tracks);
                   const sorted = sortHistory(filtered);
@@ -42676,13 +42697,7 @@ useEffect(() => {
                   )
                 )
               : topTracks.error ?
-                React.createElement('div', { className: 'text-center py-12' },
-                  React.createElement('div', { className: 'text-gray-400 mb-4' }, topTracks.error),
-                  React.createElement('button', {
-                    onClick: () => loadTopTracks(),
-                    className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
-                  }, 'Try Again')
-                )
+                historyErrorState(topTracks.error, () => loadTopTracks(), [{ id: 'lastfm', name: 'Last.fm' }])
               : (() => {
                   const filtered = historySearch ? topTracks.tracks.filter(t =>
                     t.title.toLowerCase().includes(historySearch.toLowerCase()) ||
@@ -42796,13 +42811,7 @@ useEffect(() => {
                   )
                 )
               : topArtists.error ?
-                React.createElement('div', { className: 'text-center py-12' },
-                  React.createElement('div', { className: 'text-gray-400 mb-4' }, topArtists.error),
-                  React.createElement('button', {
-                    onClick: () => loadTopArtists(),
-                    className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
-                  }, 'Try Again')
-                )
+                historyErrorState(topArtists.error, () => loadTopArtists(), [{ id: 'lastfm', name: 'Last.fm' }])
               : topArtists.artists.length === 0 ?
                 React.createElement('div', { className: 'text-center py-12 text-gray-400' }, 'No top artists found for this period.')
               :
@@ -42987,13 +42996,7 @@ useEffect(() => {
                   )
                 )
               : topAlbums.error ?
-                React.createElement('div', { className: 'text-center py-12' },
-                  React.createElement('div', { className: 'text-gray-400 mb-4' }, topAlbums.error),
-                  React.createElement('button', {
-                    onClick: () => loadTopAlbums(),
-                    className: 'px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors'
-                  }, 'Try Again')
-                )
+                historyErrorState(topAlbums.error, () => loadTopAlbums(), [{ id: 'lastfm', name: 'Last.fm' }])
               : topAlbums.albums.length === 0 ?
                 React.createElement('div', { className: 'text-center py-12 text-gray-400' }, 'No top albums found for this period.')
               :
@@ -51092,10 +51095,11 @@ useEffect(() => {
                 type: 'text',
                 defaultValue: metaServiceConfigs[selectedResolver.id]?.endpoint || 'http://localhost:11434',
                 onBlur: (e) => {
+                  // Saving an empty URL doesn't switch the plugin on.
                   saveMetaServiceConfig(selectedResolver.id, {
                     ...metaServiceConfigs[selectedResolver.id],
                     endpoint: e.target.value,
-                    enabled: true
+                    enabled: !!e.target.value.trim()
                   });
                   // Re-fetch dynamic models after endpoint change
                   setTimeout(() => {
@@ -51936,10 +51940,12 @@ useEffect(() => {
                 type: 'password',
                 defaultValue: metaServiceConfigs[selectedMarketplaceItem.id]?.apiKey || '',
                 onBlur: (e) => {
+                  // Saving an empty key doesn't switch the plugin on (the
+                  // resolver modal's key field already worked this way).
                   saveMetaServiceConfig(selectedMarketplaceItem.id, {
                     ...metaServiceConfigs[selectedMarketplaceItem.id],
                     apiKey: e.target.value,
-                    enabled: true
+                    enabled: !!e.target.value.trim()
                   });
                 },
                 placeholder: selectedMarketplaceItem.id === 'chatgpt' ? 'sk-...' : 'AIza...',

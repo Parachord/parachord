@@ -434,3 +434,21 @@ describe('design-audit layout fixes (#1382)', () => {
     expect(app).toMatch(/return \(\) => resizeObserver\.disconnect\(\);[\s\S]{0,400}?\}, \[activeView, searchDetailCategory\]\);/);
   });
 });
+
+describe('design-audit small fixes (#1382)', () => {
+  test('History offers to connect a missing service instead of "Try Again"', () => {
+    expect(app).toContain("const notConnected = /^No (listening history service|Last\\.fm account) connected/.test(error || '');");
+    expect(app).toContain("? services.map(s => button(`Connect ${s.name}`, () => openPluginSettings(s.id)))");
+    expect((app.match(/historyErrorState\((listeningHistory|topTracks|topArtists|topAlbums)\.error,/g) || []).length).toBe(4);
+  });
+
+  test('saving an empty key or URL does not switch a plugin on', () => {
+    expect((app.match(/enabled: !!e\.target\.value\.trim\(\)/g) || []).length).toBe(2);
+  });
+
+  test('text fields and selections get a native Cut / Copy / Paste menu', () => {
+    const main = read('main.js');
+    expect(main).toContain("mainWindow.webContents.on('context-menu', (_event, params) => {");
+    expect(main).toContain("{ role: 'paste', enabled: !!flags.canPaste },");
+  });
+});

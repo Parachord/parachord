@@ -975,6 +975,30 @@ function createWindow() {
     show: false
   });
 
+  // Text fields get the usual Cut / Copy / Paste menu, and selected text a
+  // Copy menu. The app's own menus (tracks, albums, playlists) call
+  // preventDefault in the page, so this only fires where nothing else
+  // handles the right-click (design audit bug 31).
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const flags = params.editFlags || {};
+    let template = null;
+    if (params.isEditable) {
+      template = [
+        { role: 'undo', enabled: !!flags.canUndo },
+        { role: 'redo', enabled: !!flags.canRedo },
+        { type: 'separator' },
+        { role: 'cut', enabled: !!flags.canCut },
+        { role: 'copy', enabled: !!flags.canCopy },
+        { role: 'paste', enabled: !!flags.canPaste },
+        { type: 'separator' },
+        { role: 'selectAll', enabled: !!flags.canSelectAll },
+      ];
+    } else if (params.selectionText && params.selectionText.trim()) {
+      template = [{ role: 'copy' }];
+    }
+    if (template) Menu.buildFromTemplate(template).popup({ window: mainWindow });
+  });
+
   amazonWebPlayer.setHost(mainWindow);
   registerAmazonDmlsProvider({
     registerWidevineProvider,
