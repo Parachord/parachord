@@ -297,7 +297,14 @@ module.exports = {
         title: title,
         duration: track.duration ? Math.floor(track.duration / 1000) : null
       };
-      if (track.album) out.album = track.album;
+      // The release ListenBrainz matched rides in the JSPF track extension
+      // (generated playlists carry no plain album); with it the playlist
+      // mosaic finds album covers instead of artist photos.
+      const ext = (track.extension && track.extension['https://musicbrainz.org/doc/jspf#track']) || {};
+      const meta = ext.additional_metadata || {};
+      const album = [track.album, ext.release_name, meta.release_name]
+        .find(v => typeof v === 'string' && v.trim());
+      if (album) out.album = album.trim();
       if (mbid) out.mbid = mbid;
       tracks.push(out);
     }
