@@ -10920,7 +10920,9 @@ const Parachord = () => {
           }
           break;
         case 'focus-search':
-          searchInputRef.current?.focus();
+          // Cmd/Ctrl+F from any page. The search box only exists on the
+          // Search page, so focusing it elsewhere did nothing.
+          if (openSearchRef.current) openSearchRef.current();
           break;
         case 'play-pause':
           if (handlePlayPauseRef.current) handlePlayPauseRef.current();
@@ -15467,7 +15469,10 @@ ${trackListXml}
         activeElement.tagName === 'TEXTAREA' ||
         activeElement.isContentEditable
       );
-      if (isTyping) return;
+      // Escape in the Search page's own box still goes back (the box lets
+      // Escape through for that); every other key in a text field is typing.
+      const searchBoxEscape = e.key === 'Escape' && activeElement === searchInputRef.current;
+      if (isTyping && !searchBoxEscape) return;
 
       if (e.key === 'Escape' && activeView === 'search') {
         navigateBack();
@@ -33341,6 +33346,16 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   // The scheduler monitors queue tracks and resolves them based on priority
 
   // Navigation helpers
+  // Go to Search and put the cursor in its box (the Find menu item). A ref,
+  // because the menu listener is registered once and would otherwise see
+  // the first render's page.
+  const openSearchRef = useRef(null);
+  openSearchRef.current = () => {
+    if (activeView !== 'search') navigateTo('search');
+    // The box mounts with the page; focus it once it has painted.
+    requestAnimationFrame(() => requestAnimationFrame(() => searchInputRef.current?.focus()));
+  };
+
   const navigateTo = (view) => {
     if (view === 'home') {
       setHomeVisitCount(c => c + 1); // Trigger AI suggestions refresh
@@ -46899,7 +46914,9 @@ useEffect(() => {
                           },
                           className: 'flex items-center justify-center rounded transition-colors text-gray-400 hover:text-green-400 no-drag',
                           style: { width: '16px', height: '16px' },
-                          title: `Buy on ${purchaseSource.resolverName}`
+                          // The Tooltip above names it; a native title too
+                          // showed two tooltips at once.
+                          'aria-label': `Buy on ${purchaseSource.resolverName}`
                         },
                           // Shopping cart with download arrow icon
                           React.createElement('svg', {

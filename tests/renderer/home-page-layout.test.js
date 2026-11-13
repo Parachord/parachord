@@ -403,3 +403,20 @@ describe('design-audit copy and motion fixes (#1382)', () => {
     expect(html).toMatch(/@keyframes fadeIn \{/);
   });
 });
+
+describe('design-audit keyboard fixes (#1382)', () => {
+  test('Escape in the Search box goes back; other typing is left alone', () => {
+    expect(app).toContain("const searchBoxEscape = e.key === 'Escape' && activeElement === searchInputRef.current;");
+    expect(app).toContain('if (isTyping && !searchBoxEscape) return;');
+  });
+
+  test('Find (Cmd/Ctrl+F) opens Search from any page, then focuses its box', () => {
+    expect(app).toMatch(/case 'focus-search':[\s\S]{0,200}openSearchRef\.current\(\);/);
+    expect(app).toContain("if (activeView !== 'search') navigateTo('search');");
+  });
+
+  test('the Buy button has one tooltip', () => {
+    const i = app.indexOf('content: `Buy on ${purchaseSource.resolverName}`');
+    expect(app.slice(i, i + 1400)).not.toContain('title: `Buy on');
+  });
+});
