@@ -965,7 +965,9 @@
       background: #374151;
     }
 
-    /* Release card hover lift animation */
+    /* Release card hover lift animation. The hover shadow is !important
+       because cards set their resting shadow inline (var(--card-shadow)),
+       which otherwise wins. */
     .release-card {
       transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
                   box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -974,7 +976,7 @@
     .release-card:hover {
       transform: translateY(-6px);
       box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15),
-                  0 8px 16px -8px rgba(0, 0, 0, 0.1);
+                  0 8px 16px -8px rgba(0, 0, 0, 0.1) !important;
     }
 
     .release-card:active {
@@ -1019,9 +1021,20 @@
       }
     }
 
+    /* `backwards`, not `forwards`: the from-state (hidden, 12px down) covers
+       the stagger delay, and the card is released when the animation ends.
+       With `forwards` the finished animation kept holding `transform`, which
+       beats every normal rule, so .release-card:hover could never lift the
+       card (design audit bug 12). */
     .card-fade-up {
-      animation: cardFadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-      opacity: 0;
+      animation: cardFadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+    }
+
+    /* Concert rows (Concerts page, artist On Tour) stagger in with this. It
+       was referenced but never defined, so they appeared all at once. */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
     /* Release type badge styling */

@@ -3462,7 +3462,7 @@ ipcMain.handle('soundcloud-auth', async () => {
   // Validate client ID exists
   if (!clientId) {
     console.error('❌ No SoundCloud credentials configured!');
-    return { success: false, error: 'SoundCloud requires API credentials. Configure them in Settings → Installed → SoundCloud → Advanced.' };
+    return { success: false, error: 'SoundCloud requires API credentials. Configure them in Settings › Plug-Ins › SoundCloud › Advanced.' };
   }
 
   // The bundled (and .env) SoundCloud app is registered at :8888 and
@@ -3475,7 +3475,7 @@ ipcMain.handle('soundcloud-auth', async () => {
       success: false,
       error: `SoundCloud's built-in sign-in only works on port ${DEFAULT_AUTH_PORT}, and Parachord's local server is on port ${authPort}. `
         + `Either set the port back to ${DEFAULT_AUTH_PORT} in Settings → General, or add your own SoundCloud app credentials `
-        + `(Settings → Installed → SoundCloud → Advanced) with ${redirectUri} registered as its redirect URI.`
+        + `(Settings › Plug-Ins › SoundCloud › Advanced) with ${redirectUri} registered as its redirect URI.`
     };
   }
 

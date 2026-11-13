@@ -378,3 +378,28 @@ describe('design-audit bug fixes (#1382)', () => {
     expect(app).toContain("onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }");
   });
 });
+
+describe('design-audit copy and motion fixes (#1382)', () => {
+  const engine = read('src/renderer/hooks/use-playback-engine.js');
+  const html = read('index.html');
+
+  test('no message names a Settings path that does not exist', () => {
+    for (const src of [app, engine, read('src/renderer/lib/playback-limits.js'), read('main.js')]) {
+      expect(src).not.toMatch(/Settings (→|>) (Resolvers|Installed|Apple Music)/);
+    }
+    expect(engine).not.toContain('Toggle Developer Tools');
+  });
+
+  test('Settings does not claim plug-ins are sandboxed (README: they are not)', () => {
+    expect(app).not.toMatch(/secure sandbox|Sandboxed execution/);
+  });
+
+  test('card-fade-up releases the card when it ends, so the hover lift applies', () => {
+    expect(html).toMatch(/\.card-fade-up \{\s*animation: cardFadeUp 0\.4s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;\s*\}/);
+    expect(html).toMatch(/\.release-card:hover \{[^}]*!important;/);
+  });
+
+  test('the fadeIn animation the concert rows use is defined', () => {
+    expect(html).toMatch(/@keyframes fadeIn \{/);
+  });
+});

@@ -9384,7 +9384,7 @@ const Parachord = () => {
         // shows "Problem Connecting" (Electron's third-party-cookie gate,
         // parachord#834). Letting it fire on Linux/Windows surfaces a
         // confusing error popup to users who didn't ask for it; they should
-        // connect explicitly via the Settings → Apple Music → Connect
+        // connect explicitly via the Settings › Plug-Ins › Apple Music › Connect
         // button instead, which routes through the auth-window flow.
         if (musicKitWeb && window.electron?.platform === 'darwin') {
           try {
@@ -9399,7 +9399,7 @@ const Parachord = () => {
             console.log('[Sync] MusicKit JS auth failed, trying native MusicKit:', error.message);
           }
         } else if (musicKitWeb) {
-          console.log('[Sync] Skipping MusicKit JS auto-popup on non-macOS (use Settings → Apple Music → Connect to sign in via the auth window)');
+          console.log('[Sync] Skipping MusicKit JS auto-popup on non-macOS (use Settings › Plug-Ins › Apple Music › Connect to sign in via the auth window)');
         }
 
         // Fallback: try native MusicKit on macOS to get a user token
@@ -9510,7 +9510,7 @@ const Parachord = () => {
               console.log('[Sync] MusicKit JS re-auth failed:', error.message);
             }
           } else if (musicKitWeb) {
-            console.log('[Sync] Skipping MusicKit JS re-auth popup on non-macOS (use Settings → Apple Music → Connect)');
+            console.log('[Sync] Skipping MusicKit JS re-auth popup on non-macOS (use Settings › Plug-Ins › Apple Music › Connect)');
           }
 
           // Fallback: try native MusicKit on macOS
@@ -9571,7 +9571,7 @@ const Parachord = () => {
         const reason = authStatus.error || 'Token rejected by ListenBrainz';
         console.error('[Sync] ListenBrainz auth failed:', reason);
         showToast(
-          `ListenBrainz sync failed: ${reason}. Re-paste your token in Settings → Plugins.`,
+          `ListenBrainz sync failed: ${reason}. Re-paste your token in Settings › Plug-Ins › ListenBrainz.`,
           'error',
           { label: 'Open Settings', onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); } },
           { duration: 8000 }
@@ -29210,7 +29210,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       setListeningHistory({
         tracks: [],
         loading: false,
-        error: 'No listening history service connected. Configure Last.fm or ListenBrainz in Settings > Resolvers.'
+        error: 'No listening history service connected. Connect Last.fm or ListenBrainz in Settings › Plug-Ins.'
       });
       return;
     }
@@ -34898,7 +34898,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
         title: 'MusicKit Not Available',
         message: developerToken
           ? 'MusicKit JS authorization failed. Please check your developer token.'
-          : 'MusicKit requires either a developer token (Settings → Resolvers → Apple Music) or macOS native integration.'
+          : 'Apple Music needs either a developer token (Settings › Plug-Ins › Apple Music) or macOS native integration.'
       });
       return;
     }
@@ -44180,7 +44180,7 @@ useEffect(() => {
                   React.createElement('div', { className: 'flex-1' },
                     React.createElement('h3', { className: 'text-sm font-semibold text-gray-900 mb-2' }, 'Extensible Plug-in Architecture'),
                     React.createElement('p', { className: 'text-sm text-gray-600 leading-relaxed mb-3' },
-                      'Parachord\'s plug-in system lets you connect to your favorite music services and customize your listening experience. Each plug-in runs in a secure sandbox, ensuring your data stays safe while enabling powerful integrations.'
+                      'Parachord\'s plug-in system lets you connect to your favorite music services and customize your listening experience. Plug-ins run with the same access as Parachord itself, so install only ones you trust.'
                     ),
                     React.createElement('div', { className: 'grid grid-cols-1 sm:grid-cols-3 gap-3' },
                       // Feature 1
@@ -44202,7 +44202,7 @@ useEffect(() => {
                         React.createElement('svg', { className: 'w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
                           React.createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' })
                         ),
-                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Sandboxed execution keeps your credentials secure')
+                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Install only plug-ins you trust: they are not sandboxed')
                       )
                     )
                   )
@@ -45144,7 +45144,7 @@ useEffect(() => {
                   loadedResolvers.filter(r => r.capabilities?.resolve && activeResolvers.includes(r.id)).length === 0 &&
                     React.createElement('p', {
                       style: { fontSize: '13px', color: 'var(--text-tertiary)', fontStyle: 'italic', padding: '12px 0' }
-                    }, 'No content resolvers enabled. Enable resolvers in Settings → Resolvers.'),
+                    }, 'No music services are on. Turn one on in Settings › Plug-Ins.'),
 
                   // Reset button - refined
                   React.createElement('div', { style: { marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)' } },
@@ -55433,7 +55433,7 @@ useEffect(() => {
               style: { fontSize: '14px', color: 'var(--text-secondary)' }
             }, 'Click to enable or disable sources. You can configure them in Settings.')
           ),
-          // Content - Resolver cards grid (same design as Settings > Installed)
+          // Content - Resolver cards grid (same design as Settings › Plug-Ins)
           React.createElement('div', {
             style: { padding: '24px 32px' }
           },
