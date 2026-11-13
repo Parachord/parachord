@@ -241,6 +241,21 @@ describe('Rows', () => {
     const html = h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} });
     expect(html).toContain('aria-label="See all in Playlists"');
   });
+  test('Recent loves always leads Made from your listening, whatever the filter', () => {
+    const loves = { id: 'recent-loves', title: 'Recent loves', subtitle: 'Your 50 latest loves' };
+    const alone = h(S.MixesRow, { mixes: [], loves });
+    expect(alone).toContain('aria-label="Open Recent loves"');
+    expect(alone).not.toContain('Filter mixes by source');
+    const mixes = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, title: `Mix ${i}`, resolverId: 'listenbrainz', serviceLabel: 'ListenBrainz', resolverName: 'ListenBrainz' }));
+    const html = h(S.MixesRow, { mixes, loves, lovesActions: { onOpen: () => {}, onPlay: () => {}, onQueue: () => {}, onAddToPlaylist: () => {} } });
+    const opens = html.match(/aria-label="Open [^"]*"/g);
+    expect(opens[0]).toBe('aria-label="Open Recent loves"');
+    expect(opens).toHaveLength(6); // loves plus five mixes fill the row
+    expect(html).toContain('aria-label="Add Recent loves to a playlist"');
+    expect(html).toContain('Your 50 latest loves');
+    // Not a service, so it adds no filter chip.
+    expect(html.match(/aria-pressed=/g)).toHaveLength(2); // All, ListenBrainz
+  });
   test('Mixes row has no See all', () => {
     const html = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', resolverName: 'Apple Music' }] });
     expect(html).not.toContain('See all');
@@ -336,14 +351,9 @@ describe('Rows', () => {
   test('neither half: nothing', () => {
     expect(h(S.FreshCriticalRow, { fresh: [], critical: [] })).toBe('');
   });
-  test('the Refresh icon says it is busy and spins while a refresh runs', () => {
-    const albums = [{ title: 'T', artist: 'A', resolverId: 'lastfm' }];
-    const idle = h(S.AlbumsRow, { albums, onRefresh: () => {}, refreshing: false });
-    expect(idle).toMatch(/<button[^>]*aria-label="Refresh suggestions"[^>]*aria-busy="false"/);
-    expect(idle).not.toContain('animate-spin');
-    const busy = h(S.AlbumsRow, { albums, onRefresh: () => {}, refreshing: true });
-    expect(busy).toMatch(/<button[^>]*aria-busy="true"[^>]*disabled=""/);
-    expect(busy).toContain('class="animate-spin"');
+  test('the Albums row has no refresh control (the Recommendations page keeps its own)', () => {
+    const html = h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], onRefresh: () => {}, refreshing: true });
+    expect(html).not.toMatch(/Refresh suggestions|Refreshing suggestions|animate-spin/);
   });
   test('a playlist card with no covers shows the playlist glyph', () => {
     expect(h(S.PlaylistCard, { playlist: { id: 'p', title: 'P' } })).toContain('data-playlist-glyph');

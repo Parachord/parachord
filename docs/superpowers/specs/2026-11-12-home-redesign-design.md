@@ -83,12 +83,14 @@ This replaces **Continue Listening**.
 
 ### 4. Made from your listening
 
-The play-history mixes your services make, up to six cards.
+The play-history mixes your services make, led by Recent loves, up to six cards.
+
+- **Recent loves always comes first**: your last 50 loved tracks, as a card with a mosaic of the newest loved albums. It opens Collection's songs newest loved first, and plays and queues under the `loves` context. It's no service's, so it adds no filter chip and shows whatever chip is selected.
 
 - Each card shows the mix's title and a one-line description. The row's source filter names the services, so the card carries no service label.
 - **Source filters**: All, then one chip per service that returned at least one mix. A chip filters only this row.
 - **No "See all"**, because no page lists these: Recommendations leaves them out on purpose.
-- **Hidden** when no service returns a mix.
+- **Hidden** when there are no loves and no service returns a mix.
 
 Which mixes count as play history:
 
@@ -132,7 +134,7 @@ Each card names its source and why it was picked ("Last.fm · like Hovvdy"). Shu
 - **Source filters**: All, then one chip per source with at least one album. A chip filters only this row.
 - **See all** opens Recommendations.
 - Home reads the answers Recommendations caches (`cache_recommendations`). When that cache is empty or stale, Home fills it itself, in the background. See point 1 of "Settled after a builder's read".
-- Shuffleupagus's batch keeps its Refresh, a small icon button on this section, and keeps the "Refresh Home suggestions on every visit" setting (`lib/home-suggestions-refresh.js`), because the Recommendations spec says Home is where that batch refreshes.
+- No Refresh control on this section. Shuffleupagus's batch refreshes from the Recommendations page's Refresh, or on every visit with the "Refresh Home suggestions on every visit" setting (`lib/home-suggestions-refresh.js`).
 - **Hidden** when no source has albums.
 
 This replaces the Discover, Album Suggestions and Artist Suggestions sections.

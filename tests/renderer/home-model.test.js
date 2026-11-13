@@ -301,3 +301,21 @@ describe('history mix mosaics', () => {
     expect(m.withMixMosaics(mixes, {})).toBe(mixes);
   });
 });
+
+describe('recent loves in Made from your listening', () => {
+  test('the mosaic takes the newest distinct albums, at most four', () => {
+    const loves = [
+      { artist: 'A', album: 'X', albumArt: 'ax' }, { artist: 'A', album: 'X' }, { artist: 'B', album: '' },
+      { artist: 'B', album: 'Y' }, { artist: 'C', album: 'Z' }, { artist: 'D', album: 'W' }, { artist: 'E', album: 'V' },
+    ];
+    expect(m.lovesMosaicAlbums(loves)).toEqual([
+      { artist: 'A', album: 'X', albumArt: 'ax' }, { artist: 'B', album: 'Y', albumArt: null },
+      { artist: 'C', album: 'Z', albumArt: null }, { artist: 'D', album: 'W', albumArt: null },
+    ]);
+    expect(m.lovesMosaicAlbums(undefined)).toEqual([]);
+  });
+  test('the row shows with loves even when no service has mixes', () => {
+    expect(m.homeSections({ mixes: [], loves: [{ title: 't' }] }).mixes).toBe(true);
+    expect(m.homeSections({ mixes: [], loves: [] }).mixes).toBe(false);
+  });
+});

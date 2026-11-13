@@ -444,19 +444,22 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 
 // ------------------------------------------------------------------------ Rows
 
-// Mixes are playlist cards; the source filter names their services.
-function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
+// Mixes are playlist cards; the source filter names their services. Recent
+// loves (`loves`, a card with its own `lovesActions`) always leads the row: it
+// is no service's, so it adds no chip and shows whatever the filter.
+function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
   const [picked, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
-  if (all.length === 0) return null;
+  if (all.length === 0 && !loves) return null;
   const chips = sourceChips(all, (m, id) => m.resolverName || id, sourceColors);
   // A chip whose source has gone leaves the row on All.
   const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
-  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
+  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS - (loves ? 1 : 0));
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource, label: 'Filter mixes by source' }),
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+      loves && e(PlaylistCard, Object.assign({ key: 'recent-loves', playlist: loves, subtitle: loves.subtitle, onArtError }, lovesActions)),
       shown.map((m, i) => e(PlaylistCard, {
         key: m.id || i, playlist: m, subtitle: m.description || m.subtitle,
         onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError,
@@ -487,7 +490,7 @@ function albumHandlers(p) {
 }
 
 function AlbumsRow(props) {
-  const { albums, navigateTo, onRefresh, refreshing } = props;
+  const { albums, navigateTo } = props;
   const [picked, setSource] = React.useState('All');
   const all = Array.isArray(albums) ? albums : [];
   if (all.length === 0) return null;
@@ -495,19 +498,9 @@ function AlbumsRow(props) {
   // A chip whose source has gone leaves the row on All.
   const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
   const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
-  // While a refresh runs the icon spins, is disabled and says it's busy.
-  const refresh = onRefresh && e('button', {
-    type: 'button', 'aria-label': refreshing ? 'Refreshing suggestions' : 'Refresh suggestions',
-    'aria-busy': refreshing ? 'true' : 'false', disabled: !!refreshing,
-    onClick: () => { if (!refreshing) onRefresh(); },
-    style: {
-      background: 'none', border: 'none', cursor: refreshing ? 'default' : 'pointer',
-      color: 'var(--text-secondary)', padding: '4px', display: 'flex',
-    },
-  }, svg(16, e('path', { d: 'M21 12a9 9 0 1 1-3-6.7M21 3v6h-6' }), refreshing ? { className: 'animate-spin' } : undefined));
   return e('section', { 'aria-labelledby': 'home-albums', style: SECTION_STYLE },
     e(SectionHeader, {
-      id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo, extra: refresh,
+      id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo,
       pageColor: PAGE_COLOR.recommendations,
     }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource }),
