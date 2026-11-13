@@ -28,6 +28,10 @@ const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
 
+// The sidebar's highlight for each page (app.js): its colour, and its 10% fill
+// as the panel background. The same in both themes, as the sidebar is.
+const FRESH_TONE = { color: '#10b981', fill: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.25)' };
+const CRITICAL_TONE = { color: '#ef4444', fill: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.25)' };
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
@@ -514,18 +518,18 @@ function AlbumsRow(props) {
 // shows its cards. A half that is neither loading nor has cards is left out.
 function FreshCriticalRow(props) {
   const { fresh, critical, freshLoading, criticalLoading, navigateTo } = props;
-  // Each half is a panel tinted with its own theme colour (Fresh Drops green,
-  // Critical Darlings amber), mixed into the page background so both themes
-  // follow, with the sidebar's icon for it beside the title.
+  // Each half is a panel in its page's sidebar highlight (the same fill and
+  // colour the sidebar shows when that page is open), with the sidebar's icon
+  // for it beside the title.
   const half = (id, title, sub, page, view, items, loading, tone, icon) => e('section', {
     key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
     style: Object.assign({ flex: HOME_HALF_FLEX, minWidth: 0 }, SECTION_STYLE, {
       padding: `${HOME_HALF_PANEL_PAD}px`, borderRadius: '16px',
-      backgroundColor: `color-mix(in srgb, ${tone} 7%, var(--bg-primary))`,
-      border: `1px solid color-mix(in srgb, ${tone} 22%, transparent)`,
+      backgroundColor: tone.fill,
+      border: `1px solid ${tone.border}`,
     }),
   },
-    e(SectionHeader, { id, title, sub, page, view, navigateTo, tone, icon }),
+    e(SectionHeader, { id, title, sub, page, view, navigateTo, tone: tone.color, icon }),
     loading
       ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })
       : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
@@ -536,8 +540,8 @@ function FreshCriticalRow(props) {
   const showC = c.length > 0 || !!criticalLoading;
   if (!showF && !showC) return null;
   return e('div', { style: { display: 'flex', gap: `${HOME_HALF_GAP}px` } },
-    showF && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f, f.length === 0, 'var(--success)', DropletGlyph()),
-    showC && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c, c.length === 0, 'var(--warning)', TrophyGlyph()));
+    showF && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f, f.length === 0, FRESH_TONE, DropletGlyph()),
+    showC && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c, c.length === 0, CRITICAL_TONE, TrophyGlyph()));
 }
 
 // A concert card is not clickable as a whole: "Tickets" is its only action.

@@ -247,12 +247,20 @@ describe('Rows', () => {
     const loading = h(S.FreshCriticalRow, { fresh: [], critical: [], freshLoading: true, criticalLoading: true });
     expect((loading.match(/flex:0 0 calc\(50% - 16px\)/g) || []).length).toBe(2);
   });
-  test('each half is its own tinted panel with its icon, Fresh Drops green and Critical Darlings amber', () => {
+  test('each half is a panel in its page\'s sidebar highlight, with its icon in that colour', () => {
     const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
     const sections = html.split('<section').slice(1);
     expect(sections).toHaveLength(2);
-    expect(sections[0]).toMatch(/^[^>]*background-color:color-mix\(in srgb, var\(--success\) \d+%, var\(--bg-primary\)\)/);
-    expect(sections[1]).toMatch(/^[^>]*background-color:color-mix\(in srgb, var\(--warning\) \d+%, var\(--bg-primary\)\)/);
+    expect(sections[0]).toMatch(/^[^>]*background-color:rgba\(16, 185, 129, 0\.1\)/);
+    expect(sections[1]).toMatch(/^[^>]*background-color:rgba\(239, 68, 68, 0\.1\)/);
+    expect(sections[0]).toMatch(/data-section-icon[^>]*color:#10b981/);
+    expect(sections[1]).toMatch(/data-section-icon[^>]*color:#ef4444/);
+    // The sidebar's highlights for those pages, which the panels copy.
+    const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
+    expect(app).toContain("backgroundColor: activeView === 'new-releases' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',");
+    expect(app).toContain("color: activeView === 'new-releases' ? '#10b981' : 'var(--nav-inactive)',");
+    expect(app).toContain("backgroundColor: activeView === 'critics-picks' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',");
+    expect(app).toContain("color: activeView === 'critics-picks' ? '#ef4444' : 'var(--nav-inactive)',");
     for (const sec of sections) {
       expect(sec).toMatch(/^[^>]*border-radius:16px/);
       expect(sec).toMatch(/^[^>]*padding:20px/);
