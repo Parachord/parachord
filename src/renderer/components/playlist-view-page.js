@@ -123,19 +123,24 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
             overflow: 'hidden'
           }
         },
-          // Background with the playlist's own cover, the first mosaic tile, or the gradient
+          // Background with the first mosaic tile or the gradient, and the
+          // playlist's own cover layered over it — the img reports its own
+          // death (a CSS background cannot), so a dead cover degrades to the
+          // tile/gradient, never to a flat header.
           React.createElement('div', {
             className: 'absolute inset-0',
             style: {
-              backgroundImage: (playlistCover || playlistCoverArt[0])
-                ? `url(${playlistCover || playlistCoverArt[0]})`
+              backgroundImage: playlistCoverArt[0]
+                ? `url(${playlistCoverArt[0]})`
                 : 'linear-gradient(to bottom right, #f43f5e, #ec4899, #c026d3)',
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               filter: 'blur(20px) brightness(0.7)',
               transform: 'scale(1.2)'
             }
-          }),
+          },
+            playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover })
+          ),
           // Gradient overlay
           React.createElement('div', {
             className: 'absolute inset-0',

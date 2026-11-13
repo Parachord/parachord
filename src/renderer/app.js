@@ -1139,7 +1139,11 @@ window.appleMusicLookupPlaylist = async (playlistId, storefront = 'us') => {
       sources: ['applemusic'],
       appleMusicId: String(song.id),
       appleMusicUrl: song.attributes.url,
-      albumArt: song.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || playlistArt,
+      // Only the track's OWN artwork — never the playlist's cover (that is
+      // `albumArt` on the playlist result below; a playlist cover stamped on
+      // a track masquerades as the track's album art — the 4×-tiled-mosaic
+      // bug).
+      albumArt: song.attributes.artwork?.url?.replace('{w}', '500').replace('{h}', '500') || null,
       previewUrl: song.attributes.previews?.[0]?.url || null
     }));
 

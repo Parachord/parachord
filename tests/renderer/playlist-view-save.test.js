@@ -21,16 +21,10 @@ describe('the ephemeral playlist SAVE button', () => {
   test('a provider playlist saves through the Import path (both buttons produce the same record)', () => {
     expect(saveStart).toBeGreaterThan(-1);
     expect(save).toContain('if (selectedPlaylist.sourceUrl) {');
+    // The full arg list, pinned: (url, skipStorageUpdate, storedAddedAt,
+    // metadataOverrides, opts) — coverArt must ride as the 4th arg.
     expect(save).toContain('await handleImportPlaylistFromUrl(');
-    expect(save).toContain('selectedPlaylist.sourceUrl,');
-  });
-
-  test('the SAVE keeps the cover the view is showing: coverArt rides as a metadata override', () => {
-    // A recommended playlist's cover (the image the Recommendations page's
-    // card showed) must survive the save — not be replaced by a generated
-    // mosaic. The override wins over the lookup's own cover so the image
-    // never swaps on save.
-    expect(save).toContain("selectedPlaylist.coverArt ? { coverArt: selectedPlaylist.coverArt } : null");
+    expect(save).toMatch(/selectedPlaylist\.sourceUrl,\s*false,\s*null,\s*selectedPlaylist\.coverArt \? \{ coverArt: selectedPlaylist\.coverArt \} : null\s*\);/);
   });
 
   test('the Weekly Jams record spreads the whole playlist, no hand-picked field list', () => {

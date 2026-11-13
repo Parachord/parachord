@@ -55,6 +55,10 @@ describe('PlaylistCoverImage (the shared cover layer)', () => {
     // A fresh URL retries instead of staying dropped.
     expect(src).toMatch(/React\.useEffect\(\(\) => \{ setBroken\(false\); \}, \[url\]\)/);
   });
+
+  test('is React.memo\'d like every kit component', () => {
+    expect(read('src/renderer/components/playlist-cover.js')).toContain('React.memo(PlaylistCoverImageBase)');
+  });
 });
 
 describe('opening a recommended playlist keeps the card\'s cover', () => {
@@ -108,8 +112,9 @@ describe('importing (SAVE, dropped link, URL import) keeps the provider cover', 
 describe('every playlist-cover surface renders the record\'s cover over the mosaic', () => {
   test('the playlist view: hero background, 192px card, share link', () => {
     expect(view).toContain('const playlistCover = (typeof selectedPlaylist?.coverArt');
-    expect(view).toContain('backgroundImage: (playlistCover || playlistCoverArt[0])');
-    expect(view).toContain("playlistCover && React.createElement(PlaylistCoverImage, { url: playlistCover })");
+    // The hero layers the cover over the tile/gradient backdrop (the <img>
+    // reports its own death; a CSS background cannot).
+    expect(view).toMatch(/backgroundImage: playlistCoverArt\[0\][\s\S]*?playlistCover && React\.createElement\(PlaylistCoverImage, \{ url: playlistCover \}\)/);
     expect(view).toContain('albumArt: playlistCover || playlistCoverArt?.[0] || null');
   });
 

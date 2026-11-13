@@ -3,12 +3,13 @@
 // A playlist record can carry `coverArt`: the image the provider gave for the
 // playlist itself (an Amazon Music recommended playlist's image — the same one
 // the Recommendations page's card shows — or a Spotify / Apple Music playlist
-// lookup's `albumArt`; see "the resolver contract" in
-// docs/architecture/plugins.md). It is NOT album art: it never goes through the
-// album-art pipeline (getAlbumArt) and never into albumArtCache, and a track
-// never carries it as its own albumArt — that is the 4×-tiled-mosaic bug: the
-// playlist cover used to be stamped on every track, and the 2×2 mosaic built
-// from those tracks showed the same image four times.
+// lookup's `albumArt`; see "Playlist covers" in docs/architecture/album-art.md
+// and the lookupPlaylist contract in docs/architecture/plugins.md). It is NOT
+// album art: it never goes through the album-art pipeline (getAlbumArt) and
+// never into albumArtCache, and a track never carries it as its own albumArt
+// — that is the 4×-tiled-mosaic bug: the playlist cover used to be stamped on
+// every track, and the 2×2 mosaic built from those tracks showed the same
+// image four times.
 //
 // Rendered as a layer OVER the surface's own fallback (the 2×2 mosaic of
 // track covers, or the placeholder): it fades in when it loads, and a URL
@@ -16,14 +17,17 @@
 // dead cover degrades to the mosaic, never to a blank box (the broken-art
 // rule's spirit; reportBrokenAlbumArt's cache keys are album-shaped, and the
 // playlist cover lives on the playlist record, not in a cache, so the
-// fallback here is visual only). The parent box must be `relative` (every
-// playlist-cover box already is). Purely presentational: no app state.
+// fallback here is visual only). It also covers the CSS-background case
+// (the playlist view's blurred hero): layered over the fallback there, the
+// <img> reports the death a background image cannot. The parent box must be
+// `relative` (every playlist-cover box already is). Purely presentational:
+// no app state.
 // React is the renderer's vendor global (loaded by index.html before app.js;
 // jest and the smoke test set it before requiring this module).
 
 // `url`: the playlist's cover URL, or null/undefined (nothing renders, the
 // caller's fallback layer shows alone).
-const PlaylistCoverImage = ({ url }) => {
+const PlaylistCoverImageBase = ({ url }) => {
   const [broken, setBroken] = React.useState(false);
   // A fresh URL (a refresh swapped the playlist's cover) retries instead of
   // staying dropped.
@@ -43,5 +47,7 @@ const PlaylistCoverImage = ({ url }) => {
     onError: () => setBroken(true),
   });
 };
+
+const PlaylistCoverImage = React.memo(PlaylistCoverImageBase);
 
 module.exports = { PlaylistCoverImage };
