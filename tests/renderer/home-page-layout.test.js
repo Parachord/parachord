@@ -60,9 +60,31 @@ describe('source', () => {
     expect(fn).toMatch(/saveRecommendationsCache\(\);\s*stampFullLoad\(toFetch\.length, failed\);/);
   });
 
-  test('the import card leads to Library Sync in Settings', () => {
+  test('the import card leads to Library Sync in Settings, which offers each service\'s sync setup', () => {
     expect(page).toContain("onImport: () => { navigateTo('settings'); setSettingsTab('general'); },");
     expect(page).not.toContain("navigateTo('search')");
+    // With nothing synced, the card is a way forward, not a dead-end sentence.
+    const card = app.slice(app.indexOf('// Nothing synced yet: offer each service'), app.indexOf('// Nothing synced yet: offer each service') + 1800);
+    expect(card).toContain('onClick: () => openSyncSetupModal(pid),');
+    expect(card).toContain('`Set up ${config.name} sync`');
+    expect(app).not.toContain('No sync providers connected.');
+  });
+
+  test('checklist items open where the thing is connected', () => {
+    // Last.fm and ListenBrainz: the plugin's own detail, not Settings › General.
+    expect(page).toContain("else if (id === 'lastfm' || id === 'listenbrainz') openPluginSettings(id);");
+    const open = app.slice(app.indexOf('const openPluginSettings = (pluginId) => {'), app.indexOf('const openSyncSetupModal = async'));
+    expect(open).toContain("setSettingsTab('plugins');");
+    expect(open).toContain('if (plugin) setSelectedResolver(plugin);');
+  });
+
+  test('Connect Spotify with no Client ID opens the Spotify plugin and says why', () => {
+    const i = app.indexOf("pendingSyncSetupRef.current = 'spotify';");
+    const block = app.slice(i, i + 1100);
+    expect(block).toContain('const result = await window.electron.spotify.authenticate();');
+    expect(block).toMatch(/if \(result\.error === 'no_client_id'\) \{\s*openPluginSettings\('spotify'\);\s*showToast\(/);
+    // A refused login is not left pending.
+    expect(block).toContain('pendingSyncSetupRef.current = null;');
   });
 
   test('the Ask box is not re-keyed on the example (that wiped typed text)', () => {

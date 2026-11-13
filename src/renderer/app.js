@@ -9334,6 +9334,17 @@ const Parachord = () => {
   };
 
   // Open sync setup modal
+  // Open Settings → Plug-Ins with one plugin's detail showing (a service or a
+  // meta service such as Last.fm), so "Connect X" lands where X is connected.
+  // An unknown id still opens the Plug-Ins tab.
+  const openPluginSettings = (pluginId) => {
+    setActiveView('settings');
+    setSettingsTab('plugins');
+    const plugin = metaServices.find(s => s.id === pluginId)
+      || (loadedResolversRef.current || []).find(r => r.id === pluginId);
+    if (plugin) setSelectedResolver(plugin);
+  };
+
   const openSyncSetupModal = async (providerId) => {
     // ListenBrainz: token comes from the scrobbler plugin's config, NOT a
     // separate sync OAuth flow. If the user hasn't connected LB for
@@ -9345,9 +9356,9 @@ const Parachord = () => {
       const lbAuthenticated = !!lbCfg?.userToken;
       if (!lbAuthenticated) {
         showToast(
-          'Connect ListenBrainz in Settings → Plugins first.',
-          'warning',
-          { label: 'Open Settings', onClick: () => { setActiveView('settings'); setSettingsTab('plugins'); } },
+          'Connect ListenBrainz in its plugin settings first.',
+          'info',
+          { label: 'Open ListenBrainz', onClick: () => openPluginSettings('listenbrainz') },
           { duration: 8000 }
         );
         return;
@@ -9448,8 +9459,20 @@ const Parachord = () => {
           return;
         }
         pendingSyncSetupRef.current = 'spotify';
-        await window.electron.spotify.authenticate();
-        // Spotify opens external browser, auth flow continues in onAuthSuccess callback
+        const result = await window.electron.spotify.authenticate();
+        // A started login opens the external browser and continues in the
+        // onAuthSuccess callback. A refused one (no Client ID yet, which is
+        // every new user) used to end here in silence: open the Spotify
+        // plugin, where the Client ID goes, and say why.
+        if (result && result.success === false) {
+          pendingSyncSetupRef.current = null;
+          if (result.error === 'no_client_id') {
+            openPluginSettings('spotify');
+            showToast('Spotify needs your own Client ID first. Add it in the Spotify plugin, then connect.', 'info', null, { duration: 8000 });
+          } else {
+            showToast("Couldn't start the Spotify sign-in. Try again from the Spotify plugin in Settings.", 'error');
+          }
+        }
         return;
       }
       // Apple Music: stored token may have expired — try re-authorizing for a fresh one.
@@ -36175,7 +36198,7 @@ useEffect(() => {
     fetchAlbumTracksByName, getAlbumArt, handleCollectionAlbumClick, handleStartCollectionStation,
     loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
     loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
-    openSyncSetupModal, openTopAlbum, openWhatsNew, playServicePlaylist, playTrackCollection, prefetchTopAlbumTracks,
+    openPluginSettings, openSyncSetupModal, openTopAlbum, openWhatsNew, playServicePlaylist, playTrackCollection, prefetchTopAlbumTracks,
     queueServicePlaylist, showHomeContextMenu,
   });
 
@@ -45855,11 +45878,34 @@ useEffect(() => {
                             : `Clean Up ${config.name} Duplicates`
                         )
                       ),
-                    // Show message if no providers are connected
+                    // Nothing synced yet: offer each service's sync setup here.
+                    // Home's Import card lands on this card, and a sentence
+                    // with no way forward was a dead end for a new user.
                     Object.entries(syncProviderConfig).filter(([pid]) => resolverSyncSettings[pid]?.enabled).length === 0 &&
-                      React.createElement('p', {
-                        style: { fontSize: '13px', color: 'var(--text-tertiary)', fontStyle: 'italic' }
-                      }, 'No sync providers connected. Enable library sync for Spotify, Apple Music, or ListenBrainz first.')
+                      React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
+                        React.createElement('p', {
+                          style: { fontSize: '13px', color: 'var(--text-secondary)' }
+                        }, 'No service is synced yet. Set one up to import its playlists and saved music:'),
+                        React.createElement('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+                          Object.entries(syncProviderConfig).map(([pid, config]) =>
+                            React.createElement('button', {
+                              key: pid,
+                              type: 'button',
+                              onClick: () => openSyncSetupModal(pid),
+                              style: {
+                                padding: '10px 16px',
+                                backgroundColor: 'var(--hover-bg-default)',
+                                color: 'var(--text-primary)',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                borderRadius: '8px',
+                                border: '1px solid var(--border-subtle)',
+                                cursor: 'pointer'
+                              }
+                            }, `Set up ${config.name} sync`)
+                          )
+                        )
+                      )
                   )
                 ),
 

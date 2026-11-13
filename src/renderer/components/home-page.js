@@ -50,6 +50,7 @@ const HOME_PAGE_HANDLERS = [
   'navigateTo',
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
+  'openPluginSettings',
   'openServicePlaylist',
   'openSyncSetupModal',
   'openTopAlbum',
@@ -143,6 +144,7 @@ const HomePage = React.memo(function HomePage(props) {
     newReleasesLoading,
     openCriticsPicksAlbum,
     openHomeBannerCta,
+    openPluginSettings,
     openServicePlaylist,
     openSyncSetupModal,
     openTopAlbum,
@@ -186,7 +188,9 @@ const HomePage = React.memo(function HomePage(props) {
   // Each item's click does what its old card did.
   const onSetupAction = (id) => {
     if (id === 'resolvers') { navigateTo('settings'); setSettingsTab('plugins'); }
-    else if (id === 'lastfm' || id === 'listenbrainz') { navigateTo('settings'); setSettingsTab('general'); }
+    // The plugin's own detail, where the account is connected (General only
+    // has the scrobbling switch).
+    else if (id === 'lastfm' || id === 'listenbrainz') openPluginSettings(id);
     else if (id === 'spotify') openSyncSetupModal('spotify');
     else if (id === 'browser-extension') setExtensionInfoOpen(true);
     else if (id === 'raycast') setRaycastInfoOpen(true);
@@ -565,7 +569,8 @@ const HomePage = React.memo(function HomePage(props) {
           ? skeletonSection('jump', 'Jump back in', React.createElement(JumpBackInSkeleton))
           : React.createElement(JumpBackIn, {
             tiles, onOpenTile, onPlayTile, onContextMenu: onTileMenu, onArtError, showImport: show.importCard,
-            // Library Sync lives in Settings › General.
+            // Library Sync lives in Settings › General; with nothing synced
+            // yet, its card offers each service's sync setup.
             onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
           }),
 
