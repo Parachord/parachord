@@ -864,6 +864,31 @@ describe('album category rows', () => {
     expect(subs[0].pageable).toEqual([expect.objectContaining({ pagingKey: 'amazonmusic|fresh', category: 'new' })]);
   });
 
+  test('album items carry their position in the blend, categorized or not', () => {
+    const providers = [
+      norm('a', 'A', [{ items: [al('A0'), al('A1')] }]),
+      norm('b', 'B', [
+        { id: 'mine', title: 'Mine', category: 'personal', items: [al('B0')] },
+        { id: 'ed', title: 'Ed', category: 'editorial', items: [al('B1'), { type: 'playlist', id: 'p1', name: 'P1', url: 'https://x/p1' }] }
+      ])
+    ];
+    const page = m.buildRecommendationPage({ providers });
+    const byName = Object.fromEntries(rowsOf(page, 'album').flatMap(s => s.items).map(i => [i.name, i.blendIndex]));
+    expect(byName).toEqual({ A0: 0, B0: 1, A1: 2, B1: 3 });
+    expect(rowsOf(page, 'playlist')[0].items[0].blendIndex).toBeUndefined();
+    for (const p of providers) for (const sec of p.sections) for (const item of sec.items) {
+      expect(item).not.toHaveProperty('blendIndex');
+    }
+
+    const single = [norm('a', 'A', [{ items: [al('O1'), al('O2')] }]), norm('b', 'B', [{ items: [al('O3')] }])];
+    const subs = rowsOf(m.buildRecommendationPage({ providers: single }), 'album');
+    expect(subs.map(s => s.key)).toEqual(['type:album']);
+    expect(subs[0].items.map(i => [i.name, i.blendIndex])).toEqual([['O1', 0], ['O3', 1], ['O2', 2]]);
+    for (const p of single) for (const sec of p.sections) for (const item of sec.items) {
+      expect(item).not.toHaveProperty('blendIndex');
+    }
+  });
+
   test('playlist rows are unchanged beside album rows', () => {
     const pl = (id) => ({ type: 'playlist', id, name: id.toUpperCase(), url: `https://x/${id}` });
     const sections = [

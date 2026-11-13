@@ -257,4 +257,47 @@ describe("Home's recommended albums (app.js recommendationAlbums)", () => {
     expect(albums.map(a => a.title)).toEqual(['N1', 'E1']);
     expect(albums.every(a => a.sourceLabel === 'Amazon Music')).toBe(true);
   });
+
+  // Before category rows, Home's albums were the provider blend (one round per
+  // provider, Shuffleupagus last). Category order would let the leading row
+  // fill Home's ~6 cards and drop a provider whose albums sit in a later row.
+  const al = (name) => ({ type: 'album', name, artist: `Artist ${name}` });
+  const blendPage = () => {
+    const providers = [
+      model.normalizeRecommendationSections({ sections: [
+        { items: [al('AP0'), al('AP1'), al('AP2')] },
+      ] }, { resolverId: 'applemusic', resolverName: 'Apple Music' }),
+      model.normalizeRecommendationSections({ sections: [
+        { id: 'recents', title: 'Recents', category: 'personal', items: [al('AZ0'), al('AZ1')] },
+        { id: 'fans', title: 'Fans also like', category: 'artist', seedArtist: 'FIDLAR', items: [al('AZ2'), al('AZ3')] },
+      ] }, { resolverId: 'amazonmusic', resolverName: 'Amazon Music' }),
+    ];
+    const aiAlbums = ['SH0', 'SH1', 'SH2'].map(t => ({ title: t, artist: `Artist ${t}`, reason: 'r' }));
+    const shuffleupagus = model.shuffleupagusSection({ albums: aiAlbums, artists: [] });
+    return { sections: model.buildRecommendationPage({ providers, shuffleupagus }), aiAlbums };
+  };
+
+  test('keeps the provider blend order across the category rows', () => {
+    const { sections, aiAlbums } = blendPage();
+    expect(sections.find(s => s.type === 'album').subsections.map(s => s.key))
+      .toEqual(['albums:personal', 'albums:artist', 'albums:other']);
+    const albums = recommendationAlbumsFor({ sections }, {
+      aiRecommendations: { albums: [...aiAlbums, { title: 'SH9', artist: 'Artist SH9' }] },
+    });
+    expect(albums.map(a => a.title)).toEqual(
+      ['AP0', 'AZ0', 'SH0', 'AP1', 'AZ1', 'SH1', 'AP2', 'AZ2', 'SH2', 'AZ3', 'SH9']);
+    expect(albums.slice(0, 3).map(a => a.sourceLabel)).toEqual(['Apple Music', 'Amazon Music', 'Shuffleupagus']);
+  });
+
+  test('a page cached before blendIndex keeps its collection order', () => {
+    const { sections } = blendPage();
+    const old = sections.map(s => ({
+      ...s,
+      subsections: s.subsections.map(sub => ({
+        ...sub, items: sub.items.map(({ blendIndex, ...rest }) => rest),
+      })),
+    }));
+    expect(recommendationAlbumsFor({ sections: old }).map(a => a.title)).toEqual(
+      ['AZ0', 'SH0', 'AZ1', 'SH1', 'SH2', 'AZ2', 'AZ3', 'AP0', 'AP1', 'AP2']);
+  });
 });

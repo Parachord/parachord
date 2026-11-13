@@ -490,6 +490,12 @@ function buildRecommendationPage({ providers, shuffleupagus, expandedSections, e
       // item a first page already showed stays where it is.
       const owned = mergeOwned([...base.map(p => p.byType[type]), ...extra.map(p => p.byType[type])]);
       let items = [...interleave(owned.slice(0, base.length)), ...owned.slice(base.length).flat()];
+      // Each album's place in the blend, before categoryRows splits it, so
+      // Home's "Albums you might love" (app.js recommendationAlbums) can
+      // put the rows back in blend order. Stamped on the single row too, so
+      // the field means the same everywhere. These are mergeOwned's copies,
+      // never a provider's cached objects.
+      if (type === 'album') items.forEach((item, i) => { item.blendIndex = i; });
       if (type === 'playlist') {
         // Only the newest week of each weekly playlist (latest `date`, else
         // the provider's first, which is This Week): older weeks are history,

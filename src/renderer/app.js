@@ -36111,32 +36111,44 @@ useEffect(() => {
   // Albums you might love: every provider's album picks (the Recommendations
   // cache) plus Shuffleupagus's, once each. The source label is the row's
   // source record name (the registry's), and the card's second line says
-  // why it was picked.
+  // why it was picked. The provider albums keep the page's provider blend
+  // across the Albums category rows (each item's `blendIndex`, from
+  // recommendation-model.js), so the leading row can't fill Home's row by
+  // itself.
   const recommendationAlbums = useMemo(() => {
     const out = [];
     const seen = new Set();
     const keyOf = (artist, title) => `${(artist || '').trim().toLowerCase()}|${(title || '').trim().toLowerCase()}`;
     const why = (label, reason) => (reason ? `${label} · ${reason}` : label);
+    // Collect first, then sort by blend position, then dedupe, so the
+    // earliest copy in the blend wins. An item with no blendIndex (a page
+    // cached before the field) sorts by its collection position.
+    const picked = [];
     for (const section of recommendations.sections || []) {
       for (const sub of section.subsections || []) {
         for (const item of sub.items || []) {
           if (item.type !== 'album' || !item.name) continue;
-          const key = keyOf(item.artist, item.name);
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const source = (sub.sources || []).find(src => src.id === item.resolverId);
-          const sourceLabel = item.resolverId === 'shuffleupagus'
-            ? 'Shuffleupagus'
-            : ((source && source.name) || item.resolverId || '');
-          out.push({
-            ...item,
-            title: item.name,
-            sourceLabel,
-            imageUrl: recommendationImageFor(item),
-            why: why(sourceLabel, item.reason)
-          });
+          const at = picked.length;
+          picked.push({ item, sub, at, rank: Number.isFinite(item.blendIndex) ? item.blendIndex : at });
         }
       }
+    }
+    picked.sort((a, b) => (a.rank - b.rank) || (a.at - b.at));
+    for (const { item, sub } of picked) {
+      const key = keyOf(item.artist, item.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const source = (sub.sources || []).find(src => src.id === item.resolverId);
+      const sourceLabel = item.resolverId === 'shuffleupagus'
+        ? 'Shuffleupagus'
+        : ((source && source.name) || item.resolverId || '');
+      out.push({
+        ...item,
+        title: item.name,
+        sourceLabel,
+        imageUrl: recommendationImageFor(item),
+        why: why(sourceLabel, item.reason)
+      });
     }
     for (const album of homeData.aiRecommendations?.albums || []) {
       if (!album || !album.title) continue;
