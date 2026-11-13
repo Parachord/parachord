@@ -1976,6 +1976,7 @@ const {
 } = require('./components/recommendation-skeletons');
 const { useStableHandlers } = require('./lib/stable-handlers');
 const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
+const { toastBackground } = require('./lib/toast-style');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
@@ -11778,7 +11779,7 @@ const Parachord = () => {
                 }
               } catch (err) {
                 console.error(`play/${playKind} failed:`, err);
-                showToast(`Play failed: ${err.message}`);
+                showToast(`Play failed: ${err.message}`, 'error');
                 restoreProtocolPlaceholder();
               }
               break;
@@ -11832,7 +11833,7 @@ const Parachord = () => {
                 }
                 const refillUrl = params.refill || params.url || null;
                 if (refillUrl && !window.isPublicHttpUrl(refillUrl)) {
-                  showToast('Invalid refill URL: must be public http/https');
+                  showToast('Invalid refill URL: must be public http/https', 'error');
                   break;
                 }
                 // The pool path finds a playable first track before it clears
@@ -11840,7 +11841,7 @@ const Parachord = () => {
                 await startSpinoffRef.current({ pool: initialPool, displayName, refillUrl }, { beforeStart: clearQueue });
               } catch (err) {
                 console.error('play/radio failed:', err);
-                showToast(`Radio failed: ${err.message}`);
+                showToast(`Radio failed: ${err.message}`, 'error');
               }
               break;
             }
@@ -12000,7 +12001,7 @@ const Parachord = () => {
 
                 if (results.length === 0) {
                   if (await openFromCatalogs()) break;
-                  showToast(`Album not found: ${albumTitle}`);
+                  showToast(`Album not found: ${albumTitle}`, 'error');
                   setLoadingRelease(false);
                   break;
                 }
@@ -12037,7 +12038,7 @@ const Parachord = () => {
                   console.warn('Album catalog fallback failed:', catalogError);
                 }
                 if (!opened) {
-                  showToast(`Failed to load album: ${albumTitle}`);
+                  showToast(`Failed to load album: ${albumTitle}`, 'error');
                   setLoadingRelease(false);
                 }
               }
@@ -12088,7 +12089,7 @@ const Parachord = () => {
                 const link = parseFriendLink(tab, params.period);
                 navigateToFriendRef.current(friend, link.tabKey, link.period);
               } else {
-                showToast(`Friend not found: ${friendId}`);
+                showToast(`Friend not found: ${friendId}`, 'error');
               }
             }
             break;
@@ -12139,7 +12140,7 @@ const Parachord = () => {
               if (playlist) {
                 loadPlaylistRef.current(playlist); // same path as a sidebar click
               } else {
-                showToast(`Playlist not found: ${playlistId}`);
+                showToast(`Playlist not found: ${playlistId}`, 'error');
               }
             }
             break;
@@ -12187,7 +12188,7 @@ const Parachord = () => {
             try {
               const { service, user } = params;
               if (!service || !user) {
-                showToast('listen-along requires service and user');
+                showToast('listen-along requires service and user', 'error');
                 break;
               }
               if (!['listenbrainz', 'lastfm'].includes(service)) {
@@ -12238,7 +12239,7 @@ const Parachord = () => {
               }
             } catch (err) {
               console.error('listen-along failed:', err);
-              showToast(`listen-along failed: ${err.message}`);
+              showToast(`listen-along failed: ${err.message}`, 'error');
             }
             break;
           }
@@ -12256,14 +12257,14 @@ const Parachord = () => {
             // parachord://import?title={title}&creator={creator}&tracks={base64_json}
             if (params.url) {
               if (!window.isPublicHttpUrl(params.url)) {
-                showToast('Import failed: only public http/https URLs are allowed');
+                showToast('Import failed: only public http/https URLs are allowed', 'error');
                 break;
               }
               let importUrl;
               try {
                 importUrl = new URL(params.url);
               } catch {
-                showToast('Import failed: invalid URL');
+                showToast('Import failed: invalid URL', 'error');
                 break;
               }
               showConfirmDialog({
@@ -12280,7 +12281,7 @@ const Parachord = () => {
                       setActiveView('playlists');
                     }
                   } catch (err) {
-                    showToast(`Import failed: ${err.message}`);
+                    showToast(`Import failed: ${err.message}`, 'error');
                   }
                 }
               });
@@ -12288,13 +12289,13 @@ const Parachord = () => {
               // Import from inline base64-encoded JSON tracks
               try {
                 if (params.tracks.length > 100000) {
-                  showToast('Import failed: payload too large');
+                  showToast('Import failed: payload too large', 'error');
                   break;
                 }
                 const decoded = window.decodeBase64Utf8Json(params.tracks);
                 const tracks = Array.isArray(decoded) ? decoded : (decoded.tracks || []);
                 if (tracks.length > 500) {
-                  showToast('Import failed: too many tracks (max 500)');
+                  showToast('Import failed: too many tracks (max 500)', 'error');
                   break;
                 }
                 const title = params.title || decoded.title || 'Imported Playlist';
@@ -12353,18 +12354,18 @@ ${trackListXml}
                         showToast(`Imported playlist: ${title}`);
                         setActiveView('playlists');
                       } else {
-                        showToast('Failed to save imported playlist');
+                        showToast('Failed to save imported playlist', 'error');
                       }
                     } catch (err) {
-                      showToast(`Import failed: ${err.message}`);
+                      showToast(`Import failed: ${err.message}`, 'error');
                     }
                   }
                 });
               } catch (err) {
-                showToast(`Import failed: ${err.message}`);
+                showToast(`Import failed: ${err.message}`, 'error');
               }
             } else {
-              showToast('Import requires a url or tracks parameter');
+              showToast('Import requires a url or tracks parameter', 'error');
             }
             break;
           }
@@ -12374,7 +12375,7 @@ ${trackListXml}
         }
       } catch (error) {
         console.error('🔗 Protocol URL error:', error);
-        showToast(`Protocol error: ${error.message}`);
+        showToast(`Protocol error: ${error.message}`, 'error');
         // Take the loading placeholder down if one was set; the toast
         // surfaces the failure but the playbar shouldn't keep showing
         // "Loading…" forever.
@@ -12398,7 +12399,7 @@ ${trackListXml}
             // Already showing toast from menu action
             break;
           case 'available':
-            showToast(`Update available: v${status.version}`, 5000);
+            showToast(`Update available: v${status.version}`, 'info', null, { duration: 5000 });
             // Prompt user to download
             if (window.confirm(`A new version (v${status.version}) is available. Download now?`)) {
               window.electron.updater.download();
@@ -12411,14 +12412,14 @@ ${trackListXml}
             showToast(`Downloading update: ${Math.round(status.percent || 0)}%`);
             break;
           case 'downloaded':
-            showToast('Update downloaded. Restart to install.', 8000);
+            showToast('Update downloaded. Restart to install.', 'success', null, { duration: 8000 });
             // Prompt user to install
             if (window.confirm('Update downloaded. Restart now to install?')) {
               window.electron.updater.install();
             }
             break;
           case 'error':
-            showToast(`Update error: ${status.error}`, 5000);
+            showToast(`Update error: ${status.error}`, 'error', null, { duration: 5000 });
             break;
         }
       });
@@ -13253,7 +13254,9 @@ ${trackListXml}
     }
   }, [toast]);
 
-  const showToast = useCallback((message, type = 'success', action = null, { persistent = false, duration } = {}) => {
+  // `type`: 'error' | 'warning' | 'info' colour the toast; 'success' and no
+  // type are neutral (lib/toast-style.js).
+  const showToast = useCallback((message, type = 'neutral', action = null, { persistent = false, duration } = {}) => {
     setToast({ message, type, action, persistent, duration });
   }, []);
 
@@ -22143,7 +22146,7 @@ ${trackListXml}
 
       if (results.length === 0) {
         if (await openFromCatalogs()) return;
-        showToast('Album not found');
+        showToast('Album not found', 'error');
         setLoadingRelease(false);
         return;
       }
@@ -22184,7 +22187,7 @@ ${trackListXml}
       } catch (catalogError) {
         console.warn('Album catalog fallback failed:', catalogError);
       }
-      showToast('Failed to load album');
+      showToast('Failed to load album', 'error');
       setLoadingRelease(false);
     }
   };
@@ -36888,7 +36891,7 @@ useEffect(() => {
         className: 'fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 transition-all flex items-center gap-3',
         style: {
           padding: '12px 20px',
-          backgroundColor: toast.type === 'error' ? '#dc2626' : toast.type === 'info' ? '#2563eb' : 'var(--tooltip-bg)',
+          backgroundColor: toastBackground(toast.type),
           color: '#ffffff',
           fontSize: '13px',
           fontWeight: '500',
@@ -40450,7 +40453,7 @@ useEffect(() => {
                         setConcertsLocation(name);
                       } catch (err) {
                         console.log('📍 Geolocation error:', err.message);
-                        showToast('Could not determine your location');
+                        showToast('Could not determine your location', 'error');
                       }
                       setConcertsGeocodingLoading(false);
                     },
@@ -45604,16 +45607,27 @@ useEffect(() => {
                       React.createElement('div', {
                         className: `px-2 py-0.5 rounded text-xs font-medium ${skipUnsavedFriendWarning ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`
                       }, skipUnsavedFriendWarning ? 'Hidden' : 'Showing')
+                    ),
+                    // Items dismissed from Home's setup checklist: the reset
+                    // below is the only way to bring them back.
+                    homeSetupDismissed.length > 0 && React.createElement('div', {
+                      style: { padding: '8px 12px', borderRadius: '8px', backgroundColor: 'var(--hover-bg-default)' }
+                    },
+                      React.createElement('p', { style: { fontSize: '14px', color: 'var(--text-primary)' } }, 'Home setup checklist'),
+                      React.createElement('p', { style: { fontSize: '12px', color: 'var(--text-secondary)' } },
+                        `${homeSetupDismissed.length} dismissed ${homeSetupDismissed.length === 1 ? 'item' : 'items'}. Resetting brings ${homeSetupDismissed.length === 1 ? 'it' : 'them'} back.`)
                     )
                   ),
                   // Reset all button
-                  (skipExternalPrompt || skipUnsavedFriendWarning) && React.createElement('button', {
+                  (skipExternalPrompt || skipUnsavedFriendWarning || homeSetupDismissed.length > 0) && React.createElement('button', {
                     onClick: async () => {
                       setSkipExternalPrompt(false);
                       setSkipUnsavedFriendWarning(false);
+                      setHomeSetupDismissed([]);
                       if (window.electron?.store) {
                         await window.electron.store.set('skip_external_prompt', false);
                         await window.electron.store.set('skip_unsaved_friend_warning', false);
+                        await window.electron.store.set('home_setup_dismissed', []);
                       }
                       showToast('All dialog preferences reset');
                     },
@@ -45625,7 +45639,7 @@ useEffect(() => {
                     'Reset All Dialogs'
                   ),
                   // All dialogs showing message
-                  (!skipExternalPrompt && !skipUnsavedFriendWarning) && React.createElement('p', {
+                  (!skipExternalPrompt && !skipUnsavedFriendWarning && homeSetupDismissed.length === 0) && React.createElement('p', {
                     className: 'text-sm text-gray-500 italic'
                   }, 'All confirmation dialogs are currently enabled.')
                 ),

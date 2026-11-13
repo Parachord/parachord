@@ -59,8 +59,8 @@ describe('album and playlist link placeholders', () => {
 
   test('every failure path before the play restores it', () => {
     expect(app).toMatch(/showToast\(`Nothing to play: \$\{displayName \|\| 'Untitled'\}`\);\s*restoreProtocolPlaceholder\(\);\s*break;/);
-    expect(app).toMatch(/showToast\(`Play failed: \$\{err\.message\}`\);\s*restoreProtocolPlaceholder\(\);/);
-    expect(app).toMatch(/showToast\(`Protocol error: \$\{error\.message\}`\);[\s\S]{0,300}?restoreProtocolPlaceholder\(\);/);
+    expect(app).toMatch(/showToast\(`Play failed: \$\{err\.message\}`, 'error'\);\s*restoreProtocolPlaceholder\(\);/);
+    expect(app).toMatch(/showToast\(`Protocol error: \$\{error\.message\}`, 'error'\);[\s\S]{0,300}?restoreProtocolPlaceholder\(\);/);
   });
 
   test('the saved queue keeps the track behind a placeholder, not the placeholder', () => {

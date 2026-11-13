@@ -3868,7 +3868,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         title: track.title
       });
       if (pool.failed) {
-        showToast('Failed to fetch similar tracks');
+        showToast('Failed to fetch similar tracks', 'error');
         return false;
       }
       const similarTracks = pool.tracks;
@@ -3951,7 +3951,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       return true;
     } catch (error) {
       console.error('Failed to start spinoff:', error);
-      showToast('Failed to fetch similar tracks');
+      showToast('Failed to fetch similar tracks', 'error');
       return false;
     } finally {
       setSpinoffLoading(false);

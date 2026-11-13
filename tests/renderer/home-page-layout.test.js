@@ -325,6 +325,20 @@ describe("Home's recommended albums (app.js recommendationAlbums)", () => {
   });
 });
 
+describe('setup checklist housekeeping', () => {
+  test('opening the Raycast instructions completes its item (it has no way to detect an install)', () => {
+    expect(page).toContain("else if (id === 'raycast') { setRaycastInfoOpen(true); dismissHomeSetupItem('raycast'); }");
+  });
+
+  test('Settings › Dialogs can bring dismissed checklist items back', () => {
+    const i = app.indexOf('// Items dismissed from Home\'s setup checklist');
+    const card = app.slice(i, i + 1800);
+    expect(card).toContain('homeSetupDismissed.length > 0 && React.createElement');
+    expect(card).toContain('setHomeSetupDismissed([]);');
+    expect(card).toContain("await window.electron.store.set('home_setup_dismissed', []);");
+  });
+});
+
 describe('first launch', () => {
   const html = read('index.html');
   test('a splash that never clears says so and offers Reload', () => {

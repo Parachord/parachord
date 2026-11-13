@@ -184,7 +184,10 @@ const HomePage = React.memo(function HomePage(props) {
   const onSetupAction = (id) => {
     if (id === 'resolvers' || id === 'scrobbling') { navigateTo('settings'); setSettingsTab('plugins'); }
     else if (id === 'browser-extension') setExtensionInfoOpen(true);
-    else if (id === 'raycast') setRaycastInfoOpen(true);
+    // Parachord can't tell whether the Raycast extension is installed, so
+    // opening its instructions is what completes the item: it leaves the
+    // list, and the checklist can reach "all done".
+    else if (id === 'raycast') { setRaycastInfoOpen(true); dismissHomeSetupItem('raycast'); }
   };
 
   // ------------------------------------------------------- background loads
