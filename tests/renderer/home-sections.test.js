@@ -82,6 +82,12 @@ describe('AlbumCard', () => {
 });
 
 describe('PlaylistCard', () => {
+  test('with an add-to-playlist handler it shows the full app trio, as the Playlists page does', () => {
+    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' }, onAddToPlaylist: () => {} });
+    const add = html.indexOf('Add Pl to a playlist');
+    expect(add).toBeGreaterThan(-1);
+    expect(add).toBeLessThan(html.indexOf('aria-label="Play Pl"'));
+  });
   test('takes the same app hover as albums: Play, then Add to Queue (Home has no add-to-playlist for a playlist)', () => {
     const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' } });
     expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"/);

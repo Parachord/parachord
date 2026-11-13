@@ -146,6 +146,12 @@ describe('render', () => {
     expect(app).toContain("className: 'h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10 drag'");
   });
 
+  test('Your playlists cards add their tracks to a playlist the way the Playlists page does', () => {
+    const page = read('src/renderer/components/home-page.js');
+    const actions = page.slice(page.indexOf('const playlistActions = {'), page.indexOf('const mixActions = {'));
+    expect(actions).toContain("onAddToPlaylist: (p) => { const tracks = playlistTracks(p); if (tracks.length > 0) setAddToPlaylistPanel({ open: true, tracks, sourceName: p.title, sourceType: 'playlist' }); },");
+  });
+
   test('a new user sees the import card and the Ask box', () => {
     const html = render({});
     expect(html).toContain('Build your collection');
