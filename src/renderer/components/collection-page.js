@@ -705,7 +705,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                         // "Remove from Collection", which could only fail with
                         // "not in your collection" (#1002).
                         const inCollection = collectionData.tracks.some(t => t.id === track.id);
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'track',
                           track: track,
                           isInCollection: inCollection,
@@ -1201,7 +1201,7 @@ const CollectionPage = React.memo(function CollectionPage(props) {
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'friend',
                             friend: friend,
                             isPinned: isPinned,

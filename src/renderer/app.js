@@ -1977,6 +1977,7 @@ const {
 const { useStableHandlers } = require('./lib/stable-handlers');
 const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { toastBackground } = require('./lib/toast-style');
+const { withCollectionState } = require('./lib/menu-collection-state');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
@@ -6156,6 +6157,11 @@ const Parachord = () => {
   useEffect(() => { scrobblerConfigsRef.current = scrobblerConfigs; }, [scrobblerConfigs]);
   useEffect(() => { scrobblerLovePushEnabledRef.current = scrobblerLovePushEnabled; }, [scrobblerLovePushEnabled]);
   useEffect(() => { collectionDataRef.current = collectionData; }, [collectionData]);
+  // Every native item menu goes through here, so a track, album or artist
+  // already in the collection is offered "Remove", not "Add".
+  window.showItemMenu = (data) => window.electron?.contextMenu?.showTrackMenu
+    ? window.electron.contextMenu.showTrackMenu(withCollectionState(data, collectionDataRef.current))
+    : Promise.resolve();
   useEffect(() => { collectionLoadingRef.current = collectionLoading; }, [collectionLoading]);
   useEffect(() => { pinnedFriendIdsRef.current = pinnedFriendIds; }, [pinnedFriendIds]);
   useEffect(() => { autoPinnedFriendIdsRef.current = autoPinnedFriendIds; }, [autoPinnedFriendIds]);
@@ -6240,6 +6246,9 @@ const Parachord = () => {
     setQueueWithContext, addToQueueWithContext,
     playTrackCollection, addToQueue,
   } = queueDomain;
+  // For the context-menu listener, which is registered once.
+  const removeFromQueueRef = useRef(removeFromQueue);
+  removeFromQueueRef.current = removeFromQueue;
 
   // The one door for turning shuffle on or off on the current queue (#1319):
   // the playbar button, the app menu, MPRIS, parachord://control/shuffle and
@@ -14506,7 +14515,9 @@ ${trackListXml}
     if (window.electron?.contextMenu?.onAction) {
       window.electron.contextMenu.onAction(async (data) => {
         console.log('Track context menu action received:', data);
-        if (data.action === 'add-to-queue' && data.tracks) {
+        if (data.action === 'remove-from-queue' && data.trackId) {
+          removeFromQueueRef.current(data.trackId, data.queueIndex);
+        } else if (data.action === 'add-to-queue' && data.tracks) {
           // Build context from source info if available
           let context = null;
           if (data.sourceType === 'playlist' && data.sourceId) {
@@ -26070,6 +26081,15 @@ ${tracks}
       prefetchChartsTracks(album);
     }, HOVER_PREFETCH_DWELL_MS);
   };
+  // The same dwell for albums known only by artist and title (Recommendations):
+  // their tracks land in topAlbumTracksCache, which their context menu reads.
+  const scheduleTopAlbumHoverPrefetch = (artistName, albumName, albumArt) => {
+    cancelHoverPrefetch();
+    hoverPrefetchTimerRef.current = setTimeout(() => {
+      hoverPrefetchTimerRef.current = null;
+      prefetchTopAlbumTracks(artistName, albumName, albumArt);
+    }, HOVER_PREFETCH_DWELL_MS);
+  };
   const cancelHoverPrefetch = () => {
     if (hoverPrefetchTimerRef.current !== null) {
       clearTimeout(hoverPrefetchTimerRef.current);
@@ -36718,7 +36738,7 @@ useEffect(() => {
               onContextMenu: (e) => {
                 e.preventDefault();
                 if (window.electron?.contextMenu?.showTrackMenu) {
-                  window.electron.contextMenu.showTrackMenu({
+                  window.showItemMenu({
                     type: 'friend',
                     friend: friend,
                     isPinned: true,
@@ -36832,7 +36852,7 @@ useEffect(() => {
                         // Get cached sources for context menu actions too
                         const cacheKey = `${friend.cachedRecentTrack.artist.toLowerCase()}|${friend.cachedRecentTrack.name.toLowerCase()}`;
                         const cachedSources = trackSourcesCache.current[cacheKey]?.sources || {};
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'friend-track',
                           track: {
                             title: friend.cachedRecentTrack.name,
@@ -37857,7 +37877,7 @@ useEffect(() => {
                           const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                           return { ...track, id: trackId, sources: {} };
                         });
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'playlist',
                           playlistId: playlist.id,
                           name: playlist.title,
@@ -38161,7 +38181,7 @@ useEffect(() => {
                         const trackId = trackSlug(track.artist || 'unknown', track.title || 'untitled', track.album || 'noalbum');
                         return { ...track, id: trackId, sources: {} };
                       });
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'playlist',
                         playlistId: playlist.id,
                         name: playlist.title,
@@ -38771,7 +38791,7 @@ useEffect(() => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
                       const prefetched = prefetchedReleases[item.id];
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'release',
                         name: item.title,
                         album: {
@@ -39083,7 +39103,7 @@ useEffect(() => {
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'track',
                           track: { id: track.id, title: track.title, artist: track.artist, album: '' }
                         });
@@ -39479,7 +39499,7 @@ useEffect(() => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
                           const prefetched = prefetchedReleases[release.id];
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'release',
                             name: release.title,
                             album: {
@@ -39978,7 +39998,7 @@ useEffect(() => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
                     const prefetched = prefetchedReleases[album.id];
-                    window.electron.contextMenu.showTrackMenu({
+                    window.showItemMenu({
                       type: 'release',
                       name: album.title,
                       album: {
@@ -41247,7 +41267,7 @@ useEffect(() => {
                   e.preventDefault();
                   e.stopPropagation();
                   if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.electron.contextMenu.showTrackMenu({
+                    window.showItemMenu({
                       type: 'artist',
                       artist: { id: item.id, name: item.name, image: img }
                     });
@@ -41343,14 +41363,25 @@ useEffect(() => {
                   }));
                 },
                 onClick: () => handleCollectionAlbumClick({ title: item.name, artist: item.artist }),
+                // Fetch the tracks after a short hover, so the menu can queue
+                // them. It sent none, so its queue and playlist items were
+                // always disabled ("click album first", design audit bug 18).
+                onMouseEnter: () => scheduleTopAlbumHoverPrefetch(item.artist, item.name, art),
+                onMouseLeave: cancelHoverPrefetch,
                 onContextMenu: (e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.electron.contextMenu.showTrackMenu({
+                    const cacheKey = `${item.artist}-${item.name}`.toLowerCase();
+                    const cached = topAlbumTracksCache.current[cacheKey];
+                    // A right-click is intent: fetch now if the hover didn't.
+                    if (!cached) prefetchTopAlbumTracks(item.artist, item.name, art);
+                    window.showItemMenu({
                       type: 'release',
                       name: item.name,
-                      album: { title: item.name, artist: item.artist, art }
+                      album: { title: item.name, artist: item.artist, art },
+                      tracks: cached || [],
+                      loading: !cached
                     });
                   }
                 }
@@ -41625,12 +41656,13 @@ useEffect(() => {
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.electron.contextMenu.showTrackMenu({
+                    window.showItemMenu({
                       type: 'playlist',
                       playlistId: record.id,
                       name: record.title,
                       creator: record.creator,
-                      tracks: record.tracks
+                      tracks: record.tracks,
+                      isEphemeral: true
                     });
                   }
                 }
@@ -41739,7 +41771,7 @@ useEffect(() => {
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.electron.contextMenu.showTrackMenu({
+                    window.showItemMenu({
                       type: 'track',
                       track,
                       sourceType: 'recommendations',
@@ -42561,7 +42593,7 @@ useEffect(() => {
                         onContextMenu: (e) => {
                           e.preventDefault();
                           if (window.electron?.contextMenu?.showTrackMenu) {
-                            window.electron.contextMenu.showTrackMenu({ type: 'track', track: track });
+                            window.showItemMenu({ type: 'track', track: track });
                           }
                         }
                       },
@@ -42686,7 +42718,7 @@ useEffect(() => {
                         className: `flex items-center gap-4 py-3 px-4 cursor-grab active:cursor-grabbing transition-all group ${!hasResolved ? 'opacity-60' : 'hover:bg-gray-50/80'}`,
                         style: { borderRadius: '8px', marginBottom: '2px' },
                         onClick: () => { const tracksAfter = filtered.slice(index + 1); const context = { type: 'history', name: 'Top Tracks' }; setQueueWithContext(tracksAfter, context); handlePlay(track); },
-                        onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.electron.contextMenu.showTrackMenu({ type: 'track', track }); }
+                        onContextMenu: (e) => { e.preventDefault(); if (window.electron?.contextMenu?.showTrackMenu) window.showItemMenu({ type: 'track', track }); }
                       },
                         React.createElement('span', { className: 'flex-shrink-0 text-right', style: { width: '32px', fontSize: '12px', fontWeight: '500', color: 'var(--text-tertiary)' } }, `#${track.rank}`),
                         React.createElement('span', { className: 'truncate transition-colors', style: { flex: '1 1 0', minWidth: 0, fontSize: '13px', fontWeight: '400', color: hasResolved ? 'var(--text-primary)' : 'var(--text-tertiary)' } }, track.title),
@@ -42798,7 +42830,7 @@ useEffect(() => {
                         e.preventDefault();
                         e.stopPropagation();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'artist',
                             artist: {
                               id: artist.id,
@@ -42983,7 +43015,7 @@ useEffect(() => {
                         if (window.electron?.contextMenu?.showTrackMenu) {
                           const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
                           const cached = topAlbumTracksCache.current[cacheKey];
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'release',
                             name: album.name,
                             album: {
@@ -43579,7 +43611,7 @@ useEffect(() => {
                           onContextMenu: (e) => {
                             e.preventDefault();
                             if (window.electron?.contextMenu?.showTrackMenu) {
-                              window.electron.contextMenu.showTrackMenu({ type: 'track', track });
+                              window.showItemMenu({ type: 'track', track });
                             }
                           }
                         },
@@ -43682,7 +43714,7 @@ useEffect(() => {
                           onContextMenu: (e) => {
                             e.preventDefault();
                             if (window.electron?.contextMenu?.showTrackMenu) {
-                              window.electron.contextMenu.showTrackMenu({ type: 'track', track });
+                              window.showItemMenu({ type: 'track', track });
                             }
                           }
                         },
@@ -43760,7 +43792,7 @@ useEffect(() => {
                             if (window.electron?.contextMenu?.showTrackMenu) {
                               const cacheKey = `${album.artist}-${album.name}`.toLowerCase();
                               const cached = topAlbumTracksCache.current[cacheKey];
-                              window.electron.contextMenu.showTrackMenu({
+                              window.showItemMenu({
                                 type: 'release',
                                 name: album.name,
                                 album: {
@@ -46468,7 +46500,7 @@ useEffect(() => {
                 onContextMenu: (e) => {
                   e.preventDefault();
                   if (window.electron?.contextMenu?.showTrackMenu) {
-                    window.electron.contextMenu.showTrackMenu({
+                    window.showItemMenu({
                       type: 'track',
                       track: currentTrack,
                       isNowPlaying: true
@@ -46526,7 +46558,7 @@ useEffect(() => {
                 e.preventDefault();
                 if (window.electron?.contextMenu?.showTrackMenu) {
                   const isInCollection = !!findSavedTrack(collectionData.tracks, currentTrack);
-                  window.electron.contextMenu.showTrackMenu({
+                  window.showItemMenu({
                     type: 'track',
                     track: currentTrack,
                     isNowPlaying: true,

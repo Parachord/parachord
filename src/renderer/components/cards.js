@@ -213,7 +213,7 @@ const RelatedArtistCard = ({ artist, getArtistImage, onNavigate }) => {
       e.preventDefault();
       e.stopPropagation();
       if (window.electron?.contextMenu?.showTrackMenu) {
-        window.electron.contextMenu.showTrackMenu({
+        window.showItemMenu({
           type: 'artist',
           artist: {
             id: slug(artist.name || 'unknown'),

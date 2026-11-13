@@ -4511,6 +4511,20 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
 
   // Only add queue/playlist options for types that have playable tracks
   // Exclude friend-track since it has its own specific menu items
+  // A queue row's menu can remove that row (design audit bug 19). "Add to
+  // Queue" stays: queueing a song again is a real choice.
+  if (data.type === 'track' && data.inQueue) {
+    menuItems.push({
+      label: 'Remove from Queue',
+      click: () => {
+        safeSendToRenderer('track-context-menu-action', {
+          action: 'remove-from-queue',
+          trackId: data.track?.id,
+          queueIndex: data.queueIndex
+        });
+      }
+    });
+  }
   if (data.type !== 'artist' && data.type !== 'friend' && data.type !== 'friend-track' && data.type !== 'collection-album' && data.type !== 'loves') {
     menuItems.push({
       label: menuLabel,
@@ -4650,6 +4664,10 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
       }
     }
 
+    // Export and Delete act on a saved local playlist. A service's playlist
+    // shown in Parachord (Weekly Exploration, a recommended mix) is
+    // ephemeral: Export silently did nothing and Delete had nothing to delete.
+    if (!data.isEphemeral) {
     menuItems.push({ type: 'separator' });
     menuItems.push({
       label: 'Export as XSPF…',
@@ -4671,6 +4689,7 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         });
       }
     });
+    }
   }
 
   // Add "Edit ID3 Tags" option for local files (tracks with filePath)
@@ -4762,27 +4781,30 @@ ipcMain.handle('show-track-context-menu', async (event, data) => {
         });
       }
     } else if (data.type === 'release') {
+      // The renderer says whether the album is saved
+      // (lib/menu-collection-state.js), so a saved one offers Remove.
+      const album = data.album || {
+        title: data.name,
+        artist: data.artist,
+        year: data.year,
+        art: data.albumArt
+      };
       menuItems.push({
-        label: 'Add Album to Collection',
+        label: data.isInCollection ? 'Remove Album from Collection' : 'Add Album to Collection',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
-            action: 'add-to-collection',
+            action: data.isInCollection ? 'remove-from-collection' : 'add-to-collection',
             type: 'album',
-            album: data.album || {
-              title: data.name,
-              artist: data.artist,
-              year: data.year,
-              art: data.albumArt
-            }
+            album
           });
         }
       });
     } else if (data.type === 'artist') {
       menuItems.push({
-        label: 'Add Artist to Collection',
+        label: data.isInCollection ? 'Remove Artist from Collection' : 'Add Artist to Collection',
         click: () => {
           safeSendToRenderer('track-context-menu-action', {
-            action: 'add-to-collection',
+            action: data.isInCollection ? 'remove-from-collection' : 'add-to-collection',
             type: 'artist',
             artist: data.artist
           });

@@ -316,7 +316,7 @@ const VirtualizedQueueList = React.memo(({
       onContextMenu: (e) => {
         e.preventDefault();
         if (!isLoading && !isError && window.electron?.contextMenu?.showTrackMenu) {
-          window.electron.contextMenu.showTrackMenu({ type: 'track', track });
+          window.showItemMenu({ type: 'track', track, inQueue: true, queueIndex: index });
         }
       },
       onClick: () => {
@@ -496,7 +496,8 @@ const VirtualizedQueueList = React.memo(({
       React.createElement('button', {
         onClick: (e) => {
           e.stopPropagation();
-          removeFromQueue(track.id);
+          // This row only: the same song may be queued more than once.
+          removeFromQueue(track.id, index);
         },
         className: 'flex-shrink-0 p-1 text-gray-500 hover:text-red-400 hover:bg-white/10 rounded transition-colors opacity-0 group-hover:opacity-100',
         title: isLoading ? 'Cancel' : 'Remove from queue'

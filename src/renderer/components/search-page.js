@@ -499,7 +499,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         e.preventDefault();
                         e.stopPropagation();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'artist',
                             artist: {
                               id: slug(artist.name || 'unknown'),
@@ -685,7 +685,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                         };
                         const prefetched = prefetchedReleasesRef.current[album.id];
                         const isLoading = prefetchInProgress.has(album.id);
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'release',
                           name: album.title,
                           album: albumData,
@@ -908,7 +908,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     onContextMenu: (e) => {
                       e.preventDefault();
                       if (window.electron?.contextMenu?.showTrackMenu) {
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'track',
                           track: track
                         });
@@ -1563,7 +1563,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                   },
                   onContextMenu: (artist) => {
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'artist',
                         artist: {
                           id: slug(artist.name || 'unknown'),
@@ -1638,7 +1638,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                     e.preventDefault();
                     e.stopPropagation();
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'track',
                         track: {
                           id: track.id,
@@ -1860,7 +1860,7 @@ const SearchPage = React.memo(function SearchPage(props) {
                       // Check prefetched cache (use ref) and loading state (use module-level Set)
                       const prefetched = prefetchedReleasesRef.current[album.id];
                       const isLoading = prefetchInProgress.has(album.id);
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'release',
                         name: album.title,
                         album: albumData,

@@ -124,7 +124,10 @@ describe('the pages use the mitigations', () => {
   test('hover prefetch is dwell-timed on both card grids and cancelled on leave', () => {
     expect(app).not.toMatch(/onMouseEnter: \(\) => prefetchChartsTracks\(/);
     expect((app.match(/onMouseEnter: \(\) => scheduleHoverPrefetch\(/g) || []).length).toBe(2);
-    expect((app.match(/onMouseLeave: cancelHoverPrefetch,/g) || []).length).toBe(2);
+    // Charts and Fresh Drops (scheduleHoverPrefetch), and Recommendations'
+    // albums (scheduleTopAlbumHoverPrefetch, the same dwell and timer).
+    expect((app.match(/onMouseEnter: \(\) => scheduleTopAlbumHoverPrefetch\(/g) || []).length).toBe(1);
+    expect((app.match(/onMouseLeave: cancelHoverPrefetch,/g) || []).length).toBe(3);
     expect(app).toMatch(/const HOVER_PREFETCH_DWELL_MS = 250;/);
   });
 

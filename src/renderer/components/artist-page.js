@@ -637,7 +637,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             },
             onTrackContextMenu: (track) => {
               if (window.electron?.contextMenu?.showTrackMenu) {
-                window.electron.contextMenu.showTrackMenu({
+                window.showItemMenu({
                   type: 'track',
                   track: track
                 });
@@ -728,7 +728,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             },
             onAlbumContextMenu: (rel) => {
               if (window.electron?.contextMenu?.showTrackMenu) {
-                window.electron.contextMenu.showTrackMenu({
+                window.showItemMenu({
                   type: 'release',
                   name: rel.title,
                   artist: rel.artist?.name,
@@ -1053,7 +1053,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                       // Check prefetched cache first (use ref to avoid stale closure)
                       const prefetched = prefetchedReleasesRef.current[rel.id];
                       if (prefetched?.tracks?.length > 0) {
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'release',
                           name: rel.title,
                           album: albumData,
@@ -1072,7 +1072,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                             sources: trackSources[trackId] || {}
                           };
                         });
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'release',
                           name: rel.title,
                           album: albumData,
@@ -1080,7 +1080,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         });
                       } else {
                         // No tracks available yet - show with 0 tracks
-                        window.electron.contextMenu.showTrackMenu({
+                        window.showItemMenu({
                           type: 'release',
                           name: rel.title,
                           album: albumData,
@@ -1729,7 +1729,7 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                         e.preventDefault();
                         e.stopPropagation();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'artist',
                             artist: {
                               id: artist.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),

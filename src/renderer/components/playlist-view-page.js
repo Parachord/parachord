@@ -722,7 +722,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                   onContextMenu: (e) => {
                     e.preventDefault();
                     if (window.electron?.contextMenu?.showTrackMenu) {
-                      window.electron.contextMenu.showTrackMenu({
+                      window.showItemMenu({
                         type: 'playlist',
                         playlistId: selectedPlaylist.id,
                         name: selectedPlaylist.title,
@@ -1195,7 +1195,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
                       onContextMenu: (e) => {
                         e.preventDefault();
                         if (window.electron?.contextMenu?.showTrackMenu) {
-                          window.electron.contextMenu.showTrackMenu({
+                          window.showItemMenu({
                             type: 'track',
                             track: track,
                             // Pass playlist context for "Remove from Playlist" option
