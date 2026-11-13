@@ -86,7 +86,7 @@ This replaces **Continue Listening**.
 
 The play-history mixes your services make, led by Recent Loves, up to six cards.
 
-- **Recent Loves always comes first**: your last 50 loved tracks, as a card with a mosaic of the newest loved albums. It opens Collection's songs newest loved first, and plays and queues under the `loves` context. It's no service's, so it adds no filter chip and shows whatever chip is selected.
+- **Recent Loves always comes first**: your last 50 loved tracks, as a card with a mosaic of the newest loved albums. It opens Collection's songs newest loved first, and plays and queues under the `loves` context. It's no service's, so it adds no filter chip and shows under All; a service's chip shows only that service's mixes.
 
 - Each card shows the mix's title and a one-line description. The row's source filter names the services, so the card carries no service label.
 - **Source filters**: All, then one chip per service that returned at least one mix. A chip filters only this row.
