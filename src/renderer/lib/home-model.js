@@ -396,10 +396,23 @@ function shouldStampHomeRecommendationsLoad({ fetched, failed, sectionCount }) {
   return sectionCount > 0;
 }
 
+// Each plugin's colour by id, for the source chips. Pass the plugin loader's
+// whole registry: ListenBrainz and Last.fm are meta services, so a list of
+// content resolvers alone leaves their chips grey.
+function pluginColors(registry) {
+  const map = {};
+  for (const r of Array.isArray(registry) ? registry : []) {
+    const c = r && (r.color || (r.manifest && r.manifest.color));
+    if (r && r.id && c) map[r.id] = c;
+  }
+  return map;
+}
+
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
   normalizeHistoryMixes, flattenHistoryMixes, historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries,
   exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists, albumsNeedingArt,
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
+  pluginColors,
 };

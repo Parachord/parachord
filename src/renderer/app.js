@@ -562,7 +562,7 @@ const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTrac
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const {
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, normalizeHistoryMixes, flattenHistoryMixes,
-  historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries
+  historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries, pluginColors
 } = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
@@ -35972,6 +35972,15 @@ useEffect(() => {
   // tile): every provider's, round-robin in provider order, each naming its
   // service (resolverId, resolverName). Empty, the row hides.
   const homeMixes = useMemo(() => flattenHistoryMixes(historyMixEntries), [historyMixEntries]);
+  // Each plugin's colour for Home's source chips, from the loader's whole
+  // registry: ListenBrainz and Last.fm are meta services, so loadedResolvers
+  // (content resolvers only) leaves their chips grey. Meta services load
+  // after setLoadedResolvers, so this also recomputes when the data the chips
+  // label arrives (mixes and recommendations), which comes from those plugins.
+  const homeSourceColors = useMemo(
+    () => pluginColors(resolverLoaderRef.current?.getAllResolvers?.()),
+    [loadedResolvers, historyMixEntries, recommendations]
+  );
   // Concerts near you: the Concerts page's location filter (coordinates and
   // radius, else the city), upcoming shows only, soonest first.
   const homeConcerts = useMemo(() => {
@@ -38173,7 +38182,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setHomeData, setRaycastInfoOpen, setSettingsTab, showToast, spotifyConnected, whatsNewUnread,
+          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setHomeData, setRaycastInfoOpen, setSettingsTab, showToast, sourceColors: homeSourceColors, spotifyConnected, whatsNewUnread,
           ...homePageHandlers
         }),
 
