@@ -2,6 +2,17 @@
 
 Reference guide for the visual design language, tokens, components, and patterns used across the Parachord desktop application.
 
+> **Partly out of date (2026-11-13).** The [design audit](plans/2026-11-13-design-audit.md) compared this guide with the code. It found several points where they disagree:
+> - tokens documented here that nothing uses (radius, tracking, leading, z-index, motion)
+> - "no breakpoint-based responsive design" (20 grids use breakpoints)
+> - the Recommendations heading style
+> - the Bandcamp colour
+> - the Tailwind scan path
+> - animations listed as in use
+> - the blue slider thumbs
+>
+> Until this guide is rewritten, the "Design system" section of [CLAUDE.md](../CLAUDE.md) and the audit win where they disagree. The design-drift ratchet (`tests/ci/design-drift.test.js`) enforces them.
+
 ## Overview
 
 Parachord is an Electron-based music player built with React (via `React.createElement`, no JSX), Tailwind CSS v3, and CSS custom properties for theming. The UI supports light and dark modes, toggled via the `.dark` class on the root element (`darkMode: 'class'`).

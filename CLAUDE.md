@@ -35,6 +35,7 @@ Subsystem detail lives in `docs/architecture/`, moved there verbatim from this f
 | AI chat (Shuffleupagus) and the DJ tools | [ai-chat.md](docs/architecture/ai-chat.md) | `tools/dj-tools.js`, `executeDjTool` in `src/renderer/app.js` |
 | `parachord://` deep links | [protocol.md](docs/architecture/protocol.md), [docs/protocol-schema.md](docs/protocol-schema.md) | `protocol-url.js`, the protocol switch in `src/renderer/app.js` |
 | Renderer patterns, full text (summary below) | [renderer-patterns.md](docs/architecture/renderer-patterns.md) | `src/renderer/` |
+| Any UI: buttons, dialogs, colours, type, spacing, icons, copy, dark mode, accessibility | "Design system" below, then [DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) and the [2026-11-13 design audit](docs/plans/2026-11-13-design-audit.md) | `src/renderer/components/`, `index.html` (tokens) |
 
 ## After you change how a feature works, update its docs
 
@@ -91,6 +92,59 @@ Summary; the full text, with the incidents behind each rule, is in [renderer-pat
 - **A layout change ships with its loading skeleton.** A new page, a new section, or a change to a card's or row's box updates the skeleton that stands in for it in the same PR, with the same grid, card box, row columns and item counts, so content replaces it without the page jumping. A view that can be waiting on data with nothing to show gets a skeleton in its layout's shape, never a blank area or a lone spinner. Keep skeletons in a components module next to the page (the Recommendations ones are `src/renderer/components/recommendation-skeletons.js`), and pin the shared dimensions in `tests/ui/loading-skeletons.test.js`.
 - **After adding a Tailwind class, run `npm run build:css` and commit `vendor/tailwind.css`.** `npm start` loads the committed file as is (only release builds regenerate it), and `tests/ci/tailwind-css-fresh.test.js` fails when it's stale.
 - **A `useEffect` / `useMemo` dependency array is evaluated during render**, so everything it names must be declared above it in the component (the TDZ trap).
+
+## Design system: don't let it drift
+
+The 2026-11-13 design audit ([docs/plans/2026-11-13-design-audit.md](docs/plans/2026-11-13-design-audit.md)) found the drift that per-page styling produces:
+- 7 primary-button colours, 16 text-input recipes, 6 dialog-title sizes, 5 empty-state templates, 152 hex colours
+- dark-mode gaps
+- about 130 clickable `div`s a keyboard can't reach
+- one concept under five names
+
+Each rule below exists because the audit found its absence. Read the audit's area section before restyling an area.
+
+- **Reuse before you build.** Before writing any UI element, look in `src/renderer/components/` for a shared one and use it. Existing shared ones include `SectionHeader`, `FilterChips`, `Tooltip` / `FixedTooltip`, `ShareButton`, the card family and the skeletons.
+  - If you'd otherwise write a second copy of something that already exists elsewhere (a button, dialog shell, menu, empty or error state, input, switch, spinner, icon), first extract it into a shared component under `src/renderer/components/`, then point both places at it. That's how `SectionHeader` (#1370) and `FilterChips` (#1371) were made.
+  - Never restyle a shared component's output from a page; change the component.
+  - A new shared component gets a "comes from X" line in the Renderer patterns list above and in `renderer-patterns.md`.
+- **Colours come from the CSS variables** in `index.html`, so both themes work.
+  - Don't add hex values, Tailwind palette classes (`text-gray-500`, `bg-red-50`, `purple-600`, ...), or `isDark` / `effectiveTheme` ternaries. Most palette classes have no `.dark` remap, and Tailwind's `purple-600` isn't the accent.
+  - If no token fits, add one to `:root` and `.dark` together.
+  - White text never sits on `var(--accent-primary)` (it's `#a78bfa` in dark mode). Use the fixed fill accent `#7c3aed` behind a named constant, the "fill-accent" convention in `home-sections.js` / `filter-chips.js`.
+  - Success, warning and error use the `--success` / `--warning` / `--error` tokens, never their own hex values.
+  - A service's colour is its plugin's `resolver.color`, never a hard-coded copy.
+- **Stay on the scales.**
+  - Type: 11 · 12 · 13 · 14 · 16 · 20 · 24 · 28 · 48px. Weights as numbers.
+  - Spacing: the 4px scale. 10px is only for card padding.
+  - Radius: 4 · 6 · 8 · 10 · 12 · 16 · full.
+  - One 24px page gutter for hero, filter bar and content.
+  - Motion: 100–400ms on transform/opacity, never `transition-all` on list rows.
+  - Section titles are `SectionHeader`. Filter buttons are `FilterChips`.
+- **Interactive means `<button>` or `<a>`.** Never put `onClick` on a `div`, `span`, `li` or `img`.
+  - Icon-only buttons get an `aria-label`.
+  - Never set an inline `outline: 'none'`.
+  - Hover actions also appear on keyboard focus, as Home's `useReveal` does.
+  - Dialogs close on Escape, move focus in, and give it back on close.
+  - No `alert()` / `confirm()` / `prompt()`: use `showToast` or a dialog.
+  - Icons come from one shared set, not a pasted SVG path. `icons.js` is that set, but it currently renders text glyphs because Lucide is never loaded (audit bug #15): fix it there, don't work around it.
+- **Look before calling a UI change done.** Check it in light mode, in dark mode, and at the 1000px minimum window width (the content area is then 744px wide; Tailwind `md:`/`lg:` measure the window, not the content). Update its loading skeleton in the same PR (Renderer patterns above).
+- **Copy.**
+  - Terms:
+    - **plugin**: what you install
+    - **service**: Spotify, Apple Music and so on
+    - **source**: where a track plays from
+    - also **Collection**, **Loves**, **Shuffleupagus**, **track**, **album**/**edition**, **sync**/**import**
+  - Never in UI text: "resolver", ids, file extensions, raw `error.message`, or Settings paths that don't exist.
+  - Sentence case everywhere except native menus, tabs, Settings section headings and page titles. Never type caps; use CSS `uppercase`.
+  - "…" not "...".
+  - Plurals go through one helper, never a hard-coded "tracks".
+  - An error says what happened and what to do. A confirm button is named for its action and sits next to Cancel. Success is a toast, not a dialog.
+- **The ratchet enforces this.** `tests/ci/design-drift.test.js` runs `scripts/design-drift.js` over `src/renderer/` and compares against `tests/ci/design-drift-baseline.json`.
+  - It counts hex colours, palette classes, theme ternaries, clickable non-buttons, `outline: 'none'`, native dialogs, "...", pasted SVG paths, off-scale font sizes and radii, and JS hover handlers. It also flags CSS variables the renderer uses but `index.html` doesn't define.
+  - A count that rises fails: fix it with the shared component or token.
+  - A count that falls fails until you lock it in with `npm run design-drift -- --write` and commit the baseline.
+  - Raising the baseline is a last resort. The PR must say why no shared way existed.
+- **`docs/DESIGN_SYSTEM.md` is out of date** in the places the audit lists (unused tokens, "no breakpoint-based responsive design", stale colours and animations). Where it disagrees with this section or the audit, this section wins until the doc is rewritten. A PR that settles one of those points updates the doc.
 
 ## Dialog Patterns
 
