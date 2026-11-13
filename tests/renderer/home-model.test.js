@@ -300,3 +300,22 @@ describe('pluginColors', () => {
     expect(m.pluginColors(undefined)).toEqual({});
   });
 });
+
+describe('history mix mosaics', () => {
+  const jams = { id: 'lb-1', name: 'Weekly Jams', url: 'https://listenbrainz.org/playlist/lb-1' };
+  const replay = { id: 'am-1', name: 'Replay', url: 'https://music.apple.com/x', imageUrl: 'https://img/replay.jpg' };
+  test('a mix with no cover of its own needs a mosaic, once', () => {
+    expect(m.mixesNeedingMosaic([jams, replay], new Set())).toEqual([jams]);
+    expect(m.mixesNeedingMosaic([jams], new Set(['lb-1']))).toEqual([]);
+    expect(m.mixesNeedingMosaic([{ ...jams, mosaic: ['a'] }], new Set())).toEqual([]);
+    expect(m.mixesNeedingMosaic([{ ...jams, url: '' }], new Set())).toEqual([]);
+    expect(m.mixesNeedingMosaic(undefined, new Set())).toEqual([]);
+  });
+  test('covers attach as each mix\'s mosaic; a mix without covers is unchanged', () => {
+    const mixes = [jams, replay];
+    const out = m.withMixMosaics(mixes, { 'lb-1': ['a', 'b', 'c', 'd', 'e'] });
+    expect(out[0]).toEqual({ ...jams, mosaic: ['a', 'b', 'c', 'd'] });
+    expect(out[1]).toBe(replay);
+    expect(m.withMixMosaics(mixes, {})).toBe(mixes);
+  });
+});

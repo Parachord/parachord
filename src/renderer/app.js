@@ -562,7 +562,7 @@ const { searchMusicBrainzArtists, searchMusicBrainzAlbums, searchMusicBrainzTrac
 const { shouldAutoRefreshHomeSuggestions } = require('./lib/home-suggestions-refresh');
 const {
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, normalizeHistoryMixes, flattenHistoryMixes,
-  historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries, pluginColors
+  historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries, pluginColors, mixesNeedingMosaic, withMixMosaics
 } = require('./lib/home-model');
 const { sourceBlockId, withoutTrackSource } = require('./lib/bad-match-report');
 const { amazonSignInPromptDecision } = require('./lib/amazon-signin-prompt');
@@ -35971,7 +35971,43 @@ useEffect(() => {
   // The history mixes ("Made from your listening", and Jump back in's mix
   // tile): every provider's, round-robin in provider order, each naming its
   // service (resolverId, resolverName). Empty, the row hides.
-  const homeMixes = useMemo(() => flattenHistoryMixes(historyMixEntries), [historyMixEntries]);
+  // A mix with no cover of its own (ListenBrainz's Jams) shows the same 2x2
+  // mosaic as a playlist, once the effect below has built it.
+  const [homeMixCovers, setHomeMixCovers] = useState({}); // { mixId: [url x4] }
+  const homeMixCoversTried = useRef(new Set());
+  const homeMixes = useMemo(
+    () => withMixMosaics(flattenHistoryMixes(historyMixEntries), homeMixCovers),
+    [historyMixEntries, homeMixCovers]
+  );
+  // Builds those mosaics while Home is showing, one mix at a time, after the
+  // mixes have painted: the tracks come through lookupRecommendationPlaylist,
+  // the lookup Play uses (so a Play right after reuses it), the covers through
+  // getPlaylistCovers (cached by playlist id). Each mix is tried once a
+  // session; a failure leaves the placeholder.
+  useEffect(() => {
+    if (activeView !== 'home') return;
+    const todo = mixesNeedingMosaic(homeMixes, homeMixCoversTried.current);
+    if (todo.length === 0) return;
+    (async () => {
+      for (const mix of todo) {
+        if (homeMixCoversTried.current.has(mix.id)) continue;
+        homeMixCoversTried.current.add(mix.id);
+        try {
+          const cached = playlistCoverCache.current[mix.id];
+          let covers = cached && Array.isArray(cached.covers) && cached.covers.length > 0 ? cached.covers : null;
+          if (!covers) {
+            const { tracks } = await lookupRecommendationPlaylist(mix);
+            covers = await getPlaylistCovers(mix.id, tracks);
+          }
+          if (covers && covers.length > 0) {
+            setHomeMixCovers(prev => ({ ...prev, [mix.id]: covers.slice(0, 4) }));
+          }
+        } catch (err) {
+          console.warn(`[Home] No mosaic for mix "${mix.name}":`, err?.message || err);
+        }
+      }
+    })();
+  }, [activeView, homeMixes]);
   // Each plugin's colour for Home's source chips, from the loader's whole
   // registry: ListenBrainz and Last.fm are meta services, so loadedResolvers
   // (content resolvers only) leaves their chips grey. Meta services load
