@@ -14471,7 +14471,7 @@ ${trackListXml}
           } else if (data.sourceType === 'recommendations') {
             context = { type: 'recommendations', name: 'Recommendations' };
           } else if (data.sourceType === 'loves') {
-            context = { type: 'loves', name: 'Recent loves' };
+            context = { type: 'loves', name: 'Recent Loves' };
           }
           addToQueue(data.tracks, context);
         } else if (data.action === 'add-to-queue' && data.track) {
@@ -35924,7 +35924,7 @@ useEffect(() => {
     const show = window.electron?.contextMenu?.showTrackMenu;
     if (!show || !item) return;
     if (kind === 'loves') {
-      show({ type: 'loves', name: 'Recent loves', tracks: Array.isArray(item) ? item : [] });
+      show({ type: 'loves', name: 'Recent Loves', tracks: Array.isArray(item) ? item : [] });
       return;
     }
     if (kind === 'playlist') {

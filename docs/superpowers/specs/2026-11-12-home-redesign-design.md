@@ -72,7 +72,7 @@ Today's banner moves from the main content area (`activeAnnouncements` in `src/r
 One row of four tiles (two by two when the page is narrow). Each tile has art, a title, a subtitle and its own Play button; clicking the rest of the tile opens the item (see "Decisions after the first build"). There's one tile of each kind, in this order:
 
 1. **Freshest playlist.** The playlist with the most recent `lastModified` (see Your playlists for what counts as a change). The subtitle says what changed ("Playlist · 12 new today").
-2. **Recent loves.** Your last 50 loved tracks: collection tracks, newest `addedAt` first, played as a queue.
+2. **Recent Loves.** Your last 50 loved tracks: collection tracks, newest `addedAt` first, played as a queue.
 3. **The album behind your latest love.** The album of the most recently loved track.
    - Skip to the next love when that track is a single with no album, or the album is already playing or in the queue.
    - The subtitle names the track ("Frog · the album behind your latest love, Hartsdale Hotbox").
@@ -84,9 +84,9 @@ This replaces **Continue Listening**.
 
 ### 4. Made from your listening
 
-The play-history mixes your services make, led by Recent loves, up to six cards.
+The play-history mixes your services make, led by Recent Loves, up to six cards.
 
-- **Recent loves always comes first**: your last 50 loved tracks, as a card with a mosaic of the newest loved albums. It opens Collection's songs newest loved first, and plays and queues under the `loves` context. It's no service's, so it adds no filter chip and shows whatever chip is selected.
+- **Recent Loves always comes first**: your last 50 loved tracks, as a card with a mosaic of the newest loved albums. It opens Collection's songs newest loved first, and plays and queues under the `loves` context. It's no service's, so it adds no filter chip and shows whatever chip is selected.
 
 - Each card shows the mix's title and a one-line description. The row's source filter names the services, so the card carries no service label.
 - **Source filters**: All, then one chip per service that returned at least one mix. A chip filters only this row.
@@ -203,7 +203,7 @@ Every card on Home matches what the same kind of thing does elsewhere in the app
   - **On hover:** **Add to Queue** and **Play** at the bottom-right of the art.
   - **Clicking the card** opens the playlist view. For a service mix that isn't a local playlist, it opens the same remote-playlist view the Recommendations page's playlist cards open.
   - **Right-click** opens the playlist context menu.
-- **Recent loves tile:**
+- **Recent Loves tile:**
   - **On hover:** shows play.
   - **Clicking** plays the loves as a queue.
   - **Right-click** offers Add to Queue and "Open in Collection" (Collection's songs, newest loved first).

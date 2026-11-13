@@ -60,7 +60,7 @@ const HOME_PAGE_HANDLERS = [
 ];
 
 // Playing recent loves from Home: the context isActiveContext matches.
-const LOVES_CONTEXT = { type: 'loves', name: 'Recent loves' };
+const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };
 
 const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
@@ -288,14 +288,14 @@ const HomePage = React.memo(function HomePage(props) {
     return tile;
   }), [tilesRaw, allPlaylistCovers, lovesCover, loves, art]);
 
-  // Recent loves as Made from your listening's lead card: a mosaic of the
+  // Recent Loves as Made from your listening's lead card: a mosaic of the
   // newest loved albums (a single cover until four have art).
   const lovesAlbums = React.useMemo(() => lovesMosaicAlbums(loves), [loves]);
   const lovesCard = React.useMemo(() => {
     if (loves.length === 0) return null;
     const covers = lovesAlbums.map((a) => coverFor(a.artist, a.album, a.albumArt)).filter(Boolean);
     return {
-      id: 'recent-loves', title: 'Recent loves',
+      id: 'recent-loves', title: 'Recent Loves',
       subtitle: loves.length === 1 ? 'Your latest love' : `Your ${loves.length} latest loves`,
       mosaic: covers.length >= 4 ? covers : null,
       imageUrl: covers.length >= 4 ? null : (covers[0] || null),
@@ -423,7 +423,7 @@ const HomePage = React.memo(function HomePage(props) {
   };
 
   // Jump back in: the tile opens its page, its Play button plays it.
-  // Recent loves opens Collection's songs, newest loved first.
+  // Recent Loves opens Collection's songs, newest loved first.
   const onOpenTile = (tile) => {
     if (tile.kind === 'playlist') loadPlaylist(tile.item);
     else if (tile.kind === 'mix') openMix(tile.item);
@@ -440,13 +440,13 @@ const HomePage = React.memo(function HomePage(props) {
     else if (tile.kind === 'album') albumActions.onPlay(tile.item);
     else if (tile.kind === 'mix') playServicePlaylist(tile.item, mixContext(tile.item));
   };
-  // The Recent loves card does what the tile does, plus Queue and Add to
+  // The Recent Loves card does what the tile does, plus Queue and Add to
   // Playlist like every playlist card.
   const lovesActions = {
     onOpen: () => onOpenTile({ kind: 'loves' }),
     onPlay: () => playTrackCollection(loves, LOVES_CONTEXT),
     onQueue: () => addToQueue(loves, LOVES_CONTEXT),
-    onAddToPlaylist: () => setAddToPlaylistPanel({ open: true, tracks: loves, sourceName: 'Recent loves', sourceType: 'playlist' }),
+    onAddToPlaylist: () => setAddToPlaylistPanel({ open: true, tracks: loves, sourceName: 'Recent Loves', sourceType: 'playlist' }),
     onContextMenu: () => showHomeContextMenu('loves', loves),
   };
   const onTileMenu = (ev, tile) => {
