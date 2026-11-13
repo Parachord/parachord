@@ -21,6 +21,7 @@
 
 const { Tooltip } = require('./ui-atoms');
 const { SectionHeader } = require('./section-header');
+const { FilterChips } = require('./filter-chips');
 const { ReleasePage, ReleaseCard, generateArtistPattern, PlayTop10Icon, QueueTop10Icon } = require('./cards');
 const { trackSlug } = require('../lib/track-slug');
 const { formatCalendarDate } = require('../lib/calendar-date');
@@ -814,35 +815,27 @@ const ArtistPage = React.memo(function ArtistPage(props) {
             className: 'sticky top-0 z-10 flex items-center px-6 py-3',
             style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
-            // Release type filter pills
-            React.createElement('div', { className: 'flex gap-2 flex-wrap' },
-              [
-                { value: 'all', label: 'All', activeColor: '#7c3aed' },
-                { value: 'album', label: 'Studio Albums', activeColor: 'rgb(99, 102, 241)' },
-                { value: 'ep', label: 'EPs', activeColor: '#a855f7' },
-                { value: 'single', label: 'Singles', activeColor: '#db2777' },
-                { value: 'live', label: 'Live', activeColor: '#d97706' },
-                { value: 'compilation', label: 'Compilations', activeColor: '#0eb3a0' }
-              ].map(({ value, label, activeColor }) => {
-                const searchFiltered = filterArtistReleases(artistReleases);
+            // Release type filters: the app's filter chips (FilterChips), All
+            // neutral, each type in its colour.
+            (() => {
+              const searchFiltered = filterArtistReleases(artistReleases);
+              const chips = [
+                { value: 'all', label: 'All' },
+                { value: 'album', label: 'Studio Albums', color: 'rgb(99, 102, 241)' },
+                { value: 'ep', label: 'EPs', color: '#a855f7' },
+                { value: 'single', label: 'Singles', color: '#db2777' },
+                { value: 'live', label: 'Live', color: '#d97706' },
+                { value: 'compilation', label: 'Compilations', color: '#0eb3a0' }
+              ].map(({ value, label, color }) => {
                 const count = value === 'all'
                   ? searchFiltered.length
                   : searchFiltered.filter(r => r.releaseType === value).length;
-
                 // While loading, show all filter types; otherwise hide those with 0 count (except 'all')
                 if (!loadingArtist && count === 0 && value !== 'all') return null;
-
-                const isActive = releaseTypeFilter === value;
-                return React.createElement('button', {
-                  key: value,
-                  onClick: () => setReleaseTypeFilter(value),
-                  className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                    isActive ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`,
-                  style: isActive ? { backgroundColor: activeColor } : undefined
-                }, loadingArtist ? label : `${label} (${count})`);
-              })
-            ),
+                return { id: value, label: loadingArtist ? label : `${label} (${count})`, color };
+              }).filter(Boolean);
+              return React.createElement(FilterChips, { chips, value: releaseTypeFilter, onChange: setReleaseTypeFilter, label: 'Filter releases by type' });
+            })(),
             // Spacer
             React.createElement('div', { className: 'flex-1' }),
             // Sort dropdown
@@ -1688,27 +1681,22 @@ const ArtistPage = React.memo(function ArtistPage(props) {
                 className: 'sticky top-0 z-10 flex items-center px-6 py-3',
               style: { backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
               },
-                React.createElement('div', { className: 'flex gap-2' },
-                  [
+                // The app's filter chips (FilterChips): All neutral, each source
+                // in the colour it had (orange-500, red-600, and Both the two
+                // as a gradient).
+                React.createElement(FilterChips, {
+                  chips: [
                     { value: 'all', label: 'All', count: relatedArtists.length },
-                    { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount },
-                    { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount },
-                    { value: 'both', label: 'Both', count: bothCount }
-                  ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count }) =>
-                    React.createElement('button', {
-                      key: value,
-                      onClick: () => setRelatedArtistsSourceFilter(value),
-                      className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                        relatedArtistsSourceFilter === value
-                          ? value === 'listenbrainz' ? 'bg-orange-500 text-white'
-                            : value === 'lastfm' ? 'bg-red-600 text-white'
-                            : value === 'both' ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white'
-                            : 'bg-purple-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`
-                    }, loadingRelated ? label : `${label} (${count})`)
-                  )
-                )
+                    { value: 'listenbrainz', label: 'ListenBrainz', count: listenbrainzCount + bothCount, color: '#f97316' },
+                    { value: 'lastfm', label: 'Last.fm', count: lastfmCount + bothCount, color: '#dc2626' },
+                    { value: 'both', label: 'Both', count: bothCount, color: '#dc2626', gradient: 'linear-gradient(to right, #f97316, #dc2626)' }
+                  ].filter(({ value, count }) => value === 'all' || count > 0).map(({ value, label, count, color, gradient }) => (
+                    { id: value, label: loadingRelated ? label : `${label} (${count})`, color, gradient }
+                  )),
+                  value: relatedArtistsSourceFilter,
+                  onChange: setRelatedArtistsSourceFilter,
+                  label: 'Filter related artists by source'
+                })
               ),
               // Content with padding
               React.createElement('div', { className: 'p-6' },

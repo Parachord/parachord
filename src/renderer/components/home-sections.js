@@ -11,9 +11,9 @@
 // home-skeletons.js; change one, change the other.
 
 const { filterBySource } = require('../lib/home-model');
-const { readableTextOn } = require('../lib/readable-text');
 const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const { Play } = require('./icons');
+const { FilterChips } = require('./filter-chips');
 const { SectionHeader, PAGE_COLOR, SECTION_TITLE_STYLE: H2_STYLE, SECTION_SUB_STYLE: SUB_STYLE } = require('./section-header');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
@@ -391,26 +391,12 @@ function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAd
 // --------------------------------------------------------------------- Filters
 
 // `sources` are ids or { id, label }. The first chip is normally 'All'.
+// The app's filter chips (./filter-chips): "All" stays neutral; a source
+// takes its service's colour, grey when it has none.
 function SourceFilter({ sources, value, onChange, label }) {
-  const list = (sources || []).map((s) => (typeof s === 'string' ? { id: s, label: s } : s));
-  return e('div', { role: 'group', 'aria-label': label || 'Filter by source', style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
-    list.map((s) => {
-      const on = s.id === value;
-      // "All" stays neutral. A source takes its service's colour: a dot when
-      // idle, the fill when selected (text picked for contrast on that fill).
-      const brand = s.id === 'All' ? null : (s.color || 'var(--text-secondary)');
-      return e('button', {
-        key: s.id, type: 'button', 'aria-pressed': on, onClick: () => onChange && onChange(s.id),
-        style: {
-          font: 'inherit', fontSize: '12px', fontWeight: 600, border: 'none', borderRadius: '999px', cursor: 'pointer',
-          padding: '8px 12px', minHeight: '36px', display: 'inline-flex', alignItems: 'center', gap: '8px',
-          backgroundColor: on ? (brand || PLAY_FILL) : 'var(--bg-secondary)',
-          color: on ? (brand ? readableTextOn(brand) : ON_FILL) : 'var(--text-primary)',
-        },
-      },
-      brand && !on && e('span', { 'aria-hidden': 'true', 'data-chip-dot': '', style: { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, backgroundColor: brand } }),
-      s.label);
-    }));
+  const chips = (sources || []).map((s) => (typeof s === 'string' ? { id: s, label: s } : s))
+    .map((s) => (s.id === 'All' ? { id: s.id, label: s.label } : { id: s.id, label: s.label, color: s.color || 'var(--text-secondary)' }));
+  return e(FilterChips, { chips, value, onChange, label: label || 'Filter by source' });
 }
 
 // Chips: All, then one per source that has at least one item.
