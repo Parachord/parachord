@@ -19473,6 +19473,13 @@ ${trackListXml}
           .then(version => {
             setAppVersion(version);
             console.log(`📦 App version: ${version}, What's New dismissed for: ${dismissedVersion || 'never'}`);
+            // A first run has nothing "new" to read: the user never had an
+            // older version. Record this one as seen, so Home shows no
+            // unread dot for release notes of a version they just installed.
+            if (!tutorialCompleted && !dismissedVersion && version) {
+              setWhatsNewDismissedVersion(version);
+              window.electron.store?.set('whats_new_dismissed_version', version);
+            }
           })
           .catch(() => {});
       }

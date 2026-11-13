@@ -1147,7 +1147,26 @@
           <path d="M1039.72 33.8887C1042.39 35.348 1042.43 39.1612 1039.8 40.6846L984.893 72.4893C982.313 73.9831 979.08 72.1478 979.039 69.167L978.192 6.85254C978.152 3.86673 981.345 1.94449 983.965 3.37793L1039.72 33.8887Z" fill="#E12949" stroke="white" stroke-width="0.2"/>
         </g>
     </svg>
+    <!-- Shown by the watchdog below if the app never finishes loading. -->
+    <div id="parachord-splash-stuck" role="alert" style="position:absolute;left:0;right:0;bottom:15%;display:none;flex-direction:column;align-items:center;gap:12px;font-size:13px;color:var(--text-secondary);">
+      <span>Parachord is taking longer than usual to start.</span>
+      <button type="button" onclick="location.reload()" style="font:inherit;font-weight:500;padding:8px 16px;border-radius:8px;border:1px solid var(--border-default);background:var(--card-bg);color:var(--text-primary);cursor:pointer;">Reload</button>
+    </div>
   </div>
+  <!--
+    Splash watchdog. The app removes the splash once its saved data has
+    loaded; if the renderer script fails before that, nothing ever did, and
+    the wordmark pulsed forever. After 20 seconds with the splash still up,
+    say so and offer Reload. Plain script, so it runs even when the app
+    bundle does not.
+  -->
+  <script>
+    setTimeout(function () {
+      var splash = document.getElementById('parachord-splash');
+      var stuck = document.getElementById('parachord-splash-stuck');
+      if (splash && stuck && !splash.classList.contains('fade-out')) stuck.style.display = 'flex';
+    }, 20000);
+  </script>
 
   <!-- React mount point. Splash overlay above (#parachord-splash) covers
        any partial paint until the Parachord component removes it. -->

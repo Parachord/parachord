@@ -324,3 +324,17 @@ describe("Home's recommended albums (app.js recommendationAlbums)", () => {
       ['AZ0', 'SH0', 'AZ1', 'SH1', 'SH2', 'AZ2', 'AZ3', 'AP0', 'AP1', 'AP2']);
   });
 });
+
+describe('first launch', () => {
+  const html = read('index.html');
+  test('a splash that never clears says so and offers Reload', () => {
+    // Outside the app bundle, so it runs even when the bundle fails.
+    expect(html).toMatch(/<div id="parachord-splash-stuck" role="alert" style="[^"]*display:none;/);
+    expect(html).toContain('<button type="button" onclick="location.reload()"');
+    expect(html).toMatch(/setTimeout\(function \(\) \{[\s\S]*?!splash\.classList\.contains\('fade-out'\)\) stuck\.style\.display = 'flex';\s*\}, 20000\);/);
+  });
+
+  test('a first run records the installed version as seen, so What\'s New is not unread', () => {
+    expect(app).toMatch(/if \(!tutorialCompleted && !dismissedVersion && version\) \{\s*setWhatsNewDismissedVersion\(version\);\s*window\.electron\.store\?\.set\('whats_new_dismissed_version', version\);/);
+  });
+});
