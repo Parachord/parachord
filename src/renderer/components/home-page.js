@@ -378,6 +378,8 @@ const HomePage = React.memo(function HomePage(props) {
     onOpen: (p) => loadPlaylist(p),
     onPlay: playPlaylist,
     onQueue: queuePlaylist,
+    // As the Playlists page's card: the playlist's tracks into the panel.
+    onAddToPlaylist: (p) => { const tracks = playlistTracks(p); if (tracks.length > 0) setAddToPlaylistPanel({ open: true, tracks, sourceName: p.title, sourceType: 'playlist' }); },
     onContextMenu: (ev, p) => showHomeContextMenu('playlist', p),
     onArtError,
   };
