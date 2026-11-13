@@ -285,28 +285,30 @@ describe('Rows', () => {
     const loading = h(S.FreshCriticalRow, { fresh: [], critical: [], freshLoading: true, criticalLoading: true });
     expect((loading.match(/flex:0 0 calc\(50% - 16px\)/g) || []).length).toBe(2);
   });
-  test('each half is a panel in its page\'s sidebar highlight, with its icon in that colour', () => {
+  test('each half opens with a hero band copied from its page\'s hero', () => {
+    const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
+    // The pages' own hero gradients and collapsed-title style, which the bands copy.
+    expect(app).toContain("className: 'absolute inset-0 bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600'");
+    expect(app).toContain("className: 'absolute inset-0 bg-gradient-to-br from-amber-500 via-orange-500 to-red-500'");
+    expect(app).toMatch(/className: 'text-2xl font-light text-white',\s*style: \{\s*textShadow: '0 2px 10px rgba\(0,0,0,0\.5\)',\s*letterSpacing: '0\.2em',/);
     const html = h(S.FreshCriticalRow, { fresh: [{ title: 'T', artist: 'A' }], critical: [{ title: 'U', artist: 'B' }], navigateTo: () => {} });
     const sections = html.split('<section').slice(1);
     expect(sections).toHaveLength(2);
-    expect(sections[0]).toMatch(/^[^>]*background-color:rgba\(16, 185, 129, 0\.1\)/);
-    expect(sections[1]).toMatch(/^[^>]*background-color:rgba\(239, 68, 68, 0\.1\)/);
-    expect(sections[0]).toMatch(/data-section-icon[^>]*color:#10b981/);
-    expect(sections[1]).toMatch(/data-section-icon[^>]*color:#ef4444/);
-    // The sidebar's highlights for those pages, which the panels copy.
-    const app = fs.readFileSync(path.join(COMP, '..', 'app.js'), 'utf8');
-    expect(app).toContain("backgroundColor: activeView === 'new-releases' ? 'rgba(16, 185, 129, 0.1)' : 'transparent',");
-    expect(app).toContain("color: activeView === 'new-releases' ? '#10b981' : 'var(--nav-inactive)',");
-    expect(app).toContain("backgroundColor: activeView === 'critics-picks' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',");
-    expect(app).toContain("color: activeView === 'critics-picks' ? '#ef4444' : 'var(--nav-inactive)',");
+    const band = (sec) => (sec.match(/<div data-home-hero="" class="([^"]*)"/) || [])[1];
+    expect(band(sections[0])).toBe('bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600');
+    expect(band(sections[1])).toBe('bg-gradient-to-br from-amber-500 via-orange-500 to-red-500');
     for (const sec of sections) {
-      expect(sec).toMatch(/^[^>]*border-radius:16px/);
-      expect(sec).toMatch(/^[^>]*padding:20px/);
-      expect(sec).toContain('data-section-icon');
+      // A bordered card on the page background; the cards sit below the band.
+      expect(sec).toMatch(/^[^>]*border-radius:16px;overflow:hidden;border:1px solid var\(--border-default\);background-color:var\(--bg-primary\)/);
+      expect(sec).toMatch(/<h2 id="home-(fresh|critical)" style="[^"]*font-weight:300;letter-spacing:0\.2em;text-transform:uppercase;color:#fff;text-shadow:0 2px 10px rgba\(0,0,0,0\.5\)"/);
+      expect(sec).toMatch(/aria-label="See all in (Fresh Drops|Critical Darlings)"[^>]*color:#fff[^>]*>See all</);
+      expect(sec.indexOf('data-home-hero')).toBeLessThan(sec.indexOf('Open '));
     }
-    // A half still loading keeps the panel, so the skeleton sits where the cards will.
+    expect(sections[0]).toContain('Fresh Drops');
+    expect(sections[1]).toContain('Critical Darlings');
+    // A half still loading keeps its band, with the skeleton below it where the cards will be.
     const loading = h(S.FreshCriticalRow, { fresh: [], critical: [], freshLoading: true, criticalLoading: true });
-    expect(loading.split('<section').slice(1).every((sec) => /^[^>]*border-radius:16px/.test(sec))).toBe(true);
+    expect(loading.split('<section').slice(1).every((sec) => sec.includes('data-home-hero'))).toBe(true);
   });
 
   test('neither half: nothing', () => {
