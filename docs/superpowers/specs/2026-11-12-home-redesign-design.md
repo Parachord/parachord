@@ -130,7 +130,7 @@ Six album cards from every source that recommends albums:
 - the plugins' `getRecommendations` album picks (Apple Music, Amazon Music, ListenBrainz, Last.fm);
 - Shuffleupagus's album suggestions.
 
-Each card names its source and why it was picked ("Last.fm · like Hovvdy"). Shuffleupagus's reason is a badge with a tooltip instead (see "Decisions after the first build").
+An album card names no source: the source filter does that, and only playlist cards (a service's own curation) carry the service. Shuffleupagus's reason is a badge with a tooltip (see "Decisions after the first build").
 
 - **Source filters**: All, then one chip per source with at least one album. A chip filters only this row.
 - **See all** opens Recommendations.
