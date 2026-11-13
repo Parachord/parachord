@@ -144,6 +144,7 @@ This replaces the Discover, Album Suggestions and Artist Suggestions sections.
 Two rows side by side, each with three album cards, a short description and a **See all** link to its own page.
 
 - **Fresh Drops**: new releases from artists in your collection, from the Fresh Drops data (`newReleases`). Each card wears the Fresh Drops page's release-type badge (Album, EP, Single) in the art's top-right corner, in that page's colours.
+- **Both halves** are cards that open with a slim band copied from their pages' heroes: the same gradient (emerald to cyan, amber to red) and the collapsed hero's uppercase light title, with the sidebar's icon and a "See all" link. The cards sit below on the page background.
 - **Critical Darlings**: from `criticsPicks`, with its score or source as the tag. A pick with a critics' summary carries it in a lower-right badge with a tooltip.
 - Each half hides on its own when it's empty, and a half that is alone stays half width.
 - Home starts neither fetch on its critical path. When the data isn't loaded yet, it loads in the background lane, after the sections above have their data.

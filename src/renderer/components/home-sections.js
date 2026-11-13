@@ -28,10 +28,11 @@ const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
 
-// The sidebar's highlight for each page (app.js): its colour, and its 10% fill
-// as the panel background. The same in both themes, as the sidebar is.
-const FRESH_TONE = { color: '#10b981', fill: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.25)' };
-const CRITICAL_TONE = { color: '#ef4444', fill: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.25)' };
+// The Fresh Drops and Critical Darlings pages' hero gradients (app.js) and
+// the collapsed hero title's shadow, which the halves' bands copy.
+const FRESH_HERO = 'bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600';
+const CRITICAL_HERO = 'bg-gradient-to-br from-amber-500 via-orange-500 to-red-500';
+const HERO_TEXT_SHADOW = '0 2px 10px rgba(0,0,0,0.5)';
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
@@ -423,23 +424,11 @@ function sourceChips(items, labelOf, colors) {
   return [{ id: 'All', label: 'All' }].concat(Array.from(seen, ([id, label]) => ({ id, label, color: colorOf(id) })));
 }
 
-// `icon` and `tone` (a theme colour) put the section's icon in a tinted
-// square before the title, as the half panels do.
-function SectionHeader({ id, title, sub, page, view, navigateTo, extra, icon, tone }) {
-  const heading = e('div', null,
-    e('h2', { id, style: H2_STYLE }, title),
-    sub && e('div', { style: SUB_STYLE }, sub));
+function SectionHeader({ id, title, sub, page, view, navigateTo, extra }) {
   return e('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' } },
-    icon ? e('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 } },
-      e('span', {
-        'aria-hidden': 'true', 'data-section-icon': '',
-        style: {
-          width: '32px', height: '32px', borderRadius: '10px', flexShrink: 0,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          color: tone, backgroundColor: `color-mix(in srgb, ${tone} 18%, transparent)`,
-        },
-      }, icon),
-      heading) : heading,
+    e('div', null,
+      e('h2', { id, style: H2_STYLE }, title),
+      sub && e('div', { style: SUB_STYLE }, sub)),
     e('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
       extra,
       page && e('button', {
@@ -528,30 +517,46 @@ function AlbumsRow(props) {
 // shows its cards. A half that is neither loading nor has cards is left out.
 function FreshCriticalRow(props) {
   const { fresh, critical, freshLoading, criticalLoading, navigateTo } = props;
-  // Each half is a panel in its page's sidebar highlight (the same fill and
-  // colour the sidebar shows when that page is open), with the sidebar's icon
-  // for it beside the title.
-  const half = (id, title, sub, page, view, items, loading, tone, icon) => e('section', {
+  // Each half is a card that opens with a slim hero band copied from its
+  // page's hero (the same gradient classes, and the collapsed hero's
+  // uppercase light title and shadow), the sidebar's icon beside the title.
+  // The cards sit below on the page background.
+  const half = (id, title, page, view, items, loading, hero, icon) => e('section', {
     key: id, 'aria-labelledby': id, 'aria-busy': loading ? 'true' : undefined,
-    style: Object.assign({ flex: HOME_HALF_FLEX, minWidth: 0 }, SECTION_STYLE, {
-      padding: `${HOME_HALF_PANEL_PAD}px`, borderRadius: '16px',
-      backgroundColor: tone.fill,
-      border: `1px solid ${tone.border}`,
-    }),
+    style: {
+      flex: HOME_HALF_FLEX, minWidth: 0, display: 'flex', flexDirection: 'column',
+      borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--border-default)', backgroundColor: 'var(--bg-primary)',
+    },
   },
-    e(SectionHeader, { id, title, sub, page, view, navigateTo, tone: tone.color, icon }),
-    loading
-      ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })
-      : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-        items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props))))));
+    e('div', {
+      'data-home-hero': '', className: hero,
+      style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '14px 20px' },
+    },
+      e('h2', {
+        id,
+        style: {
+          margin: 0, display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0,
+          fontSize: '18px', fontWeight: 300, letterSpacing: '0.2em', textTransform: 'uppercase',
+          color: ON_FILL, textShadow: HERO_TEXT_SHADOW, // on-color
+        },
+      }, icon, title),
+      e('button', {
+        type: 'button', 'aria-label': `See all in ${page}`, onClick: () => navigateTo && navigateTo(view),
+        style: { font: 'inherit', fontSize: '13px', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', padding: 0, color: ON_FILL }, // on-color
+      }, 'See all')),
+    e('div', { style: Object.assign({ padding: `${HOME_HALF_PANEL_PAD}px` }, SECTION_STYLE) },
+      loading
+        ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })
+        : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+          items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props)))))));
   const f = Array.isArray(fresh) ? fresh : [];
   const c = Array.isArray(critical) ? critical : [];
   const showF = f.length > 0 || !!freshLoading;
   const showC = c.length > 0 || !!criticalLoading;
   if (!showF && !showC) return null;
   return e('div', { style: { display: 'flex', gap: `${HOME_HALF_GAP}px` } },
-    showF && half('home-fresh', 'Fresh Drops', 'New releases from artists in your collection', 'Fresh Drops', 'new-releases', f, f.length === 0, FRESH_TONE, DropletGlyph()),
-    showC && half('home-critical', 'Critical Darlings', 'Albums the critics are loving', 'Critical Darlings', 'critics-picks', c, c.length === 0, CRITICAL_TONE, TrophyGlyph()));
+    showF && half('home-fresh', 'Fresh Drops', 'Fresh Drops', 'new-releases', f, f.length === 0, FRESH_HERO, DropletGlyph()),
+    showC && half('home-critical', 'Critical Darlings', 'Critical Darlings', 'critics-picks', c, c.length === 0, CRITICAL_HERO, TrophyGlyph()));
 }
 
 // A concert card is not clickable as a whole: "Tickets" is its only action.
