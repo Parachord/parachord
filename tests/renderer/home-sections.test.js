@@ -23,11 +23,23 @@ describe('AlbumCard', () => {
     expect(html).toContain('aria-label="Add Frog to the queue"');
     expect(count(html, /<button/g)).toBeGreaterThanOrEqual(3);
   });
-  test('overlay buttons size with the art and the overlay pads at least 8px', () => {
+  test('the hover is the app\'s card hover: the same overlay and buttons as CollectionAlbumCard, in its order', () => {
+    const cards = fs.readFileSync(path.join(COMP, 'cards.js'), 'utf8');
+    const overlay = 'absolute inset-0 bg-black/50';
+    const side = 'w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110';
+    const play = 'w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110';
+    for (const cls of [overlay, side, play, 'transition-opacity duration-200 flex items-center justify-center gap-3']) expect(cards).toContain(cls);
     const html = h(S.AlbumCard, { album });
-    expect(html).toMatch(/aria-label="Play Frog"[^>]*width:clamp\(46px, 19%, 52px\)/);
-    expect(html).toMatch(/aria-label="Add Frog to the queue"[^>]*width:clamp\(34px, 14%, 40px\)/);
-    expect(html).toMatch(/padding:8px;box-sizing:border-box/);
+    expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"[^>]*opacity:0/);
+    expect(html).toMatch(new RegExp(`aria-label="Add Frog to a playlist"[^>]*class="${side}"[^>]*background-color:rgba\\(255, 255, 255, 0\\.15\\)`));
+    expect(html).toMatch(new RegExp(`aria-label="Play Frog"[^>]*class="${play}"`));
+    expect(html.indexOf('Add Frog to a playlist')).toBeLessThan(html.indexOf('aria-label="Play Frog"'));
+    expect(html.indexOf('aria-label="Play Frog"')).toBeLessThan(html.indexOf('Add Frog to the queue'));
+  });
+  test('on a narrow card the buttons shrink in proportion and stay round, the overlay padded 8px', () => {
+    const html = h(S.AlbumCard, { album });
+    expect(count(html, /flex-shrink:1;min-width:0;height:auto;aspect-ratio:1/g)).toBe(3);
+    expect(html).toMatch(/data-art-actions[^>]*padding:8px;box-sizing:border-box/);
   });
   test('no badge on an ordinary album; its source line shows', () => {
     const html = h(S.AlbumCard, { album: { ...album, resolverId: 'lastfm', why: 'Last.fm' } });
@@ -70,6 +82,13 @@ describe('AlbumCard', () => {
 });
 
 describe('PlaylistCard', () => {
+  test('takes the same app hover as albums: Play, then Add to Queue (Home has no add-to-playlist for a playlist)', () => {
+    const html = h(S.PlaylistCard, { playlist: { id: 'p', title: 'Pl', imageUrl: 'https://img/p.jpg' } });
+    expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50 transition-opacity duration-200 flex items-center justify-center gap-3"/);
+    expect(html).toMatch(/aria-label="Play Pl"[^>]*class="w-12 h-12 bg-white rounded-full/);
+    expect(html.indexOf('aria-label="Play Pl"')).toBeLessThan(html.indexOf('Add Pl to the queue'));
+    expect(html).not.toContain('to a playlist');
+  });
   const playlist = { id: 'p1', title: 'Daily Brew', mosaic: ['https://a/1.jpg', 'https://a/2.jpg'] };
   test('has Play and Add to Queue only', () => {
     const html = h(S.PlaylistCard, { playlist, badge: '+12', subtitle: 'Refreshed 2h ago' });
@@ -111,13 +130,14 @@ describe('SourceFilter colours', () => {
 });
 
 describe('JumpBackIn', () => {
-  test('a tile opens, and a separate always-visible Play button plays', () => {
+  test('a tile opens; its art takes the app\'s card hover with Play alone', () => {
     const tiles = [{ kind: 'loves', item: [], subtitle: 'Your recent loves' }];
     const html = h(S.JumpBackIn, { tiles });
     expect(html).toContain('aria-label="Open Recent loves"');
-    expect(html).toMatch(/aria-label="Play Recent loves"[^>]*width:38px/);
+    expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50[^"]*"[^>]*opacity:0/);
+    expect(html).toMatch(/aria-label="Play Recent loves"[^>]*class="w-12 h-12 bg-white rounded-full/);
+    expect(html).not.toContain('to the queue');
     expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*<button/);
-    expect(html).not.toMatch(/aria-label="Play Recent loves"[^>]*opacity/);
   });
   test('with no tiles, the import card shows only for a new user', () => {
     expect(h(S.JumpBackIn, { tiles: [], showImport: true })).toContain('Import');
@@ -180,8 +200,12 @@ describe('JumpBackIn handlers', () => {
     find(inner, (n) => n.props['aria-label'] === 'Open Daily').props.onClick();
     expect(onOpenTile).toHaveBeenCalledWith(tile);
     expect(onPlayTile).not.toHaveBeenCalled();
-    find(inner, (n) => n.props['aria-label'] === 'Play Daily').props.onClick();
+    const overlay = find(inner, (n) => typeof n.props.onPlay === 'function');
+    overlay.props.onPlay();
     expect(onPlayTile).toHaveBeenCalledWith(tile);
+    expect(onOpenTile).toHaveBeenCalledTimes(1);
+    overlay.props.onClick();
+    expect(onOpenTile).toHaveBeenCalledTimes(2);
   });
 });
 
