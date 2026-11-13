@@ -1964,6 +1964,10 @@ const { HomePage } = require('./components/home-page');
 const { PlaylistViewPage } = require('./components/playlist-view-page');
 const { ArtistPage } = require('./components/artist-page');
 const { SearchPage } = require('./components/search-page');
+// The app's section title (Home's), over every page's rows and grids.
+const { SectionHeader, SECTION_HEADER_GAP } = require('./components/section-header');
+// The app's filter buttons (Home's source filter style).
+const { FilterChips } = require('./components/filter-chips');
 const {
   RecommendationCardSkeleton,
   RecommendationSongRowSkeleton,
@@ -39211,29 +39215,25 @@ useEffect(() => {
             className: 'flex items-center px-6 py-3',
             style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
           },
-            // Type filter pills
-            React.createElement('div', { className: 'flex gap-2 flex-wrap' },
-              [
-                { value: 'all', label: 'All', activeColor: '#7c3aed' },
-                { value: 'album', label: 'Albums', activeColor: 'rgb(99, 102, 241)' },
-                { value: 'ep', label: 'EPs', activeColor: '#a855f7' },
-                { value: 'single', label: 'Singles', activeColor: '#db2777' }
-              ].map(({ value, label, activeColor }) => {
+            // Type filters: the app's filter chips (FilterChips), All
+            // neutral, each type in its colour.
+            React.createElement(FilterChips, {
+              chips: [
+                { value: 'all', label: 'All' },
+                { value: 'album', label: 'Albums', color: 'rgb(99, 102, 241)' },
+                { value: 'ep', label: 'EPs', color: '#a855f7' },
+                { value: 'single', label: 'Singles', color: '#db2777' }
+              ].map(({ value, label, color }) => {
                 const count = value === 'all'
                   ? newReleases.length
                   : newReleases.filter(r => r.releaseType === value).length;
                 if (count === 0 && value !== 'all') return null;
-                const isActive = newReleasesFilter === value;
-                return React.createElement('button', {
-                  key: value,
-                  onClick: () => setNewReleasesFilter(value),
-                  className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                    isActive ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`,
-                  style: isActive ? { backgroundColor: activeColor } : undefined
-                }, `${label} (${count})`);
-              })
-            ),
+                return { id: value, label: `${label} (${count})`, color };
+              }).filter(Boolean),
+              value: newReleasesFilter,
+              onChange: setNewReleasesFilter,
+              label: 'Filter releases by type'
+            }),
             // Refresh button
             React.createElement('button', {
               onClick: () => loadNewReleases(true),
@@ -41052,41 +41052,25 @@ useEffect(() => {
             )
           ),
           // Filter bar (outside scrollable area), as on the other tabs (Fresh
-          // Drops, the artist page): All, then one pill per source on the
-          // page, no counts. Like theirs, each pill has its own active colour:
-          // All the tabs' purple, a source its plugin's brand colour (manifest
-          // `color`), Shuffleupagus the accent its badge uses. One pick filters
-          // every section (filterRowBySource).
+          // Drops, the artist page): the app's filter chips (FilterChips), All
+          // then one per source on the page, no counts. All is neutral; a
+          // source shows its plugin's brand colour (manifest `color`) as a
+          // dot, and fills with it when picked. One pick filters every section
+          // (filterRowBySource).
           recommendations.error !== 'not_configured' && (() => {
             const sources = pageSources(recommendations.sections);
             const active = sources.some(src => src.id === recommendationSourceFilter) ? recommendationSourceFilter : 'all';
-            const pills = [{ id: 'all', name: 'All' }, ...sources];
-            const resolvers = resolverLoaderRef.current?.getAllResolvers?.() || [];
-            const activeColorFor = (id) => {
-              if (id === 'shuffleupagus') return 'var(--accent-primary)';
-              const resolver = id === 'all' ? null : resolvers.find(r => r.id === id);
-              // The loader's default for a manifest without a colour is grey.
-              return resolver && resolver.color && resolver.color !== '#888888' ? resolver.color : '#7c3aed';
-            };
+            // A source's colour is the one Home's chips use (homeSourceColors,
+            // the plugins' manifest colours); Shuffleupagus is not a plugin
+            // and takes the fixed accent its badge uses, a source with no
+            // colour the grey.
+            const colorFor = (id) => (id === 'shuffleupagus' ? '#7c3aed' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');
+            const chips = [{ id: 'all', label: 'All' }, ...sources.map(src => ({ id: src.id, label: src.name, color: colorFor(src.id) }))];
             return React.createElement('div', {
               className: 'flex items-center px-6 py-3',
               style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }
             },
-              React.createElement('div', { className: 'flex gap-2 flex-wrap' },
-                ...pills.map(({ id, name }) => {
-                  const isActive = active === id;
-                  return React.createElement('button', {
-                    key: id,
-                    type: 'button',
-                    onClick: () => setRecommendationSourceFilter(id),
-                    'aria-pressed': isActive ? 'true' : 'false',
-                    className: `px-3 py-1.5 rounded-full text-sm transition-all no-drag ${
-                      isActive ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`,
-                    style: isActive ? { backgroundColor: activeColorFor(id) } : undefined
-                  }, name);
-                })
-              )
+              React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, label: 'Filter recommendations by source' })
             );
           })(),
           // Scrollable content area: the grouped page
@@ -41880,23 +41864,24 @@ useEffect(() => {
             };
 
             // ── The section header ───────────────────────────────────────
-            // The heading (Home's section size, no count) and See all / Show
-            // less in Home's link style on the right. Sources are filtered for
-            // the whole page in the filter bar under the hero.
-            const subsectionHeader = (sub, { expanded, showToggle }) => React.createElement('div', {
-              className: 'flex items-center justify-between gap-4 mb-4',
-              style: { minHeight: '28px' }
-            },
-              React.createElement('h2', { className: 'text-lg font-semibold truncate', style: { color: 'var(--text-primary)' } }, sub.title),
+            // The app's section title (SectionHeader, Home's style) and See
+            // all / Show less in its link style on the right. The link opens
+            // the row in place rather than going to another page, so it says
+            // "See all" (not "See all in <page>") and takes the accent (no
+            // destination page's colour). Sources are filtered for the whole
+            // page in the filter bar under the hero.
+            const subsectionHeader = (sub, { expanded, showToggle }) => React.createElement(SectionHeader, {
+              title: sub.title,
+              style: SECTION_HEADER_GAP,
               // Opening a row that can load more also starts its background
               // page fetches (the auto-paging effect), so there is no separate
               // load-more control.
-              showToggle && React.createElement('button', {
-                type: 'button',
-                onClick: () => toggleRecommendationSection(sub.key),
-                className: 'text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors flex-shrink-0 no-drag'
-              }, expanded ? 'Show less' : 'See all')
-            );
+              action: showToggle ? {
+                label: expanded ? 'Show less' : 'See all',
+                expanded,
+                onClick: () => toggleRecommendationSection(sub.key)
+              } : null
+            });
 
             // ── One section's row ─────────────────────────────────────────
             // The header, then the items the page's source filter keeps
@@ -44139,26 +44124,22 @@ useEffect(() => {
                     React.createElement('option', { value: 'installed' }, 'Installed'),
                     React.createElement('option', { value: 'available' }, 'Available')
                   ),
-                  // Category filter pills
-                  [
-                    { value: 'all', label: 'All' },
-                    { value: 'streaming', label: 'Streaming' },
-                    { value: 'social', label: 'Social' },
-                    { value: 'metadata', label: 'Metadata' },
-                    { value: 'concerts', label: 'Concerts' },
-                    { value: 'ai', label: 'AI' },
-                    { value: 'local', label: 'Local' }
-                  ].map(({ value, label }) =>
-                    React.createElement('button', {
-                      key: value,
-                      onClick: () => setMarketplaceCategory(value),
-                      className: `px-3 py-1.5 rounded-full text-sm transition-all ${
-                        marketplaceCategory === value
-                          ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
-                          : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'
-                      }`
-                    }, label)
-                  )
+                  // Category filters: the app's filter chips (FilterChips); a
+                  // category has no colour, so every chip is neutral.
+                  React.createElement(FilterChips, {
+                    chips: [
+                      { id: 'all', label: 'All' },
+                      { id: 'streaming', label: 'Streaming' },
+                      { id: 'social', label: 'Social' },
+                      { id: 'metadata', label: 'Metadata' },
+                      { id: 'concerts', label: 'Concerts' },
+                      { id: 'ai', label: 'AI' },
+                      { id: 'local', label: 'Local' }
+                    ],
+                    value: marketplaceCategory,
+                    onChange: setMarketplaceCategory,
+                    label: 'Filter plugins by category'
+                  })
                 )
               ),
 
