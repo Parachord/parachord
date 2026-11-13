@@ -21,9 +21,38 @@ describe('Amazon Music sends playlist categories', () => {
     ] }) } } };
     const getRecommendations = new Function('return ' + axe.implementation.getRecommendations)();
     const { sections } = await getRecommendations({});
-    expect(sections.map(s => s.category)).toEqual(['personal', 'community', undefined]);
+    expect(sections.map(s => s.category)).toEqual(['personal', 'community', 'personal']);
     expect(sections[0].nextCursor).toBe('12');
-    expect(axe.manifest.version).toBe('1.11.0');
+  });
+
+  const runAmazon = async (sections) => {
+    const axe = load('amazonmusic');
+    global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({ success: true, sections }) } } };
+    const getRecommendations = new Function('return ' + axe.implementation.getRecommendations)();
+    return { axe, ...(await getRecommendations({})) };
+  };
+  const albumBase = 'uri:///recommendations/browse-home/browse-home_';
+  const album = (artist) => ({ type: 'album', id: 'A' + Math.random(), name: 'An Album', artist });
+
+  test('Amazon maps its album strategies', async () => {
+    const { axe, sections } = await runAmazon([
+      { id: albumBase + 'mp3YmlRecentPlaybackStrategy', title: 'Recent', items: [album('X')] },
+      { id: albumBase + 'mp3PrimeAlbumsStrategy', title: 'Prime', items: [album('Y')] },
+      { id: albumBase + 'mp3ByArtistStrategy', title: 'Because you like FIDLAR', items: [album('FIDLAR'), album(' fidlar ')] }
+    ]);
+    expect(sections.map(s => s.category)).toEqual(['personal', 'personal', 'artist']);
+    expect(sections[0].seedArtist).toBeUndefined();
+    expect(sections[1].seedArtist).toBeUndefined();
+    expect(sections[2].seedArtist).toBe('FIDLAR');
+    expect(axe.manifest.version).toBe('1.12.0');
+  });
+
+  test('Amazon artist shelf with mixed artists has no seed', async () => {
+    const { sections } = await runAmazon([
+      { id: albumBase + 'mp3ByArtistStrategy', title: 'Because you like FIDLAR', items: [album('FIDLAR'), album('Wavves')] }
+    ]);
+    expect(sections[0].category).toBe('artist');
+    expect(sections[0].seedArtist).toBeUndefined();
   });
 });
 

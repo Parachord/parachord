@@ -579,12 +579,27 @@ module.exports = {
         return /Strategy$/.test(last) && !EDITORIAL_STRATEGIES[last];
       };
       // The category the Recommendations page files a playlist section under.
-      // Only the two playlist strategies say; the rest send none.
+      // The playlist strategies and the album strategies say; the rest send none.
       var categoryOf = function (id) {
         var last = strategyName(id);
         if (last === 'playlistStrategy') return 'personal';
+        if (last === 'mp3YmlRecentPlaybackStrategy' || last === 'mp3PrimeAlbumsStrategy') return 'personal';
+        if (last === 'mp3ByArtistStrategy') return 'artist';
         if (last === 'mp3CommunityPlaylistsStrategy') return 'community';
         return undefined;
+      };
+      // The artist a "by artist" shelf is seeded on: the one artist every
+      // album shares (trimmed, case-insensitive, first spelling). Never read
+      // from the shelf title.
+      var seedArtistOf = function (items) {
+        var seed = null;
+        for (var i = 0; i < items.length; i++) {
+          var a = items[i] && typeof items[i].artist === 'string' ? items[i].artist.trim() : '';
+          if (!a) return undefined;
+          if (seed === null) seed = a;
+          else if (seed.toLowerCase() !== a.toLowerCase()) return undefined;
+        }
+        return seed === null ? undefined : seed;
       };
       var sections = (result.sections || []).filter(function (s) {
         return s && Array.isArray(s.items) && s.items.length > 0 && isPersonal(s.id);
@@ -598,6 +613,10 @@ module.exports = {
           out = { id: s.id, title: s.title, description: s.description, items: s.items, nextCursor: String(s.nextCursor) };
         }
         if (category) out = Object.assign({}, out, { category: category });
+        if (category === 'artist') {
+          var seedArtist = seedArtistOf(s.items);
+          if (seedArtist) out = Object.assign({}, out, { seedArtist: seedArtist });
+        }
         return out;
       });
       console.log(
