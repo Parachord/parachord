@@ -34,7 +34,7 @@ const ALLOWED_STORE_KEYS = new Set([
   'saved_playback_context', 'saved_queue', 'saved_queue_position', 'saved_shuffle_state', 'saved_volume', 'repeat_mode',
   'scrobble-failed-queue', 'scrobbler-config-lastfm', 'scrobbler-config-librefm',
   'scrobbler-config-listenbrainz', 'scrobbler_love_push_enabled', 'scrobbling-enabled',
-  'love_pushed_keys', 'love_import_cursors', 'search_history',
+  'love_pushed_keys', 'love_import_cursor', 'search_history',
   'selected_chat_provider', 'show_discovery_badges',
   'skip_external_prompt', 'skip_unsaved_friend_warning',
   'suppressed_sync_playlists',

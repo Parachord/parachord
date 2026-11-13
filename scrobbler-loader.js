@@ -817,23 +817,41 @@ class LastFmScrobbler extends BaseScrobbler {
     return true;
   }
 
-  // Fetch one page of the user's loved tracks (parachord#1071 — the
-  // import half of the loved-tracks sync). Read-only: goes through the
-  // signed apiRequest like every other call (no extra scope beyond the
-  // session auth), so the auth-error handling applies here too. The caller
-  // maps the page via mapLastFmLovedPage (src/renderer/lib/love-import.js)
-  // and walks pages newest-first until the import cursor's stop marker or
-  // the caller's page guard.
-  async fetchLovedTracksPage({ page = 1, limit = 200 } = {}) {
+  // Fetch one page of the user's loved tracks (parachord#1071, the import
+  // half of the loved-tracks sync). user.getLovedTracks is a read method: API
+  // key + username only, no session key and no signature, which also keeps
+  // the signed-request auth-error handling out of a read path that can't
+  // auth-expire. The caller maps the page via parseLastfmLovedPage
+  // (src/renderer/lib/love-import.js) and walks pages newest-first until the
+  // import cursor's stop marker. Past the last page Last.fm returns an empty
+  // list rather than an error.
+  async getLovedTracksPage({ page = 1, count = 200 } = {}) {
     const config = await this.getConfig();
-    if (!config.username) {
-      throw new Error('Last.fm username not configured');
+    if (!config.username || !this.apiKey) {
+      throw new Error('Not connected');
     }
-    return this.apiRequest('user.getLovedTracks', {
+    const params = new URLSearchParams({
+      method: 'user.getLovedTracks',
       user: config.username,
-      limit,
-      page
+      api_key: this.apiKey,
+      format: 'json',
+      page: String(page),
+      limit: String(count),
     });
+    const response = await window.electron.proxyFetch(`${this.apiBase}?${params.toString()}`);
+    if (!response.success) {
+      throw new Error(`Last.fm request failed: ${response.error || `HTTP ${response.status}`}`);
+    }
+    let data;
+    try {
+      data = JSON.parse(response.text);
+    } catch (parseErr) {
+      throw new Error(`Failed to parse API response as JSON: ${(response.text || '').substring(0, 200)}`);
+    }
+    if (data && data.error) {
+      throw new Error(data.message || `Last.fm error ${data.error}`);
+    }
+    return data;
   }
 
   // Get auth token for desktop auth flow
