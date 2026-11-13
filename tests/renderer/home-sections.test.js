@@ -118,11 +118,11 @@ describe('PlaylistCard', () => {
   });
   const playlist = { id: 'p1', title: 'Daily Brew', mosaic: ['https://a/1.jpg', 'https://a/2.jpg'] };
   test('has Play and Add to Queue only', () => {
-    const html = h(S.PlaylistCard, { playlist, badge: '+12', subtitle: 'Refreshed 2h ago' });
+    const html = h(S.PlaylistCard, { playlist, badge: 'Δ 12', subtitle: 'Refreshed 2h ago' });
     expect(html).toContain('aria-label="Play Daily Brew"');
     expect(html).toContain('aria-label="Add Daily Brew to the queue"');
     expect(html).not.toContain('to a playlist');
-    expect(html).toContain('+12');
+    expect(html).toContain('Δ 12');
     expect(html).toContain('Refreshed 2h ago');
   });
   test('no badge when none given', () => {

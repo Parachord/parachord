@@ -37,8 +37,8 @@ describe('badge and change line', () => {
   test('null when older than 7 days', () => {
     expect(m.changeBadge({ lastChangeAdded: 12, tracksChangedAt: now - 8 * DAY }, now)).toBeNull();
   });
-  test('+N inside the window', () => {
-    expect(m.changeBadge({ lastChangeAdded: 12, tracksChangedAt: now - 7 * DAY }, now)).toBe('+12');
+  test('Δ N inside the window', () => {
+    expect(m.changeBadge({ lastChangeAdded: 12, tracksChangedAt: now - 7 * DAY }, now)).toBe('Δ 12');
   });
   test('line wording', () => {
     const p = { title: 'Daily Brew', lastChangeAdded: 12, tracksChangedAt: new Date(2026, 10, 12, 8).getTime() };
