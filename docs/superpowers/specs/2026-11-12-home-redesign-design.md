@@ -85,7 +85,7 @@ This replaces **Continue Listening**.
 
 The play-history mixes your services make, up to six cards.
 
-- Each card shows the mix's title on its art, plus a service label and a one-line description.
+- Each card shows the mix's title and a one-line description. The row's source filter names the services, so the card carries no service label.
 - **Source filters**: All, then one chip per service that returned at least one mix. A chip filters only this row.
 - **No "See all"**, because no page lists these: Recommendations leaves them out on purpose.
 - **Hidden** when no service returns a mix.

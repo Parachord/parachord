@@ -230,6 +230,17 @@ describe('Rows', () => {
     expect(html).not.toContain('See all');
     expect(html).toContain('Heavy Rotation');
   });
+  test('a mix card names no service on its art: the source filter does that', () => {
+    const one = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', serviceLabel: 'Apple Music', resolverName: 'Apple Music' }] });
+    expect(one.match(/Apple Music/g)).toHaveLength(1);
+    const two = h(S.MixesRow, { mixes: [
+      { id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', serviceLabel: 'Apple Music', resolverName: 'Apple Music' },
+      { id: 'n', title: 'Weekly Jams', resolverId: 'listenbrainz', serviceLabel: 'ListenBrainz', resolverName: 'ListenBrainz' },
+    ] });
+    // Each name once: in its filter chip, not on the card.
+    expect(two.match(/Apple Music/g)).toHaveLength(1);
+    expect(two.match(/ListenBrainz/g)).toHaveLength(1);
+  });
   test('Albums row see-all goes to Recommendations', () => {
     const html = h(S.AlbumsRow, { albums: [{ title: 'T', artist: 'A', resolverId: 'lastfm' }], navigateTo: () => {} });
     expect(html).toContain('aria-label="See all in Recommendations"');

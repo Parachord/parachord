@@ -346,7 +346,7 @@ function subtitleLines(subtitle) {
     .map((l, i) => (i === 0 ? l : l.charAt(0).toUpperCase() + l.slice(1)));
 }
 
-function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
+function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
   const reveal = useReveal();
   if (!playlist) return null;
   const title = playlist.title;
@@ -357,7 +357,6 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
   }, reveal.props),
     e('div', { onClick: open, style: { cursor: 'pointer' } },
       e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist', zoom: reveal.shown },
-        chip && e('span', { style: chipStyle() }, chip),
         badge && e('span', {
           style: {
             position: 'absolute', top: '8px', left: '8px', fontSize: '11px', fontWeight: 700, borderRadius: '999px',
@@ -448,7 +447,7 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 
 // ------------------------------------------------------------------------ Rows
 
-// Mixes are playlist cards with the service named on the art.
+// Mixes are playlist cards; the source filter names their services.
 function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
   const [source, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
@@ -460,7 +459,7 @@ function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu,
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource, label: 'Filter mixes by source' }),
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       shown.map((m, i) => e(PlaylistCard, {
-        key: m.id || i, playlist: m, chip: m.serviceLabel, subtitle: m.description || m.subtitle,
+        key: m.id || i, playlist: m, subtitle: m.description || m.subtitle,
         onOpen, onPlay, onQueue, onContextMenu, onArtError,
       }))));
 }
