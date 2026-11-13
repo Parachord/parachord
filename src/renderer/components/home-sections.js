@@ -28,6 +28,8 @@ const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
 
+// Each page's sidebar colour (app.js), which its section's See all link takes.
+const PAGE_COLOR = { playlists: '#ec4899', recommendations: '#f59e0b', concerts: '#10c9b4' };
 // The Fresh Drops and Critical Darlings pages' hero gradients (app.js) and
 // the collapsed hero title's shadow, which the halves' bands copy.
 const FRESH_HERO = 'bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600';
@@ -424,7 +426,8 @@ function sourceChips(items, labelOf, colors) {
   return [{ id: 'All', label: 'All' }].concat(Array.from(seen, ([id, label]) => ({ id, label, color: colorOf(id) })));
 }
 
-function SectionHeader({ id, title, sub, page, view, navigateTo, extra }) {
+// `pageColor` colours the See all link in its page's sidebar colour.
+function SectionHeader({ id, title, sub, page, view, navigateTo, extra, pageColor }) {
   return e('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' } },
     e('div', null,
       e('h2', { id, style: H2_STYLE }, title),
@@ -433,7 +436,7 @@ function SectionHeader({ id, title, sub, page, view, navigateTo, extra }) {
       extra,
       page && e('button', {
         type: 'button', 'aria-label': `See all in ${page}`, onClick: () => navigateTo && navigateTo(view),
-        style: { font: 'inherit', fontSize: '13px', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', color: 'var(--accent-primary)' },
+        style: { font: 'inherit', fontSize: '13px', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', color: pageColor || 'var(--accent-primary)' },
       }, `See all in ${page}`)));
 }
 
@@ -467,7 +470,7 @@ function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onAddToP
     e(SectionHeader, {
       id: 'home-playlists', title: 'Your playlists, freshest first',
       sub: 'By last change, so a playlist that refreshes itself stays up front however old it is',
-      page: 'Playlists', view: 'playlists', navigateTo,
+      page: 'Playlists', view: 'playlists', navigateTo, pageColor: PAGE_COLOR.playlists,
     }),
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((p, i) => e(PlaylistCard, {
@@ -505,6 +508,7 @@ function AlbumsRow(props) {
   return e('section', { 'aria-labelledby': 'home-albums', style: SECTION_STYLE },
     e(SectionHeader, {
       id: 'home-albums', title: 'Albums you might love', page: 'Recommendations', view: 'recommendations', navigateTo, extra: refresh,
+      pageColor: PAGE_COLOR.recommendations,
     }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource }),
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
@@ -650,7 +654,7 @@ function ConcertsRow({ concerts, navigateTo }) {
   return e('section', { 'aria-labelledby': 'home-concerts', style: SECTION_STYLE },
     e(SectionHeader, {
       id: 'home-concerts', title: 'Concerts near you', sub: 'Artists from your collection playing soon',
-      page: 'Concerts', view: 'concerts', navigateTo,
+      page: 'Concerts', view: 'concerts', navigateTo, pageColor: PAGE_COLOR.concerts,
     }),
     e('div', { style: grid(`repeat(${HOME_CONCERT_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((c, i) => e(ConcertCard, { key: c.id || i, concert: c }))));
