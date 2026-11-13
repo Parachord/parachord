@@ -11,7 +11,7 @@ const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
 
 const allDone = {
   missingPopularResolvers: 0, lastfmConnected: true, listenbrainzConnected: true,
-  spotifyConnected: true, extensionConnected: true, isMac: false, dismissed: [],
+  librarySyncEnabled: true, extensionConnected: true, isMac: false, dismissed: [],
 };
 
 describe('homeSetupItems', () => {
@@ -54,11 +54,19 @@ describe('homeSetupItems', () => {
     expect(homeSetupItems(allDone).whatsNew.unread).toBe(false);
   });
 
+  test('the sync item names no service, and an old "spotify" dismissal still hides it', () => {
+    const open = homeSetupItems({ ...allDone, librarySyncEnabled: false });
+    expect(open.items.find((i) => i.id === 'library-sync')).toMatchObject({ label: 'Sync your library', done: false });
+    expect(open.items.map((i) => i.label).join(' ')).not.toMatch(/Spotify/);
+    const dismissed = homeSetupItems({ ...allDone, librarySyncEnabled: false, dismissed: ['spotify'] });
+    expect(dismissed.items.some((i) => i.id === 'library-sync')).toBe(false);
+  });
+
   test('order and labels', () => {
     const s = homeSetupItems({ ...allDone, isMac: true });
     expect(s.items.map((i) => i.label)).toEqual([
       'Add more music sources', 'Connect Last.fm', 'Connect ListenBrainz',
-      'Connect Spotify', 'Install the browser extension', 'Add the Raycast extension',
+      'Sync your library', 'Install the browser extension', 'Add the Raycast extension',
     ]);
   });
 

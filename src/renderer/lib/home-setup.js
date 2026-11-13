@@ -16,7 +16,7 @@ function homeSetupItems({
   missingPopularResolvers = 0,
   lastfmConnected = false,
   listenbrainzConnected = false,
-  spotifyConnected = false,
+  librarySyncEnabled = false,
   extensionConnected = null,
   isMac = false,
   dismissed = [],
@@ -24,11 +24,16 @@ function homeSetupItems({
   whatsNewUnread = false,
 } = {}) {
   const gone = new Set(Array.isArray(dismissed) ? dismissed : []);
+  // The sync item used to be "Connect Spotify" (id 'spotify'); a dismissal
+  // saved under that id still hides it.
+  if (gone.has('spotify')) gone.add('library-sync');
   const all = [
     { id: 'resolvers', label: 'Add more music sources', done: missingPopularResolvers === 0 },
     { id: 'lastfm', label: 'Connect Last.fm', done: !!lastfmConnected },
     { id: 'listenbrainz', label: 'Connect ListenBrainz', done: !!listenbrainzConnected },
-    { id: 'spotify', label: 'Connect Spotify', done: !!spotifyConnected },
+    // Any sync service counts (Spotify, Apple Music, ListenBrainz, ...): the
+    // item names none, so a new one needs no change here.
+    { id: 'library-sync', label: 'Sync your library', done: !!librarySyncEnabled },
     // Only open when explicitly false; null (unknown) counts as done.
     { id: 'browser-extension', label: 'Install the browser extension', done: extensionConnected !== false },
   ];

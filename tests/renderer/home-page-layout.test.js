@@ -78,7 +78,12 @@ describe('source', () => {
     expect(open).toContain('if (plugin) setSelectedResolver(plugin);');
   });
 
-  test('Connect Spotify with no Client ID opens the Spotify plugin and says why', () => {
+  test('the checklist\'s sync item opens Library Sync, naming no service', () => {
+    expect(page).toContain("else if (id === 'library-sync') { navigateTo('settings'); setSettingsTab('general'); }");
+    expect(page).not.toContain("openSyncSetupModal('spotify')");
+  });
+
+  test('Spotify sync setup with no Client ID opens the Spotify plugin and says why', () => {
     const i = app.indexOf("pendingSyncSetupRef.current = 'spotify';");
     const block = app.slice(i, i + 1100);
     expect(block).toContain('const result = await window.electron.spotify.authenticate();');
@@ -153,7 +158,7 @@ describe('render', () => {
     library: [], metaServiceConfigs: {}, mixes: [], newReleases: [], newReleasesLoaded: true, newReleasesLoading: false,
     playlists: [], playlistsLoading: false, recommendationAlbums: [], recommendations: { sections: [], loading: false },
     setAddToPlaylistPanel: noop, setConcertsTicketFlyout: noop, setExtensionInfoOpen: noop, setHomeData: noop,
-    setRaycastInfoOpen: noop, setSettingsTab: noop, showToast: noop, spotifyConnected: false, whatsNewUnread: false,
+    setRaycastInfoOpen: noop, setSettingsTab: noop, showToast: noop, librarySyncEnabled: false, whatsNewUnread: false,
   };
   const render = (props) => renderToStaticMarkup(React.createElement(HomePage, { ...base, ...props }));
 

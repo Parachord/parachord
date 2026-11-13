@@ -52,7 +52,6 @@ const HOME_PAGE_HANDLERS = [
   'openHomeBannerCta',
   'openPluginSettings',
   'openServicePlaylist',
-  'openSyncSetupModal',
   'openTopAlbum',
   'openWhatsNew',
   'playServicePlaylist',
@@ -129,6 +128,7 @@ const HomePage = React.memo(function HomePage(props) {
     homeData,
     homeSetupDismissed,
     library,
+    librarySyncEnabled,
     loadConcerts,
     loadCriticsPicks,
     loadHomeHistoryMixes,
@@ -146,7 +146,6 @@ const HomePage = React.memo(function HomePage(props) {
     openHomeBannerCta,
     openPluginSettings,
     openServicePlaylist,
-    openSyncSetupModal,
     openTopAlbum,
     openWhatsNew,
     playServicePlaylist,
@@ -166,7 +165,6 @@ const HomePage = React.memo(function HomePage(props) {
     showHomeContextMenu,
     showToast,
     sourceColors,
-    spotifyConnected,
     whatsNewUnread,
   } = props;
 
@@ -177,13 +175,13 @@ const HomePage = React.memo(function HomePage(props) {
     missingPopularResolvers: missingPopularResolverCount(allResolvers),
     lastfmConnected: !!metaServiceConfigs?.lastfm?.username,
     listenbrainzConnected: !!metaServiceConfigs?.listenbrainz?.username,
-    spotifyConnected: !!spotifyConnected,
+    librarySyncEnabled: !!librarySyncEnabled,
     extensionConnected,
     isMac: typeof navigator !== 'undefined' && !!navigator.platform && navigator.platform.includes('Mac'),
     dismissed: homeSetupDismissed,
     appVersion,
     whatsNewUnread,
-  }), [allResolvers, metaServiceConfigs, spotifyConnected, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
+  }), [allResolvers, metaServiceConfigs, librarySyncEnabled, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
 
   // Each item's click does what its old card did.
   const onSetupAction = (id) => {
@@ -191,7 +189,8 @@ const HomePage = React.memo(function HomePage(props) {
     // The plugin's own detail, where the account is connected (General only
     // has the scrobbling switch).
     else if (id === 'lastfm' || id === 'listenbrainz') openPluginSettings(id);
-    else if (id === 'spotify') openSyncSetupModal('spotify');
+    // Library Sync in Settings › General offers each service's sync setup.
+    else if (id === 'library-sync') { navigateTo('settings'); setSettingsTab('general'); }
     else if (id === 'browser-extension') setExtensionInfoOpen(true);
     else if (id === 'raycast') setRaycastInfoOpen(true);
   };
