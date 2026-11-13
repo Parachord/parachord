@@ -199,8 +199,17 @@ describe('wiring', () => {
     expect(merge.slice(0, merge.indexOf('\n  };\n'))).toContain('excludePlaylistIds: historyMixIdsRef.current');
   });
 
-  test("Home's mixes are the flattened history mixes", () => {
-    expect(app).toMatch(/const homeMixes = useMemo\(\(\) => flattenHistoryMixes\(historyMixEntries\), \[historyMixEntries\]\);/);
+  test("Home's mixes are the flattened history mixes, with their mosaics", () => {
+    expect(app).toContain('() => withMixMosaics(flattenHistoryMixes(historyMixEntries), homeMixCovers),');
+    expect(app).toContain('[historyMixEntries, homeMixCovers]');
+  });
+
+  test("a mix with no cover gets its mosaic through Play's lookup, on Home only", () => {
+    const effect = app.slice(app.indexOf('const todo = mixesNeedingMosaic('), app.indexOf('}, [activeView, homeMixes]);'));
+    expect(app).toContain("if (activeView !== 'home') return;\n    const todo = mixesNeedingMosaic(homeMixes, homeMixCoversTried.current);");
+    expect(effect).toContain('await lookupRecommendationPlaylist(mix)');
+    expect(effect).toContain('await getPlaylistCovers(mix.id, tracks)');
+    expect(effect).toContain('homeMixCoversTried.current.add(mix.id)');
   });
 
   test("Home's background effect loads the mixes, and a mix plays and queues its tracks", () => {

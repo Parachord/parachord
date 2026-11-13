@@ -408,11 +408,28 @@ function pluginColors(registry) {
   return map;
 }
 
+// A history mix with no cover of its own (ListenBrainz sends none) gets the
+// same 2x2 mosaic as any playlist, built from its tracks. These pick the
+// mixes still needing one (each tried once per session) and attach the
+// covers that arrived.
+function mixesNeedingMosaic(mixes, tried) {
+  return (Array.isArray(mixes) ? mixes : []).filter((m) => m && m.id && m.url && !m.imageUrl
+    && !(Array.isArray(m.mosaic) && m.mosaic.length > 0) && !(tried && tried.has(m.id)));
+}
+
+function withMixMosaics(mixes, covers) {
+  if (!Array.isArray(mixes) || !covers || Object.keys(covers).length === 0) return mixes;
+  return mixes.map((m) => {
+    const c = m && covers[m.id];
+    return Array.isArray(c) && c.length > 0 ? { ...m, mosaic: c.slice(0, 4) } : m;
+  });
+}
+
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
   normalizeHistoryMixes, flattenHistoryMixes, historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries,
   exampleShufflePrompt, filterBySource, releaseTag, homeTopArtists, albumsNeedingArt,
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
-  pluginColors,
+  pluginColors, mixesNeedingMosaic, withMixMosaics,
 };
