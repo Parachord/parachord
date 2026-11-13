@@ -11,6 +11,8 @@
  * Presentational and props-driven: no app state, no hooks.
  */
 
+const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
+
 // The row grid the real cards use (app.js renderSubsection).
 const GRID_STYLE = { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' };
 // What a collapsed row shows (SECTION_PREVIEW / SONG_PREVIEW in app.js): the
@@ -106,14 +108,21 @@ function RecommendationFriendSkeleton({ index = 0 } = {}) {
   );
 }
 
-// A section's header: the heading (text-lg, a 28px line, mb-4 like the real
-// one), as a bar or, when the section is known, its real title.
-const sectionHeader = (title) => React.createElement('div', {
-  className: 'flex items-center justify-between gap-4 mb-4', style: { minHeight: '28px' }, 'data-skeleton': 'section-heading'
-},
-  title
-    ? React.createElement('h2', { className: 'text-lg font-semibold truncate', style: { color: 'var(--text-primary)' } }, title)
-    : bar('h-5', { width: '100px' })
+// A section's header: the app's section title (SectionHeader, as the real
+// row's header draws it, with its 16px gap below), holding its real title
+// when the section is known. Unknown, it is a bar in an element with the
+// title's style but no heading (naming it would promise a section that may
+// never come, #1328); the bar is inline, so that element keeps the title's
+// 30px line and the two headers are the same height.
+const sectionHeader = (title) => React.createElement('div', { 'data-skeleton': 'section-heading' },
+  React.createElement(SectionHeader, {
+    as: title ? 'h2' : 'div',
+    title: title || React.createElement('span', {
+      className: 'rounded shimmer-light animate-shimmer h-5',
+      style: { backgroundSize: '200% 100%', width: '100px', display: 'inline-block', verticalAlign: 'middle' }
+    }),
+    style: SECTION_HEADER_GAP
+  })
 );
 
 /**

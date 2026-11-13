@@ -416,7 +416,8 @@ describe('the five-section page render', () => {
     const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
     expect(typeSection).toMatch(/section\.subsections\.map\(renderSubsection\)/);
     const header = between('const subsectionHeader = (sub, ', 'const renderSubsection = (sub) => {');
-    expect(header).toMatch(/React\.createElement\('h2', \{ className: 'text-lg font-semibold truncate', style: \{ color: 'var\(--text-primary\)' \} \}, sub\.title\)/);
+    // The app's section title (Home's), not a page-local heading.
+    expect(header).toMatch(/React\.createElement\(SectionHeader, \{\s*title: sub\.title,/);
     // No provider row titles or per-row source tags any more.
     expect(view).not.toContain('const sourceTags = ');
     expect(header).not.toMatch(/React\.createElement\('h3'/);
@@ -424,10 +425,14 @@ describe('the five-section page render', () => {
     expect(view).not.toMatch(/`\$\{section\.items\.length\}`|`\$\{sub\.items\.length\}`/);
   });
 
-  test('"See all" / "Show less" carry Home\'s link classes exactly', () => {
+  test('"See all" / "Show less" is the section header\'s in-place link, labelled "See all"', () => {
     const header = between('const subsectionHeader = (sub, ', "// ── One section's row");
-    expect(header).toMatch(/className: 'text-sm text-purple-600 hover:text-purple-700 font-medium( [^']*)?'/);
-    expect(header).toMatch(/expanded \? 'Show less' : 'See all'/);
+    // SectionHeader's link style (Home's); no page-local link classes.
+    expect(header).toMatch(/action: showToggle \? \{/);
+    expect(header).not.toMatch(/text-purple-600/);
+    // It opens the row in place, so it is not "See all in Recommendations".
+    expect(header).toMatch(/label: expanded \? 'Show less' : 'See all'/);
+    expect(header).toMatch(/onClick: \(\) => toggleRecommendationSection\(sub\.key\)/);
     // Only for a row with more than its preview, or more to load.
     const row = between('const renderSubsection = (sub) => {', '// ── Types');
     expect(row).toMatch(/const showToggle = expanded \|\| canExpand \|\| sub\.canLoadMore;/);
@@ -440,26 +445,24 @@ describe('the five-section page render', () => {
     expect(view).not.toContain('Thinking…');
   });
 
-  test('the filter bar sits under the hero, as on the other tabs: All plus one pill per source, no counts, each in its own colour', () => {
+  test('the filter bar sits under the hero, as on the other tabs: All plus one chip per source, no counts, each in its own colour', () => {
     const bar = between('// Filter bar (outside scrollable area), as on the other tabs', '// Scrollable content area: the grouped page');
     expect(bar.length).toBeGreaterThan(0);
     // After the hero, before the scroll area, so it stays put while the page scrolls.
     expect(view.indexOf("'RECOMMENDATIONS'")).toBeLessThan(view.indexOf('// Filter bar (outside scrollable area)'));
     expect(bar).toContain('const sources = pageSources(recommendations.sections);');
-    expect(bar).toContain("const pills = [{ id: 'all', name: 'All' }, ...sources];");
-    expect(bar).toContain('}, name);');
-    expect(bar).not.toMatch(/\$\{name\} \(/);
-    // Each pill's own active colour, as the other tabs' pills have: All the
-    // tabs' purple, a source its manifest colour, Shuffleupagus the accent.
-    expect(bar).toContain('style: isActive ? { backgroundColor: activeColorFor(id) } : undefined');
-    expect(bar).toContain("if (id === 'shuffleupagus') return 'var(--accent-primary)';");
-    expect(bar).toContain("return resolver && resolver.color && resolver.color !== '#888888' ? resolver.color : '#7c3aed';");
-    // Fresh Drops' bar and pills, verbatim.
+    // The app's filter chips (Home's), All neutral, then one per source with
+    // its name and no count.
+    expect(bar).toContain("const chips = [{ id: 'all', label: 'All' }, ...sources.map(src => ({ id: src.id, label: src.name, color: colorFor(src.id) }))];");
+    expect(bar).not.toMatch(/\$\{(name|src\.name)\} \(/);
+    expect(bar).toContain("React.createElement(FilterChips, { chips, value: active, onChange: setRecommendationSourceFilter, label: 'Filter recommendations by source' })");
+    // A source's colour is Home's (the plugins' manifest colours), Shuffleupagus
+    // the fixed accent, a source with none the grey.
+    expect(bar).toContain("const colorFor = (id) => (id === 'shuffleupagus' ? '#7c3aed' : (homeSourceColors && homeSourceColors[id]) || 'var(--text-secondary)');");
+    // Fresh Drops' bar, verbatim; no page-local pill classes.
     expect(bar).toContain("className: 'flex items-center px-6 py-3'");
     expect(bar).toContain("style: { flexShrink: 0, backgroundColor: 'var(--bg-primary)', borderBottom: '1px solid var(--border-default)' }");
-    expect(bar).toMatch(/className: `px-3 py-1\.5 rounded-full text-sm transition-all no-drag \$\{\s*isActive \? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'\s*\}`/);
-    expect(bar).toContain("onClick: () => setRecommendationSourceFilter(id),");
-    expect(bar).toContain("'aria-pressed': isActive ? 'true' : 'false',");
+    expect(bar).not.toMatch(/rounded-full|bg-gray-100/);
     // Never a service by name.
     expect(bar).not.toMatch(/'lastfm'|'listenbrainz'|'amazonmusic'/);
   });
