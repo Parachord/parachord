@@ -285,3 +285,18 @@ describe('shouldStampHomeRecommendationsLoad', () => {
     expect(m.shouldStampHomeRecommendationsLoad({ fetched: 2, failed: 0, sectionCount: 0 })).toBe(false);
   });
 });
+
+describe('pluginColors', () => {
+  test('maps every plugin in the registry, meta services included, to its colour', () => {
+    const registry = [
+      { id: 'spotify', color: '#1DB954' },
+      { id: 'listenbrainz', manifest: { color: '#353070' } },
+      { id: 'lastfm', color: '#D51007', manifest: { color: '#000000' } },
+    ];
+    expect(m.pluginColors(registry)).toEqual({ spotify: '#1DB954', listenbrainz: '#353070', lastfm: '#D51007' });
+  });
+  test('skips entries with no id or no colour, and tolerates no registry', () => {
+    expect(m.pluginColors([{ id: 'x' }, { color: '#fff' }, null])).toEqual({});
+    expect(m.pluginColors(undefined)).toEqual({});
+  });
+});
