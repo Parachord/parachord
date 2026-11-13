@@ -127,6 +127,21 @@ describe('ListenBrainz playlist links (urlLookup, lookupPlaylist)', () => {
     ]);
   });
 
+  test('the album comes from the JSPF track extension when the track has none', async () => {
+    const ext = (meta) => ({ 'https://musicbrainz.org/doc/jspf#track': meta });
+    global.fetch = jest.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({ playlist: { title: 'Weekly Jams', track: [
+        { title: 'One', creator: 'A', extension: ext({ additional_metadata: { release_name: 'From Meta' } }) },
+        { title: 'Two', creator: 'B', extension: ext({ release_name: 'From Ext', additional_metadata: { release_name: 'Meta' } }) },
+        { title: 'Three', creator: 'C', album: 'Own', extension: ext({ release_name: 'Ext' }) },
+        { title: 'Four', creator: 'D', extension: ext({ additional_metadata: { release_name: '  ' } }) }
+      ] } })
+    }));
+    const pl = await lookupPlaylist('https://listenbrainz.org/playlist/abc-123/', {});
+    expect(pl.tracks.map(t => t.album)).toEqual(['From Meta', 'From Ext', 'Own', undefined]);
+  });
+
   test('a 503 rejects', async () => {
     jest.useFakeTimers();
     global.fetch = jest.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }));
