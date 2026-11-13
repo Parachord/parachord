@@ -172,24 +172,6 @@ describe('filterBySource', () => {
   test('filters by resolverId or sourceIds', () => { expect(m.filterBySource(items, 'lastfm')).toHaveLength(2); });
 });
 
-describe('releaseTag', () => {
-  // now is Thursday 12 November 2026, 15:00 local.
-  test('today, a coming day this week, a later date', () => {
-    expect(m.releaseTag('2026-11-12', now)).toBe('Out today');
-    expect(m.releaseTag('2026-11-13', now)).toBe('Out Friday');
-    expect(m.releaseTag('2026-11-30', now)).toBe('Out Nov 30');
-  });
-  test('this week, then the date', () => {
-    expect(m.releaseTag('2026-11-10', now)).toBe('This week');
-    expect(m.releaseTag('2026-11-06', now)).toBe('This week');
-    expect(m.releaseTag('2026-10-01', now)).toBe('Oct 1');
-  });
-  test('nothing for a missing or bad date', () => {
-    expect(m.releaseTag(null, now)).toBeNull();
-    expect(m.releaseTag('soon', now)).toBeNull();
-  });
-});
-
 describe('homeTopArtists', () => {
   test('most frequent artists among the loves, ties by recency, capped', () => {
     const loves = [

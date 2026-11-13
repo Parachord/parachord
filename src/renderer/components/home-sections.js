@@ -117,12 +117,6 @@ function ArtOverlay({ shown, title, onClick, onPlay, onQueue, onAddToPlaylist })
     onQueue && e(SideButton, { label: `Add ${title} to the queue`, onClick: onQueue, path: 'M4 6h16M4 12h16M4 18h7' }));
 }
 
-const chipStyle = (extra) => Object.assign({
-  position: 'absolute', top: '8px', left: '8px', maxWidth: 'calc(100% - 16px)',
-  fontSize: '11px', fontWeight: 600, borderRadius: '999px', padding: '3px 8px',
-  backgroundColor: CHIP_BG, color: CHIP_FG, ...ELLIPSIS,
-}, extra);
-
 // The Playlists page's placeholder glyph: three lines and a play triangle.
 const PlaylistGlyph = () => e('svg', {
   'aria-hidden': 'true', 'data-playlist-glyph': '', viewBox: '0 0 24 24', fill: 'currentColor',
@@ -284,6 +278,19 @@ function artBadge(album) {
   return null;
 }
 
+// The Fresh Drops page's release-type badge (app.js; the .release-badge class
+// in index.html): top right, Album indigo, EP purple, anything else pink.
+const RELEASE_BADGE_BG = { album: 'rgba(99, 102, 241, 0.9)', ep: 'rgba(168, 85, 247, 0.9)', other: 'rgba(236, 72, 153, 0.9)' }; // on-art
+function releaseBadge(type) {
+  if (typeof type !== 'string' || !type) return null;
+  const t = type.toLowerCase();
+  return e('div', { style: { position: 'absolute', top: '8px', right: '8px' } },
+    e('span', {
+      className: 'release-badge',
+      style: { backgroundColor: RELEASE_BADGE_BG[t] || RELEASE_BADGE_BG.other, color: 'white' }, // on-art
+    }, t === 'ep' ? 'EP' : t.charAt(0).toUpperCase() + t.slice(1)));
+}
+
 function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onHoverPrefetch, onArtError }) {
   const reveal = useReveal();
   const timer = React.useRef(null);
@@ -310,7 +317,7 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
     style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 },
   }, reveal.props, dwell),
     e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { cursor: 'pointer' } },
-      album.tag && e('span', { style: chipStyle() }, album.tag),
+      album.homeRow === 'fresh' && releaseBadge(album.releaseType),
       e(ArtOverlay, {
         shown: reveal.shown, title, onClick: open,
         onAddToPlaylist: () => onAddToPlaylist && onAddToPlaylist(album),
