@@ -151,6 +151,20 @@ describe('render', () => {
     expect(actions).toContain("onAddToPlaylist: (p) => { const tracks = playlistTracks(p); if (tracks.length > 0) setAddToPlaylistPanel({ open: true, tracks, sourceName: p.title, sourceType: 'playlist' }); },");
   });
 
+  test('Made from your listening shows Recent loves even with no service mixes', () => {
+    const tracks = [
+      { id: 't1', title: 'One', artist: 'A', album: 'X', addedAt: 3 },
+      { id: 't2', title: 'Two', artist: 'B', album: 'Y', addedAt: 2 },
+    ];
+    const html = render({ collectionData: { tracks, albums: [], artists: [] }, mixes: [] });
+    const row = html.slice(html.indexOf('id="home-mixes"'));
+    expect(html).toContain('id="home-mixes"');
+    expect(row.indexOf('aria-label="Open Recent loves"')).toBeGreaterThan(-1);
+    expect(row).toContain('Your 2 latest loves');
+    expect(row).toContain('aria-label="Add Recent loves to a playlist"');
+    expect(render({ mixes: [] })).not.toContain('id="home-mixes"');
+  });
+
   test('a new user sees the import card and the Ask box', () => {
     const html = render({});
     expect(html).toContain('Build your collection');

@@ -83,12 +83,14 @@ This replaces **Continue Listening**.
 
 ### 4. Made from your listening
 
-The play-history mixes your services make, up to six cards.
+The play-history mixes your services make, led by Recent loves, up to six cards.
+
+- **Recent loves always comes first**: your last 50 loved tracks, as a card with a mosaic of the newest loved albums. It opens Collection's songs newest loved first, and plays and queues under the `loves` context. It's no service's, so it adds no filter chip and shows whatever chip is selected.
 
 - Each card shows the mix's title and a one-line description. The row's source filter names the services, so the card carries no service label.
 - **Source filters**: All, then one chip per service that returned at least one mix. A chip filters only this row.
 - **No "See all"**, because no page lists these: Recommendations leaves them out on purpose.
-- **Hidden** when no service returns a mix.
+- **Hidden** when there are no loves and no service returns a mix.
 
 Which mixes count as play history:
 

@@ -24,7 +24,7 @@ const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, Concert
 const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS } = require('./home-skeletons');
 const { homeSetupItems, missingPopularResolverCount } = require('../lib/home-setup');
 const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
-const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt } = require('../lib/home-model');
+const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt, lovesMosaicAlbums } = require('../lib/home-model');
 const { trackSlug } = require('../lib/track-slug');
 
 // Plain functions from Parachord, passed as stable wrappers.
@@ -280,6 +280,20 @@ const HomePage = React.memo(function HomePage(props) {
     return tile;
   }), [tilesRaw, allPlaylistCovers, lovesCover, loves, art]);
 
+  // Recent loves as Made from your listening's lead card: a mosaic of the
+  // newest loved albums (a single cover until four have art).
+  const lovesAlbums = React.useMemo(() => lovesMosaicAlbums(loves), [loves]);
+  const lovesCard = React.useMemo(() => {
+    if (loves.length === 0) return null;
+    const covers = lovesAlbums.map((a) => coverFor(a.artist, a.album, a.albumArt)).filter(Boolean);
+    return {
+      id: 'recent-loves', title: 'Recent loves',
+      subtitle: loves.length === 1 ? 'Your latest love' : `Your ${loves.length} latest loves`,
+      mosaic: covers.length >= 4 ? covers : null,
+      imageUrl: covers.length >= 4 ? null : (covers[0] || null),
+    };
+  }, [loves, lovesAlbums, art]);
+
   const homePlaylists = React.useMemo(() => {
     const now = Date.now();
     return freshestPlaylists(playlists, 6).map((p) => ({
@@ -323,10 +337,11 @@ const HomePage = React.memo(function HomePage(props) {
       if (!loves.some((t) => t.album === album && t.artist === artist && t.albumArt)) requestArt(artist, album);
     }
     if (loves.length > 0 && !loves[0].albumArt) requestArt(loves[0].artist, loves[0].album);
+    for (const a of lovesAlbums) if (!a.albumArt) requestArt(a.artist, a.album);
     for (const a of albumsNeedingArt(recommendationAlbums, HOME_ROW_CARDS)) {
       if (!a.imageUrl) requestArt(a.artist, a.title);
     }
-  }, [tilesRaw, loves, recommendationAlbums]);
+  }, [tilesRaw, loves, lovesAlbums, recommendationAlbums]);
 
   const onArtError = (item) => {
     const target = Array.isArray(item) ? lovesCover : item;
@@ -410,6 +425,15 @@ const HomePage = React.memo(function HomePage(props) {
     else if (tile.kind === 'album') albumActions.onPlay(tile.item);
     else if (tile.kind === 'mix') openMix(tile.item);
   };
+  // The Recent loves card does what the tile does, plus Queue and Add to
+  // Playlist like every playlist card.
+  const lovesActions = {
+    onOpen: () => onOpenTile({ kind: 'loves' }),
+    onPlay: () => playTrackCollection(loves, LOVES_CONTEXT),
+    onQueue: () => addToQueue(loves, LOVES_CONTEXT),
+    onAddToPlaylist: () => setAddToPlaylistPanel({ open: true, tracks: loves, sourceName: 'Recent loves', sourceType: 'playlist' }),
+    onContextMenu: () => showHomeContextMenu('loves', loves),
+  };
   const onTileMenu = (ev, tile) => {
     if (tile.kind === 'loves') showHomeContextMenu('loves', loves);
     else if (tile.kind === 'album') showHomeContextMenu('album', tile.item);
@@ -472,7 +496,7 @@ const HomePage = React.memo(function HomePage(props) {
 
   const hasCollection = (collectionData.tracks || []).length > 0 || (library || []).length > 0;
   const show = homeSections({
-    bannerItems, tiles, mixes, playlists: homePlaylists, albums, fresh, critical, concerts, concertsLocation, hasCollection,
+    bannerItems, tiles, mixes, loves, playlists: homePlaylists, albums, fresh, critical, concerts, concertsLocation, hasCollection,
   });
   const jumpLoading = !show.jump && (collectionLoading || playlistsLoading);
   const albumsLoading = !show.albums && (!!recommendations.loading || aiLoading);
@@ -553,7 +577,7 @@ const HomePage = React.memo(function HomePage(props) {
             onImport: () => { navigateTo('settings'); setSettingsTab('general'); },
           }),
 
-        show.mixes && React.createElement(MixesRow, { mixes, sourceColors, ...mixActions }),
+        show.mixes && React.createElement(MixesRow, { mixes, loves: lovesCard, lovesActions, sourceColors, ...mixActions }),
 
         show.playlists
           ? React.createElement(PlaylistsRow, { playlists: homePlaylists, navigateTo, ...playlistActions })

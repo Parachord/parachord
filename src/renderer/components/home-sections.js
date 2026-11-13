@@ -446,17 +446,20 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 
 // ------------------------------------------------------------------------ Rows
 
-// Mixes are playlist cards; the source filter names their services.
-function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
+// Mixes are playlist cards; the source filter names their services. Recent
+// loves (`loves`, a card with its own `lovesActions`) always leads the row: it
+// is no service's, so it adds no chip and shows whatever the filter.
+function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
   const [source, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
-  if (all.length === 0) return null;
+  if (all.length === 0 && !loves) return null;
   const chips = sourceChips(all, (m, id) => m.serviceLabel || id, sourceColors);
-  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS);
+  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS - (loves ? 1 : 0));
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource, label: 'Filter mixes by source' }),
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
+      loves && e(PlaylistCard, Object.assign({ key: 'recent-loves', playlist: loves, subtitle: loves.subtitle, onArtError }, lovesActions)),
       shown.map((m, i) => e(PlaylistCard, {
         key: m.id || i, playlist: m, subtitle: m.description || m.subtitle,
         onOpen, onPlay, onQueue, onContextMenu, onArtError,
