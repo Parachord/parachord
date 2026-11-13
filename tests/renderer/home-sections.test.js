@@ -160,9 +160,9 @@ describe('JumpBackIn', () => {
   test('a tile opens; its art takes the app\'s card hover with Play alone', () => {
     const tiles = [{ kind: 'loves', item: [], subtitle: 'Your recent loves' }];
     const html = h(S.JumpBackIn, { tiles });
-    expect(html).toContain('aria-label="Open Recent loves"');
+    expect(html).toContain('aria-label="Open Recent Loves"');
     expect(html).toMatch(/data-art-actions[^>]*class="absolute inset-0 bg-black\/50[^"]*"[^>]*opacity:0/);
-    expect(html).toMatch(/aria-label="Play Recent loves"[^>]*class="w-12 h-12 bg-white rounded-full/);
+    expect(html).toMatch(/aria-label="Play Recent Loves"[^>]*class="w-12 h-12 bg-white rounded-full/);
     expect(html).not.toContain('to the queue');
     expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*<button/);
   });
@@ -241,17 +241,17 @@ describe('Rows', () => {
     const html = h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} });
     expect(html).toContain('aria-label="See all in Playlists"');
   });
-  test('Recent loves always leads Made from your listening, whatever the filter', () => {
-    const loves = { id: 'recent-loves', title: 'Recent loves', subtitle: 'Your 50 latest loves' };
+  test('Recent Loves always leads Made from your listening, whatever the filter', () => {
+    const loves = { id: 'recent-loves', title: 'Recent Loves', subtitle: 'Your 50 latest loves' };
     const alone = h(S.MixesRow, { mixes: [], loves });
-    expect(alone).toContain('aria-label="Open Recent loves"');
+    expect(alone).toContain('aria-label="Open Recent Loves"');
     expect(alone).not.toContain('Filter mixes by source');
     const mixes = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, title: `Mix ${i}`, resolverId: 'listenbrainz', serviceLabel: 'ListenBrainz', resolverName: 'ListenBrainz' }));
     const html = h(S.MixesRow, { mixes, loves, lovesActions: { onOpen: () => {}, onPlay: () => {}, onQueue: () => {}, onAddToPlaylist: () => {} } });
     const opens = html.match(/aria-label="Open [^"]*"/g);
-    expect(opens[0]).toBe('aria-label="Open Recent loves"');
+    expect(opens[0]).toBe('aria-label="Open Recent Loves"');
     expect(opens).toHaveLength(6); // loves plus five mixes fill the row
-    expect(html).toContain('aria-label="Add Recent loves to a playlist"');
+    expect(html).toContain('aria-label="Add Recent Loves to a playlist"');
     expect(html).toContain('Your 50 latest loves');
     // Not a service, so it adds no filter chip.
     expect(html.match(/aria-pressed=/g)).toHaveLength(2); // All, ListenBrainz

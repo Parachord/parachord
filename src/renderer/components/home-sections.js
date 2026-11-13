@@ -178,7 +178,7 @@ function ArtBox({ imageUrl, mosaic, item, onArtError, children, style, placehold
 function JumpTile({ tile, onOpenTile, onPlayTile, onContextMenu, onArtError }) {
   const reveal = useReveal();
   const item = tile.item;
-  const title = tile.kind === 'loves' ? 'Recent loves'
+  const title = tile.kind === 'loves' ? 'Recent Loves'
     : tile.kind === 'album' ? (item && item.album) : (item && item.title);
   const imageUrl = tile.imageUrl || (item && !Array.isArray(item) && item.imageUrl) || null;
   const mosaic = tile.mosaic || (item && !Array.isArray(item) && item.mosaic) || null;

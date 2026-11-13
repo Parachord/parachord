@@ -269,7 +269,7 @@ function homeSections({
     banner: has(bannerItems),
     jump: has(tiles),
     importCard: !hasCollection && !has(playlists),
-    // Made from your listening: the mixes, and Recent loves, which always leads it.
+    // Made from your listening: the mixes, and Recent Loves, which always leads it.
     mixes: has(mixes) || has(loves),
     playlists: has(playlists),
     albums: has(albums),
@@ -410,7 +410,7 @@ function withMixMosaics(mixes, covers) {
   });
 }
 
-// The Recent loves card's mosaic: the newest distinct albums among the loves
+// The Recent Loves card's mosaic: the newest distinct albums among the loves
 // (artist and album, with the track's own cover when it has one).
 function lovesMosaicAlbums(loves, n = 4) {
   const out = [];

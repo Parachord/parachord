@@ -88,7 +88,7 @@ describe('source', () => {
   });
 
   test('recent loves play with the loves context', () => {
-    expect(page).toContain("const LOVES_CONTEXT = { type: 'loves', name: 'Recent loves' };");
+    expect(page).toContain("const LOVES_CONTEXT = { type: 'loves', name: 'Recent Loves' };");
   });
 
   test('a concert card only links tickets: Home no longer opens the Concerts flyout', () => {
@@ -165,7 +165,7 @@ describe('render', () => {
     expect(app).toContain('const addRecommendationPlaylistToPlaylist = async (item) => addServicePlaylistToPlaylist(item);');
   });
 
-  test('Made from your listening shows Recent loves even with no service mixes', () => {
+  test('Made from your listening shows Recent Loves even with no service mixes', () => {
     const tracks = [
       { id: 't1', title: 'One', artist: 'A', album: 'X', addedAt: 3 },
       { id: 't2', title: 'Two', artist: 'B', album: 'Y', addedAt: 2 },
@@ -173,9 +173,9 @@ describe('render', () => {
     const html = render({ collectionData: { tracks, albums: [], artists: [] }, mixes: [] });
     const row = html.slice(html.indexOf('id="home-mixes"'));
     expect(html).toContain('id="home-mixes"');
-    expect(row.indexOf('aria-label="Open Recent loves"')).toBeGreaterThan(-1);
+    expect(row.indexOf('aria-label="Open Recent Loves"')).toBeGreaterThan(-1);
     expect(row).toContain('Your 2 latest loves');
-    expect(row).toContain('aria-label="Add Recent loves to a playlist"');
+    expect(row).toContain('aria-label="Add Recent Loves to a playlist"');
     expect(render({ mixes: [] })).not.toContain('id="home-mixes"');
   });
 
@@ -199,7 +199,7 @@ describe('render', () => {
       concerts: [{ id: 'e1', artist: 'Hovvdy', date: '2099-01-02', venue: { name: 'Hall', city: 'Town' } }],
       concertsLocation: 'Town',
     });
-    for (const s of ['Jump back in', 'Daily Brew', 'Recent loves', 'Your playlists, freshest first',
+    for (const s of ['Jump back in', 'Daily Brew', 'Recent Loves', 'Your playlists, freshest first',
       'Albums you might love', 'Fresh Drops', 'Critical Darlings', 'Concerts near you', 'Ask Shuffleupagus',
       'Play Collection Radio']) {
       expect(html).toContain(s);
