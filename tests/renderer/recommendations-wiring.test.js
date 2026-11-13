@@ -590,9 +590,12 @@ describe('the five-section page render', () => {
 
 describe('playlist category rows on the page', () => {
   test('playlist category rows: per-row preview, hidden empty rows, tail by category', () => {
-    expect(app).toContain("lastPageCategories: [...new Set(result.items.filter(i => i && i.type === 'playlist').map(i => playlistCategory(i, section.category)))]");
-    expect(app).toContain('expansion.lastPageCategories.includes(sub.category)');
-    expect(app).toContain('visibleRows.length > 1 ? 1 : CARD_ROWS');
+    // Typed since albums split into category rows too (#1377): `playlist:personal`
+    // and `album:personal` are different rows.
+    expect(app).toContain("lastPageCategories: [...new Set(result.items.filter(i => i && (i.type === 'playlist' || i.type === 'album')).map(i => `${i.type}:${categoryFor(i.type, i, section.category)}`))]");
+    expect(app).toContain('expansion.lastPageCategories.includes(`${sub.type}:${sub.category}`)');
+    expect(app).not.toContain('expansion.lastPageCategories.includes(sub.category)');
+    expect(app).toContain('rowCount > 1 ? 1 : CARD_ROWS');
     // Under a source filter only a page from that provider can fill a row, so
     // only its in-flight page keeps an otherwise empty row on the page.
     expect(app).toContain('recommendationsLoadingMore[p.pagingKey] && (!filteringOne || p.resolverId === activeSourceFilter)');
@@ -602,5 +605,29 @@ describe('playlist category rows on the page', () => {
 
   test('playlist category rows have space between them', () => {
     expect(app).toContain("className: 'mb-10', style: { display: 'flex', flexDirection: 'column', gap: '32px' }");
+  });
+});
+
+describe('album category rows on the page', () => {
+  test('album category rows: typed loading tail, Shuffleupagus placeholder in Based on your listening', () => {
+    expect(app).toContain("lastPageCategories: [...new Set(result.items.filter(i => i && (i.type === 'playlist' || i.type === 'album')).map(i => `${i.type}:${categoryFor(i.type, i, section.category)}`))]");
+    expect(app).toContain('expansion.lastPageCategories.includes(`${sub.type}:${sub.category}`)');
+    // The model's typed category helper, imported with the other model helpers.
+    expect(app).toMatch(/shuffleupagusSection, FRIEND_SERVICES, categoryFor\s*\} = require\('\.\/lib\/recommendation-model'\)/);
+    expect(app).toContain("const LLM_TAIL_ROWS = new Set(['type:album', 'type:artist', 'albums:personal']);");
+    expect(app).toContain("'albums:personal-pending'");
+    expect(app).toContain("title: 'Based on your listening'");
+    // The Albums pending slot only when the page has no album section at all.
+    expect(app).toContain("!allSections.some(s => s.type === 'album')");
+  });
+
+  test('the placeholder subsection sits after New for you, else first, under All or the Shuffleupagus chip', () => {
+    const fn = app.slice(app.indexOf('const renderTypeSection = (section) => {'));
+    const body = fn.slice(0, fn.indexOf('// ── The page'));
+    expect(body).toMatch(/const llmPersonalPending = section\.type === 'album' && llmLoading\s*&& \(!filteringOne \|\| activeSourceFilter === 'shuffleupagus'\)\s*&& visibleRows\.some\(sub => sub\.category\)\s*&& !visibleRows\.some\(sub => sub\.key === 'albums:personal'\);/);
+    expect(body).toContain("const newAt = visibleRows.findIndex(sub => sub.key === 'albums:new');");
+    expect(body).toContain('rows.splice(newAt + 1, 0, llmPersonalPendingRow)');
+    // The placeholder is a subsection: a 15px subsection header, no link.
+    expect(app).toMatch(/React\.createElement\(SectionHeader, \{ title: 'Based on your listening', size: 'sub', style: SECTION_HEADER_GAP \}\)/);
   });
 });
