@@ -3,7 +3,7 @@
     "id": "ticketmaster",
     "name": "Ticketmaster",
     "type": "meta-service",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "Parachord Team",
     "description": "Find concerts and live events via the Ticketmaster Discovery API.",
     "icon": "🎟️",
@@ -20,7 +20,7 @@
       "apiKey": {
         "type": "text",
         "label": "API Key",
-        "description": "Your Ticketmaster API key from https://developer-acct.ticketmaster.com",
+        "description": "Your Ticketmaster API key from https://developer.ticketmaster.com/",
         "placeholder": "your-api-key",
         "required": true
       }

@@ -313,6 +313,17 @@ describe('Home skeletons match the Home rows', () => {
     expect(skeletons).toContain('borderRadius: `${HOME_CARD_ART_RADIUS}px`');
   });
 
+  test('album card skeletons have one subtitle line (the artist), playlist card skeletons two', () => {
+    const React = require('react');
+    const { renderToStaticMarkup } = require('react-dom/server');
+    const bars = (props) => (renderToStaticMarkup(React.createElement(sk.CardRowSkeleton, Object.assign({ count: 1 }, props))).match(/h-3[ "]/g) || []).length;
+    expect(bars({})).toBe(2);
+    expect(bars({ lines: 1 })).toBe(1);
+    const page = fs.readFileSync(path.join(dir, 'home-page.js'), 'utf8');
+    expect(page).toContain("skeletonSection('albums', 'Albums you might love', React.createElement(CardRowSkeleton, { lines: 1 }))");
+    expect(page).toContain("skeletonSection('playlists', 'Your playlists, freshest first', React.createElement(CardRowSkeleton))");
+  });
+
   test('card rows and their skeletons share one gap', () => {
     expect(sk.HOME_ROW_GAP).toBe(16);
     expect(sk.HOME_CARD_TEXT_GAP).toBe(10);
@@ -361,7 +372,7 @@ describe('Home skeletons match the Home rows', () => {
     expect(sk.HOME_HALF_FLEX).toBe(`0 0 calc(50% - ${sk.HOME_HALF_GAP / 2}px)`);
     expect(sections).toContain('flex: HOME_HALF_FLEX');
     // The loading half renders CardRowSkeleton inside the same section box.
-    expect(sections).toContain('e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })');
+    expect(sections).toContain('e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })');
   });
 
   test('the tile and card box match the real ones', () => {
