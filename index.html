@@ -138,6 +138,9 @@
       /* Always-dark surfaces (player bar, queue drawer, AI panels) */
       --surface-dark: rgba(31, 41, 55, 0.95);
       --surface-dark-solid: rgba(17, 24, 39, 0.98);
+      /* Now-playing title and artist while a start is pending (on --surface-dark) */
+      --now-playing-pending-base: rgba(255, 255, 255, 0.4);
+      --now-playing-pending-highlight: rgba(255, 255, 255, 0.95);
       --surface-dark-gradient-from: rgba(17, 24, 39, 0.9);
       --surface-dark-gradient-to: rgba(17, 24, 39, 0.5);
       --surface-dark-header: rgba(17, 24, 39, 0.6);
@@ -211,6 +214,8 @@
       /* Always-dark surfaces — elevated in dark mode for contrast */
       --surface-dark: rgba(38, 38, 38, 0.95);
       --surface-dark-solid: rgba(38, 38, 38, 0.98);
+      --now-playing-pending-base: rgba(255, 255, 255, 0.35);
+      --now-playing-pending-highlight: rgba(255, 255, 255, 0.9);
       --surface-dark-gradient-from: rgba(38, 38, 38, 0.95);
       --surface-dark-gradient-to: rgba(38, 38, 38, 0.85);
       --surface-dark-header: rgba(42, 42, 42, 0.95);
@@ -617,6 +622,28 @@
     .animate-shimmer {
       animation: shimmer 1.5s ease-in-out infinite;
       background-size: 200% 100% !important;
+    }
+
+    /* The playbar's title and artist while a start is pending (a resume
+       waiting on its engine, or Play loading the track on screen): the text
+       stays readable and a highlight sweeps across it until the track plays.
+       Same keyframes as the skeletons; the colors are on --surface-dark,
+       which the playbar keeps in both themes. */
+    .now-playing-pending {
+      color: transparent !important;
+      background-image: linear-gradient(90deg,
+        var(--now-playing-pending-base) 0%,
+        var(--now-playing-pending-base) 35%,
+        var(--now-playing-pending-highlight) 50%,
+        var(--now-playing-pending-base) 65%,
+        var(--now-playing-pending-base) 100%);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .now-playing-pending { animation: none; background-image: none; color: var(--now-playing-pending-base) !important; }
     }
 
     /* Shimmer background classes (theme-aware via CSS variables when available) */
