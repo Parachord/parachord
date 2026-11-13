@@ -84,6 +84,9 @@ const skeletonSection = (key, title, body) => React.createElement('section', {
   key, 'aria-busy': 'true', style: { display: 'flex', flexDirection: 'column', gap: '14px', minWidth: 0 },
 }, React.createElement('h2', { style: H2_STYLE }, title), body);
 
+// The height of app.js's macOS title-bar drag strip (Tailwind h-8).
+const HOME_TITLEBAR_HEIGHT = 32;
+
 const HomePage = React.memo(function HomePage(props) {
   const {
     addToQueue,
@@ -116,6 +119,7 @@ const HomePage = React.memo(function HomePage(props) {
     homeActive,
     homeData,
     homeSetupDismissed,
+    isMac,
     library,
     loadAiRecommendations,
     loadConcerts,
@@ -524,6 +528,14 @@ const HomePage = React.memo(function HomePage(props) {
     className: 'flex-1 flex flex-col h-full',
     style: { overflow: 'hidden', minHeight: 0, backgroundColor: 'var(--bg-primary)' },
   },
+    // macOS draws a transparent drag strip over the top of the main area (the
+    // title bar; app.js). Other pages have a hero under it; Home has none, so
+    // this opaque band of the same height keeps scrolled text off the window
+    // edge. Windows and Linux have a native title bar and need no band.
+    isMac && React.createElement('div', {
+      'aria-hidden': 'true', 'data-home-titlebar': '',
+      style: { height: `${HOME_TITLEBAR_HEIGHT}px`, flexShrink: 0, backgroundColor: 'var(--bg-primary)' },
+    }),
     React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content', style: { minHeight: 0 } },
       banner,
       React.createElement('div', {
