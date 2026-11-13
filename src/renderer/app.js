@@ -1962,6 +1962,7 @@ const {
   RecommendationsPageSkeleton
 } = require('./components/recommendation-skeletons');
 const { useStableHandlers } = require('./lib/stable-handlers');
+const { homeBannerItems, bannerViewId } = require('./lib/home-banners');
 const { runPlaybackControl } = require('../../tools/playback-control');
 const { runQueueAdd } = require('../../tools/queue-add');
 const { EMBED_PLAYER_KINDS } = require('./lib/embed-players');
@@ -3698,6 +3699,7 @@ const Parachord = () => {
   const [extensionInfoOpen, setExtensionInfoOpen] = useState(false); // Browser extension info modal
   const [raycastInfoOpen, setRaycastInfoOpen] = useState(false); // Raycast extension info modal
   const [whatsNewOpen, setWhatsNewOpen] = useState(false); // What's New release notes modal
+  const [homeSetupDismissed, setHomeSetupDismissed] = useState([]); // ids dismissed from the Home setup checklist
   const [whatsNewDismissedVersion, setWhatsNewDismissedVersion] = useState(null); // Last version user dismissed What's New for
   const [whatsNewHighlights, setWhatsNewHighlights] = useState([]); // Parsed release note highlights
   const [appVersion, setAppVersion] = useState(null); // Current app version from electron
@@ -5879,6 +5881,8 @@ const Parachord = () => {
   const showToastRef = useRef(null);
   const showExternalTrackPromptUIRef = useRef(null);
   const openAiChatRef = useRef(null); // Ref to openAiChat for use in protocol handler
+  const pendingChatPromptRef = useRef(null); // Home's Ask prompt, sent once the chat panel state commits
+  const dispatchProtocolUrlRef = useRef(null); // Latest protocol dispatcher, for in-app callers (Home's Ask box)
   const handleAiChatSendRef = useRef(null); // Ref to handleAiChatSend for use in protocol handler
   const handleStartCollectionStationRef = useRef(null); // Ref for protocol handler
   const fetchAlbumTracksByNameRef = useRef(null); // Ref to fetchAlbumTracksByName for use in ChatCard
@@ -9085,15 +9089,66 @@ const Parachord = () => {
       .sort((a, b) => String(b.id).localeCompare(String(a.id)));
   }, [announcements, dismissedAnnouncementIds, appVersion]);
 
+  // Home's banner slot: backend-pushed announcements only. Release notes
+  // live in the setup element, not here.
+  const bannerItems = useMemo(() => homeBannerItems({
+    announcements: activeAnnouncements,
+  }), [activeAnnouncements]);
+
   // Fire a 'view' event the first time each banner id renders this session.
   // Re-renders for the same id (state updates, focus refetches) don't double-count.
+  // Only while Home is showing it, and only for the banner Home paints
+  // (bannerItems[0]).
   useEffect(() => {
-    const top = activeAnnouncements[0];
-    if (!top || !top.id) return;
-    if (announcementViewedThisSessionRef.current.has(top.id)) return;
-    announcementViewedThisSessionRef.current.add(top.id);
-    recordAnnouncementEvent(top.id, 'view');
-  }, [activeAnnouncements]);
+    if (activeView !== 'home') return;
+    const viewId = bannerViewId(bannerItems);
+    if (!viewId) return;
+    if (announcementViewedThisSessionRef.current.has(viewId)) return;
+    announcementViewedThisSessionRef.current.add(viewId);
+    recordAnnouncementEvent(viewId, 'view');
+  }, [bannerItems, activeView]);
+
+  const dismissHomeBanner = async (item) => {
+    if (!item) return;
+    dismissAnnouncement(item.id);
+  };
+
+  // Record the current version's release notes as seen (the unread dot goes).
+  // The What's New modal's own dismiss and Home's openWhatsNew both use it.
+  const markWhatsNewSeen = async () => {
+    if (!appVersion) return;
+    setWhatsNewDismissedVersion(appVersion);
+    if (window.electron?.store) {
+      await window.electron.store.set('whats_new_dismissed_version', appVersion);
+    }
+  };
+
+  // Home's setup element opens the notes; opening them counts as seeing them.
+  const whatsNewUnread = useMemo(
+    () => !!appVersion && whatsNewDismissedVersion !== appVersion,
+    [appVersion, whatsNewDismissedVersion]);
+  const openWhatsNew = async () => {
+    setWhatsNewOpen(true);
+    await markWhatsNewSeen();
+  };
+
+  const dismissHomeSetupItem = async (id) => {
+    if (!id || homeSetupDismissed.includes(id)) return;
+    const next = [...homeSetupDismissed, id];
+    setHomeSetupDismissed(next);
+    if (window.electron?.store) await window.electron.store.set('home_setup_dismissed', next);
+  };
+
+  const openHomeBannerCta = (item) => {
+    if (!item) return;
+    if (!item.cta || typeof item.cta.url !== 'string' || !/^https?:\/\//i.test(item.cta.url)) return;
+    recordAnnouncementEvent(item.id, 'cta-click');
+    if (window.electron?.shell?.openExternal) {
+      window.electron.shell.openExternal(item.cta.url);
+    } else {
+      window.open(item.cta.url, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   // Listen for sync progress
   useEffect(() => {
@@ -11475,7 +11530,11 @@ const Parachord = () => {
       setTrackLoading(false);
     };
 
-    const cleanup = window.electron.onProtocolUrl(async (url) => {
+    // `origin` is a direct-call option only: the IPC listener below never
+    // passes one, and nothing parsed from the URL can set it. 'home' means the
+    // renderer itself built the link (Ask Shuffleupagus); everything else is
+    // an outside link.
+    const dispatchProtocolUrl = async (url, { origin = 'external' } = {}) => {
       console.log('🔗 Protocol URL received:', url);
 
       try {
@@ -11517,7 +11576,7 @@ const Parachord = () => {
           else if (command === 'play' && playKind === 'radio') ackMessage = `Loading radio${params.name || params.title ? `: ${params.name || params.title}` : ''}…`;
           else if (command === 'play') ackMessage = `Looking up "${params.title || ''}"${params.artist ? ` by ${params.artist}` : ''}…`;
           else if (command === 'import') ackMessage = 'Importing…';
-          else if (command === 'chat') ackMessage = 'Opening chat…';
+          else if (command === 'chat') ackMessage = origin === 'home' ? null : 'Opening chat…'; // Home's panel opens at once
           else if (command === 'listen-along') ackMessage = `Connecting to ${params.user || 'friend'}…`;
           // Hold the acknowledgment for 30s so it stays visible through the
           // entire resolution window (radio fetch + JSPF parse + N=2
@@ -12048,11 +12107,18 @@ const Parachord = () => {
             break;
 
           case 'chat': {
-            if (openAiChatRef.current) {
-              openAiChatRef.current();
-            }
+            // false = no chat plugin enabled; openAiChat already toasted.
+            const chatOpened = openAiChatRef.current ? openAiChatRef.current() : true;
             if (params.prompt && handleAiChatSendRef.current) {
               const prompt = params.prompt.slice(0, 500);
+              if (origin === 'home') {
+                // The user typed or approved this prompt in the app. Queue it:
+                // openAiChat's state hasn't committed yet, so sending now would
+                // use the previous render's provider and messages.
+                pendingChatPromptRef.current = chatOpened === false ? null : prompt;
+                if (chatOpened !== false) setPendingChatTick((t) => t + 1);
+                break;
+              }
               showConfirmDialog({
                 type: 'info',
                 title: 'Send to Chat',
@@ -12262,7 +12328,10 @@ ${trackListXml}
         // "Loading…" forever.
         restoreProtocolPlaceholder();
       }
-    });
+    };
+    dispatchProtocolUrlRef.current = dispatchProtocolUrl;
+
+    const cleanup = window.electron.onProtocolUrl((url) => dispatchProtocolUrl(url));
 
     return cleanup;
   }, [friends, playlists]);
@@ -17414,6 +17483,13 @@ ${trackListXml}
   };
 
   // Open AI Chat
+  // Home's Ask Shuffleupagus box: the same parachord://chat path outside links
+  // use, with the in-app origin that skips the external-link confirmation.
+  const askShuffleupagus = (prompt) => {
+    if (!dispatchProtocolUrlRef.current) return;
+    return dispatchProtocolUrlRef.current(window.buildChatPromptUrl(prompt), { origin: 'home' });
+  };
+
   const openAiChat = () => {
     const chatServices = getChatServices();
     // Filter to only enabled services with required config
@@ -17421,7 +17497,7 @@ ${trackListXml}
 
     if (enabledServices.length === 0) {
       showToast('No AI chat plugins configured. Enable Ollama or Claude in Settings.', 'error');
-      return;
+      return false;
     }
 
     // Use selected provider or first available
@@ -17459,6 +17535,7 @@ ${trackListXml}
       provider: { id: provider.id, name: provider.name || provider.manifest?.name, icon: provider.icon || provider.manifest?.icon },
       loading: false
     });
+    return true;
   };
 
   // Close sidebar with animation
@@ -17596,6 +17673,20 @@ ${trackListXml}
   // Keep AI chat refs in sync for protocol handler
   useEffect(() => { openAiChatRef.current = openAiChat; });
   useEffect(() => { handleAiChatSendRef.current = handleAiChatSend; });
+
+  // A prompt from Home's Ask box waits here until openAiChat's state has
+  // committed (the send reads selectedChatProvider and the messages, which a
+  // same-tick call would see stale) and any in-flight reply has finished. The
+  // tick makes the effect run when the panel is already open.
+  const [pendingChatTick, setPendingChatTick] = useState(0);
+  useEffect(() => {
+    const pending = pendingChatPromptRef.current;
+    if (!window.shouldSendPendingChatPrompt({
+      pending, chatOpen: aiChatOpen, providerId: selectedChatProvider, loading: aiChatLoading,
+    })) return;
+    pendingChatPromptRef.current = null;
+    handleAiChatSendRef.current?.(pending);
+  }, [aiChatOpen, selectedChatProvider, aiChatLoading, pendingChatTick]);
 
   // Scroll to bottom when chat window is opened (after slide-in animation completes)
   useEffect(() => {
@@ -18370,7 +18461,7 @@ ${trackListXml}
         'concerts_location', 'concerts_location_coords', 'concerts_location_radius',
         // Queue & tutorial
         'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state', 'repeat_mode',
-        'tutorial_completed', 'whats_new_dismissed_version',
+        'tutorial_completed', 'whats_new_dismissed_version', 'home_setup_dismissed',
         // Loved-tracks push to LB/LFM (opt-in per service)
         'scrobbler_love_push_enabled', 'love_pushed_keys',
         // In-app announcements (banner)
@@ -19163,6 +19254,7 @@ ${trackListXml}
       const savedShuffleState = savedRememberQueue ? d['saved_shuffle_state'] : null;
       const tutorialCompleted = d['tutorial_completed'];
       const dismissedVersion = d['whats_new_dismissed_version'];
+      if (Array.isArray(d['home_setup_dismissed'])) setHomeSetupDismissed(d['home_setup_dismissed']);
       // Repeat (#1319) is a player setting, restored whether or not the queue is.
       setRepeatMode(d['repeat_mode']);
 
@@ -35351,9 +35443,9 @@ useEffect(() => {
     getArtistTopTracks, getChatServices, handleCollectionAlbumClick, handlePlay,
     handlePlayPause, handleStartCollectionStation, isOnAir, isServiceEnabled,
     loadAiRecommendations, loadCharts, loadCriticsPicks, loadNewReleases, loadPlaylist,
-    navigateTo, navigateToFriend, openAiChat,
+    askShuffleupagus, navigateTo, navigateToFriend, openAiChat,
     openCriticsPicksAlbum, openSyncSetupModal, openTopAlbum, playTrackCollection,
-    setQueueWithContext,
+    setQueueWithContext, dismissHomeBanner, openHomeBannerCta, dismissHomeSetupItem, openWhatsNew,
   });
 
   // Stable function props for the memo'd CollectionPage: same identity on
@@ -36066,89 +36158,6 @@ useEffect(() => {
           className: 'h-8 flex-shrink-0 absolute top-0 left-0 right-0 z-10 drag',
           style: { pointerEvents: 'auto' }
         }),
-
-        // In-app announcement banner (one at a time; dismiss surfaces next)
-        activeAnnouncements.length > 0 && (() => {
-          const ann = activeAnnouncements[0];
-          const sev = ann.severity || 'info';
-          const palette = {
-            info:    { bg: '#2563eb', fg: '#ffffff' },
-            success: { bg: '#16a34a', fg: '#ffffff' },
-            warn:    { bg: '#d97706', fg: '#ffffff' },
-            error:   { bg: '#dc2626', fg: '#ffffff' }
-          }[sev] || { bg: '#2563eb', fg: '#ffffff' };
-          // Icon/image: prefer iconUrl (https-only image), fall back to icon glyph.
-          // Image errors silently swap to the glyph (or nothing) via onError.
-          const iconUrlOk = typeof ann.iconUrl === 'string' && /^https:\/\//i.test(ann.iconUrl);
-          const iconText = typeof ann.icon === 'string' && ann.icon.length > 0 && ann.icon.length <= 4 ? ann.icon : null;
-          const iconNode = iconUrlOk
-            ? React.createElement('img', {
-                src: ann.iconUrl,
-                alt: '',
-                referrerPolicy: 'no-referrer',
-                onError: (e) => { try { e.currentTarget.style.display = 'none'; } catch (_) {} },
-                style: { width: '20px', height: '20px', flexShrink: 0, marginTop: '1px', borderRadius: '4px', objectFit: 'cover' }
-              })
-            : iconText
-              ? React.createElement('div', {
-                  style: { fontSize: '16px', lineHeight: '20px', flexShrink: 0, marginTop: '1px' }
-                }, iconText)
-              : null;
-          return React.createElement('div', {
-            key: ann.id,
-            className: 'flex items-start gap-3 px-4 py-2.5 flex-shrink-0',
-            style: {
-              backgroundColor: palette.bg,
-              color: palette.fg,
-              fontSize: '13px',
-              marginTop: isMac ? '32px' : 0
-            }
-          },
-            iconNode,
-            React.createElement('div', { className: 'flex-1 min-w-0' },
-              React.createElement('div', { style: { fontWeight: 600 } }, ann.title),
-              ann.body && React.createElement('div', { style: { opacity: 0.9, marginTop: '2px' } }, ann.body)
-            ),
-            ann.cta && ann.cta.url && /^https?:\/\//i.test(ann.cta.url) && React.createElement('button', {
-              onClick: () => {
-                recordAnnouncementEvent(ann.id, 'cta-click');
-                if (window.electron?.shell?.openExternal) {
-                  window.electron.shell.openExternal(ann.cta.url);
-                } else {
-                  window.open(ann.cta.url, '_blank', 'noopener,noreferrer');
-                }
-              },
-              style: {
-                padding: '4px 12px',
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                border: '1px solid rgba(255, 255, 255, 0.35)',
-                borderRadius: '6px',
-                color: palette.fg,
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                flexShrink: 0
-              }
-            }, ann.cta.label),
-            React.createElement('button', {
-              onClick: () => dismissAnnouncement(ann.id),
-              'aria-label': 'Dismiss announcement',
-              title: 'Dismiss',
-              style: {
-                background: 'transparent',
-                border: 'none',
-                color: palette.fg,
-                opacity: 0.85,
-                cursor: 'pointer',
-                padding: '0 4px',
-                fontSize: '18px',
-                lineHeight: 1,
-                flexShrink: 0
-              }
-            }, '×')
-          );
-        })(),
 
     // External Track Prompt Modal - refined styling
     showExternalPrompt && pendingExternalTrack && React.createElement('div', {
@@ -37560,7 +37569,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, setWhatsNewOpen, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, whatsNewDismissedVersion,
+          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, charts, collectionData, collectionLoading, criticsPicks, currentQueue, currentTrack, discoveryUnread, extensionConnected, friends, homeData, homeFriendsSortRef, homeHeaderCollapsed, homeSetupDismissed, isPlaying, library, listenAlongFriend, metaServiceConfigs, newReleases, playlists, recommendations: recommendationsPreview, resolverSyncSettings, setAddFriendModalOpen, setAddToPlaylistPanel, setCollectionTab, setCurrentQueue, setExtensionInfoOpen, setHomeData, setHomeHeaderCollapsed, setRaycastInfoOpen, setSettingsTab, setTrackLoading, showDiscoveryBadges, showToast, spotifyConnected, trackSourcesCache, whatsNewUnread,
           // Not read by the page directly; read during its render through a
           // stable handler, so it must invalidate the memo.
           _metaServices: metaServices,
@@ -51933,12 +51942,7 @@ useEffect(() => {
           React.createElement('button', {
             onClick: async () => {
               setWhatsNewOpen(false);
-              if (appVersion) {
-                setWhatsNewDismissedVersion(appVersion);
-                if (window.electron?.store) {
-                  await window.electron.store.set('whats_new_dismissed_version', appVersion);
-                }
-              }
+              await markWhatsNewSeen();
             },
             className: 'transition-colors',
             style: {

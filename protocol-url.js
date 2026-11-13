@@ -175,7 +175,27 @@
     return JSON.parse(text);
   }
 
+  // The deep link Home's Ask Shuffleupagus box sends through. The 500-character
+  // cap is the parachord://chat limit.
+  function buildChatPromptUrl(prompt) {
+    let text = String(prompt == null ? '' : prompt).slice(0, 500);
+    // The cut can split a surrogate pair; a lone high surrogate makes
+    // encodeURIComponent throw.
+    if (/[\uD800-\uDBFF]$/.test(text)) text = text.slice(0, -1);
+    return 'parachord://chat?prompt=' + encodeURIComponent(text);
+  }
+
+  // Whether a prompt queued by Home's Ask box can be sent now: the chat panel
+  // has committed open with a provider and no reply is in flight. Sending
+  // earlier would read the previous render's chat state.
+  /** @param {{ pending?: string|null, chatOpen?: boolean, providerId?: string|null, loading?: boolean }} [opts] */
+  function shouldSendPendingChatPrompt({ pending, chatOpen, providerId, loading } = {}) {
+    return !!(pending && String(pending).trim() && chatOpen && providerId && !loading);
+  }
+
   const api = {
+    buildChatPromptUrl,
+    shouldSendPendingChatPrompt,
     isPublicHttpUrl,
     HOSTED_PLAYLIST_MAX_BYTES,
     hostedPlaylistFetchProblem,
@@ -187,6 +207,8 @@
   };
 
   if (typeof window !== 'undefined') {
+    /** @type {any} */ (window).buildChatPromptUrl = buildChatPromptUrl;
+    /** @type {any} */ (window).shouldSendPendingChatPrompt = shouldSendPendingChatPrompt;
     /** @type {any} */ (window).isPublicHttpUrl = isPublicHttpUrl;
     /** @type {any} */ (window).HOSTED_PLAYLIST_MAX_BYTES = HOSTED_PLAYLIST_MAX_BYTES;
     /** @type {any} */ (window).hostedPlaylistFetchProblem = hostedPlaylistFetchProblem;
