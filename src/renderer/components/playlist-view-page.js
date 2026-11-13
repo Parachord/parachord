@@ -53,6 +53,7 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
     deletePlaylistLocally,
     draggedPlaylistTrack,
     editedPlaylistData,
+    emptyPlaylistId,
     fetchArtistData,
     formatTime,
     getPlaylistMirrorTargets,
@@ -1105,6 +1106,15 @@ const PlaylistViewPage = React.memo(function PlaylistViewPage(props) {
               // Use edited tracks when in edit mode, otherwise use playlistTracks
               (() => {
                 const displayTracks = playlistEditMode && editedPlaylistData ? editedPlaylistData.tracks : playlistTracks;
+                // Loaded and empty: say so, rather than loading rows forever.
+                if (displayTracks.length === 0 && !playlistEditMode && emptyPlaylistId === selectedPlaylist.id) {
+                  return React.createElement('div', {
+                    style: { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '6px', padding: '64px 24px' }
+                  },
+                    React.createElement('p', { style: { fontSize: '16px', fontWeight: 500, color: 'var(--text-primary)' } }, 'This playlist is empty'),
+                    React.createElement('p', { style: { fontSize: '14px', color: 'var(--text-secondary)' } }, 'Add tracks with "Add to Playlist" in any track\'s right-click menu.')
+                  );
+                }
                 return displayTracks.length > 0 ?
                 React.createElement(VirtualizedTrackList, {
                   tracks: displayTracks,

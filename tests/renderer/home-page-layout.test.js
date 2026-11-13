@@ -352,3 +352,29 @@ describe('first launch', () => {
     expect(app).toMatch(/if \(!tutorialCompleted && !dismissedVersion && version\) \{\s*setWhatsNewDismissedVersion\(version\);\s*window\.electron\.store\?\.set\('whats_new_dismissed_version', version\);/);
   });
 });
+
+describe('design-audit bug fixes (#1382)', () => {
+  const pv = read('src/renderer/components/playlist-view-page.js');
+
+  test('a loaded, empty playlist says so instead of loading rows forever', () => {
+    expect(pv).toMatch(/if \(displayTracks\.length === 0 && !playlistEditMode && emptyPlaylistId === selectedPlaylist\.id\) \{/);
+    expect(pv).toContain("'This playlist is empty'");
+    // Each "no tracks" path marks the playlist.
+    expect(app.match(/setEmptyPlaylistId\(playlist\.id\);/g) || []).toHaveLength(3);
+  });
+
+  test('the confirm dialog\'s secondary button uses defined variables', () => {
+    expect(app).not.toContain("var(--card-secondary-bg");
+    expect(app).not.toContain("'1px solid var(--border)'");
+  });
+
+  test('Spotify "Clear" saves the cleared value, not the stale input', () => {
+    expect(app).toContain("saveSpotifyCredentials('');");
+    expect(app).toContain("const clientId = (typeof clientIdOverride === 'string' ? clientIdOverride : spotifyClientIdInput).trim();");
+  });
+
+  test('Add-to-Playlist "Done" is readable, and the stop-sync option keeps its box after a hover', () => {
+    expect(app).toContain("color: selectedPlaylistsForAdd.length > 0 ? '#ffffff' : 'var(--text-primary)',");
+    expect(app).toContain("onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }");
+  });
+});

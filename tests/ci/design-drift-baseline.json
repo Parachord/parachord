@@ -14,8 +14,6 @@
     "jsHover": 134
   },
   "undefinedCssVars": [
-    "--accent-secondary-fg",
-    "--border",
-    "--card-secondary-bg"
+    "--accent-secondary-fg"
   ]
 }

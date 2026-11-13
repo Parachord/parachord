@@ -3492,6 +3492,9 @@ const Parachord = () => {
   const navigateBackRef = useRef(null);
   const activeViewNowRef = useRef(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
+  // The playlist whose tracks finished loading and came back empty, so its view
+  // says so instead of showing loading rows forever.
+  const [emptyPlaylistId, setEmptyPlaylistId] = useState(null);
   const [allPlaylistCovers, setAllPlaylistCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [weeklyJamCovers, setWeeklyJamCovers] = useState({}); // { playlistId: [url1, url2, url3, url4] }
   const [draggedPlaylistTrack, setDraggedPlaylistTrack] = useState(null); // For playlist track reordering
@@ -33120,6 +33123,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
           return { ...track, id: trackId, sources: {} };
         });
         setPlaylistTracks(tracksWithIds);
+        if (tracksWithIds.length === 0) setEmptyPlaylistId(playlist.id);
 
         // Step 1.5: Fetch playlist cover art (4 unique album covers for 2x2 grid)
         getPlaylistCovers(playlist.id, tracksWithIds).then(covers => {
@@ -33224,6 +33228,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       } else {
         console.log('⚠️ No tracks found in ListenBrainz playlist');
         setPlaylistTracks([]);
+        setEmptyPlaylistId(playlist.id);
       }
     } else if (playlist.tracks && playlist.tracks.length > 0) {
       // Handle playlists with tracks array directly (e.g., newly created playlists)
@@ -33266,6 +33271,7 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
       // No tracks to display
       console.log('⚠️ Playlist has no tracks');
       setPlaylistTracks([]);
+      setEmptyPlaylistId(playlist.id);
     }
   };
   loadPlaylistRef.current = loadPlaylist;
@@ -34454,13 +34460,13 @@ Variety guidance: ${theme} Be creative and surprising — avoid defaulting to th
   };
 
   // Save Spotify credentials (client ID only — PKCE flow doesn't need a secret)
-  const saveSpotifyCredentials = async () => {
+  const saveSpotifyCredentials = async (clientIdOverride) => {
     if (!window.electron?.spotify?.setCredentials) {
       console.error('Spotify setCredentials not available');
       return;
     }
 
-    const clientId = spotifyClientIdInput.trim();
+    const clientId = (typeof clientIdOverride === 'string' ? clientIdOverride : spotifyClientIdInput).trim();
 
     const result = await window.electron.spotify.setCredentials({
       clientId
@@ -37500,7 +37506,7 @@ useEffect(() => {
 
       // Main content area - Playlist Page (new design matching album page layout)
       : activeView === 'playlist-view' && selectedPlaylist ? React.createElement(PlaylistViewPage, {
-          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, formatTime, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setShareDropdownOpen, setSyncDeleteDialog, setTrackLoading, shareDropdownOpen, showToast, trackSources,
+          activeResolvers: playbackResolvers, allPlaylistCovers, allResolvers, currentTrack, draggedPlaylistTrack, editedPlaylistData, emptyPlaylistId, formatTime, handlePlaylistTracksScrollRef, isPlaying, playbackContext, playlistCoverArt, playlistDropTarget, playlistEditMode, playlistObserverRef, playlistScrollContainerReady, playlistScrollContainerRef, playlistTrackRowRefs, playlistTracks, playlistTracksScrollRef, publishCollectionSmartLink, refreshingPlaylist, resolverLoaderRef, resolverOrder, selectedPlaylist, setAddToPlaylistPanel, setDraggedPlaylistTrack, setDraggingTrackForPlaylist, setEditedPlaylistData, setPlaylistCoverArt, setPlaylistDropTarget, setPlaylistEditMode, setPlaylistScrollContainerReady, setPlaylistTracks, setPlaylists, setRefreshingPlaylist, setSelectedPlaylist, setSelectedPlaylistsForAdd, setShareDropdownOpen, setSyncDeleteDialog, setTrackLoading, shareDropdownOpen, showToast, trackSources,
           ...playlistViewPageHandlers
         })
 
@@ -49053,7 +49059,9 @@ useEffect(() => {
                 spotifyClientIdInput && React.createElement('button', {
                   onClick: () => {
                     setSpotifyClientIdInput('');
-                    saveSpotifyCredentials();
+                    // Pass the cleared value: the input state hasn't updated
+                    // yet, and reading it re-saved the old Client ID.
+                    saveSpotifyCredentials('');
                   },
                   style: {
                     padding: '6px 12px',
@@ -52880,7 +52888,9 @@ useEffect(() => {
                 padding: '8px 14px',
                 fontSize: '13px',
                 fontWeight: '500',
-                color: '#ffffff',
+                // Neutral "Done" takes the page's text colour: white on the
+                // near-white neutral fill was unreadable in light mode.
+                color: selectedPlaylistsForAdd.length > 0 ? '#ffffff' : 'var(--text-primary)',
                 backgroundColor: selectedPlaylistsForAdd.length > 0 ? 'var(--accent-primary)' : 'var(--hover-bg-default)',
                 border: 'none',
                 borderRadius: '8px',
@@ -53994,8 +54004,8 @@ useEffect(() => {
               fontSize: '13px',
               fontWeight: '500',
               color: 'var(--text-primary)',
-              backgroundColor: 'var(--card-secondary-bg, rgba(0,0,0,0.04))',
-              border: '1px solid var(--border)',
+              backgroundColor: 'var(--hover-bg-default)',
+              border: '1px solid var(--border-default)',
               borderRadius: '10px',
               cursor: 'pointer'
             }
@@ -55206,8 +55216,10 @@ useEffect(() => {
                 cursor: 'pointer',
                 transition: 'background-color 150ms ease, border-color 150ms ease'
               },
-              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; },
-              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; }
+              // Hover deepens the fill; leaving restores it (it used to clear
+              // to transparent, so the option lost its box after one hover).
+              onMouseEnter: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-subtle)'; },
+              onMouseLeave: (e) => { e.currentTarget.style.backgroundColor = 'var(--hover-bg-default)'; }
             },
               React.createElement('div', {
                 style: { fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }
