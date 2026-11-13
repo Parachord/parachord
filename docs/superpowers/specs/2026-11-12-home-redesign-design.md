@@ -109,7 +109,7 @@ Which mixes count as play history:
 Six playlist cards, ordered by **when each playlist last changed**, not by when it was created. A playlist that refreshes itself (a hosted XSPF, a synced mirror) stays up front however old it is.
 
 - The art is a 2×2 mosaic.
-- A badge shows how many tracks the latest change added ("+12"), while that change is recent. See point 3 of "Settled after a builder's read".
+- A badge shows how many tracks the latest change added ("Δ 12"), while that change is recent. See point 3 of "Settled after a builder's read".
 - The subtitle reads "Refreshed 2h ago · since 2023": when it last changed, and the year it was created.
 - **See all** opens the Playlists page.
 - **Hidden** with no playlists.
@@ -295,7 +295,7 @@ A fresh reviewer read this spec as its builder and raised the points below. Each
    - Also store `lastChangeAdded`, the number of tracks the latest change added, computed at the same moment. A track is its content key, not its `id`: artist and title folded like `trackSlug`, with duplicates counted (new keys minus old keys, as a multiset). Track ids can't do it: hosted XSPF tracks have no ids, and ListenBrainz ids are positional (`listenbrainz-track-<playlist>-<index>`), so a weekly playlist that replaces every track keeps every id.
    - Both ride along in the save payload through `buildPlaylistSavePayload`'s spread. No field list changes, and no sync contract changes, because neither field is pushed to a service.
    - A playlist saved before the field exists falls back to `lastModified` until its tracks next change.
-3. **The "+N" badge and "N new" lines use the latest change, not "since your last visit" (my call; this replaces the window stated in section 5).**
+3. **The "Δ N" badge and "N new" lines use the latest change, not "since your last visit" (my call; this replaces the window stated in section 5).**
    - The badge shows `+lastChangeAdded` while `tracksChangedAt` is within the last 7 days, and is hidden otherwise.
    - The header line and the freshest tile's subtitle use the same two fields ("picked up 12 new tracks this morning", "12 new today"), with the time phrase taken from `tracksChangedAt`.
    - No visit timestamp or per-playlist snapshot is stored.
