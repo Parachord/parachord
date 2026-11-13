@@ -1202,7 +1202,7 @@ const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-sh
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems,
-  filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES
+  filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES, playlistCategory
 } = require('./lib/recommendation-model');
 const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
@@ -28297,7 +28297,7 @@ Return ONLY the JSON array, no other text.`;
       if (!result || !Array.isArray(result.items) || result.items.length === 0) {
         // Nothing more from the provider: remember the exhaustion so the
         // button goes away (a force-refresh resets it).
-        setExpandedSections(prev => ({ ...prev, [key]: { ...(prev[key] || { items: [] }), exhausted: true, lastPageTypes: [] } }));
+        setExpandedSections(prev => ({ ...prev, [key]: { ...(prev[key] || { items: [] }), exhausted: true, lastPageTypes: [], lastPageCategories: [] } }));
       } else {
         // No-advance guard (the same rule paginatePlaylistTracks enforces for
         // playlist pages): a provider answering the very cursor that was sent
@@ -28324,7 +28324,10 @@ Return ONLY the JSON array, no other text.`;
               // section shares the fetch, and a split whose type the page
               // didn't bring stops showing its loading tail (spec "Paging
               // guards") while the section pages on for the others.
-              lastPageTypes: [...new Set(result.items.map(i => i && i.type).filter(Boolean))]
+              lastPageTypes: [...new Set(result.items.map(i => i && i.type).filter(Boolean))],
+              // Which playlist categories this page brought: a category row
+              // whose category the page didn't bring stops showing its tail.
+              lastPageCategories: [...new Set(result.items.filter(i => i && i.type === 'playlist').map(i => playlistCategory(i, section.category)))]
             }
           };
         });
@@ -41887,11 +41890,13 @@ useEffect(() => {
             // The header, then the items the page's source filter keeps
             // (filterRowBySource). Open state is per row (sub.key); the page
             // fetches are per provider section (sub.pageable[].pagingKey).
-            const renderSubsection = (sub) => {
+            // `cardRows` is how many rows of cards this row's preview shows: the
+            // Playlists section passes 1 when it has several category rows.
+            const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {
               const expanded = recommendationsExpandedSections.has(sub.key);
               const items = filterRowBySource(sub, activeSourceFilter);
               const isSongs = sub.type === 'song';
-              const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : SECTION_PREVIEW;
+              const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : (recommendationsGridColumns.cards || 6) * cardRows;
               const llmTail = llmLoading && LLM_TAIL_ROWS.has(sub.key) && (!filteringOne || activeSourceFilter === 'shuffleupagus') ? LLM_TAIL : 0;
               // The row's real preview always shows in full; the Shuffleupagus
               // tail (a fixed LLM_TAIL placeholders) trails after it, so a
@@ -41907,6 +41912,9 @@ useEffect(() => {
               const showLoadingTail = expanded && (sub.pageable || []).some(p => {
                 if (!recommendationsLoadingMore[p.pagingKey]) return false;
                 const expansion = expandedSections[p.pagingKey];
+                if (sub.category) {
+                  return !expansion || !Array.isArray(expansion.lastPageCategories) || expansion.lastPageCategories.includes(sub.category);
+                }
                 return !expansion || !Array.isArray(expansion.lastPageTypes) || expansion.lastPageTypes.includes(sub.type);
               });
               // Albums (title, artist) and playlists (name, source) have two
@@ -41938,7 +41946,7 @@ useEffect(() => {
                   // An open row fetching its next page: placeholders where the
                   // new cards will land.
                   ...(showLoadingTail
-                    ? Array.from({ length: SECTION_PREVIEW }, (_, i) => React.createElement(RecommendationCardSkeleton, { key: `rec-more-${i}`, index: i, lines: cardLines }))
+                    ? Array.from({ length: preview }, (_, i) => React.createElement(RecommendationCardSkeleton, { key: `rec-more-${i}`, index: i, lines: cardLines }))
                     : []),
                   // Shuffleupagus still thinking: where its picks will land.
                   ...Array.from({ length: llmTail }, (_, i) => React.createElement(RecommendationCardSkeleton, {
@@ -41956,9 +41964,18 @@ useEffect(() => {
             // section skeleton under an Albums heading stands in the Albums
             // slot (after Songs).
             const llmSlot = llmPlaceholder && React.createElement(RecommendationSectionSkeleton, { key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW });
-            const renderTypeSection = (section) => React.createElement('div', { key: `type:${section.type}`, className: 'mb-10' },
-              ...section.subsections.map(renderSubsection)
-            );
+            const renderTypeSection = (section) => {
+              // A row with nothing to show under the source filter (and no page
+              // in flight) isn't rendered. Several rows left: one row of cards
+              // each, so the section stays compact; a lone row keeps two.
+              const visibleRows = section.subsections.filter(sub =>
+                filterRowBySource(sub, activeSourceFilter).length > 0
+                || (sub.pageable || []).some(p => recommendationsLoadingMore[p.pagingKey]));
+              const cardRows = visibleRows.length > 1 ? 1 : CARD_ROWS;
+              return React.createElement('div', { key: `type:${section.type}`, className: 'mb-10' },
+                ...visibleRows.map(sub => renderSubsection(sub, { cardRows }))
+              );
+            };
 
             // ── The page ──────────────────────────────────────────────────
             const contentSections = sections.filter(s => s.type !== 'friend');

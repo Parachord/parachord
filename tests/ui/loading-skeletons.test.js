@@ -25,7 +25,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
   const skel = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'components', 'recommendation-skeletons.js'), 'utf8');
   const view = app.slice(app.indexOf("activeView === 'recommendations' && React.createElement"));
   const loading = view.slice(view.indexOf('recommendations.loading && allSections.length === 0 ?'), view.indexOf(": recommendations.error === 'not_configured' ?"));
-  const renderSubsection = view.slice(view.indexOf('const renderSubsection = (sub) => {'));
+  const renderSubsection = view.slice(view.indexOf('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {'));
   const songRow = view.slice(view.indexOf('const songRow = (item, index, allSongs, section) => {'), view.indexOf('// ── Friends'));
   const friendCard = view.slice(view.indexOf('const friendCard = (item, index, row) => {'), view.indexOf("// ── One section's row"));
   const artistCard = view.slice(view.indexOf('const artistCard = (item, index) => {'), view.indexOf('const albumCard = (item, index) => {'));
@@ -93,7 +93,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     expect(view).toContain('const CARD_ROWS = 2;');
     expect(view).toContain('const SECTION_PREVIEW = (recommendationsGridColumns.cards || 6) * CARD_ROWS;');
     expect(view).toContain('const FRIEND_PREVIEW = recommendationsGridColumns.friends || 6;');
-    expect(renderSubsection).toContain("const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : SECTION_PREVIEW;");
+    expect(renderSubsection).toContain("const preview = isSongs ? SONG_PREVIEW : sub.type === 'friend' ? FRIEND_PREVIEW : (recommendationsGridColumns.cards || 6) * cardRows;");
     expect(skel).toContain('const CARD_PREVIEW = 6;');
     const songs = view.match(/const SONG_PREVIEW = (\d+);/)[1];
     expect(skel).toContain(`const SONG_PREVIEW = ${songs};`);
@@ -161,10 +161,13 @@ describe('Recommendations skeletons match the sectioned page', () => {
     const more = app.slice(app.indexOf('const loadMoreRecommendationSection = async'), app.indexOf('// Re-merge when a "load more" answered'));
     expect(more).toMatch(/lastPageTypes: \[\.\.\.new Set\(result\.items\.map\(i => i && i\.type\)\.filter\(Boolean\)\)\]/);
     expect(more).toMatch(/exhausted: true, lastPageTypes: \[\]/);
+    // The loading tail's cards use the row's own preview, not the whole-page
+    // SECTION_PREVIEW, so a one-row category row shows one row of placeholders.
+    expect(renderSubsection).toMatch(/showLoadingTail[\s\S]{0,200}Array\.from\(\{ length: preview \}[\s\S]{0,120}RecommendationCardSkeleton/);
   });
 
   test('the real section header and the skeleton header share the heading line', () => {
-    const header = view.slice(view.indexOf('const subsectionHeader = (sub, { expanded, showToggle }) =>'), view.indexOf('const renderSubsection = (sub) => {'));
+    const header = view.slice(view.indexOf('const subsectionHeader = (sub, { expanded, showToggle }) =>'), view.indexOf('const renderSubsection = (sub, { cardRows = CARD_ROWS } = {}) => {'));
     // Both draw the app's SectionHeader with the shared gap below it.
     expect(header).toMatch(/React\.createElement\(SectionHeader, \{/);
     expect(header).toContain('style: SECTION_HEADER_GAP');
@@ -173,7 +176,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // The unnamed heading's bar is inline in the title's line, so it keeps
     // the title's 30px line height.
     expect(skel).toMatch(/display: 'inline-block', verticalAlign: 'middle'/);
-    expect(view).toMatch(/const renderTypeSection = \(section\) => React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10' \}/);
+    expect(view).toMatch(/const renderTypeSection = \(section\) => \{[\s\S]{0,700}React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10' \}/);
     expect(skel).toContain("React.createElement('div', { className: 'mb-10', 'aria-hidden': 'true' }");
   });
 
