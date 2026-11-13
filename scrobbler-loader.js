@@ -817,6 +817,25 @@ class LastFmScrobbler extends BaseScrobbler {
     return true;
   }
 
+  // Fetch one page of the user's loved tracks (parachord#1071 — the
+  // import half of the loved-tracks sync). Read-only: goes through the
+  // signed apiRequest like every other call (no extra scope beyond the
+  // session auth), so the auth-error handling applies here too. The caller
+  // maps the page via mapLastFmLovedPage (src/renderer/lib/love-import.js)
+  // and walks pages newest-first until the import cursor's stop marker or
+  // the caller's page guard.
+  async fetchLovedTracksPage({ page = 1, limit = 200 } = {}) {
+    const config = await this.getConfig();
+    if (!config.username) {
+      throw new Error('Last.fm username not configured');
+    }
+    return this.apiRequest('user.getLovedTracks', {
+      user: config.username,
+      limit,
+      page
+    });
+  }
+
   // Get auth token for desktop auth flow
   async getAuthToken() {
     const response = await window.electron.proxyFetch(

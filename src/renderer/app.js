@@ -1165,6 +1165,10 @@ window.isMusicKitAvailable = () => {
 // Collection track/album/artist ids (must match sync-providers/spotify.js);
 // in lib/collection-ids.js so the extracted page modules can share them.
 const { normalizeForId, generateTrackId, generateAlbumId, generateArtistId, isPlaceholderAlbum, findSavedTrack, clearPlaceholderAlbums } = require('./lib/collection-ids');
+// Loved-tracks import helpers (parachord#1071) — pure mapping/dedupe/
+// tombstone/cursor logic; the runner (runLoveImport) and fetchers live below.
+const LoveImport = require('./lib/love-import');
+const { lastfmTombstoneKey } = LoveImport;
 
 // Generate a unique hash from a string (for deterministic pattern generation)
 // Unicode-aware track/album id slugs — replaces the ASCII-only strip formula
@@ -3781,6 +3785,13 @@ const Parachord = () => {
   const [loveBackfillRunning, setLoveBackfillRunning] = useState({}); // { [service]: boolean }
   const loveBackfillRunningRef = useRef({});
   const [loveBackfillProgress, setLoveBackfillProgress] = useState({}); // { [service]: { done, total } }
+  // Loved-tracks IMPORT (parachord#1071): the inbound half of the
+  // loved-tracks scrobbler sync. One run per service, manual button in
+  // the scrobbler's card; cursors make later runs only fetch new loves.
+  const [loveImportRunning, setLoveImportRunning] = useState({}); // { [service]: boolean }
+  const loveImportRunningRef = useRef({});
+  const [loveImportProgress, setLoveImportProgress] = useState({}); // { [service]: { done, total, phase? } }
+  const loveImportCursorsRef = useRef({}); // { [service]: ms epoch — newest loved-at seen }
   // In-memory retry queue for love-pushes that failed transiently (mapper
   // 5xx/502, LB API 5xx/429, network errors). Walked by a periodic runner
   // that re-attempts pushLoveToScrobblers on each entry. Max 5 attempts,
@@ -13769,10 +13780,15 @@ ${trackListXml}
     push('applemusic', track.appleMusicId);
     push('applemusic', track.sources?.applemusic?.appleMusicId);
     // ListenBrainz uses recording MBID as the external identifier on
-    // its sync surface (loved-tracks sync — currently one-way push,
-    // no inbound; included for forward-compat if LB inbound lands).
+    // its sync surface (loved-tracks sync — the import side reads these
+    // back, parachord#1071).
     push('listenbrainz', track.mbid);
     push('listenbrainz', track.sources?.listenbrainz?.mbid);
+    // Last.fm loves have no per-track id, so the key the loved-tracks
+    // import (parachord#1071) reads back is the normalized artist|title
+    // (lastfmTombstoneKey in src/renderer/lib/love-import.js — the same
+    // normalizeStr the resolver gate uses).
+    push('lastfm', lastfmTombstoneKey(track.artist, track.title));
     return entries;
   }, []);
 
@@ -14033,6 +14049,217 @@ ${trackListXml}
     if (failed > 0) msg += ` (${failed} failed)`;
     showToast(msg);
   }, [showToast, markLovePushed]);
+
+  // ── Loved-tracks IMPORT (parachord#1071) ──────────────────────────────
+  // Pulls the user's loves from a scrobbler service into the collection —
+  // the inbound half of the loved-tracks sync. Rules that keep it from
+  // fighting the push side (see docs/architecture/sync.md):
+  //   1. No loop: every imported track is marked in love_pushed_keys for
+  //      the service it came from, so the push toggle/backfill never sends
+  //      a love straight back to its origin.
+  //   2. Cross-service propagation stays the existing toggle's job: an
+  //      imported love is pushed to the OTHER service below when that
+  //      service's push toggle is on, and the completion toast says so.
+  //   3. Identity-first dedupe (MBID → ISRC → collection id → artist+title)
+  //      so loves without an album (Last.fm) or with a different release
+  //      (LB) don't create near-duplicates.
+  //   4. Tombstoned loves stay out: a love the user removed must not come
+  //      back on the next import.
+  //   5. addedAt keeps the service's loved-at time.
+  //   6. One-way stays one-way: importing never unloves anything remotely.
+
+  // Per-service page fetchers. Both services return loves newest-first, so
+  // the cursor (newest loved-at seen) bounds the walk: sliceNewLoved stops
+  // below the cursor (a small overlap re-fetches same-second late
+  // arrivals). The MAX_PAGES guard bounds a lying total attr; dedupe makes
+  // an early stop harmless.
+  const LOVE_IMPORT_MAX_PAGES = 500;
+  const fetchLastFmLoves = useCallback(async (cursorMs, onProgress) => {
+    const out = [];
+    let total = 0;
+    let seen = 0;
+    for (let page = 1; page <= LOVE_IMPORT_MAX_PAGES; page++) {
+      const data = await window.lastfmScrobbler.fetchLovedTracksPage({ page, limit: 200 });
+      const { items, total: pageTotal } = LoveImport.mapLastFmLovedPage(data);
+      if (page === 1 && pageTotal > 0) total = pageTotal;
+      const { fresh, stop } = LoveImport.sliceNewLoved(items, cursorMs);
+      out.push(...fresh);
+      seen += items.length;
+      // Progress counts every love seen (fresh + already-known tail), so a
+      // big library with mostly-old loves still visibly marches toward the
+      // remote total instead of sitting at 12/842.
+      onProgress(seen, total || seen);
+      if (stop || items.length === 0) break;
+      if (page === LOVE_IMPORT_MAX_PAGES) {
+        console.warn(`[love-import lastfm] stopped at the ${LOVE_IMPORT_MAX_PAGES}-page guard`);
+        break;
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    return { candidates: out, total };
+  }, []);
+
+  const runLoveImport = useCallback(async (service) => {
+    const fetcher = service === 'lastfm' ? fetchLastFmLoves : null;
+    const label = service === 'lastfm' ? 'Last.fm' : 'ListenBrainz';
+    const otherService = service === 'lastfm' ? 'listenbrainz' : 'lastfm';
+    const otherLabel = service === 'lastfm' ? 'ListenBrainz' : 'Last.fm';
+    if (!fetcher) return;
+    if (loveImportRunningRef.current[service]) return;
+    // A not-yet-loaded collection reads as empty: the identity dedupe would
+    // add every love as new. Same guard class as saveCollection (#758).
+    if (collectionLoadingRef.current) {
+      showToast('Your library is still loading — try the import again in a moment');
+      return;
+    }
+    const scrobbler = service === 'lastfm' ? window.lastfmScrobbler : window.listenbrainzScrobbler;
+    if (!scrobbler) { showToast(`${label} scrobbler not loaded`); return; }
+    let connected = false;
+    try { connected = await scrobbler.isEnabled(); } catch (e) { connected = false; }
+    if (!connected) { showToast(`${label} not connected`); return; }
+
+    loveImportRunningRef.current = { ...loveImportRunningRef.current, [service]: true };
+    setLoveImportRunning(prev => ({ ...prev, [service]: true }));
+    setLoveImportProgress(prev => ({ ...prev, [service]: { done: 0, total: 0 } }));
+
+    try {
+      const cursorMs = loveImportCursorsRef.current?.[service] || 0;
+      const setProgress = (done, total, phase) =>
+        setLoveImportProgress(prev => ({ ...prev, [service]: { done, total, ...(phase ? { phase } : {}) } }));
+
+      // 1. Fetch (only loves newer than the cursor).
+      const { candidates } = await fetcher(cursorMs, (done, total) => setProgress(done, total));
+      if (candidates.length === 0) {
+        showToast(cursorMs > 0 ? `No new loved tracks on ${label}` : `No loved tracks found on ${label}`);
+        return;
+      }
+
+      // 2. Resolve names, dedupe, honor tombstones.
+      let tombstones = null;
+      const readTombstones = async () => {
+        if (!window.electron?.tombstones?.list) return null;
+        try { return await window.electron.tombstones.list(); } catch (e) { return null; }
+      };
+      tombstones = await readTombstones();
+      const index = LoveImport.buildCollectionIdentityIndex(collectionDataRef.current?.tracks || []);
+      const nowMs = Date.now();
+      let existing = 0, removed = 0, skipped = 0;
+      const toAdd = [];
+      for (const cand of candidates) {
+        let c = cand;
+        // LB items submitted without metadata: resolve names from
+        // MusicBrainz by recording MBID (background lane, 1 req/s).
+        if (c.needsLookup) {
+          const names = (typeof window.lookupRecordingTitle === 'function'
+            ? await window.lookupRecordingTitle(c.mbid) : null) || null;
+          if (!names) { skipped++; continue; }
+          c = { ...c, artist: names.artist, title: names.title };
+        }
+        if (LoveImport.isTombstoned(tombstones, c)) { removed++; continue; }
+        if (LoveImport.matchCollectionTrack(index, c)) { existing++; continue; }
+        const track = LoveImport.buildImportTrack(c, nowMs);
+        toAdd.push(track);
+        LoveImport.indexTrack(index, track); // two loves of the same recording add once
+      }
+
+      // A removal during the fetch/dedupe loop (minutes on a big library)
+      // must not be undone by this import — re-read the tombstone list right
+      // before the write and drop anything removed in the meantime.
+      if (toAdd.length > 0) {
+        const tombstonesNow = await readTombstones();
+        const stillWanted = toAdd.filter(t =>
+          !LoveImport.isTombstoned(tombstonesNow ?? tombstones, { service, artist: t.artist, title: t.title, mbid: t.mbid }));
+        removed += toAdd.length - stillWanted.length;
+        toAdd.length = 0;
+        toAdd.push(...stillWanted);
+      }
+
+      // 3. Add — one collection write for the whole batch. The in-updater
+      //    re-check guards a collection that changed while we were fetching;
+      //    the box captures what actually got added, so the toast, the badge
+      //    and the cross-service push all report the real number, not the plan.
+      const writeBox = { fresh: null };
+      if (toAdd.length > 0) {
+        setCollectionData(prev => {
+          const freshIndex = LoveImport.buildCollectionIdentityIndex(prev.tracks);
+          const fresh = toAdd.filter(t => !LoveImport.matchCollectionTrack(freshIndex, t));
+          if (fresh.length === 0) { writeBox.fresh = []; return prev; }
+          const newData = { ...prev, tracks: [...prev.tracks, ...fresh] };
+          saveCollection(newData);
+          writeBox.fresh = fresh;
+          return newData;
+        });
+
+        // No loop: mark every imported track as already-pushed for the
+        // service it came FROM, so neither the push toggle nor that
+        // service's backfill sends it straight back. One write, after the
+        // collection write so a failed add doesn't orphan marks.
+        const marked = LoveImport.applyLoveImportMarks(lovePushedKeysRef.current, toAdd.map(t => t.id), service);
+        lovePushedKeysRef.current = marked;
+        try { await window.electron.store.set('love_pushed_keys', marked); }
+        catch (e) { console.warn(`[love-import ${service}] could not persist no-loop marks:`, e?.message || e); }
+      }
+      // The functional updater has always run by the time the store.set
+      // above resolved (React commits before the IPC round-trip returns);
+      // null means it somehow hasn't, and the plan is the honest fallback
+      // (it can only over-count a race-lost duplicate).
+      const addedTracks = writeBox.fresh ?? toAdd;
+      if (addedTracks.length > 0) showSidebarBadge('collection');
+      // Cross-service propagation is the existing push toggle's job (below).
+      const pushToOther = !!(scrobblerLovePushEnabledRef.current?.[otherService]);
+
+      // 4. The cursor advances ONLY on a run that added nothing. A run that
+      //    adds never advances past what it added, so the next run
+      //    re-verifies the added window — cheap (the identity dedupe counts
+      //    them as already-in-collection and advances the cursor then) — and
+      //    a failed collection.save self-heals after a restart, when the
+      //    failed write's in-memory adds are gone: the next import re-fetches
+      //    and re-adds instead of silently skipping those loves forever. (In
+      //    the same session the in-memory state still shows the adds, so a
+      //    second click would advance past them — saveCollection failures
+      //    are #758's silent-disk-failure class and surface only in the
+      //    console.) A per-love max would instead advance past OLDER adds
+      //    the moment one NEWER love already exists in the collection —
+      //    exactly the first-import shape — so the whole-run hold is the rule.
+      const nextCursor = toAdd.length > 0 ? cursorMs : LoveImport.nextImportCursor(candidates, cursorMs);
+      if (nextCursor > cursorMs) {
+        loveImportCursorsRef.current = { ...(loveImportCursorsRef.current || {}), [service]: nextCursor };
+        window.electron.store.set('love_import_cursors', loveImportCursorsRef.current).catch(() => {});
+      }
+
+      showToast(LoveImport.summarizeLoveImport({
+        serviceLabel: label,
+        added: addedTracks.length,
+        existing,
+        skipped,
+        removed,
+        crossServiceLabel: pushToOther && addedTracks.length > 0 ? otherLabel : null,
+        crossQueued: pushToOther ? addedTracks.length : 0,
+      }));
+
+      // 5. Cross-service propagation (issue #1071 rule 2): a love imported
+      //    from one service is pushed to the other when that service's
+      //    toggle is on — paced, and the completion toast above says so.
+      //    pushLoveToScrobblers skips the source service via the marks
+      //    written in step 3.
+      if (pushToOther && addedTracks.length > 0) {
+        setProgress(0, addedTracks.length, 'push');
+        for (let i = 0; i < addedTracks.length; i++) {
+          try { await pushLoveToScrobblers(addedTracks[i]); }
+          catch (err) { console.warn(`[love-import ${service}] cross-service push failed for "${addedTracks[i].title}":`, err?.message || err); }
+          setProgress(i + 1, addedTracks.length, 'push');
+          if (i < addedTracks.length - 1) await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+    } catch (err) {
+      console.warn(`[love-import ${service}] failed:`, err?.message || err);
+      showToast(`Import from ${label} failed: ${err?.message || err}`);
+    } finally {
+      loveImportRunningRef.current = { ...loveImportRunningRef.current, [service]: false };
+      setLoveImportRunning(prev => ({ ...prev, [service]: false }));
+      setLoveImportProgress(prev => ({ ...prev, [service]: null }));
+    }
+  }, [showToast, showSidebarBadge, saveCollection, pushLoveToScrobblers, fetchLastFmLoves]);
 
   // Remove track from collection
   const removeTrackFromCollection = useCallback((track) => {
@@ -18364,8 +18591,9 @@ ${trackListXml}
         // Queue & tutorial
         'saved_queue', 'saved_queue_position', 'saved_playback_context', 'saved_shuffle_state', 'repeat_mode',
         'tutorial_completed', 'whats_new_dismissed_version',
-        // Loved-tracks push to LB/LFM (opt-in per service)
-        'scrobbler_love_push_enabled', 'love_pushed_keys',
+        // Loved-tracks push to LB/LFM (opt-in per service) + the import
+        // cursor (newest loved-at seen per service, parachord#1071)
+        'scrobbler_love_push_enabled', 'love_pushed_keys', 'love_import_cursors',
         // In-app announcements (banner)
         'cached_announcements', 'dismissed_announcement_ids',
         // Playlists page sort preference
@@ -19164,6 +19392,8 @@ ${trackListXml}
       const lovePushedKeys = d['love_pushed_keys'] || {};
       setScrobblerLovePushEnabled(lovePushEnabled);
       lovePushedKeysRef.current = lovePushedKeys;
+      // Loved-tracks import cursor (parachord#1071): { lastfm?: ms, listenbrainz?: ms }
+      loveImportCursorsRef.current = d['love_import_cursors'] || {};
 
       // Restore saved queue if remember queue is enabled, and only when nothing
       // has started playing in this run (#1287, mobile's QueueRestorePolicy): a
@@ -49279,6 +49509,9 @@ useEffect(() => {
                         backfillRunning: !!loveBackfillRunning.lastfm,
                         backfillProgress: loveBackfillProgress.lastfm,
                         unpushedCount: (collectionDataRef.current?.tracks || collectionData.tracks).filter(t => !lovePushedKeysRef.current[t.id]?.lastfm).length,
+                        onRunImport: () => runLoveImport('lastfm'),
+                        importRunning: !!loveImportRunning.lastfm,
+                        importProgress: loveImportProgress.lastfm,
                       })
                   )
                 )

@@ -266,6 +266,9 @@ const ScrobblerSettingsCard = React.memo(({
   backfillRunning = false,
   backfillProgress = null,
   unpushedCount = 0,
+  onRunImport = null,
+  importRunning = false,
+  importProgress = null,
 }) => {
   const [connecting, setConnecting] = React.useState(false);
   const [error, setError] = React.useState(null);
@@ -547,6 +550,26 @@ const ScrobblerSettingsCard = React.memo(({
             ),
             React.createElement('p', { className: 'text-xs text-gray-500' },
               'Backfilled loves are stamped at the time of push (the remote service has no backdate API).'
+            )
+          ),
+        // Loved-tracks import (issue #1071): pull the user's loves on this
+        // service into the collection. Opt-in per service; Libre.fm stays
+        // out (same scope as push — the card simply never passes onRunImport).
+        onRunImport && (scrobbler.id === 'lastfm' || scrobbler.id === 'listenbrainz') &&
+          React.createElement('div', { className: 'border-t border-gray-200 pt-3 space-y-2' },
+            React.createElement('button', {
+              onClick: onRunImport,
+              disabled: importRunning,
+              className: 'w-full py-1.5 px-3 text-sm bg-purple-50 text-purple-700 rounded-lg font-medium hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+            },
+              importRunning && importProgress
+                ? (importProgress.phase === 'push'
+                    ? `Also pushing to ${scrobbler.id === 'lastfm' ? 'ListenBrainz' : 'Last.fm'}… ${importProgress.done}/${importProgress.total}`
+                    : `Importing… ${importProgress.done}/${importProgress.total}`)
+                : `Import loved tracks from ${scrobbler.id === 'lastfm' ? 'Last.fm' : 'ListenBrainz'}`
+            ),
+            React.createElement('p', { className: 'text-xs text-gray-500' },
+              'Adds the tracks you love there to your Parachord collection (tracks you removed stay out).'
             )
           ),
         // Disconnect

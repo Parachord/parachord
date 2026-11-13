@@ -1,0 +1,68 @@
+{
+  "lovedtracks": {
+    "@attr": {
+      "page": "1",
+      "perPage": "3",
+      "totalPages": "281",
+      "total": "842",
+      "user": "example-user"
+    },
+    "track": [
+      {
+        "artist": {
+          "name": "Radiohead",
+          "mbid": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+          "url": "https://www.last.fm/music/Radiohead"
+        },
+        "name": "Creep",
+        "mbid": "8f28b6df-1788-46ea-a7a4-3a0f30e10482",
+        "streamable": "0",
+        "date": {
+          "uts": "1735689600",
+          "text": "1 Jan 2025, 00:00"
+        },
+        "url": "https://www.last.fm/music/Radiohead/_/Creep"
+      },
+      {
+        "artist": {
+          "name": "Tokyo Jihen",
+          "mbid": "b6d7ec1f-62f6-43dc-a67c-8367f4047d0e",
+          "url": "https://www.last.fm/music/Tokyo+Jihen"
+        },
+        "name": "修羅場",
+        "mbid": "",
+        "streamable": "0",
+        "date": {
+          "uts": "1704067200",
+          "text": "1 Jan 2024, 00:00"
+        },
+        "url": "https://www.last.fm/music/Tokyo+Jihen/_/%E4%BF%AE%E7%BE%85%E5%A0%B4"
+      },
+      {
+        "artist": {
+          "name": "Fiona Apple",
+          "mbid": "beth9c05-5355-49c2-bfe6-48968a7e502b",
+          "url": "https://www.last.fm/music/Fiona+Apple"
+        },
+        "name": "Fast As You Can",
+        "mbid": "not-a-uuid",
+        "streamable": "0",
+        "url": "https://www.last.fm/music/Fiona+Apple/_/Fast+As+You+Can"
+      },
+      {
+        "artist": {
+          "#text": "New Order",
+          "mbid": ""
+        },
+        "name": "Temptation",
+        "mbid": "0f2a2e31-9a0f-4c0f-b0c5-e9d62a1e6384",
+        "streamable": "0",
+        "date": {
+          "uts": "1609459200",
+          "text": "1 Jan 2021, 00:00"
+        },
+        "url": "https://www.last.fm/music/New+Order/_/Temptation"
+      }
+    ]
+  }
+}
