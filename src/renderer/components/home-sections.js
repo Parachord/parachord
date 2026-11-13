@@ -345,7 +345,7 @@ function subtitleLines(subtitle) {
     .map((l, i) => (i === 0 ? l : l.charAt(0).toUpperCase() + l.slice(1)));
 }
 
-function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
+function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
   const reveal = useReveal();
   if (!playlist) return null;
   const title = playlist.title;
@@ -363,11 +363,12 @@ function PlaylistCard({ playlist, badge, chip, subtitle, onOpen, onPlay, onQueue
             padding: '3px 8px', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)',
           },
         }, badge),
-        // Home has no add-to-playlist for a playlist, so its card shows the
-        // app's overlay with Play and Add to Queue, as the app's cards do when
-        // an action is missing.
+        // The app's overlay. A mix (a service playlist, tracks not loaded)
+        // has no Add to Playlist, so it shows Play and Add to Queue, as the
+        // app's cards do when an action is missing.
         e(ArtOverlay, {
           shown: reveal.shown, title, onClick: open,
+          onAddToPlaylist: onAddToPlaylist && (() => onAddToPlaylist(playlist)),
           onPlay: () => onPlay && onPlay(playlist),
           onQueue: () => onQueue && onQueue(playlist),
         }))),
@@ -465,7 +466,7 @@ function MixesRow({ mixes, sourceColors, onOpen, onPlay, onQueue, onContextMenu,
       }))));
 }
 
-function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onContextMenu, onArtError }) {
+function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
   const list = Array.isArray(playlists) ? playlists.slice(0, HOME_ROW_CARDS) : [];
   if (list.length === 0) return null;
   return e('section', { 'aria-labelledby': 'home-playlists', style: SECTION_STYLE },
@@ -477,7 +478,7 @@ function PlaylistsRow({ playlists, navigateTo, onOpen, onPlay, onQueue, onContex
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
       list.map((p, i) => e(PlaylistCard, {
         key: p.id || i, playlist: p, badge: p.badge, subtitle: p.subtitle,
-        onOpen, onPlay, onQueue, onContextMenu, onArtError,
+        onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError,
       }))));
 }
 
