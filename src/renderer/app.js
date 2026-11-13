@@ -1189,6 +1189,8 @@ const { isLastfmHiddenListening } = require('./lib/lastfm-hidden-listening');
 const { createBrokenArtRetry } = require('./lib/broken-art');
 const { cachedCoversToSeed, coverAttemptKey, coverFetchOrder } = require('./lib/playlist-cover-queue');
 const { holdPreviousPlaybarArt, trackArtKey, playbarShowsTrack } = require('./lib/playbar-art');
+const { claimMediaSessionActions } = require('./lib/media-session-guard');
+const { playStartPending } = require('./lib/play-state');
 const { isOtherVersion } = require('./lib/track-variants');
 const { pickTrackMatch } = require('../../sync-providers/track-match');
 // Playlist freshness stamps (tracksChangedAt, lastChangeAdded) for Home; the
@@ -8211,6 +8213,7 @@ const Parachord = () => {
     trackLoading,
     setTrackLoading,
     loadingTrack,
+    resumePending,
     browserPlaybackActive,
     setBrowserPlaybackActive,
     activeExtensionTabId,
@@ -11226,7 +11229,11 @@ const Parachord = () => {
   // Transport controls from the widget / Control Center / hardware keys routed
   // by the OS. play/pause are idempotent (a "pause" while already paused is a
   // no-op rather than a toggle) and share the dedupe guard with the
-  // globalShortcut media-key path.
+  // globalShortcut media-key path. The handlers are claimed
+  // (lib/media-session-guard.js): MusicKit JS, configured later in this
+  // renderer, replaces every handler with its own, and the keys then
+  // bypassed handlePlayPause (a MusicKit JS track resumed under a button that
+  // still said Play; any other track's key did nothing).
   useEffect(() => {
     if (!mediaSessionEnabled()) return;
     const ms = navigator.mediaSession;
@@ -11248,14 +11255,14 @@ const Parachord = () => {
         handlePreviousRef.current?.();
       },
     };
-    for (const [action, fn] of Object.entries(handlers)) {
-      try { ms.setActionHandler(action, fn); } catch (_e) { /* action unsupported on this platform */ }
-    }
-    return () => {
-      for (const action of Object.keys(handlers)) {
-        try { ms.setActionHandler(action, null); } catch (_e) { /* noop */ }
-      }
-    };
+    const refusedLogged = new Set();
+    return claimMediaSessionActions(ms, handlers, {
+      onRefused: (action) => {
+        if (refusedLogged.has(action)) return;
+        refusedLogged.add(action);
+        console.log(`🎹 Media session: kept Parachord's "${action}" handler (another script tried to replace it)`);
+      },
+    });
   }, []);
 
   // Track metadata on track change.
@@ -46178,7 +46185,7 @@ useEffect(() => {
               style: { display: 'flex', alignItems: 'center', justifyContent: 'center', color: (!currentTrack && playHistoryRef.current.length === 0) ? '#4b5563' : '#ffffff', cursor: (!currentTrack && playHistoryRef.current.length === 0) ? 'not-allowed' : 'pointer' }
             }, React.createElement(SkipBack, { size: 18 }))
           ),
-          React.createElement(Tooltip, { content: isPlaying ? 'Pause' : 'Play', position: 'top', variant: 'dark' },
+          React.createElement(Tooltip, { content: isPlaying ? 'Pause' : (playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending }) ? 'Starting…' : 'Play'), position: 'top', variant: 'dark' },
             React.createElement('button', {
               onClick: handlePlayPause,
               disabled: !currentTrack,
@@ -46388,7 +46395,13 @@ useEffect(() => {
               // hover tooltip on the title; resolvers that don't render exactly
               // as before.
               (() => {
-                const titleDiv = React.createElement('div', { className: 'text-sm font-medium text-white truncate' }, currentTrack.title);
+                // A start of this track is on its way (playStartPending): the
+                // title and artist shimmer until it plays.
+                const startPending = playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending });
+                const titleDiv = React.createElement('div', {
+                  className: `text-sm font-medium text-white truncate${startPending ? ' now-playing-pending' : ''}`,
+                  'aria-busy': startPending || undefined
+                }, currentTrack.title);
                 const playingResolverId = determineResolverIdFromTrack(currentTrack);
                 const streamQuality = (playingResolverId && window.pickStreamQuality)
                   ? window.pickStreamQuality(currentTrack, playingResolverId)
@@ -46413,7 +46426,7 @@ useEffect(() => {
 
                   const artistButton = React.createElement('button', {
                     onClick: () => fetchArtistData(currentTrack.artist),
-                    className: 'truncate hover:text-white hover:underline transition-colors cursor-pointer no-drag',
+                    className: `truncate hover:text-white hover:underline transition-colors cursor-pointer no-drag${playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending }) ? ' now-playing-pending' : ''}`,
                     style: { maxWidth: 'none' }
                   }, currentTrack.artist);
 

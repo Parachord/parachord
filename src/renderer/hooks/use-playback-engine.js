@@ -38,7 +38,8 @@
 
 const { pickTrackMatch } = require('../../../sync-providers/track-match');
 const { sourceBlockId } = require('../lib/bad-match-report');
-const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack, pendingStartAt } = require('../lib/playback-helpers');
+const { trackToHoldAfterFailure, OFFLINE_PLAY_MESSAGE, isDeviceOffline, unsupportedAudioMessage, dropSubsonicSecrets, playbackDurationSeconds, compareCandidateSources, playableSourceIds, previousAction, RADIO_SEED_PROBE_COUNT, noPlayableSimilarTracksMessage, hasPlayableSource, advanceAction, leaveSessionTrigger, repeatLap, pushPlayHistory, historyForReplacedTrack, isSameTrack, pendingStartAt, trackPositionKey } = require('../lib/playback-helpers');
+const { reconcileEnginePlayState, musicKitStatePlaying, musicKitWebHoldsTrack, playStartPending, restartPositionForResume, PLAY_START_PATIENCE_MS, nativeAppleMusicPlaying, spotifyPlayingTrack, EXTERNAL_RESUME_POLL_MS } = require('../lib/play-state');
 // The shared Widevine player (Shaka on audioRef's element; manifest + license
 // via the main-process bridge). Registered on window for resolvers/cleanup;
 // the error hook installs inside the engine's component so it can showToast.
@@ -250,6 +251,23 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
   React.useEffect(() => {
     if (!trackLoading) setLoadingTrack(null);
   }, [trackLoading]);
+  // A resume waiting on its engine (handlePlayPause): Spotify's Web API, the
+  // native Apple Music helper, MusicKit JS, the shared element's play(). The
+  // playbar shimmers the title and artist until it plays (playStartPending),
+  // and another Play click waits for it instead of sending a second resume.
+  const [resumePending, setResumePendingState] = React.useState(false);
+  const resumePendingRef = React.useRef(false);
+  // When the last start of the on-screen track was asked for: a click while
+  // it is pending waits, unless it has been pending this long, when the
+  // start is taken as lost and the click starts the track again.
+  const playStartRequestedAtRef = React.useRef(0);
+  const setResumePending = (pending) => {
+    resumePendingRef.current = pending;
+    setResumePendingState(pending);
+  };
+  React.useEffect(() => {
+    if (isPlaying && resumePendingRef.current) setResumePending(false);
+  }, [isPlaying]);
   const [browserPlaybackActive, setBrowserPlaybackActive] = React.useState(false); // Track confirmed playing in the user's browser
   const [activeExtensionTabId, setActiveExtensionTabId] = React.useState(null); // Which extension tab is playing
   // (spinoff session state is Parachord-owned input — its mode evaluates in
@@ -523,6 +541,34 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
       console.log(`🎵 ${label} playback ended`);
       handleNextRef.current?.(false, { trigger: 'ended' });
     });
+    // The button follows the element (play-state.js). Something other than
+    // handlePlayPause can start or pause it, and the progress bar (fed by
+    // timeupdate above) then moved while the button said Play. Only for the
+    // track on screen: an element a newer play left behind changes nothing,
+    // and a pause Parachord made on the way to another track (marked by
+    // pauseSharedElementForSwitch) is the next play's to report.
+    const syncElementPlayState = (playing) => {
+      const el = audioRef.current;
+      if (!el) return;
+      const parachordStopped = !playing && !!el.__parachordStopping;
+      if (!playing) el.__parachordStopping = false;
+      const track = currentTrackRef.current;
+      const engineOwnsTrack = !!ownerOf(el) && !!track && usesSharedAudio(track._activeResolver)
+        && isSameTrack(html5AudioTrackRef.current, track);
+      const next = reconcileEnginePlayState({
+        enginePlaying: playing,
+        engineOwnsTrack,
+        isPlaying: isPlayingRef.current,
+        parachordStopped,
+        ended: el.ended,
+      });
+      if (next === null) return;
+      console.log(`🔄 Shared audio ${playing ? 'started' : 'paused'} outside the play button; the playbar follows it`);
+      isPlayingRef.current = next;
+      setIsPlaying(next);
+    };
+    audio.addEventListener('playing', () => syncElementPlayState(true));
+    audio.addEventListener('pause', () => syncElementPlayState(false));
     audio.addEventListener('playing', () => {
       // Reset the network-retry budget only after local-file playback has
       // held. Clearing it on this event itself loops: a seek retry sets
@@ -820,6 +866,8 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     console.log('🎵 Playing track:', trackOrSource.title, 'by', trackOrSource.artist);
     setLoadingTrack(trackOrSource);
     setTrackLoading(true); // Show loading state in playbar
+    playStartRequestedAtRef.current = Date.now();
+    if (resumePendingRef.current) setResumePending(false);
 
     // Stop all local audio sources (HTML5 Audio) - do this first to prevent overlap
     // Always stop regardless of paused state to handle edge cases
@@ -874,6 +922,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     if (musicKitWeb) {
       try {
         console.log('⏹️ Pausing Apple Music (web) before playing new track');
+        if (musicKitWeb.musicKit && musicKitWeb.musicKit.playbackState === 2) musicKitWeb.__parachordStopping = true;
         musicKitWeb.pause();
       } catch (_e) {} // Silently ignore - may not be configured or playing
     }
@@ -2941,7 +2990,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // Stop HTML5 Audio if playing (local files, SoundCloud)
     if (audioRef.current && !audioRef.current.paused) {
       console.log('⏹️ Stopping HTML5 audio before previous track');
-      audioRef.current.pause();
+      pauseSharedElementForSwitch(audioRef.current);
       audioRef.current.currentTime = 0;
     }
     setIsExternalPlayback(false);
@@ -2985,8 +3034,138 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     }
   };
 
+  // MusicKit JS reports its own play and pause (playbackStateDidChange,
+  // relayed by musickit-web.js as musickit-playback-state). Nothing listened,
+  // so a MusicKit JS track resumed by its own controls left the button on
+  // Play. The pause handlePlay sends on the way to another track is marked,
+  // like the shared element's, so it doesn't flip the button in between.
+  React.useEffect(() => {
+    const onMusicKitState = (event) => {
+      const state = event && event.detail ? event.detail.state : null;
+      const playing = musicKitStatePlaying(state);
+      if (playing === null) return;
+      const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      const parachordStopped = !playing && !!(musicKitWeb && musicKitWeb.__parachordStopping);
+      if (!playing && musicKitWeb) musicKitWeb.__parachordStopping = false;
+      const track = currentTrackRef.current;
+      const next = reconcileEnginePlayState({
+        enginePlaying: playing,
+        engineOwnsTrack: !!track && track._activeResolver === 'applemusic' && musicKitWebHoldsTrack(musicKitWeb && musicKitWeb.musicKit, track),
+        isPlaying: isPlayingRef.current,
+        parachordStopped,
+      });
+      if (next === null) return;
+      console.log(`🍎 MusicKit JS ${playing ? 'started' : 'paused'} outside the play button; the playbar follows it`);
+      isPlayingRef.current = next;
+      setIsPlaying(next);
+    };
+    window.addEventListener('musickit-playback-state', onMusicKitState);
+    return () => window.removeEventListener('musickit-playback-state', onMusicKitState);
+  }, []);
+
+  // The engines that play outside the renderer, the Spotify app and the
+  // native Apple Music helper, can be resumed without Parachord: macOS sends a
+  // media key to the app it considers Now Playing, which is that app while it
+  // plays the track, and the Spotify app, a phone or Control Center resume it
+  // too. Their pollers stop on pause, so nothing noticed and the button
+  // stayed on Play. While paused on such a track, ask the engine every
+  // EXTERNAL_RESUME_POLL_MS whether it is playing this track again; if it is,
+  // the playbar plays and the end-of-track poller starts again.
+  React.useEffect(() => {
+    if (isPlaying || trackLoading || !currentTrack) return undefined;
+    const resolverId = currentTrack._activeResolver;
+    const watchSpotify = resolverId === 'spotify' && !!spotifyToken;
+    const watchNative = resolverId === 'applemusic' && !!window.electron?.musicKit?.getPlaybackState;
+    if (!watchSpotify && !watchNative) return undefined;
+    let cancelled = false;
+    const check = async () => {
+      const track = currentTrackRef.current;
+      if (cancelled || !track || isPlayingRef.current || resumePendingRef.current || trackNeedsExplicitStart.current) return;
+      let playing = false;
+      try {
+        if (watchSpotify) {
+          const response = await fetch('https://api.spotify.com/v1/me/player', {
+            headers: { 'Authorization': `Bearer ${spotifyToken}` }
+          });
+          if (response.ok && response.status !== 204) playing = spotifyPlayingTrack(await response.json(), track);
+        } else {
+          const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+          // MusicKit JS reports its own state (the listener above).
+          if (musicKitWebHoldsTrack(musicKitWeb && musicKitWeb.musicKit, track)) return;
+          playing = nativeAppleMusicPlaying(await window.electron.musicKit.getPlaybackState(), track);
+        }
+      } catch (_e) {
+        return;
+      }
+      if (cancelled || !playing || isPlayingRef.current || !isSameTrack(currentTrackRef.current, track)) return;
+      console.log(`🔄 ${watchSpotify ? 'Spotify' : 'Apple Music'} resumed "${track.title}" outside Parachord; the playbar follows it`);
+      isPlayingRef.current = true;
+      setIsPlaying(true);
+      if (watchSpotify) {
+        startAutoAdvancePolling('spotify', track, { token: spotifyToken });
+      } else if (window.electron.musicKit.polling) {
+        window.electron.musicKit.polling.start({
+          songId: track.appleMusicId,
+          trackTitle: track.title,
+          trackArtist: track.artist,
+          duration: track.duration || 0
+        }).catch(() => {});
+      }
+    };
+    const timer = setInterval(check, EXTERNAL_RESUME_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isPlaying, trackLoading, currentTrack?.id, currentTrack?._activeResolver, spotifyToken]);
+
+  // A resume the engine refuses (Spotify answers 404 when its device went
+  // idle during the pause, the native Apple Music helper has lost its queue,
+  // the shared element's play() rejects) used to leave the button on Play
+  // with nothing on screen, so it took a second click, which often went the
+  // same way. The track starts again through handlePlay instead, where it
+  // was: handlePlay wakes the device or picks the source again, and the
+  // pending position starts it there (pendingStartAt), keeping the
+  // scrobbler's record that this listen was already submitted. Not when a
+  // newer play or a track change came first.
+  const restartAfterRefusedResume = (track, generation, label) => {
+    setResumePending(false);
+    if (playbackGenerationRef.current !== generation) return;
+    const shown = currentTrackRef.current;
+    if (!shown || isPlayingRef.current || !isSameTrack(shown, track)) return;
+    const trackKey = trackPositionKey(shown);
+    const scrobbled = !!(trackKey && window.scrobbleManager?.hasScrobbled?.((t) => trackPositionKey(t) === trackKey));
+    const pending = restartPositionForResume(shown, progressRef.current, scrobbled);
+    if (pending && pendingStartPositionRef) pendingStartPositionRef.current = pending;
+    console.log(`🔄 ${label} didn't resume; starting "${shown.title}" again where it was`);
+    handlePlay(trackToHoldAfterFailure(shown) || shown);
+  };
+  const beginResume = () => {
+    playStartRequestedAtRef.current = Date.now();
+    setResumePending(true);
+    return { track: currentTrack, generation: playbackGenerationRef.current };
+  };
+
   const handlePlayPause = async () => {
     if (!currentTrack) return;
+
+    // A start of this track is already on its way (playStartPending: a resume
+    // waiting on its engine, or handlePlay loading the track on screen). With
+    // nothing on screen to say so, people clicked again, and the second click
+    // reached an engine arm with nothing loaded: a bare Spotify resume of
+    // whatever Spotify played last, or the no-resolver branch. Play now waits
+    // for the first start. One that never finished doesn't lock the button:
+    // after PLAY_START_PATIENCE_MS a click starts the track again.
+    if (playStartPending({ currentTrack, isPlaying, trackLoading, loadingTrack, resumePending: resumePendingRef.current })) {
+      if (Date.now() - playStartRequestedAtRef.current < PLAY_START_PATIENCE_MS) {
+        console.log('⏳ Play: this track is already starting');
+        return;
+      }
+      console.log('⏳ Play: the last start never finished; starting the track again');
+      setResumePending(false);
+      handlePlay(trackToHoldAfterFailure(currentTrack) || currentTrack);
+      return;
+    }
 
     // Track explicit user pause/resume during listen-along
     if (listenAlongFriendRef.current) {
@@ -3078,11 +3257,24 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         return;
       }
       if (isPlaying) {
+        isPlayingRef.current = false;
         audioRef.current.pause();
         setIsPlaying(false);
       } else {
-        audioRef.current.play();
-        setIsPlaying(true);
+        // The button turns to Pause when the element plays (its play()
+        // resolves, or its playing event: syncElementPlayState), not before:
+        // a Widevine stream may rebuffer first, and the playbar shimmers
+        // meanwhile. A refused play() starts the track again.
+        const attempt = beginResume();
+        audioRef.current.play().then(() => {
+          setResumePending(false);
+          if (playbackGenerationRef.current !== attempt.generation || isPlayingRef.current) return;
+          isPlayingRef.current = true;
+          setIsPlaying(true);
+        }).catch((err) => {
+          console.warn('▶️ The audio element refused to resume:', err?.message || err);
+          restartAfterRefusedResume(attempt.track, attempt.generation, 'The audio element');
+        });
       }
       return;
     }
@@ -3094,12 +3286,22 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     const isAppleMusicActive = currentTrack._activeResolver === 'applemusic' ||
       (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused && currentTrack.sources?.applemusic);
     if (isAppleMusicActive && window.electron?.musicKit) {
-      try {
-        if (isPlaying) {
+      // Which Apple Music engine holds the track: MusicKit JS (the fallback
+      // when the native helper can't play) or the native helper. Pause and
+      // resume go to that one. Both used to go to the native helper only, so a
+      // MusicKit JS track went on playing under a paused button.
+      const musicKitWeb = window.getMusicKitWeb ? window.getMusicKitWeb() : null;
+      const webEngine = musicKitWebHoldsTrack(musicKitWeb?.musicKit, currentTrack);
+      if (isPlaying) {
+        try {
           // Pause both native MusicKit AND preview audio — when native MusicKit fails,
           // playback falls back to preview via window._appleMusicPreviewAudio but this
           // handler was only pausing native MusicKit, leaving the preview stream running
-          await window.electron.musicKit.pause();
+          if (webEngine) {
+            await musicKitWeb.pause();
+          } else {
+            await window.electron.musicKit.pause();
+          }
           if (window._appleMusicPreviewAudio && !window._appleMusicPreviewAudio.paused) {
             window._appleMusicPreviewAudio.pause();
             console.log('🍎 Paused Apple Music preview audio');
@@ -3109,35 +3311,56 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
           if (window.electron.musicKit.polling) {
             window.electron.musicKit.polling.stop();
           }
-          console.log('🍎 Paused Apple Music playback');
+          console.log(`🍎 Paused Apple Music playback${webEngine ? ' (MusicKit JS)' : ''}`);
+        } catch (error) {
+          console.error('Apple Music pause error:', error);
+          // Update UI state even on error to avoid stuck state
+          setIsPlaying(false);
+        }
+        return;
+      }
+
+      const attempt = beginResume();
+      let resumed = false;
+      try {
+        if (webEngine) {
+          await musicKitWeb.resume();
+          resumed = true;
         } else {
-          await window.electron.musicKit.resume();
-          // Resume preview audio if it was the active playback method
-          if (window._appleMusicPreviewAudio && window._appleMusicPreviewAudio.src && window._appleMusicPreviewAudio.paused) {
-            try {
-              await window._appleMusicPreviewAudio.play();
-              console.log('🍎 Resumed Apple Music preview audio');
-            } catch (previewErr) {
-              console.warn('🍎 Could not resume preview audio:', previewErr.message);
-            }
-          }
-          setIsPlaying(true);
-          // Restart polling for progress updates and auto-advance
-          if (window.electron.musicKit.polling) {
-            window.electron.musicKit.polling.start({
-              songId: currentTrack.appleMusicId,
-              trackTitle: currentTrack.title,
-              trackArtist: currentTrack.artist,
-              duration: currentTrack.duration || 0
-            }).catch(err => console.warn('🍎 Could not restart polling:', err.message));
-          }
-          console.log('🍎 Resumed Apple Music playback');
+          const reply = await window.electron.musicKit.resume();
+          resumed = !reply || reply.success !== false;
+          if (!resumed) console.warn('🍎 Native MusicKit refused to resume:', reply.error || 'no reason given');
         }
       } catch (error) {
-        console.error('Apple Music play/pause error:', error);
-        // Update UI state even on error to avoid stuck state
-        setIsPlaying(!isPlaying);
+        console.error('Apple Music resume error:', error);
       }
+      // Resume preview audio if it was the active playback method
+      if (window._appleMusicPreviewAudio && window._appleMusicPreviewAudio.src && window._appleMusicPreviewAudio.paused) {
+        try {
+          await window._appleMusicPreviewAudio.play();
+          resumed = true;
+          console.log('🍎 Resumed Apple Music preview audio');
+        } catch (previewErr) {
+          console.warn('🍎 Could not resume preview audio:', previewErr.message);
+        }
+      }
+      if (!resumed) {
+        restartAfterRefusedResume(attempt.track, attempt.generation, 'Apple Music');
+        return;
+      }
+      if (playbackGenerationRef.current !== attempt.generation) return;
+      setIsPlaying(true);
+      // Restart polling for progress updates and auto-advance (the native
+      // helper's; MusicKit JS reports its own time and end)
+      if (!webEngine && window.electron.musicKit.polling) {
+        window.electron.musicKit.polling.start({
+          songId: currentTrack.appleMusicId,
+          trackTitle: currentTrack.title,
+          trackArtist: currentTrack.artist,
+          duration: currentTrack.duration || 0
+        }).catch(err => console.warn('🍎 Could not restart polling:', err.message));
+      }
+      console.log(`🍎 Resumed Apple Music playback${webEngine ? ' (MusicKit JS)' : ''}`);
       return;
     }
 
@@ -3207,6 +3430,14 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
             if (response.ok || response.status === 204) {
               setIsPlaying(true);
               console.log('Resumed Spotify playback');
+              // The pause stopped the end-of-track poller; without it the
+              // queue didn't advance after this track. The bar's
+              // interpolation restarts from where it stopped until the next
+              // poll re-anchors it.
+              if (spotifyProgressBaselineRef) {
+                spotifyProgressBaselineRef.current = { progress: progressRef.current, timestamp: Date.now(), isPlaying: true };
+              }
+              startAutoAdvancePolling('spotify', currentTrack, { token });
               return true;
             } else if (response.status === 401 && !isRetry) {
               // Token expired - try to refresh
@@ -3224,7 +3455,14 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
         }
       };
 
-      await attemptSpotifyControl(spotifyToken);
+      if (isPlaying) {
+        await attemptSpotifyControl(spotifyToken);
+        return;
+      }
+      const attempt = beginResume();
+      if (!(await attemptSpotifyControl(spotifyToken))) {
+        restartAfterRefusedResume(attempt.track, attempt.generation, 'Spotify');
+      }
       return;
     }
 
@@ -3252,6 +3490,16 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     }
   }, []);
 
+  // A pause on the way to another track: the element's pause event must not
+  // flip the playbar to paused in between (syncElementPlayState). pause() on a
+  // playing element fires exactly one pause event; on a paused one, none, so
+  // the mark is only set when one will come to clear it.
+  const pauseSharedElementForSwitch = (el) => {
+    if (!el) return;
+    if (!el.paused) el.__parachordStopping = true;
+    el.pause();
+  };
+
   const stopAllLocalAudio = () => {
     // Halt embedded players (SoundCloud's widget); a no-op when idle.
     stopAllEmbedPlayers();
@@ -3260,7 +3508,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     // Always call pause() regardless of paused state to handle edge cases
     if (audioRef.current) {
       try {
-        audioRef.current.pause();
+        pauseSharedElementForSwitch(audioRef.current);
         audioRef.current.currentTime = 0;
         console.log('⏹️ Stopped HTML5 audio element');
       } catch (e) {
@@ -3750,6 +3998,7 @@ function usePlaybackEngine({// --- Hook objects (slice 1 & 2 composables) ---
     trackLoading,
     setTrackLoading,
     loadingTrack,
+    resumePending,
     browserPlaybackActive,
     setBrowserPlaybackActive,
     activeExtensionTabId,

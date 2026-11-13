@@ -343,10 +343,10 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
       style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
-    album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist),
-    // Shuffleupagus and Critical Darlings say why in the badge; the other
-    // sources keep their one-line source text.
-    !badge && album.why && e('div', { style: Object.assign({ fontSize: '11px', color: 'var(--text-secondary)' }, CLAMP2), title: album.why }, album.why));
+    // An album names no source (only a playlist card does: a playlist is
+    // the service's own). Shuffleupagus and Critical Darlings say why in the
+    // badge on the art.
+    album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist));
 }
 
 // "Refreshed 18m ago · since 2023" shows as two lines: the age, then "Since 2023".
@@ -532,7 +532,7 @@ function FreshCriticalRow(props) {
       }, 'See all')),
     e('div', { style: Object.assign({ padding: `${HOME_HALF_PANEL_PAD}px` }, SECTION_STYLE) },
       loading
-        ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS })
+        ? e(CardRowSkeleton, { count: HOME_HALF_ROW_CARDS, lines: 1 })
         : e('div', { style: grid(`repeat(${HOME_HALF_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
           items.slice(0, HOME_HALF_ROW_CARDS).map((a, i) => e(AlbumCard, Object.assign({ key: a.id || `${a.artist}-${a.title}-${i}`, album: a }, albumHandlers(props)))))));
   const f = Array.isArray(fresh) ? fresh : [];
