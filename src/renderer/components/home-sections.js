@@ -16,6 +16,7 @@ const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const { Play } = require('./icons');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
+  HOME_CARD_BOX, HOME_CARD_ART_RADIUS,
   HOME_JUMP_GRID, HOME_JUMP_GAP, HOME_HALF_FLEX, HOME_HALF_GAP, CardRowSkeleton,
 } = require('./home-skeletons');
 
@@ -317,9 +318,10 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
   };
   return e('div', Object.assign({
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, album); } },
-    style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 },
+    // The app's card (HOME_CARD_BOX), with its release-card hover lift.
+    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 }),
   }, reveal.props, dwell),
-    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { cursor: 'pointer' } },
+    e(ArtBox, { imageUrl: album.imageUrl, item: album, onArtError, zoom: reveal.shown, style: { cursor: 'pointer', borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
       album.homeRow === 'fresh' && releaseBadge(album.releaseType),
       e(ArtOverlay, {
         shown: reveal.shown, title, onClick: open,
@@ -342,7 +344,7 @@ function AlbumCard({ album, onOpen, onPlay, onQueue, onAddToPlaylist, onContextM
           }, badge.icon)))),
     e('button', {
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
-      style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }, ELLIPSIS),
+      style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
     album.artist && e('div', { style: Object.assign({ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' }, ELLIPSIS) }, album.artist),
     // Shuffleupagus and Critical Darlings say why in the badge; the other
@@ -363,10 +365,11 @@ function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAd
   const open = () => onOpen && onOpen(playlist);
   return e('div', Object.assign({
     onContextMenu: (ev) => { if (onContextMenu) { ev.preventDefault(); onContextMenu(ev, playlist); } },
-    style: { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 },
+    // The app's card (HOME_CARD_BOX), with its release-card hover lift.
+    className: 'release-card', style: Object.assign({}, HOME_CARD_BOX, { display: 'flex', flexDirection: 'column', gap: `${HOME_CARD_TEXT_GAP}px`, minWidth: 0 }),
   }, reveal.props),
     e('div', { onClick: open, style: { cursor: 'pointer' } },
-      e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist', zoom: reveal.shown },
+      e(ArtBox, { imageUrl: playlist.imageUrl, mosaic: playlist.mosaic, item: playlist, onArtError, placeholder: 'playlist', zoom: reveal.shown, style: { borderRadius: `${HOME_CARD_ART_RADIUS}px` } },
         badge && e('span', {
           style: {
             position: 'absolute', top: '8px', left: '8px', fontSize: '11px', fontWeight: 700, borderRadius: '999px',
@@ -382,7 +385,7 @@ function PlaylistCard({ playlist, badge, subtitle, onOpen, onPlay, onQueue, onAd
         }))),
     e('button', {
       type: 'button', onClick: open, 'aria-label': `Open ${title}`,
-      style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }, ELLIPSIS),
+      style: Object.assign({ font: 'inherit', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 500, fontSize: '13px', color: 'var(--text-primary)' }, ELLIPSIS),
     }, title),
     subtitle && e('div', { style: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '-6px' } },
       subtitleLines(subtitle).map((line, i) => e('div', { key: i, style: i === 0 ? CLAMP2 : ELLIPSIS }, line))));

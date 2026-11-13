@@ -20,6 +20,7 @@ Home is the first thing you see, and its job is to get you playing something in 
   - the play-history mixes your services make (#1342 kept them off Recommendations so they could go here);
   - Fresh Drops, Critical Darlings and concerts.
 - **Smarter setup prompts.** They disappear once done, can each be dismissed, and live behind one small button, not cards in the page.
+- **The app's own cards and hovers.** Every album and playlist card on Home is the card the Playlists page and Collection use (padding, corners, `--card-bg`, `--card-shadow`, the `release-card` hover lift, a 16px grid gap) with the same art hover (dim, Add to Playlist / Play / Add to Queue). Home invents no card treatment of its own.
 - **The remote announcement banner becomes a Home-only slot.**
 
 ## Non-goals
