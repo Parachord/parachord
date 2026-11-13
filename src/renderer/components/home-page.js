@@ -24,7 +24,7 @@ const { JumpBackIn, MixesRow, PlaylistsRow, AlbumsRow, FreshCriticalRow, Concert
 const { JumpBackInSkeleton, CardRowSkeleton, ConcertRowSkeleton, HOME_HALF_ROW_CARDS, HOME_ROW_CARDS } = require('./home-skeletons');
 // The app's section title, which a loading row's heading uses.
 const { SECTION_TITLE_STYLE: H2_STYLE } = require('./section-header');
-const { homeSetupItems, missingPopularResolverCount } = require('../lib/home-setup');
+const { homeSetupItems } = require('../lib/home-setup');
 const { freshestPlaylists, recentLoves, changeBadge, freshChangeLine, jumpBackInTiles } = require('../lib/home-model');
 const { playlistSubtitle, homeSections, exampleShufflePrompt, homeTopArtists, albumsNeedingArt, lovesMosaicAlbums } = require('../lib/home-model');
 const { trackSlug } = require('../lib/track-slug');
@@ -50,7 +50,6 @@ const HOME_PAGE_HANDLERS = [
   'navigateTo',
   'openCriticsPicksAlbum',
   'openHomeBannerCta',
-  'openPluginSettings',
   'openServicePlaylist',
   'openTopAlbum',
   'openWhatsNew',
@@ -99,7 +98,6 @@ const HomePage = React.memo(function HomePage(props) {
     addServicePlaylistToPlaylist,
     addToQueue,
     allPlaylistCovers,
-    allResolvers,
     appVersion,
     askShuffleupagus,
     bannerItems,
@@ -128,7 +126,6 @@ const HomePage = React.memo(function HomePage(props) {
     homeData,
     homeSetupDismissed,
     library,
-    librarySyncEnabled,
     loadConcerts,
     loadCriticsPicks,
     loadHomeHistoryMixes,
@@ -144,7 +141,6 @@ const HomePage = React.memo(function HomePage(props) {
     newReleasesLoading,
     openCriticsPicksAlbum,
     openHomeBannerCta,
-    openPluginSettings,
     openServicePlaylist,
     openTopAlbum,
     openWhatsNew,
@@ -163,6 +159,7 @@ const HomePage = React.memo(function HomePage(props) {
     setRaycastInfoOpen,
     setSettingsTab,
     showHomeContextMenu,
+    servicesConnected,
     showToast,
     sourceColors,
     whatsNewUnread,
@@ -170,27 +167,22 @@ const HomePage = React.memo(function HomePage(props) {
 
   // ---------------------------------------------------------------- setup
 
-  // The setup checklist: same checks the old cards used.
+  // The setup checklist. Scrobbling counts as connected once any plugin has
+  // an account name saved (Last.fm, ListenBrainz, Libre.fm, or a new one).
+  const scrobblingConnected = Object.values(metaServiceConfigs || {}).some((c) => c && c.username);
   const homeSetup = React.useMemo(() => homeSetupItems({
-    missingPopularResolvers: missingPopularResolverCount(allResolvers),
-    lastfmConnected: !!metaServiceConfigs?.lastfm?.username,
-    listenbrainzConnected: !!metaServiceConfigs?.listenbrainz?.username,
-    librarySyncEnabled: !!librarySyncEnabled,
+    servicesConnected: !!servicesConnected,
+    scrobblingConnected,
     extensionConnected,
     isMac: typeof navigator !== 'undefined' && !!navigator.platform && navigator.platform.includes('Mac'),
     dismissed: homeSetupDismissed,
     appVersion,
     whatsNewUnread,
-  }), [allResolvers, metaServiceConfigs, librarySyncEnabled, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
+  }), [servicesConnected, scrobblingConnected, extensionConnected, homeSetupDismissed, appVersion, whatsNewUnread]);
 
-  // Each item's click does what its old card did.
+  // Services and scrobbling are both connected in Settings › Plug-Ins.
   const onSetupAction = (id) => {
-    if (id === 'resolvers') { navigateTo('settings'); setSettingsTab('plugins'); }
-    // The plugin's own detail, where the account is connected (General only
-    // has the scrobbling switch).
-    else if (id === 'lastfm' || id === 'listenbrainz') openPluginSettings(id);
-    // Library Sync in Settings › General offers each service's sync setup.
-    else if (id === 'library-sync') { navigateTo('settings'); setSettingsTab('general'); }
+    if (id === 'resolvers' || id === 'scrobbling') { navigateTo('settings'); setSettingsTab('plugins'); }
     else if (id === 'browser-extension') setExtensionInfoOpen(true);
     else if (id === 'raycast') setRaycastInfoOpen(true);
   };

@@ -70,17 +70,13 @@ describe('source', () => {
     expect(app).not.toContain('No sync providers connected.');
   });
 
-  test('checklist items open where the thing is connected', () => {
-    // Last.fm and ListenBrainz: the plugin's own detail, not Settings › General.
-    expect(page).toContain("else if (id === 'lastfm' || id === 'listenbrainz') openPluginSettings(id);");
-    const open = app.slice(app.indexOf('const openPluginSettings = (pluginId) => {'), app.indexOf('const openSyncSetupModal = async'));
-    expect(open).toContain("setSettingsTab('plugins');");
-    expect(open).toContain('if (plugin) setSelectedResolver(plugin);');
-  });
-
-  test('the checklist\'s sync item opens Library Sync, naming no service', () => {
-    expect(page).toContain("else if (id === 'library-sync') { navigateTo('settings'); setSettingsTab('general'); }");
+  test('the checklist\'s services and scrobbling items open Plug-Ins, where both are connected', () => {
+    expect(page).toContain("if (id === 'resolvers' || id === 'scrobbling') { navigateTo('settings'); setSettingsTab('plugins'); }");
     expect(page).not.toContain("openSyncSetupModal('spotify')");
+    // Scrobbling is connected once any plugin has an account name saved.
+    expect(page).toContain('Object.values(metaServiceConfigs || {}).some((c) => c && c.username)');
+    // Services: something beyond the two that ship switched on.
+    expect(app).toMatch(/const homeServicesConnected = useMemo\(\s*\(\) => activeResolvers\.some\(id => id !== 'bandcamp' && id !== 'localfiles'\),/);
   });
 
   test('Spotify sync setup with no Client ID opens the Spotify plugin and says why', () => {
@@ -158,7 +154,7 @@ describe('render', () => {
     library: [], metaServiceConfigs: {}, mixes: [], newReleases: [], newReleasesLoaded: true, newReleasesLoading: false,
     playlists: [], playlistsLoading: false, recommendationAlbums: [], recommendations: { sections: [], loading: false },
     setAddToPlaylistPanel: noop, setConcertsTicketFlyout: noop, setExtensionInfoOpen: noop, setHomeData: noop,
-    setRaycastInfoOpen: noop, setSettingsTab: noop, showToast: noop, librarySyncEnabled: false, whatsNewUnread: false,
+    setRaycastInfoOpen: noop, setSettingsTab: noop, showToast: noop, servicesConnected: false, whatsNewUnread: false,
   };
   const render = (props) => renderToStaticMarkup(React.createElement(HomePage, { ...base, ...props }));
 

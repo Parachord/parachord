@@ -36193,17 +36193,19 @@ useEffect(() => {
 
   // Stable function props for the memo'd HomePage (keys must match
   // HOME_PAGE_HANDLERS in home-page.js).
-  // The setup checklist's sync item: done once any service's library sync is on.
-  const homeLibrarySyncEnabled = useMemo(
-    () => Object.values(resolverSyncSettings).some(v => v && v.enabled),
-    [resolverSyncSettings]
+  // The setup checklist's "Connect your music services": done once a service
+  // beyond the two that ship switched on (the activeResolvers initial state)
+  // is in use.
+  const homeServicesConnected = useMemo(
+    () => activeResolvers.some(id => id !== 'bandcamp' && id !== 'localfiles'),
+    [activeResolvers]
   );
   const homePageHandlers = useStableHandlers({
     addServicePlaylistToPlaylist, addToQueue, askShuffleupagus, copyParachordLink, dismissHomeBanner, dismissHomeSetupItem,
     fetchAlbumTracksByName, getAlbumArt, handleCollectionAlbumClick, handleStartCollectionStation,
     loadConcerts, loadCriticsPicks, loadNewReleases, loadPlaylist,
     loadHomeHistoryMixes, loadHomeRecommendations, navigateTo, openCriticsPicksAlbum, openHomeBannerCta, openServicePlaylist,
-    openPluginSettings, openTopAlbum, openWhatsNew, playServicePlaylist, playTrackCollection, prefetchTopAlbumTracks,
+    openTopAlbum, openWhatsNew, playServicePlaylist, playTrackCollection, prefetchTopAlbumTracks,
     queueServicePlaylist, showHomeContextMenu,
   });
 
@@ -38328,7 +38330,7 @@ useEffect(() => {
 
         // HOME view - dynamic personalized landing page
         activeView === 'home' && React.createElement(HomePage, {
-          allPlaylistCovers, allResolvers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, librarySyncEnabled: homeLibrarySyncEnabled, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setRaycastInfoOpen, setSettingsTab, showToast, sourceColors: homeSourceColors, whatsNewUnread,
+          allPlaylistCovers, appVersion, bannerItems, cacheLoaded, chatAvailable: homeChatAvailable, collectionData, collectionLoading, concerts: homeConcerts, concertsError, concertsLoaded, concertsLoading, concertsLocation, criticsPicks, criticsPicksError, criticsPicksLoaded, criticsPicksLoading, extensionConnected, homeActive, homeData, homeSetupDismissed, library, metaServiceConfigs, mixes: homeMixes, newReleases, newReleasesError, newReleasesLoaded, newReleasesLoading, playlists, playlistsLoading, recommendationAlbums, recommendations, setAddToPlaylistPanel, setCollectionSort, setCollectionTab, setExtensionInfoOpen, setRaycastInfoOpen, servicesConnected: homeServicesConnected, setSettingsTab, showToast, sourceColors: homeSourceColors, whatsNewUnread,
           ...homePageHandlers
         }),
 
