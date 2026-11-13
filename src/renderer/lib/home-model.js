@@ -46,7 +46,8 @@ function changeBadge(p, now) {
   if (!p || !(p.lastChangeAdded > 0)) return null;
   const at = num(p.tracksChangedAt);
   if (at === null || now - at > BADGE_WINDOW_MS) return null;
-  return `+${p.lastChangeAdded}`;
+  // Δ: the tracks that change brought in (a refresh may also drop some).
+  return `Δ ${p.lastChangeAdded}`;
 }
 
 function whenPhrase(at, now) {
