@@ -277,8 +277,9 @@ function artBadge(album) {
   if (album.resolverId === 'shuffleupagus') {
     return { label: 'Why Shuffleupagus picked this', text: album.reason || 'Picked by Shuffleupagus', icon: shuffleupagusIcon() };
   }
+  // Critical Darlings' summary takes the same Shuffleupagus badge.
   if (album.homeRow === 'critical' && album.description) {
-    return { label: 'What the critics said', text: album.description, icon: TrophyGlyph() };
+    return { label: 'What the critics said', text: album.description, icon: shuffleupagusIcon() };
   }
   return null;
 }

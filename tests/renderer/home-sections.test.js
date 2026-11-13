@@ -73,6 +73,11 @@ describe('AlbumCard', () => {
     expect(h(S.AlbumCard, { album: pick })).not.toContain('What the critics said');
     const html = h(S.AlbumCard, { album: { ...pick, description: 'A quiet masterpiece.' } });
     expect(html).toMatch(/<button[^>]*aria-label="What the critics said"/);
+    // The same Shuffleupagus badge as Shuffleupagus's picks, not a trophy.
+    const shuffle = h(S.AlbumCard, { album: { title: 'X', artist: 'Y', resolverId: 'shuffleupagus', reason: 'r' } });
+    const icon = (s2, label) => (s2.match(new RegExp(`aria-label="${label}"[^>]*>(<svg[\\s\\S]*?</svg>)`)) || [])[1];
+    expect(icon(html, 'What the critics said')).toMatch(/width="18"/);
+    expect(icon(html, 'What the critics said')).toBe(icon(shuffle, 'Why Shuffleupagus picked this'));
   });
   test('shows the tag and the artist', () => {
     const html = h(S.AlbumCard, { album });
