@@ -592,4 +592,8 @@ describe('playlist category rows on the page', () => {
     expect(app).toContain('(recommendationsGridColumns.cards || 6) * cardRows');
     expect(app).toMatch(/exhausted: true, lastPageTypes: \[\], lastPageCategories: \[\]/);
   });
+
+  test('playlist category rows have space between them', () => {
+    expect(app).toContain("className: 'mb-10', style: { display: 'flex', flexDirection: 'column', gap: '32px' }");
+  });
 });

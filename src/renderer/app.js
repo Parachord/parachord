@@ -41972,7 +41972,7 @@ useEffect(() => {
                 filterRowBySource(sub, activeSourceFilter).length > 0
                 || (sub.pageable || []).some(p => recommendationsLoadingMore[p.pagingKey] && (!filteringOne || p.resolverId === activeSourceFilter)));
               const cardRows = visibleRows.length > 1 ? 1 : CARD_ROWS;
-              return React.createElement('div', { key: `type:${section.type}`, className: 'mb-10' },
+              return React.createElement('div', { key: `type:${section.type}`, className: 'mb-10', style: { display: 'flex', flexDirection: 'column', gap: '32px' } },
                 ...visibleRows.map(sub => renderSubsection(sub, { cardRows }))
               );
             };

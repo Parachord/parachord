@@ -176,7 +176,7 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // The unnamed heading's bar is inline in the title's line, so it keeps
     // the title's 30px line height.
     expect(skel).toMatch(/display: 'inline-block', verticalAlign: 'middle'/);
-    expect(view).toMatch(/const renderTypeSection = \(section\) => \{[\s\S]{0,700}React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10' \}/);
+    expect(view).toMatch(/const renderTypeSection = \(section\) => \{[\s\S]{0,700}React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10', style: \{ display: 'flex', flexDirection: 'column', gap: '32px' \} \}/);
     expect(skel).toContain("React.createElement('div', { className: 'mb-10', 'aria-hidden': 'true' }");
   });
 
