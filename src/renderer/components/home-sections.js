@@ -448,8 +448,9 @@ const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap }
 // ------------------------------------------------------------------------ Rows
 
 // Mixes are playlist cards; the source filter names their services. Recent
-// loves (`loves`, a card with its own `lovesActions`) always leads the row: it
-// is no service's, so it adds no chip and shows whatever the filter.
+// Loves (`loves`, a card with its own `lovesActions`) leads the row under All.
+// It is no service's, so it adds no chip, and a service's chip shows only
+// that service's mixes.
 function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError }) {
   const [picked, setSource] = React.useState('All');
   const all = Array.isArray(mixes) ? mixes : [];
@@ -457,12 +458,13 @@ function MixesRow({ mixes, loves, lovesActions, sourceColors, onOpen, onPlay, on
   const chips = sourceChips(all, (m, id) => m.resolverName || id, sourceColors);
   // A chip whose source has gone leaves the row on All.
   const source = picked === 'All' || chips.some((c) => c.id === picked) ? picked : 'All';
-  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS - (loves ? 1 : 0));
+  const lovesCard = source === 'All' ? loves : null;
+  const shown = filterBySource(all, source).slice(0, HOME_ROW_CARDS - (lovesCard ? 1 : 0));
   return e('section', { 'aria-labelledby': 'home-mixes', style: SECTION_STYLE },
     e(SectionHeader, { id: 'home-mixes', title: 'Made from your listening', sub: "From the services you've connected" }),
     chips.length > 1 && e(SourceFilter, { sources: chips, value: source, onChange: setSource, label: 'Filter mixes by source' }),
     e('div', { style: grid(`repeat(${HOME_ROW_CARDS}, minmax(0, 1fr))`, `${HOME_ROW_GAP}px`) },
-      loves && e(PlaylistCard, Object.assign({ key: 'recent-loves', playlist: loves, subtitle: loves.subtitle, onArtError }, lovesActions)),
+      lovesCard && e(PlaylistCard, Object.assign({ key: 'recent-loves', playlist: lovesCard, subtitle: lovesCard.subtitle, onArtError }, lovesActions)),
       shown.map((m, i) => e(PlaylistCard, {
         key: m.id || i, playlist: m, subtitle: m.description || m.subtitle,
         onOpen, onPlay, onQueue, onAddToPlaylist, onContextMenu, onArtError,

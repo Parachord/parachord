@@ -242,7 +242,7 @@ describe('Rows', () => {
     const html = h(S.PlaylistsRow, { playlists: [{ id: 'a', title: 'A' }], navigateTo: () => {} });
     expect(html).toContain('aria-label="See all in Playlists"');
   });
-  test('Recent Loves always leads Made from your listening, whatever the filter', () => {
+  test('Recent Loves leads Made from your listening under All', () => {
     const loves = { id: 'recent-loves', title: 'Recent Loves', subtitle: 'Your 50 latest loves' };
     const alone = h(S.MixesRow, { mixes: [], loves });
     expect(alone).toContain('aria-label="Open Recent Loves"');
@@ -256,6 +256,19 @@ describe('Rows', () => {
     expect(html).toContain('Your 50 latest loves');
     // Not a service, so it adds no filter chip.
     expect(html.match(/aria-pressed=/g)).toHaveLength(2); // All, ListenBrainz
+  });
+  test('a service chip shows only that service\'s mixes: Recent Loves steps out', () => {
+    const loves = { id: 'recent-loves', title: 'Recent Loves', subtitle: 'Your 50 latest loves' };
+    const mixes = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, title: `Mix ${i}`, resolverId: 'listenbrainz', resolverName: 'ListenBrainz' }));
+    // Render the row as if the ListenBrainz chip were picked.
+    const real = global.React;
+    global.React = { ...real, useState: (v) => [v === 'All' ? 'listenbrainz' : v, () => {}] };
+    let tree;
+    try { tree = S.MixesRow({ mixes, loves, lovesActions: {} }); } finally { global.React = real; }
+    const html = renderToStaticMarkup(tree);
+    expect(html).not.toContain('Recent Loves');
+    expect(html.match(/aria-label="Open [^"]*"/g)).toHaveLength(6); // six ListenBrainz mixes fill the row
+    expect(html).toMatch(/aria-pressed="true"[^>]*>(?:<span[^>]*><\/span>)?ListenBrainz/);
   });
   test('Mixes row has no See all', () => {
     const html = h(S.MixesRow, { mixes: [{ id: 'm', title: 'Heavy Rotation', resolverId: 'applemusic', resolverName: 'Apple Music' }] });
