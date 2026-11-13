@@ -1202,7 +1202,7 @@ const { playlistShareTarget, notSyncedSharePrompt } = require('./lib/playlist-sh
 const { emptyRecommendationsMessage } = require('./lib/recommendations-empty');
 const {
   blockedItemPick, normalizeRecommendationSections, buildRecommendationPage, buildRecommendationViews, flattenRecommendationItems,
-  filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES, playlistCategory
+  filterRowBySource, pageSources, weeklyHomeEntries, shuffleupagusSection, FRIEND_SERVICES, categoryFor
 } = require('./lib/recommendation-model');
 const { releaseDateKey, releaseGroupSearchUrl, pickReleaseGroupDate, upcomingLabel, RELEASE_DATE_TTL_MS } = require('./lib/release-date');
 const { albumsNeedingTrackCount, trackCountFromRelease, runAlbumTrackCountSync } = require('./lib/album-track-counts');
@@ -28325,9 +28325,10 @@ Return ONLY the JSON array, no other text.`;
               // didn't bring stops showing its loading tail (spec "Paging
               // guards") while the section pages on for the others.
               lastPageTypes: [...new Set(result.items.map(i => i && i.type).filter(Boolean))],
-              // Which playlist categories this page brought: a category row
-              // whose category the page didn't bring stops showing its tail.
-              lastPageCategories: [...new Set(result.items.filter(i => i && i.type === 'playlist').map(i => playlistCategory(i, section.category)))]
+              // Which categories this page brought, typed (`playlist:personal`,
+              // `album:new`): a category row whose type and category the page
+              // didn't bring stops showing its tail.
+              lastPageCategories: [...new Set(result.items.filter(i => i && (i.type === 'playlist' || i.type === 'album')).map(i => `${i.type}:${categoryFor(i.type, i, section.category)}`))]
             }
           };
         });
@@ -36110,32 +36111,44 @@ useEffect(() => {
   // Albums you might love: every provider's album picks (the Recommendations
   // cache) plus Shuffleupagus's, once each. The source label is the row's
   // source record name (the registry's), and the card's second line says
-  // why it was picked.
+  // why it was picked. The provider albums keep the page's provider blend
+  // across the Albums category rows (each item's `blendIndex`, from
+  // recommendation-model.js), so the leading row can't fill Home's row by
+  // itself.
   const recommendationAlbums = useMemo(() => {
     const out = [];
     const seen = new Set();
     const keyOf = (artist, title) => `${(artist || '').trim().toLowerCase()}|${(title || '').trim().toLowerCase()}`;
     const why = (label, reason) => (reason ? `${label} · ${reason}` : label);
+    // Collect first, then sort by blend position, then dedupe, so the
+    // earliest copy in the blend wins. An item with no blendIndex (a page
+    // cached before the field) sorts by its collection position.
+    const picked = [];
     for (const section of recommendations.sections || []) {
       for (const sub of section.subsections || []) {
         for (const item of sub.items || []) {
           if (item.type !== 'album' || !item.name) continue;
-          const key = keyOf(item.artist, item.name);
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const source = (sub.sources || []).find(src => src.id === item.resolverId);
-          const sourceLabel = item.resolverId === 'shuffleupagus'
-            ? 'Shuffleupagus'
-            : ((source && source.name) || item.resolverId || '');
-          out.push({
-            ...item,
-            title: item.name,
-            sourceLabel,
-            imageUrl: recommendationImageFor(item),
-            why: why(sourceLabel, item.reason)
-          });
+          const at = picked.length;
+          picked.push({ item, sub, at, rank: Number.isFinite(item.blendIndex) ? item.blendIndex : at });
         }
       }
+    }
+    picked.sort((a, b) => (a.rank - b.rank) || (a.at - b.at));
+    for (const { item, sub } of picked) {
+      const key = keyOf(item.artist, item.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const source = (sub.sources || []).find(src => src.id === item.resolverId);
+      const sourceLabel = item.resolverId === 'shuffleupagus'
+        ? 'Shuffleupagus'
+        : ((source && source.name) || item.resolverId || '');
+      out.push({
+        ...item,
+        title: item.name,
+        sourceLabel,
+        imageUrl: recommendationImageFor(item),
+        why: why(sourceLabel, item.reason)
+      });
     }
     for (const album of homeData.aiRecommendations?.albums || []) {
       if (!album || !album.title) continue;
@@ -41089,17 +41102,21 @@ useEffect(() => {
             const allSubsections = allSections.flatMap(s => s.subsections || []);
             // Shuffleupagus has no section of its own: its picks blend into the
             // Albums and Artists For you rows, so a batch still loading shows
-            // as a card tail on those rows (or, when neither row exists yet,
-            // one subsection skeleton in the Albums slot). Only while it has
+            // as a card tail on those rows. Its albums are personal, so with
+            // Albums in category rows the tail goes on Based on your listening
+            // (albums:personal), and without that row yet a placeholder
+            // subsection stands where it will land (renderTypeSection). With
+            // no album section at all and no Artists row, one section skeleton
+            // stands in the Albums slot. Only while it has
             // no picks to show: a refresh keeps the cached batch on screen as
             // real cards until the new one lands, and a skeleton only covers
             // what has nothing to show (#1328).
             const ai = homeData.aiRecommendations;
             const llmHasPicks = !!(ai && ((ai.albums || []).length > 0 || (ai.artists || []).length > 0));
             const llmLoading = !!ai?.loading && !llmHasPicks;
-            const LLM_TAIL_ROWS = new Set(['type:album', 'type:artist']);
+            const LLM_TAIL_ROWS = new Set(['type:album', 'type:artist', 'albums:personal']);
             const LLM_TAIL = 3;
-            const llmPlaceholder = llmLoading && !filteringOne && !allSubsections.some(s => LLM_TAIL_ROWS.has(s.key));
+            const llmPlaceholder = llmLoading && !filteringOne && !allSections.some(s => s.type === 'album') && !allSubsections.some(s => LLM_TAIL_ROWS.has(s.key));
             // A collapsed card section (Albums, Artists, Playlists) shows two
             // full rows (as many as fit across, measured; 6 a row until
             // measured), Friends one row, Songs 5 rows.
@@ -41916,7 +41933,7 @@ useEffect(() => {
                 if (!recommendationsLoadingMore[p.pagingKey]) return false;
                 const expansion = expandedSections[p.pagingKey];
                 if (sub.category) {
-                  return !expansion || !Array.isArray(expansion.lastPageCategories) || expansion.lastPageCategories.includes(sub.category);
+                  return !expansion || !Array.isArray(expansion.lastPageCategories) || expansion.lastPageCategories.includes(`${sub.type}:${sub.category}`);
                 }
                 return !expansion || !Array.isArray(expansion.lastPageTypes) || expansion.lastPageTypes.includes(sub.type);
               });
@@ -41962,11 +41979,23 @@ useEffect(() => {
 
             // ── Types ─────────────────────────────────────────────────────
             // A type section is its one row: the heading with its source tags,
-            // then the items. With Shuffleupagus thinking and neither the
-            // Albums nor the Artists row on the page for it to tail, one
-            // section skeleton under an Albums heading stands in the Albums
-            // slot (after Songs).
+            // then the items. With Shuffleupagus thinking, no album section on
+            // the page and no Artists row for it to tail, one section skeleton
+            // under an Albums heading stands in the Albums slot (after Songs).
             const llmSlot = llmPlaceholder && React.createElement(RecommendationSectionSkeleton, { key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW });
+            // Shuffleupagus's placeholder subsection in a categorized Albums
+            // section (renderTypeSection places it): the Based on your
+            // listening title with no link, then one row of album card
+            // skeletons in the real cards' grid.
+            const llmPersonalPendingRow = llmLoading && React.createElement('div', { key: 'albums:personal-pending' },
+              React.createElement(SectionHeader, { title: 'Based on your listening', size: 'sub', style: SECTION_HEADER_GAP }),
+              React.createElement('div', {
+                className: 'grid gap-4',
+                style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
+              },
+                ...Array.from({ length: (recommendationsGridColumns.cards || 6) * 1 }, (_, i) => React.createElement(RecommendationCardSkeleton, { key: `rec-llm-${i}`, index: i, lines: 2 }))
+              )
+            );
             const renderTypeSection = (section) => {
               // A row with nothing to show under the source filter (and no page
               // in flight) isn't rendered. Several rows left: one row of cards
@@ -41974,15 +42003,27 @@ useEffect(() => {
               const visibleRows = section.subsections.filter(sub =>
                 filterRowBySource(sub, activeSourceFilter).length > 0
                 || (sub.pageable || []).some(p => recommendationsLoadingMore[p.pagingKey] && (!filteringOne || p.resolverId === activeSourceFilter)));
-              const cardRows = visibleRows.length > 1 ? 1 : CARD_ROWS;
+              // Shuffleupagus thinking, Albums in category rows and no Based on
+              // your listening row yet: its placeholder subsection, after New
+              // for you or else first, under All or the Shuffleupagus chip like
+              // its card tail. It counts as a row.
+              const llmPersonalPending = section.type === 'album' && llmLoading
+                && (!filteringOne || activeSourceFilter === 'shuffleupagus')
+                && visibleRows.some(sub => sub.category)
+                && !visibleRows.some(sub => sub.key === 'albums:personal');
+              const rowCount = visibleRows.length + (llmPersonalPending ? 1 : 0);
+              const cardRows = rowCount > 1 ? 1 : CARD_ROWS;
               // Rows that carry a category are subsections of one section: the
               // section's title first (16px under it, like any section), then
               // the rows 32px apart in their own column.
               if (visibleRows.some(sub => sub.category)) {
+                const rows = visibleRows.map(sub => renderSubsection(sub, { cardRows }));
+                const newAt = visibleRows.findIndex(sub => sub.key === 'albums:new');
+                if (llmPersonalPending) rows.splice(newAt + 1, 0, llmPersonalPendingRow);
                 return React.createElement('div', { key: `type:${section.type}`, className: 'mb-10' },
                   React.createElement(SectionHeader, { title: section.title, style: SECTION_HEADER_GAP }),
                   React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '32px' } },
-                    ...visibleRows.map(sub => renderSubsection(sub, { cardRows }))
+                    ...rows
                   )
                 );
               }

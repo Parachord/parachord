@@ -118,7 +118,9 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // Only while there are no picks to show (a refresh keeps the cached batch as real cards).
     expect(view).toMatch(/const llmHasPicks = !!\(ai && \(\(ai\.albums \|\| \[\]\)\.length > 0 \|\| \(ai\.artists \|\| \[\]\)\.length > 0\)\);/);
     expect(view).toMatch(/const llmLoading = !!ai\?\.loading && !llmHasPicks;/);
-    expect(view).toMatch(/const LLM_TAIL_ROWS = new Set\(\['type:album', 'type:artist'\]\);/);
+    // Albums split into category rows (#1377): Shuffleupagus's albums are
+    // Based on your listening, so its tail goes on that row.
+    expect(view).toMatch(/const LLM_TAIL_ROWS = new Set\(\['type:album', 'type:artist', 'albums:personal'\]\);/);
     expect(renderSubsection).toMatch(/const llmTail = llmLoading && LLM_TAIL_ROWS\.has\(sub\.key\) && \(!filteringOne \|\| activeSourceFilter === 'shuffleupagus'\) \? LLM_TAIL : 0;/);
     expect(renderSubsection).toMatch(/Array\.from\(\{ length: llmTail \}[\s\S]{0,160}RecommendationCardSkeleton/);
     // The tail trails the row's real preview, never replaces it.
@@ -128,11 +130,27 @@ describe('Recommendations skeletons match the sectioned page', () => {
     const grid = renderSubsection.slice(renderSubsection.indexOf('...visible.map((item, index) => cardFor(item, index, sub))'));
     expect(grid.indexOf('...visible.map((item, index) => cardFor(item, index, sub))')).toBe(0);
     expect(grid.indexOf('Array.from({ length: llmTail }')).toBeGreaterThan(0);
-    expect(view).toMatch(/const llmPlaceholder = llmLoading && !filteringOne && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
+    // The Albums slot only when there is no album section at all: with one,
+    // the tail or the Based on your listening placeholder covers it.
+    expect(view).toMatch(/const llmPlaceholder = llmLoading && !filteringOne && !allSections\.some\(s => s\.type === 'album'\) && !allSubsections\.some\(s => LLM_TAIL_ROWS\.has\(s\.key\)\);/);
     // The slot is a whole section under the Albums heading its picks will
     // bring, placed after Songs.
     expect(view).toMatch(/llmPlaceholder && React\.createElement\(RecommendationSectionSkeleton, \{ key: 'type:album-pending', kind: 'cards', lines: 2, title: 'Albums', count: SECTION_PREVIEW \}\)/);
     expect(view.match(/contentBlocks\.push\(llmSlot\)/g) || []).toHaveLength(2);
+  });
+
+  test('Shuffleupagus thinking with Albums in category rows and no Based on your listening row: one row of album card skeletons under that subsection title', () => {
+    const typeSection = view.slice(view.indexOf('const renderTypeSection = (section) => {'), view.indexOf('// ── The page'));
+    const pending = view.slice(view.indexOf('const llmPersonalPendingRow = '), view.indexOf('const renderTypeSection = (section) => {'));
+    expect(pending).toMatch(/^const llmPersonalPendingRow = llmLoading && React\.createElement\('div', \{ key: 'albums:personal-pending' \}/);
+    expect(pending).toMatch(/React\.createElement\(SectionHeader, \{ title: 'Based on your listening', size: 'sub', style: SECTION_HEADER_GAP \}\)/);
+    // The real cards' grid, one row of cards (what each category row shows
+    // when Albums has several), album cards' two text lines.
+    expect(pending).toContain("gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))'");
+    expect(pending).toMatch(/Array\.from\(\{ length: \(recommendationsGridColumns\.cards \|\| 6\) \* 1 \}, \(_, i\) => React\.createElement\(RecommendationCardSkeleton, \{ key: `rec-llm-\$\{i\}`, index: i, lines: 2 \}\)\)/);
+    // It counts as a row: the section's rows show one row of cards each.
+    expect(typeSection).toContain('const rowCount = visibleRows.length + (llmPersonalPending ? 1 : 0);');
+    expect(typeSection).toContain('if (llmPersonalPending) rows.splice(newAt + 1, 0, llmPersonalPendingRow);');
   });
 
   test('Friends shows hexagon skeletons while its answer is pending and nothing is cached', () => {
@@ -176,7 +194,8 @@ describe('Recommendations skeletons match the sectioned page', () => {
     // The unnamed heading's bar is inline in the title's line, so it keeps
     // the title's 30px line height.
     expect(skel).toMatch(/display: 'inline-block', verticalAlign: 'middle'/);
-    expect(view).toMatch(/const renderTypeSection = \(section\) => \{[\s\S]{0,1500}React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10', style: \{ display: 'flex', flexDirection: 'column', gap: '32px' \} \}/);
+    // (2500: the window grew with Shuffleupagus's Albums placeholder, #1377.)
+    expect(view).toMatch(/const renderTypeSection = \(section\) => \{[\s\S]{0,2500}React\.createElement\('div', \{ key: `type:\$\{section\.type\}`, className: 'mb-10', style: \{ display: 'flex', flexDirection: 'column', gap: '32px' \} \}/);
     expect(skel).toContain("React.createElement('div', { className: 'mb-10', 'aria-hidden': 'true' }");
   });
 
