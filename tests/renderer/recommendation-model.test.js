@@ -523,3 +523,42 @@ describe('shuffleupagusSection', () => {
     expect(shuffleupagusSection({})).toBeNull();
   });
 });
+
+describe('playlist categories: contract and helpers', () => {
+  const m = recommendationModel;
+  test('playlistCategory: weekly, then item, then section, then other', () => {
+    expect(m.playlistCategory({ weekly: { id: 'w' }, category: 'editorial' }, 'community')).toBe('personal');
+    expect(m.playlistCategory({ category: 'editorial' }, 'community')).toBe('editorial');
+    expect(m.playlistCategory({}, 'community')).toBe('community');
+    expect(m.playlistCategory({ category: 'bogus' }, 'nope')).toBe('other');
+    expect(m.playlistCategory({}, undefined)).toBe('other');
+  });
+  test('artistRowTitle: one, two, three, four or more; blanks and case-repeats dropped', () => {
+    expect(m.artistRowTitle(['Radiohead'])).toBe('Because you like Radiohead');
+    expect(m.artistRowTitle(['Radiohead', 'Arctic Monkeys'])).toBe('Because you like Radiohead and Arctic Monkeys');
+    expect(m.artistRowTitle(['Radiohead', 'Arctic Monkeys', 'The Strokes'])).toBe('Because you like Radiohead, Arctic Monkeys and The Strokes');
+    expect(m.artistRowTitle(['A', 'B', 'C', 'D'])).toBe('Because you like A, B, C and more');
+    expect(m.artistRowTitle(['Radiohead', ' radiohead ', '', '  ', 'Blur'])).toBe('Because you like Radiohead and Blur');
+    expect(m.artistRowTitle([])).toBe('Because of artists you like');
+  });
+  test('normalizers keep valid category and seedArtist, on playlists only', () => {
+    const out = m.normalizeRecommendationSections({ sections: [
+      { id: 's1', title: 'Fans Like', category: 'artist', seedArtist: ' Radiohead ', items: [
+        { type: 'playlist', id: 'p1', name: 'P1', category: 'editorial' },
+        { type: 'album', id: 'a1', name: 'A1', artist: 'X', category: 'editorial' },
+      ] },
+      { id: 's2', title: 'Odd', category: 'bogus', seedArtist: 'Ignored', items: [{ type: 'playlist', id: 'p2', name: 'P2', category: 'nope' }] },
+      { id: 's3', title: 'Mixes', category: 'personal', seedArtist: 'Ignored', items: [{ type: 'playlist', id: 'p3', name: 'P3' }] },
+    ] }, { resolverId: 'x' });
+    const [s1, s2, s3] = out.sections;
+    expect(s1.category).toBe('artist');
+    expect(s1.seedArtist).toBe('Radiohead');
+    expect(s1.items[0].category).toBe('editorial');
+    expect(s1.items[1].category).toBeUndefined();
+    expect(s2.category).toBeUndefined();
+    expect(s2.seedArtist).toBeUndefined();
+    expect(s2.items[0].category).toBeUndefined();
+    expect(s3.seedArtist).toBeUndefined();
+    expect(m.PLAYLIST_CATEGORIES.map(c => c.id)).toEqual(['personal', 'artist', 'editorial', 'community', 'other']);
+  });
+});

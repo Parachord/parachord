@@ -41,6 +41,43 @@ function blockedItemPick(item) {
   return null;
 }
 
+// Playlist categories, in page order. `artist` has no fixed title: its row
+// title is built from the seed artists by artistRowTitle. `other` is the
+// fallback playlistCategory returns, never a value a plugin sends.
+const PLAYLIST_CATEGORIES = [
+  { id: 'personal', title: 'Made for you' },
+  { id: 'artist', title: null },
+  { id: 'editorial', title: 'From the editors' },
+  { id: 'community', title: 'From other listeners' },
+  { id: 'other', title: 'More playlists' }
+];
+const VALID_PLAYLIST_CATEGORIES = ['personal', 'artist', 'editorial', 'community'];
+const validCategory = (v) => (VALID_PLAYLIST_CATEGORIES.includes(v) ? v : null);
+
+// Which category row a playlist belongs in: a weekly playlist is personal,
+// then the item's own category, then its section's, else 'other'.
+function playlistCategory(item, sectionCategory) {
+  if (item && item.weekly) return 'personal';
+  return validCategory(item && item.category) || validCategory(sectionCategory) || 'other';
+}
+
+// Title of the artist row: "Because you like A, B and C", up to three names.
+function artistRowTitle(seeds) {
+  const seen = new Set();
+  const names = [];
+  for (const raw of Array.isArray(seeds) ? seeds : []) {
+    const name = typeof raw === 'string' ? raw.trim() : '';
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    names.push(name);
+  }
+  if (names.length === 0) return 'Because of artists you like';
+  if (names.length === 1) return `Because you like ${names[0]}`;
+  if (names.length === 2) return `Because you like ${names[0]} and ${names[1]}`;
+  if (names.length === 3) return `Because you like ${names[0]}, ${names[1]} and ${names[2]}`;
+  return `Because you like ${names.slice(0, 3).join(', ')} and more`;
+}
+
 // Per-type dedupe key: two providers recommending the same thing is one row.
 function recommendationItemKey(item) {
   if (!item) return '';
@@ -105,6 +142,7 @@ function normalizeRecommendationItem(raw, resolverId) {
     item.weekly = { id: w.id, contextType: w.contextType, label: w.label, weekLabel: w.weekLabel };
     if (typeof w.date === 'string') item.weekly.date = w.date;
   }
+  if (type === 'playlist' && validCategory(raw.category)) item.category = raw.category;
   if (type === 'song') {
     if (raw.duration && Number.isFinite(Number(raw.duration))) item.duration = Number(raw.duration);
     // The track object every shared path (resolution scheduler, play, queue)
@@ -144,6 +182,11 @@ function normalizeRecommendationSections(raw, { resolverId, resolverName } = {})
     // A provider that pre-fetches a section's first page (Amazon's synthesized
     // "Playlists for You") carries its continuation cursor on the section, so
     // the page's first "Load more" starts from it.
+    const category = validCategory(rawSection.category);
+    if (category) section.category = category;
+    if (category === 'artist' && typeof rawSection.seedArtist === 'string' && rawSection.seedArtist.trim()) {
+      section.seedArtist = rawSection.seedArtist.trim();
+    }
     if (rawSection.nextCursor != null && typeof rawSection.nextCursor !== 'object') section.nextCursor = String(rawSection.nextCursor);
     sections.push(section);
   }
@@ -625,6 +668,9 @@ function shuffleupagusSection({ albums, artists } = {}) {
 }
 
 module.exports = {
+  PLAYLIST_CATEGORIES,
+  playlistCategory,
+  artistRowTitle,
   TYPE_SECTIONS,
   RECOMMENDATION_TYPES,
   blockedItemPick,
