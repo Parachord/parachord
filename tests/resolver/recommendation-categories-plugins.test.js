@@ -17,11 +17,14 @@ describe('Amazon Music sends playlist categories', () => {
     global.window = { electron: { amazonMusic: { getRecommendations: jest.fn().mockResolvedValue({ success: true, sections: [
       { id: base + 'playlistStrategy', title: 'Playlists for You', items: [item], nextCursor: 12 },
       { id: base + 'mp3CommunityPlaylistsStrategy', title: 'Community', items: [item] },
-      { id: base + 'mp3PrimeAlbumsStrategy', title: 'Albums for You', items: [item] }
+      { id: base + 'mp3PrimeAlbumsStrategy', title: 'Albums for You', items: [item] },
+      { id: base + 'mp3OtherShelfStrategy', title: 'Something else', items: [item] }
     ] }) } } };
     const getRecommendations = new Function('return ' + axe.implementation.getRecommendations)();
     const { sections } = await getRecommendations({});
-    expect(sections.map(s => s.category)).toEqual(['personal', 'community', 'personal']);
+    expect(sections.map(s => s.category)).toEqual(['personal', 'community', 'personal', undefined]);
+    expect(sections[3].category).toBeUndefined();
+    expect(sections[3].seedArtist).toBeUndefined();
     expect(sections[0].nextCursor).toBe('12');
   });
 
@@ -45,6 +48,14 @@ describe('Amazon Music sends playlist categories', () => {
     expect(sections[1].seedArtist).toBeUndefined();
     expect(sections[2].seedArtist).toBe('FIDLAR');
     expect(axe.manifest.version).toBe('1.12.0');
+  });
+
+  test('Amazon artist shelf with blank artists has no seed', async () => {
+    const { sections } = await runAmazon([
+      { id: albumBase + 'mp3ByArtistStrategy', title: 'Because you like someone', items: [album(''), album('   ')] }
+    ]);
+    expect(sections[0].category).toBe('artist');
+    expect(sections[0].seedArtist).toBeUndefined();
   });
 
   test('Amazon artist shelf with mixed artists has no seed', async () => {
