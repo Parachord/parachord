@@ -83,8 +83,12 @@ const skeletonSection = (key, title, body) => React.createElement('section', {
   key, 'aria-busy': 'true', style: { display: 'flex', flexDirection: 'column', gap: '14px', minWidth: 0 },
 }, React.createElement('h2', { style: H2_STYLE }, title), body);
 
-// The height of app.js's macOS title-bar drag strip (Tailwind h-8).
-const HOME_TITLEBAR_HEIGHT = 32;
+// The collapsed page hero's height (the other pages' collapsed heroes), Home's
+// gradient (centred on violet-600, the sidebar's accent #7c3aed) and the
+// circle pattern Home's hero always had.
+const HOME_HERO_HEIGHT = 80;
+const HOME_HERO_GRADIENT = 'bg-gradient-to-br from-purple-500 via-violet-600 to-indigo-600';
+const HOME_HERO_PATTERN = 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' viewBox=\'0 0 100 100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%23ffffff\'%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'40\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'2\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'25\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1.5\'/%3E%3Ccircle cx=\'50\' cy=\'50\' r=\'10\' fill=\'none\' stroke=\'%23fff\' stroke-width=\'1\'/%3E%3C/g%3E%3C/svg%3E")';
 
 const HomePage = React.memo(function HomePage(props) {
   const {
@@ -118,7 +122,6 @@ const HomePage = React.memo(function HomePage(props) {
     homeActive,
     homeData,
     homeSetupDismissed,
-    isMac,
     library,
     loadConcerts,
     loadCriticsPicks,
@@ -477,7 +480,7 @@ const HomePage = React.memo(function HomePage(props) {
     style: { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '16px' },
   },
     React.createElement('div', { style: { minWidth: 0 } },
-      React.createElement('h1', {
+      React.createElement('h2', {
         onContextMenu: copyParachordLink,
         style: { margin: 0, fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)' },
       }, greetingFor(new Date().getHours())),
@@ -516,14 +519,23 @@ const HomePage = React.memo(function HomePage(props) {
     className: 'flex-1 flex flex-col h-full',
     style: { overflow: 'hidden', minHeight: 0, backgroundColor: 'var(--bg-primary)' },
   },
-    // macOS draws a transparent drag strip over the top of the main area (the
-    // title bar; app.js). Other pages have a hero under it; Home has none, so
-    // this opaque band of the same height keeps scrolled text off the window
-    // edge. Windows and Linux have a native title bar and need no band.
-    isMac && React.createElement('div', {
-      'aria-hidden': 'true', 'data-home-titlebar': '',
-      style: { height: `${HOME_TITLEBAR_HEIGHT}px`, flexShrink: 0, backgroundColor: 'var(--bg-primary)' },
-    }),
+    // The collapsed page hero every page has (80px, the uppercase light title),
+    // in Home's sidebar colour: a gradient through violet-600, the accent
+    // #7c3aed, with Home's circle pattern. It sits above the scroller, so on
+    // macOS the title-bar drag strip lies over it as on other pages and
+    // scrolled content stops at its edge.
+    React.createElement('div', {
+      'data-home-hero-banner': '', className: 'relative',
+      style: { height: `${HOME_HERO_HEIGHT}px`, flexShrink: 0, overflow: 'hidden' },
+    },
+      React.createElement('div', { className: `absolute inset-0 ${HOME_HERO_GRADIENT}` }),
+      React.createElement('div', { className: 'absolute inset-0', style: { opacity: 0.1, backgroundImage: HOME_HERO_PATTERN } }),
+      React.createElement('div', { className: 'absolute inset-0 flex items-center px-6 z-10' },
+        React.createElement('h1', {
+          className: 'text-2xl font-light text-white',
+          style: { textShadow: '0 2px 10px rgba(0,0,0,0.5)', letterSpacing: '0.2em', textTransform: 'uppercase' },
+          onContextMenu: copyParachordLink,
+        }, 'Home'))),
     React.createElement('div', { className: 'flex-1 overflow-y-auto scrollable-content', style: { minHeight: 0 } },
       banner,
       React.createElement('div', {
