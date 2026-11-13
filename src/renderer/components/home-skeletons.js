@@ -68,7 +68,9 @@ function JumpBackInSkeleton() {
 }
 
 /** A row of square-art cards: art, a title line, a subtitle line. */
-function CardRowSkeleton({ count = HOME_ROW_CARDS, columns } = {}) {
+// `lines`: subtitle lines under the title (a playlist card's can wrap to two;
+// an album card has one, its artist).
+function CardRowSkeleton({ count = HOME_ROW_CARDS, columns, lines = 2 } = {}) {
   const cols = columns || count;
   return React.createElement('div', {
     'aria-hidden': 'true',
@@ -82,9 +84,8 @@ function CardRowSkeleton({ count = HOME_ROW_CARDS, columns } = {}) {
       style: { borderRadius: `${HOME_CARD_ART_RADIUS}px`, backgroundSize: '200% 100%', animationDelay: stagger(i) }
     }),
     bar('h-3.5', { width: '70%', animationDelay: stagger(i) }),
-    // Two subtitle lines: the real card's subtitle can wrap to two.
     bar('h-3', { width: '50%', animationDelay: stagger(i) }),
-    bar('h-3', { width: '35%', animationDelay: stagger(i) }))));
+    lines > 1 && bar('h-3', { width: '35%', animationDelay: stagger(i) }))));
 }
 
 /** Concerts: four cards, a date block beside three text lines. */

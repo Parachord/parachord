@@ -41,10 +41,11 @@ describe('AlbumCard', () => {
     expect(count(html, /flex-shrink:1;min-width:0;height:auto;aspect-ratio:1/g)).toBe(3);
     expect(html).toMatch(/data-art-actions[^>]*padding:8px;box-sizing:border-box/);
   });
-  test('no badge on an ordinary album; its source line shows', () => {
-    const html = h(S.AlbumCard, { album: { ...album, resolverId: 'lastfm', why: 'Last.fm' } });
+  test('an album card names no source: no badge on an ordinary album, and no source line', () => {
+    const html = h(S.AlbumCard, { album: { ...album, resolverId: 'lastfm', why: 'Last.fm · like Hovvdy' } });
     expect(html).not.toContain('Why Shuffleupagus');
-    expect(html).toContain('Last.fm');
+    expect(html).not.toContain('Last.fm');
+    expect(h(S.AlbumCard, { album: { ...album, resolverId: 'amazonmusic', why: 'Amazon Music' } })).not.toContain('Amazon Music');
   });
   test('a Shuffleupagus album has a focusable icon badge and no reason line', () => {
     const html = h(S.AlbumCard, { album: { ...album, resolverId: 'shuffleupagus', reason: 'Because you love slowcore', why: 'Shuffleupagus · Because you love slowcore' } });
