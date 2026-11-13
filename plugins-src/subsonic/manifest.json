@@ -10,7 +10,7 @@
     "homepage": "https://subsonic.org",
     "email": "",
     "minAppVersion": {
-      "android": "0.9.10",
+      "android": "0.9.11",
       "ios": "0.3.0"
     }
   },

@@ -108,7 +108,7 @@ describe('subsonic .axe structure', () => {
     // older mobile apps than the floors stay hidden from it.
     expect(axe.capabilities.mobile).toBe(true);
     expect(axe.capabilities.html5Stream).toBe(true);
-    expect(axe.manifest.minAppVersion).toEqual({ android: '0.9.10', ios: '0.3.0' });
+    expect(axe.manifest.minAppVersion).toEqual({ android: '0.9.11', ios: '0.3.0' });
     expect(axe.settings.authType).toBe('userpass');
     expect(axe.settings.configurable.username.type).toBe('text');
     expect(axe.settings.configurable.password.type).toBe('password');
