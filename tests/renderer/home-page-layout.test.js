@@ -420,3 +420,17 @@ describe('design-audit keyboard fixes (#1382)', () => {
     expect(app.slice(i, i + 1400)).not.toContain('title: `Buy on');
   });
 });
+
+describe('design-audit layout fixes (#1382)', () => {
+  test('the playbar centre and progress shrink in a narrow window', () => {
+    expect(app).toContain("style: { flex: '0 1 340px', minWidth: '200px' },");
+    expect(app).not.toContain("style: { width: '340px', flexShrink: 0 },");
+    const atoms = read('src/renderer/components/ui-atoms.js');
+    expect(atoms).toContain("className: 'flex items-center gap-2', style: { minWidth: '120px' }");
+    expect(atoms).not.toContain('min-w-[200px]');
+  });
+
+  test('Search re-measures its width after a detail view', () => {
+    expect(app).toMatch(/return \(\) => resizeObserver\.disconnect\(\);[\s\S]{0,400}?\}, \[activeView, searchDetailCategory\]\);/);
+  });
+});

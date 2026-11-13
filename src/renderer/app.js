@@ -18125,7 +18125,11 @@ ${trackListXml}
     setSearchContainerWidth(container.offsetWidth);
 
     return () => resizeObserver.disconnect();
-  }, [activeView]); // Re-attach when view changes
+    // Re-attach when the view changes, and when a detail category opens or
+    // closes: the measured box unmounts behind a detail view, and on return
+    // the observer was still watching the detached one, so card counts
+    // stopped following the window (design audit bug 23).
+  }, [activeView, searchDetailCategory]);
 
   // Calculate how many items fit in a row based on container width and item size
   const getItemsPerRow = (minItemWidth, gap = 16) => {
@@ -46458,7 +46462,10 @@ useEffect(() => {
         // CENTER: Track info (album art + metadata)
         React.createElement('div', {
           className: 'flex items-center gap-3 relative',
-          style: { width: '340px', flexShrink: 0 },
+          // 340px when there's room, down to 200px in a narrow window: fixed
+          // at 340 it pushed the volume control off-screen below ~1120px
+          // (design audit bug 21). The title and artist truncate.
+          style: { flex: '0 1 340px', minWidth: '200px' },
           onDragEnter: (e) => handleDragEnter(e, 'now-playing'),
           onDragOver: (e) => handleDragOver(e, 'now-playing'),
           onDragLeave: handleDragLeave,
