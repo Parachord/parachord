@@ -63,8 +63,13 @@
 //
 // Why functions are serialized with String(fn): the .axe materializes each
 // implementation entry with `new Function('return ' + src)()` in
-// resolver-loader.js, so functions are fully isolated — no shared scope. That
-// is also why implementation.js exports plain functions and nothing else.
+// resolver-loader.js, so functions are fully isolated — no shared scope.
+// The one exception is `implementation._lib` (#1356): a factory entry the
+// loader evaluates and invokes exactly once per resolver instance, exposing
+// its return value to every method as `this.lib` — a plugin's shared helpers
+// and cross-call state live there instead of being copy-pasted into each
+// function. That is also why implementation.js exports plain functions and
+// nothing else.
 
 const fs = require('fs');
 const path = require('path');
@@ -249,7 +254,10 @@ async function runImport() {
       '// Imported from the .axe by `node scripts/build-axes.js --import`.',
       '// Edit here, bump manifest.version in manifest.json, then run `node scripts/build-axes.js`.',
       '// The functions materialize fully isolated (resolver-loader.js uses',
-      '// new Function) — no shared scope between them; helpers must be embedded per function.',
+      '// new Function) — no shared scope between them; shared helpers live in',
+      '// an exported _lib factory (resolver-loader.js evaluates it once and',
+      '// exposes it to every method as this.lib), anything else must be',
+      '// embedded per function.',
       'module.exports = {',
     ];
     for (const [key, fnText] of entries) parts.push(`  ${key}: ${fnText},`);

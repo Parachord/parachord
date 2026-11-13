@@ -66,17 +66,49 @@ class ResolverLoader {
    * Create a resolver instance from .axe data
    */
   createResolverInstance(axe) {
-    const { manifest, capabilities, settings, implementation } = axe;
+    const { manifest, capabilities, settings } = axe;
+
+    // The plugin library (#1356): implementation._lib is not a method — it
+    // is a FACTORY, materialized and invoked exactly once per resolver
+    // instance, whose return value every implementation function sees as
+    // `this.lib`. It is the one shared scope a plugin gets: a helper two
+    // functions need is defined once in the factory instead of copy-pasted
+    // into each (the confidence gate is duplicated across four shipped
+    // plugins today), and cross-call state (a request-template cache, a
+    // breaker) lives on the library object instead of on window globals.
+    // Methods can also keep state directly on `this` (the resolver instance,
+    // shared by every method since _bindContext below) — the library is the
+    // canonical home for shared helpers; either way nothing is shared across
+    // two loaded instances of the same plugin.
+    const { _lib: libSource, ...methods } = axe.implementation || {};
+    let pluginLib = null;
+    if (libSource !== undefined) {
+      try {
+        if (typeof libSource !== 'string') {
+          throw new Error('implementation._lib must be serialized function source (a String(fn) of the factory)');
+        }
+        const libFactory = new Function('return ' + libSource)();
+        if (typeof libFactory !== 'function') {
+          throw new Error('implementation._lib must be a function');
+        }
+        pluginLib = libFactory();
+        if (!pluginLib || (typeof pluginLib !== 'object' && typeof pluginLib !== 'function')) {
+          throw new Error('implementation._lib must return the library (an object)');
+        }
+      } catch (error) {
+        console.error(`Failed to create the plugin library for ${manifest.id}:`, error);
+        pluginLib = null;
+      }
+    }
 
     // Create implementation functions
     const implFunctions = {};
-    
-    if (implementation) {
+
+    if (methods) {
       // Convert string implementations to actual functions
-      for (const [key, fnString] of Object.entries(implementation)) {
+      for (const [key, fnString] of Object.entries(methods)) {
         try {
           // Create function from string
-          // eslint-disable-next-line no-new-func
           const fn = new Function('return ' + fnString)();
           implFunctions[key] = fn;
         } catch (error) {
@@ -94,7 +126,11 @@ class ResolverLoader {
       'id', 'name', 'version', 'author', 'description', 'icon', 'color',
       'homepage', 'email', 'capabilities', 'urlPatterns', 'embedPlayer',
       'requiresAuth', 'authType', 'configurable', 'enabled', 'weight', 'config',
-      '_bindContext'
+      '_bindContext',
+      // The plugin library and its reserved name (#1356): `lib` is the
+      // once-evaluated factory result the loader injects; a method named
+      // `lib` (or `_lib`) would clobber it, so neither may be a method.
+      'lib', '_lib'
     ]);
     const safeImplFunctions = {};
     for (const [key, fn] of Object.entries(implFunctions)) {
@@ -136,6 +172,11 @@ class ResolverLoader {
       enabled: false,
       weight: 0,
       config: {},
+
+      // The plugin library (#1356): implementation._lib's factory result,
+      // evaluated once above. Methods reach it as this.lib; null when the
+      // plugin ships no _lib (or its factory failed — see above).
+      lib: pluginLib,
 
       // Implementation (filtered for safety)
       ...safeImplFunctions,
