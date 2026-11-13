@@ -262,14 +262,15 @@ function sameHistoryMixEntries(a, b) {
 // The import card is for a new user only: no collection and no playlists.
 // Empty tiles alone (a collection with no loves, say) don't show it.
 function homeSections({
-  bannerItems, tiles, mixes, playlists, albums, fresh, critical, concerts, concertsLocation, hasCollection,
+  bannerItems, tiles, mixes, loves, playlists, albums, fresh, critical, concerts, concertsLocation, hasCollection,
 } = {}) {
   const has = (a) => Array.isArray(a) && a.length > 0;
   return {
     banner: has(bannerItems),
     jump: has(tiles),
     importCard: !hasCollection && !has(playlists),
-    mixes: has(mixes),
+    // Made from your listening: the mixes, and Recent loves, which always leads it.
+    mixes: has(mixes) || has(loves),
     playlists: has(playlists),
     albums: has(albums),
     fresh: has(fresh),
@@ -409,11 +410,27 @@ function withMixMosaics(mixes, covers) {
   });
 }
 
+// The Recent loves card's mosaic: the newest distinct albums among the loves
+// (artist and album, with the track's own cover when it has one).
+function lovesMosaicAlbums(loves, n = 4) {
+  const out = [];
+  const seen = new Set();
+  for (const t of Array.isArray(loves) ? loves : []) {
+    if (!t || !t.album || !t.artist) continue;
+    const key = `${t.artist}\u0000${t.album}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ artist: t.artist, album: t.album, albumArt: t.albumArt || null });
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
 module.exports = {
   playlistFreshness, freshestPlaylists, recentLoves, changeBadge, freshChangeLine,
   isActiveContext, latestLoveAlbum, jumpBackInTiles, playlistSubtitle, homeSections,
   normalizeHistoryMixes, flattenHistoryMixes, historyMixCacheEntry, historyMixEntriesFor, sameHistoryMixEntries,
   exampleShufflePrompt, filterBySource, homeTopArtists, albumsNeedingArt,
   shouldLoadHomeRecommendations, shouldStampHomeRecommendationsLoad, HOME_RECOMMENDATIONS_THROTTLE_MS,
-  pluginColors, mixesNeedingMosaic, withMixMosaics, HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS,
+  pluginColors, mixesNeedingMosaic, withMixMosaics, HOME_MIX_COVER_ATTEMPTS, HOME_MIX_COVER_RETRY_MS, lovesMosaicAlbums,
 };
