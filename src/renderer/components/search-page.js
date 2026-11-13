@@ -20,6 +20,7 @@
 
 const Icons = require('./icons');
 const { ResolverIcon } = require('./ui-atoms');
+const { SectionHeader, SECTION_HEADER_GAP } = require('./section-header');
 const { artistOpenOptions, creditOpenOptions, trackArtistOpenOptions } = require('../lib/artist-open');
 const { VirtualizedTrackList, getBestSourceConfidence } = require('./track-lists');
 const { generateArtistPattern, PlayTop10Icon, QueueTop10Icon, SearchArtistCard, SearchHistoryItem } = require('./cards');
@@ -1375,7 +1376,7 @@ const SearchPage = React.memo(function SearchPage(props) {
           React.createElement('div', { className: 'space-y-10' },
             // Artists skeleton - square card style
             React.createElement('div', null,
-              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ARTISTS'),
+              React.createElement(SectionHeader, { as: 'h3', title: 'Artists', style: SECTION_HEADER_GAP }),
               React.createElement('div', {
                 className: 'grid gap-4',
                 style: { gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }
@@ -1401,7 +1402,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             ),
             // Songs skeleton - rounded style
             React.createElement('div', null,
-              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'SONGS'),
+              React.createElement(SectionHeader, { as: 'h3', title: 'Songs', style: SECTION_HEADER_GAP }),
               React.createElement('div', { className: 'flex gap-4' },
                 ...Array(getItemsPerRow(110)).fill(null).map((_, i) => {
                   const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(110) - 1) * 16) / getItemsPerRow(110));
@@ -1432,7 +1433,7 @@ const SearchPage = React.memo(function SearchPage(props) {
             ),
             // Albums skeleton - rounded style
             React.createElement('div', null,
-              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4' }, 'ALBUMS'),
+              React.createElement(SectionHeader, { as: 'h3', title: 'Albums', style: SECTION_HEADER_GAP }),
               React.createElement('div', { className: 'flex gap-4' },
                 ...Array(getItemsPerRow(150)).fill(null).map((_, i) => {
                   const skeletonWidth = Math.floor((searchContainerWidth - (getItemsPerRow(150) - 1) * 16) / getItemsPerRow(150));
@@ -1505,17 +1506,16 @@ const SearchPage = React.memo(function SearchPage(props) {
           ),
           // Artists section with image cards - responsive grid
           searchResults.artists.length > 0 && React.createElement('div', null,
-            React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ARTISTS'),
-              searchResults.artists.length > 10 &&
-                React.createElement('button', {
-                  onClick: () => {
-                    setSearchDetailCategory('artists');
-                    setSearchPreviewItem(searchResults.artists[0] || null);
-                  },
-                  className: 'text-xs text-gray-500 hover:text-gray-700'
-                }, 'Show more')
-            ),
+            React.createElement(SectionHeader, {
+              as: 'h3', title: 'Artists', style: SECTION_HEADER_GAP,
+              action: searchResults.artists.length > 10 ? {
+                label: 'Show more',
+                onClick: () => {
+                  setSearchDetailCategory('artists');
+                  setSearchPreviewItem(searchResults.artists[0] || null);
+                }
+              } : null
+            }),
             React.createElement('div', {
               className: 'flex gap-4'
             },
@@ -1580,17 +1580,16 @@ const SearchPage = React.memo(function SearchPage(props) {
 
           // Songs/Tracks section with album art cards - matching album card style
           searchResults.tracks.length > 0 && React.createElement('div', null,
-            React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'SONGS'),
-              searchResults.tracks.length > 10 &&
-                React.createElement('button', {
-                  onClick: () => {
-                    setSearchDetailCategory('tracks');
-                    setSearchPreviewItem(searchResults.tracks[0] || null);
-                  },
-                  className: 'text-xs text-gray-500 hover:text-gray-700'
-                }, 'Show more')
-            ),
+            React.createElement(SectionHeader, {
+              as: 'h3', title: 'Songs', style: SECTION_HEADER_GAP,
+              action: searchResults.tracks.length > 10 ? {
+                label: 'Show more',
+                onClick: () => {
+                  setSearchDetailCategory('tracks');
+                  setSearchPreviewItem(searchResults.tracks[0] || null);
+                }
+              } : null
+            }),
             React.createElement('div', {
               className: 'flex gap-4'
             },
@@ -1790,17 +1789,16 @@ const SearchPage = React.memo(function SearchPage(props) {
 
           // Albums section with album art cards - responsive grid
           searchResults.albums.length > 0 && React.createElement('div', null,
-            React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'ALBUMS'),
-              searchResults.albums.length > 8 &&
-                React.createElement('button', {
-                  onClick: () => {
-                    setSearchDetailCategory('albums');
-                    setSearchPreviewItem(searchResults.albums[0] || null);
-                  },
-                  className: 'text-xs text-gray-500 hover:text-gray-700'
-                }, 'Show more')
-            ),
+            React.createElement(SectionHeader, {
+              as: 'h3', title: 'Albums', style: SECTION_HEADER_GAP,
+              action: searchResults.albums.length > 8 ? {
+                label: 'Show more',
+                onClick: () => {
+                  setSearchDetailCategory('albums');
+                  setSearchPreviewItem(searchResults.albums[0] || null);
+                }
+              } : null
+            }),
             React.createElement('div', {
               className: 'flex gap-x-4 gap-y-5'
             },
@@ -2021,17 +2019,16 @@ const SearchPage = React.memo(function SearchPage(props) {
 
           // Playlists section - single row with overflow hidden
           searchResults.playlists.length > 0 && React.createElement('div', null,
-            React.createElement('div', { className: 'flex items-center justify-between mb-4' },
-              React.createElement('h3', { className: 'text-xs font-semibold text-gray-400 uppercase tracking-wider' }, 'PLAYLISTS'),
-              searchResults.playlists.length > 5 &&
-                React.createElement('button', {
-                  onClick: () => {
-                    setSearchDetailCategory('playlists');
-                    setSearchPreviewItem(searchResults.playlists[0] || null);
-                  },
-                  className: 'text-xs text-gray-500 hover:text-gray-700'
-                }, 'Show more')
-            ),
+            React.createElement(SectionHeader, {
+              as: 'h3', title: 'Playlists', style: SECTION_HEADER_GAP,
+              action: searchResults.playlists.length > 5 ? {
+                label: 'Show more',
+                onClick: () => {
+                  setSearchDetailCategory('playlists');
+                  setSearchPreviewItem(searchResults.playlists[0] || null);
+                }
+              } : null
+            }),
             React.createElement('div', {
               className: 'flex gap-4 overflow-hidden'
             },

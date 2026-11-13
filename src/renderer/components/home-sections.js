@@ -14,6 +14,7 @@ const { filterBySource } = require('../lib/home-model');
 const { readableTextOn } = require('../lib/readable-text');
 const { FixedTooltip, SERVICE_LOGOS } = require('./ui-atoms');
 const { Play } = require('./icons');
+const { SectionHeader, PAGE_COLOR, SECTION_TITLE_STYLE: H2_STYLE, SECTION_SUB_STYLE: SUB_STYLE } = require('./section-header');
 const {
   HOME_TILE_HEIGHT, HOME_ROW_CARDS, HOME_HALF_ROW_CARDS, HOME_CONCERT_CARDS, HOME_ROW_GAP, HOME_CARD_TEXT_GAP,
   HOME_CARD_BOX, HOME_CARD_ART_RADIUS,
@@ -29,8 +30,6 @@ const PLAY_FILL = '#7c3aed'; // fill-accent
 const ON_FILL = '#fff'; // on-color
 const SHUFFLE_COLOR = '#7c3aed'; // fill-accent: the accent var turns light purple in dark mode
 
-// Each page's sidebar colour (app.js), which its section's See all link takes.
-const PAGE_COLOR = { playlists: '#ec4899', recommendations: '#f59e0b', concerts: '#10c9b4' };
 // The Fresh Drops and Critical Darlings pages' hero gradients (app.js) and
 // the collapsed hero title's shadow, which the halves' bands copy.
 const FRESH_HERO = 'bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600';
@@ -39,8 +38,6 @@ const HERO_TEXT_SHADOW = '0 2px 10px rgba(0,0,0,0.5)';
 // Inner padding of the Fresh Drops / Critical Darlings panels.
 const HOME_HALF_PANEL_PAD = 20;
 const SECTION_STYLE = { display: 'flex', flexDirection: 'column', gap: '14px' };
-const H2_STYLE = { margin: 0, fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' };
-const SUB_STYLE = { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' };
 const CLAMP2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
 const ELLIPSIS = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 // Read by screen readers, not drawn.
@@ -429,19 +426,8 @@ function sourceChips(items, labelOf, colors) {
   return [{ id: 'All', label: 'All' }].concat(Array.from(seen, ([id, label]) => ({ id, label, color: colorOf(id) })));
 }
 
-// `pageColor` colours the See all link in its page's sidebar colour.
-function SectionHeader({ id, title, sub, page, view, navigateTo, extra, pageColor }) {
-  return e('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' } },
-    e('div', null,
-      e('h2', { id, style: H2_STYLE }, title),
-      sub && e('div', { style: SUB_STYLE }, sub)),
-    e('div', { style: { display: 'flex', alignItems: 'center', gap: '12px' } },
-      extra,
-      page && e('button', {
-        type: 'button', 'aria-label': `See all in ${page}`, onClick: () => navigateTo && navigateTo(view),
-        style: { font: 'inherit', fontSize: '13px', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', color: pageColor || 'var(--accent-primary)' },
-      }, `See all in ${page}`)));
-}
+// SectionHeader (./section-header) is the app's section title; `pageColor`
+// colours its See all link in the page's sidebar colour.
 
 const grid = (cols, gap) => ({ display: 'grid', gridTemplateColumns: cols, gap });
 

@@ -416,7 +416,8 @@ describe('the five-section page render', () => {
     const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
     expect(typeSection).toMatch(/section\.subsections\.map\(renderSubsection\)/);
     const header = between('const subsectionHeader = (sub, ', 'const renderSubsection = (sub) => {');
-    expect(header).toMatch(/React\.createElement\('h2', \{ className: 'text-lg font-semibold truncate', style: \{ color: 'var\(--text-primary\)' \} \}, sub\.title\)/);
+    // The app's section title (Home's), not a page-local heading.
+    expect(header).toMatch(/React\.createElement\(SectionHeader, \{\s*title: sub\.title,/);
     // No provider row titles or per-row source tags any more.
     expect(view).not.toContain('const sourceTags = ');
     expect(header).not.toMatch(/React\.createElement\('h3'/);
@@ -424,10 +425,14 @@ describe('the five-section page render', () => {
     expect(view).not.toMatch(/`\$\{section\.items\.length\}`|`\$\{sub\.items\.length\}`/);
   });
 
-  test('"See all" / "Show less" carry Home\'s link classes exactly', () => {
+  test('"See all" / "Show less" is the section header\'s in-place link, labelled "See all"', () => {
     const header = between('const subsectionHeader = (sub, ', "// ── One section's row");
-    expect(header).toMatch(/className: 'text-sm text-purple-600 hover:text-purple-700 font-medium( [^']*)?'/);
-    expect(header).toMatch(/expanded \? 'Show less' : 'See all'/);
+    // SectionHeader's link style (Home's); no page-local link classes.
+    expect(header).toMatch(/action: showToggle \? \{/);
+    expect(header).not.toMatch(/text-purple-600/);
+    // It opens the row in place, so it is not "See all in Recommendations".
+    expect(header).toMatch(/label: expanded \? 'Show less' : 'See all'/);
+    expect(header).toMatch(/onClick: \(\) => toggleRecommendationSection\(sub\.key\)/);
     // Only for a row with more than its preview, or more to load.
     const row = between('const renderSubsection = (sub) => {', '// ── Types');
     expect(row).toMatch(/const showToggle = expanded \|\| canExpand \|\| sub\.canLoadMore;/);
