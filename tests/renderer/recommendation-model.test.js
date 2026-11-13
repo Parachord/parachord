@@ -546,7 +546,7 @@ describe('playlist categories: contract and helpers', () => {
     expect(m.artistRowTitle(['Radiohead', ' radiohead ', '', '  ', 'Blur'])).toBe('Because you like Radiohead and Blur');
     expect(m.artistRowTitle([])).toBe('Because of artists you like');
   });
-  test('normalizers keep valid category and seedArtist, on playlists only', () => {
+  test('normalizers keep valid category and seedArtist', () => {
     const out = m.normalizeRecommendationSections({ sections: [
       { id: 's1', title: 'Fans Like', category: 'artist', seedArtist: ' Radiohead ', items: [
         { type: 'playlist', id: 'p1', name: 'P1', category: 'editorial' },
@@ -559,7 +559,8 @@ describe('playlist categories: contract and helpers', () => {
     expect(s1.category).toBe('artist');
     expect(s1.seedArtist).toBe('Radiohead');
     expect(s1.items[0].category).toBe('editorial');
-    expect(s1.items[1].category).toBeUndefined();
+    // An album keeps a category valid for albums (#1377); `editorial` is one.
+    expect(s1.items[1].category).toBe('editorial');
     expect(s2.category).toBeUndefined();
     expect(s2.seedArtist).toBeUndefined();
     expect(s2.items[0].category).toBeUndefined();
@@ -729,5 +730,33 @@ describe('playlist category rows', () => {
     }
     expect(providers[0].sections[1].items[0].category).toBeUndefined();
     expect(page.find(s => s.type === 'album').subsections[0].items[0].category).toBeUndefined();
+  });
+});
+
+describe('album categories: tables and helpers', () => {
+  const m = recommendationModel;
+  test('categoryFor: album values, playlist values, type-specific validity', () => {
+    expect(m.categoryFor('album', { category: 'new' }, 'personal')).toBe('new');
+    expect(m.categoryFor('album', {}, 'personal')).toBe('personal');
+    expect(m.categoryFor('album', { category: 'community' }, undefined)).toBe('other');
+    expect(m.categoryFor('playlist', { category: 'new' }, undefined)).toBe('other');
+    expect(m.categoryFor('playlist', { weekly: { id: 'w' } }, 'editorial')).toBe('personal');
+    expect(m.categoryFor('album', { weekly: { id: 'w' } }, 'editorial')).toBe('editorial');
+    expect(m.categoryFor('song', { category: 'personal' }, 'personal')).toBeNull();
+    expect(m.playlistCategory({ category: 'community' }, undefined)).toBe('community');
+    expect(m.ALBUM_CATEGORIES.map(c => c.id)).toEqual(['new', 'personal', 'artist', 'editorial', 'other']);
+  });
+  test('normalizers keep album categories valid for albums only', () => {
+    const out = m.normalizeRecommendationSections({ sections: [
+      { id: 'n', title: 'New', category: 'new', items: [
+        { type: 'album', id: 'a1', name: 'A1', artist: 'X' },
+        { type: 'album', id: 'a2', name: 'A2', artist: 'X', category: 'community' },
+        { type: 'playlist', id: 'p1', name: 'P1', category: 'new' },
+      ] },
+    ] }, { resolverId: 'x' });
+    const [sec] = out.sections;
+    expect(sec.category).toBe('new');
+    expect(sec.items[1].category).toBeUndefined();
+    expect(sec.items[2].category).toBeUndefined();
   });
 });
