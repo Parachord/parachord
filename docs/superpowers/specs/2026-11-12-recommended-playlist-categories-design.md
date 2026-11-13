@@ -97,7 +97,7 @@ All of this is in `src/renderer/lib/recommendation-model.js` (`buildRecommendati
 
 All of this is in `src/renderer/app.js`, Recommendations view.
 
-- **Heading:** each category row uses the page's existing row header (`subsectionHeader`: title, then "See all" / "Show less" on the right). Each row opens and closes on its own (`recommendationsExpandedSections` is already keyed per row).
+- **Heading:** category rows are subsections of one "Playlists" section. The section shows the normal 20px `SectionHeader` "Playlists" first (no link), and each category row sits under it with a 15px semibold title (`size: 'sub'`) and its own "See all" / "Show less" on the right. This holds whenever the rows carry a category, even when the source filter leaves one; the single `category: null` row keeps today's look. Each row opens and closes on its own (`recommendationsExpandedSections` is already keyed per row).
 - **Collapsed height (my call):**
   - with two or more category rows, each collapsed row shows **one** row of cards (the measured column count), so the section isn't several times longer than today;
   - a single-row Playlists section keeps today's two rows;

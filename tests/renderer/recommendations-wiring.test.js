@@ -425,6 +425,13 @@ describe('the five-section page render', () => {
     expect(view).not.toMatch(/`\$\{section\.items\.length\}`|`\$\{sub\.items\.length\}`/);
   });
 
+  test('category rows are subsections under one "Playlists" SectionHeader', () => {
+    const typeSection = between('const renderTypeSection = (section) =>', '// ── The page');
+    expect(typeSection).toMatch(/if \(visibleRows\.some\(sub => sub\.category\)\) \{[\s\S]*?React\.createElement\(SectionHeader, \{ title: section\.title, style: SECTION_HEADER_GAP \}\)/);
+    const header = between('const subsectionHeader = (sub, ', "// ── One section's row");
+    expect(header).toContain("size: sub.category ? 'sub' : 'section',");
+  });
+
   test('"See all" / "Show less" is the section header\'s in-place link, labelled "See all"', () => {
     const header = between('const subsectionHeader = (sub, ', "// ── One section's row");
     // SectionHeader's link style (Home's); no page-local link classes.

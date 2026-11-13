@@ -41875,6 +41875,9 @@ useEffect(() => {
             // page in the filter bar under the hero.
             const subsectionHeader = (sub, { expanded, showToggle }) => React.createElement(SectionHeader, {
               title: sub.title,
+              // A category row is a subsection under the section's "Playlists"
+              // heading, a step down from a section title.
+              size: sub.category ? 'sub' : 'section',
               style: SECTION_HEADER_GAP,
               // Opening a row that can load more also starts its background
               // page fetches (the auto-paging effect), so there is no separate
@@ -41972,6 +41975,17 @@ useEffect(() => {
                 filterRowBySource(sub, activeSourceFilter).length > 0
                 || (sub.pageable || []).some(p => recommendationsLoadingMore[p.pagingKey] && (!filteringOne || p.resolverId === activeSourceFilter)));
               const cardRows = visibleRows.length > 1 ? 1 : CARD_ROWS;
+              // Rows that carry a category are subsections of one section: the
+              // section's title first (16px under it, like any section), then
+              // the rows 32px apart in their own column.
+              if (visibleRows.some(sub => sub.category)) {
+                return React.createElement('div', { key: `type:${section.type}`, className: 'mb-10' },
+                  React.createElement(SectionHeader, { title: section.title, style: SECTION_HEADER_GAP }),
+                  React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '32px' } },
+                    ...visibleRows.map(sub => renderSubsection(sub, { cardRows }))
+                  )
+                );
+              }
               return React.createElement('div', { key: `type:${section.type}`, className: 'mb-10', style: { display: 'flex', flexDirection: 'column', gap: '32px' } },
                 ...visibleRows.map(sub => renderSubsection(sub, { cardRows }))
               );
